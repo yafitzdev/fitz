@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fitz-rag"
+version = "0.1.0"
+description = "A modular, plugin-based RAG framework for multi-source retrieval and LLM context assembly."
+authors = [
+    { name = "Yan Fitzner"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+
+keywords = [
+    "RAG",
+    "retrieval-augmented-generation",
+    "LLM",
+    "AI",
+    "plugins",
+    "modular",
+    "context-building",
+    "qdrant",
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "qdrant-client>=1.9.0",
+    "httpx>=0.24.1",
+    "pydantic>=2.0",
+    "tqdm>=4.0",
+    "python-dotenv>=1.0",
+    "numpy>=1.23",
+]
+
+[project.urls]
+Homepage = "https://github.com/yafitzdev/fitz-rag"
+Repository = "https://github.com/yafitzdev/fitz-rag"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
