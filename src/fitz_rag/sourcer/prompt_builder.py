@@ -19,6 +19,10 @@ from typing import Dict, List
 from fitz_rag.core import RetrievedChunk
 from fitz_rag.sourcer.rag_base import RetrievalContext, SourceConfig
 
+# NEW — unified config fallback for JSON truncation
+from fitz_rag.config import get_config
+_cfg = get_config()
+
 
 def _format_chunks(label: str, chunks: List[RetrievedChunk]) -> str:
     if not chunks:
@@ -54,6 +58,11 @@ def build_user_prompt(
     sources: List[SourceConfig],
     max_trf_json_chars: int | None = None,
 ) -> str:
+
+    # CONFIG FALLBACK — if not supplied, pull from YAML
+    if max_trf_json_chars is None:
+        max_trf_json_chars = _cfg.get("retriever", {}).get("max_trf_json_chars", None)
+
     trf_json = json.dumps(trf, indent=2)
 
     if max_trf_json_chars and len(trf_json) > max_trf_json_chars:
