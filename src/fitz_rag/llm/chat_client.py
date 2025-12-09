@@ -18,6 +18,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
+# NEW – unified config (used by real chat clients)
+from fitz_rag.config import get_config
+_cfg = get_config()
+DEFAULT_CHAT_MODEL = _cfg.get("models", {}).get("chat", "gpt-4.1-mini")
+
 
 class ChatClient(Protocol):
     """

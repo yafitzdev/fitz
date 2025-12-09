@@ -21,6 +21,10 @@ from fitz_rag.sourcer.rag_base import (
 from fitz_rag.sourcer.prompt_builder import build_user_prompt
 from fitz_rag.llm.chat_client import ChatClient
 
+# NEW – unified config to provide a fallback for max_trf_json_chars
+from fitz_rag.config import get_config
+_cfg = get_config()
+
 
 def run_single_rag_analysis(
     trf: Dict,
@@ -43,6 +47,11 @@ def run_single_rag_analysis(
 
     Returns the model's answer as a string.
     """
+
+    # apply config fallback
+    if max_trf_json_chars is None:
+        max_trf_json_chars = _cfg.get("retriever", {}).get("max_trf_json_chars", None)
+
     # 1) Run multi-source retrieval
     ctx = context_builder.retrieve_for(trf=trf, query=query)
 

@@ -9,8 +9,8 @@ class DummyChunker:
 
 
 def test_ingestion_runs(monkeypatch):
-    from fitz_rag.src.ingester import IngestionEngine
-    from fitz_rag.src.retriever.qdrant_client import create_qdrant_client
+    from fitz_ingest.ingester import IngestionEngine
+    from fitz_rag.retriever.qdrant_client import create_qdrant_client
 
     client = create_qdrant_client()
 

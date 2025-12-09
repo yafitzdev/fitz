@@ -1,10 +1,10 @@
 Metadata-Version: 2.4
-Name: fitz-rag
+Name: fitz-stack
 Version: 0.1.0
 Summary: A modular, plugin-based RAG framework for multi-source retrieval and LLM context assembly.
 Author: Yan Fitzner
-Project-URL: Homepage, https://github.com/yafitzdev/fitz-rag
-Project-URL: Repository, https://github.com/yafitzdev/fitz-rag
+Project-URL: Homepage, https://github.com/yafitzdev/fitz-stack
+Project-URL: Repository, https://github.com/yafitzdev/fitz-stack
 Keywords: RAG,retrieval-augmented-generation,LLM,AI,plugins,modular,context-building,qdrant
 Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3 :: Only
@@ -21,4 +21,9 @@ Requires-Dist: python-dotenv>=1.0
 Requires-Dist: numpy>=1.23
 Dynamic: license-file
 
-# fitz-rag
+# fitz-stack
+
+A modular AI ecosystem containing:
+
+- fitz_rag → retrieval + multi-source RAG engine
+- fitz_ingest → ingestion, chunking, embedding & vector DB pipelines

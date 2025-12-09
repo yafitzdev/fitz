@@ -25,6 +25,10 @@ from typing import Dict, List, Optional
 
 from fitz_rag.core import RetrievedChunk
 
+# NEW – load config so strategies can use global settings if needed
+from fitz_rag.config import get_config
+_cfg = get_config()
+
 
 # ---------------------------------------------------------
 # Base Strategy Interface

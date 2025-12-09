@@ -18,7 +18,7 @@ from typing import Optional, Any
 
 from qdrant_client import QdrantClient
 
-from fitz_rag.src.retriever.qdrant_client import ensure_collection
+from src.fitz_rag import ensure_collection
 
 
 class IngestionEngine:

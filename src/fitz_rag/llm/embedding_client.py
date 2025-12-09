@@ -17,6 +17,11 @@ from __future__ import annotations
 
 from typing import List, Protocol
 
+# NEW – unified config defaults for real embedding clients
+from fitz_rag.config import get_config
+_cfg = get_config()
+DEFAULT_EMBED_MODEL = _cfg.get("models", {}).get("embedding", "text-embedding-3-large")
+
 
 class EmbeddingClient(Protocol):
     """

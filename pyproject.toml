@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fitz-rag"
+name = "fitz-stack"
 version = "0.1.0"
 description = "A modular, plugin-based RAG framework for multi-source retrieval and LLM context assembly."
 authors = [

@@ -6,6 +6,7 @@ This module provides a thin abstraction over the qdrant-client
 constructor and convenience helpers used across the framework.
 
 Users can configure Qdrant via:
+- Unified YAML config (fitz_rag.config)
 - Environment variables
 - Direct initialization
 - Defaults (localhost)
@@ -20,6 +21,10 @@ from typing import Optional, Dict, Any
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
+
+# NEW — unified config
+from fitz_rag.config import get_config
+_cfg = get_config()
 
 
 # ---------------------------------------------------------
@@ -41,16 +46,37 @@ def create_qdrant_client(
     timeout: Optional[int] = None,
 ) -> QdrantClient:
     """
-    Create a QdrantClient using either explicit parameters or environment
-    variables. Falls back to http://localhost:6333 if nothing is provided.
+    Create a QdrantClient using either:
+    - explicit parameters
+    - unified YAML config
+    - environment variables
+    - fallback to http://localhost:6333
     """
-    url = url or os.getenv(ENV_QDRANT_URL, "http://localhost:6333")
-    api_key = api_key or os.getenv(ENV_QDRANT_API_KEY, None)
 
-    # Ensure timeout is numeric
+    qcfg = _cfg.get("qdrant", {})
+
+    # unified config as fallback
+    cfg_url = f"{'https' if qcfg.get('https', False) else 'http'}://{qcfg.get('host', 'localhost')}:{qcfg.get('port', 6333)}"
+
+    url = (
+        url
+        or os.getenv(ENV_QDRANT_URL)
+        or cfg_url
+    )
+
+    api_key = (
+        api_key
+        or os.getenv(ENV_QDRANT_API_KEY)
+        or None
+    )
+
     if timeout is None:
+        # ENV > unified config > default 30
         env_val = os.getenv(ENV_QDRANT_TIMEOUT)
-        timeout = int(env_val) if env_val else 30
+        if env_val:
+            timeout = int(env_val)
+        else:
+            timeout = int(qcfg.get("timeout", 30))
 
     return QdrantClient(
         url=url,

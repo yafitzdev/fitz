@@ -9,7 +9,6 @@ def test_prompt_builder_runs():
     )
     from fitz_rag.sourcer.prompt_builder import (
         build_user_prompt,
-        build_rag_block,
     )
 
     # Minimal context

@@ -1,0 +1,46 @@
+# ================================
+# fitz_rag default configuration
+# ================================
+
+qdrant:
+  host: "localhost"
+  port: 6333
+  https: false
+  collection: "fitz_default"
+
+models:
+  # Optional, in case you add chat endpoints later
+  chat: "gpt-4.1-mini"
+  embedding: "text-embedding-3-large"
+  rerank: "cohere/rerank-3.5"
+
+retriever:
+  # How many items to fetch from the vector DB
+  top_k: 20
+  # How many top documents to keep after reranking
+  rerank_k: 5
+  # Optional threshold for rerank relevance scores
+  min_score: 0.0
+
+ingestion:
+  # Chunking settings (tune as needed)
+  chunk_size: 800
+  chunk_overlap: 200
+  # Which files to ingest by default
+  glob_patterns:
+    - "**/*.txt"
+    - "**/*.md"
+    - "**/*.pdf"
+  # Which paths/patterns to skip
+  exclude_glob_patterns:
+    - "**/.git/**"
+    - "**/__pycache__/**"
+    - "**/.venv/**"
+
+prompt_logging:
+  enabled: true
+  dir: "./fitz_prompts"
+
+logging:
+  level: "INFO"      # DEBUG / INFO / WARNING / ERROR
+  json: false        # if true, log as JSON lines instead of pretty text

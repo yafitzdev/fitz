@@ -19,6 +19,10 @@ from qdrant_client import QdrantClient
 from fitz_rag.core import RetrievedChunk
 from fitz_rag.retriever.base import BaseRetriever
 
+# NEW — unified config
+from fitz_rag.config import get_config
+_cfg = get_config()
+
 
 class RAGRetriever(BaseRetriever):
     """
@@ -30,13 +34,17 @@ class RAGRetriever(BaseRetriever):
         self,
         client: QdrantClient,
         embedder: Any,
-        collection: str,
-        top_k: int = 10,
+        collection: str = None,
+        top_k: int = None,
     ) -> None:
+        # load config fallbacks
+        retr_cfg = _cfg.get("retriever", {})
+        qdrant_cfg = _cfg.get("qdrant", {})
+
         self.client = client
         self.embedder = embedder
-        self.collection = collection
-        self.top_k = top_k
+        self.collection = collection or qdrant_cfg.get("collection", "fitz_default")
+        self.top_k = top_k or retr_cfg.get("top_k", 10)
 
     def retrieve(self, query: str) -> List[RetrievedChunk]:
         if not query or not query.strip():
