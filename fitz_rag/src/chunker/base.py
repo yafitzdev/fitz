@@ -13,7 +13,7 @@ The ingestion engine uses this to store data in Qdrant.
 
 from __future__ import annotations
 from typing import List, Protocol
-from fitz_rag.core.types import Chunk
+from fitz_rag.src.core.types import Chunk
 
 
 class Chunker(Protocol):

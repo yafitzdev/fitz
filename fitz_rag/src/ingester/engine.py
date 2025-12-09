@@ -18,8 +18,8 @@ from typing import Iterable, Optional, Dict, Any, List
 
 from qdrant_client import QdrantClient
 
-from fitz_rag.core.types import Chunk
-from fitz_rag.retriever.qdrant_client import ensure_collection
+from fitz_rag.src.core.types import Chunk
+from fitz_rag.src.retriever.qdrant_client import ensure_collection
 
 
 class IngestionEngine:

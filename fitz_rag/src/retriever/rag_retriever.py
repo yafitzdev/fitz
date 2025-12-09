@@ -16,8 +16,8 @@ from typing import List, Any, Dict
 
 from qdrant_client import QdrantClient
 
-from fitz_rag.core.types import RetrievedChunk
-from fitz_rag.retriever.base import BaseRetriever
+from fitz_rag.src.core.types import RetrievedChunk
+from fitz_rag.src.retriever.base import BaseRetriever
 
 
 class RAGRetriever(BaseRetriever):

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import List, Protocol
 
-from fitz_rag.core.types import RetrievedChunk
+from fitz_rag.src.core.types import RetrievedChunk
 
 
 class BaseRetriever(Protocol):

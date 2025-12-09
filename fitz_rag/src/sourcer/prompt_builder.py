@@ -16,8 +16,8 @@ from __future__ import annotations
 import json
 from typing import Dict, List
 
-from fitz_rag.core.types import RetrievedChunk
-from fitz_rag.sourcer.rag_base import RetrievalContext, SourceConfig
+from fitz_rag.src.core.types import RetrievedChunk
+from fitz_rag.src.sourcer.rag_base import RetrievalContext, SourceConfig
 
 
 def _format_chunks(label: str, chunks: List[RetrievedChunk]) -> str:

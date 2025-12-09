@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-from fitz_rag.core.types import RetrievedChunk
+from fitz_rag.src.core.types import RetrievedChunk
 
 
 # ---------------------------------------------------------

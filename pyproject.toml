@@ -40,8 +40,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yafitzdev/fitz-rag"
-Repository = "https://github.com/yafitzdev/fitz-rag"
+Homepage = "https://github.com/yafitzdev/fitz-stack"
+Repository = "https://github.com/yafitzdev/fitz-stack"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
