@@ -97,7 +97,7 @@ class CohereChatClient:
 
 @dataclass
 class DummyChatClient:
-    prefix: str = "[DUMMY] "
+    prefix: str = "[DUMMY-ANSWER] "
 
     def chat(self, system_prompt: str, user_content: str) -> str:
         return f"{self.prefix}OK"
