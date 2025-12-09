@@ -14,11 +14,10 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Iterable, Optional, Dict, Any, List
+from typing import Optional, Any
 
 from qdrant_client import QdrantClient
 
-from fitz_rag.src.core.types import Chunk
 from fitz_rag.src.retriever.qdrant_client import ensure_collection
 
 

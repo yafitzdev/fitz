@@ -14,12 +14,12 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from fitz_rag.src.sourcer.rag_base import (
+from fitz_rag.sourcer.rag_base import (
     RAGContextBuilder,
     SourceConfig,
 )
-from fitz_rag.src.sourcer.prompt_builder import build_user_prompt
-from fitz_rag.src.llm.chat_client import ChatClient
+from fitz_rag.sourcer.prompt_builder import build_user_prompt
+from fitz_rag.llm.chat_client import ChatClient
 
 
 def run_single_rag_analysis(
