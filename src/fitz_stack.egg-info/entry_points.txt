@@ -1,5 +1,2 @@
 [console_scripts]
-fitz-docs = fitz_docs.cli:app
-fitz-ingest = fitz_ingest.cli:app
-fitz-map = fitz_map.cli:app
 fitz-rag = fitz_rag.cli:app

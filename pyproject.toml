@@ -42,9 +42,9 @@ exclude = ["tests"]
 
 [project.scripts]
 fitz-rag = "fitz_rag.cli:app"
-fitz-ingest = "fitz_ingest.cli:app"
-fitz-docs = "fitz_docs.cli:app"
-fitz-map = "fitz_map.cli:app"
+# fitz-ingest = "fitz_ingest.cli:app"
+# fitz-docs = "fitz_docs.cli:app"
+# fitz-map = "fitz_map.cli:app"
 
 
 [tool.black]

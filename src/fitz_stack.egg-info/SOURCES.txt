@@ -2,9 +2,11 @@ LICENSE
 README.md
 pyproject.toml
 src/fitz_ingest/__init__.py
+src/fitz_ingest/cli.py
 src/fitz_ingest/ingester/__init__.py
 src/fitz_ingest/ingester/engine.py
 src/fitz_rag/__init__.py
+src/fitz_rag/cli.py
 src/fitz_rag/chunker/__init__.py
 src/fitz_rag/chunker/base.py
 src/fitz_rag/config/__init__.py
