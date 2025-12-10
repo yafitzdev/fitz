@@ -1,55 +1,71 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from typing import Optional
 
-from qdrant_client import QdrantClient
-
+from fitz_rag.config.schema import RAGConfig
+from fitz_rag.config.loader import load_config
 from fitz_rag.pipeline.engine import RAGPipeline
-from fitz_rag.retriever.dense_retriever import RAGRetriever
-from fitz_rag.generation.rgs import RGS, RGSConfig
-from fitz_rag.llm.embedding_client import CohereEmbeddingClient
-from fitz_rag.llm.chat_client import CohereChatClient
 
 
 @dataclass
 class FastRAG:
     """
-    Lowest-latency pipeline.
-    No reranking → retriever returns top_k dense results only.
+    Fast (low-latency) RAG pipeline.
+
+    Preferred usage:
+        rag = FastRAG(config=my_cfg)
+
+    Legacy usage:
+        rag = FastRAG(collection="docs", top_k=5)
     """
 
-    collection: str
+    # Unified config (preferred)
+    config: Optional[RAGConfig] = None
+
+    # Legacy override fields
+    collection: Optional[str] = None
+    cohere_api_key: Optional[str] = None
+    top_k: int = 5
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
-    cohere_api_key: Optional[str] = None
+
+    pipeline: Optional[RAGPipeline] = None
 
     def __post_init__(self):
-        key = self.cohere_api_key or os.getenv("COHERE_API_KEY")
-        if not key:
-            raise RuntimeError("Missing COHERE_API_KEY")
+        # -------------------------------------
+        # 1) Unified config path
+        # -------------------------------------
+        if self.config is not None:
+            self.pipeline = RAGPipeline.from_config(self.config)
+            return
 
-        qdrant = QdrantClient(host=self.qdrant_host, port=self.qdrant_port)
+        # -------------------------------------
+        # 2) Legacy initialization path
+        # -------------------------------------
+        raw = load_config()
 
-        embedder = CohereEmbeddingClient(api_key=key)
-        chat = CohereChatClient(api_key=key)
+        # Apply minimal overrides
+        raw["retriever"]["collection"] = self.collection
+        raw["retriever"]["top_k"] = self.top_k
 
-        retriever = RAGRetriever(
-            client=qdrant,
-            embedder=embedder,
-            reranker=None,      # no reranking
-            collection=self.collection,
-            top_k=5,
-        )
+        # Disable reranking (fast mode)
+        raw["rerank"]["enabled"] = False
 
-        rgs = RGS(RGSConfig())
+        # API key passthrough
+        if self.cohere_api_key:
+            raw["llm"]["api_key"] = self.cohere_api_key
+            raw["embedding"]["api_key"] = self.cohere_api_key
+            raw["rerank"]["api_key"] = self.cohere_api_key
 
-        self.pipeline = RAGPipeline(
-            retriever=retriever,
-            llm=chat,
-            rgs=rgs,
-        )
+        # Build validated config
+        cfg = RAGConfig.from_dict(raw)
 
+        # Build pipeline from config
+        self.pipeline = RAGPipeline.from_config(cfg)
+
+    # -------------------------------------
+    # User API
+    # -------------------------------------
     def ask(self, query: str):
         return self.pipeline.run(query)

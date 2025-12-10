@@ -1,63 +1,65 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from typing import Optional
 
-from qdrant_client import QdrantClient
-
+from fitz_rag.config.schema import RAGConfig
+from fitz_rag.config.loader import load_config
 from fitz_rag.pipeline.engine import RAGPipeline
-from fitz_rag.retriever.dense_retriever import RAGRetriever
-from fitz_rag.generation.rgs import RGS, RGSConfig
-from fitz_rag.llm.embedding_client import CohereEmbeddingClient
-from fitz_rag.llm.rerank_client import CohereRerankClient
-from fitz_rag.llm.chat_client import CohereChatClient
 
 
 @dataclass
 class StandardRAG:
     """
-    Configurable, but still easy to use.
-    Allows changing models, top_k, etc.
+    Standard RAG preset — configurable but user-friendly.
+
+    Preferred:
+        rag = StandardRAG(config=my_cfg)
+
+    Backward compatible:
+        rag = StandardRAG(collection="docs", top_k=20)
     """
 
-    collection: str
-    qdrant_host: str = "localhost"
-    qdrant_port: int = 6333
+    # New unified config
+    config: Optional[RAGConfig] = None
 
+    # Legacy parameters (optional)
+    collection: Optional[str] = None
     cohere_api_key: Optional[str] = None
-    embed_model: str = "embed-english-v3.0"
-    rerank_model: str = "rerank-v3.5"
 
     top_k: int = 20
     final_top_k: int = 5
+    qdrant_host: str = "localhost"
+    qdrant_port: int = 6333
+
+    pipeline: Optional[RAGPipeline] = None
 
     def __post_init__(self):
-        key = self.cohere_api_key or os.getenv("COHERE_API_KEY")
-        if not key:
-            raise RuntimeError("Missing COHERE_API_KEY")
+        # -------------------------------------
+        # 1) Unified CONFIG path
+        # -------------------------------------
+        if self.config is not None:
+            self.pipeline = RAGPipeline.from_config(self.config)
+            return
 
-        qdrant = QdrantClient(host=self.qdrant_host, port=self.qdrant_port)
+        # -------------------------------------
+        # 2) Legacy fallback path
+        # -------------------------------------
+        raw = load_config()
 
-        embedder = CohereEmbeddingClient(api_key=key, model=self.embed_model)
-        reranker = CohereRerankClient(api_key=key, model=self.rerank_model)
-        chat = CohereChatClient(api_key=key)
+        raw["retriever"]["collection"] = self.collection
+        raw["retriever"]["top_k"] = self.top_k
 
-        retriever = RAGRetriever(
-            client=qdrant,
-            embedder=embedder,
-            reranker=reranker,
-            collection=self.collection,
-            top_k=self.top_k,
-        )
+        if self.cohere_api_key:
+            raw["llm"]["api_key"] = self.cohere_api_key
+            raw["embedding"]["api_key"] = self.cohere_api_key
+            raw["rerank"]["api_key"] = self.cohere_api_key
 
-        rgs = RGS(RGSConfig())
+        cfg = RAGConfig.from_dict(raw)
+        self.pipeline = RAGPipeline.from_config(cfg)
 
-        self.pipeline = RAGPipeline(
-            retriever=retriever,
-            llm=chat,
-            rgs=rgs,
-        )
-
+    # -------------------------------------
+    # User API
+    # -------------------------------------
     def ask(self, query: str):
         return self.pipeline.run(query)
