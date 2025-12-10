@@ -1,4 +1,4 @@
-from fitz_rag.pipeline.rag_pipeline import RAGPipeline
+from fitz_rag.pipeline.engine import RAGPipeline
 from fitz_rag.retriever.dense_retriever import RAGRetriever
 from fitz_rag.llm.chat_client import CohereChatClient
 from fitz_rag.llm.rerank_client import CohereRerankClient

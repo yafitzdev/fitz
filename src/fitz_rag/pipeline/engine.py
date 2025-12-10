@@ -1,21 +1,14 @@
 """
-RAGPipeline for fitz_rag.
+RAGPipeline — the core RAG orchestration engine.
 
-This class orchestrates:
+This class performs:
   - dense retrieval
   - reranking
   - context building
-  - prompt construction
+  - prompt assembly
   - LLM chat
 
-Usage:
-    pipeline = RAGPipeline(
-        retriever=my_retriever,
-        reranker=my_reranker,
-        chat_client=my_chat_client,
-    )
-
-    answer = pipeline.run("What is this about?")
+EasyRAG (in easy.py) is a thin wrapper that constructs a configured RAGPipeline.
 """
 
 from __future__ import annotations
@@ -31,6 +24,19 @@ from fitz_rag.context.builder import build_context
 
 @dataclass
 class RAGPipeline:
+    """
+    The core engine of the fitz-rag retrieval-augmented generation pipeline.
+
+    Users pass in:
+      - retriever (BaseRetriever)
+      - reranker (RerankClient)
+      - chat_client (ChatClient)
+
+    Example:
+        pipeline = RAGPipeline(retriever, reranker, chat_client)
+        answer = pipeline.run("What is this?")
+    """
+
     retriever: BaseRetriever
     reranker: RerankClient
     chat_client: ChatClient
@@ -40,23 +46,25 @@ class RAGPipeline:
     final_top_k: int = 5
 
     # ---------------------------------------------------------
-    # Step 1: Dense retrieval
+    # STEP 1 — Dense Retrieval
     # ---------------------------------------------------------
     def _retrieve(self, query: str) -> List[Dict[str, Any]]:
         results = self.retriever.retrieve(query)
+        if not results:
+            return []
 
         chunks = []
         for r in results:
             chunks.append(
                 {
-                    "text": getattr(r, "text", ""),  # direct field
-                    "file": r.metadata.get("file", "unknown"),  # from metadata
+                    "text": r.text,
+                    "file": r.metadata.get("file", "unknown"),
                 }
             )
         return chunks
 
     # ---------------------------------------------------------
-    # Step 2: Rerank retrieved chunks
+    # STEP 2 — Reranking
     # ---------------------------------------------------------
     def _rerank(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not chunks:
@@ -67,13 +75,13 @@ class RAGPipeline:
         return [chunks[i] for i in indices]
 
     # ---------------------------------------------------------
-    # Step 3: Build context (merged chunks)
+    # STEP 3 — Build Context
     # ---------------------------------------------------------
     def _build_context(self, chunks: List[Dict[str, Any]]) -> str:
         return build_context(chunks, max_chars=self.context_chars)
 
     # ---------------------------------------------------------
-    # Step 4: Prompt builder
+    # STEP 4 — Build Prompt
     # ---------------------------------------------------------
     def _build_prompt(self, context: str, query: str) -> str:
         return f"""
@@ -83,11 +91,13 @@ CONTEXT:
 QUESTION:
 {query}
 
-Answer ONLY using the context above. If unsure, say 'I don't know'.
+INSTRUCTIONS:
+- Answer ONLY using the context above.
+- If the context does not contain the answer, say: "I don't know."
 """.strip()
 
     # ---------------------------------------------------------
-    # Step 5: Chat with LLM
+    # STEP 5 — Chat with LLM
     # ---------------------------------------------------------
     def _chat(self, prompt: str) -> str:
         return self.chat_client.chat(
@@ -107,4 +117,5 @@ Answer ONLY using the context above. If unsure, say 'I don't know'.
         context = self._build_context(reranked)
         prompt = self._build_prompt(context, query)
 
-        return self._chat(prompt)
+        answer = self._chat(prompt)
+        return answer

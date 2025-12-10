@@ -7,7 +7,7 @@ from fitz_rag.sourcer.rag_base import (
     RAGContextBuilder,
 )
 from fitz_rag.llm.chat_client import DummyChatClient
-from fitz_rag.pipeline.rag_pipeline import run_single_rag_analysis
+from fitz_rag.pipeline.engine import run_single_rag_analysis
 
 
 class DummyStrategy(ArtefactRetrievalStrategy):
