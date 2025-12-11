@@ -17,6 +17,10 @@ from typing import Optional, Any
 from qdrant_client import QdrantClient
 
 from fitz_ingest.vector_db.qdrant_utils import ensure_collection
+from fitz_ingest.ingester.validation import (
+    IngestionValidator,
+    IngestionValidationError,
+)
 
 from fitz_rag.exceptions.retriever import EmbeddingError, VectorSearchError
 from fitz_rag.exceptions.config import ConfigError
@@ -27,6 +31,7 @@ class IngestionEngine:
     Ingest files into Qdrant using:
       - Chunker
       - Optional embedding client
+      - Central validation (fitz_ingest.ingester.validation)
     """
 
     def __init__(
@@ -36,12 +41,14 @@ class IngestionEngine:
         vector_size: int,
         embedder: Optional[Any] = None,
         distance: str = "cosine",
+        validator: Optional[IngestionValidator] = None,
     ) -> None:
         self.client = client
         self.collection = collection
         self.embedder = embedder
         self.vector_size = vector_size
         self.distance = distance
+        self.validator = validator or IngestionValidator()
 
     # ---------------------------------------------------------
     # Ingest a directory tree
@@ -61,6 +68,7 @@ class IngestionEngine:
         if not files:
             return
 
+        # Qdrant validation / ensure collection
         try:
             ensure_collection(
                 client=self.client,
@@ -68,14 +76,18 @@ class IngestionEngine:
                 vector_size=self.vector_size,
             )
         except Exception as e:
-            raise VectorSearchError(f"Failed ensuring collection '{self.collection}'") from e
+            raise VectorSearchError(
+                f"Failed ensuring collection '{self.collection}'"
+            ) from e
 
         for file in files:
             if file.is_file():
                 try:
                     self.ingest_file(chunker, file)
                 except Exception as e:
-                    raise VectorSearchError(f"Failed ingesting file: {file}") from e
+                    raise VectorSearchError(
+                        f"Failed ingesting file: {file}"
+                    ) from e
 
     # ---------------------------------------------------------
     # Ingest a single file
@@ -86,8 +98,18 @@ class IngestionEngine:
         except Exception as e:
             raise ConfigError(f"Chunker failed on file: {file_path}") from e
 
+        # No chunks -> nothing to write, not an error
         if not chunks:
             return
+
+        # Validation BEFORE embedding / Qdrant
+        try:
+            if self.validator is not None:
+                self.validator.validate_chunks(chunks, file_path)
+        except IngestionValidationError as e:
+            raise ConfigError(
+                f"Ingestion validation failed for file '{file_path}': {e}"
+            ) from e
 
         points = []
 
@@ -104,7 +126,9 @@ class IngestionEngine:
                     else None
                 )
             except Exception as e:
-                raise EmbeddingError(f"Failed embedding chunk from: {file_path}") from e
+                raise EmbeddingError(
+                    f"Failed embedding chunk from: {file_path}"
+                ) from e
 
             point_id = str(uuid.uuid4())
 
@@ -126,4 +150,6 @@ class IngestionEngine:
                 points=points,
             )
         except Exception as e:
-            raise VectorSearchError(f"Failed upserting points into '{self.collection}'") from e
+            raise VectorSearchError(
+                f"Failed upserting points into '{self.collection}'"
+            ) from e
