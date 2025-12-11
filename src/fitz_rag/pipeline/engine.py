@@ -10,7 +10,8 @@ from fitz_rag.config.loader import load_config
 from fitz_rag.retriever.plugins.dense import RAGRetriever
 from fitz_rag.llm.embedding_client import CohereEmbeddingClient
 from fitz_rag.llm.rerank.plugins.cohere import CohereRerankClient
-from fitz_rag.llm.chat_client import CohereChatClient
+from fitz_rag.llm.chat.engine import ChatEngine
+from fitz_rag.llm.chat.plugins.cohere import CohereChatClient
 
 from fitz_rag.generation.rgs import RGS, RGSConfig as RGSRuntimeConfig
 from fitz_rag.generation.rgs import RGSAnswer
@@ -141,11 +142,13 @@ class RAGPipeline:
             raise PipelineError(f"Unsupported LLM provider: {cfg.llm.provider}")
 
         logger.debug(f"{PIPELINE} Initializing chat model '{cfg.llm.model}'")
-        chat = CohereChatClient(
+        chat_plugin = CohereChatClient(
             api_key=key,
             model=cfg.llm.model,
             temperature=cfg.llm.temperature,
         )
+
+        chat = ChatEngine(chat_plugin)
 
         # ---------------- Retriever --------------------
         logger.debug(f"{PIPELINE} Constructing retriever")
