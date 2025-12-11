@@ -37,13 +37,10 @@ class DenseRetrievalPlugin(RetrievalPlugin):
     """
     Dense vector retrieval plugin for fitz-rag.
 
-    Default strategy:
-      1) Embed query via EmbeddingEngine
-      2) Dense vector search via Qdrant
-      3) Optional rerank via RerankEngine
-      4) Returns Chunk objects (universal model)
-
-    This class is auto-registered in the retrieval registry.
+    Clean DI-correct version:
+      - If embedder is injected, use AS-IS (do not wrap, do not replace)
+      - Otherwise build a default EmbeddingEngine
+      - Optional reranking engine
     """
 
     plugin_name: str = "dense"
@@ -54,7 +51,7 @@ class DenseRetrievalPlugin(RetrievalPlugin):
     retriever_cfg: RetrieverConfig | None = None
     rerank_cfg: RerankConfig | None = None
 
-    # Injected dependencies (overridden in tests)
+    # Injected test/prod dependencies
     embedder: Any | None = None
     rerank_engine: RerankEngine | None = None
 
@@ -66,6 +63,7 @@ class DenseRetrievalPlugin(RetrievalPlugin):
             raise ValueError("embed_cfg and retriever_cfg must be provided")
 
         # 1. EMBEDDING ENGINE
+        # If user injected embedder, DO NOT override it.
         if self.embedder is None:
             embed_plugin = CohereEmbeddingClient(
                 api_key=self.embed_cfg.api_key,
@@ -75,7 +73,7 @@ class DenseRetrievalPlugin(RetrievalPlugin):
             )
             self.embedder = EmbeddingEngine(embed_plugin)
 
-        # 2. RERANK ENGINE (if enabled)
+        # 2. RERANK ENGINE
         if self.rerank_cfg and self.rerank_cfg.enabled:
             rerank_plugin = CohereRerankClient(
                 api_key=self.rerank_cfg.api_key,
@@ -122,7 +120,7 @@ class DenseRetrievalPlugin(RetrievalPlugin):
                     with_payload=True,
                 )
             except TypeError:
-                # MockQdrantSearchClient in tests (positional)
+                # Mock clients (positional signature)
                 hits = self.client.search(
                     self.retriever_cfg.collection,
                     query_vector,
@@ -145,10 +143,10 @@ class DenseRetrievalPlugin(RetrievalPlugin):
 
             chunks.append(
                 Chunk(
-                    id=getattr(hit, "id", None),              # universal Chunk.id
-                    text=payload.get("text", ""),             # universal Chunk.text
-                    metadata=payload,                         # universal Chunk.metadata
-                    score=getattr(hit, "score", None),        # universal Chunk.score
+                    id=getattr(hit, "id", None),
+                    text=payload.get("text", ""),
+                    metadata=payload,
+                    score=getattr(hit, "score", None),
                 )
             )
 
@@ -167,16 +165,7 @@ class DenseRetrievalPlugin(RetrievalPlugin):
         return chunks
 
 
-# -------------------------------------------------------------------
-# Backwards compatible alias used throughout the codebase & tests.
-# -------------------------------------------------------------------
+# Backwards-compatible alias
 @dataclass
 class RAGRetriever(DenseRetrievalPlugin):
-    """
-    Backwards-compatible alias for DenseRetrievalPlugin.
-
-    Existing code can continue to import:
-
-        from fitz_rag.retriever.plugins.dense import RAGRetriever
-    """
     pass
