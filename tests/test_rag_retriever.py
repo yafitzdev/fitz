@@ -18,7 +18,14 @@ class MockQdrantSearchClient:
     Emulates the minimal QdrantClient interface needed for retriever tests.
     Returns empty search results (no external DB needed).
     """
-    def search(self, collection_name, query_vector, limit, with_payload=True):
+
+    # IMPORTANT:
+    # The real retriever calls:
+    #   search(collection_name=..., vector=..., limit=..., with_payload=True)
+    #
+    # So the mock MUST accept `vector`, not `query_vector`.
+    #
+    def search(self, collection_name, vector, limit, with_payload=True):
         return []
 
 

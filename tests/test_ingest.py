@@ -8,7 +8,8 @@ import os
 from pathlib import Path
 from typing import List
 
-from fitz_ingest.chunker.simple_chunker import SimpleChunker
+from fitz_ingest.chunker.plugins.simple import SimpleChunker
+from fitz_ingest.chunker.engine import ChunkingEngine
 from fitz_ingest.ingester.engine import IngestionEngine
 from fitz_ingest.vector_db.qdrant_utils import ensure_collection
 
@@ -45,8 +46,10 @@ def test_simple_chunker(tmp_path: Path):
     file_path = tmp_path / "sample.txt"
     file_path.write_text("A" * 1200)
 
-    chunker = SimpleChunker(chunk_size=500)
-    chunks = chunker.chunk_file(str(file_path))
+    plugin = SimpleChunker(chunk_size=500)
+    engine = ChunkingEngine(plugin)
+
+    chunks = engine.chunk_file(str(file_path))
 
     assert len(chunks) == 3
     assert chunks[0].text == "A" * 500
@@ -72,23 +75,27 @@ def test_ingestion_engine(tmp_path: Path):
     test_file = tmp_path / "doc.txt"
     test_file.write_text("hello world " * 100)  # ~1200 chars
 
-    chunker = SimpleChunker(chunk_size=500)
+    # Build plugin + chunking engine
+    plugin = SimpleChunker(chunk_size=500)
+    chunker_engine = ChunkingEngine(plugin)
 
+    # Build ingestion engine
     engine = IngestionEngine(
         client=client,
         collection="my_col",
         vector_size=1536,
+        chunker_engine=chunker_engine,
         embedder=None,
     )
 
     # Run ingestion
-    engine.ingest_file(chunker, test_file)
+    engine.ingest_file(test_file)
 
     assert len(client.upsert_calls) == 1
 
     collection_name, points = client.upsert_calls[0]
     assert collection_name == "my_col"
-    assert len(points) == 3
+    assert len(points) == 3  # 1200 chars => 500 + 500 + 200
 
     # Validate structure
     assert "text" in points[0]["payload"]
