@@ -9,7 +9,7 @@ from fitz_rag.config.loader import load_config
 
 from fitz_rag.retriever.plugins.dense import RAGRetriever
 from fitz_rag.llm.embedding_client import CohereEmbeddingClient
-from fitz_rag.llm.rerank_client import CohereRerankClient
+from fitz_rag.llm.rerank.plugins.cohere import CohereRerankClient
 from fitz_rag.llm.chat_client import CohereChatClient
 
 from fitz_rag.generation.rgs import RGS, RGSConfig as RGSRuntimeConfig
