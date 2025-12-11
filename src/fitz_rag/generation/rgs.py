@@ -1,9 +1,5 @@
 """
-fitz_rag.generation.rgs
-
-Retrieval-Guided Synthesis (RGS) utilities for fitz_rag.
-
-RGS builds prompts and wraps answers, but does not call actual LLM APIs.
+Retrieval-Guided Synthesis (RGS)
 """
 
 from __future__ import annotations
@@ -14,19 +10,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Proto
 from fitz_rag.exceptions.pipeline import RGSGenerationError, PipelineError
 
 
-# ---------------------------------------------------------------------------
-# Chunk abstraction
-# ---------------------------------------------------------------------------
-
 class SupportsRGSChunk(Protocol):
-    """
-    Minimal protocol for a chunk-like object to be used by RGS.
-
-    Supports:
-        - id: str
-        - content OR text: str
-        - metadata: dict
-    """
     id: str
     content: str
     metadata: Dict[str, Any]
@@ -34,10 +18,6 @@ class SupportsRGSChunk(Protocol):
 
 ChunkInput = Union[SupportsRGSChunk, Mapping[str, Any]]
 
-
-# ---------------------------------------------------------------------------
-# Config & result models
-# ---------------------------------------------------------------------------
 
 @dataclass
 class RGSConfig:
@@ -69,23 +49,11 @@ class RGSPrompt:
     user: str
 
 
-# ---------------------------------------------------------------------------
-# Core RGS implementation
-# ---------------------------------------------------------------------------
-
 class RGS:
-    """
-    Retrieval-Guided Synthesis helper.
-    Stateless except for configuration.
-    """
-
     def __init__(self, config: Optional[RGSConfig] = None) -> None:
         self.config: RGSConfig = config or RGSConfig()
 
     # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def build_prompt(
         self,
         query: str,
@@ -106,8 +74,8 @@ class RGS:
     ) -> RGSAnswer:
         try:
             limited = self._limit_chunks(chunks)
-
             sources: List[RGSSourceRef] = []
+
             for idx, chunk in enumerate(limited, start=1):
                 cid = self._get_chunk_id(chunk, idx)
                 meta = self._get_chunk_metadata(chunk)
@@ -118,9 +86,6 @@ class RGS:
             raise PipelineError("Failed to build RGS answer") from e
 
     # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _limit_chunks(self, chunks: Sequence[ChunkInput]) -> List[ChunkInput]:
         if self.config.max_chunks is None:
             return list(chunks)
@@ -129,32 +94,28 @@ class RGS:
     def _build_system_prompt(self) -> str:
         parts = [
             "You are a retrieval-grounded assistant.",
-            "You must answer the user's question ONLY using the provided context snippets.",
+            "You must answer ONLY using the provided context snippets.",
         ]
 
         if self.config.strict_grounding:
             parts.append(
-                "If the answer is not contained in the context, you MUST say "
-                "\"I don't know based on the provided information.\" "
-                "Do NOT invent facts."
+                "If the answer is not contained in the context, say "
+                "\"I don't know based on the provided information.\""
             )
 
         if self.config.enable_citations:
             prefix = self.config.source_label_prefix
-            parts.append(
-                f"Use citations like [{prefix}1], [{prefix}2] for referenced snippets."
-            )
+            parts.append(f"Use citations like [{prefix}1], [{prefix}2].")
 
         if self.config.answer_style:
-            parts.append(f"Preferred answer style: {self.config.answer_style}.")
+            parts.append(f"Preferred style: {self.config.answer_style}.")
 
         if self.config.max_answer_chars:
-            parts.append(
-                f"Try to limit your answer to ~{self.config.max_answer_chars} characters."
-            )
+            parts.append(f"Limit your answer to ~{self.config.max_answer_chars} characters.")
 
         return "\n".join(parts)
 
+    # ------------------------------------------------------------------
     def _build_user_prompt(
         self,
         query: str,
@@ -162,8 +123,8 @@ class RGS:
     ) -> str:
         if not chunks:
             return (
-                "No context snippets are available.\n\n"
-                f"User question:\n{query}\n\n"
+                "No context snippets available.\n\n"
+                f"User question:\n{query}\n"
                 "Explain that you cannot answer based on missing context."
             )
 
@@ -171,13 +132,24 @@ class RGS:
         context_lines: List[str] = []
 
         for idx, chunk in enumerate(chunks, start=1):
-            label = f"{prefix}{idx}"
+
+            # Build label ONLY when citations enabled
+            if self.config.enable_citations:
+                label = f"[{prefix}{idx}]"
+            else:
+                label = ""
+
             content = self._get_chunk_content(chunk)
             metadata = self._get_chunk_metadata(chunk)
 
-            header = f"[{label}]"
+            # Header formatting
             if metadata:
-                header += f" (metadata: {self._format_metadata(metadata)})"
+                if label:
+                    header = f"{label} (metadata: {self._format_metadata(metadata)})"
+                else:
+                    header = f"(metadata: {self._format_metadata(metadata)})"
+            else:
+                header = label
 
             context_lines.append(header)
             context_lines.append(content.strip())
@@ -193,23 +165,17 @@ class RGS:
         ]
 
         if self.config.include_query_in_context:
-            user_parts.append("User question:")
-            user_parts.append(query.strip())
+            user_parts.extend(["User question:", query.strip()])
         else:
             user_parts.append("Answer the question using ONLY the context above.")
 
         return "\n".join(user_parts)
 
     # ------------------------------------------------------------------
-    # Chunk field helpers (universal Chunk-compatible)
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _get_chunk_id(chunk: ChunkInput, fallback_index: int) -> str:
-        if hasattr(chunk, "id"):
-            cid = getattr(chunk, "id")
-            if isinstance(cid, str):
-                return cid
+        if hasattr(chunk, "id") and isinstance(getattr(chunk, "id"), str):
+            return getattr(chunk, "id")
 
         if isinstance(chunk, Mapping) and isinstance(chunk.get("id"), str):
             return chunk["id"]
@@ -218,37 +184,24 @@ class RGS:
 
     @staticmethod
     def _get_chunk_content(chunk: ChunkInput) -> str:
-        """
-        Universal Chunk compatibility:
-            - Prefer Chunk.text
-            - Support legacy Chunk.content
-            - Support dict["text"] and dict["content"]
-        """
-        # Universal Chunk: chunk.text
         if hasattr(chunk, "text") and isinstance(getattr(chunk, "text"), str):
             return getattr(chunk, "text")
 
-        # Legacy: chunk.content
         if hasattr(chunk, "content") and isinstance(getattr(chunk, "content"), str):
             return getattr(chunk, "content")
 
-        # Dict variants
         if isinstance(chunk, Mapping):
             if isinstance(chunk.get("text"), str):
                 return chunk["text"]
             if isinstance(chunk.get("content"), str):
                 return chunk["content"]
 
-        raise ValueError(
-            "Chunk is missing usable text field; expected `.text` or `.content`."
-        )
+        raise ValueError("Chunk missing usable text field")
 
     @staticmethod
     def _get_chunk_metadata(chunk: ChunkInput) -> Dict[str, Any]:
-        if hasattr(chunk, "metadata"):
-            value = getattr(chunk, "metadata")
-            if isinstance(value, Mapping):
-                return dict(value)
+        if hasattr(chunk, "metadata") and isinstance(getattr(chunk, "metadata"), Mapping):
+            return dict(getattr(chunk, "metadata"))
 
         if isinstance(chunk, Mapping) and isinstance(chunk.get("metadata"), Mapping):
             return dict(chunk["metadata"])
