@@ -4,8 +4,6 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from fitz_ingest.chunker.base import BaseChunker
-
-from fitz_ingest.exceptions.base import IngestionError
 from fitz_ingest.exceptions.config import IngestionConfigError
 from fitz_ingest.exceptions.chunking import IngestionChunkingError
 
