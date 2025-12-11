@@ -1,34 +1,36 @@
+from __future__ import annotations
+
 """
-fitz_rag – Retrieval-Augmented Generation Toolkit
-Public API surface for v0.1.0
+fitz_rag
+
+Public package interface for the Fitz-RAG toolkit.
+We expose only the modern, stable entry points here.
 """
 
-# Pipelines
-from fitz_rag.pipeline.engine import RAGPipeline
-from fitz_rag.pipeline.easy import EasyRAG
-from fitz_rag.pipeline.fast import FastRAG
-from fitz_rag.pipeline.standard import StandardRAG
-from fitz_rag.pipeline.debug import DebugRAG
+from .config.loader import get_config  # convenience
+from .config.schema import RAGConfig
 
-# Retrieval-Guided Synthesis
-from fitz_rag.generation.rgs import RGS, RGSConfig
+from .pipeline.engine import RAGPipeline
+from .pipeline.easy import EasyRAG
+from .pipeline.fast import FastRAG
+from .pipeline.standard import StandardRAG
+from .pipeline.debug import DebugRAG
 
-# Core data models
-from fitz_rag.models.chunk import Chunk
-from fitz_rag.models.document import Document
-
-# Factory
-from fitz_rag.pipeline.engine import create_pipeline
+from .context.pipeline import ContextPipeline
+from .generation.rgs import RGS, RGSConfig
 
 __all__ = [
+    "get_config",
+    "RAGConfig",
     "RAGPipeline",
     "EasyRAG",
     "FastRAG",
     "StandardRAG",
     "DebugRAG",
+    "ContextPipeline",
     "RGS",
     "RGSConfig",
-    "Chunk",
-    "Document",
-    "create_pipeline",
 ]
+
+# Optional but nice to have for CLI / introspection
+__version__ = "0.1.0"
