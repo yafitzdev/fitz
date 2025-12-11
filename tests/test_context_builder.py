@@ -1,17 +1,17 @@
 """
-Tests for fitz_rag.context.builder
+Tests for the new context pipeline + step modules
 """
 
 from __future__ import annotations
 
-from fitz_rag.context.builder import (
-    _normalize_text,
-    dedupe_chunks,
-    group_by_document,
-    merge_adjacent_chunks,
-    pack_context_window,
-    build_context,
-)
+from fitz_rag.context.steps.normalize import _normalize_text
+from fitz_rag.context.steps.dedupe import DedupeStep
+from fitz_rag.context.steps.group import GroupByDocumentStep
+from fitz_rag.context.steps.merge import MergeAdjacentStep
+from fitz_rag.context.steps.pack import PackWindowStep
+from fitz_rag.context.steps.render_markdown import RenderMarkdownStep
+
+from fitz_rag.context.pipeline import ContextPipeline
 
 
 # ---------------------------------------------------------
@@ -27,13 +27,14 @@ def test_normalize_text():
 # Deduplication
 # ---------------------------------------------------------
 def test_dedupe_chunks():
+    step = DedupeStep()
     chunks = [
         {"text": "A", "file": "f1"},
         {"text": "A ", "file": "f1"},  # normalized duplicate
         {"text": "B", "file": "f1"},
     ]
 
-    out = dedupe_chunks(chunks)
+    out = step(chunks)
 
     assert len(out) == 2
     assert out[0]["text"] == "A"
@@ -44,13 +45,14 @@ def test_dedupe_chunks():
 # Grouping by document
 # ---------------------------------------------------------
 def test_group_by_document():
+    step = GroupByDocumentStep()
     chunks = [
         {"text": "A", "file": "doc1"},
         {"text": "B", "file": "doc1"},
         {"text": "C", "file": "doc2"},
     ]
 
-    grouped = group_by_document(chunks)
+    grouped = step(chunks)
 
     assert set(grouped.keys()) == {"doc1", "doc2"}
     assert len(grouped["doc1"]) == 2
@@ -61,6 +63,7 @@ def test_group_by_document():
 # Merging adjacent chunks
 # ---------------------------------------------------------
 def test_merge_adjacent_chunks():
+    step = MergeAdjacentStep()
     chunks = [
         {"text": "A1", "file": "doc1"},
         {"text": "A2", "file": "doc1"},
@@ -68,7 +71,7 @@ def test_merge_adjacent_chunks():
         {"text": "B2", "file": "doc2"},
     ]
 
-    out = merge_adjacent_chunks(chunks)
+    out = step(chunks)
 
     assert len(out) == 2
     assert "A1" in out[0]["text"]
@@ -81,36 +84,34 @@ def test_merge_adjacent_chunks():
 # Packing window
 # ---------------------------------------------------------
 def test_pack_context_window():
+    step = PackWindowStep(max_chars=25)
     chunks = [
         {"text": "A" * 10, "file": "f1"},
         {"text": "B" * 10, "file": "f1"},
         {"text": "C" * 10, "file": "f1"},
     ]
 
-    out = pack_context_window(chunks, max_chars=25)
+    out = step(chunks)
 
     # A(10) + B(10) = 20 < 25 → pick 2 chunks
     assert len(out) == 2
 
 
 # ---------------------------------------------------------
-# Full context build
+# Full pipeline
 # ---------------------------------------------------------
-def test_build_context():
+def test_full_context_pipeline():
+    pipeline = ContextPipeline(max_chars=1000)
+
     chunks = [
         {"text": "A1", "file": "doc1"},
         {"text": "A2", "file": "doc1"},
         {"text": "B1", "file": "doc2"},
     ]
 
-    ctx = build_context(chunks, max_chars=1000)
+    ctx = pipeline.build(chunks)
 
-    # Should contain 2 sections: doc1 + doc2
     assert "### Source: doc1" in ctx
     assert "### Source: doc2" in ctx
-
-    # doc1 merged
     assert "A1" in ctx and "A2" in ctx
-
-    # doc2 included
     assert "B1" in ctx
