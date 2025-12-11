@@ -1,32 +1,30 @@
-# src/fitz_rag/retriever/base.py
-"""
-Base Retriever interface for fitz_rag.
-
-This defines the minimal contract for all retrievers:
-- Input: query string
-- Output: list[RetrievedChunk]
-
-Concrete implementations include:
-- RAGRetriever (embedding-based retrieval)
-- Deterministic strategies that do no embedding (via plugins)
-"""
-
 from __future__ import annotations
 
-from typing import List, Protocol
+from typing import Protocol, List, runtime_checkable
 
-from fitz_rag.core import RetrievedChunk
+from fitz_rag.core import Chunk
 
 
-class BaseRetriever(Protocol):
+@runtime_checkable
+class RetrievalPlugin(Protocol):
     """
-    Basic retrieval protocol.
+    Protocol for retrieval plugins/strategies.
 
-    Any retriever used by fitz_rag must implement `retrieve(query: str)`.
+    Any retrieval strategy (dense, BM25, hybrid, multi-query, etc.)
+    must implement this interface.
+
+    Plugins typically live in:
+        fitz_rag.retriever.plugins.<name>
+    and declare a unique `plugin_name` attribute.
     """
 
-    def retrieve(self, query: str) -> List[RetrievedChunk]:
+    # Each plugin should define a class attribute:
+    #   plugin_name: str = "<unique-name>"
+    #
+    # This is used by the auto-discovery registry.
+
+    def retrieve(self, query: str) -> List[Chunk]:
+        """
+        Run retrieval for the given user query and return a list of chunks.
+        """
         ...
-
-
-__all__ = ["BaseRetriever"]
