@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any, Optional
 import os
 
-from fitz_rag.exceptions.llm import LLMError, LLMResponseError
+from fitz_rag.llm.chat.base import ChatPlugin
 
 try:
     import cohere
@@ -13,17 +13,29 @@ except ImportError:
 
 
 @dataclass
-class CohereChatClient:
+class CohereChatClient(ChatPlugin):
     """
-    Cohere Chat API plugin for fitz-rag.
+    Cohere chat API plugin for fitz-rag.
+
+    - Uses the Cohere v2 Chat API (`ClientV2.chat`)
+    - Accepts a list of messages (role/content)
+    - Returns the assistant's text response
+
+    This class is also auto-registered as a chat plugin via
+    `plugin_name`, so it can be used through ChatEngine:
+
+        from fitz_rag.llm.chat.engine import ChatEngine
+        engine = ChatEngine.from_name("cohere")
+        answer = engine.chat_text("What is RAG?")
     """
+
+    plugin_name: str = "cohere"
 
     api_key: Optional[str] = None
     model: Optional[str] = None
     temperature: float = 0.3
-    max_tokens: Optional[int] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if cohere is None:
             raise RuntimeError("Install cohere: `pip install cohere`")
 
@@ -34,41 +46,34 @@ class CohereChatClient:
         self.model = (
             self.model
             or os.getenv("COHERE_CHAT_MODEL")
-            or "command-r7b-12-2024"
+            or "command-a-03-2025"
         )
 
-        try:
-            self._client = cohere.ClientV2(api_key=key)
-        except Exception as e:
-            raise LLMError("Failed to initialize Cohere Chat client") from e
+        self._client = cohere.ClientV2(api_key=key)
 
-    # Plugin interface
-    def chat(self, messages: List[Dict[str, str]]) -> str:
+    def chat(self, messages: List[Dict[str, Any]]) -> str:
         """
-        messages: [
-            {"role": "system", "content": "..."},
-            {"role": "user", "content": "..."},
-        ]
+        Run a chat completion and return the assistant's text.
+
+        `messages` must follow the Cohere v2 format:
+            [{"role": "user" | "system" | "assistant", "content": "<text>"}]
         """
-        kwargs: Dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-        }
-        if self.max_tokens is not None:
-            kwargs["max_tokens"] = self.max_tokens
+        res = self._client.chat(
+            model=self.model,
+            messages=messages,
+            temperature=self.temperature,
+        )
 
+        # Cohere v2: response.message.content is a list of content blocks.
+        # We take the first text block.
         try:
-            response = self._client.chat(**kwargs)
-        except Exception as e:
-            raise LLMError("Chat request failed") from e
-
-        try:
-            parts = []
-            for seg in response.message.content:
-                text = getattr(seg, "text", None)
-                if isinstance(text, str):
-                    parts.append(text)
-            return "".join(parts).strip()
-        except Exception as e:
-            raise LLMResponseError("Malformed chat response") from e
+            content_blocks = res.message.content
+            if not content_blocks:
+                return ""
+            block = content_blocks[0]
+            # block is typically: {"type": "text", "text": "..."}
+            text = getattr(block, "text", None) or block.get("text")  # type: ignore[attr-defined]
+            return text or ""
+        except Exception:
+            # Fallback: try a simple str() if format changes
+            return str(res)

@@ -1,35 +1,66 @@
 from __future__ import annotations
 
-from typing import List, Dict
+from dataclasses import dataclass
+from typing import Any, Dict, List
 
-from fitz_rag.exceptions.llm import LLMError
-from fitz_stack.logging import get_logger
-from fitz_stack.logging_tags import CHAT
-
-logger = get_logger(__name__)
+from fitz_rag.llm.chat.base import ChatPlugin
+from fitz_rag.llm.chat.registry import get_chat_plugin
 
 
+@dataclass
 class ChatEngine:
     """
-    Wraps a chat plugin and ensures:
-    - consistent message formatting
-    - unified error handling
-    - unified logging
+    Thin orchestration layer around a chat plugin.
+
+    Responsibilities:
+    - Hold a concrete chat plugin
+    - Provide a simple `.chat()` API
+    - Support plugin construction by name
+
+    Usage patterns:
+
+        # Direct plugin use
+        from fitz_rag.llm.chat.plugins.cohere import CohereChatClient
+        engine = ChatEngine(CohereChatClient())
+        answer = engine.chat_text("What is RAG?")
+
+        # Plugin by name
+        engine = ChatEngine.from_name("cohere")
+        answer = engine.chat_text("What is RAG?")
     """
 
-    def __init__(self, plugin):
-        self.plugin = plugin
+    plugin: ChatPlugin
 
-    def chat(self, system_prompt: str, user_content: str) -> str:
-        messages = []
+    @classmethod
+    def from_name(cls, name: str, **plugin_kwargs: Any) -> "ChatEngine":
+        plugin_cls = get_chat_plugin(name)
+        plugin = plugin_cls(**plugin_kwargs)  # type: ignore[arg-type]
+        return cls(plugin=plugin)
+
+    # ---------------------------------------------------------
+    # Low-level API: messages
+    # ---------------------------------------------------------
+    def chat(self, messages: List[Dict[str, Any]]) -> str:
+        """
+        Call the underlying plugin with a list of messages.
+        """
+        return self.plugin.chat(messages)
+
+    # ---------------------------------------------------------
+    # Convenience API: single user prompt
+    # ---------------------------------------------------------
+    def chat_text(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        """
+        Convenience wrapper to call chat() with a single user message,
+        optionally preceded by a system message.
+        """
+        messages: List[Dict[str, Any]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": user_content})
+        messages.append({"role": "user", "content": prompt})
 
-        logger.debug(f"{CHAT} Sending {len(messages)} messages to chat provider")
-
-        try:
-            return self.plugin.chat(messages)
-        except Exception as e:
-            logger.error(f"{CHAT} Chat plugin failed: {e}")
-            raise LLMError("Chat request failed") from e
+        return self.chat(messages)
