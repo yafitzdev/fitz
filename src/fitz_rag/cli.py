@@ -1,37 +1,24 @@
 from __future__ import annotations
 
-import os
 import typer
 import yaml
+from pathlib import Path
+import importlib.metadata
 
-from fitz_rag.config import get_config
-
+from fitz_rag.config.loader import load_config
+from fitz_rag.config.schema import RAGConfig
+from fitz_rag.pipeline.engine import create_pipeline_from_yaml
 from fitz_rag.vector_db.qdrant_client import create_qdrant_client
-from fitz_rag.retriever.plugins.dense import RAGRetriever
 
-from fitz_rag.config.schema import (
-    EmbeddingConfig,
-    RetrieverConfig,
-    RerankConfig,
-)
-
-from fitz_rag.exceptions.retriever import (
-    EmbeddingError,
-    VectorSearchError,
-    RerankError,
-)
+from fitz_rag.exceptions.base import FitzRAGError
+from fitz_rag.exceptions.retriever import VectorSearchError
 
 from fitz_stack.logging import get_logger
 from fitz_stack.logging_tags import CLI
 
 
 app = typer.Typer(help="🔥 Fitz-RAG — Retrieval-Augmented Generation Toolkit")
-
 logger = get_logger(__name__)
-
-
-class CLIError(Exception):
-    """Raised for CLI-level operational failures."""
 
 
 # ---------------------------------------------------------
@@ -40,59 +27,75 @@ class CLIError(Exception):
 @app.command()
 def version():
     """Show current Fitz-RAG version."""
-    typer.echo("fitz-rag version 0.1.0")
+    try:
+        v = importlib.metadata.version("fitz_rag")
+    except importlib.metadata.PackageNotFoundError:
+        v = "0.1.0"
+    typer.echo(f"fitz-rag version {v}")
 
 
 # ---------------------------------------------------------
-# Config
+# Config: show & path
 # ---------------------------------------------------------
 @app.command("config-show")
 def config_show():
-    """Display the loaded configuration."""
-    logger.debug(f"{CLI} Loading configuration for display")
-
+    """Print the merged configuration (default + user)."""
     try:
-        cfg = get_config()
+        cfg = load_config()
         typer.echo(yaml.dump(cfg, sort_keys=False))
     except Exception as e:
         logger.error(f"{CLI} Failed to load configuration: {e}")
-        raise CLIError(f"Failed to load configuration: {e}") from e
+        raise typer.Exit(code=1)
 
 
 @app.command("config-path")
 def config_path():
-    """Show the active config file path (if any)."""
-    logger.debug(f"{CLI} Checking config path")
+    """Show the resolved config path."""
+    # load_config(return_path=True) removed → we do explicit logic
+    env = Path(typer.getenv("FITZ_RAG_CONFIG", "")) if typer.getenv("FITZ_RAG_CONFIG") else None
 
-    try:
-        path = os.getenv("FITZ_RAG_CONFIG")
-        if path:
-            typer.echo(f"Using override config at: {path}")
-        else:
-            typer.echo("Using default embedded config.")
-    except Exception as e:
-        logger.error(f"{CLI} Failed resolving config path: {e}")
-        raise CLIError(f"Failed to resolve config path: {e}") from e
+    if env and env.exists():
+        typer.echo(str(env))
+    else:
+        # default.yaml inside package
+        from importlib.resources import files
+        default_path = files("fitz_rag.config").joinpath("default.yaml")
+        typer.echo(str(default_path))
 
 
 # ---------------------------------------------------------
-# Collections
+# Collections (Qdrant)
 # ---------------------------------------------------------
 collections_app = typer.Typer(help="Manage Qdrant collections")
 app.add_typer(collections_app, name="collections")
 
 
+def _make_qdrant_client_from_config() -> object:
+    """Internal helper: Build a Qdrant client using unified config."""
+    raw = load_config()
+    cfg = RAGConfig.from_dict(raw)
+
+    return create_qdrant_client(
+        host=cfg.retriever.qdrant_host,
+        port=cfg.retriever.qdrant_port,
+        https=False,
+        api_key=None,
+    )
+
+
 @collections_app.command("list")
 def collections_list():
-    """List all collections in Qdrant."""
-    logger.debug(f"{CLI} Listing Qdrant collections")
-
+    """List Qdrant collections."""
     try:
-        client = create_qdrant_client()
+        client = _make_qdrant_client_from_config()
         cols = client.get_collections().collections
     except Exception as e:
-        logger.error(f"{CLI} Could not connect to Qdrant: {e}")
-        raise CLIError(f"Could not connect to Qdrant: {e}") from e
+        logger.error(f"{CLI} Qdrant connection failed: {e}")
+        raise typer.Exit(code=1)
+
+    if not cols:
+        typer.echo("No collections found.")
+        return
 
     for c in cols:
         typer.echo(f"- {c.name}")
@@ -101,131 +104,51 @@ def collections_list():
 @collections_app.command("drop")
 def collections_drop(name: str):
     """Drop a Qdrant collection."""
-    logger.debug(f"{CLI} Request to drop collection '{name}'")
-
     try:
-        client = create_qdrant_client()
+        client = _make_qdrant_client_from_config()
     except Exception as e:
         logger.error(f"{CLI} Qdrant connection failed: {e}")
-        raise CLIError(f"Qdrant connection failed: {e}") from e
+        raise typer.Exit(code=1)
 
-    if typer.confirm(f"Are you sure you want to delete collection '{name}'?"):
+    if typer.confirm(f"Delete collection '{name}'?"):
         try:
             client.delete_collection(name)
             typer.echo(f"Deleted collection: {name}")
         except Exception as e:
-            logger.error(f"{CLI} Could not delete collection '{name}': {e}")
-            raise CLIError(f"Failed to delete collection '{name}': {e}") from e
+            logger.error(f"{CLI} Failed deleting collection: {e}")
+            raise typer.Exit(code=1)
 
 
 # ---------------------------------------------------------
-# Query (core RAG retrieval + rerank)
+# Query
 # ---------------------------------------------------------
 @app.command()
-def query(text: str):
+def query(text: str, config: str | None = typer.Option(None, help="Path to config YAML")):
     """
-    Run a full retrieval using the structured RAGRetriever.
-
-    Steps:
+    Run full RAG pipeline:
       - load config
-      - build embedding/retriever/rerank config objects
-      - connect to Qdrant
-      - run retrieval
+      - build pipeline
+      - retrieve + generate
     """
-
-    logger.info(f"{CLI} Starting RAG query: '{text[:50]}...'")
-
-    cfg = get_config()
-
-    # -----------------------------------------------------
-    # 1. Build config objects
-    # -----------------------------------------------------
-    logger.debug(f"{CLI} Building config objects")
-
     try:
-        embed_cfg = EmbeddingConfig.from_dict(cfg.get("embedding", {}))
-        retr_cfg = RetrieverConfig.from_dict(cfg.get("retriever", {}))
-        rerank_cfg = None
-
-        if "rerank" in cfg and cfg["rerank"].get("enabled", False):
-            rerank_cfg = RerankConfig.from_dict(cfg["rerank"])
-
-    except Exception as e:
-        logger.error(f"{CLI} Invalid configuration: {e}")
-        raise CLIError(f"Invalid configuration structure: {e}") from e
-
-    # -----------------------------------------------------
-    # 2. Qdrant client
-    # -----------------------------------------------------
-    logger.debug(f"{CLI} Connecting to Qdrant")
-
-    try:
-        client = create_qdrant_client()
-    except Exception as e:
-        logger.error(f"{CLI} Failed to connect to Qdrant: {e}")
-        raise CLIError(f"Failed to connect to Qdrant: {e}") from e
-
-    # -----------------------------------------------------
-    # 3. Construct RAGRetriever
-    # -----------------------------------------------------
-    logger.debug(f"{CLI} Initializing retriever")
-
-    try:
-        retr = RAGRetriever(
-            client=client,
-            embed_cfg=embed_cfg,
-            retriever_cfg=retr_cfg,
-            rerank_cfg=rerank_cfg,
-        )
-    except Exception as e:
-        logger.error(f"{CLI} Retriever initialization failed: {e}")
-        raise CLIError(f"Failed to initialize retriever: {e}") from e
-
-    # -----------------------------------------------------
-    # 4. Perform retrieval
-    # -----------------------------------------------------
-    logger.debug(f"{CLI} Running retrieval")
-
-    try:
-        chunks = retr.retrieve(text)
-    except EmbeddingError as e:
-        logger.error(f"{CLI} Embedding failed: {e}")
-        raise CLIError(f"Embedding failed: {e}") from e
+        pipeline = create_pipeline_from_yaml(config)
+        answer = pipeline.run(text)
+    except FitzRAGError as e:
+        logger.error(f"{CLI} Pipeline error: {e}")
+        raise typer.Exit(code=1)
     except VectorSearchError as e:
-        logger.error(f"{CLI} Vector search failed: {e}")
-        raise CLIError(f"Vector search failed: {e}") from e
-    except RerankError as e:
-        logger.error(f"{CLI} Reranking failed: {e}")
-        raise CLIError(f"Reranking failed: {e}") from e
+        logger.error(f"{CLI} Qdrant error: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        logger.error(f"{CLI} Unexpected error during retrieval: {e}")
-        raise CLIError(f"Unexpected retrieval error: {e}") from e
+        logger.error(f"{CLI} Unexpected error: {e}")
+        raise typer.Exit(code=1)
 
-    logger.info(f"{CLI} Retrieved {len(chunks)} chunks")
+    typer.echo("\n=== ANSWER ===")
+    typer.echo(answer.answer)
 
-    # -----------------------------------------------------
-    # 5. Display results
-    # -----------------------------------------------------
-    typer.echo(f"\n🔍 Retrieved {len(chunks)} chunks (after rerank if enabled):")
-    typer.echo("--------------------------------------------------")
-
-    for c in chunks:
-
-        # Unified: chunk may be dict or old-style object
-        if isinstance(c, dict):
-            meta = c.get("metadata", {})
-        else:
-            meta = getattr(c, "metadata", {}) or {}
-
-        path = (
-            meta.get("file")
-            or meta.get("source")
-            or "<no-file>"
-        )
-
-        typer.echo(f"- score=? | {path}")
-
-    typer.echo("--------------------------------------------------")
+    typer.echo("\n=== SOURCES ===")
+    for src in answer.sources:
+        typer.echo(f"- {src.source_id} | metadata={src.metadata}")
 
 
 if __name__ == "__main__":

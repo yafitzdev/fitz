@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Any
+from typing import List, Any, Callable
 
 from fitz_rag.core import Chunk  # universal chunk
 
@@ -32,15 +32,63 @@ from fitz_rag.retriever.base import RetrievalPlugin
 logger = get_logger(__name__)
 
 
+def _run_embedder(embedder: Any, query: str):
+    """
+    Run the injected embedder in a DI-friendly way.
+
+    Supported forms:
+        - callable: embedder(query) -> vector
+        - object with .embed(): embedder.embed(query) -> vector
+    """
+    # Callable embedder (e.g. lambda text: [...])
+    if callable(embedder):
+        return embedder(query)
+
+    # Object with .embed()
+    if hasattr(embedder, "embed") and callable(getattr(embedder, "embed")):
+        return embedder.embed(query)
+
+    raise TypeError("embedder must be callable or expose an .embed(query) method")
+
+
+def _hit_to_chunk(hit: Any) -> Chunk:
+    """
+    Convert a Qdrant-like hit object into a universal Chunk.
+
+    Expected hit attributes:
+        - id
+        - score
+        - payload (dict with at least 'text')
+    """
+    payload = getattr(hit, "payload", {}) or {}
+
+    return Chunk(
+        id=getattr(hit, "id", None),
+        text=payload.get("text", ""),
+        metadata=payload,
+        score=getattr(hit, "score", None),
+    )
+
+
 @dataclass
 class DenseRetrievalPlugin(RetrievalPlugin):
     """
     Dense vector retrieval plugin for fitz-rag.
 
-    Clean DI-correct version:
-      - If embedder is injected, use AS-IS (do not wrap, do not replace)
-      - Otherwise build a default EmbeddingEngine
-      - Optional reranking engine
+    Responsibilities:
+      - Embed query
+      - Perform dense vector search in Qdrant
+      - Optionally rerank results
+      - Return universal Chunk objects
+
+    Dependency injection rules:
+      - If `embedder` is provided, it is used AS-IS.
+          * It may be a callable:   embedder(text) -> vector
+          * Or an object with .embed(text) -> vector
+      - Otherwise, a default EmbeddingEngine is built from `embed_cfg`.
+      - If `rerank_engine` is provided, it's used AS-IS.
+      - Otherwise, if `rerank_cfg.enabled` is True, a Cohere rerank engine
+        is constructed (for now, Cohere is the only built-in reranker).
     """
 
     plugin_name: str = "dense"
@@ -52,8 +100,13 @@ class DenseRetrievalPlugin(RetrievalPlugin):
     rerank_cfg: RerankConfig | None = None
 
     # Injected test/prod dependencies
+    # embedder can be:
+    #   - callable: embedder(query) -> vector
+    #   - object with .embed(query) -> vector
     embedder: Any | None = None
-    rerank_engine: RerankEngine | None = None
+
+    # RerankEngine (or compatible) instance
+    rerank_engine: RerankEngine | Any | None = None
 
     # ---------------------------------------------------------
     # Initialization
@@ -65,6 +118,13 @@ class DenseRetrievalPlugin(RetrievalPlugin):
         # 1. EMBEDDING ENGINE
         # If user injected embedder, DO NOT override it.
         if self.embedder is None:
+            provider = (self.embed_cfg.provider or "").lower()
+            if provider not in ("cohere", ""):
+                # Provider not yet supported by the built-in default path.
+                raise EmbeddingError(
+                    f"Unsupported embedding provider for dense retriever: {self.embed_cfg.provider!r}"
+                )
+
             embed_plugin = CohereEmbeddingClient(
                 api_key=self.embed_cfg.api_key,
                 model=self.embed_cfg.model,
@@ -73,8 +133,14 @@ class DenseRetrievalPlugin(RetrievalPlugin):
             )
             self.embedder = EmbeddingEngine(embed_plugin)
 
-        # 2. RERANK ENGINE
-        if self.rerank_cfg and self.rerank_cfg.enabled:
+        # 2. RERANK ENGINE (if enabled and not injected)
+        if self.rerank_engine is None and self.rerank_cfg and self.rerank_cfg.enabled:
+            provider = (self.rerank_cfg.provider or "").lower()
+            if provider not in ("cohere", ""):
+                raise RerankError(
+                    f"Unsupported rerank provider for dense retriever: {self.rerank_cfg.provider!r}"
+                )
+
             rerank_plugin = CohereRerankClient(
                 api_key=self.rerank_cfg.api_key,
                 model=self.rerank_cfg.model,
@@ -97,9 +163,9 @@ class DenseRetrievalPlugin(RetrievalPlugin):
         # -----------------------------
         try:
             logger.debug(f"{EMBEDDING} Embedding query...")
-            query_vector = self.embedder.embed(query)
+            query_vector = _run_embedder(self.embedder, query)
         except Exception as e:
-            logger.error(f"{EMBEDDING} Embedding failed for query='{query}'")
+            logger.error(f"{EMBEDDING} Embedding failed for query='{query}': {e}")
             raise EmbeddingError(f"Failed to embed query: {query}") from e
 
         # -----------------------------
@@ -120,7 +186,7 @@ class DenseRetrievalPlugin(RetrievalPlugin):
                     with_payload=True,
                 )
             except TypeError:
-                # Mock clients (positional signature)
+                # Mock / legacy clients (positional signature)
                 hits = self.client.search(
                     self.retriever_cfg.collection,
                     query_vector,
@@ -137,18 +203,8 @@ class DenseRetrievalPlugin(RetrievalPlugin):
         # Convert hits → universal Chunk
         # -----------------------------
         chunks: List[Chunk] = []
-
         for hit in hits:
-            payload = getattr(hit, "payload", {}) or {}
-
-            chunks.append(
-                Chunk(
-                    id=getattr(hit, "id", None),
-                    text=payload.get("text", ""),
-                    metadata=payload,
-                    score=getattr(hit, "score", None),
-                )
-            )
+            chunks.append(_hit_to_chunk(hit))
 
         # -----------------------------
         # 3) OPTIONAL RERANKING
@@ -157,7 +213,18 @@ class DenseRetrievalPlugin(RetrievalPlugin):
             logger.debug(f"{RERANK} Running rerank engine on {len(chunks)} chunks")
 
             try:
-                chunks = self.rerank_engine.plugin.rerank(query, chunks)
+                # Allow both:
+                #   - RerankEngine(plugin=...) with .plugin.rerank()
+                #   - Custom engines with .rerank()
+                engine = self.rerank_engine
+                if hasattr(engine, "plugin") and hasattr(engine.plugin, "rerank"):
+                    chunks = engine.plugin.rerank(query, chunks)
+                elif hasattr(engine, "rerank") and callable(engine.rerank):
+                    chunks = engine.rerank(query, chunks)
+                else:
+                    raise TypeError(
+                        "rerank_engine must expose .plugin.rerank(...) or .rerank(...)"
+                    )
             except Exception as e:
                 logger.error(f"{RERANK} Rerank failed: {e}")
                 raise RerankError("Reranking failed") from e
@@ -165,7 +232,16 @@ class DenseRetrievalPlugin(RetrievalPlugin):
         return chunks
 
 
-# Backwards-compatible alias
+# -------------------------------------------------------------------
+# Backwards compatible alias used throughout the codebase & tests.
+# -------------------------------------------------------------------
 @dataclass
 class RAGRetriever(DenseRetrievalPlugin):
+    """
+    Backwards-compatible alias for DenseRetrievalPlugin.
+
+    Existing code can continue to import:
+
+        from fitz_rag.retriever.plugins.dense import RAGRetriever
+    """
     pass

@@ -1,121 +1,73 @@
 """
-Qdrant client wrapper for fitz_rag.
+Qdrant client utilities for fitz_rag.
 
-Provides:
-- create_qdrant_client()
-- ensure_collection()
+This version is *architecture correct*:
 
-Now includes structured exceptions:
-- ConfigError
-- VectorSearchError
+- No implicit config loading (pipeline owns config)
+- No legacy qdrant: {host,port} structures
+- No environment overrides
+- Only provides two thin helpers:
+      create_qdrant_client()
+      ensure_collection()
+
+Anything more complex belongs in pipeline construction.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Optional, Dict, Any
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
-from fitz_rag.config import get_config
-from fitz_rag.exceptions.config import ConfigError
 from fitz_rag.exceptions.retriever import VectorSearchError
+from fitz_rag.exceptions.config import ConfigError
 
 from fitz_stack.logging import get_logger
 from fitz_stack.logging_tags import VECTOR_DB
 
 logger = get_logger(__name__)
 
-# Load unified config
-try:
-    _cfg = get_config()
-except Exception as e:
-    raise ConfigError("Failed to load unified fitz_rag configuration") from e
 
-
-ENV_QDRANT_URL = "FITZ_RAG_QDRANT_URL"
-ENV_QDRANT_API_KEY = "FITZ_RAG_QDRANT_API_KEY"
-ENV_QDRANT_TIMEOUT = "FITZ_RAG_QDRANT_TIMEOUT"
-
-
+# -------------------------------------------------------------------
+# Client Constructor
+# -------------------------------------------------------------------
 def create_qdrant_client(
-    url: Optional[str] = None,
+    host: str,
+    port: int,
+    https: bool = False,
     api_key: Optional[str] = None,
-    timeout: Optional[int] = None,
+    timeout: int = 30,
 ) -> QdrantClient:
     """
-    Build a QdrantClient from:
-    - explicit args
-    - environment variables
-    - unified config (fitz_rag.config)
-    - default localhost fallback
+    Minimal, explicit Qdrant client factory.
 
-    Raises:
-        ConfigError – invalid config
-        VectorSearchError – Qdrant initialization failure
+    The pipeline passes values from retriever_cfg:
+        host = cfg.retriever.qdrant_host
+        port = cfg.retriever.qdrant_port
+
+    This module no longer loads config itself.
     """
 
-    logger.debug(f"{VECTOR_DB} Creating Qdrant client…")
+    scheme = "https" if https else "http"
+    url = f"{scheme}://{host}:{port}"
 
-    try:
-        qcfg = _cfg.get("qdrant", {})
-    except Exception as e:
-        logger.error(f"{VECTOR_DB} Invalid config structure: {e}")
-        raise ConfigError("Invalid config structure for qdrant section") from e
+    logger.debug(f"{VECTOR_DB} Initializing Qdrant client (url={url}, timeout={timeout})")
 
-    # Build base config URL
-    try:
-        cfg_url = (
-            f"{'https' if qcfg.get('https', False) else 'http'}://"
-            f"{qcfg.get('host', 'localhost')}:{qcfg.get('port', 6333)}"
-        )
-    except Exception as e:
-        logger.error(f"{VECTOR_DB} Failed constructing Qdrant URL: {e}")
-        raise ConfigError("Failed constructing Qdrant URL from config") from e
-
-    # URL selection
-    chosen_url = (
-        url
-        or os.getenv(ENV_QDRANT_URL)
-        or cfg_url
-    )
-
-    # API key selection
-    chosen_api_key = (
-        api_key
-        or os.getenv(ENV_QDRANT_API_KEY)
-        or None
-    )
-
-    # Timeout handling
-    try:
-        if timeout is None:
-            env_val = os.getenv(ENV_QDRANT_TIMEOUT)
-            if env_val:
-                timeout = int(env_val)
-            else:
-                timeout = int(qcfg.get("timeout", 30))
-    except Exception as e:
-        logger.error(f"{VECTOR_DB} Invalid timeout value: {e}")
-        raise ConfigError("Invalid Qdrant timeout value") from e
-
-    logger.debug(
-        f"{VECTOR_DB} Initializing Qdrant client (url={chosen_url}, timeout={timeout})"
-    )
-
-    # Initialize QdrantClient
     try:
         return QdrantClient(
-            url=chosen_url,
-            api_key=chosen_api_key,
+            url=url,
+            api_key=api_key,
             timeout=timeout,
         )
     except Exception as e:
         logger.error(f"{VECTOR_DB} Failed initializing Qdrant client: {e}")
-        raise VectorSearchError(f"Failed initializing Qdrant client for URL: {chosen_url}") from e
+        raise VectorSearchError(f"Failed initializing Qdrant client for URL: {url}") from e
 
 
+# -------------------------------------------------------------------
+# Collection Helper
+# -------------------------------------------------------------------
 def ensure_collection(
     client: QdrantClient,
     name: str,
@@ -124,34 +76,31 @@ def ensure_collection(
     metadata: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
-    Ensure a Qdrant collection exists.
+    Ensure the Qdrant collection exists.
 
-    Raises:
-        VectorSearchError – Qdrant calls failed
-        ConfigError – bad parameters
+    Used by ingestion engine.
     """
 
-    logger.debug(f"{VECTOR_DB} Ensuring collection '{name}' exists")
+    logger.debug(f"{VECTOR_DB} Ensuring collection '{name}' exists…")
 
-    # Fetch existing collections
+    # -------- Fetch collections --------
     try:
         collections = client.get_collections().collections
     except Exception as e:
         logger.error(f"{VECTOR_DB} Failed fetching collections: {e}")
         raise VectorSearchError("Failed fetching collections from Qdrant") from e
 
-    # Check existence
     try:
-        names = {c.name for c in collections}
+        existing = {c.name for c in collections}
     except Exception as e:
-        logger.error(f"{VECTOR_DB} Invalid Qdrant collections structure: {e}")
-        raise VectorSearchError("Invalid structure in Qdrant collections response") from e
+        logger.error(f"{VECTOR_DB} Invalid collections structure: {e}")
+        raise VectorSearchError("Invalid Qdrant collections response") from e
 
-    if name in names:
+    if name in existing:
         logger.debug(f"{VECTOR_DB} Collection '{name}' already exists")
         return
 
-    # Create new collection
+    # -------- Create collection --------
     logger.info(f"{VECTOR_DB} Creating new Qdrant collection '{name}'")
 
     try:

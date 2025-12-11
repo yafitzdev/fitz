@@ -1,6 +1,7 @@
+# fitz_rag/pipeline/engine.py
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Any, List, Dict
 
 from qdrant_client import QdrantClient
 
@@ -8,11 +9,15 @@ from fitz_rag.config.schema import RAGConfig
 from fitz_rag.config.loader import load_config
 
 from fitz_rag.retriever.plugins.dense import RAGRetriever
-from fitz_rag.llm.chat.engine import ChatEngine
-from fitz_rag.llm.chat.plugins.cohere import CohereChatClient
 
-from fitz_rag.generation.rgs import RGS, RGSConfig as RGSRuntimeConfig
-from fitz_rag.generation.rgs import RGSAnswer
+from fitz_rag.llm.chat.engine import ChatEngine
+from fitz_rag.llm.chat.registry import get_chat_plugin
+
+from fitz_rag.generation.rgs import (
+    RGS,
+    RGSConfig as RGSRuntimeConfig,
+    RGSAnswer,
+)
 
 from fitz_rag.exceptions.pipeline import PipelineError, RGSGenerationError
 from fitz_rag.exceptions.llm import LLMError
@@ -25,16 +30,13 @@ logger = get_logger(__name__)
 
 class RAGPipeline:
     """
-    Final v0.1.0 RAG pipeline using the unified config system.
+    Final clean RAG pipeline.
 
-    Pipeline:
-        1. Retriever retrieves (+ optional rerank) chunks
-        2. RGS builds prompt
-        3. LLM executes
-        4. RGS builds answer structure
+    Architecture:
+        retriever → rgs → llm → rgs_answer
     """
 
-    def __init__(self, retriever, llm, rgs: RGS):
+    def __init__(self, retriever: RAGRetriever, llm: ChatEngine, rgs: RGS):
         self.retriever = retriever
         self.llm = llm
         self.rgs = rgs
@@ -42,21 +44,19 @@ class RAGPipeline:
         logger.info(f"{PIPELINE} RAGPipeline initialized")
 
     # ---------------------------------------------------------
-    # Main RAG execution
+    # Main run
     # ---------------------------------------------------------
     def run(self, query: str) -> RGSAnswer:
         logger.info(f"{PIPELINE} Running pipeline for query='{query[:50]}...'")
 
-        # 1) RETRIEVE
-        logger.debug(f"{PIPELINE} Retrieving chunks")
+        # 1) Retrieve
         try:
             chunks = self.retriever.retrieve(query)
         except Exception as e:
             logger.error(f"{PIPELINE} Retriever failed: {e}")
             raise PipelineError("Retriever failed") from e
 
-        # 2) BUILD RGS PROMPT
-        logger.debug(f"{PIPELINE} Building RGS prompt")
+        # 2) Build RGS prompt
         try:
             prompt = self.rgs.build_prompt(query, chunks)
         except Exception as e:
@@ -68,67 +68,50 @@ class RAGPipeline:
             {"role": "user", "content": prompt.user},
         ]
 
-        # 3) LLM CALL
-        logger.debug(f"{PIPELINE} Calling LLM")
+        # 3) LLM call
         try:
             raw = self.llm.chat(messages)
         except Exception as e:
-            logger.error(f"{PIPELINE} LLM chat operation failed: {e}")
+            logger.error(f"{PIPELINE} LLM chat failed: {e}")
             raise LLMError("LLM chat operation failed") from e
 
-        # 4) STRUCTURE ANSWER
-        logger.debug(f"{PIPELINE} Building structured answer")
+        # 4) Build RGS answer
         try:
             answer = self.rgs.build_answer(raw, chunks)
-            logger.info(f"{PIPELINE} Pipeline run completed successfully")
+            logger.info(f"{PIPELINE} Pipeline run completed")
             return answer
         except Exception as e:
-            logger.error(f"{PIPELINE} Failed to build RGS answer: {e}")
+            logger.error(f"{PIPELINE} Failed to structure RGS answer: {e}")
             raise RGSGenerationError("Failed to build RGS answer") from e
 
     # ---------------------------------------------------------
-    # Factory from unified config
+    # Factory from config
     # ---------------------------------------------------------
     @classmethod
     def from_config(cls, cfg: RAGConfig) -> "RAGPipeline":
-        logger.info(f"{PIPELINE} Building RAGPipeline from unified config")
-
-        # Resolve API key (shared for chat / and indirectly for embedding & rerank)
-        key = (
-            cfg.llm.api_key
-            or cfg.embedding.api_key
-            or cfg.rerank.api_key
-        )
-        if key is None:
-            raise PipelineError("No API key provided in any config section.")
+        logger.info(f"{PIPELINE} Constructing RAGPipeline from config")
 
         # ---------------- Qdrant Client ----------------
         logger.debug(
-            f"{PIPELINE} Connecting to Qdrant at "
-            f"{cfg.retriever.qdrant_host}:{cfg.retriever.qdrant_port}"
+            f"{PIPELINE} Connecting Qdrant at {cfg.retriever.qdrant_host}:{cfg.retriever.qdrant_port}"
         )
         qdrant = QdrantClient(
             host=cfg.retriever.qdrant_host,
             port=cfg.retriever.qdrant_port,
         )
 
-        # ---------------- Chat LLM ---------------------
-        if cfg.llm.provider.lower() != "cohere":
-            raise PipelineError(f"Unsupported LLM provider: {cfg.llm.provider}")
-
-        logger.debug(f"{PIPELINE} Initializing chat model '{cfg.llm.model}'")
-        chat_plugin = CohereChatClient(
-            api_key=key,
+        # ---------------- Chat Engine ------------------
+        plugin_name = cfg.llm.provider.lower()
+        plugin_cls = get_chat_plugin(plugin_name)
+        chat_plugin = plugin_cls(
+            api_key=cfg.llm.api_key,
             model=cfg.llm.model,
             temperature=cfg.llm.temperature,
         )
-        chat = ChatEngine(chat_plugin)
+
+        chat_engine = ChatEngine(plugin=chat_plugin)
 
         # ---------------- Retriever --------------------
-        # NOTE: Embedding + rerank are now wired inside the retriever plugin
-        # (DenseRetrievalPlugin / RAGRetriever). It uses cfg.embedding /
-        # cfg.rerank plus the shared Qdrant client.
-        logger.debug(f"{PIPELINE} Constructing retriever (dense)")
         retriever = RAGRetriever(
             client=qdrant,
             embed_cfg=cfg.embedding,
@@ -136,58 +119,29 @@ class RAGPipeline:
             rerank_cfg=cfg.rerank,
         )
 
-        # ---------------- RGS --------------------------
-        logger.debug(f"{PIPELINE} Initializing RGS runtime config")
+        # ---------------- RGS Config -------------------
         rgs_cfg = RGSRuntimeConfig(
             enable_citations=cfg.rgs.enable_citations,
             strict_grounding=cfg.rgs.strict_grounding,
             answer_style=cfg.rgs.answer_style,
             max_chunks=cfg.rgs.max_chunks,
             max_answer_chars=cfg.rgs.max_answer_chars,
+            include_query_in_context=cfg.rgs.include_query_in_context,
+            source_label_prefix=cfg.rgs.source_label_prefix
+            if hasattr(cfg.rgs, "source_label_prefix")
+            else "S",
         )
         rgs = RGS(config=rgs_cfg)
 
-        logger.info(f"{PIPELINE} RAGPipeline successfully constructed")
-        return cls(retriever=retriever, llm=chat, rgs=rgs)
+        logger.info(f"{PIPELINE} RAGPipeline successfully created")
+        return cls(retriever=retriever, llm=chat_engine, rgs=rgs)
 
 
 # ---------------------------------------------------------
-# Pipeline factories
+# Factory for YAML-driven construction
 # ---------------------------------------------------------
-def create_pipeline(name: str, config: Optional[RAGConfig] = None, **kwargs) -> RAGPipeline:
-    logger.debug(f"{PIPELINE} create_pipeline requested: '{name}'")
-
-    if config is not None:
-        logger.debug(f"{PIPELINE} Creating pipeline from unified config")
-        return RAGPipeline.from_config(config)
-
-    name = name.lower()
-
-    if name in ("easy", "simple"):
-        logger.debug(f"{PIPELINE} Delegating to EasyRAG")
-        from fitz_rag.pipeline.easy import EasyRAG
-        return EasyRAG(**kwargs).pipeline
-
-    if name in ("fast",):
-        logger.debug(f"{PIPELINE} Delegating to FastRAG")
-        from fitz_rag.pipeline.fast import FastRAG
-        return FastRAG(**kwargs).pipeline
-
-    if name in ("standard", "default"):
-        logger.debug(f"{PIPELINE} Delegating to StandardRAG")
-        from fitz_rag.pipeline.standard import StandardRAG
-        return StandardRAG(**kwargs).pipeline
-
-    if name in ("debug", "verbose"):
-        logger.debug(f"{PIPELINE} Delegating to DebugRAG")
-        from fitz_rag.pipeline.debug import DebugRAG
-        return DebugRAG(**kwargs).pipeline
-
-    raise PipelineError(f"Unknown pipeline type: {name}")
-
-
-def create_pipeline_from_yaml(user_config_path: Optional[str] = None) -> RAGPipeline:
-    logger.debug(f"{PIPELINE} Creating pipeline from YAML config")
-    raw = load_config(user_config_path=user_config_path)
+def create_pipeline_from_yaml(path: Optional[str] = None) -> RAGPipeline:
+    logger.debug(f"{PIPELINE} Loading config from YAML")
+    raw = load_config(path)
     cfg = RAGConfig.from_dict(raw)
     return RAGPipeline.from_config(cfg)
