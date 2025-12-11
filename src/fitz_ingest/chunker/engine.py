@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Dict, Any
 
-from fitz_stack.core import Chunk
 from fitz_ingest.chunker.base import BaseChunker
 
 from fitz_ingest.exceptions.base import IngestionError
@@ -29,7 +28,7 @@ class ChunkingEngine:
 
     The plugin only needs to implement:
 
-        chunk_text(text: str, base_meta: Dict[str, Any]) -> List[Chunk]
+        chunk_text(text: str, base_meta: Dict[str, Any]) -> List[Dict[str, Any]]
 
     It does NOT need to handle:
     - file I/O
@@ -43,7 +42,7 @@ class ChunkingEngine:
     # ---------------------------------------------------------
     # Public API: chunk a file
     # ---------------------------------------------------------
-    def chunk_file(self, path: str | Path) -> List[Chunk]:
+    def chunk_file(self, path: str | Path) -> List[Dict[str, Any]]:
         path = Path(path)
         logger.debug(f"{CHUNKING} Chunking file: {path}")
 
