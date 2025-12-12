@@ -1,9 +1,8 @@
 # rag/retrieval/plugins/dense.py
-
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, ClassVar, List
+from typing import Any, ClassVar, List, Mapping, Protocol, Sequence, runtime_checkable
 
 from rag.exceptions.retriever import EmbeddingError, RerankError, VectorSearchError
 from rag.models.chunk import Chunk
@@ -16,24 +15,56 @@ from core.logging.tags import RETRIEVER
 logger = get_logger(__name__)
 
 
+Vector = Sequence[float]
+
+
+@runtime_checkable
+class Embedder(Protocol):
+    def embed(self, text: str) -> Vector: ...
+
+
+@runtime_checkable
+class VectorSearchHit(Protocol):
+    id: Any
+    payload: Mapping[str, Any] | None
+    score: float | None
+
+
+@runtime_checkable
+class VectorSearchClient(Protocol):
+    def search(
+        self,
+        collection_name: str,
+        query_vector: Vector,
+        limit: int,
+        with_payload: bool = True,
+    ) -> list[Any]:
+        ...
+
+
+@runtime_checkable
+class DenseRetrieverConfig(Protocol):
+    collection: str
+    top_k: int
+
+
 @dataclass
 class DenseRetrievalPlugin(RetrievalPlugin):
     """
     Dense vector retrieval plugin.
 
-    Architecture contracts:
-    - Requires `client` and `retriever_cfg`.
-    - Requires an embedder to be injected (engine responsibility).
-    - Does NOT infer/resolve LLM plugins from config objects.
-    - Emits canonical `Chunk` objects only.
+    Contracts:
+    - client: VectorSearchClient
+    - retriever_cfg: DenseRetrieverConfig
+    - embedder: Embedder
+    - emits canonical Chunk objects
     """
 
     plugin_name: ClassVar[str] = "dense"
 
-    client: Any | None = None
-    retriever_cfg: Any | None = None
-
-    embedder: Any | None = None
+    client: VectorSearchClient | None = None
+    retriever_cfg: DenseRetrieverConfig | None = None
+    embedder: Embedder | None = None
     rerank_engine: RerankEngine | None = None
 
     def __post_init__(self) -> None:
@@ -55,19 +86,21 @@ class DenseRetrievalPlugin(RetrievalPlugin):
             raise EmbeddingError(f"Failed to embed query: {query}") from exc
 
         try:
+            hits = self.client.search(
+                collection_name=self.retriever_cfg.collection,
+                query_vector=query_vector,
+                limit=self.retriever_cfg.top_k,
+                with_payload=True,
+            )
+        except TypeError:
             try:
-                hits = self.client.search(
-                    collection_name=self.retriever_cfg.collection,
-                    query_vector=query_vector,
-                    limit=self.retriever_cfg.top_k,
-                    with_payload=True,
-                )
-            except TypeError:
-                hits = self.client.search(
+                hits = self.client.search(  # type: ignore[call-arg]
                     self.retriever_cfg.collection,
                     query_vector,
                     self.retriever_cfg.top_k,
                 )
+            except Exception as exc:
+                raise VectorSearchError("Vector search failed") from exc
         except Exception as exc:
             raise VectorSearchError("Vector search failed") from exc
 
