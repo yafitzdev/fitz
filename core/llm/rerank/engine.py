@@ -1,64 +1,31 @@
 # core/llm/rerank/engine.py
-"""
-Rerank engine wiring for Fitz LLMs.
-
-Responsibilities:
-- Read validated config
-- Resolve credentials
-- Instantiate rerank plugin
-- Execute rerank calls
-"""
-
 from __future__ import annotations
 
-from typing import Iterable, List
+from typing import List
 
-from core.logging.logger import get_logger
-from core.logging.tags import RERANK
+from rag.models.chunk import Chunk
 
-from core.llm.credentials import resolve_api_key
-from core.llm.rerank.registry import get_rerank_plugin
-from core.config.schema import FitzConfig
-
-logger = get_logger(__name__)
+from core.llm.rerank.base import RerankPlugin
 
 
 class RerankEngine:
-    def __init__(self, config: FitzConfig):
-        self._config = config
+    """
+    Thin wrapper around a rerank plugin.
 
-        llm_cfg = config.llm
-        provider = llm_cfg.provider
+    Architecture:
+    - plugin construction is done upstream (pipeline wiring)
+    - engine only enforces the contract and delegates calls
+    """
 
-        api_key = resolve_api_key(
-            provider=provider,
-            config=llm_cfg.model_dump(),
-        )
+    def __init__(self, plugin: RerankPlugin):
+        self._plugin = plugin
 
-        logger.info(f"{RERANK} Initializing rerank engine for provider '{provider}'")
+    @property
+    def plugin(self) -> RerankPlugin:
+        return self._plugin
 
-        plugin_cls = get_rerank_plugin(provider)
-        self._plugin = plugin_cls(
-            api_key=api_key,
-            model=llm_cfg.model,
-        )
-
-    def rerank(
-        self,
-        query: str,
-        documents: Iterable[str],
-        top_k: int | None = None,
-    ) -> List[int]:
-        """
-        Rerank documents for a query.
-
-        Returns
-        -------
-        List[int]
-            Indices of documents sorted by relevance (best first)
-        """
-        return self._plugin.rerank(
-            query=query,
-            documents=documents,
-            top_k=top_k,
-        )
+    def rerank(self, query: str, chunks: List[Chunk]) -> List[Chunk]:
+        out = self._plugin.rerank(query, chunks)
+        if not isinstance(out, list) or any(not isinstance(c, Chunk) for c in out):
+            raise TypeError("RerankPlugin.rerank must return List[Chunk]")
+        return out
