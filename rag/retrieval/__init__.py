@@ -7,7 +7,7 @@ This package exposes:
 - RetrieverEngine: orchestration layer for retrieval plugins
 
 Default dense retrieval implementation lives in:
-    fitz_rag.retriever.plugins.dense
+    fitz_rag.retrieval.plugins.dense
 """
 
 from .base import RetrievalPlugin

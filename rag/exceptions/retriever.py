@@ -1,7 +1,7 @@
 from .base import FitzRAGError
 
 class RetrieverError(FitzRAGError):
-    """General retriever failure."""
+    """General retrieval failure."""
     pass
 
 

@@ -6,7 +6,7 @@ from rag.generation.rgs import RGS, RGSConfig, RGSAnswer
 
 class DummyRetriever:
     """
-    Minimal retriever for pipeline tests.
+    Minimal retrieval for pipeline tests.
 
     Returns a couple of dict-based chunks compatible with RGS.
     """

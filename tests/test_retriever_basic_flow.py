@@ -1,5 +1,5 @@
 import pytest
-from rag.retriever.plugins.dense import RAGRetriever
+from rag.retrieval.plugins.dense import RAGRetriever
 from rag.config.schema import EmbeddingConfig, RetrieverConfig, RerankConfig
 from rag.exceptions.retriever import EmbeddingError, VectorSearchError, RerankError
 from rag.models.chunk import Chunk

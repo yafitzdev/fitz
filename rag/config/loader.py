@@ -69,7 +69,7 @@ def get_config() -> Dict[str, Any]:
     try:
         return {
             "embedding": EmbeddingConfig(**raw.get("embedding", {})),
-            "retriever": RetrieverConfig(**raw.get("retriever", {})),
+            "retrieval": RetrieverConfig(**raw.get("retrieval", {})),
             "rerank": RerankConfig(**raw.get("rerank", {})),
             "rgs": RGSSettings(**raw.get("rgs", {})),
             "logging": LoggingConfig(**raw.get("logging", {})),

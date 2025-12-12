@@ -10,7 +10,7 @@ from rag.exceptions.retriever import (
     VectorSearchError,
 )
 from rag.config.schema import EmbeddingConfig, RetrieverConfig, RerankConfig
-from rag.retriever.base import RetrievalPlugin
+from rag.retrieval.base import RetrievalPlugin
 
 from core.logging.logger import get_logger
 from core.logging.tags import RETRIEVER

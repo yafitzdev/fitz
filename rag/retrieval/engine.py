@@ -1,11 +1,13 @@
+# rag/retrieval/engine.py
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, List
 
 from rag.models.chunk import Chunk
-from rag.retriever.base import RetrievalPlugin
-from rag.retriever.registry import get_retriever_plugin
+from rag.retrieval.base import RetrievalPlugin
+from rag.retrieval.registry import get_retriever_plugin
 
 
 @dataclass

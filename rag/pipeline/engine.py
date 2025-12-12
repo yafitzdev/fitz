@@ -6,7 +6,7 @@ from typing import Optional
 from rag.config.schema import RAGConfig
 from rag.config.loader import load_config
 
-from rag.retriever.plugins.dense import RAGRetriever
+from rag.retrieval.plugins.dense import RAGRetriever
 
 from core.llm.chat import ChatEngine
 from core.vector_db import get_vector_db_plugin
@@ -30,7 +30,7 @@ class RAGPipeline:
     """
     Final clean RAG pipeline.
     Architecture:
-        vector_db → retriever → rgs → llm → final answer
+        vector_db → retrieval → rgs → llm → final answer
     """
 
     def __init__(self, retriever: RAGRetriever, llm: ChatEngine, rgs: RGS):

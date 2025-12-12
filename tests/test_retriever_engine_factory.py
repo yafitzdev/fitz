@@ -1,5 +1,5 @@
-from rag.retriever.engine import RetrieverEngine
-from rag.retriever.plugins.dense import DenseRetrievalPlugin
+from rag.retrieval.engine import RetrieverEngine
+from rag.retrieval.plugins.dense import DenseRetrievalPlugin
 
 
 def test_retriever_engine_from_name():

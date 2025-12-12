@@ -1,6 +1,5 @@
-# ============================
-# File: src/fitz_rag/retriever/registry.py
-# ============================
+# rag/retrieval/registry.py
+
 from __future__ import annotations
 
 import importlib
@@ -8,8 +7,8 @@ import inspect
 import pkgutil
 from typing import Dict, Type
 
-from rag.retriever.base import RetrievalPlugin
-import rag.retriever.plugins as plugins_pkg
+from rag.retrieval.base import RetrievalPlugin
+import rag.retrieval.plugins as plugins_pkg
 
 
 RETRIEVER_REGISTRY: Dict[str, Type[RetrievalPlugin]] = {}

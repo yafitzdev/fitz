@@ -1,3 +1,5 @@
+# rag/retrieval/base.py
+
 from __future__ import annotations
 
 from typing import Protocol, List, runtime_checkable
@@ -14,7 +16,7 @@ class RetrievalPlugin(Protocol):
     must implement this interface.
 
     Plugins typically live in:
-        fitz_rag.retriever.plugins.<name>
+        fitz_rag.retrieval.plugins.<name>
     and declare a unique `plugin_name` attribute.
     """
 

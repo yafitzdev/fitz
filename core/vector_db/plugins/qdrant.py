@@ -24,7 +24,7 @@ class QdrantVectorDB(VectorDBPlugin):
     Qdrant-based vector DB plugin.
 
     Thin wrapper around `qdrant_client.QdrantClient` that provides a
-    uniform interface that matches what the retriever expects:
+    uniform interface that matches what the retrieval expects:
 
     - `.search(collection_name=..., query_vector=..., limit=..., with_payload=True)`
     - `.upsert(collection, records)`
@@ -91,7 +91,7 @@ class QdrantVectorDB(VectorDBPlugin):
     ) -> List[Any]:
         """
         Signature intentionally mirrors the Qdrant client's `search` so that
-        existing retriever code (and tests using dummy client.search) stays
+        existing retrieval code (and tests using dummy client.search) stays
         compatible.
         """
         logger.info(
