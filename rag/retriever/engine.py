@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List
 
-from rag.core import Chunk
+from rag.models.chunk import Chunk
 from rag.retriever.base import RetrievalPlugin
 from rag.retriever.registry import get_retriever_plugin
 

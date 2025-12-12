@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List
 
-from rag.core import Chunk
+from rag.models.chunk import Chunk
 from rag.exceptions.retriever import (
     EmbeddingError,
     RerankError,
@@ -26,10 +26,10 @@ def _config_to_kwargs(cfg: Any) -> dict:
     if cfg is None:
         return {}
 
-    if hasattr(cfg, "dict"):
-        data = cfg.dict(exclude_none=True)
-    elif hasattr(cfg, "model_dump"):
+    if hasattr(cfg, "model_dump"):
         data = cfg.model_dump(exclude_none=True)
+    elif hasattr(cfg, "dict"):
+        data = cfg.dict(exclude_none=True)
     elif isinstance(cfg, dict):
         data = {k: v for k, v in cfg.items() if v is not None}
     else:
@@ -94,8 +94,8 @@ class DenseRetrievalPlugin(RetrievalPlugin):
 
         try:
             query_vector = self.embedder.embed(query)
-        except Exception as e:
-            raise EmbeddingError(f"Failed to embed query: {query}") from e
+        except Exception as exc:
+            raise EmbeddingError(f"Failed to embed query: {query}") from exc
 
         try:
             try:
@@ -111,26 +111,37 @@ class DenseRetrievalPlugin(RetrievalPlugin):
                     query_vector,
                     self.retriever_cfg.top_k,
                 )
-        except Exception as e:
-            raise VectorSearchError("Vector search failed") from e
+        except Exception as exc:
+            raise VectorSearchError("Vector search failed") from exc
 
         chunks: List[Chunk] = []
-        for hit in hits:
+
+        for idx, hit in enumerate(hits):
             payload = getattr(hit, "payload", {}) or {}
-            chunks.append(
-                Chunk(
-                    id=getattr(hit, "id", None),
-                    text=payload.get("text", ""),
-                    metadata=payload,
-                    score=getattr(hit, "score", None),
-                )
+
+            chunk = Chunk(
+                id=str(getattr(hit, "id", idx)),
+                doc_id=str(
+                    payload.get("doc_id")
+                    or payload.get("document_id")
+                    or payload.get("source")
+                    or "unknown"
+                ),
+                content=payload.get("content", payload.get("text", "")),
+                metadata={
+                    **payload,
+                    "score": getattr(hit, "score", None),
+                },
+                chunk_index=int(payload.get("chunk_index", idx)),
             )
+
+            chunks.append(chunk)
 
         if self.rerank_engine:
             try:
                 chunks = self.rerank_engine.plugin.rerank(query, chunks)
-            except Exception as e:
-                raise RerankError("Reranking failed") from e
+            except Exception as exc:
+                raise RerankError("Reranking failed") from exc
 
         return chunks
 

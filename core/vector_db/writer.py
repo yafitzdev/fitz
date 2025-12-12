@@ -5,7 +5,7 @@ from typing import Iterable, List, Set
 from uuid import uuid4
 import hashlib
 
-from rag.core import Chunk
+from rag.models.chunk import Chunk
 
 from core.vector_db.engine import VectorDBEngine
 from core.vector_db.base import VectorRecord

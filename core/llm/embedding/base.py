@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, List
 
-from rag.core import Chunk  # noqa: F401  # reserved for future richer APIs
+from rag.models.chunk import Chunk  # noqa: F401  # reserved for future richer APIs
 
 
 class EmbeddingPlugin(Protocol):

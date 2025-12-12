@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Any, Protocol
 
-from core.core import Chunk as _CoreChunk
+from rag.models.chunk import Chunk as _CoreChunk
 
 # Backwards-compatible alias
 Chunk = _CoreChunk

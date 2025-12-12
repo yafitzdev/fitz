@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Protocol, List
 
-from rag.core import Chunk
+from rag.models.chunk import Chunk
 
 
 class RerankPlugin(Protocol):
