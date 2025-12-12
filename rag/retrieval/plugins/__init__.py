@@ -4,5 +4,7 @@ Retrieval plugin implementations live in this package.
 
 Important:
 - Keep this module import-free to avoid circular imports.
-- Plugin discovery/registration is owned by `rag.retrieval.registry`.
+- Discovery/registration is owned by `rag.retrieval.registry`.
 """
+
+__all__: list[str] = []

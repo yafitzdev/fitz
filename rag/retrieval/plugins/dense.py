@@ -1,17 +1,17 @@
 # rag/retrieval/plugins/dense.py
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any, ClassVar, List
 
 from rag.exceptions.retriever import EmbeddingError, RerankError, VectorSearchError
 from rag.models.chunk import Chunk
 from rag.retrieval.base import RetrievalPlugin
 
+from core.llm.rerank.engine import RerankEngine
 from core.logging.logger import get_logger
 from core.logging.tags import RETRIEVER
-
-from core.llm.rerank.engine import RerankEngine
 
 logger = get_logger(__name__)
 
@@ -28,7 +28,7 @@ class DenseRetrievalPlugin(RetrievalPlugin):
     - Emits canonical `Chunk` objects only.
     """
 
-    plugin_name: str = "dense"
+    plugin_name: ClassVar[str] = "dense"
 
     client: Any | None = None
     retriever_cfg: Any | None = None
@@ -39,10 +39,8 @@ class DenseRetrievalPlugin(RetrievalPlugin):
     def __post_init__(self) -> None:
         if self.client is None:
             raise ValueError("client must be provided")
-
         if self.retriever_cfg is None:
             raise ValueError("retriever_cfg must be provided")
-
         if self.embedder is None:
             raise ValueError("embedder must be injected (engine responsibility)")
 

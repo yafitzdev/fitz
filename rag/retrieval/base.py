@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, List, runtime_checkable
+from typing import List, Protocol, runtime_checkable
 
 from rag.models.chunk import Chunk
 
@@ -16,14 +16,9 @@ class RetrievalPlugin(Protocol):
     must implement this interface.
 
     Plugins typically live in:
-        fitz_rag.retrieval.plugins.<name>
+        rag.retrieval.plugins.<name>
     and declare a unique `plugin_name` attribute.
     """
-
-    # Each plugin should define a class attribute:
-    #   plugin_name: str = "<unique-name>"
-    #
-    # This is used by the auto-discovery registry.
 
     def retrieve(self, query: str) -> List[Chunk]:
         """
