@@ -1,4 +1,5 @@
-# ingest/chunker/registry.py
+# ingest/chunking/registry.py
+
 from __future__ import annotations
 
 import importlib
@@ -6,8 +7,8 @@ import inspect
 import pkgutil
 from typing import Dict, Type
 
-from ingest.chunker.base import BaseChunker
-import ingest.chunker.plugins as plugins_pkg
+from ingest.chunking.base import BaseChunker
+import ingest.chunking.plugins as plugins_pkg
 
 CHUNKER_REGISTRY: Dict[str, Type[BaseChunker]] = {}
 

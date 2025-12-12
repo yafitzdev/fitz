@@ -1,7 +1,9 @@
+# ingest/ingestion/registry.py
+
 from __future__ import annotations
 
 from typing import Dict, Type
-from ingest.ingester.base import IngestPlugin
+from ingest.ingestion.base import IngestPlugin
 
 REGISTRY: Dict[str, Type[IngestPlugin]] = {}
 

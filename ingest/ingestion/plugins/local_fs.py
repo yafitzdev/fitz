@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Dict
 
-from ingest.ingester.base import IngestPlugin, RawDocument
-from ingest.ingester.registry import register
+from ingest.ingestion.base import IngestPlugin, RawDocument
+from ingest.ingestion.registry import register
 
 
 @register

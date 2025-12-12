@@ -1,5 +1,5 @@
-from ingest.ingester.engine import Ingester
-from ingest.ingester.base import RawDocument
+from ingest.ingestion.engine import Ingester
+from ingest.ingestion.base import RawDocument
 from ingest.config.schema import IngestConfig
 
 

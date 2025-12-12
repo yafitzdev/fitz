@@ -1,11 +1,12 @@
-# ingest/chunker/engine.py
+# ingest/chunking/engine.py
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import List, Dict, Any
 
-from ingest.chunker.base import BaseChunker
-import ingest.chunker.registry as chunker_registry
+from ingest.chunking.base import BaseChunker
+import ingest.chunking.registry as chunker_registry
 from ingest.config.schema import ChunkerConfig
 from ingest.exceptions.config import IngestionConfigError
 from ingest.exceptions.chunking import IngestionChunkingError

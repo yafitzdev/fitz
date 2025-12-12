@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable, List
 from dataclasses import dataclass
-from ingest.ingester.base import RawDocument
+from ingest.ingestion.base import RawDocument
 
 
 @dataclass

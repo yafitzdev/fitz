@@ -1,10 +1,11 @@
-# ingest/ingester/engine.py
+# ingest/ingestion/engine.py
+
 from __future__ import annotations
 
 from typing import Iterable
 
-from ingest.ingester.base import RawDocument
-from ingest.ingester import registry
+from ingest.ingestion.base import RawDocument
+from ingest.ingestion import registry
 from ingest.config.schema import IngestConfig
 from ingest.exceptions.config import IngestionConfigError
 

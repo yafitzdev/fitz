@@ -1,4 +1,4 @@
-# ingest/chunker/__init__.py
+# ingest/chunking/__init__.py
 """
 Chunking subsystem for ingest.
 

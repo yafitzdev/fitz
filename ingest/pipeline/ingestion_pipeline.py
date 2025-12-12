@@ -4,8 +4,8 @@ from __future__ import annotations
 from typing import Iterable
 
 from ingest.config.schema import IngestConfig
-from ingest.ingester.engine import Ingester
-from ingest.chunker.engine import ChunkingEngine
+from ingest.ingestion.engine import Ingester
+from ingest.chunking.engine import ChunkingEngine
 
 from core.vector_db.writer import VectorDBWriter
 from core.logging.logger import get_logger

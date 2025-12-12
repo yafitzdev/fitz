@@ -59,7 +59,7 @@ def test_ingestion_pipeline_end_to_end(monkeypatch):
     )
 
     # PATCH INGESTER REGISTRY (public)
-    from ingest.ingester import registry as ingest_registry
+    from ingest.ingestion import registry as ingest_registry
     monkeypatch.setitem(
         ingest_registry.REGISTRY,
         "dummy",
@@ -67,7 +67,7 @@ def test_ingestion_pipeline_end_to_end(monkeypatch):
     )
 
     # PATCH CHUNKER FACTORY (public)
-    from ingest.chunker import registry as chunker_registry
+    from ingest.chunking import registry as chunker_registry
     monkeypatch.setattr(
         chunker_registry,
         "get_chunker_plugin",
