@@ -1,13 +1,17 @@
+from __future__ import annotations
+
 from typing import Dict, Type
-from ingest.ingester.plugins.base import IngestPlugin
-from ingest.ingester.plugins.local_fs import LocalFSIngestPlugin
+from ingest.ingester.base import IngestPlugin
 
-REGISTRY: Dict[str, IngestPlugin] = {
-    "local": LocalFSIngestPlugin(),
-}
+REGISTRY: Dict[str, Type[IngestPlugin]] = {}
 
-def get_ingest_plugin(name: str) -> IngestPlugin:
-    try:
-        return REGISTRY[name]
-    except KeyError:
-        raise ValueError(f"Unknown ingest plugin: {name}")
+
+def register(plugin: Type[IngestPlugin]) -> Type[IngestPlugin]:
+    REGISTRY[plugin.plugin_name] = plugin
+    return plugin
+
+
+def get_ingest_plugin(name: str) -> Type[IngestPlugin]:
+    if name not in REGISTRY:
+        raise ValueError(f"Unknown ingester plugin: {name}")
+    return REGISTRY[name]

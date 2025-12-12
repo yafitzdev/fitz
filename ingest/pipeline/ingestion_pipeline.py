@@ -1,64 +1,68 @@
-# src/fitz_ingest/pipeline/ingestion_pipeline.py
+# ingest/pipeline/ingestion_pipeline.py
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Iterable
 
+from ingest.config.schema import IngestConfig
 from ingest.ingester.engine import Ingester
 from ingest.chunker.engine import ChunkingEngine
 
 from core.vector_db.writer import VectorDBWriter
 from core.logging.logger import get_logger
-from core.logging.tags import INGEST, CHUNKING, VECTOR_DB, PIPELINE
+from core.logging.tags import PIPELINE
 
 logger = get_logger(__name__)
 
 
-@dataclass
 class IngestionPipeline:
     """
-    Clean ingestion pipeline:
+    End-to-end ingestion pipeline:
 
-        Ingester → Chunker → VectorDBWriter
+        source
+          -> ingester
+          -> chunker
+          -> vector db writer
 
-    Responsibilities:
-    - run ingester
-    - run chunker
-    - pass chunks to writer (writer handles hash, uuid, dedupe, embedding, vectordb)
+    Construction MUST happen via config-driven factories.
     """
 
-    ingester: Ingester
-    chunker: ChunkingEngine
-    writer: VectorDBWriter
-    collection: str
+    def __init__(
+        self,
+        *,
+        config: IngestConfig,
+        writer: VectorDBWriter,
+    ) -> None:
+        self.config = config
+        self.writer = writer
 
+        # -----------------------------------------------------
+        # Build engines STRICTLY via config factories
+        # -----------------------------------------------------
+        self.ingester = Ingester.from_config(config)
+        self.chunker = ChunkingEngine.from_config(config.chunker)
+
+        self.collection = config.collection
+
+    # ---------------------------------------------------------
+    # Public API
+    # ---------------------------------------------------------
     def run(self, source: str) -> int:
-        logger.info(f"{PIPELINE}{INGEST} Starting ingestion for source='{source}'")
+        logger.info(f"{PIPELINE} Starting ingestion pipeline")
 
-        written = 0
         raw_docs = self.ingester.run(source)
 
-        for raw_doc in raw_docs:
-            doc_id = getattr(raw_doc, "id", None) or getattr(raw_doc, "path", None)
-            logger.info(f"{INGEST} Processing document: {doc_id!r}")
+        total_written = 0
 
-            # Produce chunks
-            chunks = list(self.chunker.run(raw_doc))
+        for raw_doc in raw_docs:
+            chunks = self.chunker.run(raw_doc)
             if not chunks:
-                logger.debug(f"{CHUNKING} No chunks produced for doc={doc_id!r}")
                 continue
 
-            # Writer handles:
-            # - dedupe
-            # - hashing
-            # - embedding
-            # - vector upsert
-            count = self.writer.write(self.collection, chunks)
+            written = self.writer.write(
+                chunks=chunks,
+                collection=self.collection,
+            )
+            total_written += written
 
-            logger.debug(f"{VECTOR_DB} Written {count} chunks for doc={doc_id!r}")
-            written += count
-
-        logger.info(
-            f"{PIPELINE}{VECTOR_DB} Ingestion finished for source='{source}', "
-            f"written_chunks={written}"
-        )
-        return written
+        logger.info(f"{PIPELINE} Ingestion finished, written={total_written}")
+        return total_written

@@ -1,17 +1,22 @@
-import os
-from ingest.ingester.plugins.base import IngestPlugin, RawDocument
+from __future__ import annotations
 
+from pathlib import Path
+from typing import Iterable, Dict
+
+from ingest.ingester.base import IngestPlugin, RawDocument
+from ingest.ingester.registry import register
+
+
+@register
 class LocalFSIngestPlugin(IngestPlugin):
-    def ingest(self, source: str, config: dict):
-        for root, _, files in os.walk(source):
-            for f in files:
-                path = os.path.join(root, f)
-                try:
-                    with open(path, "r", encoding="utf-8") as fh:
-                        yield RawDocument(
-                            path=path,
-                            content=fh.read(),
-                            metadata={"source": "local_fs"}
-                        )
-                except Exception:
-                    continue
+    plugin_name = "local"
+
+    def ingest(self, source: str, options: Dict) -> Iterable[RawDocument]:
+        base = Path(source)
+        for path in base.glob("**/*"):
+            if path.is_file():
+                yield RawDocument(
+                    path=str(path),
+                    content=path.read_text(encoding="utf-8"),
+                    metadata={"source": "local_fs"},
+                )

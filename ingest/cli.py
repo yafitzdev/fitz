@@ -18,7 +18,7 @@ from typing import Iterable, List
 import typer
 
 from ingest.ingester.engine import Ingester
-from ingest.ingester.plugins.base import RawDocument
+from ingest.ingester.base import RawDocument
 
 from rag.core import Chunk
 

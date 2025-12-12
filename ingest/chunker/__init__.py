@@ -1,11 +1,11 @@
+# ingest/chunker/__init__.py
 """
-Chunking subsystem for fitz_ingest.
+Chunking subsystem for ingest.
 
-This package provides:
-
-- BaseChunker / ChunkerPlugin: interface for chunking plugins
-- ChunkingEngine: orchestration and file I/O wrapper
-- registry: auto-discovery of plugins in fitz_ingest.chunker.plugins
+Provides:
+- Chunker plugins
+- ChunkingEngine
+- Registry + auto-discovery
 """
 
 from .base import BaseChunker, ChunkerPlugin, Chunk

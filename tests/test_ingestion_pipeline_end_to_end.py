@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+
 from ingest.pipeline import IngestionPipeline
+from ingest.config.schema import IngestConfig
 
 
 @dataclass
@@ -24,7 +26,7 @@ class DummyChunker:
     def run(self, raw_doc):
         return [
             DummyChunk(id=None, text="chunk1", metadata={"source": "doc1"}),
-            DummyChunk(id=None, text="chunk1", metadata={"source": "doc1"}),  # duplicate text
+            DummyChunk(id=None, text="chunk1", metadata={"source": "doc1"}),
         ]
 
 
@@ -45,33 +47,51 @@ class DummyVectorDB:
         self.upserts.append((col, recs))
 
 
-def test_ingestion_pipeline_end_to_end():
+def test_ingestion_pipeline_end_to_end(monkeypatch):
     embedder = DummyEmbedder()
     vectordb = DummyVectorDB()
 
-    # Writer performs dedupe + embed + write
     from core.vector_db.writer import VectorDBWriter
-    writer = VectorDBWriter(embedder=embedder, vectordb=vectordb, deduplicate=True)
+    writer = VectorDBWriter(
+        embedder=embedder,
+        vectordb=vectordb,
+        deduplicate=True,
+    )
 
-    pipeline = IngestionPipeline(
-        ingester=DummyIngester(),
-        chunker=DummyChunker(),
-        writer=writer,
+    # PATCH INGESTER REGISTRY (public)
+    from ingest.ingester import registry as ingest_registry
+    monkeypatch.setitem(
+        ingest_registry.REGISTRY,
+        "dummy",
+        lambda **_: DummyIngester(),
+    )
+
+    # PATCH CHUNKER FACTORY (public)
+    from ingest.chunker import registry as chunker_registry
+    monkeypatch.setattr(
+        chunker_registry,
+        "get_chunker_plugin",
+        lambda name: (lambda **_: DummyChunker()),
+    )
+
+    cfg = IngestConfig(
+        ingester={"plugin_name": "dummy"},
+        chunker={"plugin_name": "dummy"},
         collection="my_col",
     )
 
-    written = pipeline.run("some_path")
-    assert written == 1  # dedupe eliminates one chunk
+    pipeline = IngestionPipeline(
+        config=cfg,
+        writer=writer,
+    )
 
-    # Embedding called once
+    written = pipeline.run("some_path")
+
+    assert written == 1
     assert embedder.calls == ["chunk1"]
 
-    # Ensure vector DB received exactly one record
-    assert len(vectordb.upserts) == 1
     col, recs = vectordb.upserts[0]
     assert col == "my_col"
     assert len(recs) == 1
-
-    # Writer ensures chunk_id in payload
     assert "chunk_id" in recs[0].payload
     assert "chunk_hash" in recs[0].payload
