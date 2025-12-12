@@ -1,91 +1,50 @@
+# rag/retrieval/plugins/dense.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, List
 
+from rag.exceptions.retriever import EmbeddingError, RerankError, VectorSearchError
 from rag.models.chunk import Chunk
-from rag.exceptions.retriever import (
-    EmbeddingError,
-    RerankError,
-    VectorSearchError,
-)
-from rag.config.schema import EmbeddingConfig, RetrieverConfig, RerankConfig
 from rag.retrieval.base import RetrievalPlugin
 
 from core.logging.logger import get_logger
 from core.logging.tags import RETRIEVER
 
-from core.llm.embedding.engine import EmbeddingEngine
 from core.llm.rerank.engine import RerankEngine
-from core.llm.registry import get_llm_plugin
 
 logger = get_logger(__name__)
 
 
-def _config_to_kwargs(cfg: Any) -> dict:
-    if cfg is None:
-        return {}
-
-    if hasattr(cfg, "model_dump"):
-        data = cfg.model_dump(exclude_none=True)
-    elif hasattr(cfg, "dict"):
-        data = cfg.dict(exclude_none=True)
-    elif isinstance(cfg, dict):
-        data = {k: v for k, v in cfg.items() if v is not None}
-    else:
-        data = {
-            k: v for k, v in vars(cfg).items()
-            if not k.startswith("_") and v is not None
-        }
-
-    data.pop("plugin_name", None)
-    return data
-
-
 @dataclass
 class DenseRetrievalPlugin(RetrievalPlugin):
+    """
+    Dense vector retrieval plugin.
+
+    Architecture contracts:
+    - Requires `client` and `retriever_cfg`.
+    - Requires an embedder to be injected (engine responsibility).
+    - Does NOT infer/resolve LLM plugins from config objects.
+    - Emits canonical `Chunk` objects only.
+    """
+
     plugin_name: str = "dense"
 
     client: Any | None = None
-    embed_cfg: EmbeddingConfig | None = None
-    retriever_cfg: RetrieverConfig | None = None
-    rerank_cfg: RerankConfig | None = None
+    retriever_cfg: Any | None = None
 
-    embedder: EmbeddingEngine | None = None
+    embedder: Any | None = None
     rerank_engine: RerankEngine | None = None
 
     def __post_init__(self) -> None:
+        if self.client is None:
+            raise ValueError("client must be provided")
+
         if self.retriever_cfg is None:
             raise ValueError("retriever_cfg must be provided")
 
-        if self.embedder is None and self.embed_cfg is None:
-            raise ValueError("embed_cfg must be provided when no embedder is injected")
-
         if self.embedder is None:
-            if not getattr(self.embed_cfg, "plugin_name", None):
-                raise ValueError("embed_cfg.plugin_name must be set")
-
-            EmbedCls = get_llm_plugin(
-                plugin_name=self.embed_cfg.plugin_name,
-                plugin_type="embedding",
-            )
-            embed_plugin = EmbedCls(**_config_to_kwargs(self.embed_cfg))
-            self.embedder = EmbeddingEngine(embed_plugin)
-
-        if (
-            self.rerank_cfg
-            and getattr(self.rerank_cfg, "enabled", False)
-            and self.rerank_engine is None
-        ):
-            if not getattr(self.rerank_cfg, "plugin_name", None):
-                raise ValueError("rerank_cfg.plugin_name must be set")
-
-            RerankCls = get_llm_plugin(
-                plugin_name=self.rerank_cfg.plugin_name,
-                plugin_type="rerank",
-            )
-            rerank_plugin = RerankCls(**_config_to_kwargs(self.rerank_cfg))
-            self.rerank_engine = RerankEngine(rerank_plugin)
+            raise ValueError("embedder must be injected (engine responsibility)")
 
     def retrieve(self, query: str) -> List[Chunk]:
         logger.info(
@@ -119,25 +78,35 @@ class DenseRetrievalPlugin(RetrievalPlugin):
         for idx, hit in enumerate(hits):
             payload = getattr(hit, "payload", {}) or {}
 
-            chunk = Chunk(
-                id=str(getattr(hit, "id", idx)),
-                doc_id=str(
-                    payload.get("doc_id")
-                    or payload.get("document_id")
-                    or payload.get("source")
-                    or "unknown"
-                ),
-                content=payload.get("content", payload.get("text", "")),
-                metadata={
-                    **payload,
-                    "score": getattr(hit, "score", None),
-                },
-                chunk_index=int(payload.get("chunk_index", idx)),
+            doc_id = (
+                payload.get("doc_id")
+                or payload.get("document_id")
+                or payload.get("source")
+                or "unknown"
+            )
+            chunk_index = payload.get("chunk_index", idx)
+            content = payload.get("content", payload.get("text", ""))
+
+            chunk_id = getattr(hit, "id", None)
+            if chunk_id is None:
+                chunk_id = f"{doc_id}:{chunk_index}"
+
+            metadata = dict(payload)
+            score = getattr(hit, "score", None)
+            if score is not None:
+                metadata["score"] = score
+
+            chunks.append(
+                Chunk(
+                    id=str(chunk_id),
+                    doc_id=str(doc_id),
+                    content=str(content),
+                    chunk_index=int(chunk_index),
+                    metadata=metadata,
+                )
             )
 
-            chunks.append(chunk)
-
-        if self.rerank_engine:
+        if self.rerank_engine is not None:
             try:
                 chunks = self.rerank_engine.plugin.rerank(query, chunks)
             except Exception as exc:
