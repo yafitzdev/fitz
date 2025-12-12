@@ -1,16 +1,16 @@
+# rag/models/document.py
 from __future__ import annotations
+
+from typing import Any, Dict
+
 from pydantic import BaseModel, Field
-from typing import Dict, Optional
 
 
 class Document(BaseModel):
     """
-    Base document model stored before or during chunking.
-
-    Validation errors here propagate as Pydantic exceptions,
-    which upper layers convert into ConfigError.
+    Canonical document model used across the fitz stack.
     """
-    id: str = Field(..., description="Unique identifier for the document.")
-    path: Optional[str] = Field(None, description="Optional file path.")
-    metadata: Dict = Field(default_factory=dict, description="Document-level metadata.")
-    content: str = Field(..., description="Full raw text of the document.")
+
+    id: str = Field(..., description="Document ID")
+    content: str = Field(..., description="Full document content")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Document metadata")
