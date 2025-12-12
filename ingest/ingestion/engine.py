@@ -1,13 +1,12 @@
 # ingest/ingestion/engine.py
-
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Any, Dict, Iterable
 
-from ingest.ingestion.base import RawDocument
-from ingest.ingestion import registry
 from ingest.config.schema import IngestConfig
 from ingest.exceptions.config import IngestionConfigError
+from ingest.ingestion.base import IngestPlugin, RawDocument
+from ingest.ingestion.registry import get_ingest_plugin
 
 from core.logging.logger import get_logger
 from core.logging.tags import INGEST
@@ -15,61 +14,42 @@ from core.logging.tags import INGEST
 logger = get_logger(__name__)
 
 
-class Ingester:
+class IngestionEngine:
     """
     Ingestion engine wrapper.
 
-    Supports:
-    - plugin-style ingesters (ingest())
-    - engine-style ingesters (run())
+    Architecture:
+    - Always delegates to an injected IngestPlugin
+    - Config-to-plugin wiring is done in from_config()
     """
 
-    def __init__(self, *, config: IngestConfig | None = None, plugin=None, options=None):
-        if config is not None:
-            built = self.from_config(config)
-            self.plugin = built.plugin
-            self.options = built.options
-            return
+    def __init__(self, plugin: IngestPlugin, kwargs: Dict[str, Any] | None = None):
+        self._plugin = plugin
+        self._kwargs: Dict[str, Any] = dict(kwargs or {})
 
-        self.plugin = plugin
-        self.options = options or {}
-
-    # ---------------------------------------------------------
-    # Factory
-    # ---------------------------------------------------------
     @classmethod
-    def from_config(cls, cfg: IngestConfig) -> "Ingester":
-        if not cfg.ingester or not cfg.ingester.plugin_name:
-            raise IngestionConfigError("IngesterConfig.plugin_name is required")
+    def from_config(cls, cfg: IngestConfig) -> "IngestionEngine":
+        if not cfg.ingester.plugin_name:
+            raise IngestionConfigError("ingester.plugin_name is required")
 
         try:
-            PluginFactory = registry.get_ingest_plugin(cfg.ingester.plugin_name)
-        except Exception as e:
+            PluginCls = get_ingest_plugin(cfg.ingester.plugin_name)
+        except Exception as exc:
             raise IngestionConfigError(
-                f"Unknown ingester plugin '{cfg.ingester.plugin_name}'"
-            ) from e
+                f"Unknown ingester plugin {cfg.ingester.plugin_name!r}"
+            ) from exc
+
+        kwargs = dict(cfg.ingester.kwargs or {})
 
         try:
-            plugin = PluginFactory(**(cfg.ingester.options or {}))
-        except Exception as e:
+            plugin = PluginCls(**kwargs)
+        except Exception as exc:
             raise IngestionConfigError(
-                f"Failed to initialize ingester plugin '{cfg.ingester.plugin_name}'"
-            ) from e
+                f"Failed to initialize ingester plugin {cfg.ingester.plugin_name!r}"
+            ) from exc
 
-        return cls(
-            plugin=plugin,
-            options=cfg.ingester.options or {},
-        )
+        return cls(plugin=plugin, kwargs=kwargs)
 
-    # ---------------------------------------------------------
-    # Public API
-    # ---------------------------------------------------------
     def run(self, source: str) -> Iterable[RawDocument]:
         logger.info(f"{INGEST} Running ingestion on source={source}")
-
-        # Engine-style ingester (used in tests)
-        if hasattr(self.plugin, "run"):
-            return self.plugin.run(source)
-
-        # Plugin-style ingester (normal path)
-        return self.plugin.ingest(source, self.options)
+        return self._plugin.ingest(source, self._kwargs)
