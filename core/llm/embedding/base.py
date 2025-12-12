@@ -1,30 +1,16 @@
+# core/llm/embedding/base.py
 from __future__ import annotations
 
-from typing import Protocol, List
-
-from rag.models.chunk import Chunk  # noqa: F401  # reserved for future richer APIs
+from typing import Protocol, runtime_checkable
 
 
+@runtime_checkable
 class EmbeddingPlugin(Protocol):
     """
-    Protocol for embedding plugins.
+    Canonical embedding plugin contract.
 
-    Any embedding implementation (Cohere, OpenAI, local, etc.) should
-    implement this interface.
-
-    Plugins typically live in:
-        fitz_rag.llm.embedding.plugins.<name>
-
-    and declare a unique `plugin_name` attribute (string).
+    Provider-specific logic must live in plugin implementations only.
     """
 
-    # Each plugin should define a class attribute:
-    #   plugin_name: str = "<unique-name>"
-    #
-    # This is used by the auto-discovery registry.
-
-    def embed(self, text: str) -> List[float]:
-        """
-        Embed a single piece of text into a vector of floats.
-        """
+    def embed(self, text: str) -> list[float]:
         ...
