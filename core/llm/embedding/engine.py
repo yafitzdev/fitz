@@ -1,38 +1,50 @@
+# core/llm/embedding/engine.py
+"""
+Embedding engine wiring for Fitz LLMs.
+
+Responsibilities:
+- Read validated config
+- Resolve credentials
+- Instantiate embedding plugin
+- Execute embedding calls
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List
+from typing import Iterable, List
 
-from core.llm.embedding.base import EmbeddingPlugin
-from core.llm.registry import get_llm_plugin
 from core.logging.logger import get_logger
 from core.logging.tags import EMBEDDING
+
+from core.llm.credentials import resolve_api_key
+from core.llm.embedding.registry import get_embedding_plugin
+from core.config.schema import FitzConfig
 
 logger = get_logger(__name__)
 
 
-@dataclass
 class EmbeddingEngine:
-    """
-    Orchestration for embedding plugins.
+    def __init__(self, config: FitzConfig):
+        self._config = config
 
-    Responsibilities:
-        - Normalize input to a single text string
-        - Run plugin.embed(...)
-        - Provide factory constructor from_name(...)
-    """
+        llm_cfg = config.llm
+        provider = llm_cfg.provider
 
-    plugin: EmbeddingPlugin
+        api_key = resolve_api_key(
+            provider=provider,
+            config=llm_cfg.model_dump(),
+        )
 
-    def embed(self, text: str) -> List[float]:
-        logger.info(f"{EMBEDDING} Embedding text of length={len(text)}")
-        return self.plugin.embed(text)
+        logger.info(f"{EMBEDDING} Initializing embedding engine for provider '{provider}'")
 
-    # ---------------------------------------------------------
-    # Factory from registry
-    # ---------------------------------------------------------
-    @classmethod
-    def from_name(cls, plugin_name: str, **kwargs) -> "EmbeddingEngine":
-        PluginCls = get_llm_plugin(plugin_name, plugin_type="embedding")
-        plugin = PluginCls(**kwargs)
-        return cls(plugin=plugin)
+        plugin_cls = get_embedding_plugin(provider)
+        self._plugin = plugin_cls(
+            api_key=api_key,
+            model=llm_cfg.model,
+        )
+
+    def embed(self, texts: Iterable[str]) -> List[list[float]]:
+        """
+        Generate embeddings for a list of texts.
+        """
+        return self._plugin.embed(texts)

@@ -1,0 +1,6 @@
+# core/config/default.yaml
+
+llm:
+  provider: openai
+  model: gpt-4.1-mini
+  # api_key intentionally omitted

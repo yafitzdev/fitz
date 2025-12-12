@@ -1,38 +1,61 @@
+# core/llm/chat/engine.py
+"""
+Chat engine wiring for Fitz LLMs.
+
+Responsibilities:
+- Read validated config
+- Resolve credentials
+- Instantiate chat plugin
+- Execute chat calls
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import Iterable
 
-from core.llm.chat.base import ChatPlugin
-from core.llm.registry import get_llm_plugin
 from core.logging.logger import get_logger
 from core.logging.tags import CHAT
+
+from core.llm.credentials import resolve_api_key
+from core.llm.chat.registry import get_chat_plugin
+from core.config.schema import FitzConfig
 
 logger = get_logger(__name__)
 
 
-@dataclass
 class ChatEngine:
-    """
-    Orchestration layer around a ChatPlugin.
+    def __init__(self, config: FitzConfig):
+        self._config = config
 
-    Responsibilities:
-        - Normalize chat messages
-        - Call plugin.chat(...)
-        - Provide factory constructor from_name(...)
-    """
+        llm_cfg = config.llm
+        provider = llm_cfg.provider
 
-    plugin: ChatPlugin
+        api_key = resolve_api_key(
+            provider=provider,
+            config=llm_cfg.model_dump(),
+        )
 
-    def chat(self, messages: List[Dict[str, Any]]) -> str:
-        logger.info(f"{CHAT} Running chat with {len(messages)} messages")
-        return self.plugin.chat(messages)
+        logger.info(f"{CHAT} Initializing chat engine for provider '{provider}'")
 
-    # ---------------------------------------------------------
-    # Factory from registry
-    # ---------------------------------------------------------
-    @classmethod
-    def from_name(cls, plugin_name: str, **kwargs) -> "ChatEngine":
-        PluginCls = get_llm_plugin(plugin_name, plugin_type="chat")
-        plugin = PluginCls(**kwargs)
-        return cls(plugin=plugin)
+        plugin_cls = get_chat_plugin(provider)
+        self._plugin = plugin_cls(
+            api_key=api_key,
+            model=llm_cfg.model,
+        )
+
+    def chat(self, messages: Iterable[dict[str, str]]) -> str:
+        """
+        Execute a chat request.
+
+        Parameters
+        ----------
+        messages:
+            OpenAI-style message list:
+            [{"role": "system"|"user"|"assistant", "content": "..."}]
+
+        Returns
+        -------
+        str
+            Assistant response
+        """
+        return self._plugin.chat(messages)

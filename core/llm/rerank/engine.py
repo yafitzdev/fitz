@@ -1,38 +1,64 @@
+# core/llm/rerank/engine.py
+"""
+Rerank engine wiring for Fitz LLMs.
+
+Responsibilities:
+- Read validated config
+- Resolve credentials
+- Instantiate rerank plugin
+- Execute rerank calls
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, List
+from typing import Iterable, List
 
-from core.llm.rerank.base import RerankPlugin
-from core.llm.registry import get_llm_plugin
 from core.logging.logger import get_logger
 from core.logging.tags import RERANK
+
+from core.llm.credentials import resolve_api_key
+from core.llm.rerank.registry import get_rerank_plugin
+from core.config.schema import FitzConfig
 
 logger = get_logger(__name__)
 
 
-@dataclass
 class RerankEngine:
-    """
-    Orchestration layer around a RerankPlugin.
+    def __init__(self, config: FitzConfig):
+        self._config = config
 
-    Responsibilities:
-        - Call plugin.rerank(query, chunks)
-        - Provide factory constructor from_name(...)
-    """
+        llm_cfg = config.llm
+        provider = llm_cfg.provider
 
-    plugin: RerankPlugin
+        api_key = resolve_api_key(
+            provider=provider,
+            config=llm_cfg.model_dump(),
+        )
 
-    def rerank(self, query: str, chunks: List[Any]) -> List[Any]:
-        logger.info(f"{RERANK} Reranking {len(chunks)} chunks")
-        indices = self.plugin.rerank(query, chunks)
-        return [chunks[i] for i in indices]
+        logger.info(f"{RERANK} Initializing rerank engine for provider '{provider}'")
 
-    # ---------------------------------------------------------
-    # Factory from registry
-    # ---------------------------------------------------------
-    @classmethod
-    def from_name(cls, plugin_name: str, **kwargs) -> "RerankEngine":
-        PluginCls = get_llm_plugin(plugin_name, plugin_type="rerank")
-        plugin = PluginCls(**kwargs)
-        return cls(plugin=plugin)
+        plugin_cls = get_rerank_plugin(provider)
+        self._plugin = plugin_cls(
+            api_key=api_key,
+            model=llm_cfg.model,
+        )
+
+    def rerank(
+        self,
+        query: str,
+        documents: Iterable[str],
+        top_k: int | None = None,
+    ) -> List[int]:
+        """
+        Rerank documents for a query.
+
+        Returns
+        -------
+        List[int]
+            Indices of documents sorted by relevance (best first)
+        """
+        return self._plugin.rerank(
+            query=query,
+            documents=documents,
+            top_k=top_k,
+        )
