@@ -1,29 +1,16 @@
+# core/llm/chat/base.py
 from __future__ import annotations
 
-from typing import Protocol, List, Dict, Any
+from typing import Any, Protocol, runtime_checkable
 
 
+@runtime_checkable
 class ChatPlugin(Protocol):
     """
-    Protocol for chat / LLM plugins.
+    Canonical chat plugin contract.
 
-    Any chat implementation (Cohere, OpenAI, etc.) should implement this.
-
-    Plugins typically live in:
-        fitz_rag.llm.chat.plugins.<name>
-
-    and declare a unique:
-        plugin_name: str
+    Provider-specific logic must live in plugin implementations only.
     """
 
-    # plugin_name: str = "unique-name"
-
-    def chat(self, messages: List[Dict[str, Any]]) -> str:
-        """
-        Run a chat completion given a list of messages.
-
-        Messages follow the usual structure:
-            {"role": "user" | "assistant" | "system", "content": "<text>"}
-        and the plugin should return the assistant's response text.
-        """
+    def chat(self, messages: list[dict[str, Any]]) -> str:
         ...
