@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from ingest.ingester.engine import Ingester
 from ingest.chunker.engine import ChunkingEngine
 
 from core.vector_db.writer import VectorDBWriter
-from core.logging import get_logger
-from core.logging_tags import INGEST, CHUNKING, VECTOR_DB, PIPELINE
+from core.logging.logger import get_logger
+from core.logging.tags import INGEST, CHUNKING, VECTOR_DB, PIPELINE
 
 logger = get_logger(__name__)
 

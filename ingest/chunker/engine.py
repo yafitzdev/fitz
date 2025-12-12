@@ -7,8 +7,8 @@ from ingest.chunker.base import BaseChunker
 from ingest.exceptions.config import IngestionConfigError
 from ingest.exceptions.chunking import IngestionChunkingError
 
-from core.logging import get_logger
-from core.logging_tags import CHUNKING
+from core.logging.logger import get_logger
+from core.logging.tags import CHUNKING
 
 logger = get_logger(__name__)
 

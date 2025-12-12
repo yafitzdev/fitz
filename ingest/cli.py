@@ -12,7 +12,6 @@ High-level flow:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List
 
@@ -23,8 +22,8 @@ from ingest.ingester.plugins.base import RawDocument
 
 from rag.core import Chunk
 
-from core.logging import get_logger
-from core.logging_tags import CLI, INGEST, CHUNKING, VECTOR_DB, EMBEDDING
+from core.logging.logger import get_logger
+from core.logging.tags import CLI, INGEST, CHUNKING, VECTOR_DB, EMBEDDING
 
 from core.llm.registry import get_llm_plugin
 from core.llm.embedding.engine import EmbeddingEngine

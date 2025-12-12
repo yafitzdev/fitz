@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List
+from typing import List
 
 from core.llm.embedding.base import EmbeddingPlugin
 from core.llm.registry import get_llm_plugin
-from core.logging import get_logger
-from core.logging_tags import EMBEDDING
+from core.logging.logger import get_logger
+from core.logging.tags import EMBEDDING
 
 logger = get_logger(__name__)
 

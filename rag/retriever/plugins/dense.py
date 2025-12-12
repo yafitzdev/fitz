@@ -12,8 +12,8 @@ from rag.exceptions.retriever import (
 from rag.config.schema import EmbeddingConfig, RetrieverConfig, RerankConfig
 from rag.retriever.base import RetrievalPlugin
 
-from core.logging import get_logger
-from core.logging_tags import RETRIEVER
+from core.logging.logger import get_logger
+from core.logging.tags import RETRIEVER
 
 from core.llm.embedding.engine import EmbeddingEngine
 from core.llm.rerank.engine import RerankEngine

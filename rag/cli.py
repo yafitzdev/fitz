@@ -15,8 +15,8 @@ from typing import Optional
 
 import typer
 
-from core.logging import get_logger
-from core.logging_tags import CLI, PIPELINE
+from core.logging.logger import get_logger
+from core.logging.tags import CLI, PIPELINE
 
 from rag.config.loader import load_config
 from rag.config.schema import RAGConfig

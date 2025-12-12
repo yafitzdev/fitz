@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-from core.logging import get_logger
-from core.logging_tags import VECTOR_DB
+from core.logging.logger import get_logger
+from core.logging.tags import VECTOR_DB
 from core.vector_db.base import VectorDBPlugin, VectorRecord
 from core.vector_db.registry import register_vector_db_plugin
 

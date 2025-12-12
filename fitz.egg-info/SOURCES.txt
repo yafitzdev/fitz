@@ -2,8 +2,6 @@ LICENSE
 README.md
 pyproject.toml
 core/__init__.py
-core/logging.py
-core/logging_tags.py
 core/core/__init__.py
 core/core/chunk.py
 core/llm/__init__.py
@@ -29,6 +27,9 @@ core/llm/rerank/registry.py
 core/llm/rerank/plugins/__init__.py
 core/llm/rerank/plugins/cohere.py
 core/llm/rerank/plugins/dummy.py
+core/logging/__init__.py
+core/logging/logger.py
+core/logging/tags.py
 core/vector_db/__init__.py
 core/vector_db/base.py
 core/vector_db/engine.py

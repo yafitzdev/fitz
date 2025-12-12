@@ -8,8 +8,8 @@ import pkgutil
 from dataclasses import dataclass
 from typing import Any, Dict, Literal, Type
 
-from core.logging import get_logger
-from core.logging_tags import PIPELINE
+from core.logging.logger import get_logger
+from core.logging.tags import PIPELINE
 
 logger = get_logger(__name__)
 

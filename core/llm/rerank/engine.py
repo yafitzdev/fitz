@@ -5,8 +5,8 @@ from typing import Any, List
 
 from core.llm.rerank.base import RerankPlugin
 from core.llm.registry import get_llm_plugin
-from core.logging import get_logger
-from core.logging_tags import RERANK
+from core.logging.logger import get_logger
+from core.logging.tags import RERANK
 
 logger = get_logger(__name__)
 

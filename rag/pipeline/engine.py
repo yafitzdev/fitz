@@ -20,8 +20,8 @@ from rag.generation.rgs import (
 from rag.exceptions.pipeline import PipelineError, RGSGenerationError
 from rag.exceptions.llm import LLMError
 
-from core.logging import get_logger
-from core.logging_tags import PIPELINE, VECTOR_DB
+from core.logging.logger import get_logger
+from core.logging.tags import PIPELINE, VECTOR_DB
 
 logger = get_logger(__name__)
 

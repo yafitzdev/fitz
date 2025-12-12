@@ -5,8 +5,8 @@ from typing import List, Dict, Any
 
 from core.llm.chat.base import ChatPlugin
 from core.llm.registry import get_llm_plugin
-from core.logging import get_logger
-from core.logging_tags import CHAT
+from core.logging.logger import get_logger
+from core.logging.tags import CHAT
 
 logger = get_logger(__name__)
 

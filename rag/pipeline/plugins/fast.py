@@ -6,8 +6,8 @@ from rag.config.schema import RAGConfig, RerankConfig
 from rag.pipeline.engine import RAGPipeline
 from rag.pipeline.base import PipelinePlugin
 
-from core.logging import get_logger
-from core.logging_tags import PIPELINE
+from core.logging.logger import get_logger
+from core.logging.tags import PIPELINE
 
 logger = get_logger(__name__)
 
