@@ -1,7 +1,8 @@
+# rag/context/steps/dedupe.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Dict
+from typing import Any
 
 from .normalize import _normalize_text, _to_chunk_dict, ChunkDict
 
@@ -9,26 +10,24 @@ from .normalize import _normalize_text, _to_chunk_dict, ChunkDict
 @dataclass
 class DedupeStep:
     """
-    Deduplicate chunks based on normalized text.
+    Deduplicate chunks based on normalized content.
+
     The first occurrence is kept.
 
     Returns canonical dict chunks.
     """
 
-    def __call__(self, chunks: List[Any]) -> List[ChunkDict]:
-        seen = set()
-        output: List[ChunkDict] = []
+    def __call__(self, chunks: list[Any]) -> list[ChunkDict]:
+        seen: set[str] = set()
+        output: list[ChunkDict] = []
 
         for ch in chunks:
             c = _to_chunk_dict(ch)
-            text_norm = _normalize_text(c["text"])
-            if text_norm in seen:
+            key = _normalize_text(c["content"])
+            if key in seen:
                 continue
 
-            seen.add(text_norm)
-
-            c_out = dict(c)
-            c_out["text"] = text_norm
-            output.append(c_out)
+            seen.add(key)
+            output.append(c)
 
         return output

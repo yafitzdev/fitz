@@ -1,7 +1,8 @@
+# rag/context/steps/group.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 from .normalize import _to_chunk_dict, ChunkDict
 
@@ -9,37 +10,31 @@ from .normalize import _to_chunk_dict, ChunkDict
 @dataclass
 class GroupByDocumentStep:
     """
-    Group chunks by their 'file' origin.
+    Group chunks by their document id.
 
     Priority:
+    - top-level "doc_id"
+    - attribute .doc_id
+    - metadata["doc_id"]
     - metadata["file"]
-    - top-level "file"
     - "unknown"
 
     Returns:
-        Dict[str, List[ChunkDict]]
-        where the key is the file identifier.
+        dict[str, list[ChunkDict]]
     """
 
-    def __call__(self, chunks: List[Any]) -> Dict[str, List[ChunkDict]]:
-        groups: Dict[str, List[ChunkDict]] = {}
+    def __call__(self, chunks: list[Any]) -> dict[str, list[ChunkDict]]:
+        groups: dict[str, list[ChunkDict]] = {}
 
         for ch in chunks:
             c = _to_chunk_dict(ch)
-            meta = c.get("metadata", {}) or {}
-            file_val = meta.get("file") or getattr(ch, "file", None)
 
-            if file_val is None and isinstance(ch, dict):
-                file_val = ch.get("file")
+            doc_id = c.get("doc_id") or ""
+            if not doc_id:
+                meta = c.get("metadata", {}) or {}
+                doc_id = str(meta.get("doc_id") or meta.get("file") or "unknown")
+                c["doc_id"] = doc_id
 
-            if file_val is None:
-                file_val = "unknown"
-
-            # Ensure metadata["file"] is set for downstream consumers
-            meta = dict(meta)
-            meta.setdefault("file", file_val)
-            c["metadata"] = meta
-
-            groups.setdefault(str(file_val), []).append(c)
+            groups.setdefault(str(doc_id), []).append(c)
 
         return groups

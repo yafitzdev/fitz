@@ -1,7 +1,8 @@
+# rag/context/steps/render_markdown.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any
 
 from .normalize import _to_chunk_dict
 
@@ -9,30 +10,22 @@ from .normalize import _to_chunk_dict
 @dataclass
 class RenderMarkdownStep:
     """
-    Render a list of canonical chunks into a markdown string.
+    Render chunks into a markdown string.
 
     Format per chunk:
 
-        ### Source: <file>
-        <text>
-
-    The 'file' is resolved from metadata["file"] if present,
-    otherwise falls back to "unknown".
+        ### Source: <doc_id>
+        <content>
     """
 
-    def __call__(self, chunks: List[Any]) -> str:
-        final_sections: List[str] = []
+    def __call__(self, chunks: list[Any]) -> str:
+        final_sections: list[str] = []
 
         for ch in chunks:
             c = _to_chunk_dict(ch)
-            meta = c.get("metadata", {}) or {}
-            file_val = meta.get("file") or "unknown"
-            text = c.get("text", "")
+            doc_id = c.get("doc_id") or "unknown"
+            content = c.get("content", "")
 
-            section = (
-                f"### Source: {file_val}\n"
-                f"{text}\n"
-            )
-            final_sections.append(section)
+            final_sections.append(f"### Source: {doc_id}\n{content}\n")
 
         return "\n".join(final_sections)
