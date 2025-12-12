@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 
 [project]
-name = "fitz-stack"
+name = "fitz"
 version = "0.1.0"
 description = "The Fitz modular ecosystem: RAG, ingestion, documentation, mapping, grounding and more."
 readme = "README.md"
@@ -36,15 +36,15 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["fitz_*"]
+include = ["core*", "ingest*", "rag*"]
 exclude = ["tests"]
 
 
 [project.scripts]
-fitz-rag = "fitz_rag.cli:app"
-# fitz-ingest = "fitz_ingest.cli:app"
-# fitz-docs = "fitz_docs.cli:app"
-# fitz-map = "fitz_map.cli:app"
+fitz-rag = "rag.cli:app"
+# fitz-ingest = "ingest.cli:app"
+# fitz-docs = "docs.cli:app"
+# fitz-map = "map.cli:app"
 
 
 [tool.black]

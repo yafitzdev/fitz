@@ -50,7 +50,7 @@ def test_ingestion_pipeline_end_to_end():
     vectordb = DummyVectorDB()
 
     # Writer performs dedupe + embed + write
-    from fitz_stack.vector_db.writer import VectorDBWriter
+    from core.vector_db.writer import VectorDBWriter
     writer = VectorDBWriter(embedder=embedder, vectordb=vectordb, deduplicate=True)
 
     pipeline = IngestionPipeline(

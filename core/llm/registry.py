@@ -1,5 +1,5 @@
 # ============================
-# File: src/fitz_stack/llm/registry.py
+# File: core/llm/registry.py
 # ============================
 from __future__ import annotations
 
@@ -72,9 +72,9 @@ def auto_discover_llm_plugins() -> None:
         return
 
     namespaces = [
-        "fitz_stack.llm.embedding.plugins",
-        "fitz_stack.llm.rerank.plugins",
-        "fitz_stack.llm.chat.plugins",
+        "core.llm.embedding.plugins",
+        "core.llm.rerank.plugins",
+        "core.llm.chat.plugins",
     ]
 
     for ns in namespaces:
@@ -89,7 +89,9 @@ def auto_discover_llm_plugins() -> None:
         for module_info in pkgutil.iter_modules(pkg.__path__, prefix=f"{ns}."):
             try:
                 importlib.import_module(module_info.name)
-                logger.info(f"{PIPELINE} Auto-discovered LLM plugin module '{module_info.name}'")
+                logger.info(
+                    f"{PIPELINE} Auto-discovered LLM plugin module '{module_info.name}'"
+                )
             except Exception as exc:
                 logger.info(
                     f"{PIPELINE} Failed to import LLM plugin module '{module_info.name}': {exc}"

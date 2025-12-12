@@ -3,21 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List
 
-from fitz_rag.core import Chunk
-from fitz_rag.exceptions.retriever import (
+from rag.core import Chunk
+from rag.exceptions.retriever import (
     EmbeddingError,
     RerankError,
     VectorSearchError,
 )
-from fitz_rag.config.schema import EmbeddingConfig, RetrieverConfig, RerankConfig
-from fitz_rag.retriever.base import RetrievalPlugin
+from rag.config.schema import EmbeddingConfig, RetrieverConfig, RerankConfig
+from rag.retriever.base import RetrievalPlugin
 
-from fitz_stack.logging import get_logger
-from fitz_stack.logging_tags import RETRIEVER
+from core.logging import get_logger
+from core.logging_tags import RETRIEVER
 
-from fitz_stack.llm.embedding.engine import EmbeddingEngine
-from fitz_stack.llm.rerank.engine import RerankEngine
-from fitz_stack.llm.registry import get_llm_plugin
+from core.llm.embedding.engine import EmbeddingEngine
+from core.llm.rerank.engine import RerankEngine
+from core.llm.registry import get_llm_plugin
 
 logger = get_logger(__name__)
 
