@@ -17,7 +17,7 @@ from core.llm.registry import get_llm_plugin
 from core.llm.rerank.engine import RerankEngine
 from core.logging.logger import get_logger
 from core.logging.tags import PIPELINE, VECTOR_DB
-from core.vector_db import get_vector_db_plugin
+from core.vector_db.registry import get_vector_db_plugin
 
 logger = get_logger(__name__)
 

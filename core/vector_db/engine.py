@@ -1,33 +1,33 @@
+# core/vector_db/engine.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import Any, List, Type
 
-from core.vector_db.base import VectorDBPlugin, VectorRecord
+from core.llm.registry import get_llm_plugin
+from core.vector_db.base import SearchResult, VectorDBPlugin
 
 
-@dataclass
+@dataclass(slots=True)
 class VectorDBEngine:
-    """
-    Thin orchestration wrapper around a VectorDBPlugin.
-
-    Keeps ingestion code plugin-agnostic and testable.
-    """
-
     plugin: VectorDBPlugin
 
-    def upsert(self, collection: str, records: List[VectorRecord]) -> None:
-        if not records:
-            return
-        self.plugin.upsert(collection, records)
+    @classmethod
+    def from_name(cls, plugin_name: str, **kwargs: Any) -> "VectorDBEngine":
+        PluginCls: Type[Any] = get_llm_plugin(plugin_name=plugin_name, plugin_type="vector_db")
+        plugin = PluginCls(**kwargs)
+        return cls(plugin=plugin)
 
-    def search(self, collection: str, vector: List[float], limit: int):
+    def search(
+        self,
+        collection_name: str,
+        query_vector: list[float],
+        limit: int,
+        with_payload: bool = True,
+    ) -> List[SearchResult] | List[Any]:
         return self.plugin.search(
-            collection_name=collection,
-            query_vector=vector,
+            collection_name=collection_name,
+            query_vector=query_vector,
             limit=limit,
-            with_payload=True,
+            with_payload=with_payload,
         )
-
-    def delete_collection(self, collection: str) -> None:
-        self.plugin.delete_collection(collection)

@@ -1,25 +1,7 @@
-"""
-Vector DB subsystem for fitz-stack.
+# core/vector_db/__init__.py
+from __future__ import annotations
 
-This package exposes:
+from .base import SearchResult, VectorDBPlugin
+from .engine import VectorDBEngine
 
-- VectorRecord, SearchResult: simple data containers
-- VectorDBPlugin: protocol for all vector DB implementations
-- get_vector_db_plugin / register_vector_db_plugin: registry helpers
-"""
-
-from .base import VectorDBPlugin, VectorRecord, SearchResult
-from .registry import (
-    get_vector_db_plugin,
-    register_vector_db_plugin,
-    VectorDBRegistryError,
-)
-
-__all__ = [
-    "VectorDBPlugin",
-    "VectorRecord",
-    "SearchResult",
-    "get_vector_db_plugin",
-    "register_vector_db_plugin",
-    "VectorDBRegistryError",
-]
+__all__ = ["SearchResult", "VectorDBEngine", "VectorDBPlugin"]

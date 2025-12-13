@@ -1,3 +1,6 @@
-from .loader import load_config, get_config
+# rag/config/__init__.py
+from __future__ import annotations
 
-__all__ = ["load_config", "get_config"]
+from .loader import load_config
+
+__all__ = ["load_config"]

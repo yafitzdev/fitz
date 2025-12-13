@@ -1,4 +1,4 @@
-# core/llm/chat/plugins/cohere.py
+# core/llm/plugins/cohere.py
 from __future__ import annotations
 
 from typing import Any
@@ -23,13 +23,12 @@ class CohereChatClient:
         if cohere is None:
             raise RuntimeError("Install cohere: `pip install cohere`")
 
-        self.model = model
-        self.temperature = temperature
-
         key = api_key or os.getenv("COHERE_API_KEY")
         if not key:
             raise ValueError("COHERE_API_KEY is not set for CohereChatClient")
 
+        self.model = model
+        self.temperature = temperature
         self._client = cohere.ClientV2(api_key=key)
 
     def chat(self, messages: list[dict[str, Any]]) -> str:

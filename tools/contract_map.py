@@ -23,15 +23,10 @@ except Exception:  # pragma: no cover
     BaseModel = object  # type: ignore[assignment]
 
 
-# -----------------------------
-# Ensure repo root is importable
-# -----------------------------
-
-
 def _ensure_repo_root_on_syspath() -> Path:
     """
     When running as: python tools/contract_map.py
-    sys.path[0] is tools/, not repo root. Fix that deterministically.
+    sys.path[0] is tools/, not repo root. Fix deterministically.
     """
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
@@ -40,11 +35,6 @@ def _ensure_repo_root_on_syspath() -> Path:
 
 
 REPO_ROOT = _ensure_repo_root_on_syspath()
-
-
-# -----------------------------
-# Data structures
-# -----------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,11 +95,6 @@ class ContractMap:
     models: List[ModelContract] = field(default_factory=list)
     protocols: List[ProtocolContract] = field(default_factory=list)
     registries: List[RegistryContract] = field(default_factory=list)
-
-
-# -----------------------------
-# Formatting helpers
-# -----------------------------
 
 
 def _fmt_type(tp: Any) -> str:
@@ -176,7 +161,6 @@ def _extract_pydantic_fields(model_cls: Type[Any]) -> List[ModelField]:
             )
         return fields
 
-    # fallback: annotations only
     hints = getattr(model_cls, "__annotations__", {}) or {}
     for name in sorted(hints.keys()):
         fields.append(ModelField(name=name, type=_fmt_type(hints[name]), required=True, default=None))
@@ -219,11 +203,6 @@ def _extract_protocol_methods(proto_cls: Type[Any]) -> List[MethodContract]:
     return methods
 
 
-# -----------------------------
-# Safe imports with diagnostics
-# -----------------------------
-
-
 def _safe_import(cm: ContractMap, module: str, *, verbose: bool) -> object | None:
     try:
         return importlib.import_module(module)
@@ -247,11 +226,6 @@ def _maybe_call(cm: ContractMap, module_obj: object, fn_name: str, *, verbose: b
                     traceback=tb,
                 )
             )
-
-
-# -----------------------------
-# Registries
-# -----------------------------
 
 
 def _extract_registry_plugins(
@@ -324,9 +298,6 @@ def _extract_llm_registry(
     *,
     verbose: bool,
 ) -> List[RegistryContract]:
-    """
-    LLM_REGISTRY is nested by plugin_type. Expose each type as its own registry entry.
-    """
     out: List[RegistryContract] = []
     mod = _safe_import(cm, module_name, verbose=verbose)
     if mod is None:
@@ -352,7 +323,6 @@ def _extract_llm_registry(
             )
         )
 
-    # Also expose the raw registry for quick “is it empty” checks
     flat = []
     for bucket in reg.values():
         if isinstance(bucket, dict):
@@ -368,11 +338,6 @@ def _extract_llm_registry(
     return out
 
 
-# -----------------------------
-# Collection
-# -----------------------------
-
-
 def build_contract_map(*, verbose: bool) -> ContractMap:
     cm = ContractMap(
         meta={
@@ -382,7 +347,6 @@ def build_contract_map(*, verbose: bool) -> ContractMap:
         }
     )
 
-    # --- Models ---
     model_modules = [
         "core.config.schema",
         "rag.models.chunk",
@@ -409,7 +373,6 @@ def build_contract_map(*, verbose: bool) -> ContractMap:
                 )
                 continue
 
-            # Non-pydantic dataclass-like contract models (RawDocument)
             if obj.__name__ in {"RawDocument"} and hasattr(obj, "__annotations__"):
                 hints = obj.__annotations__ or {}
                 fields = [ModelField(name=k, type=_fmt_type(hints[k]), required=True) for k in sorted(hints.keys())]
@@ -417,7 +380,6 @@ def build_contract_map(*, verbose: bool) -> ContractMap:
 
     cm.models.sort(key=lambda m: (m.module, m.name))
 
-    # --- Protocols ---
     protocol_modules = [
         "core.llm.chat.base",
         "core.llm.embedding.base",
@@ -446,7 +408,6 @@ def build_contract_map(*, verbose: bool) -> ContractMap:
 
     cm.protocols.sort(key=lambda p: (p.module, p.name))
 
-    # --- Registries ---
     cm.registries.extend(_extract_llm_registry(cm, "core.llm.registry", verbose=verbose))
 
     rr = _extract_registry_plugins(
@@ -486,7 +447,7 @@ def build_contract_map(*, verbose: bool) -> ContractMap:
         cm,
         "rag.pipeline.registry",
         list_fn="available_pipeline_plugins",
-        note="Explicit pipeline plugin registry",
+        note="Lazy discovery over rag.pipeline.plugins.*",
         verbose=verbose,
     )
     if pr:
@@ -494,7 +455,6 @@ def build_contract_map(*, verbose: bool) -> ContractMap:
 
     cm.registries.sort(key=lambda r: (r.module, r.name))
 
-    # --- Health checks (fast, architecture-oriented) ---
     def _registry_nonempty(name_contains: str) -> bool:
         for r in cm.registries:
             if name_contains in r.name and r.plugins:
@@ -541,12 +501,18 @@ def build_contract_map(*, verbose: bool) -> ContractMap:
             )
         )
 
+    if any("cannot import name 'VectorRecord'" in f.error for f in cm.import_failures):
+        cm.health.append(
+            HealthIssue(
+                level="ERROR",
+                message=(
+                    "Some modules still import VectorRecord from core.vector_db.base. "
+                    "Canonical name is SearchResult. Replace VectorRecord imports/usages."
+                ),
+            )
+        )
+
     return cm
-
-
-# -----------------------------
-# Rendering
-# -----------------------------
 
 
 def render_markdown(cm: ContractMap, *, verbose: bool) -> str:
@@ -619,11 +585,6 @@ def render_markdown(cm: ContractMap, *, verbose: bool) -> str:
 def render_json(cm: ContractMap) -> str:
     payload = asdict(cm)
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
-
-
-# -----------------------------
-# CLI
-# -----------------------------
 
 
 def main(argv: Optional[List[str]] = None) -> int:

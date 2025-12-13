@@ -48,5 +48,4 @@ class RAGConfig(BaseModel):
     rerank: RerankConfig = Field(default_factory=RerankConfig)
     rgs: RGSConfig = Field(default_factory=RGSConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
-
     model_config = ConfigDict(extra="forbid")
