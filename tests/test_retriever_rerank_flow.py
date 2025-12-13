@@ -1,6 +1,4 @@
-import pytest
 from rag.retrieval.plugins.dense import DenseRetrievalPlugin
-from rag.models.chunk import Chunk
 
 
 class MockEmbedder:

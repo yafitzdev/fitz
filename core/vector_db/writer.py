@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any, Dict, Iterable
 
-from rag.models.chunk import Chunk
+from core.models.chunk import Chunk
 
 from core.logging.logger import get_logger
 from core.logging.tags import VECTOR_DB

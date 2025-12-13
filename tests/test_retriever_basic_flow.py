@@ -1,8 +1,8 @@
 import pytest
 from rag.retrieval.plugins.dense import RAGRetriever
 from rag.config.schema import EmbeddingConfig, RetrieverConfig, RerankConfig
-from rag.exceptions.retriever import EmbeddingError, VectorSearchError, RerankError
-from rag.models.chunk import Chunk
+from rag.exceptions.retriever import EmbeddingError
+from core.models.chunk import Chunk
 
 
 class DummyEmbedder:

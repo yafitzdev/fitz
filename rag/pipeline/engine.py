@@ -6,7 +6,7 @@ from typing import Optional
 from rag.config.loader import load_config
 from rag.config.schema import RAGConfig
 from rag.context.pipeline import ContextPipeline
-from rag.exceptions.llm import LLMError
+from core.exceptions.llm import LLMError
 from rag.exceptions.pipeline import PipelineError, RGSGenerationError
 from rag.generation.rgs import RGS, RGSAnswer, RGSConfig as RGSRuntimeConfig
 from rag.retrieval.engine import RetrieverEngine

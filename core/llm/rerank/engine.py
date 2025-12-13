@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import List
 
-from rag.models.chunk import Chunk
+from core.models.chunk import Chunk
 
 from core.llm.rerank.base import RerankPlugin
 

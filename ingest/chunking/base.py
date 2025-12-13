@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Protocol, runtime_checkable
 
-from rag.models.chunk import Chunk
+from core.models.chunk import Chunk
 
 
 @runtime_checkable
@@ -14,7 +14,7 @@ class ChunkerPlugin(Protocol):
 
     Contract:
     - Input: raw text + base metadata
-    - Output: list[Chunk] (canonical rag.models.chunk.Chunk)
+    - Output: list[Chunk] (canonical core.models.chunk.Chunk)
 
     Plugins live in:
         ingest.chunking.plugins.<name>

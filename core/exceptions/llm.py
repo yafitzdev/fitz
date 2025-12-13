@@ -1,4 +1,4 @@
-from .base import FitzRAGError
+from core.exceptions.base import FitzRAGError
 
 class LLMError(FitzRAGError):
     """General LLM call failure."""
@@ -7,4 +7,7 @@ class LLMError(FitzRAGError):
 
 class LLMResponseError(LLMError):
     """LLM returned malformed / unusable output."""
+    pass
+
+class EmbeddingError(RuntimeError):
     pass

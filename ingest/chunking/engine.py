@@ -10,7 +10,7 @@ from ingest.config.schema import ChunkerConfig
 from ingest.exceptions.chunking import IngestionChunkingError
 from ingest.exceptions.config import IngestionConfigError
 
-from rag.models.chunk import Chunk
+from core.models.chunk import Chunk
 
 from core.logging.logger import get_logger
 from core.logging.tags import CHUNKING

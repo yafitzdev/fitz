@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from rag.exceptions.pipeline import PipelineError
-from rag.models.chunk import Chunk
+from core.models.chunk import Chunk
 
 from .steps.normalize import NormalizeStep, ChunkDict
 from .steps.dedupe import DedupeStep

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 
-from rag.exceptions.retriever import EmbeddingError
+from core.exceptions.llm import EmbeddingError
 
 try:
     import cohere

@@ -3,7 +3,7 @@
 import pytest
 
 from rag.pipeline.engine import RAGPipeline
-from rag.exceptions.llm import LLMError
+from core.exceptions.llm import LLMError
 from rag.generation.rgs import RGS, RGSConfig
 
 class DummyRetriever:

@@ -4,7 +4,6 @@ class RetrieverError(FitzRAGError):
     """General retrieval failure."""
     pass
 
-
 class EmbeddingError(RetrieverError):
     """Embedding model failed (e.g., API failure, invalid input)."""
     pass

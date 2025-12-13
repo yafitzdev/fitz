@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from rag.models.chunk import Chunk
+from core.models.chunk import Chunk
 
 
 @runtime_checkable

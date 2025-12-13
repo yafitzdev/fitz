@@ -8,7 +8,7 @@ try:
 except ImportError:
     cohere = None  # type: ignore
 
-from rag.models.chunk import Chunk
+from core.models.chunk import Chunk
 
 
 class CohereRerankClient:

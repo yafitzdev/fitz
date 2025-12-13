@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rag.retrieval.plugins.dense import DenseRetrievalPlugin
-from rag.models.chunk import Chunk
+from core.models.chunk import Chunk
 
 from rag.config.schema import EmbeddingConfig, RetrieverConfig, RerankConfig
 

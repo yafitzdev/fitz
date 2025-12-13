@@ -4,8 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List, Protocol, runtime_checkable
 
-from rag.models.chunk import Chunk
-from rag.exceptions.retriever import EmbeddingError, RerankError, VectorSearchError
+from core.models.chunk import Chunk
+from core.exceptions.llm import EmbeddingError
+from rag.exceptions.retriever import RerankError, VectorSearchError
 from rag.retrieval.base import RetrievalPlugin
 
 from core.logging.logger import get_logger
