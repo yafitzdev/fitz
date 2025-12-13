@@ -442,17 +442,123 @@ def _build_layout_tree(root: Path, *, max_depth: int | None, excludes: set[str])
 
     return tree
 
+def _classes_for_file(path: Path) -> list[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
 
-def _render_layout_tree(tree: Dict[str, Any], prefix: str = "") -> List[str]:
+    return sorted(
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+    )
+
+def _get_classes_for_file(path: Path) -> list[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    return sorted(
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+    )
+
+def _render_layout_tree(
+    tree: Dict[str, Any],
+    prefix: str = "",
+    *,
+    root: Path,
+) -> List[str]:
     lines: List[str] = []
-    entries = sorted(tree.items(), key=lambda kv: (0 if kv[0].endswith("/") else 1, kv[0]))
+
+    entries = sorted(
+        tree.items(),
+        key=lambda kv: (0 if kv[0].endswith("/") else 1, kv[0]),
+    )
+
+    for idx, (name, child) in enumerate(entries):
+        last = idx == len(entries) - 1
+        connector = "└── " if last else "├── "
+
+        label = name
+
+        # 🔹 annotate .py files inline
+        if not name.endswith("/") and name.endswith(".py"):
+            file_path = root / name
+            classes = _get_classes_for_file(file_path)
+
+            if classes:
+                if len(classes) == 1:
+                    label = f"{name} (class: {classes[0]})"
+                else:
+                    label = f"{name} (classes: {', '.join(classes)})"
+
+        lines.append(f"{prefix}{connector}{label}")
+
+        if isinstance(child, dict) and child:
+            extension = "    " if last else "│   "
+            lines.extend(
+                _render_layout_tree(
+                    child,
+                    prefix=prefix + extension,
+                    root=root / name.rstrip("/"),
+                )
+            )
+
+    return lines
+
+def _extract_classes_from_file(path: Path) -> list[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    return sorted(
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+    )
+
+
+def _build_class_layout_tree(root: Path, *, excludes: set[str]) -> dict[str, Any]:
+    tree: dict[str, Any] = {}
+
+    for p in _iter_python_files(root, excludes=excludes):
+        rel = p.relative_to(root)
+
+        node = tree
+        for part in rel.parts[:-1]:
+            node = node.setdefault(f"{part}/", {})  # type: ignore[assignment]
+
+        classes = _extract_classes_from_file(p)
+        if classes:
+            node[p.name] = classes
+
+    return tree
+
+
+def _render_class_layout_tree(tree: dict[str, Any], prefix: str = "") -> list[str]:
+    lines: list[str] = []
+    entries = sorted(tree.items(), key=lambda kv: kv[0])
+
     for idx, (name, child) in enumerate(entries):
         last = idx == len(entries) - 1
         connector = "└── " if last else "├── "
         lines.append(f"{prefix}{connector}{name}")
-        if isinstance(child, dict) and child:
-            extension = "    " if last else "│   "
-            lines.extend(_render_layout_tree(child, prefix=prefix + extension))
+
+        extension = "    " if last else "│   "
+
+        if isinstance(child, dict):
+            lines.extend(_render_class_layout_tree(child, prefix + extension))
+        elif isinstance(child, list):
+            for i, cls in enumerate(child):
+                cls_last = i == len(child) - 1
+                cls_connector = "└── " if cls_last else "├── "
+                lines.append(f"{prefix}{extension}{cls_connector}{cls}")
+
     return lines
 
 
@@ -1100,7 +1206,7 @@ def render_markdown(cm: ContractMap, *, verbose: bool, layout_depth: int | None)
     layout_tree = _build_layout_tree(REPO_ROOT, max_depth=layout_depth, excludes=_DEFAULT_LAYOUT_EXCLUDES)
     lines.append("```")
     lines.append(f"{REPO_ROOT.name}/")
-    lines.extend(_render_layout_tree(layout_tree, prefix=""))
+    lines.extend(_render_layout_tree(layout_tree, prefix="", root=REPO_ROOT))
     lines.append("```")
     lines.append("")
 
