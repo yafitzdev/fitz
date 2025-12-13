@@ -36,6 +36,20 @@ def _ensure_repo_root_on_syspath() -> Path:
 
 REPO_ROOT = _ensure_repo_root_on_syspath()
 
+_DEFAULT_LAYOUT_EXCLUDES = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".idea",
+    ".vscode",
+    "dist",
+    "build",
+    "node_modules",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class ImportFailure:
@@ -338,6 +352,67 @@ def _extract_llm_registry(
     return out
 
 
+def _should_exclude_path(rel: Path, excludes: set[str]) -> bool:
+    # exclude any path that contains an excluded segment
+    return any(part in excludes for part in rel.parts)
+
+
+def _build_layout_tree(
+    root: Path,
+    *,
+    max_depth: int | None,
+    excludes: set[str],
+) -> Dict[str, Any]:
+    """
+    Build a nested dict tree:
+      { "dir/": { ... }, "file.py": None, ... }
+    """
+    tree: Dict[str, Any] = {}
+
+    for p in root.rglob("*"):
+        rel = p.relative_to(root)
+
+        if _should_exclude_path(rel, excludes):
+            continue
+
+        if max_depth is not None and len(rel.parts) > max_depth:
+            continue
+
+        node = tree
+        parts = rel.parts
+        for i, part in enumerate(parts):
+            is_last = i == len(parts) - 1
+            if is_last:
+                if p.is_dir():
+                    key = f"{part}/"
+                    node = node.setdefault(key, {})  # type: ignore[assignment]
+                else:
+                    node.setdefault(part, None)
+            else:
+                key = f"{part}/"
+                node = node.setdefault(key, {})  # type: ignore[assignment]
+
+    return tree
+
+
+def _render_layout_tree(tree: Dict[str, Any], prefix: str = "") -> List[str]:
+    """
+    Render nested dict tree to a deterministic ASCII tree.
+    """
+    lines: List[str] = []
+
+    entries = sorted(tree.items(), key=lambda kv: (0 if kv[0].endswith("/") else 1, kv[0]))
+    for idx, (name, child) in enumerate(entries):
+        last = idx == len(entries) - 1
+        connector = "└── " if last else "├── "
+        lines.append(f"{prefix}{connector}{name}")
+        if isinstance(child, dict) and child:
+            extension = "    " if last else "│   "
+            lines.extend(_render_layout_tree(child, prefix=prefix + extension))
+
+    return lines
+
+
 def build_contract_map(*, verbose: bool) -> ContractMap:
     cm = ContractMap(
         meta={
@@ -515,13 +590,31 @@ def build_contract_map(*, verbose: bool) -> ContractMap:
     return cm
 
 
-def render_markdown(cm: ContractMap, *, verbose: bool) -> str:
+def render_markdown(
+    cm: ContractMap,
+    *,
+    verbose: bool,
+    layout_depth: int | None,
+) -> str:
     lines: List[str] = []
     lines.append("# Contract Map")
     lines.append("")
     lines.append("## Meta")
     for k in sorted(cm.meta.keys()):
         lines.append(f"- `{k}`: `{cm.meta[k]}`")
+    lines.append("")
+
+    # Project layout is intentionally near the top (big context boost for LLMs).
+    lines.append("## Project Layout")
+    lines.append(f"- root: `{REPO_ROOT}`")
+    lines.append(f"- excludes: `{sorted(_DEFAULT_LAYOUT_EXCLUDES)}`")
+    lines.append(f"- max_depth: `{layout_depth if layout_depth is not None else 'unlimited'}`")
+    lines.append("")
+    layout_tree = _build_layout_tree(REPO_ROOT, max_depth=layout_depth, excludes=_DEFAULT_LAYOUT_EXCLUDES)
+    lines.append("```")
+    lines.append(f"{REPO_ROOT.name}/")
+    lines.extend(_render_layout_tree(layout_tree, prefix=""))
+    lines.append("```")
     lines.append("")
 
     if cm.health:
@@ -601,6 +694,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Exit non-zero if any ERROR health issues exist",
     )
+    parser.add_argument(
+        "--layout-depth",
+        type=int,
+        default=None,
+        help="Max depth for Project Layout tree (default: unlimited).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -609,7 +708,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.format == "json":
         text = render_json(cm)
     else:
-        text = render_markdown(cm, verbose=args.verbose)
+        text = render_markdown(cm, verbose=args.verbose, layout_depth=args.layout_depth)
 
     if args.out:
         out_path = Path(args.out)

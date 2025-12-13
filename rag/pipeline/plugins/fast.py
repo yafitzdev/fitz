@@ -1,11 +1,11 @@
 # rag/pipeline/plugins/fast.py
 from __future__ import annotations
 
-from dataclasses import dataclass
 import copy
+from dataclasses import dataclass
 
 from rag.config.schema import RAGConfig
-from rag.pipeline.base import PipelinePlugin, Pipeline
+from rag.pipeline.base import Pipeline, PipelinePlugin
 from rag.pipeline.engine import RAGPipeline
 
 from core.logging.logger import get_logger
@@ -34,6 +34,8 @@ class FastPipelinePlugin(PipelinePlugin):
     - mutate config (disable rerank)
     - delegate to RAGPipeline.from_config()
     """
+
+    plugin_name: str = "fast"
 
     def build(self, cfg: RAGConfig) -> Pipeline:
         logger.info(f"{PIPELINE} Building Fast pipeline (rerank disabled)")

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict
 
 from rag.config.schema import RAGConfig
-from rag.pipeline.base import PipelinePlugin, Pipeline
+from rag.pipeline.base import Pipeline, PipelinePlugin
 from rag.pipeline.engine import RAGPipeline
 
 from core.logging.logger import get_logger
@@ -22,6 +22,8 @@ class DebugPipelinePlugin(PipelinePlugin):
     Wraps a RAGPipeline in a DebugRunner that exposes an `explain(query)` method.
     DebugRunner MUST use the same wiring (RAGPipeline.from_config()).
     """
+
+    plugin_name: str = "debug"
 
     def build(self, cfg: RAGConfig) -> Pipeline:
         logger.info(f"{PIPELINE} Building Debug pipeline")

@@ -1,3 +1,6 @@
+# rag/pipeline/plugins/__init__.py
+from __future__ import annotations
+
 from .debug import DebugPipelinePlugin
 from .easy import EasyPipelinePlugin
 from .fast import FastPipelinePlugin
