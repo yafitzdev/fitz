@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Protocol, Sequence, Union, runtime_checkable
 
 from rag.exceptions.pipeline import PipelineError, RGSGenerationError
-from rag.generation.prompting import PromptAssembler, PromptConfig, PromptSlots
+from rag.generation.prompting import PromptAssembler, PromptConfig, PromptProfile, PromptSlots
 
 
 @runtime_checkable
@@ -57,7 +57,11 @@ class RGSPrompt:
 class RGS:
     def __init__(self, config: RGSConfig | None = None) -> None:
         self.config: RGSConfig = config or RGSConfig()
-        self._assembler = PromptAssembler(defaults=PromptSlots(), overrides=self.config.prompt_config)
+        self._assembler = PromptAssembler(
+            defaults=PromptSlots(),
+            overrides=self.config.prompt_config,
+            profile=PromptProfile.RAG_USER,
+        )
 
     def build_prompt(self, query: str, chunks: Sequence[ChunkInput]) -> RGSPrompt:
         try:

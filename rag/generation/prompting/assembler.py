@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from rag.generation.prompting.profiles import PromptProfile
+
 
 @dataclass(frozen=True, slots=True)
 class PromptConfig:
@@ -29,8 +31,10 @@ class PromptConfig:
 class PromptAssembler:
     defaults: Any  # PromptSlots
     overrides: PromptConfig | None = None
+    profile: PromptProfile = PromptProfile.RAG_USER
 
     def slot(self, name: str) -> str:
+        # NOTE: profile is currently a no-op (RAG_USER only)
         if self.overrides is None:
             return str(getattr(self.defaults, name))
 
