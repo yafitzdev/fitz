@@ -6,9 +6,10 @@ Retrieval-Guided Synthesis (RGS)
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence, Union, runtime_checkable
+from typing import Any, Dict, List, Mapping, Protocol, Sequence, Union, runtime_checkable
 
 from rag.exceptions.pipeline import PipelineError, RGSGenerationError
+from rag.generation.prompting import PromptAssembler, PromptConfig, PromptSlots
 
 
 @runtime_checkable
@@ -30,6 +31,8 @@ class RGSConfig:
     max_answer_chars: int | None = None
     include_query_in_context: bool = True
     source_label_prefix: str = "S"
+
+    prompt_config: PromptConfig | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +57,7 @@ class RGSPrompt:
 class RGS:
     def __init__(self, config: RGSConfig | None = None) -> None:
         self.config: RGSConfig = config or RGSConfig()
+        self._assembler = PromptAssembler(defaults=PromptSlots(), overrides=self.config.prompt_config)
 
     def build_prompt(self, query: str, chunks: Sequence[ChunkInput]) -> RGSPrompt:
         try:
@@ -84,42 +88,20 @@ class RGS:
         return list(chunks[: self.config.max_chunks])
 
     def _build_system_prompt(self) -> str:
-        parts = [
-            "You are a retrieval-grounded assistant.",
-            "You must answer ONLY using the provided context snippets.",
-        ]
-
-        if self.config.strict_grounding:
-            parts.append(
-                'If the answer is not contained in the context, say "I don\'t know based on the provided information."'
-            )
-
-        if self.config.enable_citations:
-            prefix = self.config.source_label_prefix
-            parts.append(f"Use citations like [{prefix}1], [{prefix}2].")
-
-        if self.config.answer_style:
-            parts.append(f"Preferred style: {self.config.answer_style}.")
-
-        if self.config.max_answer_chars:
-            parts.append(f"Limit your answer to ~{self.config.max_answer_chars} characters.")
-
-        return "\n".join(parts)
+        return self._assembler.build_system(
+            strict_grounding=self.config.strict_grounding,
+            enable_citations=self.config.enable_citations,
+            source_label_prefix=self.config.source_label_prefix,
+            answer_style=self.config.answer_style,
+            max_answer_chars=self.config.max_answer_chars,
+        )
 
     def _build_user_prompt(self, query: str, chunks: Sequence[ChunkInput]) -> str:
-        if not chunks:
-            return (
-                "No context snippets available.\n\n"
-                f"User question:\n{query}\n"
-                "Explain that you cannot answer based on missing context."
-            )
-
+        context_items: list[str] = []
         prefix = self.config.source_label_prefix
-        context_lines: List[str] = []
 
         for idx, chunk in enumerate(chunks, start=1):
             label = f"[{prefix}{idx}]" if self.config.enable_citations else ""
-
             content = self._get_chunk_content(chunk).strip()
             metadata = self._get_chunk_metadata(chunk)
 
@@ -130,25 +112,20 @@ class RGS:
                 header = label
 
             if header:
-                context_lines.append(header)
-            context_lines.append(content)
-            context_lines.append("")
+                item = self._assembler.format_context_item(header=header, content=content)
+            else:
+                item = self._assembler.format_context_item(header="", content=content).lstrip("\n")
 
-        context_block = "\n".join(context_lines).rstrip()
+            context_items.append(item)
 
-        user_parts = [
-            "You are given the following context snippets:",
-            "",
-            context_block,
-            "",
-        ]
-
-        if self.config.include_query_in_context:
-            user_parts.extend(["User question:", query.strip()])
-        else:
-            user_parts.append("Answer the question using ONLY the context above.")
-
-        return "\n".join(user_parts)
+        return self._assembler.build_user(
+            query=query,
+            context_items=context_items,
+            include_query_in_context=self.config.include_query_in_context,
+            user_instructions=self.config.prompt_config.user_instructions
+            if self.config.prompt_config is not None
+            else None,
+        )
 
     @staticmethod
     def _get_chunk_id(chunk: ChunkInput, fallback_index: int) -> str:
