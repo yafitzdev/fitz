@@ -15,6 +15,7 @@ This CLI stays strictly on *core* contracts:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterable, Any
 
 import typer
 
@@ -35,22 +36,27 @@ app = typer.Typer(help="Ingestion CLI for fitz-ingest")
 logger = get_logger(__name__)
 
 
-def _raw_to_chunks(raw_docs) -> list[Chunk]:
+def _raw_to_chunks(raw_docs: Iterable[Any]) -> list[Chunk]:
     chunks: list[Chunk] = []
 
     for i, doc in enumerate(raw_docs):
         meta = dict(getattr(doc, "metadata", None) or {})
         path = getattr(doc, "path", None)
         if path:
-            meta.setdefault("path", path)
+            meta.setdefault("path", str(path))
 
-        # Canonical Chunk requires: id, doc_id, chunk_index, content, metadata
+        # Be robust across RawDocument variants: some use .content, some .text
+        content = getattr(doc, "content", None)
+        if content is None:
+            content = getattr(doc, "text", None)
+        content = content or ""
+
         chunks.append(
             Chunk(
                 id=f"{meta.get('path', 'doc')}:{i}",
                 doc_id=str(meta.get("path") or meta.get("doc_id") or "unknown"),
                 chunk_index=i,
-                content=getattr(doc, "content", "") or "",
+                content=content,
                 metadata=meta,
             )
         )
