@@ -1,2 +1,3 @@
 [console_scripts]
+fitz-ingest = ingest.cli:app
 fitz-rag = rag.cli:app

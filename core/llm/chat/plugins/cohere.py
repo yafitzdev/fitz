@@ -1,4 +1,4 @@
-# core/llm/plugins/cohere.py
+# core/llm/chat/plugins/cohere.py
 from __future__ import annotations
 
 from typing import Any

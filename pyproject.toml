@@ -19,14 +19,12 @@ dependencies = [
     "qdrant-client>=1.7",
     "httpx>=0.24",
     "typing-extensions>=4.7",
+    "pydantic>=2.0"
 ]
 
 
 [project.optional-dependencies]
-docs = ["mkdocs", "mkdocs-material"]
 ingest = ["pdfminer.six", "python-docx"]
-map = ["networkx"]
-ground = ["scikit-learn"]
 
 
 [tool.setuptools.packages.find]
@@ -36,9 +34,7 @@ exclude = ["tests*"]
 
 [project.scripts]
 fitz-rag = "rag.cli:app"
-# fitz-ingest = "ingest.cli:app"
-# fitz-docs = "docs.cli:app"
-# fitz-map = "map.cli:app"
+fitz-ingest = "ingest.cli:app"
 
 
 [tool.black]

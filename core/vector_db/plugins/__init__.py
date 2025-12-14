@@ -1,5 +1,5 @@
 """
-Built-in vector DB plugins for fitz-stack.
+Built-in vector DB plugins for fitz.
 
 Currently available:
 

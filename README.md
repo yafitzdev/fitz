@@ -1,6 +1,253 @@
-# fitz-stack
+# fitz
 
-A modular AI ecosystem containing:
+> A modular, production-grade RAG framework born from real-world AI pipelines at scale.
 
-- fitz_rag → retrieval + multi-source RAG engine
-- fitz_ingest → ingestion, chunking, embedding & vector DB pipelines
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/yourusername/fitz/releases)
+
+---
+
+## Why fitz?
+
+Most RAG frameworks suffer from abstraction overload, opaque chains, and kitchen-sink design. **fitz** takes a different approach:
+
+- **Protocol-based contracts** — Clear interfaces, swap implementations freely
+- **Explicit wiring** — See exactly what's happening in your pipeline
+- **Layered architecture** — Clean dependency flow, no circular imports
+- **Config-driven** — Engines built from config, no hidden magic
+- **Production-tested** — Born from real AI pipelines, not toy examples
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        CLI Layer                            │
+│              (rag/cli.py, ingest/cli.py)                    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                    Pipeline Layer                           │
+│  RAGPipeline → Retriever → Context → RGS → LLM → Answer     │
+│  IngestionPipeline → Ingest → Chunk → Embed → VectorDB      │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                    Plugin Layer                             │
+│   chat/embedding/rerank     │   retrieval plugins           │
+│   vector_db plugins         │   chunking plugins            │
+│   ingestion plugins         │   pipeline plugins            │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                     Core Layer                              │
+│  Registry • Config • Models • Logging • Credentials         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Installation
+
+```bash
+pip install fitz
+```
+
+Or install from source:
+
+```bash
+git clone https://github.com/yafitzdev/fitz.git
+cd fitz
+pip install -e .
+```
+
+### Optional dependencies
+
+```bash
+pip install fitz[ingest]   # PDF, DOCX parsing
+```
+
+---
+
+## Quick Start
+
+### 1. Configure your environment
+
+```bash
+export COHERE_API_KEY="your-api-key"
+# or
+export OPENAI_API_KEY="your-api-key"
+```
+
+### 2. Ingest documents
+
+```bash
+fitz-ingest run ./my-documents --collection my_knowledge --ingest-plugin local
+```
+
+### 3. Query with RAG
+
+```python
+from rag.pipeline.engine import RAGPipeline
+from rag.generation.rgs import RGS, RGSConfig
+
+# Using the default config
+pipeline = create_pipeline_from_yaml()
+
+# Ask a question
+answer = pipeline.run("What are the key concepts in my documents?")
+
+print(answer.answer)
+for source in answer.sources:
+    print(f"  - {source.source_id}: {source.metadata}")
+```
+
+### 4. CLI query
+
+```bash
+fitz-rag query "What is the main topic?" --config my_config.yaml
+```
+
+---
+
+## Core Concepts
+
+### Plugins
+
+Everything in fitz is a plugin. Plugins implement protocols (interfaces) and are auto-discovered at runtime.
+
+```python
+from core.llm.chat.base import ChatPlugin
+
+class MyChatPlugin:
+    plugin_name = "my_chat"
+    plugin_type = "chat"
+    
+    def chat(self, messages: list[dict]) -> str:
+        # Your implementation
+        return "response"
+```
+
+### Available Plugin Types
+
+| Type | Protocol | Method | Description |
+|------|----------|--------|-------------|
+| `chat` | `ChatPlugin` | `chat()` | LLM chat completions |
+| `embedding` | `EmbeddingPlugin` | `embed()` | Text embeddings |
+| `rerank` | `RerankPlugin` | `rerank()` | Result reranking |
+| `vector_db` | `VectorDBPlugin` | `search()` | Vector storage/search |
+| `retrieval` | `RetrievalPlugin` | `retrieve()` | Retrieval strategies |
+| `chunking` | `ChunkerPlugin` | `chunk_text()` | Text chunking |
+| `ingestion` | `IngestPlugin` | `ingest()` | Document ingestion |
+
+### Configuration
+
+fitz uses YAML configuration:
+
+```yaml
+# rag_config.yaml
+vector_db:
+  plugin_name: qdrant
+  kwargs:
+    host: localhost
+    port: 6333
+
+llm:
+  plugin_name: cohere
+  kwargs:
+    model: command-r-plus
+
+embedding:
+  plugin_name: cohere
+  kwargs:
+    model: embed-english-v3.0
+
+retriever:
+  plugin_name: dense
+  collection: my_knowledge
+  top_k: 5
+
+rgs:
+  enable_citations: true
+  strict_grounding: true
+  max_chunks: 8
+```
+
+### RGS (Retrieval-Guided Synthesis)
+
+The RGS module handles prompt construction and answer synthesis with built-in citation support:
+
+```python
+from rag.generation.rgs import RGS, RGSConfig
+
+rgs = RGS(RGSConfig(
+    enable_citations=True,
+    strict_grounding=True,
+    max_chunks=8,
+    source_label_prefix="S"
+))
+
+prompt = rgs.build_prompt(query, chunks)
+# prompt.system → system message with grounding instructions
+# prompt.user   → user message with context and query
+```
+
+---
+
+## Project Structure
+
+```
+fitz/
+├── core/                 # Foundation layer
+│   ├── llm/              # LLM abstractions (chat, embedding, rerank)
+│   ├── vector_db/        # Vector DB abstractions
+│   ├── models/           # Canonical data models (Chunk, Document)
+│   ├── config/           # Configuration loading
+│   └── logging/          # Unified logging
+├── rag/                  # RAG pipeline
+│   ├── pipeline/         # Pipeline orchestration
+│   ├── retrieval/        # Retrieval strategies
+│   ├── context/          # Context processing steps
+│   ├── generation/       # RGS prompt building
+│   └── config/           # RAG configuration
+├── ingest/               # Ingestion pipeline
+│   ├── ingestion/        # Document ingestion
+│   ├── chunking/         # Text chunking
+│   ├── validation/       # Document validation
+│   └── pipeline/         # Ingestion orchestration
+└── tools/                # Development tools
+    └── contract_map/     # Codebase analysis
+```
+
+---
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+```bash
+# Setup development environment
+git clone https://github.com/yafitzdev/fitz.git
+cd fitz
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Run contract map analysis
+python -m tools.contract_map
+```
+
+---
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+## Acknowledgments
+
+Built with lessons learned from production AI pipelines. Special thanks to the open-source community for the foundational tools that make this possible.
