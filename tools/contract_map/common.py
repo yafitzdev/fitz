@@ -36,21 +36,33 @@ def _ensure_repo_root_on_syspath() -> Path:
 REPO_ROOT = _ensure_repo_root_on_syspath()
 
 
-def discover_toplevel_packages(repo_root: Path) -> set[str]:
+def _discover_fitz_subpackages() -> set[str]:
     """
-    Discover top-level Python packages by scanning for directories
-    containing an __init__.py directly under repo_root.
+    Discover logical top-level packages inside fitz/.
+
+    Example:
+        fitz/
+          core/
+          rag/
+          ingest/
+          retrieval/
+
+    -> {"core", "rag", "ingest", "retrieval"}
     """
-    pkgs: set[str] = set()
-    for p in repo_root.iterdir():
-        if not p.is_dir():
-            continue
-        if (p / "__init__.py").exists():
-            pkgs.add(p.name)
-    return pkgs
+    fitz_dir = REPO_ROOT / "fitz"
+    if not fitz_dir.is_dir():
+        return set()
+
+    out: set[str] = set()
+    for p in fitz_dir.iterdir():
+        if p.is_dir() and (p / "__init__.py").exists():
+            out.add(p.name)
+    return out
 
 
-TOPLEVEL_PACKAGES = discover_toplevel_packages(REPO_ROOT)
+FITZ_SUBPACKAGES = _discover_fitz_subpackages()
+
+TOPLEVEL_PACKAGES = {"tools"} | FITZ_SUBPACKAGES
 
 
 DEFAULT_LAYOUT_EXCLUDES = {
@@ -221,7 +233,11 @@ def fmt_type(tp: Any) -> str:
 def is_pydantic_model(obj: Any) -> bool:
     """Check if an object is a Pydantic model class."""
     try:
-        return isinstance(obj, type) and issubclass(obj, BaseModel) and obj is not BaseModel
+        return (
+            isinstance(obj, type)
+            and issubclass(obj, BaseModel)
+            and obj is not BaseModel
+        )
     except Exception:
         return False
 
@@ -271,15 +287,26 @@ def module_name_from_path(path: Path) -> str | None:
     if not parts:
         return None
 
-    if parts[0] not in TOPLEVEL_PACKAGES:
-        return None
+    # tools.*
+    if parts[0] == "tools":
+        return ".".join(parts)
 
-    return ".".join(parts)
+    # fitz.<subpkg>.*
+    if parts[0] == "fitz" and len(parts) > 1 and parts[1] in FITZ_SUBPACKAGES:
+        return ".".join(parts)
+
+    return None
 
 
 def toplevel(pkg: str | None) -> str | None:
     """Extract the top-level package name."""
     if not pkg:
         return None
+
+    if pkg.startswith("fitz."):
+        parts = pkg.split(".")
+        if len(parts) >= 2:
+            return parts[1]
+
     top = pkg.split(".", 1)[0]
     return top if top in TOPLEVEL_PACKAGES else None
