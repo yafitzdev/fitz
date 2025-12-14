@@ -86,7 +86,7 @@ def list_loader_modules() -> List[str]:
     import importlib
 
     out: List[str] = []
-    for pkg in ("core.config", "fitz.rag.config", "fitz.ingest.config"):
+    for pkg in ("core.config", "fitz.pipeline.config", "fitz.ingest.config"):
         mod = f"{pkg}.loader"
         try:
             importlib.import_module(mod)
@@ -124,7 +124,7 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
         ("fitz.core.llm.rerank.plugins", "RerankPlugin"),
         ("fitz.core.vector_db.plugins", "VectorDBPlugin"),
         ("fitz.retrieval.plugins", "RetrievalPlugin"),
-        ("fitz.rag.pipeline.plugins", "PipelinePlugin"),
+        ("fitz.pipeline.pipeline.plugins", "PipelinePlugin"),
         ("fitz.ingest.chunking.plugins", "ChunkerPlugin"),
         ("fitz.ingest.ingestion.plugins", "IngestPlugin"),
     ]
@@ -142,7 +142,7 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
         "RerankPlugin": ("fitz.core.llm.rerank", 'plugin_type="rerank"', "plugin_type='rerank'"),
         "VectorDBPlugin": ("core.vector_db", 'plugin_type="vector_db"', "plugin_type='vector_db'"),
         "RetrievalPlugin": ("fitz.retrieval.registry", "get_retriever_plugin(", "RetrieverEngine.from_name("),
-        "PipelinePlugin": ("fitz.rag.pipeline", "get_pipeline_plugin(", "available_pipeline_plugins("),
+        "PipelinePlugin": ("fitz.pipeline.pipeline", "get_pipeline_plugin(", "available_pipeline_plugins("),
         "ChunkerPlugin": ("fitz.ingest.chunking", "get_chunker_plugin(", "ChunkingEngine"),
         "IngestPlugin": ("fitz.ingest.ingestion", "get_ingest_plugin(", "IngestionEngine"),
     }

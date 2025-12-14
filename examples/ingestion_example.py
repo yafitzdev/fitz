@@ -10,7 +10,7 @@ This example demonstrates the document ingestion flow:
 Run with:
     # First create some test documents
     mkdir -p test_docs
-    echo "RAG systems combine retrieval with generation." > test_docs/rag.txt
+    echo "RAG systems combine retrieval with generation." > test_docs/pipeline.txt
     echo "Vector databases enable semantic search." > test_docs/vectors.txt
 
     python examples/ingestion_example.py
@@ -29,7 +29,7 @@ def main():
     if not test_dir.exists():
         print("Creating test documents...")
         test_dir.mkdir(exist_ok=True)
-        (test_dir / "fitz.rag.txt").write_text(
+        (test_dir / "fitz.pipeline.txt").write_text(
             "RAG (Retrieval-Augmented Generation) systems combine information retrieval "
             "with language model generation. They first retrieve relevant documents from "
             "a knowledge base, then use those documents as context for generating responses. "

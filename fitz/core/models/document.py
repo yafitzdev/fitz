@@ -1,4 +1,4 @@
-# rag/models/document.py
+# pipeline/models/document.py
 from __future__ import annotations
 
 from typing import Any, Dict

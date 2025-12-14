@@ -89,8 +89,8 @@ fitz-ingest run ./my-documents --collection my_knowledge --ingest-plugin local
 ### 3. Query with RAG
 
 ```python
-from fitz.rag.pipeline.engine import RAGPipeline
-from fitz.rag.generation.rgs import RGS, RGSConfig
+from fitz.pipeline.pipeline.engine import RAGPipeline
+from fitz.pipeline.generation.rgs import RGS, RGSConfig
 
 # Using the default config
 pipeline = create_pipeline_from_yaml()
@@ -106,7 +106,7 @@ for source in answer.sources:
 ### 4. CLI query
 
 ```bash
-fitz-rag query "What is the main topic?" --config my_config.yaml
+fitz-pipeline query "What is the main topic?" --config my_config.yaml
 ```
 
 ---
@@ -179,7 +179,7 @@ rgs:
 The RGS module handles prompt construction and answer synthesis with built-in citation support:
 
 ```python
-from fitz.rag.generation.rgs import RGS, RGSConfig
+from fitz.pipeline.generation.rgs import RGS, RGSConfig
 
 rgs = RGS(RGSConfig(
     enable_citations=True,

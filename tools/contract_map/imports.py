@@ -77,10 +77,10 @@ def build_import_graph(root: Path, *, excludes: set[str]) -> ImportGraph:
 
     violations: List[str] = []
     for e in edges:
-        if e.src == "core" and e.dst in {"rag", "ingest"}:
+        if e.src == "core" and e.dst in {"pipeline", "ingest"}:
             violations.append(f"VIOLATION: core imports {e.dst} ({e.count}x)")
-        if e.src == "ingest" and e.dst == "rag":
-            violations.append(f"VIOLATION: ingest imports rag ({e.count}x)")
+        if e.src == "ingest" and e.dst == "pipeline":
+            violations.append(f"VIOLATION: ingest imports pipeline ({e.count}x)")
 
     return ImportGraph(edges=edges, violations=sorted(violations))
 

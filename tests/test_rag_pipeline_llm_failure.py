@@ -3,8 +3,8 @@
 import pytest
 
 from fitz.core.exceptions.llm import LLMError
-from fitz.rag.generation.rgs import RGS, RGSConfig
-from fitz.rag.pipeline.engine import RAGPipeline
+from fitz.pipeline.generation.rgs import RGS, RGSConfig
+from fitz.pipeline.pipeline.engine import RAGPipeline
 
 
 class DummyRetriever:

@@ -34,8 +34,8 @@ from fitz.core.vector_db.writer import VectorDBWriter
 from fitz.ingest.chunking.plugins.simple import SimpleChunker
 from fitz.ingest.ingestion.registry import get_ingest_plugin
 from fitz.ingest.validation.documents import ValidationConfig, validate
-from fitz.rag.context.pipeline import ContextPipeline
-from fitz.rag.generation.rgs import RGS, RGSConfig
+from fitz.pipeline.context.pipeline import ContextPipeline
+from fitz.pipeline.generation.rgs import RGS, RGSConfig
 from fitz.retrieval.plugins.dense import DenseRetrievalPlugin
 
 COLLECTION_NAME = "fitz_demo"

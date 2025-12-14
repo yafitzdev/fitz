@@ -1,0 +1,39 @@
+# pipeline/config/default.yaml
+vector_db:
+  plugin_name: qdrant
+  kwargs:
+    host: localhost
+    port: 6333
+
+llm:
+  plugin_name: cohere
+  kwargs:
+    api_key: ""
+    model: ""
+    temperature: 0.2
+
+embedding:
+  plugin_name: cohere
+  kwargs:
+    model: embed-english-v3.0
+
+retriever:
+  plugin_name: dense
+  collection: default
+  top_k: 5
+
+rerank:
+  enabled: false
+  plugin_name: cohere
+  kwargs:
+    model: ""
+
+rgs:
+  enable_citations: true
+  strict_grounding: true
+  max_chunks: 8
+  include_query_in_context: true
+  source_label_prefix: S
+
+logging:
+  level: INFO

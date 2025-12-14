@@ -1,10 +1,10 @@
-# rag/retrieval/plugins/__init__.py
+# pipeline/retrieval/plugins/__init__.py
 """
 Retrieval plugin implementations live in this package.
 
 Important:
 - Keep this module import-free to avoid circular imports.
-- Discovery/registration is owned by `rag.retrieval.registry`.
+- Discovery/registration is owned by `pipeline.retrieval.registry`.
 """
 
 __all__: list[str] = []

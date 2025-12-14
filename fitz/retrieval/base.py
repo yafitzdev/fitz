@@ -1,4 +1,4 @@
-# rag/retrieval/base.py
+# pipeline/retrieval/base.py
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ class RetrievalPlugin(Protocol):
     must implement this interface.
 
     Plugins typically live in:
-        rag.retrieval.plugins.<name>
+        pipeline.retrieval.plugins.<name>
     and declare a unique `plugin_name` attribute.
     """
 

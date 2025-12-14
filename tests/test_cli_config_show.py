@@ -17,13 +17,13 @@ import typer
 
 from fitz.core.logging.logger import get_logger
 from fitz.core.logging.tags import CLI, PIPELINE
-from fitz.rag.config.loader import load_config
-from fitz.rag.config.schema import RAGConfig
-from fitz.rag.pipeline.engine import create_pipeline_from_yaml
+from fitz.pipeline.config.loader import load_config
+from fitz.pipeline.config.schema import RAGConfig
+from fitz.pipeline.pipeline.engine import create_pipeline_from_yaml
 
 logger = get_logger(__name__)
 
-app = typer.Typer(help="fitz-rag CLI")
+app = typer.Typer(help="fitz-pipeline CLI")
 
 config_app = typer.Typer(help="Configuration commands")
 app.add_typer(config_app, name="config")

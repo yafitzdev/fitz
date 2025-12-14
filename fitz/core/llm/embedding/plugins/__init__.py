@@ -1,5 +1,5 @@
 """
-Built-in embedding plugins for fitz-rag.
+Built-in embedding plugins for fitz-pipeline.
 
 Each plugin module should define:
     - a class with:

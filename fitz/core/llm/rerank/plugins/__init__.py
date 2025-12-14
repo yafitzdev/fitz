@@ -1,5 +1,5 @@
 """
-Built-in reranking plugins for fitz-rag.
+Built-in reranking plugins for fitz-pipeline.
 
 Each plugin must define:
     - class attribute plugin_name: str

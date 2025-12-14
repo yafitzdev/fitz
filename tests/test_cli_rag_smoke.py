@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
 
-from fitz.rag.cli import app
+from fitz.pipeline.cli import app
 
 
 def test_rag_cli_config_show_smoke() -> None:

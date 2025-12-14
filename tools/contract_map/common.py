@@ -43,11 +43,11 @@ def _discover_fitz_subpackages() -> set[str]:
     Example:
         fitz/
           core/
-          rag/
+          pipeline/
           ingest/
           retrieval/
 
-    -> {"core", "rag", "ingest", "retrieval"}
+    -> {"core", "pipeline", "ingest", "retrieval"}
     """
     fitz_dir = REPO_ROOT / "fitz"
     if not fitz_dir.is_dir():

@@ -174,9 +174,9 @@ def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
 
     pr = extract_pipeline_registry(
         cm,
-        "fitz.rag.pipeline.registry",
+        "fitz.pipeline.pipeline.registry",
         list_fn="available_pipeline_plugins",
-        note="Lazy discovery over rag.pipeline.plugins.*",
+        note="Lazy discovery over pipeline.pipeline.plugins.*",
         verbose=verbose,
     )
     if pr:

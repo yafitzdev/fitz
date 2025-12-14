@@ -1,4 +1,4 @@
-# rag/retrieval/registry.py
+# pipeline/retrieval/registry.py
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Dict, Iterable, Type
 
 from fitz.core.logging.logger import get_logger
 from fitz.core.logging.tags import RETRIEVER
-from fitz.rag.retrieval import RetrievalPlugin
+from fitz.pipeline.retrieval import RetrievalPlugin
 
 logger = get_logger(__name__)
 
@@ -39,7 +39,7 @@ def _auto_discover() -> None:
     Deterministic plugin discovery.
 
     Architecture contract:
-    - `rag.retrieval.plugins.__init__` must be import-free (no registry imports).
+    - `pipeline.retrieval.plugins.__init__` must be import-free (no registry imports).
     - Registry owns discovery and registration.
     - Plugin classes expose `plugin_name: str` and implement `retrieve(...)`.
     """

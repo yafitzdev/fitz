@@ -1,5 +1,5 @@
 # tests/test_rgs_chunk_id_fallback.py
-from fitz.rag.generation.rgs import RGS, RGSConfig
+from fitz.pipeline.generation.rgs import RGS, RGSConfig
 
 
 def test_rgs_chunk_id_fallback_generates_chunk_ids():

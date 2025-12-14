@@ -55,7 +55,7 @@ def plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "fitz.rag.pipeline.plugins":
+    if namespace == "fitz.pipeline.pipeline.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -177,7 +177,7 @@ def scan_all_discoveries() -> List[DiscoveryReport]:
         scan_discovery("fitz.core.llm.rerank.plugins", "LLM rerank plugins (Option A discovery)"),
         scan_discovery("fitz.core.vector_db.plugins", "Vector DB plugins (Option A discovery)"),
         scan_discovery("fitz.retrieval.plugins", "RAG retriever plugins (Option A discovery)"),
-        scan_discovery("fitz.rag.pipeline.plugins", "RAG pipeline plugins (Option A discovery)"),
+        scan_discovery("fitz.pipeline.pipeline.plugins", "RAG pipeline plugins (Option A discovery)"),
         scan_discovery("fitz.ingest.chunking.plugins", "Ingest chunking plugins (Option A discovery)"),
         scan_discovery("fitz.ingest.ingestion.plugins", "Ingest ingestion plugins (Option A discovery)"),
     ]

@@ -144,7 +144,7 @@ Open an issue with:
    isort .
    
    # Type check
-   mypy core rag ingest
+   mypy core pipeline ingest
    
    # Run tests
    pytest
@@ -248,7 +248,7 @@ Open an issue with:
 pytest
 
 # With coverage
-pytest --cov=core --cov=rag --cov=ingest
+pytest --cov=core --cov=pipeline --cov=ingest
 
 # Specific module
 pytest tests/test_retriever_*.py

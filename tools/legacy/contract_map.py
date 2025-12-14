@@ -52,7 +52,7 @@ _DEFAULT_LAYOUT_EXCLUDES = {
     "node_modules",
 }
 
-_TOPLEVEL_PACKAGES = ("core", "rag", "ingest", "tools")
+_TOPLEVEL_PACKAGES = ("core", "pipeline", "ingest", "tools")
 
 
 @dataclass(slots=True)
@@ -657,10 +657,10 @@ def _build_import_graph(root: Path, *, excludes: set[str]) -> ImportGraph:
 
     violations: List[str] = []
     for e in edges:
-        if e.src == "core" and e.dst in {"rag", "ingest"}:
+        if e.src == "core" and e.dst in {"pipeline", "ingest"}:
             violations.append(f"VIOLATION: core imports {e.dst} ({e.count}x)")
-        if e.src == "ingest" and e.dst == "rag":
-            violations.append(f"VIOLATION: ingest imports rag ({e.count}x)")
+        if e.src == "ingest" and e.dst == "pipeline":
+            violations.append(f"VIOLATION: ingest imports pipeline ({e.count}x)")
 
     return ImportGraph(edges=edges, violations=sorted(violations))
 
@@ -720,7 +720,7 @@ def _find_default_yamls(root: Path, *, excludes: set[str]) -> List[str]:
 
 def _list_loader_modules() -> List[str]:
     out: List[str] = []
-    for pkg in ("core.config", "fitz.rag.config", "fitz.ingest.config"):
+    for pkg in ("core.config", "fitz.pipeline.config", "fitz.ingest.config"):
         mod = f"{pkg}.loader"
         try:
             importlib.import_module(mod)
@@ -779,7 +779,7 @@ def _plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "fitz.rag.retrieval.plugins":
+    if namespace == "fitz.pipeline.retrieval.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -791,7 +791,7 @@ def _plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "fitz.rag.pipeline.plugins":
+    if namespace == "fitz.pipeline.pipeline.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -915,8 +915,8 @@ def _compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
         ("fitz.core.llm.embedding.plugins", "EmbeddingPlugin"),
         ("fitz.core.llm.rerank.plugins", "RerankPlugin"),
         ("fitz.core.vector_db.plugins", "VectorDBPlugin"),
-        ("fitz.rag.retrieval.plugins", "RetrievalPlugin"),
-        ("fitz.rag.pipeline.plugins", "PipelinePlugin"),
+        ("fitz.pipeline.retrieval.plugins", "RetrievalPlugin"),
+        ("fitz.pipeline.pipeline.plugins", "PipelinePlugin"),
         ("fitz.ingest.chunking.plugins", "ChunkerPlugin"),
         ("fitz.ingest.ingestion.plugins", "IngestPlugin"),
     ]
@@ -933,8 +933,8 @@ def _compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
         ),
         "RerankPlugin": ("fitz.core.llm.rerank", 'plugin_type="rerank"', "plugin_type='rerank'"),
         "VectorDBPlugin": ("core.vector_db", 'plugin_type="vector_db"', "plugin_type='vector_db'"),
-        "RetrievalPlugin": ("fitz.rag.retrieval", "get_retriever_plugin(", "RetrieverEngine.from_name("),
-        "PipelinePlugin": ("fitz.rag.pipeline", "get_pipeline_plugin(", "available_pipeline_plugins("),
+        "RetrievalPlugin": ("fitz.pipeline.retrieval", "get_retriever_plugin(", "RetrieverEngine.from_name("),
+        "PipelinePlugin": ("fitz.pipeline.pipeline", "get_pipeline_plugin(", "available_pipeline_plugins("),
         "ChunkerPlugin": ("fitz.ingest.chunking", "get_chunker_plugin(", "ChunkingEngine"),
         "IngestPlugin": ("fitz.ingest.ingestion", "get_ingest_plugin(", "IngestionEngine"),
     }
@@ -1047,7 +1047,7 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
         "core.config.schema",
         "core.models.chunk",
         "core.models.document",
-        "fitz.rag.config.schema",
+        "fitz.pipeline.config.schema",
         "fitz.ingest.config.schema",
         "fitz.ingest.ingestion.base",
     ]
@@ -1084,8 +1084,8 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
         "fitz.core.llm.embedding.base",
         "fitz.core.llm.rerank.base",
         "fitz.core.vector_db.base",
-        "fitz.rag.retrieval.base",
-        "fitz.rag.pipeline.base",
+        "fitz.pipeline.retrieval.base",
+        "fitz.pipeline.pipeline.base",
         "fitz.ingest.chunking.base",
         "fitz.ingest.ingestion.base",
     ]
@@ -1111,10 +1111,10 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
 
     rr = _extract_registry_plugins(
         cm,
-        "fitz.rag.retrieval.registry",
+        "fitz.pipeline.retrieval.registry",
         dict_attr="RETRIEVER_REGISTRY",
         discover_fns=("_auto_discover",),
-        note="Lazy discovery over rag.retrieval.plugins.*",
+        note="Lazy discovery over pipeline.retrieval.plugins.*",
         verbose=verbose,
     )
     if rr:
@@ -1144,9 +1144,9 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
 
     pr = _extract_pipeline_registry(
         cm,
-        "fitz.rag.pipeline.registry",
+        "fitz.pipeline.pipeline.registry",
         list_fn="available_pipeline_plugins",
-        note="Lazy discovery over rag.pipeline.plugins.*",
+        note="Lazy discovery over pipeline.pipeline.plugins.*",
         verbose=verbose,
     )
     if pr:
@@ -1172,7 +1172,7 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
         cm.health.append(
             HealthIssue(
                 level="ERROR",
-                message="Retriever registry appears empty. Likely cause: rag.retrieval.plugins package missing/empty or import failures.",
+                message="Retriever registry appears empty. Likely cause: pipeline.retrieval.plugins package missing/empty or import failures.",
             )
         )
 
@@ -1192,8 +1192,8 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
         _scan_discovery("fitz.core.llm.embedding.plugins", "LLM embedding plugins (Option A discovery)"),
         _scan_discovery("fitz.core.llm.rerank.plugins", "LLM rerank plugins (Option A discovery)"),
         _scan_discovery("fitz.core.vector_db.plugins", "Vector DB plugins (Option A discovery)"),
-        _scan_discovery("fitz.rag.retrieval.plugins", "RAG retriever plugins (Option A discovery)"),
-        _scan_discovery("fitz.rag.pipeline.plugins", "RAG pipeline plugins (Option A discovery)"),
+        _scan_discovery("fitz.pipeline.retrieval.plugins", "RAG retriever plugins (Option A discovery)"),
+        _scan_discovery("fitz.pipeline.pipeline.plugins", "RAG pipeline plugins (Option A discovery)"),
         _scan_discovery("fitz.ingest.chunking.plugins", "Ingest chunking plugins (Option A discovery)"),
         _scan_discovery(
             "fitz.ingest.ingestion.plugins", "Ingest ingestion plugins (Option A discovery)"

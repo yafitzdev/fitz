@@ -58,14 +58,17 @@ Use the examples as templates. Key patterns:
 
 ```python
 # Config-driven pipeline creation
-from fitz.rag.pipeline.engine import create_pipeline_from_yaml
+from fitz.pipeline.pipeline.engine import create_pipeline_from_yaml
+
 pipeline = create_pipeline_from_yaml("my_config.yaml")
 
 # Direct component usage
-from fitz.rag.generation.rgs import RGS, RGSConfig
+from fitz.pipeline.generation.rgs import RGS, RGSConfig
+
 rgs = RGS(RGSConfig(enable_citations=True))
 
 # Plugin selection via registry
 from fitz.core.llm import get_llm_plugin
+
 ChatPlugin = get_llm_plugin(plugin_name="cohere", plugin_type="chat")
 ```

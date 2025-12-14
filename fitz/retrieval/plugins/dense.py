@@ -1,4 +1,4 @@
-# rag/retrieval/plugins/dense.py
+# pipeline/retrieval/plugins/dense.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,8 +10,8 @@ from fitz.core.llm.rerank.engine import RerankEngine
 from fitz.core.logging.logger import get_logger
 from fitz.core.logging.tags import RETRIEVER
 from fitz.core.models.chunk import Chunk
-from fitz.rag.exceptions.retriever import RerankError, VectorSearchError
-from fitz.rag.retrieval import RetrievalPlugin
+from fitz.pipeline.exceptions.retriever import RerankError, VectorSearchError
+from fitz.pipeline.retrieval import RetrievalPlugin
 
 logger = get_logger(__name__)
 

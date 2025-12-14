@@ -1,4 +1,4 @@
-# rag/models/chunk.py
+# pipeline/models/chunk.py
 from __future__ import annotations
 
 from typing import Any, Dict
