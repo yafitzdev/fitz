@@ -34,8 +34,8 @@ exclude = ["tests*"]
 
 
 [project.scripts]
-fitz-rag = "rag.cli:app"
-fitz-ingest = "ingest.cli:app"
+fitz-rag = "fitz.rag.cli:app"
+fitz-ingest = "fitz.ingest.cli:app"
 
 
 [tool.black]

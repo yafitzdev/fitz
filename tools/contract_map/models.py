@@ -107,9 +107,9 @@ def extract_models(cm: ContractMap, *, verbose: bool) -> None:
         "core.config.schema",
         "core.models.chunk",
         "core.models.document",
-        "rag.config.schema",
-        "ingest.config.schema",
-        "ingest.ingestion.base",
+        "fitz.rag.config.schema",
+        "fitz.ingest.config.schema",
+        "fitz.ingest.ingestion.base",
     ]
 
     for mod_name in model_modules:
@@ -145,14 +145,14 @@ def extract_models(cm: ContractMap, *, verbose: bool) -> None:
 def extract_protocols(cm: ContractMap, *, verbose: bool) -> None:
     """Extract all protocols from the codebase."""
     protocol_modules = [
-        "core.llm.chat.base",
-        "core.llm.embedding.base",
-        "core.llm.rerank.base",
+        "fitz.core.llm.chat.base",
+        "fitz.core.llm.embedding.base",
+        "fitz.core.llm.rerank.base",
         "core.vector_db.base",
-        "rag.retrieval.base",
-        "rag.pipeline.base",
-        "ingest.chunking.base",
-        "ingest.ingestion.base",
+        "fitz.rag.retrieval.base",
+        "fitz.rag.pipeline.base",
+        "fitz.ingest.chunking.base",
+        "fitz.ingest.ingestion.base",
     ]
 
     for mod_name in protocol_modules:

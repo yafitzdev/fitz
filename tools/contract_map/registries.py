@@ -137,11 +137,11 @@ def extract_llm_registry(
 
 def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
     """Extract all registries from the codebase."""
-    cm.registries.extend(extract_llm_registry(cm, "core.llm.registry", verbose=verbose))
+    cm.registries.extend(extract_llm_registry(cm, "fitz.core.llm.registry", verbose=verbose))
 
     rr = extract_registry_plugins(
         cm,
-        "rag.retrieval.registry",
+        "fitz.rag.retrieval.registry",
         dict_attr="RETRIEVER_REGISTRY",
         discover_fns=("_auto_discover",),
         note="Lazy discovery over rag.retrieval.plugins.*",
@@ -152,7 +152,7 @@ def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
 
     cr = extract_registry_plugins(
         cm,
-        "ingest.chunking.registry",
+        "fitz.ingest.chunking.registry",
         dict_attr="CHUNKER_REGISTRY",
         discover_fns=("_auto_discover",),
         note="Lazy discovery over ingest.chunking.plugins.*",
@@ -163,7 +163,7 @@ def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
 
     ir = extract_registry_plugins(
         cm,
-        "ingest.ingestion.registry",
+        "fitz.ingest.ingestion.registry",
         dict_attr="REGISTRY",
         discover_fns=("_auto_discover",),
         note="Lazy discovery over ingest.ingestion.plugins.*",
@@ -174,7 +174,7 @@ def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
 
     pr = extract_pipeline_registry(
         cm,
-        "rag.pipeline.registry",
+        "fitz.rag.pipeline.registry",
         list_fn="available_pipeline_plugins",
         note="Lazy discovery over rag.pipeline.plugins.*",
         verbose=verbose,

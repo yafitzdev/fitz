@@ -720,7 +720,7 @@ def _find_default_yamls(root: Path, *, excludes: set[str]) -> List[str]:
 
 def _list_loader_modules() -> List[str]:
     out: List[str] = []
-    for pkg in ("core.config", "rag.config", "ingest.config"):
+    for pkg in ("core.config", "fitz.rag.config", "fitz.ingest.config"):
         mod = f"{pkg}.loader"
         try:
             importlib.import_module(mod)
@@ -747,7 +747,7 @@ def _find_load_callsites(root: Path, *, excludes: set[str]) -> List[str]:
 
 
 def _plugin_predicate_for_namespace(namespace: str):
-    if namespace.startswith("core.llm."):
+    if namespace.startswith("fitz.core.llm."):
         expected = namespace.split(".", 3)[2]  # chat|embedding|rerank
         method = {"chat": "chat", "embedding": "embed", "rerank": "rerank"}.get(expected)
 
@@ -779,7 +779,7 @@ def _plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "rag.retrieval.plugins":
+    if namespace == "fitz.rag.retrieval.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -791,7 +791,7 @@ def _plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "rag.pipeline.plugins":
+    if namespace == "fitz.rag.pipeline.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -803,7 +803,7 @@ def _plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "ingest.chunking.plugins":
+    if namespace == "fitz.ingest.chunking.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -815,7 +815,7 @@ def _plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "ingest.ingestion.plugins":
+    if namespace == "fitz.ingest.ingestion.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -911,32 +911,32 @@ def _compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
     consumers: Dict[str, List[str]] = {}
 
     expected = [
-        ("core.llm.chat.plugins", "ChatPlugin"),
-        ("core.llm.embedding.plugins", "EmbeddingPlugin"),
-        ("core.llm.rerank.plugins", "RerankPlugin"),
+        ("fitz.core.llm.chat.plugins", "ChatPlugin"),
+        ("fitz.core.llm.embedding.plugins", "EmbeddingPlugin"),
+        ("fitz.core.llm.rerank.plugins", "RerankPlugin"),
         ("core.vector_db.plugins", "VectorDBPlugin"),
-        ("rag.retrieval.plugins", "RetrievalPlugin"),
-        ("rag.pipeline.plugins", "PipelinePlugin"),
-        ("ingest.chunking.plugins", "ChunkerPlugin"),
-        ("ingest.ingestion.plugins", "IngestPlugin"),
+        ("fitz.rag.retrieval.plugins", "RetrievalPlugin"),
+        ("fitz.rag.pipeline.plugins", "PipelinePlugin"),
+        ("fitz.ingest.chunking.plugins", "ChunkerPlugin"),
+        ("fitz.ingest.ingestion.plugins", "IngestPlugin"),
     ]
     for ns, iface in expected:
         rep = _scan_discovery(ns, note="hotspot scan")
         impl[iface] = rep.plugins_found
 
     patterns = {
-        "ChatPlugin": ("core.llm.chat", 'plugin_type="chat"', "plugin_type='chat'"),
+        "ChatPlugin": ("fitz.core.llm.chat", 'plugin_type="chat"', "plugin_type='chat'"),
         "EmbeddingPlugin": (
-            "core.llm.embedding",
+            "fitz.core.llm.embedding",
             'plugin_type="embedding"',
             "plugin_type='embedding'",
         ),
-        "RerankPlugin": ("core.llm.rerank", 'plugin_type="rerank"', "plugin_type='rerank'"),
+        "RerankPlugin": ("fitz.core.llm.rerank", 'plugin_type="rerank"', "plugin_type='rerank'"),
         "VectorDBPlugin": ("core.vector_db", 'plugin_type="vector_db"', "plugin_type='vector_db'"),
-        "RetrievalPlugin": ("rag.retrieval", "get_retriever_plugin(", "RetrieverEngine.from_name("),
-        "PipelinePlugin": ("rag.pipeline", "get_pipeline_plugin(", "available_pipeline_plugins("),
-        "ChunkerPlugin": ("ingest.chunking", "get_chunker_plugin(", "ChunkingEngine"),
-        "IngestPlugin": ("ingest.ingestion", "get_ingest_plugin(", "IngestionEngine"),
+        "RetrievalPlugin": ("fitz.rag.retrieval", "get_retriever_plugin(", "RetrieverEngine.from_name("),
+        "PipelinePlugin": ("fitz.rag.pipeline", "get_pipeline_plugin(", "available_pipeline_plugins("),
+        "ChunkerPlugin": ("fitz.ingest.chunking", "get_chunker_plugin(", "ChunkingEngine"),
+        "IngestPlugin": ("fitz.ingest.ingestion", "get_ingest_plugin(", "IngestionEngine"),
     }
 
     for p in _iter_python_files(root, excludes=excludes):
@@ -1047,9 +1047,9 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
         "core.config.schema",
         "core.models.chunk",
         "core.models.document",
-        "rag.config.schema",
-        "ingest.config.schema",
-        "ingest.ingestion.base",
+        "fitz.rag.config.schema",
+        "fitz.ingest.config.schema",
+        "fitz.ingest.ingestion.base",
     ]
     for mod_name in model_modules:
         mod = _safe_import(cm, mod_name, verbose=verbose)
@@ -1080,14 +1080,14 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
     cm.models.sort(key=lambda m: (m.module, m.name))
 
     protocol_modules = [
-        "core.llm.chat.base",
-        "core.llm.embedding.base",
-        "core.llm.rerank.base",
+        "fitz.core.llm.chat.base",
+        "fitz.core.llm.embedding.base",
+        "fitz.core.llm.rerank.base",
         "core.vector_db.base",
-        "rag.retrieval.base",
-        "rag.pipeline.base",
-        "ingest.chunking.base",
-        "ingest.ingestion.base",
+        "fitz.rag.retrieval.base",
+        "fitz.rag.pipeline.base",
+        "fitz.ingest.chunking.base",
+        "fitz.ingest.ingestion.base",
     ]
     for mod_name in protocol_modules:
         mod = _safe_import(cm, mod_name, verbose=verbose)
@@ -1107,11 +1107,11 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
 
     cm.protocols.sort(key=lambda p: (p.module, p.name))
 
-    cm.registries.extend(_extract_llm_registry(cm, "core.llm.registry", verbose=verbose))
+    cm.registries.extend(_extract_llm_registry(cm, "fitz.core.llm.registry", verbose=verbose))
 
     rr = _extract_registry_plugins(
         cm,
-        "rag.retrieval.registry",
+        "fitz.rag.retrieval.registry",
         dict_attr="RETRIEVER_REGISTRY",
         discover_fns=("_auto_discover",),
         note="Lazy discovery over rag.retrieval.plugins.*",
@@ -1122,7 +1122,7 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
 
     cr = _extract_registry_plugins(
         cm,
-        "ingest.chunking.registry",
+        "fitz.ingest.chunking.registry",
         dict_attr="CHUNKER_REGISTRY",
         discover_fns=("_auto_discover",),
         note="Lazy discovery over ingest.chunking.plugins.*",
@@ -1133,7 +1133,7 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
 
     ir = _extract_registry_plugins(
         cm,
-        "ingest.ingestion.registry",
+        "fitz.ingest.ingestion.registry",
         dict_attr="REGISTRY",
         discover_fns=("_auto_discover",),
         note="Lazy discovery over ingest.ingestion.plugins.*",
@@ -1144,7 +1144,7 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
 
     pr = _extract_pipeline_registry(
         cm,
-        "rag.pipeline.registry",
+        "fitz.rag.pipeline.registry",
         list_fn="available_pipeline_plugins",
         note="Lazy discovery over rag.pipeline.plugins.*",
         verbose=verbose,
@@ -1188,15 +1188,15 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
     cm.entrypoints = _discover_entrypoints(REPO_ROOT, excludes=_DEFAULT_LAYOUT_EXCLUDES)
 
     cm.discovery = [
-        _scan_discovery("core.llm.chat.plugins", "LLM chat plugins (Option A discovery)"),
-        _scan_discovery("core.llm.embedding.plugins", "LLM embedding plugins (Option A discovery)"),
-        _scan_discovery("core.llm.rerank.plugins", "LLM rerank plugins (Option A discovery)"),
+        _scan_discovery("fitz.core.llm.chat.plugins", "LLM chat plugins (Option A discovery)"),
+        _scan_discovery("fitz.core.llm.embedding.plugins", "LLM embedding plugins (Option A discovery)"),
+        _scan_discovery("fitz.core.llm.rerank.plugins", "LLM rerank plugins (Option A discovery)"),
         _scan_discovery("core.vector_db.plugins", "Vector DB plugins (Option A discovery)"),
-        _scan_discovery("rag.retrieval.plugins", "RAG retriever plugins (Option A discovery)"),
-        _scan_discovery("rag.pipeline.plugins", "RAG pipeline plugins (Option A discovery)"),
-        _scan_discovery("ingest.chunking.plugins", "Ingest chunking plugins (Option A discovery)"),
+        _scan_discovery("fitz.rag.retrieval.plugins", "RAG retriever plugins (Option A discovery)"),
+        _scan_discovery("fitz.rag.pipeline.plugins", "RAG pipeline plugins (Option A discovery)"),
+        _scan_discovery("fitz.ingest.chunking.plugins", "Ingest chunking plugins (Option A discovery)"),
         _scan_discovery(
-            "ingest.ingestion.plugins", "Ingest ingestion plugins (Option A discovery)"
+            "fitz.ingest.ingestion.plugins", "Ingest ingestion plugins (Option A discovery)"
         ),
     ]
 

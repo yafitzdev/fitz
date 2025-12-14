@@ -11,7 +11,7 @@ from .common import DiscoveryReport
 
 def plugin_predicate_for_namespace(namespace: str):
     """Return predicates to identify plugins in a namespace."""
-    if namespace.startswith("core.llm."):
+    if namespace.startswith("fitz.core.llm."):
         expected = namespace.split(".", 3)[2]  # chat|embedding|rerank
         method = {"chat": "chat", "embedding": "embed", "rerank": "rerank"}.get(expected)
 
@@ -43,7 +43,7 @@ def plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "rag.retrieval.plugins":
+    if namespace == "fitz.rag.retrieval.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -55,7 +55,7 @@ def plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "rag.pipeline.plugins":
+    if namespace == "fitz.rag.pipeline.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -67,7 +67,7 @@ def plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "ingest.chunking.plugins":
+    if namespace == "fitz.ingest.chunking.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -79,7 +79,7 @@ def plugin_predicate_for_namespace(namespace: str):
 
         return is_plugin, plugin_id
 
-    if namespace == "ingest.ingestion.plugins":
+    if namespace == "fitz.ingest.ingestion.plugins":
 
         def is_plugin(cls: type) -> bool:
             if not isinstance(getattr(cls, "plugin_name", None), str):
@@ -172,14 +172,14 @@ def scan_discovery(namespace: str, note: str) -> DiscoveryReport:
 def scan_all_discoveries() -> List[DiscoveryReport]:
     """Scan all known plugin namespaces."""
     return [
-        scan_discovery("core.llm.chat.plugins", "LLM chat plugins (Option A discovery)"),
-        scan_discovery("core.llm.embedding.plugins", "LLM embedding plugins (Option A discovery)"),
-        scan_discovery("core.llm.rerank.plugins", "LLM rerank plugins (Option A discovery)"),
+        scan_discovery("fitz.core.llm.chat.plugins", "LLM chat plugins (Option A discovery)"),
+        scan_discovery("fitz.core.llm.embedding.plugins", "LLM embedding plugins (Option A discovery)"),
+        scan_discovery("fitz.core.llm.rerank.plugins", "LLM rerank plugins (Option A discovery)"),
         scan_discovery("core.vector_db.plugins", "Vector DB plugins (Option A discovery)"),
-        scan_discovery("rag.retrieval.plugins", "RAG retriever plugins (Option A discovery)"),
-        scan_discovery("rag.pipeline.plugins", "RAG pipeline plugins (Option A discovery)"),
-        scan_discovery("ingest.chunking.plugins", "Ingest chunking plugins (Option A discovery)"),
-        scan_discovery("ingest.ingestion.plugins", "Ingest ingestion plugins (Option A discovery)"),
+        scan_discovery("fitz.rag.retrieval.plugins", "RAG retriever plugins (Option A discovery)"),
+        scan_discovery("fitz.rag.pipeline.plugins", "RAG pipeline plugins (Option A discovery)"),
+        scan_discovery("fitz.ingest.chunking.plugins", "Ingest chunking plugins (Option A discovery)"),
+        scan_discovery("fitz.ingest.ingestion.plugins", "Ingest ingestion plugins (Option A discovery)"),
     ]
 
 

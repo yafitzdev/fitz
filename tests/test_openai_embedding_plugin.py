@@ -24,7 +24,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_init_with_explicit_api_key(self):
         """Plugin initializes with explicit API key."""
         with patch.dict("os.environ", {}, clear=True):
-            with patch("core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 client = OpenAIEmbeddingClient(api_key="test-key")
@@ -35,7 +35,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_init_with_env_var(self):
         """Plugin initializes with OPENAI_API_KEY env var."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "env-key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 client = OpenAIEmbeddingClient()
@@ -47,7 +47,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_init_missing_api_key_raises(self):
         """Plugin raises RuntimeError when no API key available."""
         with patch.dict("os.environ", {}, clear=True):
-            with patch("core.llm.embedding.plugins.openai.OpenAI"):
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI"):
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
@@ -56,7 +56,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_init_missing_library_raises(self):
         """Plugin raises RuntimeError when openai not installed."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI", None):
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI", None):
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 with pytest.raises(RuntimeError, match="Install openai"):
@@ -65,7 +65,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_init_with_custom_model(self):
         """Plugin accepts custom model."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI"):
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI"):
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 client = OpenAIEmbeddingClient(model="text-embedding-3-large")
@@ -75,7 +75,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_init_with_dimensions(self):
         """Plugin accepts custom dimensions."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI"):
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI"):
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 client = OpenAIEmbeddingClient(dimensions=512)
@@ -85,7 +85,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_init_with_base_url(self):
         """Plugin accepts custom base_url."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 OpenAIEmbeddingClient(base_url="https://custom.api.com/v1")
@@ -96,7 +96,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_embed_returns_list_of_floats(self):
         """embed() returns list of floats."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 expected_embedding = [0.1, 0.2, 0.3, 0.4, 0.5]
@@ -115,7 +115,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_embed_passes_model_to_api(self):
         """embed() passes correct model to API."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 mock_response = MockEmbeddingResponse(data=[MockEmbeddingData(embedding=[0.1])])
@@ -130,7 +130,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_embed_includes_dimensions_when_set(self):
         """embed() includes dimensions in API call when specified."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 mock_response = MockEmbeddingResponse(data=[MockEmbeddingData(embedding=[0.1])])
@@ -145,7 +145,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_embed_raises_embedding_error_on_failure(self):
         """embed() raises EmbeddingError on API failure."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
                 from fitz.core.exceptions.llm import EmbeddingError
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
@@ -159,7 +159,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_init_raises_embedding_error_on_client_failure(self):
         """Plugin raises EmbeddingError when client init fails."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI") as mock_openai:
                 from fitz.core.exceptions.llm import EmbeddingError
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
@@ -171,7 +171,7 @@ class TestOpenAIEmbeddingPlugin:
     def test_plugin_attributes(self):
         """Plugin has correct plugin_name and plugin_type."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "key"}):
-            with patch("core.llm.embedding.plugins.openai.OpenAI"):
+            with patch("fitz.core.llm.embedding.plugins.openai.OpenAI"):
                 from fitz.core.llm.embedding.plugins.openai import OpenAIEmbeddingClient
 
                 client = OpenAIEmbeddingClient()

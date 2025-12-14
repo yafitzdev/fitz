@@ -29,7 +29,7 @@ def main():
     if not test_dir.exists():
         print("Creating test documents...")
         test_dir.mkdir(exist_ok=True)
-        (test_dir / "rag.txt").write_text(
+        (test_dir / "fitz.rag.txt").write_text(
             "RAG (Retrieval-Augmented Generation) systems combine information retrieval "
             "with language model generation. They first retrieve relevant documents from "
             "a knowledge base, then use those documents as context for generating responses. "

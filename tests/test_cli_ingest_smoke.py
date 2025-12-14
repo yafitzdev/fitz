@@ -6,7 +6,7 @@ from typing import Any, Type
 
 from typer.testing import CliRunner
 
-import ingest.cli as ingest_cli
+from fitz.ingest import cli as ingest_cli
 
 
 class DummyEmbeddingPlugin:

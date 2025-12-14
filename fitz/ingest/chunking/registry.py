@@ -38,7 +38,7 @@ def _auto_discover() -> None:
     if _DISCOVERED:
         return
 
-    plugins_pkg = importlib.import_module("ingest.chunking.plugins")
+    plugins_pkg = importlib.import_module("fitz.ingest.chunking.plugins")
 
     for module_info in pkgutil.iter_modules(plugins_pkg.__path__):
         module = importlib.import_module(f"{plugins_pkg.__name__}.{module_info.name}")
