@@ -16,11 +16,6 @@ from .common import (
     toplevel,
 )
 
-# Canonical roots for domains that do not expose base/registry at top level
-MODULE_ROOT_OVERRIDES = {
-    "retrieval": "retrieval.runtime",
-}
-
 
 def resolve_from_import(*, current_module: str, module: str | None, level: int) -> str | None:
     """Resolve a relative import to an absolute module name."""
@@ -39,13 +34,16 @@ def resolve_from_import(*, current_module: str, module: str | None, level: int) 
 
 
 def normalize_root(name: str | None) -> str | None:
-    """Normalize a module name through canonical root overrides."""
+    """
+    Normalize a module name to its architectural domain root.
+
+    Example:
+    - fitz.retrieval.runtime.engine -> retrieval
+    - fitz.pipeline.pipeline.engine -> pipeline
+    """
     if not name:
         return None
-    root = toplevel(name)
-    if not root:
-        return None
-    return MODULE_ROOT_OVERRIDES.get(root, root)
+    return toplevel(name)
 
 
 def build_import_graph(root: Path, *, excludes: set[str]) -> ImportGraph:
