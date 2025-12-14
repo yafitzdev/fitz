@@ -1,7 +1,7 @@
 # tests/test_retriever_rerank_flow.py
 from dataclasses import dataclass
 
-from fitz.retrieval.plugins.dense import DenseRetrievalPlugin
+from fitz.retrieval.runtime.plugins.dense import DenseRetrievalPlugin
 
 
 @dataclass

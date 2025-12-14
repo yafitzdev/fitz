@@ -11,7 +11,7 @@ from fitz.core.logging.logger import get_logger
 from fitz.core.logging.tags import RETRIEVER
 from fitz.core.models.chunk import Chunk
 from fitz.retrieval.exceptions.base import RerankError, VectorSearchError
-from fitz.retrieval.base import RetrievalPlugin
+from fitz.retrieval.runtime.base import RetrievalPlugin
 
 logger = get_logger(__name__)
 

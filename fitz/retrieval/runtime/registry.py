@@ -1,5 +1,3 @@
-# fitz/retrieval/registry.py
-
 from __future__ import annotations
 
 import importlib
@@ -8,7 +6,7 @@ from typing import Dict, Iterable, Type
 
 from fitz.core.logging.logger import get_logger
 from fitz.core.logging.tags import RETRIEVER
-from fitz.retrieval.base import RetrievalPlugin
+from fitz.retrieval.runtime.base import RetrievalPlugin
 
 logger = get_logger(__name__)
 
@@ -38,16 +36,17 @@ def _auto_discover() -> None:
     """
     Deterministic plugin discovery.
 
-    Architecture contract:
-    - `pipeline.retrieval.plugins.__init__` must be import-free (no registry imports).
-    - Registry owns discovery and registration.
-    - Plugin classes expose `plugin_name: str` and implement `retrieve(...)`.
+    Contract:
+    - runtime.plugins.* contains plugin implementations
+    - registry owns discovery/registration
+    - plugin classes expose `plugin_name: str` and implement `retrieve(...)`
     """
     global _DISCOVERED
     if _DISCOVERED:
         return
 
-    plugins_pkg = importlib.import_module("fitz.retrieval.plugins")
+    # IMPORTANT: runtime/plugins moved, so discover from *this* package.
+    plugins_pkg = importlib.import_module("fitz.retrieval.runtime.plugins")
 
     for module_info in pkgutil.iter_modules(plugins_pkg.__path__):
         module = importlib.import_module(f"{plugins_pkg.__name__}.{module_info.name}")

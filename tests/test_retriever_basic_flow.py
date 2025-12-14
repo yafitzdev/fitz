@@ -1,7 +1,7 @@
 # tests/test_retriever_basic_flow.py
 from dataclasses import dataclass
 
-from fitz.pipeline.retrieval import RetrieverEngine
+from fitz.retrieval.runtime.engine import RetrieverEngine
 
 
 @dataclass

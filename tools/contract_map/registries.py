@@ -141,10 +141,10 @@ def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
 
     rr = extract_registry_plugins(
         cm,
-        "fitz.retrieval.registry",
+        "fitz.retrieval.runtime.registry",
         dict_attr="RETRIEVER_REGISTRY",
         discover_fns=("_auto_discover",),
-        note="Lazy discovery over fitz.retrieval.plugins.*",
+        note="Lazy discovery over fitz.retrieval.runtime.plugins.*",
         verbose=verbose,
     )
     if rr:

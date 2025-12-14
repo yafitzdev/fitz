@@ -36,7 +36,7 @@ from fitz.ingest.ingestion.registry import get_ingest_plugin
 from fitz.ingest.validation.documents import ValidationConfig, validate
 from fitz.pipeline.context.pipeline import ContextPipeline
 from fitz.generation.retrieval_guided.synthesis import RGS, RGSConfig
-from fitz.retrieval.plugins.dense import DenseRetrievalPlugin
+from fitz.retrieval.runtime.plugins.dense import DenseRetrievalPlugin
 
 COLLECTION_NAME = "fitz_demo"
 

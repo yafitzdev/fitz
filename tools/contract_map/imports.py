@@ -16,6 +16,11 @@ from .common import (
     toplevel,
 )
 
+# Canonical roots for domains that do not expose base/registry at top level
+MODULE_ROOT_OVERRIDES = {
+    "retrieval": "retrieval.runtime",
+}
+
 
 def resolve_from_import(*, current_module: str, module: str | None, level: int) -> str | None:
     """Resolve a relative import to an absolute module name."""
@@ -33,13 +38,23 @@ def resolve_from_import(*, current_module: str, module: str | None, level: int) 
     return ".".join(base_parts)
 
 
+def normalize_root(name: str | None) -> str | None:
+    """Normalize a module name through canonical root overrides."""
+    if not name:
+        return None
+    root = toplevel(name)
+    if not root:
+        return None
+    return MODULE_ROOT_OVERRIDES.get(root, root)
+
+
 def build_import_graph(root: Path, *, excludes: set[str]) -> ImportGraph:
     """Build an import graph by analyzing all Python files."""
     edge_counts: Dict[Tuple[str, str], int] = {}
 
     for file in iter_python_files(root, excludes=excludes):
         mod = module_name_from_path(file)
-        src = toplevel(mod)
+        src = normalize_root(mod)
         if not src:
             continue
 
@@ -56,7 +71,7 @@ def build_import_graph(root: Path, *, excludes: set[str]) -> ImportGraph:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    dst = toplevel(alias.name)
+                    dst = normalize_root(alias.name)
                     if not dst or dst == src:
                         continue
                     edge_counts[(src, dst)] = edge_counts.get((src, dst), 0) + 1
@@ -67,7 +82,7 @@ def build_import_graph(root: Path, *, excludes: set[str]) -> ImportGraph:
                     module=node.module,
                     level=int(getattr(node, "level", 0) or 0),
                 )
-                dst = toplevel(target)
+                dst = normalize_root(target)
                 if not dst or dst == src:
                     continue
                 edge_counts[(src, dst)] = edge_counts.get((src, dst), 0) + 1

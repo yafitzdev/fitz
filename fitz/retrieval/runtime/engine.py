@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any, List
 
 from fitz.core.models.chunk import Chunk
-from fitz.retrieval.base import RetrievalPlugin
-from fitz.retrieval.registry import get_retriever_plugin
+from fitz.retrieval.runtime.base import RetrievalPlugin
+from fitz.retrieval.runtime.registry import get_retriever_plugin
 
 
 @dataclass(slots=True)

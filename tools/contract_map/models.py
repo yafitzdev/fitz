@@ -149,7 +149,7 @@ def extract_protocols(cm: ContractMap, *, verbose: bool) -> None:
         "fitz.core.llm.embedding.base",
         "fitz.core.llm.rerank.base",
         "fitz.core.vector_db.base",
-        "fitz.retrieval.base",
+        "fitz.retrieval.runtime.base",
         "fitz.pipeline.pipeline.base",
         "fitz.ingest.chunking.base",
         "fitz.ingest.ingestion.base",

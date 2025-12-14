@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 
 from fitz.core.models.chunk import Chunk
-from fitz.retrieval.plugins.dense import DenseRetrievalPlugin
+from fitz.retrieval.runtime.plugins.dense import DenseRetrievalPlugin
 
 
 @dataclass
