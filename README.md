@@ -24,7 +24,7 @@ Most RAG frameworks suffer from abstraction overload, opaque chains, and kitchen
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        CLI Layer                            │
-│              (rag/cli.py, ingest/cli.py)                    │
+│            (pipeline/cli.py, ingest/cli.py)                 │
 └─────────────────────────────────────────────────────────────┘
                               │
 ┌─────────────────────────────────────────────────────────────┐
