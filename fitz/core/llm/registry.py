@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import importlib
 import pkgutil
-from typing import Any, Dict, Iterable, Type
+from typing import Any, Dict, Iterable, Type, Literal
 
 LLMPluginType = str  # "chat" | "embedding" | "rerank" | "vector_db"
+Availability = Literal["external", "local"]
 
 
 class LLMRegistryError(RuntimeError):
@@ -13,6 +14,7 @@ class LLMRegistryError(RuntimeError):
 
 
 LLM_REGISTRY: Dict[LLMPluginType, Dict[str, Type[Any]]] = {}
+LLM_REGISTRY_LOCAL: Dict[LLMPluginType, Dict[str, Type[Any]]] = {}
 _DISCOVERED = False
 
 _REQUIRED_METHOD: dict[str, str] = {
@@ -37,6 +39,14 @@ def get_llm_plugin(*, plugin_name: str, plugin_type: LLMPluginType) -> Type[Any]
         return LLM_REGISTRY[plugin_type][plugin_name]
     except KeyError as exc:
         raise LLMRegistryError(f"Unknown {plugin_type} plugin: {plugin_name!r}") from exc
+
+
+def get_local_llm_plugin(*, plugin_type: LLMPluginType) -> Type[Any]:
+    _auto_discover()
+    try:
+        return next(iter(LLM_REGISTRY_LOCAL.get(plugin_type, {}).values()))
+    except StopIteration as exc:
+        raise LLMRegistryError(f"No local {plugin_type} plugin available") from exc
 
 
 def available_llm_plugins(plugin_type: LLMPluginType) -> list[str]:
@@ -106,8 +116,13 @@ def _iter_plugin_classes(module: object) -> Iterable[type]:
 def _register(cls: Type[Any]) -> None:
     plugin_name = getattr(cls, "plugin_name")
     plugin_type = getattr(cls, "plugin_type")
+    availability: Availability = getattr(cls, "availability", "external")
 
-    bucket = LLM_REGISTRY.setdefault(plugin_type, {})
+    if availability == "local":
+        bucket = LLM_REGISTRY_LOCAL.setdefault(plugin_type, {})
+    else:
+        bucket = LLM_REGISTRY.setdefault(plugin_type, {})
+
     existing = bucket.get(plugin_name)
 
     if existing is not None and existing is not cls:
