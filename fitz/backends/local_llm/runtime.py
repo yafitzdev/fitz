@@ -1,67 +1,76 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
-import urllib.request
+from typing import Any
 
+from fitz.core.exceptions.llm import LLMError
 from fitz.core.logging.logger import get_logger
 from fitz.core.logging.tags import PIPELINE
 
 logger = get_logger(__name__)
 
 
+_LOCAL_FALLBACK_HELP = """\
+
+===============================================
+Local LLM fallback is enabled, but no local runtime was found.
+fitz can run fully offline using a lightweight local model via Ollama.
+
+To enable local fallback:
+  1) Install Ollama: https://ollama.com
+  2) Download the default model:
+     ollama pull llama3
+  3) Ensure Ollama is running in the background
+
+Then rerun your command.
+===============================================
+"""
+
+
 @dataclass(frozen=True)
 class LocalLLMRuntimeConfig:
     model: str = "llama3"
-    base_url: str = "http://localhost:11434"
     timeout: float = 1.0
 
 
 class LocalLLMRuntime:
-    """
-    Local LLM runtime using Ollama.
-
-    This runtime is USER-FACING.
-    If unavailable, we terminate cleanly with instructions.
-    """
-
     def __init__(self, cfg: LocalLLMRuntimeConfig) -> None:
         self._cfg = cfg
-        self._client: Optional[Any] = None
 
     def _check_available(self) -> None:
         try:
-            req = urllib.request.Request(self._cfg.base_url, method="GET")
+            import urllib.request
+
+            req = urllib.request.Request(
+                "http://localhost:11434/api/tags",
+                method="GET",
+            )
             with urllib.request.urlopen(req, timeout=self._cfg.timeout):
                 return
-        except Exception as exc:
-            logger.debug(
-                "Local LLM runtime availability check failed",
-                exc_info=exc,
-            )
-            raise SystemExit(
-                "To enable local fallback:\n"
-                "  1) Install Ollama: https://ollama.com\n"
-                "  2) Run: ollama pull llama3\n"
-                "  3) Ensure Ollama is running"
-            )
+
+        except Exception:
+            # 🔑 THIS IS THE KEY LINE
+            raise LLMError(_LOCAL_FALLBACK_HELP) from None
 
     def llama(self) -> Any:
-        if self._client is not None:
-            return self._client
-
         self._check_available()
 
         try:
             import ollama  # type: ignore
         except Exception:
-            raise SystemExit(
-                "To enable local fallback:\n"
-                "  1) Install Ollama: https://ollama.com\n"
-                "  2) Run: ollama pull llama3\n"
-                "  3) Ensure Ollama is running"
-            )
+            raise LLMError(_LOCAL_FALLBACK_HELP) from None
 
-        logger.info(f"{PIPELINE} Using local LLM model '{self._cfg.model}'")
-        self._client = ollama
-        return self._client
+        logger.info(f"{PIPELINE} Using local Ollama model: {self._cfg.model}")
+
+        class _OllamaAdapter:
+            def __init__(self, model: str):
+                self._model = model
+
+            def chat(self, prompt: str) -> str:
+                resp = ollama.chat(
+                    model=self._model,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                return resp["message"]["content"]
+
+        return _OllamaAdapter(self._cfg.model)
