@@ -6,11 +6,7 @@ from typing import Any, Mapping, Sequence
 
 from fitz.core.logging.logger import get_logger
 from fitz.core.logging.tags import CHAT
-
-from fitz.backends.local_llm.runtime import (
-    LocalLLMRuntime,
-    LocalLLMRuntimeConfig,
-)
+from fitz.backends.local_llm.runtime import LocalLLMRuntime
 
 logger = get_logger(__name__)
 
@@ -20,7 +16,7 @@ class LocalChatConfig:
     """
     Baseline local chat settings.
 
-    Keep this intentionally minimal: this is not a “model zoo”.
+    Diagnostic quality only.
     """
 
     max_tokens: int = 256
@@ -29,50 +25,40 @@ class LocalChatConfig:
 
 class LocalChatLLM:
     """
-    Local ChatLLM adapter.
+    Local ChatLLM adapter using Ollama.
 
-    Expected message format:
-      - Sequence of dict-like objects with keys: 'role', 'content'
-      - Roles: 'system'|'user'|'assistant' (best-effort)
+    NOTE:
+    The Ollama Python client adapter does NOT accept keyword arguments
+    like `options=` or `model=` here. The runtime already encapsulates
+    the model selection.
     """
 
-    def __init__(
-        self,
-        cfg: LocalChatConfig | None = None,
-        runtime_cfg: LocalLLMRuntimeConfig | None = None,
-    ) -> None:
+    def __init__(self, runtime: LocalLLMRuntime, cfg: LocalChatConfig | None = None) -> None:
+        self._rt = runtime
         self._cfg = cfg or LocalChatConfig()
-        self._rt = LocalLLMRuntime(runtime_cfg or LocalLLMRuntimeConfig())
 
     def chat(self, messages: Sequence[Mapping[str, str]]) -> str:
         logger.info(f"{CHAT} Using local chat model (baseline quality)")
 
         llm = self._rt.llama()
 
-        # Ollama-style chat
-        if hasattr(llm, "chat"):
-            resp: Any = llm.chat(
-                model=self._rt._cfg.model,
-                messages=[
-                    {"role": m.get("role", "user"), "content": m.get("content", "")}
-                    for m in messages
-                ],
-                options={
-                    "temperature": self._cfg.temperature,
-                    "num_predict": self._cfg.max_tokens,
-                },
-            )
-            return _extract_chat_text(resp)
+        # Call adapter with messages only (no kwargs)
+        resp: Any = llm.chat(
+            [
+                {
+                    "role": m.get("role", "user"),
+                    "content": m.get("content", ""),
+                }
+                for m in messages
+            ]
+        )
 
-        raise RuntimeError("Unsupported local LLM client")
+        return _extract_text(resp)
 
 
-def _extract_chat_text(resp: Any) -> str:
+def _extract_text(resp: Any) -> str:
     try:
-        message = resp.get("message") or {}
-        content = message.get("content")
-        if content is not None:
-            return str(content)
+        msg = resp.get("message") or {}
+        return str(msg.get("content") or "")
     except Exception:
-        pass
-    return str(resp)
+        return str(resp)
