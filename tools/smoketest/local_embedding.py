@@ -1,14 +1,16 @@
 from fitz.core.llm.embedding.plugins.local import LocalEmbeddingClient
-from fitz.core.exceptions.llm import LLMError
 
 
 def main() -> None:
     embedder = LocalEmbeddingClient()
-    embedder.embed("hello world")
+
+    vec = embedder.embed("hello world")
+
+    print("\n=== LOCAL EMBEDDING OUTPUT ===")
+    print(f"Vector length: {len(vec)}")
+    print(f"First 10 values: {vec[:10]}")
+    print("=============================\n")
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except LLMError as e:
-        print(e)
+    main()
