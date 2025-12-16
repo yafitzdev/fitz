@@ -1,4 +1,4 @@
-# core/config/loader.py
+# fitz/core/config/loader.py
 """
 Configuration loader for Fitz.
 
@@ -7,6 +7,7 @@ Responsibilities:
 - Load user config (meta)
 - Expand ${ENV_VAR} placeholders
 - Resolve preset
+- Normalize preset into runtime config
 - Validate resolved config via FitzConfig
 """
 
@@ -18,10 +19,10 @@ from typing import Any
 
 import yaml
 
+from fitz.core.config.normalize import normalize_preset
 from fitz.core.config.schema import FitzConfig, FitzMetaConfig
 from fitz.core.logging.logger import get_logger
 from fitz.core.logging.tags import CLI
-from fitz.core.config.normalize import normalize_preset
 
 logger = get_logger(__name__)
 
@@ -69,7 +70,8 @@ def load_config(user_config_path: Path | None = None) -> FitzConfig:
     1. Load meta config
     2. Merge user meta config
     3. Resolve preset
-    4. Validate resolved runtime config
+    4. Normalize preset into runtime shape
+    5. Validate runtime config
     """
     logger.debug(f"{CLI} Loading default config from {DEFAULT_CONFIG_PATH}")
     meta_raw = _load_yaml(DEFAULT_CONFIG_PATH)
@@ -85,7 +87,7 @@ def load_config(user_config_path: Path | None = None) -> FitzConfig:
     if preset_name not in meta.presets:
         raise ValueError(f"Unknown preset: {preset_name}")
 
-    resolved = meta.presets[preset_name]
-    normalized = normalize_preset(resolved)
+    preset = meta.presets[preset_name]
+    normalized = normalize_preset(preset)
 
     return FitzConfig.model_validate(normalized)

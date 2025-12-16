@@ -1,10 +1,10 @@
-# core/config/schema.py
+# fitz/core/config/schema.py
 """
 Pydantic schema for Fitz configuration.
 
 Architecture:
 - FitzMetaConfig: YAML-facing meta config (presets, defaults)
-- FitzConfig: runtime config consumed by engines
+- FitzConfig: fully resolved runtime config consumed by engines
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ class PluginConfig(BaseModel):
     """
     Generic plugin configuration block.
 
-    All provider-specific configuration must be expressed via:
+    Provider-specific configuration must be expressed via:
     - plugin_name: plugin id in the central registry
     - kwargs: arbitrary plugin init kwargs
     """
@@ -36,7 +36,10 @@ class FitzConfig(BaseModel):
     This is the ONLY config that engines are allowed to see.
     """
 
-    llm: PluginConfig
+    chat: PluginConfig
+    embedding: PluginConfig
+    rerank: PluginConfig | None = Field(default=None, description="Optional rerank plugin")
+
     vector_db: PluginConfig
     pipeline: PluginConfig
 
