@@ -158,6 +158,7 @@ def doctor() -> None:
         typer.echo("✓ Ollama detected")
     else:
         typer.echo("⚠ Ollama not detected (local LLM unavailable)")
+        typer.echo("→ To enable local LLMs: https://ollama.com")
 
     typer.echo()
 
