@@ -24,6 +24,7 @@ from tools.contract_map.analysis import (
     render_invariants_section,
     render_stats_section,
     render_any_breakdown_section,
+    render_exception_analysis_section,
 )
 from tools.contract_map.architecture import RoleResolver
 from tools.contract_map.common import (
@@ -386,6 +387,7 @@ def render_markdown(cm: ContractMap, *, verbose: bool, layout_depth: int | None)
     sections.append(render_invariants_section(cm.invariants))
     sections.append(render_stats_section(cm.stats))
     sections.append(render_any_breakdown_section(cm.stats))
+    sections.append(render_exception_analysis_section(cm.stats))
     sections.append(render_hotspots_section(cm.hotspots))
     sections.append(render_models_section(cm))
     sections.append(render_protocols_section(cm))

@@ -415,6 +415,114 @@ def render_any_breakdown_section(stats):
     return "\n".join(lines)
 
 
+def analyze_exception_patterns(root, excludes):
+    """Analyze exception handling patterns in the codebase."""
+    from pathlib import Path
+
+    patterns = {
+        'bare_except_continue': 0,
+        'bare_except_pass': 0,
+        'logged_exceptions': 0,
+        'reraise_exceptions': 0,
+    }
+
+    problem_files = []
+
+    for py_file in root.rglob("*.py"):
+        rel = py_file.relative_to(root)
+        if any(part in excludes for part in rel.parts):
+            continue
+
+        try:
+            content = py_file.read_text()
+            lines = content.splitlines()
+
+            for i, line in enumerate(lines):
+                # Check for bare except patterns
+                if 'except Exception:' in line or 'except:' in line:
+                    # Look at next line
+                    if i + 1 < len(lines):
+                        next_line = lines[i + 1].strip()
+
+                        if next_line == 'continue':
+                            patterns['bare_except_continue'] += 1
+                            problem_files.append((str(rel), i + 1, 'silent continue'))
+                        elif next_line == 'pass':
+                            patterns['bare_except_pass'] += 1
+                            # Don't flag if in __del__ (cleanup is OK)
+                            if i > 5 and 'def __del__' not in ''.join(lines[i - 5:i]):
+                                problem_files.append((str(rel), i + 1, 'silent pass'))
+
+                # Check for good patterns
+                if 'except' in line and 'as e:' in line:
+                    if i + 1 < len(lines):
+                        next_line = lines[i + 1]
+                        if 'log' in next_line.lower():
+                            patterns['logged_exceptions'] += 1
+                        elif 'raise' in next_line:
+                            patterns['reraise_exceptions'] += 1
+
+        except:
+            pass
+
+    return patterns, problem_files
+
+
+def render_exception_analysis_section(stats):
+    """Render exception handling analysis section."""
+    if not stats:
+        return ""
+
+    patterns, problems = analyze_exception_patterns(REPO_ROOT, DEFAULT_LAYOUT_EXCLUDES)
+
+    lines = ["## Exception Handling Analysis"]
+    lines.append("")
+
+    total_bare = patterns['bare_except_continue'] + patterns['bare_except_pass']
+    good = patterns['logged_exceptions'] + patterns['reraise_exceptions']
+
+    lines.append(f"**Total bare exceptions**: `{total_bare}`")
+    lines.append(f"**Good exception handling**: `{good}`")
+    lines.append("")
+
+    lines.append("### Patterns Found")
+    lines.append("")
+    lines.append(f"- **Silent failures** (`except: continue`): {patterns['bare_except_continue']}")
+    lines.append(f"- **Silent ignores** (`except: pass`): {patterns['bare_except_pass']}")
+    lines.append(f"- **Logged exceptions**: {patterns['logged_exceptions']}")
+    lines.append(f"- **Re-raised exceptions**: {patterns['reraise_exceptions']}")
+    lines.append("")
+
+    if problems:
+        lines.append("### Issues to Fix")
+        lines.append("")
+        # Show first 10
+        for file, line_num, issue in problems[:10]:
+            lines.append(f"- `{file}:{line_num}` - {issue}")
+
+        if len(problems) > 10:
+            lines.append(f"- ... and {len(problems) - 10} more")
+        lines.append("")
+
+    if total_bare > 0:
+        lines.append("### Recommendation")
+        lines.append("")
+        lines.append(f"Fix {total_bare} silent exception(s) by adding logging:")
+        lines.append("```python")
+        lines.append("# Instead of:")
+        lines.append("except Exception:")
+        lines.append("    continue")
+        lines.append("")
+        lines.append("# Use:")
+        lines.append("except Exception as e:")
+        lines.append('    logger.warning(f"Failed: {e}")')
+        lines.append("    continue")
+        lines.append("```")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     from .common import ContractMap
 
