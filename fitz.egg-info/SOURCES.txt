@@ -23,6 +23,10 @@ fitz/backends/local_vector_db/faiss.py
 fitz/backends/local_vector_db/runtime.py
 fitz/cli/__init__.py
 fitz/cli/cli.py
+fitz/cli/doctor.py
+fitz/cli/help.py
+fitz/cli/init.py
+fitz/cli/plugins.py
 fitz/core/__init__.py
 fitz/core/_contracts/__init__.py
 fitz/core/_contracts/roles.py
