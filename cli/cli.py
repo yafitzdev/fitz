@@ -1,23 +1,38 @@
-"""
-Main fitz CLI for setup and utility commands.
+# fitz/cli/cli.py
 
-This is the top-level `fitz` command that provides:
-- setup-local: Set up local LLM (Ollama) for offline testing
-- Other utility commands (future)
 """
+Main Fitz CLI.
+
+Goals:
+- Discoverability first
+- Zero magic
+- No core side effects
+"""
+
+from __future__ import annotations
+
 import subprocess
 import sys
+from pathlib import Path
 
 import typer
 
+from fitz.core.llm.registry import LLM_REGISTRY
+from fitz.pipeline.pipeline.registry import available_pipeline_plugins
+from fitz.ingest.chunking.registry import CHUNKER_REGISTRY
+from fitz.ingest.ingestion.registry import REGISTRY as INGEST_REGISTRY
+
 app = typer.Typer(
-    help="Fitz CLI - Setup and utility commands",
+    help="Fitz — local-first RAG framework",
     no_args_is_help=True,
 )
 
 
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
 def check_ollama_installed() -> bool:
-    """Check if Ollama is installed and accessible."""
     try:
         result = subprocess.run(
             ["ollama", "--version"],
@@ -30,213 +45,158 @@ def check_ollama_installed() -> bool:
         return False
 
 
-def pull_model() -> bool:
-    """Pull the llama3.2:1b model using Ollama."""
-    try:
-        typer.echo("Pulling model llama3.2:1b...")
-        typer.echo("(This may take a few minutes)")
-        typer.echo()
+# ---------------------------------------------------------------------------
+# help / overview
+# ---------------------------------------------------------------------------
 
-        # Run ollama pull and show output
-        result = subprocess.run(
-            ["ollama", "pull", "llama3.2:1b"],
-            check=False,
-        )
+@app.command("help")
+def help_cmd() -> None:
+    typer.echo()
+    typer.echo("Fitz — local-first RAG framework")
+    typer.echo()
+    typer.echo("Common commands:")
+    typer.echo("  fitz init               Initialize a local Fitz workspace")
+    typer.echo("  fitz plugins            List available plugins")
+    typer.echo("  fitz ingest             Ingest documents")
+    typer.echo("  fitz pipeline run       Query your knowledge base")
+    typer.echo("  fitz config show        Show resolved configuration")
+    typer.echo()
+    typer.echo("Quick start:")
+    typer.echo("  1. fitz init")
+    typer.echo("  2. fitz ingest ./docs")
+    typer.echo('  3. fitz pipeline run "What is this project about?"')
+    typer.echo()
 
-        return result.returncode == 0
-    except Exception as e:
-        typer.echo(f"Error pulling model: {e}")
-        return False
+
+# ---------------------------------------------------------------------------
+# init
+# ---------------------------------------------------------------------------
+
+@app.command("init")
+def init() -> None:
+    """
+    Initialize a local Fitz workspace.
+
+    Creates .fitz/ if it does not exist and prints
+    the active default setup.
+    """
+    root = Path.cwd()
+    fitz_dir = root / ".fitz"
+
+    if not fitz_dir.exists():
+        fitz_dir.mkdir()
+        typer.echo("✓ Created .fitz/")
+    else:
+        typer.echo("✓ .fitz/ already exists")
+
+    typer.echo()
+    typer.echo("Active defaults:")
+    typer.echo("  Preset: local")
+    typer.echo("  LLM: local (Ollama)")
+    typer.echo("  Embedding: local")
+    typer.echo("  Vector DB: local-faiss (disk)")
+    typer.echo()
+    typer.echo("Next steps:")
+    typer.echo("  fitz ingest ./docs")
+    typer.echo('  fitz pipeline run "Your question"')
+    typer.echo()
 
 
-def verify_local_llm() -> bool:
-    """Verify the local LLM works by testing it."""
-    try:
-        # Import here to avoid issues if backends aren't available
-        from fitz.backends.local_llm.runtime import LocalLLMRuntime, LocalLLMRuntimeConfig
+# ---------------------------------------------------------------------------
+# plugins
+# ---------------------------------------------------------------------------
 
-        typer.echo()
-        typer.echo("Verifying local LLM...")
+@app.command("plugins")
+def plugins() -> None:
+    """
+    List all discovered plugins.
+    """
+    typer.echo()
+    typer.echo("LLM chat:")
+    for name in sorted(LLM_REGISTRY["chat"]):
+        typer.echo(f"  - {name}")
 
-        # Try to initialize and use the runtime
-        runtime_cfg = LocalLLMRuntimeConfig(model="llama3.2:1b")
-        runtime = LocalLLMRuntime(runtime_cfg)
+    typer.echo()
+    typer.echo("Embeddings:")
+    for name in sorted(LLM_REGISTRY["embedding"]):
+        typer.echo(f"  - {name}")
 
-        # This will raise an exception if Ollama isn't running or model isn't available
-        adapter = runtime.llama()
+    typer.echo()
+    typer.echo("Rerank:")
+    for name in sorted(LLM_REGISTRY["rerank"]):
+        typer.echo(f"  - {name}")
 
-        typer.echo("✓ Local LLM verified")
-        return True
+    typer.echo()
+    typer.echo("Vector DB:")
+    for name in sorted(LLM_REGISTRY["vector_db"]):
+        typer.echo(f"  - {name}")
 
-    except Exception as e:
-        typer.echo(f"✗ Verification failed: {e}")
-        return False
+    typer.echo()
+    typer.echo("Pipeline:")
+    for name in sorted(available_pipeline_plugins()):
+        typer.echo(f"  - {name}")
 
+    typer.echo()
+    typer.echo("Chunkers:")
+    for name in sorted(CHUNKER_REGISTRY):
+        typer.echo(f"  - {name}")
+
+    typer.echo()
+    typer.echo("Ingesters:")
+    for name in sorted(INGEST_REGISTRY):
+        typer.echo(f"  - {name}")
+
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
+# doctor
+# ---------------------------------------------------------------------------
+
+@app.command("doctor")
+def doctor() -> None:
+    """
+    Run basic diagnostics for local setup.
+    """
+    typer.echo()
+    typer.echo("Fitz doctor")
+    typer.echo()
+
+    # Python
+    typer.echo(f"✓ Python {sys.version.split()[0]}")
+
+    # .fitz
+    if Path(".fitz").exists():
+        typer.echo("✓ .fitz directory present")
+    else:
+        typer.echo("⚠ .fitz directory missing (run: fitz init)")
+
+    # Ollama
+    if check_ollama_installed():
+        typer.echo("✓ Ollama detected")
+    else:
+        typer.echo("⚠ Ollama not detected (local LLM unavailable)")
+
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
+# legacy local-llm helpers (kept for compatibility)
+# ---------------------------------------------------------------------------
 
 @app.command("setup-local")
 def setup_local() -> None:
-    """
-    Set up local LLM (Ollama) for offline testing.
-
-    This command guides you through setting up Ollama as a local LLM fallback.
-    The local LLM is optional and only required for offline testing.
-
-    Steps:
-    1. Checks if Ollama is installed
-    2. Pulls the llama3.2:1b model
-    3. Verifies the setup works
-
-    Examples:
-        # Run setup
-        fitz setup-local
-
-        # After setup, test it works
-        fitz test
-    """
     typer.echo()
-    typer.echo("=" * 60)
-    typer.echo("FITZ LOCAL LLM SETUP")
-    typer.echo("=" * 60)
-    typer.echo()
-
-    # Step 1: Check if Ollama is installed
-    if not check_ollama_installed():
-        typer.echo("Ollama is not installed.")
-        typer.echo()
-        typer.echo("Fitz uses Ollama for its local LLM fallback.")
-        typer.echo("This is optional and only required for offline testing.")
-        typer.echo()
-        typer.echo("Please install Ollama manually:")
-        typer.echo("  https://ollama.com")
-        typer.echo()
-        typer.echo("After installation, rerun:")
-        typer.echo("  fitz setup-local")
-        typer.echo()
-        raise typer.Exit(code=1)
-
-    typer.echo("✓ Ollama detected")
-    typer.echo()
-
-    # Step 2: Pull the model
-    if not pull_model():
-        typer.echo()
-        typer.echo("✗ Failed to pull model")
-        typer.echo()
-        typer.echo("Please ensure Ollama is running and try again.")
-        raise typer.Exit(code=1)
-
-    typer.echo()
-    typer.echo("✓ Model downloaded")
-
-    # Step 3: Verify
-    if not verify_local_llm():
-        typer.echo()
-        typer.echo("Setup completed but verification failed.")
-        typer.echo("The model is downloaded, but Ollama may not be running.")
-        typer.echo()
-        typer.echo("Try:")
-        typer.echo("  1. Start Ollama (it usually starts automatically)")
-        typer.echo("  2. Run: fitz setup-local")
-        raise typer.Exit(code=1)
-
-    # Success!
-    typer.echo()
-    typer.echo("=" * 60)
-    typer.echo("✓ Local LLM setup complete")
-    typer.echo("=" * 60)
-    typer.echo()
-    typer.echo("You can now run:")
-    typer.echo("  fitz test")
+    typer.echo("Deprecated: use `fitz init` + `fitz doctor`")
+    typer.echo("This command will be removed in a future release.")
     typer.echo()
 
 
 @app.command("test")
 def test() -> None:
-    """
-    Test local LLM setup.
-
-    Runs a quick test to verify that:
-    - Ollama is installed
-    - The model is available
-    - Local LLM can generate responses
-
-    Examples:
-        # Test local setup
-        fitz test
-    """
     typer.echo()
-    typer.echo("=" * 60)
-    typer.echo("TESTING LOCAL LLM")
-    typer.echo("=" * 60)
-    typer.echo()
-
-    # Check Ollama
-    typer.echo("[1/3] Checking Ollama installation...")
-    if not check_ollama_installed():
-        typer.echo("  ✗ Ollama not found")
-        typer.echo()
-        typer.echo("Run: fitz setup-local")
-        raise typer.Exit(code=1)
-    typer.echo("  ✓ Ollama detected")
-
-    # Check model
-    typer.echo()
-    typer.echo("[2/3] Checking model availability...")
-    try:
-        result = subprocess.run(
-            ["ollama", "list"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if "llama3.2:1b" not in result.stdout:
-            typer.echo("  ✗ Model llama3.2:1b not found")
-            typer.echo()
-            typer.echo("Run: fitz setup-local")
-            raise typer.Exit(code=1)
-        typer.echo("  ✓ Model llama3.2:1b available")
-    except Exception as e:
-        typer.echo(f"  ✗ Error checking model: {e}")
-        raise typer.Exit(code=1)
-
-    # Test generation
-    typer.echo()
-    typer.echo("[3/3] Testing text generation...")
-    try:
-        from fitz.backends.local_llm.runtime import LocalLLMRuntime, LocalLLMRuntimeConfig
-
-        runtime_cfg = LocalLLMRuntimeConfig(model="llama3.2:1b")
-        runtime = LocalLLMRuntime(runtime_cfg)
-        adapter = runtime.llama()
-
-        # Test a simple chat
-        response = adapter.chat([
-            {"role": "user", "content": "Say 'hello' in one word."}
-        ])
-
-        if response:
-            typer.echo("  ✓ Generation successful")
-            typer.echo(f"  Response preview: {response[:50]}...")
-        else:
-            typer.echo("  ⚠ Generation returned empty response")
-
-    except Exception as e:
-        typer.echo(f"  ✗ Generation failed: {e}")
-        typer.echo()
-        typer.echo("This might mean:")
-        typer.echo("  • Ollama service is not running")
-        typer.echo("  • Model is not properly installed")
-        typer.echo()
-        typer.echo("Try: fitz setup-local")
-        raise typer.Exit(code=1)
-
-    # Success!
-    typer.echo()
-    typer.echo("=" * 60)
-    typer.echo("✓ ALL TESTS PASSED")
-    typer.echo("=" * 60)
-    typer.echo()
-    typer.echo("Your local LLM is working correctly!")
+    typer.echo("Deprecated: use `fitz doctor`")
+    typer.echo("This command will be removed in a future release.")
     typer.echo()
 
 
