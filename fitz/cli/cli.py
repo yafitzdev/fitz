@@ -106,47 +106,41 @@ def init() -> None:
 # plugins
 # ---------------------------------------------------------------------------
 
+def _discover_all_plugins() -> None:
+    # LLM
+    import fitz.core.llm.chat.plugins  # noqa
+    import fitz.core.llm.embedding.plugins  # noqa
+    import fitz.core.llm.rerank.plugins  # noqa
+
+    # Vector DB
+    import fitz.core.vector_db.plugins  # noqa
+
+
 @app.command("plugins")
 def plugins() -> None:
     """
     List all discovered plugins.
     """
     typer.echo()
-    typer.echo("LLM chat:")
-    for name in sorted(LLM_REGISTRY["chat"]):
-        typer.echo(f"  - {name}")
 
-    typer.echo()
-    typer.echo("Embeddings:")
-    for name in sorted(LLM_REGISTRY["embedding"]):
-        typer.echo(f"  - {name}")
+    # Trigger discovery explicitly
+    _discover_all_plugins()
 
-    typer.echo()
-    typer.echo("Rerank:")
-    for name in sorted(LLM_REGISTRY["rerank"]):
-        typer.echo(f"  - {name}")
+    from fitz.core.llm.registry import LLM_REGISTRY
 
-    typer.echo()
-    typer.echo("Vector DB:")
-    for name in sorted(LLM_REGISTRY["vector_db"]):
-        typer.echo(f"  - {name}")
+    def show(title: str, plugins: dict):
+        typer.echo(f"{title}:")
+        if not plugins:
+            typer.echo("  (none)")
+        else:
+            for name in sorted(plugins):
+                typer.echo(f"  - {name}")
+        typer.echo()
 
-    typer.echo()
-    typer.echo("Pipeline:")
-    for name in sorted(available_pipeline_plugins()):
-        typer.echo(f"  - {name}")
-
-    typer.echo()
-    typer.echo("Chunkers:")
-    for name in sorted(CHUNKER_REGISTRY):
-        typer.echo(f"  - {name}")
-
-    typer.echo()
-    typer.echo("Ingesters:")
-    for name in sorted(INGEST_REGISTRY):
-        typer.echo(f"  - {name}")
-
-    typer.echo()
+    show("LLM chat", LLM_REGISTRY.get("chat", {}))
+    show("LLM embedding", LLM_REGISTRY.get("embedding", {}))
+    show("LLM rerank", LLM_REGISTRY.get("rerank", {}))
+    show("Vector DB", LLM_REGISTRY.get("vector_db", {}))
 
 
 # ---------------------------------------------------------------------------
