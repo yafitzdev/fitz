@@ -8,3 +8,6 @@ typer>=0.9
 [ingest]
 pdfminer.six
 python-docx
+
+[local]
+ollama>=0.1.0

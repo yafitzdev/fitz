@@ -16,6 +16,8 @@ Requires-Dist: typer>=0.9
 Provides-Extra: ingest
 Requires-Dist: pdfminer.six; extra == "ingest"
 Requires-Dist: python-docx; extra == "ingest"
+Provides-Extra: local
+Requires-Dist: ollama>=0.1.0; extra == "local"
 Dynamic: license-file
 
 # fitz
@@ -44,7 +46,7 @@ Most RAG frameworks suffer from abstraction overload, opaque chains, and kitchen
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        CLI Layer                            │
-│              (rag/cli.py, ingest/cli.py)                    │
+│            (pipeline/cli.py, ingest/cli.py)                 │
 └─────────────────────────────────────────────────────────────┘
                               │
 ┌─────────────────────────────────────────────────────────────┐
@@ -110,7 +112,7 @@ fitz-ingest run ./my-documents --collection my_knowledge --ingest-plugin local
 
 ```python
 from fitz.pipeline.pipeline.engine import RAGPipeline
-from fitz.pipeline.generation.rgs import RGS, RGSConfig
+from fitz.generation.retrieval_guided.synthesis import RGS, RGSConfig
 
 # Using the default config
 pipeline = create_pipeline_from_yaml()
@@ -126,7 +128,7 @@ for source in answer.sources:
 ### 4. CLI query
 
 ```bash
-fitz-rag query "What is the main topic?" --config my_config.yaml
+fitz-pipeline query "What is the main topic?" --config my_config.yaml
 ```
 
 ---
@@ -199,7 +201,7 @@ rgs:
 The RGS module handles prompt construction and answer synthesis with built-in citation support:
 
 ```python
-from fitz.rag.generation.rgs import RGS, RGSConfig
+from fitz.generation.retrieval_guided.synthesis import RGS, RGSConfig
 
 rgs = RGS(RGSConfig(
     enable_citations=True,

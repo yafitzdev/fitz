@@ -1,8 +1,3 @@
-core
 examples
-generation
-ingest
-rag
-retrieval
-scripts
+fitz
 tools

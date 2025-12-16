@@ -35,7 +35,7 @@ exclude = ["tests*"]
 
 
 [project.scripts]
-fitz = "fitz.cli:app"
+fitz = "fitz.cli.cli:app"
 fitz-ingest = "fitz.ingest.cli:app"
 fitz-pipeline = "fitz.pipeline.cli:app"
 
