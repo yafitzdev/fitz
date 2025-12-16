@@ -6,7 +6,7 @@ from typing import Any
 
 def _as_plugin_config(block: dict[str, Any], *, key: str) -> dict[str, Any]:
     """
-    Convert a human-facing preset block into a PluginConfig dict.
+    Convert a human-facing preset block into a EnginePluginConfig dict.
     Expected human-facing shape:
       { "plugin": "<name>", "kwargs": { ... }? }
     """

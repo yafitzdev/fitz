@@ -14,7 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class PluginConfig(BaseModel):
+class EnginePluginConfig(BaseModel):
     """
     Generic plugin configuration block.
 
@@ -36,12 +36,12 @@ class FitzConfig(BaseModel):
     This is the ONLY config that engines are allowed to see.
     """
 
-    chat: PluginConfig
-    embedding: PluginConfig
-    rerank: PluginConfig | None = Field(default=None, description="Optional rerank plugin")
+    chat: EnginePluginConfig
+    embedding: EnginePluginConfig
+    rerank: EnginePluginConfig | None = Field(default=None, description="Optional rerank plugin")
 
-    vector_db: PluginConfig
-    pipeline: PluginConfig
+    vector_db: EnginePluginConfig
+    pipeline: EnginePluginConfig
 
     model_config = ConfigDict(extra="forbid")
 

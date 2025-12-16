@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class PluginConfig(BaseModel):
+class PipelinePluginConfig(BaseModel):
     plugin_name: str = Field(..., description="Plugin name in the central registry")
     kwargs: dict[str, Any] = Field(default_factory=dict, description="Plugin init kwargs")
     model_config = ConfigDict(extra="forbid")
@@ -43,9 +43,9 @@ class LoggingConfig(BaseModel):
 
 
 class RAGConfig(BaseModel):
-    vector_db: PluginConfig
-    llm: PluginConfig
-    embedding: PluginConfig
+    vector_db: PipelinePluginConfig
+    llm: PipelinePluginConfig
+    embedding: PipelinePluginConfig
     retriever: RetrieverConfig
     rerank: RerankConfig = Field(default_factory=RerankConfig)
     rgs: RGSConfig = Field(default_factory=RGSConfig)
