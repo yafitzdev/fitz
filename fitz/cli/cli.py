@@ -106,41 +106,29 @@ def init() -> None:
 # plugins
 # ---------------------------------------------------------------------------
 
-def _discover_all_plugins() -> None:
-    # LLM
-    import fitz.core.llm.chat.plugins  # noqa
-    import fitz.core.llm.embedding.plugins  # noqa
-    import fitz.core.llm.rerank.plugins  # noqa
-
-    # Vector DB
-    import fitz.core.vector_db.plugins  # noqa
-
-
 @app.command("plugins")
 def plugins() -> None:
     """
     List all discovered plugins.
     """
+    from fitz.core.llm.registry import available_llm_plugins
+
     typer.echo()
 
-    # Trigger discovery explicitly
-    _discover_all_plugins()
-
-    from fitz.core.llm.registry import LLM_REGISTRY
-
-    def show(title: str, plugins: dict):
+    def show(title: str, plugin_type: str):
         typer.echo(f"{title}:")
-        if not plugins:
+        names = available_llm_plugins(plugin_type)
+        if not names:
             typer.echo("  (none)")
         else:
-            for name in sorted(plugins):
+            for name in names:
                 typer.echo(f"  - {name}")
         typer.echo()
 
-    show("LLM chat", LLM_REGISTRY.get("chat", {}))
-    show("LLM embedding", LLM_REGISTRY.get("embedding", {}))
-    show("LLM rerank", LLM_REGISTRY.get("rerank", {}))
-    show("Vector DB", LLM_REGISTRY.get("vector_db", {}))
+    show("LLM chat", "chat")
+    show("LLM embedding", "embedding")
+    show("LLM rerank", "rerank")
+    show("Vector DB", "vector_db")
 
 
 # ---------------------------------------------------------------------------
