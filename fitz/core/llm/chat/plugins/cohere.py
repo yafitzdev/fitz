@@ -5,52 +5,131 @@ import os
 from typing import Any
 
 try:
-    import cohere
+    import httpx
 except ImportError:
-    cohere = None  # type: ignore
+    httpx = None  # type: ignore
 
 
 class CohereChatClient:
+    """
+    Cohere chat plugin using direct HTTP requests.
+
+    Zero dependencies beyond httpx (which is already required by fitz core).
+
+    Required:
+        - COHERE_API_KEY environment variable OR api_key parameter
+
+    Optional:
+        - model: Chat model (default: command-r-plus)
+        - temperature: Sampling temperature (default: 0.2)
+    """
     plugin_name = "cohere"
     plugin_type = "chat"
 
     def __init__(
-        self,
-        api_key: str | None = None,
-        model: str = "command-r-plus",
-        temperature: float = 0.2,
+            self,
+            api_key: str | None = None,
+            model: str = "command-r-plus",
+            temperature: float = 0.2,
+            base_url: str = "https://api.cohere.ai/v1",
     ) -> None:
-        if cohere is None:
-            raise RuntimeError("Install cohere: `pip install cohere`")
+        if httpx is None:
+            raise RuntimeError(
+                "httpx is required for Cohere plugin. "
+                "Install with: pip install httpx"
+            )
 
+        # Get API key
         key = api_key or os.getenv("COHERE_API_KEY")
         if not key:
-            raise ValueError("COHERE_API_KEY is not set for CohereChatClient")
+            raise RuntimeError(
+                "COHERE_API_KEY is not set. "
+                "Set it as an environment variable or pass api_key parameter."
+            )
+        self._api_key = key
 
         self.model = model
         self.temperature = temperature
-        self._client = cohere.ClientV2(api_key=key)
+        self.base_url = base_url
 
-    def chat(self, messages: list[dict[str, Any]]) -> str:
-        resp = self._client.chat(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
+        # Create HTTP client
+        self._client = httpx.Client(
+            base_url=self.base_url,
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=60.0,
         )
 
-        msg = getattr(resp, "message", None)
-        if msg is None:
-            return str(resp)
+    def chat(self, messages: list[dict[str, Any]]) -> str:
+        """
+        Send chat completion request.
 
-        content = getattr(msg, "content", None)
-        if isinstance(content, list) and content:
-            first = content[0]
-            text = getattr(first, "text", None)
-            if isinstance(text, str):
-                return text
+        Args:
+            messages: List of message dicts with 'role' and 'content'
 
-        text = getattr(msg, "text", None)
-        if isinstance(text, str):
-            return text
+        Returns:
+            The assistant's response text
 
-        return str(resp)
+        Raises:
+            RuntimeError: If the API request fails
+        """
+        # Build request payload
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+        }
+
+        try:
+            response = self._client.post("/chat", json=payload)
+            response.raise_for_status()
+
+            data = response.json()
+
+            # Extract text from response
+            # Response structure varies, try common patterns
+            if "text" in data:
+                return data["text"]
+
+            if "message" in data:
+                msg = data["message"]
+                if isinstance(msg, dict) and "content" in msg:
+                    content = msg["content"]
+                    if isinstance(content, str):
+                        return content
+                    if isinstance(content, list) and content:
+                        # Handle structured content
+                        text_parts = [
+                            item.get("text", "")
+                            for item in content
+                            if isinstance(item, dict) and item.get("type") == "text"
+                        ]
+                        return " ".join(text_parts)
+
+            # Fallback
+            return str(data)
+
+        except httpx.HTTPStatusError as exc:
+            error_detail = ""
+            try:
+                error_data = exc.response.json()
+                error_detail = f": {error_data.get('message', '')}"
+            except Exception:
+                pass
+
+            raise RuntimeError(
+                f"Cohere API request failed with status {exc.response.status_code}{error_detail}"
+            ) from exc
+
+        except Exception as exc:
+            raise RuntimeError(f"Failed to complete chat: {exc}") from exc
+
+    def __del__(self):
+        """Clean up HTTP client on deletion."""
+        if hasattr(self, '_client'):
+            try:
+                self._client.close()
+            except Exception:
+                pass

@@ -4,39 +4,128 @@ from __future__ import annotations
 import os
 
 try:
-    import cohere
+    import httpx
 except ImportError:
-    cohere = None  # type: ignore
+    httpx = None  # type: ignore
 
 from fitz.core.models.chunk import Chunk
 
 
 class CohereRerankClient:
+    """
+    Cohere rerank plugin using direct HTTP requests.
+
+    Zero dependencies beyond httpx (which is already required by fitz core).
+
+    Required:
+        - COHERE_API_KEY environment variable OR api_key parameter
+
+    Optional:
+        - model: Rerank model (default: rerank-english-v3.0)
+    """
     plugin_name = "cohere"
     plugin_type = "rerank"
 
     def __init__(
-        self,
-        api_key: str | None = None,
-        model: str = "rerank-english-v3.0",
+            self,
+            api_key: str | None = None,
+            model: str = "rerank-english-v3.0",
+            base_url: str = "https://api.cohere.ai/v1",
     ) -> None:
-        if cohere is None:
-            raise RuntimeError("Install cohere: `pip install cohere`")
+        if httpx is None:
+            raise RuntimeError(
+                "httpx is required for Cohere plugin. "
+                "Install with: pip install httpx"
+            )
 
+        # Get API key
         key = api_key or os.getenv("COHERE_API_KEY")
         if not key:
-            raise ValueError("COHERE_API_KEY is not set for CohereRerankClient")
+            raise RuntimeError(
+                "COHERE_API_KEY is not set. "
+                "Set it as an environment variable or pass api_key parameter."
+            )
+        self._api_key = key
 
         self.model = model
-        self._client = cohere.ClientV2(api_key=key)
+        self.base_url = base_url
+
+        # Create HTTP client
+        self._client = httpx.Client(
+            base_url=self.base_url,
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=30.0,
+        )
 
     def rerank(self, query: str, chunks: list[Chunk]) -> list[Chunk]:
-        docs = [c.content for c in chunks]
-        response = self._client.rerank(model=self.model, query=query, documents=docs)
+        """
+        Rerank chunks based on relevance to query.
 
-        results = sorted(
-            response.results,
-            key=lambda r: r.relevance_score,
-            reverse=True,
-        )
-        return [chunks[r.index] for r in results]
+        Args:
+            query: The search query
+            chunks: List of chunks to rerank
+
+        Returns:
+            Reranked list of chunks (sorted by relevance, highest first)
+
+        Raises:
+            RuntimeError: If the API request fails
+        """
+        if not chunks:
+            return []
+
+        # Extract text from chunks
+        documents = [chunk.content for chunk in chunks]
+
+        # Build request payload
+        payload = {
+            "model": self.model,
+            "query": query,
+            "documents": documents,
+        }
+
+        try:
+            response = self._client.post("/rerank", json=payload)
+            response.raise_for_status()
+
+            data = response.json()
+
+            # Extract results
+            # Response structure: {"results": [{"index": 0, "relevance_score": 0.9}, ...]}
+            results = data.get("results", [])
+
+            # Sort by relevance score (highest first)
+            sorted_results = sorted(
+                results,
+                key=lambda r: r.get("relevance_score", 0.0),
+                reverse=True,
+            )
+
+            # Return chunks in reranked order
+            return [chunks[r["index"]] for r in sorted_results]
+
+        except httpx.HTTPStatusError as exc:
+            error_detail = ""
+            try:
+                error_data = exc.response.json()
+                error_detail = f": {error_data.get('message', '')}"
+            except Exception:
+                pass
+
+            raise RuntimeError(
+                f"Cohere API request failed with status {exc.response.status_code}{error_detail}"
+            ) from exc
+
+        except Exception as exc:
+            raise RuntimeError(f"Failed to rerank: {exc}") from exc
+
+    def __del__(self):
+        """Clean up HTTP client on deletion."""
+        if hasattr(self, '_client'):
+            try:
+                self._client.close()
+            except Exception:
+                pass
