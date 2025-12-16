@@ -56,7 +56,7 @@ class LocalChatLLM:
         return _extract_text(resp)
 
 
-def _extract_text(resp: Any) -> str:
+def _extract_text(resp: object) -> str:
     try:
         msg = resp.get("message") or {}
         return str(msg.get("content") or "")

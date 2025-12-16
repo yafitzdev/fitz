@@ -54,7 +54,7 @@ class ChunkingEngine:
 
         return cls(plugin)
 
-    def run(self, raw_doc: Any) -> List[Chunk]:
+    def run(self, raw_doc: object) -> List[Chunk]:
         path = Path(raw_doc.path)
 
         logger.debug(f"{CHUNKING} Chunking file: {path}")

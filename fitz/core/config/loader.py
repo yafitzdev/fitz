@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "default.yaml"
 
 
-def _expand_env(value: Any) -> Any:
+def _expand_env(value: object) -> object:
     if isinstance(value, str):
         return os.path.expandvars(value)
     if isinstance(value, dict):
@@ -39,7 +39,7 @@ def _expand_env(value: Any) -> Any:
     return value
 
 
-def _deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+def _deep_merge(a: dict[str, object], b: dict[str, object]) -> dict[str, object]:
     out = dict(a)
     for k, v in b.items():
         if k in out and isinstance(out[k], dict) and isinstance(v, dict):
