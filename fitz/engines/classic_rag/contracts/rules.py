@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Dict, FrozenSet
 
-from fitz.core._contracts.roles import ROLES, Role
+from fitz.engines.classic_rag.contracts.roles import ROLES, Role
 
 
 def role_by_name() -> Dict[str, Role]:
