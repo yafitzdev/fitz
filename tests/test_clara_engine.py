@@ -32,9 +32,9 @@ class TestClaraConfig:
     def test_default_config(self):
         """Test default configuration values."""
         from fitz.engines.clara.config.schema import (
+            ClaraCompressionConfig,
             ClaraConfig,
             ClaraModelConfig,
-            ClaraCompressionConfig,
         )
 
         config = ClaraConfig()

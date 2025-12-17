@@ -14,11 +14,11 @@ This gives new users confidence that Fitz is working correctly.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from pathlib import Path
 from typing import Optional
-import os
 
 import typer
 
@@ -59,7 +59,6 @@ in 2020 to address the limitation of LLMs having static, outdated knowledge.
 - **Source Attribution**: Responses can cite their sources
 - **Domain Adaptation**: Works with any document collection
 """,
-
     "vector_databases.txt": """# Vector Databases for RAG
 
 Vector databases are specialized databases designed to store and query 
@@ -80,7 +79,6 @@ high-dimensional vector embeddings. They are essential for RAG systems.
 - **HNSW**: Hierarchical Navigable Small World - efficient approximate search algorithm
 - **Cosine Similarity**: Common metric for comparing embedding vectors
 """,
-
     "building_rag_pipeline.txt": """# Building a RAG Pipeline
 
 A RAG pipeline consists of several components working together.
@@ -126,6 +124,7 @@ A RAG pipeline consists of several components working together.
 # Helper Functions
 # =============================================================================
 
+
 def print_step(step: int, total: int, message: str) -> None:
     """Print a step indicator."""
     if RICH_AVAILABLE:
@@ -169,6 +168,7 @@ def print_info(message: str) -> None:
 # =============================================================================
 # System Check
 # =============================================================================
+
 
 def check_system() -> tuple[bool, dict]:
     """
@@ -216,6 +216,7 @@ def check_system() -> tuple[bool, dict]:
         # Check Ollama for local
         try:
             import httpx
+
             response = httpx.get("http://localhost:11434/api/tags", timeout=2)
             if response.status_code == 200:
                 details["llm_provider"] = "local"
@@ -237,6 +238,7 @@ def check_system() -> tuple[bool, dict]:
     qdrant_available = False
     try:
         import httpx
+
         host = os.getenv("QDRANT_HOST", "localhost")
         port = os.getenv("QDRANT_PORT", "6333")
         response = httpx.get(f"http://{host}:{port}/collections", timeout=2)
@@ -252,15 +254,14 @@ def check_system() -> tuple[bool, dict]:
     if not qdrant_available:
         try:
             import faiss
+
             details["vector_db"] = "local-faiss"
             print_success("FAISS available (local vector DB)")
         except ImportError:
             pass
 
     if not details["vector_db"]:
-        details["issues"].append(
-            "No vector database found. Install faiss-cpu or start Qdrant."
-        )
+        details["issues"].append("No vector database found. Install faiss-cpu or start Qdrant.")
 
     success = len(details["issues"]) == 0
     return success, details
@@ -269,6 +270,7 @@ def check_system() -> tuple[bool, dict]:
 # =============================================================================
 # Sample Documents
 # =============================================================================
+
 
 def create_sample_documents(base_dir: Path) -> list[Path]:
     """Create sample documents in the given directory."""
@@ -287,12 +289,13 @@ def create_sample_documents(base_dir: Path) -> list[Path]:
 # Config Generation
 # =============================================================================
 
+
 def generate_quickstart_config(
-        llm_provider: str,
-        embedding_provider: str,
-        vector_db: str,
-        qdrant_host: str = "localhost",
-        qdrant_port: str = "6333",
+    llm_provider: str,
+    embedding_provider: str,
+    vector_db: str,
+    qdrant_host: str = "localhost",
+    qdrant_port: str = "6333",
 ) -> str:
     """
     Generate a minimal config for quickstart.
@@ -378,11 +381,12 @@ rgs:
 # Ingestion
 # =============================================================================
 
+
 def run_ingestion(
-        docs_path: Path,
-        collection: str,
-        embedding_plugin: str,
-        vector_db_plugin: str,
+    docs_path: Path,
+    collection: str,
+    embedding_plugin: str,
+    vector_db_plugin: str,
 ) -> tuple[bool, int]:
     """
     Run document ingestion.
@@ -390,13 +394,13 @@ def run_ingestion(
     Returns (success, num_chunks).
     """
     try:
-        from fitz.llm.registry import get_llm_plugin
-        from fitz.llm.embedding.engine import EmbeddingEngine
-        from fitz.vector_db.registry import get_vector_db_plugin
-        from fitz.vector_db.writer import VectorDBWriter
+        from fitz.engines.classic_rag.models.chunk import Chunk
         from fitz.ingest.ingestion.engine import IngestionEngine
         from fitz.ingest.ingestion.registry import get_ingest_plugin
-        from fitz.engines.classic_rag.models.chunk import Chunk
+        from fitz.llm.embedding.engine import EmbeddingEngine
+        from fitz.llm.registry import get_llm_plugin
+        from fitz.vector_db.registry import get_vector_db_plugin
+        from fitz.vector_db.writer import VectorDBWriter
 
         # Step 1: Ingest documents
         IngestPluginCls = get_ingest_plugin("local")
@@ -411,16 +415,20 @@ def run_ingestion(
             path = getattr(doc, "path", f"doc_{i}")
 
             # Simple paragraph-based chunking
-            paragraphs = [p.strip() for p in content.split("\n\n") if p.strip() and len(p.strip()) > 50]
+            paragraphs = [
+                p.strip() for p in content.split("\n\n") if p.strip() and len(p.strip()) > 50
+            ]
 
             for j, para in enumerate(paragraphs):
-                chunks.append(Chunk(
-                    id=f"{Path(path).stem}:{j}",
-                    doc_id=str(path),
-                    chunk_index=j,
-                    content=para,
-                    metadata={"source": str(path)},
-                ))
+                chunks.append(
+                    Chunk(
+                        id=f"{Path(path).stem}:{j}",
+                        doc_id=str(path),
+                        chunk_index=j,
+                        content=para,
+                        metadata={"source": str(path)},
+                    )
+                )
 
         if not chunks:
             return False, 0
@@ -447,6 +455,7 @@ def run_ingestion(
     except Exception as e:
         print_error(f"Ingestion failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False, 0
 
@@ -454,6 +463,7 @@ def run_ingestion(
 # =============================================================================
 # Query Test
 # =============================================================================
+
 
 def run_test_query(collection: str, config_path: Path) -> tuple[bool, str, list]:
     """
@@ -483,6 +493,7 @@ def run_test_query(collection: str, config_path: Path) -> tuple[bool, str, list]
     except Exception as e:
         print_error(f"Query failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False, str(e), []
 
@@ -491,17 +502,18 @@ def run_test_query(collection: str, config_path: Path) -> tuple[bool, str, list]
 # Main Command
 # =============================================================================
 
+
 def command(
-        clean: bool = typer.Option(
-            False,
-            "--clean",
-            help="Remove existing quickstart data before running",
-        ),
-        skip_query: bool = typer.Option(
-            False,
-            "--skip-query",
-            help="Skip the test query (useful for CI without LLM)",
-        ),
+    clean: bool = typer.Option(
+        False,
+        "--clean",
+        help="Remove existing quickstart data before running",
+    ),
+    skip_query: bool = typer.Option(
+        False,
+        "--skip-query",
+        help="Skip the test query (useful for CI without LLM)",
+    ),
 ) -> None:
     """
     Run a complete end-to-end test of Fitz.
@@ -525,11 +537,12 @@ def command(
 
     # Header
     if RICH_AVAILABLE:
-        console.print(Panel.fit(
-            "[bold]🚀 Fitz Quickstart[/bold]\n"
-            "Let's verify your setup works end-to-end!",
-            border_style="blue"
-        ))
+        console.print(
+            Panel.fit(
+                "[bold]🚀 Fitz Quickstart[/bold]\n" "Let's verify your setup works end-to-end!",
+                border_style="blue",
+            )
+        )
     else:
         print("\n" + "=" * 60)
         print("🚀 Fitz Quickstart")
@@ -614,9 +627,9 @@ def command(
 
     if RICH_AVAILABLE:
         with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
         ) as progress:
             task = progress.add_task("Ingesting...", total=None)
             success, num_chunks = run_ingestion(
@@ -646,9 +659,9 @@ def command(
 
         if RICH_AVAILABLE:
             with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    console=console,
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
             ) as progress:
                 task = progress.add_task("Generating answer...", total=None)
                 success, answer, sources = run_test_query(collection, config_path)
@@ -663,11 +676,13 @@ def command(
 
         # Display answer
         if RICH_AVAILABLE:
-            console.print(Panel(
-                answer[:500] + ("..." if len(answer) > 500 else ""),
-                title="[green]Answer[/green]",
-                border_style="green",
-            ))
+            console.print(
+                Panel(
+                    answer[:500] + ("..." if len(answer) > 500 else ""),
+                    title="[green]Answer[/green]",
+                    border_style="green",
+                )
+            )
             if sources:
                 console.print(f"  [dim]Sources: {', '.join(sources)}[/dim]")
         else:

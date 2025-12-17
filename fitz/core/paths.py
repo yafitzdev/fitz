@@ -14,9 +14,9 @@ Design principles:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
-import os
 
 
 class FitzPaths:
@@ -202,6 +202,7 @@ class FitzPaths:
 # =============================================================================
 # Convenience Functions
 # =============================================================================
+
 
 def get_workspace() -> Path:
     """Convenience function to get workspace path."""

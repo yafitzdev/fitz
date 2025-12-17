@@ -14,13 +14,13 @@ import typer
 
 from fitz.core import (
     Constraints,
-    QueryError,
-    KnowledgeError,
     GenerationError,
+    KnowledgeError,
+    QueryError,
 )
 from fitz.engines.classic_rag.config.loader import load_config as load_rag_config
-from fitz.engines.classic_rag.runtime import run_classic_rag
 from fitz.engines.classic_rag.errors.llm import LLMError
+from fitz.engines.classic_rag.runtime import run_classic_rag
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import CLI, PIPELINE
 
@@ -43,7 +43,7 @@ def command(
         "--preset",
         "-p",
         help="Use a named preset (e.g., 'local' for offline mode). "
-             "Available: local, openai, azure, cohere",
+        "Available: local, openai, azure, cohere",
     ),
     max_sources: Optional[int] = typer.Option(
         None,
@@ -55,7 +55,7 @@ def command(
         None,
         "--filters",
         "-f",
-        help="JSON string of metadata filters (e.g., '{\"topic\": \"physics\"}')",
+        help='JSON string of metadata filters (e.g., \'{"topic": "physics"}\')',
     ),
 ) -> None:
     """
@@ -99,6 +99,7 @@ def command(
 
         # Load config from preset dict
         from fitz.engines.classic_rag.config.schema import FitzConfig
+
         config_obj = FitzConfig.from_dict(preset_dict)
     else:
         config_path = str(config) if config else None
@@ -112,25 +113,19 @@ def command(
         filter_dict = {}
         if filters:
             import json
+
             try:
                 filter_dict = json.loads(filters)
             except json.JSONDecodeError as e:
                 typer.echo(f"Error: Invalid JSON in --filters: {e}", err=True)
                 raise typer.Exit(code=1)
 
-        constraints = Constraints(
-            max_sources=max_sources,
-            filters=filter_dict
-        )
+        constraints = Constraints(max_sources=max_sources, filters=filter_dict)
 
     # Run query using new runtime
     typer.echo("Processing query...")
     try:
-        answer = run_classic_rag(
-            query=question,
-            config=config_obj,
-            constraints=constraints
-        )
+        answer = run_classic_rag(query=question, config=config_obj, constraints=constraints)
     except LLMError as e:
         # LLMError contains user-friendly setup instructions - display them directly
         typer.echo(str(e), err=True)
@@ -151,8 +146,8 @@ def command(
             if isinstance(root_cause, LLMError):
                 typer.echo(str(root_cause), err=True)
                 raise typer.Exit(code=1)
-            root_cause = getattr(root_cause, '__cause__', None)
-        
+            root_cause = getattr(root_cause, "__cause__", None)
+
         typer.echo(f"Unexpected error: {e}", err=True)
         logger.exception("Unexpected error during query execution")
         raise typer.Exit(code=1)
@@ -192,4 +187,5 @@ def command(
         typer.echo("=" * 60)
         typer.echo()
         import json
+
         typer.echo(json.dumps(answer.metadata, indent=2))

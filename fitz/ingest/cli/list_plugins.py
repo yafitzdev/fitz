@@ -12,11 +12,11 @@ from typing import Optional
 
 import typer
 
+from fitz.core.registry import available_llm_plugins  # Use this for embedding/rerank
+from fitz.core.registry import get_llm_plugin  # Use this for embedding/rerank
 from fitz.core.registry import (
-    get_ingest_plugin,
     available_ingest_plugins,
-    available_llm_plugins,  # Use this for embedding/rerank
-    get_llm_plugin,         # Use this for embedding/rerank
+    get_ingest_plugin,
 )
 from fitz.vector_db.registry import available_vector_db_plugins
 

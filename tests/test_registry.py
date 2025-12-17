@@ -44,10 +44,10 @@ def test_registry_error_message_is_helpful():
 def test_all_registries_use_same_pattern():
     """All plugin registries should follow the same pattern."""
     from fitz.core.registry import (
+        PluginNotFoundError,
+        get_ingest_plugin,
         get_llm_plugin,
         get_vector_db_plugin,
-        get_ingest_plugin,
-        PluginNotFoundError,
     )
 
     # All should raise PluginNotFoundError for unknown plugins

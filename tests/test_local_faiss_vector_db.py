@@ -48,7 +48,7 @@ def test_local_faiss_vector_db_upsert_search_and_persist(tmp_path: Path):
         {
             "id": f"c{i}",
             "vector": (np.ones(dim, dtype="float32") * i).tolist(),
-            "payload": {"i": i, "content": f"text {i}"}
+            "payload": {"i": i, "content": f"text {i}"},
         }
         for i in range(5)
     ]
@@ -143,14 +143,20 @@ def test_local_faiss_collection_filtering(tmp_path: Path):
     db = FaissLocalVectorDB(path=tmp_path)
 
     # Add to two collections
-    db.upsert("collection_a", [
-        {"id": "a1", "vector": [1.0, 0.0, 0.0], "payload": {"name": "a1"}},
-        {"id": "a2", "vector": [0.9, 0.1, 0.0], "payload": {"name": "a2"}},
-    ])
+    db.upsert(
+        "collection_a",
+        [
+            {"id": "a1", "vector": [1.0, 0.0, 0.0], "payload": {"name": "a1"}},
+            {"id": "a2", "vector": [0.9, 0.1, 0.0], "payload": {"name": "a2"}},
+        ],
+    )
 
-    db.upsert("collection_b", [
-        {"id": "b1", "vector": [0.0, 1.0, 0.0], "payload": {"name": "b1"}},
-    ])
+    db.upsert(
+        "collection_b",
+        [
+            {"id": "b1", "vector": [0.0, 1.0, 0.0], "payload": {"name": "b1"}},
+        ],
+    )
 
     assert db.count() == 3
     assert db.count("collection_a") == 2
@@ -172,10 +178,13 @@ def test_local_faiss_delete_collection(tmp_path: Path):
     db = FaissLocalVectorDB(path=tmp_path)
 
     db.upsert("keep", [{"id": "k1", "vector": [1.0, 0.0], "payload": {}}])
-    db.upsert("delete", [
-        {"id": "d1", "vector": [0.0, 1.0], "payload": {}},
-        {"id": "d2", "vector": [0.0, 0.9], "payload": {}},
-    ])
+    db.upsert(
+        "delete",
+        [
+            {"id": "d1", "vector": [0.0, 1.0], "payload": {}},
+            {"id": "d2", "vector": [0.0, 0.9], "payload": {}},
+        ],
+    )
 
     assert db.count() == 3
 

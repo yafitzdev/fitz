@@ -18,20 +18,17 @@ from __future__ import annotations
 
 from typing import Any, Type
 
-from fitz.core.registry import (
-    # Functions
-    get_llm_plugin,
-    available_llm_plugins,
-    resolve_llm_plugin,
-    # Registries
-    LLM_REGISTRY,
+from fitz.core.registry import (  # Functions; Registries; Errors
     CHAT_REGISTRY,
     EMBEDDING_REGISTRY,
+    LLM_REGISTRY,
     RERANK_REGISTRY,
-    # Errors
     LLMRegistryError,
-    PluginRegistryError,
     PluginNotFoundError,
+    PluginRegistryError,
+    available_llm_plugins,
+    get_llm_plugin,
+    resolve_llm_plugin,
 )
 
 # Type alias for backwards compat

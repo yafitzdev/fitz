@@ -15,10 +15,10 @@ from pathlib import Path
 from typing import Optional, Union
 
 from fitz.core.config import (
-    load_config as _load_config_core,
     ConfigError,
     ConfigNotFoundError,
 )
+from fitz.core.config import load_config as _load_config_core
 from fitz.engines.clara.config.schema import ClaraConfig
 
 

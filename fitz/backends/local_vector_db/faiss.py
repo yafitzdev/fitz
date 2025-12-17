@@ -47,10 +47,10 @@ class FaissLocalVectorDB:
     plugin_type = "vector_db"
 
     def __init__(
-            self,
-            *,
-            path: Optional[str | Path] = None,
-            persist: bool = True,
+        self,
+        *,
+        path: Optional[str | Path] = None,
+        persist: bool = True,
     ):
         """
         Initialize FAISS vector database.
@@ -62,16 +62,17 @@ class FaissLocalVectorDB:
         # Import here to allow graceful failure if faiss not installed
         try:
             import faiss
+
             self._faiss = faiss
         except ImportError:
             raise ImportError(
-                "faiss is required for local-faiss plugin. "
-                "Install with: pip install faiss-cpu"
+                "faiss is required for local-faiss plugin. " "Install with: pip install faiss-cpu"
             )
 
         # Resolve path
         if path is None:
             from fitz.core.paths import FitzPaths
+
             self._base_path = FitzPaths.vector_db()
         else:
             self._base_path = Path(path)
@@ -93,7 +94,9 @@ class FaissLocalVectorDB:
         # Try to load existing index
         self._try_load()
 
-        logger.info(f"{VECTOR_DB} Local FAISS initialized (path={self._base_path}, dim={self._dim or 'auto'})")
+        logger.info(
+            f"{VECTOR_DB} Local FAISS initialized (path={self._base_path}, dim={self._dim or 'auto'})"
+        )
 
     def _try_load(self) -> bool:
         """Try to load existing index from disk. Returns True if successful."""
@@ -211,11 +214,11 @@ class FaissLocalVectorDB:
             self._save()
 
     def search(
-            self,
-            collection_name: str,
-            query_vector: list[float],
-            limit: int,
-            with_payload: bool = True,
+        self,
+        collection_name: str,
+        query_vector: list[float],
+        limit: int,
+        with_payload: bool = True,
     ) -> list[SearchResult]:
         """
         Search for similar vectors.
@@ -285,10 +288,7 @@ class FaissLocalVectorDB:
             return self._index.ntotal
 
         # Count by collection
-        return sum(
-            1 for p in self._payloads
-            if p.get("_collection") == collection
-        )
+        return sum(1 for p in self._payloads if p.get("_collection") == collection)
 
     def delete_collection(self, collection: str) -> int:
         """
@@ -304,8 +304,7 @@ class FaissLocalVectorDB:
 
         # Find indices to keep
         keep_indices = [
-            i for i, p in enumerate(self._payloads)
-            if p.get("_collection") != collection
+            i for i, p in enumerate(self._payloads) if p.get("_collection") != collection
         ]
 
         deleted = self._index.ntotal - len(keep_indices)
@@ -374,16 +373,18 @@ class FaissLocalVectorDB:
             if embedding is None:
                 raise ValueError(f"Chunk {chunk.id} has no embedding attached")
 
-            points.append({
-                "id": chunk.id,
-                "vector": list(embedding),
-                "payload": {
-                    "doc_id": chunk.doc_id,
-                    "chunk_index": chunk.chunk_index,
-                    "content": chunk.content,
-                    **(chunk.metadata or {}),
+            points.append(
+                {
+                    "id": chunk.id,
+                    "vector": list(embedding),
+                    "payload": {
+                        "doc_id": chunk.doc_id,
+                        "chunk_index": chunk.chunk_index,
+                        "content": chunk.content,
+                        **(chunk.metadata or {}),
+                    },
                 }
-            })
+            )
 
         # Use "default" collection for legacy API
         self.upsert("default", points)

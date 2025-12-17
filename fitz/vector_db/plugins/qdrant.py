@@ -55,6 +55,7 @@ Original error: {original_error}
 
 class QdrantCollectionError(Exception):
     """Raised for collection-related errors with helpful messages."""
+
     pass
 
 
@@ -136,9 +137,7 @@ class QdrantVectorDB(VectorDBPlugin):
 
         try:
             self._client = QdrantClient(
-                host=self._resolved_host,
-                port=self._resolved_port,
-                timeout=10
+                host=self._resolved_host, port=self._resolved_port, timeout=10
             )
             # Test connection
             self._client.get_collections()
@@ -163,6 +162,7 @@ class QdrantVectorDB(VectorDBPlugin):
         if self._resolved_host == "localhost":
             try:
                 from fitz.core.detect import get_qdrant_connection
+
                 detected_host, detected_port = get_qdrant_connection()
                 self._resolved_host = detected_host
                 self._resolved_port = detected_port
@@ -276,12 +276,12 @@ Possible fixes:
     # =========================================================================
 
     def search(
-            self,
-            collection_name: str,
-            query_vector: List[float],
-            limit: int = 10,
-            with_payload: bool = True,
-            **kwargs: Any,
+        self,
+        collection_name: str,
+        query_vector: List[float],
+        limit: int = 10,
+        with_payload: bool = True,
+        **kwargs: Any,
     ) -> List[SearchResult]:
         """
         Search for similar vectors in a collection.
@@ -437,9 +437,9 @@ Try recreating the collection:
 
             # Handle different qdrant-client versions
             # Newer versions use info.points_count, older had vectors_count
-            points_count = getattr(info, 'points_count', 0)
-            vectors_count = getattr(info, 'vectors_count', points_count)
-            indexed_count = getattr(info, 'indexed_vectors_count', 0)
+            points_count = getattr(info, "points_count", 0)
+            vectors_count = getattr(info, "vectors_count", points_count)
+            indexed_count = getattr(info, "indexed_vectors_count", 0)
 
             return {
                 "name": collection_name,

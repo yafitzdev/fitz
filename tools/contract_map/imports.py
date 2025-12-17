@@ -78,10 +78,10 @@ def _is_inside_function(node: ast.AST, tree: ast.Module) -> bool:
 
 
 def _extract_imports(
-        tree: ast.Module,
-        current_module: str,
-        *,
-        include_lazy: bool = True,
+    tree: ast.Module,
+    current_module: str,
+    *,
+    include_lazy: bool = True,
 ) -> List[Tuple[str, bool]]:
     """
     Extract all imports from an AST tree.
@@ -185,9 +185,13 @@ def build_import_graph(root: Path, *, excludes: set[str]) -> ImportGraph:
         if src == "core" and dst in {"pipeline", "ingest"}:
             lazy_would_violate.append(f"(lazy/OK) core imports {dst} inside functions ({count}x)")
         if src == "ingest" and dst == "pipeline":
-            lazy_would_violate.append(f"(lazy/OK) ingest imports pipeline inside functions ({count}x)")
+            lazy_would_violate.append(
+                f"(lazy/OK) ingest imports pipeline inside functions ({count}x)"
+            )
 
-    return ImportGraph(edges=edges, violations=sorted(violations), lazy_ok=sorted(lazy_would_violate))
+    return ImportGraph(
+        edges=edges, violations=sorted(violations), lazy_ok=sorted(lazy_would_violate)
+    )
 
 
 def render_import_graph_section(import_graph: ImportGraph | None) -> str:
@@ -206,7 +210,7 @@ def render_import_graph_section(import_graph: ImportGraph | None) -> str:
         lines.append("- (no module-level layering violations detected)")
 
     # Show lazy imports that are OK
-    if hasattr(import_graph, 'lazy_ok') and import_graph.lazy_ok:
+    if hasattr(import_graph, "lazy_ok") and import_graph.lazy_ok:
         lines.append("")
         lines.append("Lazy imports (inside functions, no violation):")
         for info in import_graph.lazy_ok:
@@ -228,7 +232,7 @@ if __name__ == "__main__":
 
     print(f"Found {len(graph.edges)} edges")
     print(f"Found {len(graph.violations)} module-level violations")
-    if hasattr(graph, 'lazy_ok'):
+    if hasattr(graph, "lazy_ok"):
         print(f"Found {len(graph.lazy_ok)} lazy imports (OK)")
 
     print("\n" + "=" * 80)

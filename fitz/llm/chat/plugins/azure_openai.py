@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fitz.llm.credentials import resolve_api_key, CredentialError
+from fitz.llm.credentials import CredentialError, resolve_api_key
 
 try:
     from openai import AzureOpenAI

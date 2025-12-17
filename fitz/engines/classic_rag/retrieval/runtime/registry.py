@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from fitz.core.registry import (
-    get_retriever_plugin,
-    available_retriever_plugins,
     RETRIEVER_REGISTRY,
-    PluginRegistryError,
     PluginNotFoundError,
+    PluginRegistryError,
+    available_retriever_plugins,
+    get_retriever_plugin,
 )
 
 __all__ = [

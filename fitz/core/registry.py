@@ -32,8 +32,10 @@ T = TypeVar("T")
 # Exceptions
 # =============================================================================
 
+
 class PluginRegistryError(Exception):
     """Base error for plugin registry operations."""
+
     pass
 
 
@@ -42,11 +44,13 @@ class PluginNotFoundError(PluginRegistryError, ValueError):
 
     Inherits from ValueError for backwards compatibility.
     """
+
     pass
 
 
 class DuplicatePluginError(PluginRegistryError):
     """Raised when two plugins have the same name."""
+
     pass
 
 
@@ -56,6 +60,7 @@ class LLMRegistryError(PluginNotFoundError):
 
     Inherits from PluginNotFoundError for consistent exception handling.
     """
+
     pass
 
 
@@ -64,12 +69,14 @@ class VectorDBRegistryError(PluginNotFoundError):
 
     Inherits from PluginNotFoundError for consistent exception handling.
     """
+
     pass
 
 
 # =============================================================================
 # Generic Plugin Registry
 # =============================================================================
+
 
 @dataclass
 class PluginRegistry:
@@ -84,6 +91,7 @@ class PluginRegistry:
         plugin_type_filter: If set, only register plugins with this plugin_type
         check_module_match: If True, only register classes defined in the scanned module
     """
+
     name: str
     scan_packages: List[str]
     required_method: str
@@ -100,8 +108,7 @@ class PluginRegistry:
         if plugin_name not in self._plugins:
             available = sorted(self._plugins.keys())
             raise PluginNotFoundError(
-                f"Unknown {self.name} plugin: {plugin_name!r}. "
-                f"Available: {available}"
+                f"Unknown {self.name} plugin: {plugin_name!r}. " f"Available: {available}"
             )
 
         return self._plugins[plugin_name]
@@ -305,8 +312,7 @@ def get_llm_plugin(*, plugin_name: str, plugin_type: str) -> Type[Any]:
     if plugin_name not in LLM_REGISTRY[plugin_type]:
         available = sorted(LLM_REGISTRY[plugin_type].keys())
         raise LLMRegistryError(
-            f"Unknown {plugin_type} plugin: {plugin_name!r}. "
-            f"Available: {available}"
+            f"Unknown {plugin_type} plugin: {plugin_name!r}. " f"Available: {available}"
         )
 
     return LLM_REGISTRY[plugin_type][plugin_name]
@@ -326,6 +332,7 @@ def resolve_llm_plugin(*, plugin_type: str, requested_name: str) -> Type[Any]:
 # =============================================================================
 # Vector DB Functions
 # =============================================================================
+
 
 def get_vector_db_plugin(plugin_name: str) -> Type[Any]:
     """Get a vector DB plugin by name."""
@@ -349,6 +356,7 @@ def resolve_vector_db_plugin(requested_name: str) -> Type[Any]:
 # Ingest Functions
 # =============================================================================
 
+
 def get_ingest_plugin(plugin_name: str) -> Type[Any]:
     """Get an ingestion plugin by name."""
     return INGEST_REGISTRY.get(plugin_name)
@@ -362,6 +370,7 @@ def available_ingest_plugins() -> List[str]:
 # =============================================================================
 # Chunking Functions
 # =============================================================================
+
 
 def get_chunker_plugin(plugin_name: str) -> Type[Any]:
     """Get a chunker plugin by name."""
@@ -382,6 +391,7 @@ def available_chunking_plugins() -> List[str]:
 # Retriever Functions
 # =============================================================================
 
+
 def get_retriever_plugin(plugin_name: str) -> Type[Any]:
     """Get a retriever plugin by name."""
     return RETRIEVER_REGISTRY.get(plugin_name)
@@ -395,6 +405,7 @@ def available_retriever_plugins() -> List[str]:
 # =============================================================================
 # Pipeline Functions
 # =============================================================================
+
 
 def get_pipeline_plugin(plugin_name: str) -> Type[Any]:
     """Get a pipeline plugin by name."""

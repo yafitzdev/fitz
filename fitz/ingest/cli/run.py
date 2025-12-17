@@ -13,31 +13,31 @@ from typing import Any, Iterable, List
 
 import typer
 
+from fitz.engines.classic_rag.models.chunk import Chunk
+from fitz.ingest.ingestion.engine import IngestionEngine
+from fitz.ingest.ingestion.registry import get_ingest_plugin
 from fitz.llm.embedding.engine import EmbeddingEngine
 from fitz.llm.registry import get_llm_plugin
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import CHUNKING, CLI, EMBEDDING, INGEST, VECTOR_DB
-from fitz.engines.classic_rag.models.chunk import Chunk
 from fitz.vector_db.registry import get_vector_db_plugin
 from fitz.vector_db.writer import VectorDBWriter
-from fitz.ingest.ingestion.engine import IngestionEngine
-from fitz.ingest.ingestion.registry import get_ingest_plugin
 
 logger = get_logger(__name__)
 
 # Try to import rich for progress bars
 try:
     from rich.console import Console
+    from rich.panel import Panel
     from rich.progress import (
+        BarColumn,
         Progress,
         SpinnerColumn,
-        TextColumn,
-        BarColumn,
         TaskProgressColumn,
+        TextColumn,
         TimeElapsedColumn,
         TimeRemainingColumn,
     )
-    from rich.panel import Panel
     from rich.table import Table
 
     RICH_AVAILABLE = True
@@ -77,22 +77,22 @@ def _raw_to_chunks(raw_docs: Iterable[Any]) -> list[Chunk]:
 
 
 def _embed_with_progress(
-        embed_engine: EmbeddingEngine,
-        chunks: List[Chunk],
-        show_progress: bool = True,
+    embed_engine: EmbeddingEngine,
+    chunks: List[Chunk],
+    show_progress: bool = True,
 ) -> List[List[float]]:
     """Embed chunks with progress bar."""
     vectors = []
 
     if RICH_AVAILABLE and show_progress and len(chunks) > 1:
         with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                TimeRemainingColumn(),
-                console=console,
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
         ) as progress:
             task = progress.add_task("Embedding...", total=len(chunks))
 
@@ -112,46 +112,46 @@ def _embed_with_progress(
 
 
 def command(
-        source: Path = typer.Argument(
-            ...,
-            help="Source to ingest (file or directory, depending on ingest plugin).",
-        ),
-        collection: str = typer.Option(
-            ...,
-            "--collection",
-            "-c",
-            help="Target vector DB collection name.",
-        ),
-        ingest_plugin: str = typer.Option(
-            "local",
-            "--ingest-plugin",
-            "-i",
-            help="Ingestion plugin name (as registered in ingest.ingestion.registry).",
-        ),
-        embedding_plugin: str = typer.Option(
-            "cohere",
-            "--embedding-plugin",
-            "-e",
-            help="Embedding plugin name (registered in llm.registry).",
-        ),
-        vector_db_plugin: str = typer.Option(
-            "qdrant",
-            "--vector-db-plugin",
-            "-v",
-            help="Vector DB plugin name (registered in vector_db.registry).",
-        ),
-        batch_size: int = typer.Option(
-            50,
-            "--batch-size",
-            "-b",
-            help="Number of chunks to process before writing to vector DB.",
-        ),
-        quiet: bool = typer.Option(
-            False,
-            "--quiet",
-            "-q",
-            help="Suppress progress output.",
-        ),
+    source: Path = typer.Argument(
+        ...,
+        help="Source to ingest (file or directory, depending on ingest plugin).",
+    ),
+    collection: str = typer.Option(
+        ...,
+        "--collection",
+        "-c",
+        help="Target vector DB collection name.",
+    ),
+    ingest_plugin: str = typer.Option(
+        "local",
+        "--ingest-plugin",
+        "-i",
+        help="Ingestion plugin name (as registered in ingest.ingestion.registry).",
+    ),
+    embedding_plugin: str = typer.Option(
+        "cohere",
+        "--embedding-plugin",
+        "-e",
+        help="Embedding plugin name (registered in llm.registry).",
+    ),
+    vector_db_plugin: str = typer.Option(
+        "qdrant",
+        "--vector-db-plugin",
+        "-v",
+        help="Vector DB plugin name (registered in vector_db.registry).",
+    ),
+    batch_size: int = typer.Option(
+        50,
+        "--batch-size",
+        "-b",
+        help="Number of chunks to process before writing to vector DB.",
+    ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Suppress progress output.",
+    ),
 ) -> None:
     """
     Ingest documents into a vector database.
@@ -194,12 +194,13 @@ def command(
     # Header
     if show_progress:
         if RICH_AVAILABLE:
-            console.print(Panel.fit(
-                f"[bold]Ingesting[/bold] {source}\n"
-                f"[dim]Collection: {collection}[/dim]",
-                title="🔄 fitz-ingest",
-                border_style="blue"
-            ))
+            console.print(
+                Panel.fit(
+                    f"[bold]Ingesting[/bold] {source}\n" f"[dim]Collection: {collection}[/dim]",
+                    title="🔄 fitz-ingest",
+                    border_style="blue",
+                )
+            )
         else:
             typer.echo()
             typer.echo("=" * 60)
@@ -262,7 +263,9 @@ def command(
     # =========================================================================
     if show_progress:
         if RICH_AVAILABLE:
-            console.print(f"[blue]⏳[/blue] Generating embeddings with [bold]{embedding_plugin}[/bold]...")
+            console.print(
+                f"[blue]⏳[/blue] Generating embeddings with [bold]{embedding_plugin}[/bold]..."
+            )
         else:
             typer.echo(f"[3/4] Generating embeddings with '{embedding_plugin}'...")
 
@@ -297,18 +300,18 @@ def command(
     # Write in batches with progress
     if RICH_AVAILABLE and show_progress and len(chunks) > batch_size:
         with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                console=console,
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
         ) as progress:
             task = progress.add_task("Writing to DB...", total=len(chunks))
 
             for i in range(0, len(chunks), batch_size):
-                batch_chunks = chunks[i:i + batch_size]
-                batch_vectors = vectors[i:i + batch_size]
+                batch_chunks = chunks[i : i + batch_size]
+                batch_vectors = vectors[i : i + batch_size]
                 writer.upsert(collection=collection, chunks=batch_chunks, vectors=batch_vectors)
                 progress.update(task, advance=len(batch_chunks))
     else:
@@ -342,7 +345,7 @@ def command(
 
             console.print(table)
             console.print()
-            console.print("[dim]Next: fitz-pipeline query \"Your question\" [/dim]")
+            console.print('[dim]Next: fitz-pipeline query "Your question" [/dim]')
         else:
             typer.echo()
             typer.echo("=" * 60)

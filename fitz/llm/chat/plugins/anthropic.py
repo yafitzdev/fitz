@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fitz.llm.credentials import resolve_api_key, CredentialError
+from fitz.llm.credentials import CredentialError, resolve_api_key
 
 try:
     import anthropic

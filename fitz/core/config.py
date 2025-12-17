@@ -60,16 +60,19 @@ class ConfigError(Exception):
 
 class ConfigNotFoundError(ConfigError):
     """Raised when a config file doesn't exist."""
+
     pass
 
 
 class ConfigParseError(ConfigError):
     """Raised when YAML parsing fails."""
+
     pass
 
 
 class ConfigValidationError(ConfigError):
     """Raised when config doesn't match schema."""
+
     pass
 
 
@@ -119,9 +122,9 @@ def load_yaml(path: Union[str, Path]) -> Dict[str, Any]:
 
 
 def load_config(
-        path: Optional[Union[str, Path]] = None,
-        schema: Optional[Type[T]] = None,
-        config_type: Optional[str] = None,
+    path: Optional[Union[str, Path]] = None,
+    schema: Optional[Type[T]] = None,
+    config_type: Optional[str] = None,
 ) -> T:
     """
     Load and validate a configuration file.
@@ -211,6 +214,7 @@ def get_default_config_path(config_type: str) -> Path:
     if config_type == "rag" or config_type == "classic_rag":
         # Classic RAG default is bundled with the engine
         from fitz.engines.classic_rag.config.loader import DEFAULT_CONFIG_PATH
+
         return DEFAULT_CONFIG_PATH
 
     elif config_type == "ingest":
@@ -226,8 +230,8 @@ def get_default_config_path(config_type: str) -> Path:
 
 
 def _resolve_config_path(
-        path: Optional[Union[str, Path]],
-        config_type: Optional[str],
+    path: Optional[Union[str, Path]],
+    config_type: Optional[str],
 ) -> Path:
     """Resolve the actual config path to load."""
     if path is not None:
@@ -244,14 +248,14 @@ def _resolve_config_path(
     # Try the bundled RAG default
     try:
         from fitz.engines.classic_rag.config.loader import DEFAULT_CONFIG_PATH
+
         if DEFAULT_CONFIG_PATH.exists():
             return DEFAULT_CONFIG_PATH
     except ImportError:
         pass
 
     raise ConfigNotFoundError(
-        "No config file specified and no default found. "
-        "Run 'fitz init' to create one."
+        "No config file specified and no default found. " "Run 'fitz init' to create one."
     )
 
 
@@ -272,27 +276,33 @@ def _detect_schema(data: Dict[str, Any], config_type: Optional[str]) -> Optional
     # Use explicit type hint
     if config_type == "rag" or config_type == "classic_rag":
         from fitz.engines.classic_rag.config.schema import ClassicRagConfig
+
         return ClassicRagConfig
 
     if config_type == "ingest":
         from fitz.ingest.config.schema import IngestConfig
+
         return IngestConfig
 
     if config_type == "clara":
         from fitz.engines.clara.config.schema import ClaraConfig
+
         return ClaraConfig
 
     # Auto-detect from content (lazy imports to avoid architecture violations)
     if "ingester" in data and "chunker" in data:
         from fitz.ingest.config.schema import IngestConfig
+
         return IngestConfig
 
     if "llm" in data or "retriever" in data or "vector_db" in data:
         from fitz.engines.classic_rag.config.schema import ClassicRagConfig
+
         return ClassicRagConfig
 
     if "model" in data and "compression" in data:
         from fitz.engines.clara.config.schema import ClaraConfig
+
         return ClaraConfig
 
     # Unknown - return None to get raw dict
@@ -300,9 +310,9 @@ def _detect_schema(data: Dict[str, Any], config_type: Optional[str]) -> Optional
 
 
 def _validate_config(
-        data: Dict[str, Any],
-        schema: Type[T],
-        path: Path,
+    data: Dict[str, Any],
+    schema: Type[T],
+    path: Path,
 ) -> T:
     """
     Validate config data against a schema.
@@ -341,6 +351,7 @@ def load_rag_config(path: Optional[Union[str, Path]] = None):
     """
     # Lazy import to avoid architecture violation
     from fitz.engines.classic_rag.config.schema import ClassicRagConfig
+
     return load_config(path, schema=ClassicRagConfig, config_type="rag")
 
 
@@ -352,6 +363,7 @@ def load_ingest_config(path: Union[str, Path]):
     """
     # Lazy import to avoid architecture violation
     from fitz.ingest.config.schema import IngestConfig
+
     return load_config(path, schema=IngestConfig, config_type="ingest")
 
 
@@ -363,6 +375,7 @@ def load_clara_config(path: Optional[Union[str, Path]] = None):
     """
     # Lazy import to avoid architecture violation
     from fitz.engines.clara.config.schema import ClaraConfig
+
     return load_config(path, schema=ClaraConfig, config_type="clara")
 
 
@@ -372,8 +385,8 @@ def load_clara_config(path: Optional[Union[str, Path]] = None):
 
 
 def save_config(
-        data: Union[Dict[str, Any], Any],
-        path: Optional[Union[str, Path]] = None,
+    data: Union[Dict[str, Any], Any],
+    path: Optional[Union[str, Path]] = None,
 ) -> Path:
     """
     Save configuration to a YAML file.

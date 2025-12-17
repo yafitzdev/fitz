@@ -10,14 +10,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fitz.core.http import (
-    create_api_client,
-    raise_for_status,
-    handle_api_error,
     APIError,
     HTTPClientNotAvailable,
+    create_api_client,
+    handle_api_error,
+    raise_for_status,
 )
-from fitz.llm.credentials import resolve_api_key, CredentialError
 from fitz.engines.classic_rag.errors.llm import EmbeddingError
+from fitz.llm.credentials import CredentialError, resolve_api_key
 
 
 @dataclass
@@ -73,8 +73,7 @@ class CohereEmbeddingClient:
             )
         except HTTPClientNotAvailable:
             raise RuntimeError(
-                "httpx is required for Cohere plugin. "
-                "Install with: pip install httpx"
+                "httpx is required for Cohere plugin. " "Install with: pip install httpx"
             )
 
     def embed(self, text: str) -> list[float]:

@@ -22,9 +22,11 @@ logger = get_logger(__name__)
 # Protocols
 # =============================================================================
 
+
 @runtime_checkable
 class ChunkLike(Protocol):
     """Protocol for chunk-like objects."""
+
     id: str
     doc_id: str
     chunk_index: int
@@ -43,6 +45,7 @@ class VectorDBClient(Protocol):
 # Utility Functions
 # =============================================================================
 
+
 def compute_chunk_hash(chunk: ChunkLike) -> str:
     """
     Compute a stable hash for a chunk.
@@ -60,8 +63,8 @@ def compute_chunk_hash(chunk: ChunkLike) -> str:
 
 
 def chunks_to_points(
-        chunks: Iterable[ChunkLike],
-        vectors: Iterable[List[float]],
+    chunks: Iterable[ChunkLike],
+    vectors: Iterable[List[float]],
 ) -> List[Dict[str, Any]]:
     """
     Convert chunks and vectors to the standard points format.
@@ -93,11 +96,13 @@ def chunks_to_points(
             "chunk_hash": chunk_hash,
         }
 
-        points.append({
-            "id": chunk.id,
-            "vector": vector,
-            "payload": payload,
-        })
+        points.append(
+            {
+                "id": chunk.id,
+                "vector": vector,
+                "payload": payload,
+            }
+        )
 
     return points
 
@@ -105,6 +110,7 @@ def chunks_to_points(
 # =============================================================================
 # VectorDBWriter Class (for compatibility)
 # =============================================================================
+
 
 @dataclass
 class VectorDBWriter:
@@ -132,10 +138,10 @@ class VectorDBWriter:
     client: VectorDBClient
 
     def upsert(
-            self,
-            collection: str,
-            chunks: Iterable[ChunkLike],
-            vectors: Iterable[List[float]],
+        self,
+        collection: str,
+        chunks: Iterable[ChunkLike],
+        vectors: Iterable[List[float]],
     ) -> None:
         """
         Upsert chunks with their vectors into the vector database.

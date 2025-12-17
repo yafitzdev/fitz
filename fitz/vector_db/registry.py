@@ -12,19 +12,16 @@ Design principle: NO SILENT FALLBACK
 """
 from __future__ import annotations
 
-from typing import Any, Type, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Type
 
-from fitz.core.registry import (
-    # Functions
-    get_vector_db_plugin,
-    available_vector_db_plugins,
-    resolve_vector_db_plugin,
-    # Registry
+from fitz.core.registry import (  # Functions; Registry; Errors
     VECTOR_DB_REGISTRY,
-    # Errors
-    VectorDBRegistryError,
-    PluginRegistryError,
     PluginNotFoundError,
+    PluginRegistryError,
+    VectorDBRegistryError,
+    available_vector_db_plugins,
+    get_vector_db_plugin,
+    resolve_vector_db_plugin,
 )
 
 if TYPE_CHECKING:

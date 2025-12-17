@@ -34,14 +34,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
-
 # =============================================================================
 # Test Configuration
 # =============================================================================
 
+
 @dataclass
 class TestConfig:
     """Configuration for the smoketest."""
+
     docs_path: Optional[Path] = None
     verbose: bool = False
     embedding_dim: int = 64
@@ -52,6 +53,7 @@ class TestConfig:
 # =============================================================================
 # Mock Components (No External Dependencies)
 # =============================================================================
+
 
 def deterministic_embed(text: str, dim: int = 64) -> List[float]:
     """
@@ -65,7 +67,7 @@ def deterministic_embed(text: str, dim: int = 64) -> List[float]:
 
     # Use character n-grams to create semantic-ish embeddings
     for i in range(len(text_lower) - 2):
-        trigram = text_lower[i:i + 3]
+        trigram = text_lower[i : i + 3]
         hash_val = hash(trigram) % dim
         vec[hash_val] += 1.0
 
@@ -90,6 +92,7 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
 @dataclass
 class MockSearchResult:
     """Mock search result from vector DB."""
+
     id: str
     payload: dict
     score: float
@@ -114,11 +117,7 @@ class MockVectorDB:
         self._collections[collection] = list(existing.values())
 
     def search(
-            self,
-            collection_name: str,
-            query_vector: list[float],
-            limit: int,
-            with_payload: bool = True
+        self, collection_name: str, query_vector: list[float], limit: int, with_payload: bool = True
     ) -> list[MockSearchResult]:
         if collection_name not in self._collections:
             return []
@@ -126,11 +125,11 @@ class MockVectorDB:
         results = []
         for point in self._collections[collection_name]:
             score = cosine_similarity(query_vector, point["vector"])
-            results.append(MockSearchResult(
-                id=str(point["id"]),
-                payload=dict(point.get("payload", {})),
-                score=score
-            ))
+            results.append(
+                MockSearchResult(
+                    id=str(point["id"]), payload=dict(point.get("payload", {})), score=score
+                )
+            )
 
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:limit]
@@ -216,7 +215,7 @@ There are three main types of machine learning:
 
 Popular machine learning frameworks include TensorFlow, PyTorch, and scikit-learn.
 These tools make it easier to build and train models.
-"""
+""",
     },
     {
         "id": "doc2",
@@ -234,7 +233,7 @@ A typical neural network has:
 Deep learning refers to neural networks with many hidden layers. These deep 
 networks can learn complex patterns and are used for image recognition, 
 natural language processing, and many other tasks.
-"""
+""",
     },
     {
         "id": "doc3",
@@ -252,7 +251,7 @@ Key features of vector databases:
 Popular vector databases include Qdrant, Pinecone, Milvus, and Weaviate.
 RAG (Retrieval-Augmented Generation) systems heavily rely on vector databases 
 to find relevant context for language models.
-"""
+""",
     },
     {
         "id": "doc4",
@@ -270,7 +269,7 @@ The RAG pipeline typically involves:
 
 RAG improves accuracy by grounding responses in retrieved facts, 
 reducing hallucination and providing citations.
-"""
+""",
     },
 ]
 
@@ -290,6 +289,7 @@ def create_test_files(base_dir: Path) -> List[Path]:
 # Pipeline Components Under Test
 # =============================================================================
 
+
 def document_ingestion(config: TestConfig) -> tuple[list[dict], bool]:
     """Test 1: Document ingestion."""
     print("\n" + "=" * 60)
@@ -304,22 +304,20 @@ def document_ingestion(config: TestConfig) -> tuple[list[dict], bool]:
             if path.suffix.lower() in {".txt", ".md"}:
                 try:
                     content = path.read_text(encoding="utf-8", errors="ignore")
-                    documents.append({
-                        "id": str(path.stem),
-                        "path": str(path),
-                        "content": content
-                    })
+                    documents.append({"id": str(path.stem), "path": str(path), "content": content})
                 except Exception as e:
                     print(f"  ⚠ Failed to read {path}: {e}")
     else:
         # Use sample documents
         for doc in SAMPLE_DOCUMENTS:
-            documents.append({
-                "id": doc["id"],
-                "path": f"sample/{doc['id']}.txt",
-                "content": doc["content"],
-                "title": doc["title"]
-            })
+            documents.append(
+                {
+                    "id": doc["id"],
+                    "path": f"sample/{doc['id']}.txt",
+                    "content": doc["content"],
+                    "title": doc["title"],
+                }
+            )
 
     print(f"  ✓ Loaded {len(documents)} documents")
     if config.verbose:
@@ -346,16 +344,15 @@ def chunking(documents: list[dict], config: TestConfig) -> tuple[list[dict], boo
         for i, para in enumerate(paragraphs):
             if len(para) < 20:  # Skip very short chunks
                 continue
-            chunks.append({
-                "id": f"{doc['id']}:{i}",
-                "doc_id": doc["id"],
-                "chunk_index": i,
-                "content": para,
-                "metadata": {
-                    "path": doc.get("path", ""),
-                    "title": doc.get("title", doc["id"])
+            chunks.append(
+                {
+                    "id": f"{doc['id']}:{i}",
+                    "doc_id": doc["id"],
+                    "chunk_index": i,
+                    "content": para,
+                    "metadata": {"path": doc.get("path", ""), "title": doc.get("title", doc["id"])},
                 }
-            })
+            )
 
     print(f"  ✓ Created {len(chunks)} chunks from {len(documents)} documents")
     if config.verbose:
@@ -366,7 +363,9 @@ def chunking(documents: list[dict], config: TestConfig) -> tuple[list[dict], boo
     return chunks, len(chunks) > 0
 
 
-def embedding(chunks: list[dict], embedder: MockEmbedder, config: TestConfig) -> tuple[list[list[float]], bool]:
+def embedding(
+    chunks: list[dict], embedder: MockEmbedder, config: TestConfig
+) -> tuple[list[list[float]], bool]:
     """Test 3: Embedding generation."""
     print("\n" + "=" * 60)
     print("TEST 3: EMBEDDING GENERATION")
@@ -390,10 +389,7 @@ def embedding(chunks: list[dict], embedder: MockEmbedder, config: TestConfig) ->
 
 
 def vector_storage(
-        chunks: list[dict],
-        vectors: list[list[float]],
-        vector_db: MockVectorDB,
-        config: TestConfig
+    chunks: list[dict], vectors: list[list[float]], vector_db: MockVectorDB, config: TestConfig
 ) -> bool:
     """Test 4: Vector storage (upsert)."""
     print("\n" + "=" * 60)
@@ -405,16 +401,18 @@ def vector_storage(
     # Prepare points for upsert
     points = []
     for chunk, vector in zip(chunks, vectors):
-        points.append({
-            "id": chunk["id"],
-            "vector": vector,
-            "payload": {
-                "doc_id": chunk["doc_id"],
-                "chunk_index": chunk["chunk_index"],
-                "content": chunk["content"],
-                **chunk.get("metadata", {})
+        points.append(
+            {
+                "id": chunk["id"],
+                "vector": vector,
+                "payload": {
+                    "doc_id": chunk["doc_id"],
+                    "chunk_index": chunk["chunk_index"],
+                    "content": chunk["content"],
+                    **chunk.get("metadata", {}),
+                },
             }
-        })
+        )
 
     vector_db.upsert(collection, points)
 
@@ -426,9 +424,7 @@ def vector_storage(
 
 
 def retrieval(
-        vector_db: MockVectorDB,
-        embedder: MockEmbedder,
-        config: TestConfig
+    vector_db: MockVectorDB, embedder: MockEmbedder, config: TestConfig
 ) -> tuple[list[dict], bool]:
     """Test 5: Retrieval (search)."""
     print("\n" + "=" * 60)
@@ -449,11 +445,7 @@ def retrieval(
 
     retrieved_chunks = []
     for i, result in enumerate(results):
-        retrieved_chunks.append({
-            "id": result.id,
-            "score": result.score,
-            **result.payload
-        })
+        retrieved_chunks.append({"id": result.id, "score": result.score, **result.payload})
         if config.verbose:
             preview = result.payload.get("content", "")[:40].replace("\n", " ")
             print(f"    {i + 1}. [{result.score:.4f}] {result.id}: {preview}...")
@@ -462,9 +454,7 @@ def retrieval(
 
 
 def reranking(
-        chunks: list[dict],
-        reranker: MockReranker,
-        config: TestConfig
+    chunks: list[dict], reranker: MockReranker, config: TestConfig
 ) -> tuple[list[dict], bool]:
     """Test 6: Reranking (optional)."""
     print("\n" + "=" * 60)
@@ -482,7 +472,7 @@ def reranking(
             doc_id=c["doc_id"],
             chunk_index=c.get("chunk_index", 0),
             content=c["content"],
-            metadata=c.get("metadata", {})
+            metadata=c.get("metadata", {}),
         )
         for c in chunks
     ]
@@ -495,12 +485,7 @@ def reranking(
 
     # Convert back to dicts
     reranked_dicts = [
-        {
-            "id": c.id,
-            "doc_id": c.doc_id,
-            "content": c.content,
-            "metadata": c.metadata
-        }
+        {"id": c.id, "doc_id": c.doc_id, "content": c.content, "metadata": c.metadata}
         for c in reranked
     ]
 
@@ -530,17 +515,13 @@ def rgs_prompt_building(chunks: list[dict], config: TestConfig) -> tuple[dict, b
             doc_id=c["doc_id"],
             chunk_index=c.get("chunk_index", 0),
             content=c["content"],
-            metadata=c.get("metadata", {})
+            metadata=c.get("metadata", {}),
         )
-        for c in chunks[:config.max_chunks]
+        for c in chunks[: config.max_chunks]
     ]
 
     # Build RGS prompt
-    rgs = RGS(RGSConfig(
-        enable_citations=True,
-        strict_grounding=True,
-        max_chunks=config.max_chunks
-    ))
+    rgs = RGS(RGSConfig(enable_citations=True, strict_grounding=True, max_chunks=config.max_chunks))
 
     prompt = rgs.build_prompt(query, chunk_objects)
 
@@ -565,7 +546,7 @@ def llm_generation(prompt: dict, llm: MockLLM, config: TestConfig) -> tuple[str,
 
     messages = [
         {"role": "system", "content": prompt["system"]},
-        {"role": "user", "content": prompt["user"]}
+        {"role": "user", "content": prompt["user"]},
     ]
 
     response = llm.chat(messages)
@@ -580,11 +561,7 @@ def llm_generation(prompt: dict, llm: MockLLM, config: TestConfig) -> tuple[str,
     return response, bool(response)
 
 
-def answer_formatting(
-        response: str,
-        chunks: list[dict],
-        config: TestConfig
-) -> tuple[dict, bool]:
+def answer_formatting(response: str, chunks: list[dict], config: TestConfig) -> tuple[dict, bool]:
     """Test 9: Answer formatting with provenance."""
     print("\n" + "=" * 60)
     print("TEST 9: ANSWER FORMATTING")
@@ -594,26 +571,24 @@ def answer_formatting(
 
     # Build provenance from chunks
     provenance = []
-    for i, chunk in enumerate(chunks[:config.max_chunks]):
-        provenance.append(Provenance(
-            source_id=chunk["id"],
-            excerpt=chunk["content"][:100],
-            metadata={
-                "doc_id": chunk["doc_id"],
-                "relevance_rank": i + 1,
-                **chunk.get("metadata", {})
-            }
-        ))
+    for i, chunk in enumerate(chunks[: config.max_chunks]):
+        provenance.append(
+            Provenance(
+                source_id=chunk["id"],
+                excerpt=chunk["content"][:100],
+                metadata={
+                    "doc_id": chunk["doc_id"],
+                    "relevance_rank": i + 1,
+                    **chunk.get("metadata", {}),
+                },
+            )
+        )
 
     # Create Answer object
     answer = Answer(
         text=response,
         provenance=provenance,
-        metadata={
-            "engine": "classic_rag",
-            "model": "mock_llm",
-            "num_sources": len(provenance)
-        }
+        metadata={"engine": "classic_rag", "model": "mock_llm", "num_sources": len(provenance)},
     )
 
     print(f"  ✓ Created Answer with {len(answer.provenance)} sources")
@@ -626,17 +601,15 @@ def answer_formatting(
 
     return {
         "text": answer.text,
-        "provenance": [
-            {"source_id": p.source_id, "excerpt": p.excerpt}
-            for p in answer.provenance
-        ],
-        "metadata": answer.metadata
+        "provenance": [{"source_id": p.source_id, "excerpt": p.excerpt} for p in answer.provenance],
+        "metadata": answer.metadata,
     }, bool(answer.text and answer.provenance)
 
 
 # =============================================================================
 # Main Test Runner
 # =============================================================================
+
 
 def run_all_tests(config: TestConfig) -> bool:
     """Run all tests and return success status."""
@@ -736,33 +709,20 @@ def run_all_tests(config: TestConfig) -> bool:
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="End-to-end smoketest for Classic RAG engine"
-    )
+    parser = argparse.ArgumentParser(description="End-to-end smoketest for Classic RAG engine")
     parser.add_argument(
         "--with-files",
         type=Path,
-        help="Path to directory with test documents (uses sample docs if not provided)"
+        help="Path to directory with test documents (uses sample docs if not provided)",
     )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")
     parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Show detailed output"
-    )
-    parser.add_argument(
-        "--top-k",
-        type=int,
-        default=3,
-        help="Number of results to retrieve (default: 3)"
+        "--top-k", type=int, default=3, help="Number of results to retrieve (default: 3)"
     )
 
     args = parser.parse_args()
 
-    config = TestConfig(
-        docs_path=args.with_files,
-        verbose=args.verbose,
-        top_k=args.top_k
-    )
+    config = TestConfig(docs_path=args.with_files, verbose=args.verbose, top_k=args.top_k)
 
     success = run_all_tests(config)
     return 0 if success else 1

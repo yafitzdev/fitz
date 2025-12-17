@@ -129,7 +129,9 @@ def test_embedding(config: dict) -> tuple[bool, str]:
     emb_cfg = config.get("embedding", {})
     plugin = emb_cfg.get("plugin_name", "?")
     model = emb_cfg.get("kwargs", {}).get("model", "default")
-    return True, f"Plugin '{plugin}'" + (f" model '{model}'" if model != "default" else " configured")
+    return True, f"Plugin '{plugin}'" + (
+        f" model '{model}'" if model != "default" else " configured"
+    )
 
 
 def test_rerank(config: dict) -> tuple[bool, str]:
@@ -159,9 +161,7 @@ def test_rerank(config: dict) -> tuple[bool, str]:
 
 def command(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
-    test_connections: bool = typer.Option(
-        False, "--test", "-t", help="Test actual connections"
-    ),
+    test_connections: bool = typer.Option(False, "--test", "-t", help="Test actual connections"),
 ) -> None:
     """
     Run diagnostics on your Fitz setup.

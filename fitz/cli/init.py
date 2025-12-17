@@ -317,20 +317,16 @@ def command(
             if RICH_AVAILABLE:
                 console.print("\n[red]❌ No LLM providers available![/red]")
                 console.print(
-                    "Please set an API key (COHERE_API_KEY, OPENAI_API_KEY) "
-                    "or install Ollama."
+                    "Please set an API key (COHERE_API_KEY, OPENAI_API_KEY) " "or install Ollama."
                 )
             else:
                 print("\n❌ No LLM providers available!")
                 print(
-                    "Please set an API key (COHERE_API_KEY, OPENAI_API_KEY) "
-                    "or install Ollama."
+                    "Please set an API key (COHERE_API_KEY, OPENAI_API_KEY) " "or install Ollama."
                 )
             raise typer.Exit(code=1)
 
-        llm_choice = prompt_choice(
-            "Select LLM provider", available_llms, default=llm_default
-        )
+        llm_choice = prompt_choice("Select LLM provider", available_llms, default=llm_default)
 
         # Embedding choice
         available_embeddings = []

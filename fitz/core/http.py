@@ -55,6 +55,7 @@ except ImportError:
 
 class HTTPClientError(Exception):
     """Base error for HTTP client issues."""
+
     pass
 
 
@@ -62,10 +63,7 @@ class HTTPClientNotAvailable(HTTPClientError):
     """Raised when httpx is not installed."""
 
     def __init__(self):
-        super().__init__(
-            "httpx is required for HTTP API calls. "
-            "Install with: pip install httpx"
-        )
+        super().__init__("httpx is required for HTTP API calls. " "Install with: pip install httpx")
 
 
 @dataclass
@@ -81,6 +79,7 @@ class APIError(Exception):
         details: Additional error details from the API response
         original_error: The original exception that caused this error
     """
+
     message: str
     status_code: Optional[int] = None
     provider: Optional[str] = None
@@ -102,16 +101,19 @@ class APIError(Exception):
 
 class RateLimitError(APIError):
     """Raised when API rate limit is exceeded."""
+
     pass
 
 
 class AuthenticationError(APIError):
     """Raised when API authentication fails."""
+
     pass
 
 
 class ModelNotFoundError(APIError):
     """Raised when requested model doesn't exist."""
+
     pass
 
 
@@ -141,14 +143,14 @@ DEFAULT_HEADERS = {
 
 
 def create_api_client(
-        base_url: str,
-        api_key: Optional[str] = None,
-        timeout: Optional[float] = None,
-        timeout_type: str = "default",
-        headers: Optional[Dict[str, str]] = None,
-        auth_header: str = "Authorization",
-        auth_scheme: str = "Bearer",
-        **kwargs: Any,
+    base_url: str,
+    api_key: Optional[str] = None,
+    timeout: Optional[float] = None,
+    timeout_type: str = "default",
+    headers: Optional[Dict[str, str]] = None,
+    auth_header: str = "Authorization",
+    auth_scheme: str = "Bearer",
+    **kwargs: Any,
 ) -> "httpx.Client":
     """
     Create a configured HTTP client for API calls.
@@ -209,9 +211,9 @@ def create_api_client(
 
 @contextmanager
 def api_client(
-        base_url: str,
-        api_key: Optional[str] = None,
-        **kwargs: Any,
+    base_url: str,
+    api_key: Optional[str] = None,
+    **kwargs: Any,
 ) -> Generator["httpx.Client", None, None]:
     """
     Context manager for HTTP client with automatic cleanup.
@@ -233,9 +235,9 @@ def api_client(
 
 
 def handle_api_error(
-        exc: Exception,
-        provider: str = "unknown",
-        endpoint: str = "",
+    exc: Exception,
+    provider: str = "unknown",
+    endpoint: str = "",
 ) -> APIError:
     """
     Convert an httpx exception to a structured APIError.
@@ -343,9 +345,9 @@ def handle_api_error(
 
 
 def raise_for_status(
-        response: "httpx.Response",
-        provider: str = "unknown",
-        endpoint: str = "",
+    response: "httpx.Response",
+    provider: str = "unknown",
+    endpoint: str = "",
 ) -> None:
     """
     Check response status and raise appropriate APIError if failed.
@@ -375,9 +377,9 @@ def raise_for_status(
 
 
 def check_api_health(
-        url: str,
-        timeout: float = 5.0,
-        expected_status: int = 200,
+    url: str,
+    timeout: float = 5.0,
+    expected_status: int = 200,
 ) -> bool:
     """
     Simple health check for an API endpoint.
@@ -405,10 +407,10 @@ def check_api_health(
 
 
 def check_api_auth(
-        base_url: str,
-        api_key: str,
-        test_endpoint: str = "/models",
-        auth_scheme: str = "Bearer",
+    base_url: str,
+    api_key: str,
+    test_endpoint: str = "/models",
+    auth_scheme: str = "Bearer",
 ) -> bool:
     """
     Check if API authentication is valid.
@@ -427,10 +429,10 @@ def check_api_auth(
 
     try:
         with api_client(
-                base_url=base_url,
-                api_key=api_key,
-                timeout=5.0,
-                auth_scheme=auth_scheme,
+            base_url=base_url,
+            api_key=api_key,
+            timeout=5.0,
+            auth_scheme=auth_scheme,
         ) as client:
             response = client.get(test_endpoint)
             return response.status_code != 401
@@ -444,8 +446,8 @@ def check_api_auth(
 
 
 def create_cohere_client(
-        api_key: str,
-        timeout_type: str = "default",
+    api_key: str,
+    timeout_type: str = "default",
 ) -> "httpx.Client":
     """Create a client configured for Cohere API."""
     return create_api_client(
@@ -456,9 +458,9 @@ def create_cohere_client(
 
 
 def create_openai_client(
-        api_key: str,
-        timeout_type: str = "default",
-        base_url: str = "https://api.openai.com/v1",
+    api_key: str,
+    timeout_type: str = "default",
+    base_url: str = "https://api.openai.com/v1",
 ) -> "httpx.Client":
     """Create a client configured for OpenAI API (or compatible)."""
     return create_api_client(
@@ -474,14 +476,14 @@ def create_openai_client(
 
 
 def create_async_api_client(
-        base_url: str,
-        api_key: Optional[str] = None,
-        timeout: Optional[float] = None,
-        timeout_type: str = "default",
-        headers: Optional[Dict[str, str]] = None,
-        auth_header: str = "Authorization",
-        auth_scheme: str = "Bearer",
-        **kwargs: Any,
+    base_url: str,
+    api_key: Optional[str] = None,
+    timeout: Optional[float] = None,
+    timeout_type: str = "default",
+    headers: Optional[Dict[str, str]] = None,
+    auth_header: str = "Authorization",
+    auth_scheme: str = "Bearer",
+    **kwargs: Any,
 ) -> "httpx.AsyncClient":
     """
     Create an async HTTP client for API calls.

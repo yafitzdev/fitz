@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fitz"
-version = "0.3.0"
+version = "0.3.1"
 description = "A modular, production-ready engine platform with clean architecture and comprehensive observability."
 readme = "README.md"
 license = {text = "MIT"}

@@ -6,14 +6,14 @@ Cohere rerank plugin using centralized HTTP client and credentials.
 from __future__ import annotations
 
 from fitz.core.http import (
-    create_api_client,
-    raise_for_status,
-    handle_api_error,
     APIError,
     HTTPClientNotAvailable,
+    create_api_client,
+    handle_api_error,
+    raise_for_status,
 )
-from fitz.llm.credentials import resolve_api_key, CredentialError
 from fitz.engines.classic_rag.models.chunk import Chunk
+from fitz.llm.credentials import CredentialError, resolve_api_key
 
 
 class CohereRerankClient:
@@ -57,8 +57,7 @@ class CohereRerankClient:
             )
         except HTTPClientNotAvailable:
             raise RuntimeError(
-                "httpx is required for Cohere plugin. "
-                "Install with: pip install httpx"
+                "httpx is required for Cohere plugin. " "Install with: pip install httpx"
             )
 
     def rerank(self, query: str, chunks: list[Chunk]) -> list[Chunk]:

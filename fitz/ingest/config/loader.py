@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Union
 
 from fitz.core.config import (
-    load_config as _load_config_core,
     ConfigError,
     ConfigNotFoundError,
     ConfigValidationError,
 )
+from fitz.core.config import load_config as _load_config_core
 from fitz.ingest.config.schema import IngestConfig
 
 
@@ -30,6 +30,7 @@ class IngestConfigError(ConfigError):
 
     Deprecated: Use fitz.core.config.ConfigError instead.
     """
+
     pass
 
 

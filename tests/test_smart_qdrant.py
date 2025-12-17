@@ -22,6 +22,7 @@ def qdrant_available() -> bool:
     """Check if Qdrant is available."""
     try:
         from fitz.vector_db.plugins.qdrant import QdrantVectorDB
+
         db = QdrantVectorDB()
         db.list_collections()
         return True
@@ -40,6 +41,7 @@ pytestmark = pytest.mark.skipif(
 def qdrant_db():
     """Create a Qdrant client for testing."""
     from fitz.vector_db.plugins.qdrant import QdrantVectorDB
+
     return QdrantVectorDB()
 
 

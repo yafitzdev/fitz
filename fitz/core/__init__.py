@@ -40,28 +40,29 @@ Examples:
     >>> vector_db_path = FitzPaths.vector_db()
 """
 
+from .answer import Answer
+from .constraints import Constraints
+
 # Core protocol
 from .engine import KnowledgeEngine
 
-# Core types
-from .query import Query
-from .answer import Answer
-from .provenance import Provenance
-from .constraints import Constraints
-
-# Path management
-from .paths import FitzPaths, get_workspace, get_vector_db_path, get_config_path
-
 # Core exceptions
 from .exceptions import (
-    EngineError,
-    QueryError,
-    KnowledgeError,
-    GenerationError,
     ConfigurationError,
+    EngineError,
+    GenerationError,
+    KnowledgeError,
+    QueryError,
     TimeoutError,
     UnsupportedOperationError,
 )
+
+# Path management
+from .paths import FitzPaths, get_config_path, get_vector_db_path, get_workspace
+from .provenance import Provenance
+
+# Core types
+from .query import Query
 
 __all__ = [
     # Protocol

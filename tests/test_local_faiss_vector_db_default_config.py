@@ -26,7 +26,7 @@ def test_local_faiss_vector_db_uses_fitz_paths_default(tmp_path):
     # Override FitzPaths to use temp directory
     fake_workspace = tmp_path / ".fitz"
 
-    with patch.object(FitzPaths, 'workspace', return_value=fake_workspace):
+    with patch.object(FitzPaths, "workspace", return_value=fake_workspace):
         # Create DB with no path specified - should use FitzPaths default
         db = FaissLocalVectorDB()
 
@@ -92,10 +92,13 @@ def test_local_faiss_reload_from_disk(tmp_path):
     """Test that data is correctly reloaded from disk."""
     # Create and populate
     db1 = FaissLocalVectorDB(path=tmp_path, persist=True)
-    db1.upsert("collection", [
-        {"id": "doc1", "vector": [1.0, 0.0, 0.0, 0.0], "payload": {"title": "First"}},
-        {"id": "doc2", "vector": [0.0, 1.0, 0.0, 0.0], "payload": {"title": "Second"}},
-    ])
+    db1.upsert(
+        "collection",
+        [
+            {"id": "doc1", "vector": [1.0, 0.0, 0.0, 0.0], "payload": {"title": "First"}},
+            {"id": "doc2", "vector": [0.0, 1.0, 0.0, 0.0], "payload": {"title": "Second"}},
+        ],
+    )
 
     # Create new instance - should load from disk
     db2 = FaissLocalVectorDB(path=tmp_path, persist=True)

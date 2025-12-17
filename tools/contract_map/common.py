@@ -159,6 +159,7 @@ class ImportGraph:
         lazy_ok: Lazy imports (inside functions) that would violate rules
                  if they were at module level, but are OK because they're lazy
     """
+
     edges: List[ImportEdge] = field(default_factory=list)
     violations: List[str] = field(default_factory=list)
     lazy_ok: List[str] = field(default_factory=list)

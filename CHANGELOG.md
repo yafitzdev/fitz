@@ -6,6 +6,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-01-17
+
+### 🐛 Fixed
+
+- **CLI Import Error**: Fixed misleading error messages when internal fitz modules fail to import
+- **Detection Module**: Moved `fitz/cli/detect.py` to `fitz/core/detect.py` as single source of truth for service detection
+- **FAISS Detection**: `SystemStatus.faiss` now returns `ServiceStatus` instead of boolean for consistent API
+- **Registry Exceptions**: `LLMRegistryError` now inherits from `PluginNotFoundError` for consistent exception handling
+- **Invalid Plugin Type**: `get_llm_plugin()` now raises `ValueError` for invalid plugin types (not just unknown plugins)
+- **Ingest CLI**: Fixed import of non-existent `available_embedding_plugins` - now uses `available_llm_plugins("embedding")`
+- **UTF-8 Encoding**: Added encoding declaration to handle emoji characters in error messages on Windows
+
+### 🔧 Changed
+
+- `fitz/core/detect.py` is now the canonical location for all service detection (Ollama, Qdrant, FAISS, API keys)
+- `SystemStatus` now has `best_llm`, `best_embedding`, `best_vector_db` helper properties
+- CLI modules (`doctor.py`, `init.py`) now import from `fitz.core.detect` instead of `fitz.cli.detect`
+
 ---
 
 ## [0.3.0] - 2025-12-17

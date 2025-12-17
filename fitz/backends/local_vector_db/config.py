@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 def _default_vector_db_path() -> Path:
     """Get default vector DB path from FitzPaths."""
     from fitz.core.paths import FitzPaths
+
     return FitzPaths.vector_db()
 
 

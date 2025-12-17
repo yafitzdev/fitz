@@ -36,9 +36,11 @@ logger = logging.getLogger(__name__)
 # Data Classes
 # =============================================================================
 
+
 @dataclass
 class ServiceStatus:
     """Status of a detected service."""
+
     name: str
     available: bool
     host: Optional[str] = None
@@ -49,6 +51,7 @@ class ServiceStatus:
 @dataclass
 class ApiKeyStatus:
     """Status of an API key."""
+
     name: str
     available: bool
     env_var: str = ""
@@ -58,6 +61,7 @@ class ApiKeyStatus:
 @dataclass
 class SystemStatus:
     """Complete system status."""
+
     ollama: ServiceStatus
     qdrant: ServiceStatus
     faiss: ServiceStatus
@@ -100,6 +104,7 @@ class SystemStatus:
 # =============================================================================
 # Service Detection
 # =============================================================================
+
 
 def detect_ollama() -> ServiceStatus:
     """
@@ -233,6 +238,7 @@ def detect_faiss() -> ServiceStatus:
     """
     try:
         import faiss
+
         return ServiceStatus(
             name="FAISS",
             available=True,
@@ -310,6 +316,7 @@ def detect_system_status() -> SystemStatus:
 # =============================================================================
 # Connection Helpers
 # =============================================================================
+
 
 def get_qdrant_connection() -> tuple[str, int]:
     """

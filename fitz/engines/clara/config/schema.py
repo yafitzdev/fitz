@@ -6,8 +6,8 @@ Configuration dataclasses for the CLaRa engine.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Literal
 from pathlib import Path
+from typing import Literal, Optional
 
 
 @dataclass
