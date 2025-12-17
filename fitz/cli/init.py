@@ -7,159 +7,27 @@ Detects available providers and creates a working configuration.
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import typer
+
+# Import centralized detection (THE SINGLE SOURCE OF TRUTH)
+from fitz.cli.detect import (
+    ProviderStatus,
+    detect_all,
+)
 
 # Rich for pretty output (optional, falls back gracefully)
 try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.prompt import Confirm, Prompt
-    from rich.table import Table
 
     RICH_AVAILABLE = True
     console = Console()
 except ImportError:
     RICH_AVAILABLE = False
     console = None
-
-
-# =============================================================================
-# Detection Functions
-# =============================================================================
-
-
-@dataclass
-class ProviderStatus:
-    """Status of a provider/service."""
-
-    name: str
-    available: bool
-    details: str = ""
-    env_var: str = ""
-
-
-def detect_api_keys() -> dict[str, ProviderStatus]:
-    """Detect which API keys are set."""
-    providers = {}
-
-    # Cohere
-    cohere_key = os.getenv("COHERE_API_KEY")
-    providers["cohere"] = ProviderStatus(
-        name="Cohere",
-        available=bool(cohere_key),
-        details=f"Key: {cohere_key[:8]}..." if cohere_key else "Not set",
-        env_var="COHERE_API_KEY",
-    )
-
-    # OpenAI
-    openai_key = os.getenv("OPENAI_API_KEY")
-    providers["openai"] = ProviderStatus(
-        name="OpenAI",
-        available=bool(openai_key),
-        details=f"Key: {openai_key[:8]}..." if openai_key else "Not set",
-        env_var="OPENAI_API_KEY",
-    )
-
-    # Anthropic
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-    providers["anthropic"] = ProviderStatus(
-        name="Anthropic",
-        available=bool(anthropic_key),
-        details=f"Key: {anthropic_key[:8]}..." if anthropic_key else "Not set",
-        env_var="ANTHROPIC_API_KEY",
-    )
-
-    return providers
-
-
-def detect_ollama() -> ProviderStatus:
-    """Detect if Ollama is running."""
-    try:
-        # Check if ollama command exists
-        result = subprocess.run(
-            ["ollama", "list"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            # Parse models
-            lines = result.stdout.strip().split("\n")[1:]  # Skip header
-            models = [line.split()[0] for line in lines if line.strip()]
-            model_str = ", ".join(models[:3])
-            if len(models) > 3:
-                model_str += f" (+{len(models) - 3} more)"
-            return ProviderStatus(
-                name="Ollama",
-                available=True,
-                details=f"Models: {model_str}" if models else "No models installed",
-            )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    except Exception:
-        pass
-
-    return ProviderStatus(name="Ollama", available=False, details="Not installed or not running")
-
-
-def detect_qdrant() -> ProviderStatus:
-    """Detect if Qdrant is accessible."""
-    import urllib.error
-    import urllib.request
-
-    # Check common locations - prioritize env var
-    env_host = os.getenv("QDRANT_HOST")
-    hosts_to_try = []
-    if env_host:
-        hosts_to_try.append(env_host)
-    hosts_to_try.extend(["localhost", "127.0.0.1", "192.168.178.2"])  # Common locations
-
-    port = int(os.getenv("QDRANT_PORT", "6333"))
-
-    for host in hosts_to_try:
-        try:
-            url = f"http://{host}:{port}/collections"
-            req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=3) as response:
-                if response.status == 200:
-                    import json
-
-                    data = json.loads(response.read())
-                    collections = data.get("result", {}).get("collections", [])
-                    col_names = [c.get("name", "?") for c in collections]
-                    col_str = ", ".join(col_names[:3]) if col_names else "none"
-                    if len(col_names) > 3:
-                        col_str += f" (+{len(col_names) - 3})"
-                    return ProviderStatus(
-                        name="Qdrant",
-                        available=True,
-                        details=f"At {host}:{port} (collections: {col_str})",
-                    )
-        except Exception:
-            continue
-
-    return ProviderStatus(
-        name="Qdrant", available=False, details="Not found (tried localhost:6333)"
-    )
-
-
-def check_faiss_available() -> ProviderStatus:
-    """Check if FAISS is installed."""
-    try:
-        import faiss
-
-        return ProviderStatus(name="FAISS", available=True, details="Installed (local vector DB)")
-    except ImportError:
-        return ProviderStatus(
-            name="FAISS", available=False, details="Not installed (pip install faiss-cpu)"
-        )
 
 
 # =============================================================================
@@ -314,6 +182,11 @@ def print_status(name: str, available: bool, details: str = "") -> None:
         print(f"  {icon} {name}: {details}")
 
 
+def print_provider_status(provider: ProviderStatus) -> None:
+    """Print status for a provider using ProviderStatus dataclass."""
+    print_status(provider.name, provider.available, provider.details)
+
+
 def prompt_choice(prompt: str, choices: list[str], default: str = None) -> str:
     """Prompt user for a choice."""
     choices_str = "/".join(choices)
@@ -391,49 +264,30 @@ def command(
         print("=" * 60)
 
     # ==========================================================================
-    # Detection Phase
+    # Detection Phase (using centralized detection)
     # ==========================================================================
 
     print_header("Checking LLM Providers...")
 
-    api_keys = detect_api_keys()
-    ollama = detect_ollama()
+    system = detect_all()
 
-    for provider in api_keys.values():
-        print_status(provider.name, provider.available, provider.details)
-    print_status(ollama.name, ollama.available, ollama.details)
+    # Display API key status
+    for provider in system.api_keys.values():
+        print_provider_status(provider)
+    print_provider_status(system.ollama)
 
     print_header("Checking Vector Databases...")
 
-    qdrant = detect_qdrant()
-    faiss = check_faiss_available()
-
-    print_status(qdrant.name, qdrant.available, qdrant.details)
-    print_status(faiss.name, faiss.available, faiss.details)
+    print_provider_status(system.qdrant)
+    print_provider_status(system.faiss)
 
     # ==========================================================================
-    # Determine Best Defaults
+    # Determine Best Defaults (using SystemStatus helpers)
     # ==========================================================================
 
-    # LLM priority: Cohere > OpenAI > Anthropic > Ollama
-    llm_default = "ollama"  # fallback
-    if api_keys["cohere"].available:
-        llm_default = "cohere"
-    elif api_keys["openai"].available:
-        llm_default = "openai"
-    elif api_keys["anthropic"].available:
-        llm_default = "anthropic"
-    elif ollama.available:
-        llm_default = "ollama"
-
-    # Embedding priority: same provider as LLM if possible
-    embedding_default = llm_default
-    if embedding_default == "anthropic":
-        # Anthropic doesn't have embeddings, fall back
-        embedding_default = "cohere" if api_keys["cohere"].available else "openai"
-
-    # Vector DB priority: Qdrant > FAISS
-    vector_db_default = "qdrant" if qdrant.available else "faiss"
+    llm_default = system.best_llm
+    embedding_default = system.best_embedding
+    vector_db_default = system.best_vector_db
 
     # ==========================================================================
     # User Choices (if interactive)
@@ -450,120 +304,92 @@ def command(
 
         # LLM choice
         available_llms = []
-        if api_keys["cohere"].available:
+        if system.api_keys["cohere"].available:
             available_llms.append("cohere")
-        if api_keys["openai"].available:
+        if system.api_keys["openai"].available:
             available_llms.append("openai")
-        if api_keys["anthropic"].available:
+        if system.api_keys["anthropic"].available:
             available_llms.append("anthropic")
-        if ollama.available:
+        if system.ollama.available:
             available_llms.append("ollama")
 
         if not available_llms:
             if RICH_AVAILABLE:
                 console.print("\n[red]❌ No LLM providers available![/red]")
-                console.print("Please either:")
-                console.print("  1. Set an API key: export COHERE_API_KEY=your-key")
-                console.print("  2. Install Ollama: https://ollama.com")
+                console.print(
+                    "Please set an API key (COHERE_API_KEY, OPENAI_API_KEY) "
+                    "or install Ollama."
+                )
             else:
                 print("\n❌ No LLM providers available!")
-                print("Please either:")
-                print("  1. Set an API key: export COHERE_API_KEY=your-key")
-                print("  2. Install Ollama: https://ollama.com")
+                print(
+                    "Please set an API key (COHERE_API_KEY, OPENAI_API_KEY) "
+                    "or install Ollama."
+                )
             raise typer.Exit(code=1)
 
-        # Auto-select if only one option
-        if len(available_llms) == 1:
-            llm_choice = available_llms[0]
-            print(f"\n✓ Using {llm_choice} for LLM (only available provider)")
-        else:
-            print(f"\nAvailable LLM providers: {', '.join(available_llms)}")
-            llm_choice = prompt_choice("Select LLM provider", available_llms, llm_default)
+        llm_choice = prompt_choice(
+            "Select LLM provider", available_llms, default=llm_default
+        )
 
         # Embedding choice
         available_embeddings = []
-        if api_keys["cohere"].available:
+        if system.api_keys["cohere"].available:
             available_embeddings.append("cohere")
-        if api_keys["openai"].available:
+        if system.api_keys["openai"].available:
             available_embeddings.append("openai")
-        if ollama.available:
+        if system.ollama.available:
             available_embeddings.append("ollama")
 
-        if llm_choice in available_embeddings:
-            embedding_default = llm_choice
-        elif available_embeddings:
-            embedding_default = available_embeddings[0]
+        if not available_embeddings:
+            if RICH_AVAILABLE:
+                console.print("\n[red]❌ No embedding providers available![/red]")
+            else:
+                print("\n❌ No embedding providers available!")
+            raise typer.Exit(code=1)
 
-        # Auto-select if only one option
-        if len(available_embeddings) == 1:
-            embedding_choice = available_embeddings[0]
-            print(f"✓ Using {embedding_choice} for embeddings (only available provider)")
-        else:
-            print(f"\nAvailable embedding providers: {', '.join(available_embeddings)}")
-            embedding_choice = prompt_choice(
-                "Select embedding provider", available_embeddings, embedding_default
-            )
+        embedding_choice = prompt_choice(
+            "Select embedding provider", available_embeddings, default=embedding_default
+        )
 
         # Vector DB choice
         available_vdbs = []
-        if qdrant.available:
+        if system.qdrant.available:
             available_vdbs.append("qdrant")
-        if faiss.available:
+        if system.faiss.available:
             available_vdbs.append("faiss")
 
         if not available_vdbs:
             if RICH_AVAILABLE:
-                console.print("\n[red]❌ No vector database available![/red]")
-                console.print("Please either:")
-                console.print("  1. Start Qdrant: docker run -p 6333:6333 qdrant/qdrant")
-                console.print("  2. Install FAISS: pip install faiss-cpu")
+                console.print("\n[red]❌ No vector databases available![/red]")
+                console.print("Please install FAISS (pip install faiss-cpu) or start Qdrant.")
             else:
-                print("\n❌ No vector database available!")
-                print("Please either:")
-                print("  1. Start Qdrant: docker run -p 6333:6333 qdrant/qdrant")
-                print("  2. Install FAISS: pip install faiss-cpu")
+                print("\n❌ No vector databases available!")
+                print("Please install FAISS (pip install faiss-cpu) or start Qdrant.")
             raise typer.Exit(code=1)
 
-        # Auto-select if only one option
-        if len(available_vdbs) == 1:
-            vector_db_choice = available_vdbs[0]
-            print(f"✓ Using {vector_db_choice} for vector database (only available option)")
-        else:
-            print(f"\nAvailable vector databases: {', '.join(available_vdbs)}")
-            vector_db_choice = prompt_choice(
-                "Select vector database", available_vdbs, vector_db_default
-            )
+        vector_db_choice = prompt_choice(
+            "Select vector database", available_vdbs, default=vector_db_default
+        )
 
         # Collection name
         if RICH_AVAILABLE:
-            collection_name = Prompt.ask("\nCollection name", default="default")
+            collection_name = Prompt.ask("Collection name", default="default")
         else:
-            collection_name = input("\nCollection name [default]: ").strip() or "default"
+            collection_name = input("Collection name [default]: ").strip() or "default"
 
-        # Rerank option (if Cohere available)
-        enable_rerank = False
-        if api_keys["cohere"].available:
-            print()
-            enable_rerank = prompt_confirm(
-                "Enable reranking? (improves quality, uses Cohere API)", default=False
-            )
+        # Reranking
+        enable_rerank = prompt_confirm(
+            "Enable reranking? (improves quality, uses Cohere API)", default=False
+        )
 
     # ==========================================================================
     # Generate Config
     # ==========================================================================
 
-    # Get Qdrant host if using Qdrant
-    qdrant_host = "localhost"
-    qdrant_port = 6333
-    if vector_db_choice == "qdrant" and qdrant.available:
-        # Parse from details
-        if "At " in qdrant.details:
-            try:
-                addr = qdrant.details.split("At ")[1].split(" ")[0]
-                qdrant_host, qdrant_port = addr.split(":")
-                qdrant_port = int(qdrant_port)
-            except:
-                pass
+    # Get Qdrant host/port from detection (no more parsing from details!)
+    qdrant_host = system.qdrant_host
+    qdrant_port = system.qdrant_port
 
     config = generate_config(
         llm_provider=llm_choice,
@@ -611,7 +437,7 @@ def command(
         # Check if any config exists
         existing = [p for p in config_locations if p.exists()]
         if existing or fitz_config.exists():
-            if not prompt_confirm(f"Overwrite existing config files?", default=False):
+            if not prompt_confirm("Overwrite existing config files?", default=False):
                 print("Aborted.")
                 raise typer.Exit(code=0)
 

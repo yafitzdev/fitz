@@ -8,12 +8,18 @@ Runs comprehensive diagnostics on your Fitz setup.
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
 import typer
+
+# Import centralized detection
+from fitz.cli.detect import (
+    ProviderStatus,
+    detect_all,
+    detect_api_key,
+)
 
 # Rich for pretty output (optional)
 try:
@@ -37,6 +43,12 @@ def print_status(name: str, status: str, details: str = "", ok: bool = True) -> 
     else:
         icon = "✓" if ok else "✗" if status == "ERROR" else "⚠"
         print(f"  {icon} {name}: {details}")
+
+
+def print_provider_status(provider: ProviderStatus) -> None:
+    """Print status for a provider."""
+    status = "OK" if provider.available else "INFO"
+    print_status(provider.name, status, provider.details, provider.available)
 
 
 def check_python() -> tuple[bool, str]:
@@ -77,150 +89,6 @@ def check_config() -> tuple[bool, str, Optional[dict]]:
                 return False, f"Config error: {e}", None
 
     return False, "No config found", None
-
-
-def check_ollama() -> tuple[bool, str]:
-    """
-    Check if Ollama is installed and running.
-
-    Prioritizes HTTP API check (more reliable on Windows where CLI
-    may not be in PATH for subprocess).
-
-    Checks:
-    1. HTTP API availability (localhost:11434) - PRIMARY
-    2. CLI availability (ollama command) - FALLBACK for "installed but not running"
-    """
-    import urllib.error
-    import urllib.request
-
-    # Get host/port from env or defaults
-    host = os.getenv("OLLAMA_HOST", "localhost")
-    port = int(os.getenv("OLLAMA_PORT", "11434"))
-
-    # Also try common alternative hosts
-    hosts_to_try = [host]
-    if host == "localhost":
-        hosts_to_try.extend(["127.0.0.1", "0.0.0.0"])
-
-    # Check 1: HTTP API availability (PRIMARY - most reliable)
-    for try_host in hosts_to_try:
-        try:
-            url = f"http://{try_host}:{port}/api/tags"
-            req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=3) as response:
-                if response.status == 200:
-                    import json
-                    data = json.loads(response.read())
-                    api_models = data.get("models", [])
-                    model_names = [m.get("name", "?") for m in api_models]
-
-                    if model_names:
-                        model_str = ", ".join(model_names[:3])
-                        if len(model_names) > 3:
-                            model_str += f" (+{len(model_names) - 3} more)"
-                        return True, f"Running at {try_host}:{port} ({model_str})"
-                    return True, f"Running at {try_host}:{port} (no models)"
-        except urllib.error.URLError:
-            continue
-        except Exception:
-            continue
-
-    # Check 2: CLI availability (to distinguish "not installed" from "not running")
-    cli_installed = False
-    try:
-        # On Windows, try with shell=True as fallback
-        result = subprocess.run(
-            ["ollama", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            shell=(sys.platform == "win32"),  # Use shell on Windows
-        )
-        if result.returncode == 0:
-            cli_installed = True
-    except FileNotFoundError:
-        pass
-    except subprocess.TimeoutExpired:
-        cli_installed = True  # Timeout suggests it exists but is slow
-    except Exception:
-        pass
-
-    # CLI found but HTTP not responding
-    if cli_installed:
-        return False, f"Installed but not running at {host}:{port} (run: ollama serve)"
-
-    return False, "Not installed (https://ollama.com)"
-
-
-def check_api_key(name: str, env_var: str) -> tuple[bool, str]:
-    """Check if an API key is set."""
-    key = os.getenv(env_var)
-    if key:
-        return True, f"Set ({key[:8]}...)"
-    return False, f"Not set (export {env_var}=...)"
-
-
-def check_qdrant() -> tuple[bool, str]:
-    """
-    Check if Qdrant is accessible.
-
-    Tries multiple common addresses:
-    1. QDRANT_HOST env var (if set)
-    2. localhost
-    3. 127.0.0.1
-    4. Common Docker/network addresses (192.168.x.x)
-    """
-    import urllib.error
-    import urllib.request
-
-    # Build list of hosts to try - prioritize env var
-    env_host = os.getenv("QDRANT_HOST")
-    hosts_to_try = []
-    if env_host:
-        hosts_to_try.append(env_host)
-
-    # Common locations
-    hosts_to_try.extend([
-        "localhost",
-        "127.0.0.1",
-        "192.168.178.2",  # Common Docker bridge network
-        "192.168.1.1",  # Common router/server address
-        "host.docker.internal",  # Docker Desktop
-    ])
-
-    port = int(os.getenv("QDRANT_PORT", "6333"))
-
-    for host in hosts_to_try:
-        try:
-            url = f"http://{host}:{port}/collections"
-            req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=2) as response:
-                if response.status == 200:
-                    import json
-                    data = json.loads(response.read())
-                    collections = data.get("result", {}).get("collections", [])
-                    return True, f"Connected at {host}:{port} ({len(collections)} collections)"
-        except urllib.error.URLError:
-            continue
-        except Exception:
-            continue
-
-    # Build helpful message with tried addresses
-    tried = "localhost:6333"
-    if env_host:
-        tried = f"{env_host}:{port}, localhost:{port}"
-
-    return False, f"Not reachable (tried {tried}). Set QDRANT_HOST env var."
-
-
-def check_faiss() -> tuple[bool, str]:
-    """Check if FAISS is installed."""
-    try:
-        import faiss
-
-        return True, "Installed"
-    except ImportError:
-        return False, "Not installed (pip install faiss-cpu)"
 
 
 def check_dependencies() -> list[tuple[str, bool, str]]:
@@ -290,10 +158,10 @@ def test_rerank(config: dict) -> tuple[bool, str]:
 
 
 def command(
-        verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
-        test_connections: bool = typer.Option(
-            False, "--test", "-t", help="Test actual connections"
-        ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
+    test_connections: bool = typer.Option(
+        False, "--test", "-t", help="Test actual connections"
+    ),
 ) -> None:
     """
     Run diagnostics on your Fitz setup.
@@ -356,34 +224,26 @@ def command(
                 issues.append(f"Missing dependency: {name}")
 
     # =========================================================================
-    # LLM Providers
+    # LLM Providers (using centralized detection)
     # =========================================================================
 
     print("\n🤖 LLM Providers:")
 
-    ok, msg = check_ollama()
-    print_status("Ollama", "OK" if ok else "INFO", msg, ok)
+    system = detect_all()
 
-    ok, msg = check_api_key("Cohere", "COHERE_API_KEY")
-    print_status("Cohere", "OK" if ok else "INFO", msg, ok)
-
-    ok, msg = check_api_key("OpenAI", "OPENAI_API_KEY")
-    print_status("OpenAI", "OK" if ok else "INFO", msg, ok)
-
-    ok, msg = check_api_key("Anthropic", "ANTHROPIC_API_KEY")
-    print_status("Anthropic", "OK" if ok else "INFO", msg, ok)
+    print_provider_status(system.ollama)
+    print_provider_status(system.api_keys["cohere"])
+    print_provider_status(system.api_keys["openai"])
+    print_provider_status(system.api_keys["anthropic"])
 
     # =========================================================================
-    # Vector Databases
+    # Vector Databases (using centralized detection)
     # =========================================================================
 
     print("\n🗄️  Vector Databases:")
 
-    ok, msg = check_qdrant()
-    print_status("Qdrant", "OK" if ok else "INFO", msg, ok)
-
-    ok, msg = check_faiss()
-    print_status("FAISS", "OK" if ok else "INFO", msg, ok)
+    print_provider_status(system.qdrant)
+    print_provider_status(system.faiss)
 
     # =========================================================================
     # Config Validation
@@ -429,8 +289,9 @@ def command(
             from qdrant_client import QdrantClient
 
             vdb_cfg = config.get("vector_db", {}).get("kwargs", {})
-            host = vdb_cfg.get("host", os.getenv("QDRANT_HOST", "localhost"))
-            port = vdb_cfg.get("port", int(os.getenv("QDRANT_PORT", "6333")))
+            # Use detected host/port as fallback
+            host = vdb_cfg.get("host", system.qdrant_host)
+            port = vdb_cfg.get("port", system.qdrant_port)
             client = QdrantClient(host=host, port=port, timeout=5)
             collections = client.get_collections()
             print_status(
