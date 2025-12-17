@@ -12,11 +12,10 @@ CLaRa differs from Classic RAG:
 - Single language modeling loss trains both retrieval and generation
 """
 
-from typing import Optional, Dict, Any, List, TYPE_CHECKING
+from typing import Optional, Dict, Any, List
 import logging
 
 from fitz.core import (
-    KnowledgeEngine,
     Query,
     Answer,
     Provenance,
@@ -25,9 +24,7 @@ from fitz.core import (
     GenerationError,
     ConfigurationError,
 )
-
-# Import config directly from schema module to avoid circular imports
-from fitz.engines.clara.config.schema import ClaraConfig, ClaraModelConfig
+from fitz.engines.clara.config.schema import ClaraConfig
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +186,6 @@ class ClaraEngine:
         # Format documents for compression
         # CLaRa expects documents in a specific format
         formatted_docs = [[doc] for doc in documents]
-        questions = ["" for _ in documents]  # Empty questions for compression-only
 
         with torch.no_grad():
             # Use the model's internal compression
@@ -291,14 +287,16 @@ class ClaraEngine:
             answer_text, used_indices = self._generate(query.text, retrieved_docs)
 
             # Step 4: Build provenance
+            # Note: Provenance takes source_id, excerpt, and metadata (no direct score field)
             provenance = []
             for i, (doc_id, score) in enumerate(zip(retrieved_doc_ids, scores)):
                 provenance.append(Provenance(
                     source_id=doc_id,
-                    excerpt=self._doc_texts[doc_id][:200] + "...",  # First 200 chars
-                    score=float(score),
+                    excerpt=self._doc_texts[doc_id][:200] + "..." if len(self._doc_texts[doc_id]) > 200 else
+                    self._doc_texts[doc_id],
                     metadata={
                         "rank": i + 1,
+                        "relevance_score": float(score),
                         "compression_rate": self._config.compression.compression_rate,
                     }
                 ))

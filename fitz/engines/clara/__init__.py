@@ -60,7 +60,7 @@ References:
 # =============================================================================
 # CONFIGURATION (import first, no dependencies on engine)
 # =============================================================================
-from .config.schema import (
+from fitz.engines.clara.config.schema import (
     ClaraConfig,
     ClaraModelConfig,
     ClaraCompressionConfig,
@@ -72,12 +72,12 @@ from .config.schema import (
 # =============================================================================
 # ENGINE (import after config to avoid circular imports)
 # =============================================================================
-from .engine import ClaraEngine
+from fitz.engines.clara.engine import ClaraEngine
 
 # =============================================================================
 # RUNTIME (import after engine)
 # =============================================================================
-from .runtime import (
+from fitz.engines.clara.runtime import (
     run_clara,
     create_clara_engine,
     clear_engine_cache,
