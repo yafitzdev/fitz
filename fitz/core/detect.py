@@ -51,7 +51,7 @@ class ApiKeyStatus:
     """Status of an API key."""
     name: str
     available: bool
-    env_var: str
+    env_var: str = ""
     details: str = ""
 
 
@@ -60,8 +60,41 @@ class SystemStatus:
     """Complete system status."""
     ollama: ServiceStatus
     qdrant: ServiceStatus
-    faiss_available: bool
+    faiss: ServiceStatus
     api_keys: dict[str, ApiKeyStatus]
+
+    @property
+    def best_llm(self) -> str:
+        """Return the best available LLM provider."""
+        if self.api_keys["cohere"].available:
+            return "cohere"
+        if self.api_keys["openai"].available:
+            return "openai"
+        if self.api_keys["anthropic"].available:
+            return "anthropic"
+        if self.ollama.available:
+            return "ollama"
+        return "ollama"  # Default fallback
+
+    @property
+    def best_embedding(self) -> str:
+        """Return the best available embedding provider."""
+        if self.api_keys["cohere"].available:
+            return "cohere"
+        if self.api_keys["openai"].available:
+            return "openai"
+        if self.ollama.available:
+            return "ollama"
+        return "ollama"  # Default fallback
+
+    @property
+    def best_vector_db(self) -> str:
+        """Return the best available vector database."""
+        if self.qdrant.available:
+            return "qdrant"
+        if self.faiss.available:
+            return "faiss"
+        return "faiss"  # Default fallback
 
 
 # =============================================================================
@@ -191,6 +224,28 @@ def detect_qdrant() -> ServiceStatus:
     )
 
 
+def detect_faiss() -> ServiceStatus:
+    """
+    Check if FAISS is installed.
+
+    Returns:
+        ServiceStatus with available=True if faiss can be imported
+    """
+    try:
+        import faiss
+        return ServiceStatus(
+            name="FAISS",
+            available=True,
+            details="Installed (local vector DB)",
+        )
+    except ImportError:
+        return ServiceStatus(
+            name="FAISS",
+            available=False,
+            details="Not installed (pip install faiss-cpu)",
+        )
+
+
 def detect_api_key(provider: str) -> ApiKeyStatus:
     """
     Check if an API key is set for a provider.
@@ -238,21 +293,12 @@ def detect_api_key(provider: str) -> ApiKeyStatus:
     )
 
 
-def detect_faiss() -> bool:
-    """Check if FAISS is installed."""
-    try:
-        import faiss
-        return True
-    except ImportError:
-        return False
-
-
 def detect_system_status() -> SystemStatus:
     """Get complete system status."""
     return SystemStatus(
         ollama=detect_ollama(),
         qdrant=detect_qdrant(),
-        faiss_available=detect_faiss(),
+        faiss=detect_faiss(),
         api_keys={
             "cohere": detect_api_key("cohere"),
             "openai": detect_api_key("openai"),
@@ -296,6 +342,7 @@ def get_ollama_connection() -> tuple[str, int]:
         return status.host, status.port
 
     return "localhost", 11434
+
 
 # =============================================================================
 # Aliases for CLI compatibility
