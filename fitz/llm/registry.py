@@ -2,16 +2,25 @@
 """
 Central LLM plugin registry.
 
-Handles auto-discovery of chat, embedding, rerank, and vector_db plugins.
-"""
+Handles discovery and registration of:
+- chat plugins
+- embedding plugins
+- rerank plugins
 
+Note: vector_db plugins have their own separate registry at fitz.vector_db.registry
+"""
 from __future__ import annotations
 
 import importlib
 import pkgutil
-from typing import Any, Dict, Type
+from typing import Any, Dict, Iterable, Type
 
-LLMPluginType = str  # "chat" | "embedding" | "rerank" | "vector_db"
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import CHAT
+
+logger = get_logger(__name__)
+
+LLMPluginType = str  # "chat" | "embedding" | "rerank"
 
 
 class LLMRegistryError(RuntimeError):
@@ -25,25 +34,23 @@ _REQUIRED_METHOD: dict[str, str] = {
     "chat": "chat",
     "embedding": "embed",
     "rerank": "rerank",
-    "vector_db": "search",
 }
 
+# Only LLM-related packages - vector_db has its own registry
 _SCAN_PACKAGES: tuple[str, ...] = (
-    "fitz.llm.plugins",
     "fitz.llm.chat.plugins",
     "fitz.llm.embedding.plugins",
     "fitz.llm.rerank.plugins",
-    "fitz.vector_db.plugins",
 )
 
 
 def get_llm_plugin(*, plugin_name: str, plugin_type: LLMPluginType) -> Type[Any]:
-    """Get a plugin class by name and type."""
+    """Get an LLM plugin by name and type."""
     _auto_discover()
     try:
         return LLM_REGISTRY[plugin_type][plugin_name]
     except KeyError as exc:
-        available = list(LLM_REGISTRY.get(plugin_type, {}).keys())
+        available = sorted(LLM_REGISTRY.get(plugin_type, {}).keys())
         raise LLMRegistryError(
             f"Unknown {plugin_type} plugin: {plugin_name!r}. "
             f"Available: {available}"
@@ -57,52 +64,39 @@ def available_llm_plugins(plugin_type: LLMPluginType) -> list[str]:
 
 
 def resolve_llm_plugin(
-        *,
-        plugin_type: LLMPluginType,
-        requested_name: str,
+    *,
+    plugin_type: LLMPluginType,
+    requested_name: str,
 ) -> Type[Any]:
     """
-    Resolve an LLM plugin by name.
+    Resolve an LLM plugin with local-first fallback.
 
-    CHANGED: Now respects the requested plugin name instead of always
-    falling back to local. This allows config to actually control which
-    plugin is used.
-
-    If the requested plugin is not available, falls back to local if available.
-
-    Args:
-        plugin_type: Type of plugin (chat, embedding, rerank, vector_db)
-        requested_name: Name of the plugin to resolve
-
-    Returns:
-        Plugin class
-
-    Raises:
-        LLMRegistryError: If plugin not found and no fallback available
+    Resolution order:
+    1. Any plugin with availability="local" for this plugin_type
+    2. The explicitly requested plugin_name
     """
     _auto_discover()
 
     bucket = LLM_REGISTRY.get(plugin_type, {})
 
-    # 1. Try the explicitly requested plugin first
-    if requested_name in bucket:
-        return bucket[requested_name]
-
-    # 2. If not found, try local fallback
+    # 1. local-first
     for cls in bucket.values():
         if getattr(cls, "availability", None) == "local":
             return cls
 
-    # 3. No plugin found
-    available = list(bucket.keys())
-    raise LLMRegistryError(
-        f"Unknown {plugin_type} plugin: {requested_name!r}. "
-        f"Available: {available}"
-    )
+    # 2. explicit request
+    try:
+        return bucket[requested_name]
+    except KeyError as exc:
+        available = sorted(bucket.keys())
+        raise LLMRegistryError(
+            f"Unknown {plugin_type} plugin: {requested_name!r}. "
+            f"Available: {available}"
+        ) from exc
 
 
 def _auto_discover() -> None:
-    """Auto-discover plugins from scan packages."""
+    """Discover all LLM plugins from scan packages."""
     global _DISCOVERED
     if _DISCOVERED:
         return
@@ -110,11 +104,12 @@ def _auto_discover() -> None:
     for pkg_name in _SCAN_PACKAGES:
         _scan_package_best_effort(pkg_name)
 
+    logger.debug(f"{CHAT} Discovered LLM plugins: { {k: list(v.keys()) for k, v in LLM_REGISTRY.items()} }")
     _DISCOVERED = True
 
 
 def _scan_package_best_effort(package_name: str) -> None:
-    """Scan a package for plugins, ignoring errors."""
+    """Scan a package for plugin classes."""
     try:
         pkg = importlib.import_module(package_name)
     except Exception:
@@ -127,28 +122,54 @@ def _scan_package_best_effort(package_name: str) -> None:
     for module_info in pkgutil.iter_modules(pkg_path):
         module_name = f"{package_name}.{module_info.name}"
         try:
-            mod = importlib.import_module(module_name)
+            module = importlib.import_module(module_name)
         except Exception:
             continue
 
-        # Look for plugin classes
-        for attr_name in dir(mod):
-            cls = getattr(mod, attr_name, None)
-            if not isinstance(cls, type):
-                continue
+        for cls in _iter_plugin_classes(module):
+            _register(cls)
 
-            p_name = getattr(cls, "plugin_name", None)
-            p_type = getattr(cls, "plugin_type", None)
 
-            if not p_name or not p_type:
-                continue
+def _iter_plugin_classes(module: object) -> Iterable[type]:
+    """Iterate over plugin classes in a module."""
+    mod_name = getattr(module, "__name__", "")
+    for obj in vars(module).values():
+        if not isinstance(obj, type):
+            continue
+        if getattr(obj, "__module__", None) != mod_name:
+            continue
 
-            # Verify it has the required method
-            required = _REQUIRED_METHOD.get(p_type)
-            if required and not hasattr(cls, required):
-                continue
+        plugin_name = getattr(obj, "plugin_name", None)
+        plugin_type = getattr(obj, "plugin_type", None)
 
-            # Register it
-            if p_type not in LLM_REGISTRY:
-                LLM_REGISTRY[p_type] = {}
-            LLM_REGISTRY[p_type][p_name] = cls
+        if not isinstance(plugin_name, str) or not plugin_name:
+            continue
+        if not isinstance(plugin_type, str) or not plugin_type:
+            continue
+
+        required = _REQUIRED_METHOD.get(plugin_type)
+        if required is None:
+            continue
+
+        fn = getattr(obj, required, None)
+        if not callable(fn):
+            continue
+
+        yield obj
+
+
+def _register(cls: Type[Any]) -> None:
+    """Register a plugin class."""
+    plugin_name = getattr(cls, "plugin_name")
+    plugin_type = getattr(cls, "plugin_type")
+
+    bucket = LLM_REGISTRY.setdefault(plugin_type, {})
+    existing = bucket.get(plugin_name)
+
+    if existing is not None and existing is not cls:
+        raise LLMRegistryError(
+            f"Duplicate {plugin_type} plugin_name={plugin_name!r}: "
+            f"{existing.__module__}.{existing.__name__} vs {cls.__module__}.{cls.__name__}"
+        )
+
+    bucket[plugin_name] = cls

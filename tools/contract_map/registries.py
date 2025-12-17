@@ -116,7 +116,7 @@ def extract_llm_registry(
                 module=module_name,
                 name=f"LLM_REGISTRY[{plugin_type!r}]",
                 plugins=plugins,
-                note="Lazy discovery over core.llm*/plugins and core.vector_db.plugins",
+                note="Lazy discovery over fitz.llm.*/plugins (chat, embedding, rerank)",
             )
         )
 
@@ -137,8 +137,20 @@ def extract_llm_registry(
 
 def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
     """Extract all registries from the codebase."""
-    # LLM registry (central)
+    # LLM registry (chat, embedding, rerank only)
     cm.registries.extend(extract_llm_registry(cm, "fitz.llm.registry", verbose=verbose))
+
+    # Vector DB registry (separate from LLM)
+    vdb = extract_registry_plugins(
+        cm,
+        "fitz.vector_db.registry",
+        dict_attr="VECTOR_DB_REGISTRY",
+        discover_fns=("_auto_discover",),
+        note="Lazy discovery over fitz.vector_db.plugins.*",
+        verbose=verbose,
+    )
+    if vdb:
+        cm.registries.append(vdb)
 
     # Retriever registry - updated path for engines structure
     rr = extract_registry_plugins(
