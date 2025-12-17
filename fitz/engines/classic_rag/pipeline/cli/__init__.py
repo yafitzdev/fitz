@@ -1,3 +1,4 @@
+# fitz/pipeline/cli/__init__.py
 """
 CLI module for pipeline commands.
 
@@ -11,6 +12,8 @@ Available commands:
 """
 
 import typer
+
+from fitz.cli.errors import friendly_errors
 
 # Create main app first
 app = typer.Typer(
@@ -28,9 +31,10 @@ def _register_commands():
     """Register commands after module initialization to avoid circular imports."""
     from fitz.engines.classic_rag.pipeline.cli import config_show, query_with_preset, test
 
-    app.command("query")(query_with_preset.command)
-    config_app.command("show")(config_show.command)
-    app.command("test")(test.command)
+    # Wrap commands with friendly error handling
+    app.command("query")(friendly_errors(query_with_preset.command))
+    config_app.command("show")(friendly_errors(config_show.command))
+    app.command("test")(friendly_errors(test.command))
 
 
 # Register commands immediately

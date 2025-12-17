@@ -1,3 +1,4 @@
+# fitz/ingest/cli/__init__.py
 """
 CLI module for ingestion commands.
 
@@ -13,6 +14,8 @@ Available commands:
 
 import typer
 
+from fitz.cli.errors import friendly_errors
+
 # Create main app first
 app = typer.Typer(
     help="Ingestion CLI commands",
@@ -25,10 +28,11 @@ def _register_commands():
     """Register commands after module initialization to avoid circular imports."""
     from fitz.ingest.cli import list_plugins, run, stats, validate
 
-    app.command("run")(run.command)
-    app.command("list-plugins")(list_plugins.command)
-    app.command("validate")(validate.command)
-    app.command("stats")(stats.command)
+    # Wrap commands with friendly error handling
+    app.command("run")(friendly_errors(run.command))
+    app.command("list-plugins")(friendly_errors(list_plugins.command))
+    app.command("validate")(friendly_errors(validate.command))
+    app.command("stats")(friendly_errors(stats.command))
 
 
 # Register commands immediately
