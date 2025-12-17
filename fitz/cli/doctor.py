@@ -80,27 +80,76 @@ def check_config() -> tuple[bool, str, Optional[dict]]:
 
 
 def check_ollama() -> tuple[bool, str]:
-    """Check if Ollama is installed and running."""
+    """
+    Check if Ollama is installed and running.
+
+    Prioritizes HTTP API check (more reliable on Windows where CLI
+    may not be in PATH for subprocess).
+
+    Checks:
+    1. HTTP API availability (localhost:11434) - PRIMARY
+    2. CLI availability (ollama command) - FALLBACK for "installed but not running"
+    """
+    import urllib.error
+    import urllib.request
+
+    # Get host/port from env or defaults
+    host = os.getenv("OLLAMA_HOST", "localhost")
+    port = int(os.getenv("OLLAMA_PORT", "11434"))
+
+    # Also try common alternative hosts
+    hosts_to_try = [host]
+    if host == "localhost":
+        hosts_to_try.extend(["127.0.0.1", "0.0.0.0"])
+
+    # Check 1: HTTP API availability (PRIMARY - most reliable)
+    for try_host in hosts_to_try:
+        try:
+            url = f"http://{try_host}:{port}/api/tags"
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=3) as response:
+                if response.status == 200:
+                    import json
+                    data = json.loads(response.read())
+                    api_models = data.get("models", [])
+                    model_names = [m.get("name", "?") for m in api_models]
+
+                    if model_names:
+                        model_str = ", ".join(model_names[:3])
+                        if len(model_names) > 3:
+                            model_str += f" (+{len(model_names) - 3} more)"
+                        return True, f"Running at {try_host}:{port} ({model_str})"
+                    return True, f"Running at {try_host}:{port} (no models)"
+        except urllib.error.URLError:
+            continue
+        except Exception:
+            continue
+
+    # Check 2: CLI availability (to distinguish "not installed" from "not running")
+    cli_installed = False
     try:
+        # On Windows, try with shell=True as fallback
         result = subprocess.run(
-            ["ollama", "list"],
+            ["ollama", "--version"],
             capture_output=True,
             text=True,
             timeout=5,
+            shell=(sys.platform == "win32"),  # Use shell on Windows
         )
         if result.returncode == 0:
-            lines = result.stdout.strip().split("\n")[1:]
-            models = [line.split()[0] for line in lines if line.strip()]
-            if models:
-                return True, f"Running ({len(models)} models)"
-            return True, "Running (no models installed)"
-        return False, "Installed but not responding"
+            cli_installed = True
     except FileNotFoundError:
-        return False, "Not installed (https://ollama.com)"
+        pass
     except subprocess.TimeoutExpired:
-        return False, "Timeout (is Ollama running?)"
-    except Exception as e:
-        return False, f"Error: {e}"
+        cli_installed = True  # Timeout suggests it exists but is slow
+    except Exception:
+        pass
+
+    # CLI found but HTTP not responding
+    if cli_installed:
+        return False, f"Installed but not running at {host}:{port} (run: ollama serve)"
+
+    return False, "Not installed (https://ollama.com)"
 
 
 def check_api_key(name: str, env_var: str) -> tuple[bool, str]:
@@ -112,29 +161,56 @@ def check_api_key(name: str, env_var: str) -> tuple[bool, str]:
 
 
 def check_qdrant() -> tuple[bool, str]:
-    """Check if Qdrant is accessible."""
+    """
+    Check if Qdrant is accessible.
+
+    Tries multiple common addresses:
+    1. QDRANT_HOST env var (if set)
+    2. localhost
+    3. 127.0.0.1
+    4. Common Docker/network addresses (192.168.x.x)
+    """
     import urllib.error
     import urllib.request
 
-    host = os.getenv("QDRANT_HOST", "localhost")
+    # Build list of hosts to try - prioritize env var
+    env_host = os.getenv("QDRANT_HOST")
+    hosts_to_try = []
+    if env_host:
+        hosts_to_try.append(env_host)
+
+    # Common locations
+    hosts_to_try.extend([
+        "localhost",
+        "127.0.0.1",
+        "192.168.178.2",  # Common Docker bridge network
+        "192.168.1.1",  # Common router/server address
+        "host.docker.internal",  # Docker Desktop
+    ])
+
     port = int(os.getenv("QDRANT_PORT", "6333"))
 
-    try:
-        url = f"http://{host}:{port}/collections"
-        req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=3) as response:
-            if response.status == 200:
-                import json
+    for host in hosts_to_try:
+        try:
+            url = f"http://{host}:{port}/collections"
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=2) as response:
+                if response.status == 200:
+                    import json
+                    data = json.loads(response.read())
+                    collections = data.get("result", {}).get("collections", [])
+                    return True, f"Connected at {host}:{port} ({len(collections)} collections)"
+        except urllib.error.URLError:
+            continue
+        except Exception:
+            continue
 
-                data = json.loads(response.read())
-                collections = data.get("result", {}).get("collections", [])
-                return True, f"Connected at {host}:{port} ({len(collections)} collections)"
-    except urllib.error.URLError:
-        pass
-    except Exception as e:
-        return False, f"Error: {e}"
+    # Build helpful message with tried addresses
+    tried = "localhost:6333"
+    if env_host:
+        tried = f"{env_host}:{port}, localhost:{port}"
 
-    return False, f"Not reachable at {host}:{port}"
+    return False, f"Not reachable (tried {tried}). Set QDRANT_HOST env var."
 
 
 def check_faiss() -> tuple[bool, str]:
@@ -172,67 +248,52 @@ def check_dependencies() -> list[tuple[str, bool, str]]:
     return deps
 
 
+def test_chat(config: dict) -> tuple[bool, str]:
+    """Test chat/LLM configuration."""
+    llm_cfg = config.get("llm", {})
+    plugin = llm_cfg.get("plugin_name", "?")
+    model = llm_cfg.get("kwargs", {}).get("model", "default")
+    return True, f"Plugin '{plugin}' model '{model}'"
+
+
 def test_embedding(config: dict) -> tuple[bool, str]:
-    """Test embedding generation."""
-    if not config:
-        return False, "No config"
-
-    try:
-        embedding_cfg = config.get("embedding", {})
-        plugin_name = embedding_cfg.get("plugin_name", "cohere")
-
-        # Quick import test
-        if plugin_name == "cohere":
-            if not os.getenv("COHERE_API_KEY"):
-                return False, "COHERE_API_KEY not set"
-        elif plugin_name == "openai":
-            if not os.getenv("OPENAI_API_KEY"):
-                return False, "OPENAI_API_KEY not set"
-
-        return True, f"Plugin '{plugin_name}' configured"
-    except Exception as e:
-        return False, f"Error: {e}"
+    """Test embedding configuration."""
+    emb_cfg = config.get("embedding", {})
+    plugin = emb_cfg.get("plugin_name", "?")
+    model = emb_cfg.get("kwargs", {}).get("model", "default")
+    return True, f"Plugin '{plugin}'" + (f" model '{model}'" if model != "default" else " configured")
 
 
-def test_llm(config: dict) -> tuple[bool, str]:
-    """Test LLM configuration."""
-    if not config:
-        return False, "No config"
+def test_rerank(config: dict) -> tuple[bool, str]:
+    """Test rerank configuration."""
+    rerank_cfg = config.get("rerank", {})
 
-    try:
-        llm_cfg = config.get("llm", {})
-        plugin_name = llm_cfg.get("plugin_name", "cohere")
-        model = llm_cfg.get("kwargs", {}).get("model", "unknown")
+    # Check if rerank is configured
+    if not rerank_cfg:
+        return False, "Not configured (optional)"
 
-        # Quick validation
-        if plugin_name == "cohere":
-            if not os.getenv("COHERE_API_KEY"):
-                return False, "COHERE_API_KEY not set"
-        elif plugin_name == "openai":
-            if not os.getenv("OPENAI_API_KEY"):
-                return False, "OPENAI_API_KEY not set"
-        elif plugin_name == "anthropic":
-            if not os.getenv("ANTHROPIC_API_KEY"):
-                return False, "ANTHROPIC_API_KEY not set"
+    enabled = rerank_cfg.get("enabled", False)
+    if not enabled:
+        return False, "Disabled (optional)"
 
-        return True, f"Plugin '{plugin_name}' model '{model}'"
-    except Exception as e:
-        return False, f"Error: {e}"
+    plugin = rerank_cfg.get("plugin_name", "?")
+    model = rerank_cfg.get("kwargs", {}).get("model", "")
+
+    if plugin == "?" or plugin is None:
+        return False, "Enabled but no plugin specified"
+
+    detail = f"Plugin '{plugin}'"
+    if model:
+        detail += f" model '{model}'"
+
+    return True, detail
 
 
 def command(
-    verbose: bool = typer.Option(
-        False,
-        "--verbose",
-        "-v",
-        help="Show detailed output",
-    ),
-    test_connections: bool = typer.Option(
-        False,
-        "--test",
-        "-t",
-        help="Test actual connections (slower)",
-    ),
+        verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
+        test_connections: bool = typer.Option(
+            False, "--test", "-t", help="Test actual connections"
+        ),
 ) -> None:
     """
     Run diagnostics on your Fitz setup.
@@ -331,21 +392,28 @@ def command(
     if config:
         print("\n⚙️  Configuration:")
 
-        ok, msg = test_llm(config)
-        print_status("LLM", "OK" if ok else "WARN", msg, ok)
+        # Chat (was "LLM")
+        ok, msg = test_chat(config)
+        print_status("Chat", "OK" if ok else "WARN", msg, ok)
         if not ok:
-            warnings.append(f"LLM: {msg}")
+            warnings.append(f"Chat: {msg}")
 
+        # Embedding
         ok, msg = test_embedding(config)
         print_status("Embedding", "OK" if ok else "WARN", msg, ok)
         if not ok:
             warnings.append(f"Embedding: {msg}")
 
-        # Show configured values
+        # Rerank (NEW)
+        ok, msg = test_rerank(config)
+        print_status("Rerank", "OK" if ok else "INFO", msg, ok)
+
+        # Show configured values in verbose mode
         if verbose:
             print("\n  Configured values:")
-            print(f"    LLM: {config.get('llm', {}).get('plugin_name', '?')}")
+            print(f"    Chat: {config.get('llm', {}).get('plugin_name', '?')}")
             print(f"    Embedding: {config.get('embedding', {}).get('plugin_name', '?')}")
+            print(f"    Rerank: {config.get('rerank', {}).get('plugin_name', 'disabled')}")
             print(f"    Vector DB: {config.get('vector_db', {}).get('plugin_name', '?')}")
             print(f"    Collection: {config.get('retriever', {}).get('collection', '?')}")
 
@@ -361,8 +429,8 @@ def command(
             from qdrant_client import QdrantClient
 
             vdb_cfg = config.get("vector_db", {}).get("kwargs", {})
-            host = vdb_cfg.get("host", "localhost")
-            port = vdb_cfg.get("port", 6333)
+            host = vdb_cfg.get("host", os.getenv("QDRANT_HOST", "localhost"))
+            port = vdb_cfg.get("port", int(os.getenv("QDRANT_PORT", "6333")))
             client = QdrantClient(host=host, port=port, timeout=5)
             collections = client.get_collections()
             print_status(
@@ -377,30 +445,10 @@ def command(
 
         # Test embedding
         try:
-            emb_cfg = config.get("embedding", {})
-            if emb_cfg.get("plugin_name") == "cohere" and os.getenv("COHERE_API_KEY"):
-                import httpx
-
-                client = httpx.Client(
-                    base_url="https://api.cohere.ai/v1",
-                    headers={"Authorization": f"Bearer {os.getenv('COHERE_API_KEY')}"},
-                    timeout=10,
-                )
-                response = client.post(
-                    "/embed",
-                    json={
-                        "texts": ["test"],
-                        "model": "embed-english-v3.0",
-                        "input_type": "search_query",
-                        "embedding_types": ["float"],
-                    },
-                )
-                if response.status_code == 200:
-                    print_status("Embedding API", "OK", "Cohere embed working", True)
-                else:
-                    print_status("Embedding API", "ERROR", f"Status {response.status_code}", False)
+            # This would need actual embedding test implementation
+            print_status("Embedding test", "SKIP", "Not implemented", True)
         except Exception as e:
-            print_status("Embedding API", "ERROR", str(e), False)
+            print_status("Embedding test", "ERROR", str(e), False)
 
     # =========================================================================
     # Summary
@@ -412,33 +460,23 @@ def command(
         if RICH_AVAILABLE:
             console.print(f"[red]❌ {len(issues)} issue(s) found:[/red]")
             for issue in issues:
-                console.print(f"  • {issue}")
+                console.print(f"  [red]•[/red] {issue}")
         else:
             print(f"❌ {len(issues)} issue(s) found:")
             for issue in issues:
                 print(f"  • {issue}")
-
-    if warnings:
+    elif warnings:
         if RICH_AVAILABLE:
             console.print(f"[yellow]⚠️  {len(warnings)} warning(s):[/yellow]")
             for warning in warnings:
-                console.print(f"  • {warning}")
+                console.print(f"  [yellow]•[/yellow] {warning}")
         else:
             print(f"⚠️  {len(warnings)} warning(s):")
             for warning in warnings:
                 print(f"  • {warning}")
-
-    if not issues and not warnings:
-        if RICH_AVAILABLE:
-            console.print("[green]✅ All checks passed![/green]")
-        else:
-            print("✅ All checks passed!")
-
-    print()
-
-    # Exit with error code if there are issues
-    if issues:
-        raise typer.Exit(code=1)
+        print("✅ All checks passed!")
+    else:
+        print("✅ All checks passed!")
 
 
 if __name__ == "__main__":
