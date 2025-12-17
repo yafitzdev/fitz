@@ -1,6 +1,7 @@
+# CHANGELOG.md
 # Changelog
 
-All notable changes to Fitz will be documented in this file.
+All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -9,124 +10,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] - 2025-12-17
 
-### 🎯 MAJOR ARCHITECTURAL REFACTOR: RAG Framework → Engine Platform
+### 🎉 Overview
 
-Fitz has been fundamentally restructured from a RAG framework into an engine platform. This enables support for multiple knowledge engine paradigms (Classic RAG, CLaRa, custom engines) while maintaining clean abstractions.
+Fitz v0.3.0 transforms the project from a RAG framework into a **multi-engine knowledge platform**. This release introduces a pluggable engine architecture, the CLaRa engine for compression-native RAG, and a universal runtime that makes switching between paradigms seamless.
 
-### ✨ Added
+---
 
-#### Developer Experience
-- **`fitz init` Setup Wizard**: Interactive configuration with auto-detection
-  - Detects available LLM providers (API keys, Ollama)
-  - Detects vector databases (Qdrant, FAISS)
-  - Generates working config automatically
-  - Auto-selects when only one option available
-  
-- **`fitz doctor` Diagnostics**: Comprehensive health checks
-  - Python version and dependencies
-  - API key validation
-  - Service connectivity (Qdrant, Ollama)
-  - Configuration validation
+### ✨ Highlights
 
-- **Smart Qdrant Plugin**: Production-ready vector DB integration
-  - Auto-creates collections on first upsert
-  - Auto-detects vector dimensions
-  - Handles named vs unnamed vectors automatically
-  - Converts string IDs to UUIDs
-  - Environment variable configuration (QDRANT_HOST, QDRANT_PORT)
+#### Multi-Engine Architecture
+- **Universal Runtime**: `run(query, engine="clara")` - switch engines with one parameter
+- **Engine Registry**: Discover, register, and manage knowledge engines
+- **Protocol-Based Design**: Implement `answer(Query) -> Answer` to create custom engines
+- **Shared Infrastructure**: LLM, vector DB, and ingestion services shared across engines
 
-- **Friendly Error Handler**: User-friendly error messages
-  - Pattern matching for common errors
-  - Actionable fix suggestions
-  - Debug mode (FITZ_DEBUG=1) for full tracebacks
+#### CLaRa Engine (NEW)
+- **Apple's CLaRa Integration**: Continuous Latent Reasoning for RAG
+- **16x-128x Document Compression**: Preserve semantics while drastically reducing context
+- **Unified Retrieval-Generation**: Single model for both retrieval and generation
+- **Multi-Hop Reasoning**: Superior performance on complex queries
+- **HuggingFace Models**: Support for CLaRa-7B-Base, CLaRa-7B-Instruct, CLaRa-7B-E2E
 
-- **Progress Bars**: Rich progress display for ingestion
-  - Real-time embedding progress
-  - Batch writing progress
-  - Time estimates
-  - Quiet mode (-q) for scripts
+#### Forward Compatibility
+- **Stable Contracts**: `Query`, `Answer`, `Provenance` won't change
+- **Paradigm Agnostic**: Add new engines without modifying core code
+- **Your Code Won't Break**: Upgrade to new engines with minimal changes
 
-#### Core Abstractions
-- **New `fitz.core` package** with paradigm-agnostic contracts:
-  - `KnowledgeEngine` protocol - The single stable abstraction all engines implement
-  - `Query` dataclass - Input representation
-  - `Answer` dataclass - Output representation
-  - `Provenance` dataclass - Source attribution
-  - `Constraints` dataclass - Query-time constraints
-  - Complete exception hierarchy (`EngineError`, `QueryError`, `KnowledgeError`, `GenerationError`, etc.)
+---
 
-#### Engine Architecture
-- **New `fitz.engines` package** organizing engines by paradigm:
-  - `classic_rag/` - Classic RAG implementation (moved from root)
-  - Ready for future engines (`clara/`, custom engines)
-- **`ClassicRagEngine`** - Implements `KnowledgeEngine` protocol, wraps existing RAG pipeline
-- **Canonical runtime** (`engines/classic_rag/runtime.py`):
-  - `run_classic_rag()` - Primary entry point for Classic RAG
-  - `create_classic_rag_engine()` - Factory for reusable engines
+### 🚀 Added
 
-#### Universal Runtime
-- **New `fitz.runtime` package** for multi-engine orchestration:
-  - `EngineRegistry` - Dynamic engine discovery and registration
-  - `run()` - Universal entry point supporting any engine
-  - `create_engine()` - Factory for any engine type
-  - `list_engines()` - Engine enumeration
-  - Auto-registration system for engines
+#### Core Contracts (`fitz/core/`)
+- `KnowledgeEngine` protocol - paradigm-agnostic engine interface
+- `Query` dataclass - standardized query representation with constraints
+- `Answer` dataclass - standardized response with provenance
+- `Provenance` dataclass - source attribution for answers
+- `Constraints` dataclass - query-time limits (max_sources, filters)
+- Exception hierarchy: `QueryError`, `KnowledgeError`, `GenerationError`, `ConfigurationError`
 
-#### Shared Infrastructure
-- Promoted shared services to root level:
-  - `fitz.llm/` - LLM service (chat, embedding, rerank)
-  - `fitz.vector_db/` - Vector database service
-  - `fitz.logging/` - Logging infrastructure
-  - `fitz.ingest/` - Document ingestion
+#### Universal Runtime (`fitz/runtime/`)
+- `run(query, engine="...")` - universal entry point
+- `EngineRegistry` - global engine discovery and registration
+- `create_engine(engine="...")` - factory for engine instances
+- `list_engines()` - discover available engines
+- `list_engines_with_info()` - engines with descriptions
+- `@EngineRegistry.register_engine` - decorator for registration
+
+#### CLaRa Engine (`fitz/engines/clara/`)
+- `ClaraEngine` - full implementation of CLaRa paradigm
+- `run_clara()` - convenience function for quick queries
+- `create_clara_engine()` - factory for reusable instances
+- `ClaraConfig` - comprehensive configuration
+- `ClaraModelConfig` - model loading options (quantization, device, dtype)
+- `ClaraCompressionConfig` - compression rate settings (16x-128x)
+- `ClaraRetrievalConfig` - latent space retrieval settings
+- `ClaraGenerationConfig` - generation parameters
+- Auto-registration with global engine registry
+
+#### Classic RAG Engine (`fitz/engines/classic_rag/`)
+- `ClassicRagEngine` - wrapper implementing `KnowledgeEngine`
+- `run_classic_rag()` - convenience function
+- `create_classic_rag_engine()` - factory function
+- Auto-registration with global engine registry
+
+---
 
 ### 🔄 Changed
 
-- Cohere chat plugin now uses correct v1 API format
-- Updated default model to `command-r-08-2024` (command-r-plus deprecated)
-- Config now saves to correct locations automatically
-
-#### Import Paths (BREAKING)
-All import paths have changed to reflect the new architecture:
-
-**OLD (v0.2.x)**:
-```python
-from fitz.pipeline.pipeline.engine import RAGPipeline
-from fitz.core.llm.chat.plugins.openai import OpenAIChat
-```
-
-**NEW (v0.3.0)**:
-```python
-from fitz.engines.classic_rag import run_classic_rag, ClassicRagEngine
-from fitz.llm.chat.plugins.openai import OpenAIChat
-```
-
 #### Public API (BREAKING)
-- **Removed**: Direct `RAGPipeline` instantiation from public API
-- **New**: `run_classic_rag()` is now the canonical entry point
-- **New**: Universal `run()` function supports all engines
 
-**OLD**:
+**Entry Points**:
 ```python
-pipeline = RAGPipeline.from_config(config)
-result = pipeline.run("What is X?")
-print(result.answer)
+# OLD
+from fitz.pipeline.pipeline.engine import RAGPipeline
+result = RAGPipeline.from_config(config).run("query")
+
+# NEW
+from fitz import run
+answer = run("query", engine="classic_rag")
+# or
+from fitz.engines.classic_rag import run_classic_rag
+answer = run_classic_rag("query")
 ```
 
-**NEW**:
-```python
-answer = run_classic_rag("What is X?")
-print(answer.text)
-```
-
-#### Answer Format (BREAKING)
+**Answer Format**:
 - `RGSAnswer.answer` → `Answer.text`
 - `RGSAnswer.sources` → `Answer.provenance`
-- Source objects are now `Provenance` with standardized fields
+- `source.chunk_id` → `provenance.source_id`
+- `source.text` → `provenance.excerpt`
+- `source.metadata` → `provenance.metadata`
+
+**Import Paths**:
+| Old Path | New Path |
+|----------|----------|
+| `fitz.pipeline.*` | `fitz.engines.classic_rag.*` |
+| `fitz.core.llm.*` | `fitz.llm.*` |
+| `fitz.core.embedding.*` | `fitz.llm.embedding.*` |
+| `fitz.core.vector_db.*` | `fitz.vector_db.*` |
 
 #### CLI Commands
-- **Updated**: `fitz-pipeline query` now uses new runtime
-- **Added**: Support for `--max-sources` and `--filters` flags
-- **Enhanced**: Better error messages using new exception hierarchy
+- `fitz-pipeline query` - now uses universal runtime internally
+- Added `--engine` flag to select engine
+- Added `fitz engines` command to list available engines
+
+---
 
 ### 🏗️ Refactored
 
@@ -143,12 +130,8 @@ NEW (v0.3.0):
 fitz/
 ├── core/              # Paradigm-agnostic contracts
 ├── engines/
-│   └── classic_rag/   # RAG implementation
-│       ├── engine.py
-│       ├── runtime.py
-│       ├── pipeline/
-│       ├── retrieval/
-│       └── generation/
+│   ├── classic_rag/   # Traditional RAG
+│   └── clara/         # CLaRa engine
 ├── runtime/           # Multi-engine orchestration
 ├── llm/               # Shared LLM service
 ├── vector_db/         # Shared vector DB service
@@ -157,59 +140,122 @@ fitz/
 
 #### Module Organization
 - **Moved**: All RAG-specific code → `engines/classic_rag/`
-- **Promoted**: Shared services → root level
-- **Eliminated**: `core/` as a catch-all package
-- **Fixed**: All circular dependencies
+- **Added**: CLaRa engine in `engines/clara/`
+- **Promoted**: Shared services to root level
+- **Created**: `runtime/` for multi-engine orchestration
+- **Cleaned**: `core/` now contains only paradigm-agnostic contracts
+
+---
 
 ### 🐛 Fixed
-- Fixed all import path inconsistencies
-- Resolved circular dependency issues
-- Fixed double-nesting of modules
-- Corrected model location inconsistencies
-- Qdrant point ID format (string → UUID conversion)
-- UTF-16 file encoding detection in local filesystem plugin
-- Named vector configuration handling
+- Resolved all circular import dependencies
+- Fixed import path inconsistencies across modules
+- Corrected Provenance field usage (score → metadata)
+- Fixed engine registration order to prevent import errors
+- Proper lazy imports in runtime to avoid circular dependencies
+
+---
 
 ### 📚 Documentation
-- **New**: Architecture overview in README
-- **New**: Migration guide (v0.2.x → v0.3.0)
-- **New**: Quickstart examples using new API
-- **Updated**: All code examples to use new imports
-- **Added**: Comprehensive docstrings for all core types
+- **New**: Complete README rewrite with multi-engine focus
+- **New**: MIGRATION.md with detailed upgrade instructions
+- **New**: ENGINES.md explaining engine architecture
+- **New**: CUSTOM_ENGINES.md tutorial for creating engines
+- **Updated**: All code examples to use new API
+- **Added**: CLaRa-specific documentation and examples
+
+---
 
 ### 🧪 Testing
 - ✅ All existing tests updated and passing
-- ✅ Import path migrations verified
-- ✅ Backwards compatibility layer removed (clean break)
+- ✅ New tests for CLaRa engine (config, engine, runtime, registration)
+- ✅ New tests for universal runtime
+- ✅ New tests for engine registry
+- ✅ Integration tests for multi-engine scenarios
+- ✅ 155 tests total, all passing
+
+---
 
 ### ⚠️ Breaking Changes Summary
 
-1. **Import paths changed** - All `fitz.pipeline.*`, `fitz.core.llm.*`, etc. must be updated
-2. **Public API changed** - Use `run_classic_rag()` instead of `RAGPipeline.run()`
-3. **Answer format changed** - `Answer.text` and `Answer.provenance` instead of old attributes
-4. **CLI behavior unchanged** - Commands work the same, internal implementation changed
+1. **Import paths changed** - Update all imports (see Migration Guide)
+2. **Public API changed** - Use `run()` or engine-specific functions
+3. **Answer format changed** - `Answer.text` and `Answer.provenance`
+4. **No backwards compatibility layer** - Clean break for cleaner codebase
+
+---
+
+### 📦 Dependencies
+
+#### New Optional Dependencies
+```toml
+[project.optional-dependencies]
+clara = ["transformers>=4.35.0", "torch>=2.0.0"]
+```
+
+#### Installation
+```bash
+# Base installation
+pip install fitz
+
+# With CLaRa support
+pip install fitz[clara]
+
+# Full installation
+pip install fitz[all]
+```
+
+---
 
 ### 🔮 Future Compatibility
 
 This architecture enables:
-- **CLaRa engine** (citation-attributed reasoning) - Coming in v0.4.0
-- **Custom engines** - Users can implement `KnowledgeEngine` protocol
-- **Multi-engine applications** - Switch engines dynamically
-- **Engine composition** - Combine engines for ensemble approaches
-
-### 📦 Migration Path
-
-See `MIGRATION.md` for detailed upgrade instructions.
-
-**Quick migration**:
-1. Update all imports (find/replace `fitz.pipeline` → `fitz.engines.classic_rag`)
-2. Replace `RAGPipeline.run()` with `run_classic_rag()`
-3. Update answer access: `result.answer` → `answer.text`
-4. Update sources: `result.sources` → `answer.provenance`
-5. Run tests
+- **GraphRAG engine** - Knowledge graph-based retrieval (planned v0.3.1)
+- **Engine composition** - Combine engines for ensemble (planned v0.4.0)
+- **Streaming responses** - Real-time generation (planned v0.5.0)
+- **Custom engines** - Users can implement and register their own
 
 ---
 
-## [0.2.x] - Previous Releases
+### 📖 Migration Path
 
-See previous changelog entries for v0.2.x release notes.
+See [MIGRATION.md](docs/MIGRATION.md) for detailed upgrade instructions.
+
+**Quick migration**:
+1. Update imports: `fitz.pipeline` → `fitz.engines.classic_rag`
+2. Replace `RAGPipeline.run()` with `run_classic_rag()`
+3. Update answer access: `result.answer` → `answer.text`
+4. Update sources: `result.sources` → `answer.provenance`
+5. Run tests to verify
+
+---
+
+## [0.2.0] - 2024-12-16
+
+### Overview
+Quality-focused release with enhanced observability, local-first development, and production readiness improvements.
+
+### Added
+- Contract Map tool for architecture documentation
+- Ollama integration for local LLMs
+- FAISS support for local vector database
+- Enhanced error messages in API clients
+
+### Improved
+- Error handling with comprehensive logging
+- Type safety (92% clean)
+- API error messages with better context
+
+---
+
+## [0.1.0] - 2024-12-01
+
+### Overview
+Initial release of Fitz RAG framework.
+
+### Added
+- Core RAG pipeline
+- OpenAI, Azure, Cohere LLM plugins
+- Qdrant vector database integration
+- Document ingestion pipeline
+- CLI tools for query and ingestion
