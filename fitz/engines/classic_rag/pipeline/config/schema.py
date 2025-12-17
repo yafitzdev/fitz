@@ -67,7 +67,7 @@ class RAGConfig(BaseModel):
             Validated RAGConfig instance
 
         Example:
-            >>> from fitz.core.config.presets import get_preset
+            >>> from fitz.engines.classic_rag.config.presets import get_preset
             >>> config_dict = get_preset("local")
             >>> config = RAGConfig.from_dict(config_dict)
         """

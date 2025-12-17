@@ -152,7 +152,7 @@ class RAGPipeline:
             RAGPipeline instance
 
         Example:
-            >>> from fitz.core.config.presets import get_preset
+            >>> from fitz.engines.classic_rag.config.presets import get_preset
             >>> config = get_preset("local")
             >>> pipeline = RAGPipeline.from_dict(config)
         """

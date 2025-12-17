@@ -104,7 +104,7 @@ def extract_protocol_methods(proto_cls: Type[Any]) -> List[MethodContract]:
 def extract_models(cm: ContractMap, *, verbose: bool) -> None:
     """Extract all models from the codebase."""
     model_modules = [
-        "fitz.core.config.schema",
+        "fitz.engines.classic_rag.config.schema",
         "fitz.core.models.chunk",
         "fitz.core.models.document",
         "fitz.engines.classic_rag.pipeline.config.schema",
