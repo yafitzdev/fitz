@@ -16,7 +16,6 @@ Design principle: NO SILENT FALLBACK
 """
 from __future__ import annotations
 
-
 from fitz.core.registry import (  # Functions; Registries; Errors
     CHAT_REGISTRY,
     EMBEDDING_REGISTRY,
