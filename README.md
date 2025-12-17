@@ -3,7 +3,7 @@
 
 **Fitz** is a modular knowledge engine platform that supports multiple retrieval-generation paradigms. Build RAG applications today, switch to CLaRa tomorrow, or create your own custom engine.
 
-[![Tests](https://github.com/yafitzdev/fitz/workflows/tests/badge.svg)](https://github.com/yafitzdev/fitz/actions)
+[![Tests](https://img.shields.io/github/actions/workflow/status/yafitzdev/fitz/ci.yml?label=tests)](https://github.com/yafitzdev/fitz/actions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
