@@ -1,176 +1,171 @@
-# fitz
+# Fitz v0.3.0 - Engine Architecture
 
-> A modular RAG framework with clean architecture and straightforward configuration.
+## What's New in v0.3.0
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.2.0-green.svg)](https://github.com/yafitzdev/fitz/releases)
+Fitz has been restructured as an **engine platform** rather than a RAG framework. This enables:
 
----
-
-## Why fitz?
-
-Most RAG frameworks hide what's happening behind layers of abstraction. **fitz** gives you direct control:
-
-- **See what's happening** — No magic chains, explicit pipeline steps
-- **Swap components freely** — Protocol-based plugins, not vendor lock-in  
-- **Run locally** — Zero API costs with Ollama + FAISS
-- **Configure, don't code** — YAML-driven, sensible defaults
+- ✅ **Clean abstractions**: Query → Engine → Answer (paradigm-agnostic)
+- ✅ **Multiple paradigms**: Classic RAG today, CLaRa tomorrow, custom engines anytime
+- ✅ **Forward compatible**: Your code won't break when new engines are added
+- ✅ **Better organization**: Engines are self-contained, infrastructure is shared
 
 ---
 
 ## Quick Start
 
-### Local Development (No API Keys)
+### Installation
 
 ```bash
-# Install
-pip install fitz[local]
-
-# Start Ollama (get it from ollama.ai)
-ollama pull llama3.2
-ollama pull nomic-embed-text
-
-# Ingest documents
-fitz-ingest run ./docs --collection my_docs
-
-# Query
-fitz-pipeline query "What are the main concepts?" --collection my_docs
-```
-
-### With Cloud APIs
-
-```bash
-# Install
 pip install fitz
-
-# Set your API key
-export OPENAI_API_KEY="sk-..."
-
-# Ingest documents
-fitz-ingest run ./docs --collection my_docs
-
-# Query
-fitz-pipeline query "What are the main concepts?" --collection my_docs
 ```
 
----
-
-## Features
-
-### Local-First
-Run everything on your machine. No API keys, no rate limits, no costs.
-
-```bash
-pip install fitz[local]
-# Uses Ollama for LLMs, FAISS for vector search
-```
-
-### Flexible Plugins
-Swap any component via config:
-
-**LLMs**: OpenAI, Anthropic, Cohere, Azure, Ollama  
-**Vector DBs**: Qdrant, FAISS  
-**Everything else**: Drop in your own plugins
-
-### Straightforward Config
-
-```yaml
-llm:
-  plugin_name: openai
-  kwargs:
-    model: gpt-4
-    temperature: 0
-
-retriever:
-  collection: my_docs
-  top_k: 5
-
-rgs:
-  enable_citations: true
-  strict_grounding: true
-```
-
----
-
-## Installation
-
-### From Source
-
-```bash
-git clone https://github.com/yafitzdev/fitz.git
-cd fitz
-pip install -e .
-```
-
-### Optional Dependencies
-
-```bash
-pip install fitz[ingest]  # PDF, DOCX support
-pip install fitz[local]   # Ollama + FAISS
-```
-
----
-
-## Usage
-
-### Python API
+### Basic Usage (New API)
 
 ```python
-from fitz.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
-from fitz.engines.classic_rag.pipeline.config.loader import load_rag_config
+from fitz.engines.classic_rag import run_classic_rag
 
-# Load config
-config = load_rag_config()
+# Simple query
+answer = run_classic_rag("What is quantum computing?")
+print(answer.text)
 
-# Create pipeline
+# View sources
+for source in answer.provenance:
+    print(f"Source: {source.source_id}")
+    print(f"Excerpt: {source.excerpt}")
+```
+
+### Advanced Usage
+
+```python
+from fitz.core import Query, Constraints
+from fitz.engines.classic_rag import create_classic_rag_engine
+
+# Create reusable engine
+engine = create_classic_rag_engine("config.yaml")
+
+# Query with constraints
+query = Query(
+    text="Explain quantum entanglement",
+    constraints=Constraints(
+        max_sources=5,
+        filters={"topic": "physics"}
+    )
+)
+
+answer = engine.answer(query)
+```
+
+---
+
+## Architecture
+
+### Before v0.3.0 (RAG Framework)
+```
+fitz/
+├── pipeline/      # RAG-specific
+├── retrieval/     # RAG-specific
+├── generation/    # RAG-specific
+└── core/          # Mixed concerns
+```
+
+### After v0.3.0 (Engine Platform)
+```
+fitz/
+├── core/                  # Paradigm-agnostic contracts
+│   ├── engine.py          # KnowledgeEngine protocol
+│   ├── query.py           # Query type
+│   └── answer.py          # Answer type
+├── engines/
+│   ├── classic_rag/       # RAG implementation
+│   │   ├── engine.py      # ClassicRagEngine
+│   │   ├── runtime.py     # Canonical entry point
+│   │   ├── pipeline/      # RAG pipeline logic
+│   │   ├── retrieval/     # RAG retrieval
+│   │   └── generation/    # RAG generation
+│   └── clara/             # Future: CLaRa engine
+├── llm/                   # Shared LLM service
+├── vector_db/             # Shared vector DB service
+└── ingest/                # Shared ingestion
+```
+
+**Key principle:** Knowledge → Engine → Answer
+
+---
+
+## CLI
+
+### Query Command
+
+```bash
+# Basic query
+fitz-pipeline query "What is quantum computing?"
+
+# With constraints
+fitz-pipeline query "Explain X" --max-sources 5
+
+# With filters
+fitz-pipeline query "What is Y?" --filters '{"topic": "physics"}'
+
+# With preset
+fitz-pipeline query "Analyze this" --preset local
+```
+
+### Config Command
+
+```bash
+# Show resolved configuration
+fitz-pipeline config show
+
+# Show with custom config
+fitz-pipeline config show --config my_config.yaml
+```
+
+---
+
+## Migration Guide (v0.2.x → v0.3.0)
+
+### Old Code (v0.2.x)
+```python
+from fitz.pipeline.pipeline.engine import RAGPipeline
+from fitz.pipeline.config.loader import load_config
+
+config = load_config()
 pipeline = RAGPipeline.from_config(config)
-
-# Query
-result = pipeline.run("What is retrieval-guided synthesis?")
+result = pipeline.run("What is X?")
 
 print(result.answer)
 for source in result.sources:
-    print(f"  - {source.doc_id}: {source.content[:100]}")
+    print(source.chunk_id)
 ```
 
-### CLI
+### New Code (v0.3.0)
+```python
+from fitz.engines.classic_rag import run_classic_rag
 
-```bash
-# Ingest documents
-fitz-ingest run ./my-documents \
-  --collection docs \
-  --chunk-size 1000 \
-  --chunk-overlap 200
+answer = run_classic_rag("What is X?")
 
-# Query
-fitz-pipeline query "Your question here" \
-  --collection docs \
-  --preset standard
-
-# Show config
-fitz-pipeline config show
+print(answer.text)
+for source in answer.provenance:
+    print(source.source_id)
 ```
+
+### Breaking Changes
+
+1. **Import paths changed**: `fitz.pipeline.*` → `fitz.engines.classic_rag.*`
+2. **Answer format changed**: `RGSAnswer.answer` → `Answer.text`
+3. **Source format changed**: `sources` → `provenance`
+4. **Entry point changed**: `RAGPipeline.run()` → `run_classic_rag()`
+
+### Backwards Compatibility
+
+The old `RAGPipeline` API still works internally, but is no longer the public API. 
+Update your code to use the new engine interface for forward compatibility.
 
 ---
 
 ## Configuration
 
-### Environment Variables
-
-```bash
-# LLM APIs
-export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
-export COHERE_API_KEY="..."
-
-# Vector DB (optional)
-export QDRANT_URL="http://localhost:6333"
-```
-
-### YAML Config
-
-Place a `config.yaml` in your project:
+### YAML Config (Unchanged)
 
 ```yaml
 llm:
@@ -199,175 +194,52 @@ rgs:
   strict_grounding: true
 ```
 
+Configuration structure remains the same. The new engine wrapper handles loading.
+
 ---
 
-## Architecture
+## Future Engines
 
-```
-CLI (fitz, fitz-ingest, fitz-pipeline)
-    ↓
-Pipeline (orchestration)
-    ↓
-Plugins (chat, embed, rerank, vector_db)
-    ↓
-Core (registry, config, models)
-    ↓
-Backends (ollama, faiss, cloud APIs)
+The new architecture enables adding engines without touching core infrastructure:
+
+```python
+from fitz.core import Query
+from fitz.engines.clara import ClaraEngine  # Future
+
+# Same interface, different paradigm
+engine = ClaraEngine(config)
+query = Query(text="What is X?")
+answer = engine.answer(query)  # CLaRa reasoning instead of RAG
 ```
 
-Clean boundaries. No circular dependencies.
+All engines implement the same `KnowledgeEngine` protocol:
+```python
+def answer(self, query: Query) -> Answer:
+    ...
+```
 
 ---
 
 ## Examples
 
-### Local RAG Pipeline
-
-```python
-from fitz.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
-from fitz.engines.classic_rag.pipeline.config.schema import RAGConfig, PipelinePluginConfig
-
-# Local config
-config = RAGConfig(
-    llm=PipelinePluginConfig(
-        plugin_name="local",
-        kwargs={"model": "llama3.2"}
-    ),
-    embedding=PipelinePluginConfig(
-        plugin_name="local",
-        kwargs={"model": "nomic-embed-text"}
-    ),
-    vector_db=PipelinePluginConfig(
-        plugin_name="local-faiss",
-        kwargs={}
-    ),
-    retriever=RetrieverConfig(
-        plugin_name="dense",
-        collection="docs",
-        top_k=5
-    )
-)
-
-pipeline = RAGPipeline.from_config(config)
-result = pipeline.run("What is X?")
-```
-
-### Custom Ingestion
-
-```python
-from fitz.ingest.pipeline.ingestion_pipeline import IngestionPipeline
-from fitz.ingest.config.schema import IngestConfig
-
-config = IngestConfig(
-    ingester=IngesterConfig(
-        plugin_name="local",
-        kwargs={}
-    ),
-    chunker=ChunkerConfig(
-        plugin_name="simple",
-        chunk_size=1000,
-        chunk_overlap=200,
-        kwargs={}
-    ),
-    collection="my_docs"
-)
-
-pipeline = IngestionPipeline(config)
-pipeline.run(source="./documents")
-```
-
----
-
-## Plugin Development
-
-### Create a Chat Plugin
-
-```python
-from fitz.llm.chat.base import ChatPlugin
-
-class MyChatClient(ChatPlugin):
-    plugin_name = "my_llm"
-    
-    def __init__(self, model: str = "default", **kwargs):
-        self.model = model
-    
-    def chat(self, messages: list[dict[str, Any]]) -> str:
-        # Your implementation
-        return response_text
-```
-
-Place it in `fitz/core/llm/chat/plugins/` and it's automatically discovered.
-
-### Use It
-
-```yaml
-llm:
-  plugin_name: my_llm
-  kwargs:
-    model: custom-model
-```
-
----
-
-## Testing
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=fitz
-
-# Run specific test
-pytest tests/test_rag_pipeline_end_to_end.py
-```
-
----
-
-## Development
-
-```bash
-# Clone
-git clone https://github.com/yafitzdev/fitz.git
-cd fitz
-
-# Install for development
-pip install -e ".[local,ingest]"
-
-# Run tests
-pytest
-
-# Format code
-black .
-isort .
-```
+See `examples/` directory:
+- `quickstart.py` - Basic usage
+- `full_pipeline.py` - Complete example with all features
+- `ingestion_example.py` - Document ingestion
 
 ---
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-Areas we'd love help with:
-- Additional LLM/vector DB plugins
-- Advanced chunking strategies
-- Performance improvements
-- Documentation
+The engine architecture makes it easier to contribute:
+- Add new engines in `fitz/engines/<name>/`
+- Share infrastructure (`llm/`, `vector_db/`, etc.)
+- Don't touch core contracts unless absolutely necessary
 
 ---
 
-## License
+## Support
 
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-## Links
-
-- **Repository**: https://github.com/yafitzdev/fitz
-- **Issues**: https://github.com/yafitzdev/fitz/issues
-- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
-
----
-
-**Build RAG pipelines that make sense.**
+- Documentation: https://fitz.readthedocs.io
+- Issues: https://github.com/yourorg/fitz/issues
+- Discussions: https://github.com/yourorg/fitz/discussions

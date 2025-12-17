@@ -5,6 +5,10 @@ Usage:
     fitz-pipeline query "What is this about?"
     fitz-pipeline query "Explain X" --config my_config.yaml
     fitz-pipeline query "Explain X" --preset local
+
+UPDATED: Now uses the new runtime entry point (run_classic_rag) instead of
+calling RAGPipeline directly. This provides better abstraction and forwards
+compatibility with future engines.
 """
 
 from pathlib import Path
@@ -14,7 +18,11 @@ import typer
 
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import CLI, PIPELINE
-from fitz.engines.classic_rag.pipeline.pipeline.engine import create_pipeline_from_yaml
+
+# NEW: Import from runtime instead of pipeline
+from fitz.engines.classic_rag.runtime import run_classic_rag
+from fitz.engines.classic_rag.config.loader import load_config as load_rag_config
+from fitz.core import Constraints, QueryError, KnowledgeError, GenerationError
 
 logger = get_logger(__name__)
 
@@ -35,6 +43,16 @@ def command(
         "--preset",
         "-p",
         help="Use a configuration preset (local, dev, production). Overrides --config.",
+    ),
+    max_sources: Optional[int] = typer.Option(
+        None,
+        "--max-sources",
+        help="Maximum number of sources to use for answer generation.",
+    ),
+    filters: Optional[str] = typer.Option(
+        None,
+        "--filters",
+        help="Metadata filters as JSON string, e.g. '{\"topic\": \"physics\"}'",
     ),
 ) -> None:
     """
@@ -57,51 +75,72 @@ def command(
         # Query with preset (offline/no API keys needed)
         fitz-pipeline query "What is this?" --preset local
 
-        # Query with dev preset (cost-effective APIs)
-        fitz-pipeline query "Analyze this" --preset dev
+        # Query with constraints
+        fitz-pipeline query "What is X?" --max-sources 5
 
-        # Query with production preset (best models)
-        fitz-pipeline query "Important query" --preset production
+        # Query with metadata filters
+        fitz-pipeline query "Explain Y" --filters '{"topic": "physics"}'
     """
-    # Handle preset vs config
-    config_source = None
+    # Determine config source
+    config_path = None
     if preset:
-        config_source = f"preset={preset}"
         logger.info(f"{CLI}{PIPELINE} Using preset: {preset}")
-
-        # Import here to avoid circular dependency
+        # Presets are now handled by config loader
         from fitz.engines.classic_rag.config.presets import get_preset
 
         try:
-            preset_config = get_preset(preset)
+            preset_dict = get_preset(preset)
         except ValueError as e:
-            typer.echo(f"Error: {e}")
+            typer.echo(f"Error: {e}", err=True)
             raise typer.Exit(code=1)
 
-        # For now, we need to save preset to a temp file
-        # TODO: Enhance create_pipeline_from_yaml to accept dict directly
-        import tempfile
-
-        import yaml
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            yaml.dump(preset_config, f)
-            temp_config_path = f.name
-
-        try:
-            pipeline = create_pipeline_from_yaml(temp_config_path)
-        finally:
-            import os
-
-            os.unlink(temp_config_path)
+        # Load config from preset dict
+        from fitz.engines.classic_rag.config.schema import FitzConfig
+        config_obj = FitzConfig.from_dict(preset_dict)
     else:
-        config_source = config if config is not None else "<default>"
+        config_path = str(config) if config else None
+        config_source = config_path or "<default>"
         logger.info(f"{CLI}{PIPELINE} Running RAG query with config={config_source}")
-        pipeline = create_pipeline_from_yaml(str(config) if config is not None else None)
+        config_obj = load_rag_config(config_path)
 
-    # Run query
+    # Build constraints if provided
+    constraints = None
+    if max_sources or filters:
+        filter_dict = {}
+        if filters:
+            import json
+            try:
+                filter_dict = json.loads(filters)
+            except json.JSONDecodeError as e:
+                typer.echo(f"Error: Invalid JSON in --filters: {e}", err=True)
+                raise typer.Exit(code=1)
+
+        constraints = Constraints(
+            max_sources=max_sources,
+            filters=filter_dict
+        )
+
+    # Run query using new runtime
     typer.echo("Processing query...")
-    rgs_answer = pipeline.run(question)
+    try:
+        answer = run_classic_rag(
+            query=question,
+            config=config_obj,
+            constraints=constraints
+        )
+    except QueryError as e:
+        typer.echo(f"Query error: {e}", err=True)
+        raise typer.Exit(code=1)
+    except KnowledgeError as e:
+        typer.echo(f"Knowledge retrieval error: {e}", err=True)
+        raise typer.Exit(code=1)
+    except GenerationError as e:
+        typer.echo(f"Answer generation error: {e}", err=True)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        typer.echo(f"Unexpected error: {e}", err=True)
+        logger.exception("Unexpected error during query execution")
+        raise typer.Exit(code=1)
 
     # Display answer
     typer.echo()
@@ -109,25 +148,33 @@ def command(
     typer.echo("ANSWER")
     typer.echo("=" * 60)
     typer.echo()
-    typer.echo(getattr(rgs_answer, "answer", "") or "(No answer generated)")
+    typer.echo(answer.text or "(No answer generated)")
     typer.echo()
 
-    # Display citations if available
-    citations = getattr(rgs_answer, "citations", None)
-    if citations:
+    # Display sources if available
+    if answer.provenance:
         typer.echo("=" * 60)
         typer.echo("SOURCES")
         typer.echo("=" * 60)
         typer.echo()
-        for c in citations:
-            label = getattr(c, "label", None) or getattr(c, "source_id", "")
-            title = getattr(c, "title", "") or ""
-            src = ""
-            meta = getattr(c, "metadata", None) or {}
-            if isinstance(meta, dict):
-                src = meta.get("source") or meta.get("path") or ""
-
-            typer.echo(f"[{label}] {title}")
-            if src:
-                typer.echo(f"     Source: {src}")
+        for i, prov in enumerate(answer.provenance, 1):
+            typer.echo(f"[{i}] {prov.source_id}")
+            if prov.excerpt:
+                # Truncate long excerpts
+                excerpt = prov.excerpt[:200] + "..." if len(prov.excerpt) > 200 else prov.excerpt
+                typer.echo(f"    {excerpt}")
+            if prov.metadata:
+                # Show relevant metadata
+                for key in ["title", "source", "path", "relevance_score"]:
+                    if key in prov.metadata:
+                        typer.echo(f"    {key}: {prov.metadata[key]}")
             typer.echo()
+
+    # Show metadata if verbose logging
+    if logger.level <= 10:  # DEBUG level
+        typer.echo("=" * 60)
+        typer.echo("METADATA")
+        typer.echo("=" * 60)
+        typer.echo()
+        import json
+        typer.echo(json.dumps(answer.metadata, indent=2))
