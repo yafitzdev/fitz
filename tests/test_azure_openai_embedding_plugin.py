@@ -25,7 +25,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         """Plugin initializes with explicit parameters."""
         with patch.dict("os.environ", {}, clear=True):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -47,7 +47,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -59,7 +59,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         """Plugin raises RuntimeError when no API key."""
         with patch.dict("os.environ", {}, clear=True):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI"):
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -73,7 +73,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         """Plugin raises RuntimeError when no endpoint."""
         with patch.dict("os.environ", {"AZURE_OPENAI_API_KEY": "key"}, clear=True):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI"):
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -88,7 +88,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         }
         with patch.dict("os.environ", env, clear=True):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI"):
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -103,7 +103,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI", None):
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -118,7 +118,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -139,7 +139,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -160,7 +160,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -185,7 +185,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI") as mock_azure:
                 from fitz.engines.classic_rag.errors.llm import EmbeddingError
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 
@@ -204,7 +204,7 @@ class TestAzureOpenAIEmbeddingPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.embedding.plugins.azure_openai.AzureOpenAI"):
-                from fitz.core.llm.embedding.plugins.azure_openai import (
+                from fitz.llm.embedding.plugins.azure_openai import (
                     AzureOpenAIEmbeddingClient,
                 )
 

@@ -11,8 +11,8 @@ from pathlib import Path
 
 import typer
 
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import CLI, INGEST
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import CLI, INGEST
 from fitz.ingest.ingestion.engine import IngestionEngine
 from fitz.ingest.ingestion.registry import get_ingest_plugin
 from fitz.ingest.validation.documents import ValidationConfig, validate

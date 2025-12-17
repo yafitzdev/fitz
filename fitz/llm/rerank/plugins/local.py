@@ -6,7 +6,7 @@ from typing import Any, List
 from fitz.backends.local_llm.embedding import LocalEmbedder, LocalEmbedderConfig
 from fitz.backends.local_llm.rerank import LocalReranker, LocalRerankerConfig
 from fitz.backends.local_llm.runtime import LocalLLMRuntime, LocalLLMRuntimeConfig
-from fitz.core.llm.rerank.base import RerankPlugin
+from fitz.llm.rerank.base import RerankPlugin
 from fitz.engines.classic_rag.models.chunk import Chunk
 
 

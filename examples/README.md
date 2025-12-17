@@ -68,7 +68,7 @@ from fitz.generation.retrieval_guided.synthesis import RGS, RGSConfig
 rgs = RGS(RGSConfig(enable_citations=True))
 
 # Plugin selection via registry
-from fitz.core.llm import get_llm_plugin
+from fitz.llm import get_llm_plugin
 
 ChatPlugin = get_llm_plugin(plugin_name="cohere", plugin_type="chat")
 ```

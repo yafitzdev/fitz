@@ -1,6 +1,6 @@
 from fitz.backends.local_vector_db.config import LocalVectorDBConfig
 from fitz.backends.local_vector_db.faiss import FaissLocalVectorDB
-from fitz.core.vector_db.base import VectorDBPlugin
+from fitz.vector_db.base import VectorDBPlugin
 
 
 class LocalVectorDBRuntime:

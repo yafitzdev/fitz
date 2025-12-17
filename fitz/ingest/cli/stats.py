@@ -8,9 +8,9 @@ Usage:
 
 import typer
 
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import CLI, VECTOR_DB
-from fitz.core.vector_db.registry import get_vector_db_plugin
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import CLI, VECTOR_DB
+from fitz.vector_db.registry import get_vector_db_plugin
 
 logger = get_logger(__name__)
 

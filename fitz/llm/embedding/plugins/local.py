@@ -4,7 +4,7 @@ from typing import Any
 
 from fitz.backends.local_llm.embedding import LocalEmbedder, LocalEmbedderConfig
 from fitz.backends.local_llm.runtime import LocalLLMRuntime, LocalLLMRuntimeConfig
-from fitz.core.llm.embedding.base import EmbeddingPlugin
+from fitz.llm.embedding.base import EmbeddingPlugin
 
 
 class LocalEmbeddingClient(EmbeddingPlugin):

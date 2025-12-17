@@ -283,7 +283,7 @@ pipeline.run(source="./documents")
 ### Create a Chat Plugin
 
 ```python
-from fitz.core.llm.chat.base import ChatPlugin
+from fitz.llm.chat.base import ChatPlugin
 
 class MyChatClient(ChatPlugin):
     plugin_name = "my_llm"

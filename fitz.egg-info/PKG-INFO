@@ -140,7 +140,7 @@ fitz-pipeline query "What is the main topic?" --config my_config.yaml
 Everything in fitz is a plugin. Plugins implement protocols (interfaces) and are auto-discovered at runtime.
 
 ```python
-from fitz.core.llm.chat.base import ChatPlugin
+from fitz.llm.chat.base import ChatPlugin
 
 class MyChatPlugin:
     plugin_name = "my_chat"

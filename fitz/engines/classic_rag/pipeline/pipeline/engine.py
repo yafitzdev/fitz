@@ -4,13 +4,13 @@ from __future__ import annotations
 from typing import Optional
 
 from fitz.engines.classic_rag.errors.llm import LLMError
-from fitz.core.llm.chat import ChatEngine
-from fitz.core.llm.embedding.engine import EmbeddingEngine
-from fitz.core.llm.registry import resolve_llm_plugin
-from fitz.core.llm.rerank.engine import RerankEngine
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import PIPELINE, VECTOR_DB
-from fitz.core.vector_db.registry import get_vector_db_plugin
+from fitz.llm.chat import ChatEngine
+from fitz.llm.embedding.engine import EmbeddingEngine
+from fitz.llm.registry import resolve_llm_plugin
+from fitz.llm.rerank.engine import RerankEngine
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import PIPELINE, VECTOR_DB
+from fitz.vector_db.registry import get_vector_db_plugin
 from fitz.generation.retrieval_guided.synthesis import RGS, RGSAnswer
 from fitz.generation.retrieval_guided.synthesis import RGSConfig as RGSRuntimeConfig
 from fitz.pipeline.config.loader import load_config

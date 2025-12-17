@@ -1,5 +1,5 @@
 # tests/test_rerank_engine_basic.py
-from fitz.core.llm.rerank.engine import RerankEngine
+from fitz.llm.rerank.engine import RerankEngine
 from fitz.engines.classic_rag.models.chunk import Chunk
 
 

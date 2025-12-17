@@ -1,6 +1,6 @@
 # tests/test_ingestion_pipeline_end_to_end.py
 from fitz.engines.classic_rag.models.chunk import Chunk
-from fitz.core.vector_db.writer import VectorDBWriter
+from fitz.vector_db.writer import VectorDBWriter
 
 
 class DummyVectorDB:

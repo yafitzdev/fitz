@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fitz.core.llm.chat.base import ChatPlugin
+from fitz.llm.chat.base import ChatPlugin
 
 
 class ChatEngine:

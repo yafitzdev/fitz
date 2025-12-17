@@ -7,7 +7,7 @@ from typing import Any
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct
 
-from fitz.core.vector_db.base import VectorDBPlugin
+from fitz.vector_db.base import VectorDBPlugin
 
 
 @dataclass

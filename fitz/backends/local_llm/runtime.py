@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from fitz.engines.classic_rag.errors.llm import LLMError
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import PIPELINE
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import PIPELINE
 
 logger = get_logger(__name__)
 

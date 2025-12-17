@@ -1,6 +1,6 @@
 # tests/test_embedding_engine_basic.py
 
-from fitz.core.llm.embedding.engine import EmbeddingEngine
+from fitz.llm.embedding.engine import EmbeddingEngine
 
 
 class DummyEmbedPlugin:

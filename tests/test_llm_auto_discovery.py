@@ -1,7 +1,7 @@
 import pytest
 
-from fitz.core.llm import available_llm_plugins, get_llm_plugin
-from fitz.core.llm.registry import LLMRegistryError
+from fitz.llm import available_llm_plugins, get_llm_plugin
+from fitz.llm.registry import LLMRegistryError
 
 
 def test_available_llm_plugins_smoke():

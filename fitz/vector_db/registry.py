@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Type
 
-from fitz.core.llm.registry import get_llm_plugin
+from fitz.llm.registry import get_llm_plugin
 
 if TYPE_CHECKING:
-    from fitz.core.vector_db.base import VectorDBPlugin
+    from fitz.vector_db.base import VectorDBPlugin
 
 
 def get_vector_db_plugin(plugin_name: str) -> Type["VectorDBPlugin"]:

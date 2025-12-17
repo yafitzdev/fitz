@@ -30,7 +30,7 @@ class TestAzureOpenAIChatPlugin:
         """Plugin initializes with explicit parameters."""
         with patch.dict("os.environ", {}, clear=True):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 client = AzureOpenAIChatClient(
                     api_key="test-key",
@@ -51,7 +51,7 @@ class TestAzureOpenAIChatPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 client = AzureOpenAIChatClient()
 
@@ -65,7 +65,7 @@ class TestAzureOpenAIChatPlugin:
         """Plugin raises ValueError when no API key."""
         with patch.dict("os.environ", {}, clear=True):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI"):
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 with pytest.raises(ValueError, match="AZURE_OPENAI_API_KEY"):
                     AzureOpenAIChatClient(
@@ -77,7 +77,7 @@ class TestAzureOpenAIChatPlugin:
         """Plugin raises ValueError when no endpoint."""
         with patch.dict("os.environ", {"AZURE_OPENAI_API_KEY": "key"}, clear=True):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI"):
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 with pytest.raises(ValueError, match="AZURE_OPENAI_ENDPOINT"):
                     AzureOpenAIChatClient(deployment_name="test")
@@ -90,7 +90,7 @@ class TestAzureOpenAIChatPlugin:
         }
         with patch.dict("os.environ", env, clear=True):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI"):
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 with pytest.raises(ValueError, match="deployment_name"):
                     AzureOpenAIChatClient()
@@ -103,7 +103,7 @@ class TestAzureOpenAIChatPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI", None):
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 with pytest.raises(RuntimeError, match="Install openai"):
                     AzureOpenAIChatClient(deployment_name="test")
@@ -116,7 +116,7 @@ class TestAzureOpenAIChatPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 client = AzureOpenAIChatClient(
                     deployment_name="test",
@@ -138,7 +138,7 @@ class TestAzureOpenAIChatPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 mock_response = MockChatCompletion(
                     choices=[MockChoice(message=MockMessage(content="Azure response!"))]
@@ -158,7 +158,7 @@ class TestAzureOpenAIChatPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 mock_response = MockChatCompletion(
                     choices=[MockChoice(message=MockMessage(content="OK"))]
@@ -179,7 +179,7 @@ class TestAzureOpenAIChatPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI") as mock_azure:
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 mock_response = MockChatCompletion(choices=[])
                 mock_azure.return_value.chat.completions.create.return_value = mock_response
@@ -197,7 +197,7 @@ class TestAzureOpenAIChatPlugin:
         }
         with patch.dict("os.environ", env):
             with patch("fitz.core.llm.chat.plugins.azure_openai.AzureOpenAI"):
-                from fitz.core.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
+                from fitz.llm.chat.plugins.azure_openai import AzureOpenAIChatClient
 
                 client = AzureOpenAIChatClient(deployment_name="test")
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Type
 
-from fitz.core.llm.registry import get_llm_plugin
-from fitz.core.llm.rerank.base import RerankPlugin
+from fitz.llm.registry import get_llm_plugin
+from fitz.llm.rerank.base import RerankPlugin
 
 
 def get_rerank_plugin(plugin_name: str) -> Type[RerankPlugin]:

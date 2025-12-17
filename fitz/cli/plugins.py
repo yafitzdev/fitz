@@ -7,7 +7,7 @@ def command() -> None:
     """
     List all discovered plugins.
     """
-    from fitz.core.llm.registry import available_llm_plugins
+    from fitz.llm.registry import available_llm_plugins
 
     typer.echo()
 

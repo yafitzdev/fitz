@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from fitz.backends.local_llm.runtime import LocalLLMRuntime
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import CHAT
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import CHAT
 
 logger = get_logger(__name__)
 

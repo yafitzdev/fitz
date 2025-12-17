@@ -4,8 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import CHUNKING
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import CHUNKING
 from fitz.engines.classic_rag.models.chunk import Chunk
 from fitz.ingest.chunking.base import ChunkerPlugin
 from fitz.ingest.chunking.registry import get_chunker_plugin

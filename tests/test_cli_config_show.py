@@ -15,8 +15,8 @@ from typing import Optional
 
 import typer
 
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import CLI, PIPELINE
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import CLI, PIPELINE
 from fitz.pipeline.config.loader import load_config
 from fitz.pipeline.config.schema import RAGConfig
 from fitz.pipeline.pipeline.engine import create_pipeline_from_yaml

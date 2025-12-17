@@ -29,8 +29,8 @@ if not os.getenv("COHERE_API_KEY"):
     print("Run: export COHERE_API_KEY='your-key'")
     sys.exit(1)
 
-from fitz.core.llm import get_llm_plugin
-from fitz.core.vector_db.writer import VectorDBWriter
+from fitz.llm import get_llm_plugin
+from fitz.vector_db.writer import VectorDBWriter
 from fitz.generation.retrieval_guided.synthesis import RGS, RGSConfig
 from fitz.ingest.chunking.plugins.simple import SimpleChunker
 from fitz.ingest.ingestion.registry import get_ingest_plugin

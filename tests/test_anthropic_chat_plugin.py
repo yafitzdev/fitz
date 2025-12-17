@@ -26,7 +26,7 @@ class TestAnthropicChatPlugin:
         """Plugin initializes with explicit API key."""
         with patch.dict("os.environ", {}, clear=True):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic") as mock_anthropic:
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 client = AnthropicChatClient(api_key="test-key")
 
@@ -39,7 +39,7 @@ class TestAnthropicChatPlugin:
         """Plugin initializes with ANTHROPIC_API_KEY env var."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "env-key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic") as mock_anthropic:
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 client = AnthropicChatClient()
 
@@ -49,7 +49,7 @@ class TestAnthropicChatPlugin:
         """Plugin raises ValueError when no API key available."""
         with patch.dict("os.environ", {}, clear=True):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic"):
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
                     AnthropicChatClient()
@@ -58,7 +58,7 @@ class TestAnthropicChatPlugin:
         """Plugin raises RuntimeError when anthropic not installed."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic", None):
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 with pytest.raises(RuntimeError, match="Install anthropic"):
                     AnthropicChatClient()
@@ -67,7 +67,7 @@ class TestAnthropicChatPlugin:
         """Plugin accepts custom model, max_tokens, temperature."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic"):
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 client = AnthropicChatClient(
                     model="claude-opus-4-20250514",
@@ -83,7 +83,7 @@ class TestAnthropicChatPlugin:
         """chat() returns string from response."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic") as mock_anthropic:
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 mock_response = MockAnthropicResponse(
                     content=[MockTextBlock(text="Hello from Claude!")]
@@ -100,7 +100,7 @@ class TestAnthropicChatPlugin:
         """chat() extracts system message and passes separately."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic") as mock_anthropic:
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 mock_response = MockAnthropicResponse(content=[MockTextBlock(text="Response")])
                 mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_response
@@ -120,7 +120,7 @@ class TestAnthropicChatPlugin:
         """chat() works without system message."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic") as mock_anthropic:
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 mock_response = MockAnthropicResponse(content=[MockTextBlock(text="Response")])
                 mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_response
@@ -136,7 +136,7 @@ class TestAnthropicChatPlugin:
         """chat() concatenates multiple text blocks."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic") as mock_anthropic:
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 mock_response = MockAnthropicResponse(
                     content=[
@@ -155,7 +155,7 @@ class TestAnthropicChatPlugin:
         """chat() returns empty string when no content blocks."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic") as mock_anthropic:
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 mock_response = MockAnthropicResponse(content=[])
                 mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_response
@@ -169,7 +169,7 @@ class TestAnthropicChatPlugin:
         """chat() preserves user/assistant message order."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic") as mock_anthropic:
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 mock_response = MockAnthropicResponse(content=[MockTextBlock(text="Response")])
                 mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_response
@@ -194,7 +194,7 @@ class TestAnthropicChatPlugin:
         """Plugin has correct plugin_name and plugin_type."""
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "key"}):
             with patch("fitz.core.llm.chat.plugins.anthropic.anthropic"):
-                from fitz.core.llm.chat.plugins.anthropic import AnthropicChatClient
+                from fitz.llm.chat.plugins.anthropic import AnthropicChatClient
 
                 client = AnthropicChatClient()
 

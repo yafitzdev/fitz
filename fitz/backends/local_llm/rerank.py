@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Sequence, Tuple
 
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import RERANK
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import RERANK
 
 from .embedding import LocalEmbedder
 

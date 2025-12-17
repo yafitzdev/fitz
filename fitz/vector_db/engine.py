@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List, Type
 
-from fitz.core.llm.registry import get_llm_plugin
-from fitz.core.vector_db.base import SearchResult, VectorDBPlugin
+from fitz.llm.registry import get_llm_plugin
+from fitz.vector_db.base import SearchResult, VectorDBPlugin
 
 
 @dataclass(slots=True)

@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any, List
 
 from fitz.backends.local_llm.runtime import LocalLLMRuntime
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import EMBEDDING
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import EMBEDDING
 
 logger = get_logger(__name__)
 

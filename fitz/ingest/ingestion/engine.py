@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable
 
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import INGEST
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import INGEST
 from fitz.ingest.config.schema import IngestConfig
 from fitz.ingest.exceptions.config import IngestionConfigError
 from fitz.ingest.ingestion.base import IngestPlugin, RawDocument

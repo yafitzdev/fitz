@@ -21,8 +21,8 @@ import yaml
 
 from fitz.engines.classic_rag.config.normalize import normalize_preset
 from fitz.engines.classic_rag.config.schema import FitzConfig, FitzMetaConfig
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import CLI
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import CLI
 
 logger = get_logger(__name__)
 

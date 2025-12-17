@@ -1,9 +1,9 @@
 # ingest/pipeline/ingestion_pipeline.py
 from __future__ import annotations
 
-from fitz.core.logging.logger import get_logger
-from fitz.core.logging.tags import PIPELINE
-from fitz.core.vector_db.writer import VectorDBWriter
+from fitz.logging.logger import get_logger
+from fitz.logging.tags import PIPELINE
+from fitz.vector_db.writer import VectorDBWriter
 from fitz.ingest.chunking.engine import ChunkingEngine
 from fitz.ingest.config.schema import IngestConfig
 from fitz.ingest.ingestion.engine import IngestionEngine
