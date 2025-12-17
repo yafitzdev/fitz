@@ -4,12 +4,17 @@ Vector DB plugin registry.
 
 Handles discovery and registration of vector database plugins.
 Separate from LLM registry for cleaner architecture.
+
+Design principle: NO SILENT FALLBACK
+- If user configures "qdrant", they get qdrant or an error
+- If user wants local-faiss, they explicitly configure "local-faiss"
+- No magic substitution that could cause confusion
 """
 from __future__ import annotations
 
 import importlib
 import pkgutil
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Type
+from typing import Any, Dict, Iterable, Type, TYPE_CHECKING
 
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import VECTOR_DB
@@ -27,18 +32,34 @@ class VectorDBRegistryError(RuntimeError):
 VECTOR_DB_REGISTRY: Dict[str, Type[Any]] = {}
 _DISCOVERED = False
 
-_SCAN_PACKAGES: tuple[str, ...] = ("fitz.vector_db.plugins",)
+_SCAN_PACKAGES: tuple[str, ...] = (
+    "fitz.vector_db.plugins",
+)
 
 
 def get_vector_db_plugin(plugin_name: str) -> Type["VectorDBPlugin"]:
-    """Get a vector DB plugin by name."""
+    """
+    Get a vector DB plugin by exact name.
+
+    No fallback, no magic - returns exactly what you ask for or raises an error.
+
+    Args:
+        plugin_name: Exact name of the plugin (e.g., "qdrant", "local-faiss")
+
+    Returns:
+        Plugin class
+
+    Raises:
+        VectorDBRegistryError: If plugin not found
+    """
     _auto_discover()
     try:
         return VECTOR_DB_REGISTRY[plugin_name]
     except KeyError as exc:
         available = sorted(VECTOR_DB_REGISTRY.keys())
         raise VectorDBRegistryError(
-            f"Unknown vector_db plugin: {plugin_name!r}. " f"Available: {available}"
+            f"Unknown vector_db plugin: {plugin_name!r}. "
+            f"Available: {available}"
         ) from exc
 
 
@@ -48,29 +69,15 @@ def available_vector_db_plugins() -> list[str]:
     return sorted(VECTOR_DB_REGISTRY.keys())
 
 
+# Alias for backwards compatibility - same as get_vector_db_plugin, no magic
 def resolve_vector_db_plugin(requested_name: str) -> Type["VectorDBPlugin"]:
     """
-    Resolve a vector DB plugin with local-first fallback.
+    Resolve a vector DB plugin by name.
 
-    Resolution order:
-    1. Any plugin with availability="local"
-    2. The explicitly requested plugin_name
+    This is an alias for get_vector_db_plugin() for backwards compatibility.
+    No fallback behavior - returns exactly what you request or raises an error.
     """
-    _auto_discover()
-
-    # 1. local-first
-    for cls in VECTOR_DB_REGISTRY.values():
-        if getattr(cls, "availability", None) == "local":
-            return cls
-
-    # 2. explicit request
-    try:
-        return VECTOR_DB_REGISTRY[requested_name]
-    except KeyError as exc:
-        available = sorted(VECTOR_DB_REGISTRY.keys())
-        raise VectorDBRegistryError(
-            f"Unknown vector_db plugin: {requested_name!r}. " f"Available: {available}"
-        ) from exc
+    return get_vector_db_plugin(requested_name)
 
 
 def _auto_discover() -> None:

@@ -446,7 +446,8 @@ def run_ingestion(
         if vector_db_plugin == "local-faiss":
             dim = len(vectors[0])
             from fitz.backends.local_vector_db.config import LocalVectorDBConfig
-            config = LocalVectorDBConfig()
+            # Use .fitz/vector_db in CWD to match the generated config
+            config = LocalVectorDBConfig(path=Path.cwd() / ".fitz" / "vector_db")
             vdb_client = VectorDBPluginCls(dim=dim, config=config)
         else:
             vdb_client = VectorDBPluginCls()
