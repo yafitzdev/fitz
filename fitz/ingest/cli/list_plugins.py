@@ -15,10 +15,8 @@ import typer
 from fitz.core.registry import (
     get_ingest_plugin,
     available_ingest_plugins,
-    available_embedding_plugins,
-    available_rerank_plugins,
-    get_embedding_plugin,
-    get_rerank_plugin,
+    available_llm_plugins,  # Use this for embedding/rerank
+    get_llm_plugin,         # Use this for embedding/rerank
 )
 from fitz.vector_db.registry import available_vector_db_plugins
 
@@ -79,7 +77,7 @@ def command(
         typer.echo()
         typer.echo("🔢 Embedding Plugins (text → vectors)")
         typer.echo("-" * 60)
-        embedding_plugins = available_embedding_plugins()
+        embedding_plugins = available_llm_plugins("embedding")
         if embedding_plugins:
             for name in embedding_plugins:
                 typer.echo(f"  • {name}")
@@ -91,7 +89,7 @@ def command(
         typer.echo()
         typer.echo("🎯 Rerank Plugins (result scoring)")
         typer.echo("-" * 60)
-        rerank_plugins = available_rerank_plugins()
+        rerank_plugins = available_llm_plugins("rerank")
         if rerank_plugins:
             for name in rerank_plugins:
                 typer.echo(f"  • {name}")

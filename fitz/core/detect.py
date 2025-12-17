@@ -296,3 +296,11 @@ def get_ollama_connection() -> tuple[str, int]:
         return status.host, status.port
 
     return "localhost", 11434
+
+# =============================================================================
+# Aliases for CLI compatibility
+# =============================================================================
+
+# CLI modules use these names
+ProviderStatus = ApiKeyStatus  # Alias for backwards compatibility
+detect_all = detect_system_status  # Alias for backwards compatibility

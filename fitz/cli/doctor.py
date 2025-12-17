@@ -15,7 +15,7 @@ from typing import Optional
 import typer
 
 # Import centralized detection
-from fitz.cli.detect import (
+from fitz.core.detect import (
     ProviderStatus,
     detect_all,
     detect_api_key,

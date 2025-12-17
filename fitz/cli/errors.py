@@ -1,4 +1,5 @@
 # fitz/cli/errors.py
+# -*- coding: utf-8 -*-
 """
 Global error handler for Fitz CLI.
 
@@ -432,6 +433,38 @@ def handle_import_error(exc: ImportError | ModuleNotFoundError) -> None:
 
     # Get the root module name (e.g., 'fitz.foo.bar' -> 'fitz')
     root_module = module_name.split('.')[0] if module_name else 'unknown'
+
+    # NEW: Check if this is an internal fitz module error
+    if root_module == 'fitz':
+        # This is an internal import error, not a missing package
+        # Show the actual traceback for debugging
+        tb = traceback.format_exc()
+        display_error(
+            title=f"Internal Import Error: {module_name}",
+            description=f"Failed to import internal module '{module_name}'. This is likely a code issue, not a missing package.",
+            fixes=[
+                ErrorFix(
+                    "Check for circular imports",
+                    "Run with debug mode to see the full traceback:",
+                    ["$env:FITZ_DEBUG = '1'  # PowerShell",
+                     "export FITZ_DEBUG=1    # Bash",
+                     "fitz doctor"]
+                ),
+                ErrorFix(
+                    "Reinstall fitz in development mode",
+                    "Make sure fitz is properly installed:",
+                    ["pip install -e ."]
+                ),
+                ErrorFix(
+                    "Test the import directly",
+                    f"Debug the specific import:",
+                    [f"python -c \"from {module_name} import *\""]
+                ),
+            ],
+            original_error=tb,  # Always show traceback for internal errors
+        )
+        return
+
     pip_name = pip_name_map.get(root_module, root_module)
 
     display_error(

@@ -12,7 +12,7 @@ from pathlib import Path
 import typer
 
 # Import centralized detection (THE SINGLE SOURCE OF TRUTH)
-from fitz.cli.detect import (
+from fitz.core.detect import (
     ProviderStatus,
     detect_all,
 )
