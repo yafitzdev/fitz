@@ -7,7 +7,7 @@ the same pattern as classic_rag/runtime.py.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 from fitz.core import Answer, Constraints, Query
 

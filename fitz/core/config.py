@@ -101,10 +101,10 @@ def load_yaml(path: Union[str, Path]) -> Dict[str, Any]:
     p = Path(path)
 
     if not p.exists():
-        raise ConfigNotFoundError(f"Config file not found", path=p)
+        raise ConfigNotFoundError("Config file not found", path=p)
 
     if p.is_dir():
-        raise ConfigError(f"Config path is a directory, not a file", path=p)
+        raise ConfigError("Config path is a directory, not a file", path=p)
 
     try:
         with p.open("r", encoding="utf-8") as f:

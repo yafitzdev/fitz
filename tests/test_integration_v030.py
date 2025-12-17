@@ -9,7 +9,7 @@ These tests verify that the complete refactored system works end-to-end:
 - Universal runner works
 """
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -274,7 +274,6 @@ class TestProtocolCompliance:
 
     def test_protocol_check(self):
         """Test that protocol checking works."""
-        from typing import runtime_checkable
 
         # Mock engine that implements protocol
         class GoodEngine:

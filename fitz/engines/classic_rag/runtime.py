@@ -13,7 +13,7 @@ Philosophy:
 
 from typing import Any, Dict, Optional
 
-from fitz.core import Answer, Constraints, Provenance, Query
+from fitz.core import Answer, Constraints, Provenance
 from fitz.engines.classic_rag.config import ClassicRagConfig, load_config
 from fitz.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
 

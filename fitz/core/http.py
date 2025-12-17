@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Dict, Generator, Optional, Type
+from typing import Any, Dict, Generator, Optional
 
 logger = logging.getLogger(__name__)
 

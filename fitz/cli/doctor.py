@@ -7,7 +7,6 @@ Runs comprehensive diagnostics on your Fitz setup.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -18,7 +17,6 @@ import typer
 from fitz.core.detect import (
     ProviderStatus,
     detect_all,
-    detect_api_key,
 )
 
 # Rich for pretty output (optional)

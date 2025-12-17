@@ -343,7 +343,6 @@ def render_stats_section(stats: CodeStats | None) -> str:
 
 def analyze_any_breakdown(root, excludes):
     """Quick Any breakdown - categorize by pattern."""
-    from pathlib import Path
 
     categories = {
         "legitimate_kwargs": 0,
@@ -425,7 +424,6 @@ def render_any_breakdown_section(stats):
 
 def analyze_exception_patterns(root, excludes):
     """Analyze exception handling patterns in the codebase."""
-    from pathlib import Path
 
     patterns = {
         "bare_except_continue": 0,

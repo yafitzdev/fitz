@@ -64,7 +64,7 @@ class _OllamaAdapter:
     def __init__(self, model: str, verbose: bool) -> None:
         try:
             import ollama  # type: ignore
-        except Exception as exc:
+        except Exception:
             raise LLMError(_LOCAL_FALLBACK_HELP) from None
 
         self._ollama = ollama

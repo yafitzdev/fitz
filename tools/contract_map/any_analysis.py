@@ -318,7 +318,7 @@ def render_any_details_section(analysis: AnyAnalysis, *, max_items: int = 20) ->
 
         for occ in occurrences:
             lines.append(f"**{occ.file}:{occ.line_num}** (in `{occ.context}`)")
-            lines.append(f"```python")
+            lines.append("```python")
             lines.append(occ.line)
             lines.append("```")
             lines.append("")

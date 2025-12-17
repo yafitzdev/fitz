@@ -5,10 +5,8 @@ Tests for FAISS with default configuration.
 Verifies that FaissLocalVectorDB works correctly with FitzPaths defaults.
 """
 
-from pathlib import Path
 from unittest.mock import patch
 
-import numpy as np
 import pytest
 
 pytest.importorskip("faiss")

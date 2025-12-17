@@ -112,7 +112,7 @@ def error_handling():
     print("ERROR HANDLING")
     print("=" * 60)
 
-    from fitz.core import GenerationError, KnowledgeError, QueryError
+    from fitz.core import KnowledgeError, QueryError
 
     try:
         # Empty query will raise QueryError
@@ -157,7 +157,7 @@ def working_with_answers():
             print(f"  Metadata: {list(prov.metadata.keys())}")
 
     # Access metadata
-    print(f"\n\nAnswer metadata:")
+    print("\n\nAnswer metadata:")
     for key, value in answer.metadata.items():
         print(f"  {key}: {value}")
 

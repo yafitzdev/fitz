@@ -18,7 +18,6 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -615,7 +614,7 @@ def command(
     )
     FitzPaths.ensure_workspace()
     config_path.write_text(config)
-    print_success(f"Config saved to .fitz/quickstart_config.yaml")
+    print_success("Config saved to .fitz/quickstart_config.yaml")
     print_info(f"  LLM: {llm_provider}")
     print_info(f"  Embedding: {embedding_provider}")
     print_info(f"  Vector DB: {vector_db}")

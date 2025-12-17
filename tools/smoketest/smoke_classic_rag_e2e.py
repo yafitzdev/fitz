@@ -29,10 +29,9 @@ from __future__ import annotations
 import argparse
 import math
 import sys
-import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import List, Optional
 
 # =============================================================================
 # Test Configuration
@@ -334,7 +333,6 @@ def chunking(documents: list[dict], config: TestConfig) -> tuple[list[dict], boo
     print("TEST 2: DOCUMENT CHUNKING")
     print("=" * 60)
 
-    from fitz.engines.classic_rag.models.chunk import Chunk
 
     chunks = []
     for doc in documents:
@@ -555,7 +553,7 @@ def llm_generation(prompt: dict, llm: MockLLM, config: TestConfig) -> tuple[str,
     print(f"  ✓ LLM called {llm.call_count} times")
 
     if config.verbose:
-        print(f"\n  --- Response ---")
+        print("\n  --- Response ---")
         print(f"  {response}")
 
     return response, bool(response)

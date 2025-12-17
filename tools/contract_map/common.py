@@ -5,9 +5,9 @@ from __future__ import annotations
 import importlib
 import sys
 import traceback
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Type, get_type_hints
+from typing import Any, Dict, Iterable, List
 
 try:
     from typing import get_args, get_origin

@@ -365,7 +365,6 @@ class FaissLocalVectorDB:
 
         Deprecated: Use upsert() instead.
         """
-        from fitz.engines.classic_rag.models.chunk import Chunk
 
         points = []
         for chunk in chunks:

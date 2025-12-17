@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Tuple
 
 from .common import (
     DEFAULT_LAYOUT_EXCLUDES,

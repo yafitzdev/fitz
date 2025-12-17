@@ -12,7 +12,7 @@ Design principle: NO SILENT FALLBACK
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Type
+from typing import TYPE_CHECKING
 
 from fitz.core.registry import (  # Functions; Registry; Errors
     VECTOR_DB_REGISTRY,
@@ -25,7 +25,7 @@ from fitz.core.registry import (  # Functions; Registry; Errors
 )
 
 if TYPE_CHECKING:
-    from fitz.vector_db.base import VectorDBPlugin
+    pass
 
 __all__ = [
     # Functions

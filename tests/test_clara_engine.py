@@ -7,7 +7,6 @@ and integrates properly with the Fitz platform.
 """
 
 import sys
-from dataclasses import asdict
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -15,14 +14,10 @@ import pytest
 # Core imports
 from fitz.core import (
     Answer,
-    ConfigurationError,
     Constraints,
-    GenerationError,
-    KnowledgeEngine,
     KnowledgeError,
     Provenance,
     Query,
-    QueryError,
 )
 
 
@@ -32,9 +27,7 @@ class TestClaraConfig:
     def test_default_config(self):
         """Test default configuration values."""
         from fitz.engines.clara.config.schema import (
-            ClaraCompressionConfig,
             ClaraConfig,
-            ClaraModelConfig,
         )
 
         config = ClaraConfig()
@@ -344,7 +337,7 @@ class TestClaraIntegration:
 
     def test_clara_answer_format_matches_classic_rag(self):
         """Test that CLaRa answers have the same format as Classic RAG."""
-        from fitz.core import Answer, Provenance
+        from fitz.core import Answer
 
         # Both engines should return Answer objects
         answer = Answer(

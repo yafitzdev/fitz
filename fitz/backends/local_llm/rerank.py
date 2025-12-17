@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Sequence, Tuple
+from typing import List, Sequence, Tuple
 
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import RERANK

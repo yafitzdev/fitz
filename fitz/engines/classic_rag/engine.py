@@ -5,13 +5,11 @@ This engine wraps the existing RAG pipeline (retrieval + generation) behind
 the paradigm-agnostic KnowledgeEngine interface.
 """
 
-from typing import Any, Dict, Optional
 
 from fitz.core import (
     Answer,
     ConfigurationError,
     GenerationError,
-    KnowledgeEngine,
     KnowledgeError,
     Provenance,
     Query,

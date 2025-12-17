@@ -461,7 +461,7 @@ def handle_import_error(exc: ImportError | ModuleNotFoundError) -> None:
                 ),
                 ErrorFix(
                     "Test the import directly",
-                    f"Debug the specific import:",
+                    "Debug the specific import:",
                     [f'python -c "from {module_name} import *"'],
                 ),
             ],
@@ -477,7 +477,7 @@ def handle_import_error(exc: ImportError | ModuleNotFoundError) -> None:
         fixes=[
             ErrorFix(
                 "Install the package",
-                f"Install the missing dependency:",
+                "Install the missing dependency:",
                 [f"pip install {pip_name}"],
             ),
             ErrorFix(
@@ -622,7 +622,7 @@ def test_error_matching():
             print(f"  → {pattern.title}")
         else:
             print(f"✗ '{error[:40]}...'")
-            print(f"  → No match")
+            print("  → No match")
         print()
 
 

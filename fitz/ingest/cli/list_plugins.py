@@ -13,7 +13,6 @@ from typing import Optional
 import typer
 
 from fitz.core.registry import available_llm_plugins  # Use this for embedding/rerank
-from fitz.core.registry import get_llm_plugin  # Use this for embedding/rerank
 from fitz.core.registry import (
     available_ingest_plugins,
     get_ingest_plugin,
