@@ -1,31 +1,66 @@
-# ingest/config/loader.py
+# fitz/ingest/config/loader.py
+"""
+Configuration loader for ingestion pipeline.
+
+This is a thin wrapper around fitz.core.config.
+All the actual loading logic lives there.
+
+For new code, prefer importing directly from fitz.core.config:
+    from fitz.core.config import load_config, load_ingest_config
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Union
 
-import yaml
-
+from fitz.core.config import (
+    load_config as _load_config_core,
+    ConfigError,
+    ConfigNotFoundError,
+    ConfigValidationError,
+)
 from fitz.ingest.config.schema import IngestConfig
 
 
-class IngestConfigError(RuntimeError):
+# Backwards compatibility alias
+class IngestConfigError(ConfigError):
+    """
+    Raised for ingest configuration errors.
+
+    Deprecated: Use fitz.core.config.ConfigError instead.
+    """
     pass
 
 
-def load_ingest_config(path: str | Path) -> IngestConfig:
-    p = Path(path)
-    if not p.exists():
-        raise IngestConfigError(f"Config file not found: {p}")
+def load_ingest_config(path: Union[str, Path]) -> IngestConfig:
+    """
+    Load ingestion configuration.
 
+    Args:
+        path: Path to YAML config file (required for ingest)
+
+    Returns:
+        Validated IngestConfig instance
+
+    Raises:
+        IngestConfigError: If config file not found or invalid
+
+    Examples:
+        >>> config = load_ingest_config("ingest_config.yaml")
+    """
     try:
-        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    except Exception as exc:
-        raise IngestConfigError(f"Failed to load ingest config: {p}") from exc
+        return _load_config_core(path, schema=IngestConfig)
+    except ConfigNotFoundError as e:
+        raise IngestConfigError(f"Config file not found: {path}") from e
+    except ConfigValidationError as e:
+        raise IngestConfigError("Invalid ingest configuration") from e
+    except ConfigError as e:
+        raise IngestConfigError(f"Failed to load ingest config: {path}") from e
 
-    if not isinstance(data, dict):
-        raise IngestConfigError("Ingest config root must be a mapping")
 
-    try:
-        return IngestConfig.model_validate(data)
-    except Exception as exc:
-        raise IngestConfigError("Invalid ingest configuration") from exc
+# Re-export for backwards compatibility
+__all__ = [
+    "load_ingest_config",
+    "IngestConfigError",
+]

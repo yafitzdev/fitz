@@ -22,8 +22,12 @@ from fitz.core.registry import (
     DuplicatePluginError,
 )
 
+# Backwards compatibility alias (old code uses get_chunker_plugin)
+get_chunker_plugin = get_chunking_plugin
+
 __all__ = [
     "get_chunking_plugin",
+    "get_chunker_plugin",  # Backwards compatibility
     "available_chunking_plugins",
     "CHUNKING_REGISTRY",
     "PluginRegistryError",

@@ -64,7 +64,6 @@ FITZ_SUBPACKAGES = _discover_fitz_subpackages()
 
 TOPLEVEL_PACKAGES = {"tools"} | FITZ_SUBPACKAGES
 
-
 DEFAULT_LAYOUT_EXCLUDES = {
     ".git",
     ".venv",
@@ -151,8 +150,18 @@ class ImportEdge:
 
 @dataclass(slots=True)
 class ImportGraph:
+    """
+    Import graph with violation detection.
+
+    Attributes:
+        edges: All import edges (both module-level and lazy)
+        violations: Module-level imports that violate architecture rules
+        lazy_ok: Lazy imports (inside functions) that would violate rules
+                 if they were at module level, but are OK because they're lazy
+    """
     edges: List[ImportEdge] = field(default_factory=list)
     violations: List[str] = field(default_factory=list)
+    lazy_ok: List[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
