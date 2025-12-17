@@ -145,10 +145,10 @@ def extract_models(cm: ContractMap, *, verbose: bool) -> None:
 def extract_protocols(cm: ContractMap, *, verbose: bool) -> None:
     """Extract all protocols from the codebase."""
     protocol_modules = [
-        "fitz.core.llm.chat.base",
-        "fitz.core.llm.embedding.base",
-        "fitz.core.llm.rerank.base",
-        "fitz.core.vector_db.base",
+        "fitz.llm.chat.base",
+        "fitz.llm.embedding.base",
+        "fitz.llm.rerank.base",
+        "fitz.vector_db.base",
         "fitz.engines.classic_rag.retrieval.runtime.base",
         "fitz.engines.classic_rag.pipeline.pipeline.base",
         "fitz.ingest.chunking.base",

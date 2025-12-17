@@ -119,10 +119,10 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
     consumers: Dict[str, List[str]] = {}
 
     expected = [
-        ("fitz.core.llm.chat.plugins", "ChatPlugin"),
-        ("fitz.core.llm.embedding.plugins", "EmbeddingPlugin"),
-        ("fitz.core.llm.rerank.plugins", "RerankPlugin"),
-        ("fitz.core.vector_db.plugins", "VectorDBPlugin"),
+        ("fitz.llm.chat.plugins", "ChatPlugin"),
+        ("fitz.llm.embedding.plugins", "EmbeddingPlugin"),
+        ("fitz.llm.rerank.plugins", "RerankPlugin"),
+        ("fitz.vector_db.plugins", "VectorDBPlugin"),
         ("fitz.engines.classic_rag.retrieval.plugins", "RetrievalPlugin"),
         ("fitz.engines.classic_rag.pipeline.pipeline.plugins", "PipelinePlugin"),
         ("fitz.ingest.chunking.plugins", "ChunkerPlugin"),
@@ -133,13 +133,13 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
         impl[iface] = rep.plugins_found
 
     patterns = {
-        "ChatPlugin": ("fitz.core.llm.chat", 'plugin_type="chat"', "plugin_type='chat'"),
+        "ChatPlugin": ("fitz.llm.chat", 'plugin_type="chat"', "plugin_type='chat'"),
         "EmbeddingPlugin": (
-            "fitz.core.llm.embedding",
+            "fitz.llm.embedding",
             'plugin_type="embedding"',
             "plugin_type='embedding'",
         ),
-        "RerankPlugin": ("fitz.core.llm.rerank", 'plugin_type="rerank"', "plugin_type='rerank'"),
+        "RerankPlugin": ("fitz.llm.rerank", 'plugin_type="rerank"', "plugin_type='rerank'"),
         "VectorDBPlugin": ("core.vector_db", 'plugin_type="vector_db"', "plugin_type='vector_db'"),
         "RetrievalPlugin": (
             "fitz.engines.classic_rag.retrieval.registry",

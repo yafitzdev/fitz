@@ -23,11 +23,11 @@ _REQUIRED_METHOD: dict[str, str] = {
 }
 
 _SCAN_PACKAGES: tuple[str, ...] = (
-    "fitz.core.llm.plugins",
-    "fitz.core.llm.chat.plugins",
-    "fitz.core.llm.embedding.plugins",
-    "fitz.core.llm.rerank.plugins",
-    "fitz.core.vector_db.plugins",
+    "fitz.llm.plugins",
+    "fitz.llm.chat.plugins",
+    "fitz.llm.embedding.plugins",
+    "fitz.llm.rerank.plugins",
+    "fitz.vector_db.plugins",
 )
 
 

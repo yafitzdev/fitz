@@ -21,7 +21,7 @@ def _simple_plugin_id(cls: type) -> str:
 
 PLUGIN_PREDICATES: Dict[str, PluginPredicate] = {
     # --- core LLM ---
-    "fitz.core.llm.chat.plugins": (
+    "fitz.llm.chat.plugins": (
         lambda cls: (
             isinstance(cls, type)
             and isinstance(getattr(cls, "plugin_name", None), str)
@@ -30,7 +30,7 @@ PLUGIN_PREDICATES: Dict[str, PluginPredicate] = {
         ),
         _simple_plugin_id,
     ),
-    "fitz.core.llm.embedding.plugins": (
+    "fitz.llm.embedding.plugins": (
         lambda cls: (
             isinstance(cls, type)
             and isinstance(getattr(cls, "plugin_name", None), str)
@@ -39,7 +39,7 @@ PLUGIN_PREDICATES: Dict[str, PluginPredicate] = {
         ),
         _simple_plugin_id,
     ),
-    "fitz.core.llm.rerank.plugins": (
+    "fitz.llm.rerank.plugins": (
         lambda cls: (
             isinstance(cls, type)
             and isinstance(getattr(cls, "plugin_name", None), str)
@@ -49,7 +49,7 @@ PLUGIN_PREDICATES: Dict[str, PluginPredicate] = {
         _simple_plugin_id,
     ),
     # --- vector DB ---
-    "fitz.core.vector_db.plugins": (
+    "fitz.vector_db.plugins": (
         lambda cls: (
             isinstance(getattr(cls, "plugin_name", None), str)
             and getattr(cls, "plugin_type", None) == "vector_db"
@@ -172,12 +172,12 @@ def scan_discovery(namespace: str, note: str) -> DiscoveryReport:
 def scan_all_discoveries() -> List[DiscoveryReport]:
     """Scan all declared plugin namespaces."""
     return [
-        scan_discovery("fitz.core.llm.chat.plugins", "LLM chat plugins (Option A discovery)"),
+        scan_discovery("fitz.llm.chat.plugins", "LLM chat plugins (Option A discovery)"),
         scan_discovery(
-            "fitz.core.llm.embedding.plugins", "LLM embedding plugins (Option A discovery)"
+            "fitz.llm.embedding.plugins", "LLM embedding plugins (Option A discovery)"
         ),
-        scan_discovery("fitz.core.llm.rerank.plugins", "LLM rerank plugins (Option A discovery)"),
-        scan_discovery("fitz.core.vector_db.plugins", "Vector DB plugins (Option A discovery)"),
+        scan_discovery("fitz.llm.rerank.plugins", "LLM rerank plugins (Option A discovery)"),
+        scan_discovery("fitz.vector_db.plugins", "Vector DB plugins (Option A discovery)"),
         scan_discovery(
             "fitz.engines.classic_rag.retrieval.runtime.plugins", "RAG retriever plugins (Option A discovery)"
         ),

@@ -137,7 +137,7 @@ def extract_llm_registry(
 
 def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
     """Extract all registries from the codebase."""
-    cm.registries.extend(extract_llm_registry(cm, "fitz.core.llm.registry", verbose=verbose))
+    cm.registries.extend(extract_llm_registry(cm, "fitz.llm.registry", verbose=verbose))
 
     rr = extract_registry_plugins(
         cm,
