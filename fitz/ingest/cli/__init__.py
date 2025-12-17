@@ -14,7 +14,14 @@ Available commands:
 
 import typer
 
-from fitz.cli.errors import friendly_errors
+# Try to import error handler, but don't fail if not present
+try:
+    from fitz.cli.errors import friendly_errors
+    HAS_ERROR_HANDLER = True
+except ImportError:
+    HAS_ERROR_HANDLER = False
+    def friendly_errors(func):
+        return func
 
 # Create main app first
 app = typer.Typer(

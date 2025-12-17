@@ -1,3 +1,4 @@
+# fitz/ingest/cli/run.py
 """
 Run command: Ingest documents into vector database.
 
@@ -8,7 +9,7 @@ Usage:
 """
 
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, List
 
 import typer
 
@@ -23,6 +24,26 @@ from fitz.ingest.ingestion.engine import IngestionEngine
 from fitz.ingest.ingestion.registry import get_ingest_plugin
 
 logger = get_logger(__name__)
+
+# Try to import rich for progress bars
+try:
+    from rich.console import Console
+    from rich.progress import (
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        BarColumn,
+        TaskProgressColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+    from rich.panel import Panel
+    from rich.table import Table
+    RICH_AVAILABLE = True
+    console = Console()
+except ImportError:
+    RICH_AVAILABLE = False
+    console = None
 
 
 def _raw_to_chunks(raw_docs: Iterable[Any]) -> list[Chunk]:
@@ -54,6 +75,41 @@ def _raw_to_chunks(raw_docs: Iterable[Any]) -> list[Chunk]:
     return chunks
 
 
+def _embed_with_progress(
+    embed_engine: EmbeddingEngine,
+    chunks: List[Chunk],
+    show_progress: bool = True,
+) -> List[List[float]]:
+    """Embed chunks with progress bar."""
+    vectors = []
+    
+    if RICH_AVAILABLE and show_progress and len(chunks) > 1:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Embedding...", total=len(chunks))
+            
+            for chunk in chunks:
+                vector = embed_engine.embed(chunk.content)
+                vectors.append(vector)
+                progress.update(task, advance=1)
+    else:
+        # Fallback without rich
+        for i, chunk in enumerate(chunks):
+            vector = embed_engine.embed(chunk.content)
+            vectors.append(vector)
+            if not RICH_AVAILABLE and (i + 1) % 10 == 0:
+                typer.echo(f"  Embedded {i + 1}/{len(chunks)} chunks...")
+    
+    return vectors
+
+
 def command(
     source: Path = typer.Argument(
         ...,
@@ -83,6 +139,18 @@ def command(
         "-v",
         help="Vector DB plugin name (registered in core.vector_db.registry).",
     ),
+    batch_size: int = typer.Option(
+        50,
+        "--batch-size",
+        "-b",
+        help="Number of chunks to process before writing to vector DB.",
+    ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Suppress progress output.",
+    ),
 ) -> None:
     """
     Ingest documents into a vector database.
@@ -102,6 +170,9 @@ def command(
             --ingest-plugin local \\
             --embedding-plugin openai \\
             --vector-db-plugin qdrant
+        
+        # Quiet mode (minimal output)
+        fitz-ingest run ./docs --collection my_docs -q
     """
     # Validate source path
     if not source.exists():
@@ -117,32 +188,105 @@ def command(
         f"(ingest='{ingest_plugin}', embedding='{embedding_plugin}', vdb='{vector_db_plugin}')"
     )
 
-    # 1) Ingestion → RawDocument
-    typer.echo(f"[1/4] Ingesting documents from {source}...")
-    IngestPluginCls = get_ingest_plugin(ingest_plugin)
-    ingest_plugin_obj = IngestPluginCls()
-    ingest_engine = IngestionEngine(plugin=ingest_plugin_obj, kwargs={})
+    show_progress = not quiet
 
-    raw_docs = list(ingest_engine.run(str(source)))
+    # Header
+    if show_progress:
+        if RICH_AVAILABLE:
+            console.print(Panel.fit(
+                f"[bold]Ingesting[/bold] {source}\n"
+                f"[dim]Collection: {collection}[/dim]",
+                title="🔄 fitz-ingest",
+                border_style="blue"
+            ))
+        else:
+            typer.echo()
+            typer.echo("=" * 60)
+            typer.echo(f"Ingesting: {source}")
+            typer.echo(f"Collection: {collection}")
+            typer.echo("=" * 60)
+
+    # =========================================================================
+    # Step 1: Ingest documents
+    # =========================================================================
+    if show_progress:
+        if RICH_AVAILABLE:
+            with console.status("[bold blue]Reading documents...", spinner="dots"):
+                IngestPluginCls = get_ingest_plugin(ingest_plugin)
+                ingest_plugin_obj = IngestPluginCls()
+                ingest_engine = IngestionEngine(plugin=ingest_plugin_obj, kwargs={})
+                raw_docs = list(ingest_engine.run(str(source)))
+            console.print(f"[green]✓[/green] Found [bold]{len(raw_docs)}[/bold] documents")
+        else:
+            typer.echo(f"[1/4] Ingesting documents from {source}...")
+            IngestPluginCls = get_ingest_plugin(ingest_plugin)
+            ingest_plugin_obj = IngestPluginCls()
+            ingest_engine = IngestionEngine(plugin=ingest_plugin_obj, kwargs={})
+            raw_docs = list(ingest_engine.run(str(source)))
+            typer.echo(f"  ✓ Ingested {len(raw_docs)} documents")
+    else:
+        IngestPluginCls = get_ingest_plugin(ingest_plugin)
+        ingest_plugin_obj = IngestPluginCls()
+        ingest_engine = IngestionEngine(plugin=ingest_plugin_obj, kwargs={})
+        raw_docs = list(ingest_engine.run(str(source)))
+
     logger.info(f"{INGEST} Ingested {len(raw_docs)} raw documents")
-    typer.echo(f"  ✓ Ingested {len(raw_docs)} documents")
 
-    # 2) RawDocument → canonical Chunk (1:1 fallback)
-    typer.echo("[2/4] Converting to chunks...")
-    chunks = _raw_to_chunks(raw_docs)
+    if not raw_docs:
+        if RICH_AVAILABLE:
+            console.print("[yellow]⚠[/yellow] No documents found to ingest")
+        else:
+            typer.echo("⚠ No documents found to ingest")
+        raise typer.Exit(code=0)
+
+    # =========================================================================
+    # Step 2: Convert to chunks
+    # =========================================================================
+    if show_progress:
+        if RICH_AVAILABLE:
+            with console.status("[bold blue]Converting to chunks...", spinner="dots"):
+                chunks = _raw_to_chunks(raw_docs)
+            console.print(f"[green]✓[/green] Created [bold]{len(chunks)}[/bold] chunks")
+        else:
+            typer.echo("[2/4] Converting to chunks...")
+            chunks = _raw_to_chunks(raw_docs)
+            typer.echo(f"  ✓ Created {len(chunks)} chunks")
+    else:
+        chunks = _raw_to_chunks(raw_docs)
+
     logger.info(f"{CHUNKING} Produced {len(chunks)} chunks (1:1 raw→chunk)")
-    typer.echo(f"  ✓ Created {len(chunks)} chunks")
 
-    # 3) Embedding
-    typer.echo(f"[3/4] Generating embeddings with '{embedding_plugin}'...")
+    # =========================================================================
+    # Step 3: Generate embeddings
+    # =========================================================================
+    if show_progress:
+        if RICH_AVAILABLE:
+            console.print(f"[blue]⏳[/blue] Generating embeddings with [bold]{embedding_plugin}[/bold]...")
+        else:
+            typer.echo(f"[3/4] Generating embeddings with '{embedding_plugin}'...")
+
     EmbedPluginCls = get_llm_plugin(plugin_name=embedding_plugin, plugin_type="embedding")
     embed_engine = EmbeddingEngine(EmbedPluginCls())
-    vectors = [embed_engine.embed(c.content) for c in chunks]
-    logger.info(f"{EMBEDDING} Embedded {len(vectors)} chunks using '{embedding_plugin}'")
-    typer.echo(f"  ✓ Generated {len(vectors)} embeddings")
+    
+    vectors = _embed_with_progress(embed_engine, chunks, show_progress=show_progress)
+    
+    if show_progress:
+        if RICH_AVAILABLE:
+            console.print(f"[green]✓[/green] Generated [bold]{len(vectors)}[/bold] embeddings")
+        else:
+            typer.echo(f"  ✓ Generated {len(vectors)} embeddings")
 
-    # 4) Vector DB upsert
-    typer.echo(f"[4/4] Writing to vector database '{vector_db_plugin}'...")
+    logger.info(f"{EMBEDDING} Embedded {len(vectors)} chunks using '{embedding_plugin}'")
+
+    # =========================================================================
+    # Step 4: Write to vector database
+    # =========================================================================
+    if show_progress:
+        if RICH_AVAILABLE:
+            console.print(f"[blue]⏳[/blue] Writing to [bold]{vector_db_plugin}[/bold]...")
+        else:
+            typer.echo(f"[4/4] Writing to vector database '{vector_db_plugin}'...")
+
     VectorDBPluginCls = get_vector_db_plugin(vector_db_plugin)
 
     # Special handling for local-faiss which needs dimension
@@ -151,28 +295,73 @@ def command(
             typer.echo("ERROR: No vectors generated, cannot initialize FAISS")
             raise typer.Exit(code=1)
 
-        # Get dimension from first vector
         dim = len(vectors[0])
-
-        # Import config
         from fitz.backends.local_vector_db.config import LocalVectorDBConfig
-
         config = LocalVectorDBConfig()
-
         vdb_client = VectorDBPluginCls(dim=dim, config=config)
     else:
         vdb_client = VectorDBPluginCls()
 
     writer = VectorDBWriter(client=vdb_client)
-    writer.upsert(collection=collection, chunks=chunks, vectors=vectors)
+    
+    # Write in batches with progress
+    if RICH_AVAILABLE and show_progress and len(chunks) > batch_size:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Writing to DB...", total=len(chunks))
+            
+            for i in range(0, len(chunks), batch_size):
+                batch_chunks = chunks[i:i + batch_size]
+                batch_vectors = vectors[i:i + batch_size]
+                writer.upsert(collection=collection, chunks=batch_chunks, vectors=batch_vectors)
+                progress.update(task, advance=len(batch_chunks))
+    else:
+        writer.upsert(collection=collection, chunks=chunks, vectors=vectors)
+
+    if show_progress:
+        if RICH_AVAILABLE:
+            console.print(f"[green]✓[/green] Written to collection [bold]{collection}[/bold]")
+        else:
+            typer.echo(f"  ✓ Written to collection '{collection}'")
 
     logger.info(f"{VECTOR_DB} Upserted {len(chunks)} chunks into collection='{collection}'")
 
-    typer.echo()
-    typer.echo("=" * 60)
-    typer.echo("✓ Ingestion complete!")
-    typer.echo("=" * 60)
-    typer.echo(f"Documents:  {len(raw_docs)}")
-    typer.echo(f"Chunks:     {len(chunks)}")
-    typer.echo(f"Collection: {collection}")
-    typer.echo()
+    # =========================================================================
+    # Summary
+    # =========================================================================
+    if show_progress:
+        if RICH_AVAILABLE:
+            console.print()
+            
+            # Summary table
+            table = Table(title="✅ Ingestion Complete", show_header=False, box=None)
+            table.add_column("Metric", style="dim")
+            table.add_column("Value", style="bold")
+            
+            table.add_row("Documents", str(len(raw_docs)))
+            table.add_row("Chunks", str(len(chunks)))
+            table.add_row("Collection", collection)
+            table.add_row("Vector DB", vector_db_plugin)
+            table.add_row("Embedding", embedding_plugin)
+            
+            console.print(table)
+            console.print()
+            console.print("[dim]Next: fitz-pipeline query \"Your question\" [/dim]")
+        else:
+            typer.echo()
+            typer.echo("=" * 60)
+            typer.echo("✓ Ingestion complete!")
+            typer.echo("=" * 60)
+            typer.echo(f"Documents:  {len(raw_docs)}")
+            typer.echo(f"Chunks:     {len(chunks)}")
+            typer.echo(f"Collection: {collection}")
+            typer.echo()
+    else:
+        # Quiet mode - just confirm success
+        typer.echo(f"✓ Ingested {len(chunks)} chunks into '{collection}'")

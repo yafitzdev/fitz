@@ -1,211 +1,179 @@
-#!/usr/bin/env python3
+# tests/test_smart_qdrant.py
 """
-Test script for the Smart Qdrant Plugin.
+Tests for the Smart Qdrant Plugin.
 
-Run this to verify the plugin works correctly with your Qdrant setup.
+These tests require a running Qdrant instance.
+They will be skipped if Qdrant is not available.
 
-Usage:
-    # From fitz project root after copying smart_qdrant_plugin.py:
-    python -c "from fitz.vector_db.plugins.qdrant import QdrantVectorDB; print('OK')"
-
-    # Or run this file directly (after installing):
-    python test_smart_qdrant.py
+To run with Qdrant:
+    $env:QDRANT_HOST = "192.168.178.2"  # Your Qdrant host
+    pytest tests/test_smart_qdrant.py -v
 """
 
 import os
-import sys
+import pytest
 
 
-def test_connection():
-    """Test basic connection to Qdrant."""
-    print("=" * 60)
-    print("Testing Smart Qdrant Plugin")
-    print("=" * 60)
-
-    # Try to import from installed location first, then fall back to local
+def qdrant_available() -> bool:
+    """Check if Qdrant is available."""
     try:
         from fitz.vector_db.plugins.qdrant import QdrantVectorDB
-        print("✓ Plugin imported from fitz.vector_db.plugins.qdrant")
-    except ImportError:
-        try:
-            from fitz.core.vector_db.plugins.qdrant import QdrantVectorDB
-            print("✓ Plugin imported from fitz.core.vector_db.plugins.qdrant")
-        except ImportError:
-            print("✗ Failed to import plugin from fitz package")
-            print("  Make sure you copied smart_qdrant_plugin.py to:")
-            print("    fitz/vector_db/plugins/qdrant.py")
-            print("  or:")
-            print("    fitz/core/vector_db/plugins/qdrant.py")
-            return False
-
-    # Test connection
-    host = os.getenv("QDRANT_HOST", "localhost")
-    port = int(os.getenv("QDRANT_PORT", "6333"))
-
-    print(f"\nConnecting to Qdrant at {host}:{port}...")
-
-    try:
-        db = QdrantVectorDB(host=host, port=port)
-        print(f"✓ Connected to Qdrant")
-    except Exception as e:
-        print(f"✗ Connection failed: {e}")
+        db = QdrantVectorDB()
+        db.list_collections()
+        return True
+    except Exception:
         return False
 
-    # List collections
-    print("\nAvailable collections:")
-    try:
-        collections = db.list_collections()
+
+# Skip all tests in this module if Qdrant not available
+pytestmark = pytest.mark.skipif(
+    not qdrant_available(),
+    reason="Qdrant not available (set QDRANT_HOST or start Qdrant on localhost:6333)"
+)
+
+
+@pytest.fixture
+def qdrant_db():
+    """Create a Qdrant client for testing."""
+    from fitz.vector_db.plugins.qdrant import QdrantVectorDB
+    return QdrantVectorDB()
+
+
+@pytest.fixture
+def test_collection_name():
+    """Unique test collection name."""
+    return "_fitz_pytest_auto_create"
+
+
+class TestQdrantConnection:
+    """Test basic Qdrant connectivity."""
+
+    def test_connection(self, qdrant_db):
+        """Test that we can connect and list collections."""
+        collections = qdrant_db.list_collections()
+        assert isinstance(collections, list)
+
+    def test_get_collection_stats(self, qdrant_db):
+        """Test getting stats for an existing collection."""
+        collections = qdrant_db.list_collections()
         if collections:
-            for c in collections:
-                print(f"  - {c}")
-        else:
-            print("  (none)")
-    except Exception as e:
-        print(f"  Error listing collections: {e}")
-
-    return True
+            stats = qdrant_db.get_collection_stats(collections[0])
+            assert "name" in stats
 
 
-def test_auto_create_collection():
+class TestAutoCreateCollection:
     """Test auto-creation of collections."""
-    print("\n" + "=" * 60)
-    print("Testing Auto-Create Collection")
-    print("=" * 60)
 
-    try:
-        from fitz.vector_db.plugins.qdrant import QdrantVectorDB
-    except ImportError:
-        from fitz.vector_db.plugins.qdrant import QdrantVectorDB
+    def test_auto_create_and_upsert(self, qdrant_db, test_collection_name):
+        """Test that upserting to non-existent collection creates it."""
+        # Clean up if exists from previous run
+        if test_collection_name in qdrant_db.list_collections():
+            qdrant_db.delete_collection(test_collection_name)
 
-    db = QdrantVectorDB()
+        # Upsert should auto-create
+        test_points = [
+            {
+                "id": "test-doc-1",
+                "vector": [0.1] * 1024,
+                "payload": {"content": "Test document", "doc_id": "doc1"}
+            },
+        ]
 
-    test_collection = "_fitz_test_auto_create"
+        qdrant_db.upsert(test_collection_name, test_points)
 
-    # Clean up if exists
-    if test_collection in db.list_collections():
-        print(f"Cleaning up existing test collection...")
-        db.delete_collection(test_collection)
+        # Verify collection was created
+        assert test_collection_name in qdrant_db.list_collections()
 
-    # Test auto-creation via upsert
-    print(f"\nUpserting to non-existent collection '{test_collection}'...")
+        # Verify data was inserted
+        stats = qdrant_db.get_collection_stats(test_collection_name)
+        assert stats.get("points_count", 0) >= 1
 
-    test_points = [
-        {
-            "id": "test-doc-1",
-            "vector": [0.1] * 1024,  # 1024 dimensions (Cohere embed size)
-            "payload": {"content": "This is a test document", "doc_id": "doc1"}
-        },
-        {
-            "id": "test-doc-2",
-            "vector": [0.2] * 1024,
-            "payload": {"content": "Another test document", "doc_id": "doc2"}
-        }
-    ]
+        # Cleanup
+        qdrant_db.delete_collection(test_collection_name)
 
-    db.upsert(test_collection, test_points)
-    print(f"✓ Auto-created collection and upserted {len(test_points)} points")
+    def test_search_after_upsert(self, qdrant_db, test_collection_name):
+        """Test that search works after auto-create and upsert."""
+        # Clean up if exists
+        if test_collection_name in qdrant_db.list_collections():
+            qdrant_db.delete_collection(test_collection_name)
 
-    # Verify collection exists
-    stats = db.get_collection_stats(test_collection)
-    print(f"\nCollection stats:")
-    print(f"  Points: {stats.get('points_count', 0)}")
-    print(f"  Status: {stats.get('status', 'unknown')}")
+        # Upsert
+        test_points = [
+            {
+                "id": "test-doc-1",
+                "vector": [0.1] * 1024,
+                "payload": {"content": "Test document about AI", "doc_id": "doc1"}
+            },
+            {
+                "id": "test-doc-2",
+                "vector": [0.2] * 1024,
+                "payload": {"content": "Test document about ML", "doc_id": "doc2"}
+            },
+        ]
 
-    # Test search
-    print(f"\nTesting search...")
-    results = db.search(
-        collection_name=test_collection,
-        query_vector=[0.15] * 1024,
-        limit=2,
-    )
-    print(f"✓ Search returned {len(results)} results")
-    for r in results:
-        print(f"  - ID: {r.id}, Score: {r.score:.4f}")
+        qdrant_db.upsert(test_collection_name, test_points)
 
-    # Cleanup
-    print(f"\nCleaning up test collection...")
-    db.delete_collection(test_collection)
-    print(f"✓ Deleted test collection")
+        # Search
+        results = qdrant_db.search(
+            collection_name=test_collection_name,
+            query_vector=[0.15] * 1024,
+            limit=2,
+        )
 
-    return True
+        assert len(results) == 2
+        assert all(hasattr(r, "id") for r in results)
+        assert all(hasattr(r, "score") for r in results)
+
+        # Cleanup
+        qdrant_db.delete_collection(test_collection_name)
 
 
-def test_error_messages():
-    """Test helpful error messages."""
-    print("\n" + "=" * 60)
-    print("Testing Error Messages")
-    print("=" * 60)
+class TestErrorMessages:
+    """Test that error messages are helpful."""
 
-    try:
-        from fitz.vector_db.plugins.qdrant import QdrantVectorDB
-    except ImportError:
-        from fitz.vector_db.plugins.qdrant import QdrantVectorDB
-
-    # Import error class
-    try:
+    def test_collection_not_found_error(self, qdrant_db):
+        """Test that searching non-existent collection gives helpful error."""
         from fitz.vector_db.plugins.qdrant import QdrantCollectionError
-    except ImportError:
-        try:
-            from fitz.core.vector_db.plugins.qdrant import QdrantCollectionError
-        except ImportError:
-            # Define locally if not found
-            QdrantCollectionError = Exception
 
-    db = QdrantVectorDB()
+        with pytest.raises(QdrantCollectionError) as exc_info:
+            qdrant_db.search("_nonexistent_collection_xyz", [0.1] * 1024, limit=5)
 
-    # Test searching non-existent collection
-    print("\nSearching non-existent collection '_does_not_exist'...")
-    try:
-        db.search("_does_not_exist", [0.1] * 1024, limit=5)
-        print("✗ Should have raised an error")
-        return False
-    except QdrantCollectionError as e:
-        print(f"✓ Got helpful error message:")
-        # Just show first few lines
-        lines = str(e).strip().split('\n')[:5]
-        for line in lines:
-            print(f"  {line}")
-
-    return True
+        error_msg = str(exc_info.value)
+        # Should mention the collection name
+        assert "_nonexistent_collection_xyz" in error_msg
+        # Should have helpful suggestions
+        assert "fix" in error_msg.lower() or "ingest" in error_msg.lower()
 
 
-def main():
-    """Run all tests."""
-    print("\n🔧 Smart Qdrant Plugin Test Suite\n")
+class TestStringIdConversion:
+    """Test that string IDs are properly converted to UUIDs."""
 
-    all_passed = True
+    def test_string_id_converted(self, qdrant_db, test_collection_name):
+        """Test that string IDs like 'doc.txt:0' work."""
+        # Clean up if exists
+        if test_collection_name in qdrant_db.list_collections():
+            qdrant_db.delete_collection(test_collection_name)
 
-    # Test 1: Connection
-    if not test_connection():
-        print("\n❌ Connection test failed - cannot continue")
-        return 1
+        # Upsert with string ID (the problematic format)
+        test_points = [
+            {
+                "id": "test_docs\\quantum.txt:0",  # This format caused issues before
+                "vector": [0.1] * 1024,
+                "payload": {"content": "Test", "doc_id": "doc1"}
+            },
+        ]
 
-    # Test 2: Auto-create
-    try:
-        if not test_auto_create_collection():
-            all_passed = False
-    except Exception as e:
-        print(f"\n❌ Auto-create test failed: {e}")
-        all_passed = False
+        # Should not raise
+        qdrant_db.upsert(test_collection_name, test_points)
 
-    # Test 3: Error messages
-    try:
-        if not test_error_messages():
-            all_passed = False
-    except Exception as e:
-        print(f"\n❌ Error message test failed: {e}")
-        all_passed = False
+        # Verify it worked
+        stats = qdrant_db.get_collection_stats(test_collection_name)
+        assert stats.get("points_count", 0) >= 1
 
-    # Summary
-    print("\n" + "=" * 60)
-    if all_passed:
-        print("✅ All tests passed!")
-    else:
-        print("❌ Some tests failed")
-    print("=" * 60)
+        # Original ID should be in payload
+        results = qdrant_db.search(test_collection_name, [0.1] * 1024, limit=1)
+        assert len(results) >= 1
+        assert results[0].payload.get("_original_id") == "test_docs\\quantum.txt:0"
 
-    return 0 if all_passed else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+        # Cleanup
+        qdrant_db.delete_collection(test_collection_name)
