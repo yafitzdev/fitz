@@ -1,6 +1,6 @@
 # fitz/llm/chat/plugins/cohere.py
 """
-Cohere chat plugin using direct HTTP requests.
+Cohere chat plugin using centralized HTTP client.
 
 Uses Cohere v1 Chat API which expects:
 - preamble: system message
@@ -13,15 +13,18 @@ from __future__ import annotations
 import os
 from typing import Any
 
-try:
-    import httpx
-except ImportError:
-    httpx = None  # type: ignore
+from fitz.core.http import (
+    create_api_client,
+    raise_for_status,
+    handle_api_error,
+    APIError,
+    HTTPClientNotAvailable,
+)
 
 
 class CohereChatClient:
     """
-    Cohere chat plugin using direct HTTP requests.
+    Cohere chat plugin using centralized HTTP client.
 
     Required:
         - COHERE_API_KEY environment variable OR api_key parameter
@@ -41,11 +44,6 @@ class CohereChatClient:
         temperature: float = 0.2,
         base_url: str = "https://api.cohere.ai/v1",
     ) -> None:
-        if httpx is None:
-            raise RuntimeError(
-                "httpx is required for Cohere plugin. " "Install with: pip install httpx"
-            )
-
         # Get API key
         key = api_key or os.getenv("COHERE_API_KEY")
         if not key:
@@ -53,21 +51,23 @@ class CohereChatClient:
                 "COHERE_API_KEY is not set. "
                 "Set it as an environment variable or pass api_key parameter."
             )
-        self._api_key = key
 
         self.model = model
         self.temperature = temperature
         self.base_url = base_url
 
-        # Create HTTP client
-        self._client = httpx.Client(
-            base_url=self.base_url,
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=120.0,  # Longer timeout for LLM generation
-        )
+        # Create HTTP client using centralized factory
+        try:
+            self._client = create_api_client(
+                base_url=self.base_url,
+                api_key=key,
+                timeout_type="chat",  # 120s timeout for LLM generation
+            )
+        except HTTPClientNotAvailable:
+            raise RuntimeError(
+                "httpx is required for Cohere plugin. "
+                "Install with: pip install httpx"
+            )
 
     def chat(self, messages: list[dict[str, Any]]) -> str:
         """
@@ -84,11 +84,6 @@ class CohereChatClient:
             RuntimeError: If the API request fails
         """
         # Convert standard messages format to Cohere format
-        # Cohere v1 uses:
-        #   - preamble: system prompt
-        #   - message: current user message
-        #   - chat_history: previous messages
-
         preamble = ""
         chat_history = []
         current_message = ""
@@ -100,8 +95,6 @@ class CohereChatClient:
             if role == "system":
                 preamble = content
             elif role == "user":
-                # Last user message becomes the "message" parameter
-                # Previous user messages go to chat_history
                 if current_message:
                     chat_history.append({"role": "USER", "message": current_message})
                 current_message = content
@@ -123,31 +116,21 @@ class CohereChatClient:
 
         try:
             response = self._client.post("/chat", json=payload)
-            response.raise_for_status()
+            raise_for_status(response, provider="cohere", endpoint="/chat")
 
             data = response.json()
 
-            # Cohere response has "text" field
             if "text" in data:
                 return data["text"]
 
-            # Fallback for unexpected format
             return str(data)
 
-        except httpx.HTTPStatusError as exc:
-            error_detail = ""
-            try:
-                error_data = exc.response.json()
-                error_detail = f": {error_data.get('message', '')}"
-            except Exception:
-                pass
-
-            raise RuntimeError(
-                f"Cohere API request failed with status {exc.response.status_code}{error_detail}"
-            ) from exc
+        except APIError as exc:
+            raise RuntimeError(str(exc)) from exc
 
         except Exception as exc:
-            raise RuntimeError(f"Failed to complete chat: {exc}") from exc
+            error = handle_api_error(exc, provider="cohere", endpoint="/chat")
+            raise RuntimeError(str(error)) from exc
 
     def __del__(self):
         """Clean up HTTP client on deletion."""

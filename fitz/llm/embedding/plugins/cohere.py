@@ -1,23 +1,28 @@
-# core/llm/embedding/plugins/cohere.py
+# fitz/llm/embedding/plugins/cohere.py
+"""
+Cohere embedding plugin using centralized HTTP client.
+"""
+
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
+from fitz.core.http import (
+    create_api_client,
+    raise_for_status,
+    handle_api_error,
+    APIError,
+    HTTPClientNotAvailable,
+)
 from fitz.engines.classic_rag.errors.llm import EmbeddingError
-
-try:
-    import httpx
-except ImportError:
-    httpx = None  # type: ignore
 
 
 @dataclass
 class CohereEmbeddingClient:
     """
-    Cohere embedding plugin using direct HTTP requests.
-
-    Zero dependencies beyond httpx (which is already required by fitz core).
+    Cohere embedding plugin using centralized HTTP client.
 
     Required:
         - COHERE_API_KEY environment variable OR api_key parameter
@@ -37,12 +42,10 @@ class CohereEmbeddingClient:
     output_dimension: int | None = None
     base_url: str = "https://api.cohere.ai/v1"
 
-    def __post_init__(self) -> None:
-        if httpx is None:
-            raise RuntimeError(
-                "httpx is required for Cohere plugin. " "Install with: pip install httpx"
-            )
+    # Internal client (not a dataclass field)
+    _client: Any = field(init=False, repr=False, default=None)
 
+    def __post_init__(self) -> None:
         # Get API key
         key = self.api_key or os.getenv("COHERE_API_KEY")
         if not key:
@@ -58,15 +61,18 @@ class CohereEmbeddingClient:
             self.input_type or os.getenv("COHERE_EMBED_INPUT_TYPE") or "search_document"
         )
 
-        # Create HTTP client
-        self._client = httpx.Client(
-            base_url=self.base_url,
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=30.0,
-        )
+        # Create HTTP client using centralized factory
+        try:
+            self._client = create_api_client(
+                base_url=self.base_url,
+                api_key=self._api_key,
+                timeout_type="embedding",  # 30s timeout
+            )
+        except HTTPClientNotAvailable:
+            raise RuntimeError(
+                "httpx is required for Cohere plugin. "
+                "Install with: pip install httpx"
+            )
 
     def embed(self, text: str) -> list[float]:
         """
@@ -81,7 +87,6 @@ class CohereEmbeddingClient:
         Raises:
             EmbeddingError: If the API request fails
         """
-        # Build request payload
         payload: dict[str, object] = {
             "texts": [text],
             "model": self.model,
@@ -90,54 +95,42 @@ class CohereEmbeddingClient:
         }
 
         if self.output_dimension is not None:
-            payload["truncate"] = "END"  # Required when using output_dimension
-            # Note: output_dimension is only available in v2 API
-            # For v1, we'll just use full dimensions
+            payload["truncate"] = "END"
 
         try:
             response = self._client.post("/embed", json=payload)
-            response.raise_for_status()
+            raise_for_status(response, provider="cohere", endpoint="/embed")
 
             data = response.json()
 
             # Extract embedding from response
-            # Response structure: {"embeddings": {"float": [[0.1, 0.2, ...]]}}
             embeddings_data = data.get("embeddings", {})
 
             # Handle both v1 and v2 API response formats
             if isinstance(embeddings_data, dict):
-                # v1 API format: {"embeddings": {"float": [[...]]}}
                 float_embeddings = embeddings_data.get("float", [])
                 if float_embeddings and isinstance(float_embeddings, list) and float_embeddings[0]:
                     return float_embeddings[0]
             elif isinstance(embeddings_data, list):
-                # v2 API format: {"embeddings": [[...]]}
                 if embeddings_data and embeddings_data[0]:
                     return embeddings_data[0]
 
-            raise EmbeddingError(f"No embedding returned from Cohere API")
+            raise EmbeddingError("No embedding returned from Cohere API")
 
-        except httpx.HTTPStatusError as exc:
-            error_detail = ""
-            try:
-                error_data = exc.response.json()
-                error_detail = f": {error_data.get('message', '')}"
-            except Exception as e:
-                # Failed to parse error response
-                error_detail = f" (response parse failed: {e})"
+        except APIError as exc:
+            raise EmbeddingError(str(exc)) from exc
 
-            raise EmbeddingError(
-                f"Cohere API request failed with status {exc.response.status_code}{error_detail}"
-            ) from exc
+        except EmbeddingError:
+            raise
 
         except Exception as exc:
-            raise EmbeddingError(f"Failed to embed text: {exc}") from exc
+            error = handle_api_error(exc, provider="cohere", endpoint="/embed")
+            raise EmbeddingError(str(error)) from exc
 
     def __del__(self):
         """Clean up HTTP client on deletion."""
-        if hasattr(self, "_client"):
+        if hasattr(self, "_client") and self._client:
             try:
                 self._client.close()
-            except Exception as e:
-                # Failed to parse error response
-                error_detail = f" (response parse failed: {e})"
+            except Exception:
+                pass
