@@ -1,7 +1,7 @@
 # fitz/engines/classic_rag/config/default.yaml
 #
 # Default configuration for Classic RAG engine.
-# Using Cohere for LLM/embedding and Qdrant for vector DB.
+# Configured for your Qdrant setup at 192.168.178.2:6333
 #
 
 # =============================================================================
@@ -12,7 +12,6 @@ llm:
   kwargs:
     model: command-r-plus
     temperature: 0.2
-    # api_key loaded from COHERE_API_KEY env var
 
 # =============================================================================
 # Embedding Configuration - Cohere
@@ -21,7 +20,6 @@ embedding:
   plugin_name: cohere
   kwargs:
     model: embed-english-v3.0
-    # api_key loaded from COHERE_API_KEY env var
 
 # =============================================================================
 # Vector Database Configuration - Qdrant
@@ -31,17 +29,18 @@ vector_db:
   kwargs:
     host: "192.168.178.2"
     port: 6333
+    vector_name: "Default"  # Named vector in your Qdrant collection
 
 # =============================================================================
 # Retriever Configuration
 # =============================================================================
 retriever:
   plugin_name: dense
-  collection: default
+  collection: fitz_stack_test  # Your collection with data
   top_k: 5
 
 # =============================================================================
-# Reranker Configuration (Optional) - Cohere
+# Reranker Configuration (Optional)
 # =============================================================================
 rerank:
   enabled: false
