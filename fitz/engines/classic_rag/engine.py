@@ -20,6 +20,7 @@ from fitz.core import (
 
 # RAG-specific imports (from the moved modules)
 from fitz.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
+from fitz.engines.classic_rag.config.schema import RAGConfig, PipelinePluginConfig, RerankConfig, RetrieverConfig, RGSConfig, LoggingConfig
 from fitz.engines.classic_rag.generation.retrieval_guided.synthesis import RGSAnswer
 from fitz.engines.classic_rag.config.schema import FitzConfig
 
@@ -62,11 +63,61 @@ class ClassicRagEngine:
                               components cannot be initialized
         """
         try:
-            # Initialize the underlying RAG pipeline
-            self._pipeline = RAGPipeline(config)
+            # Convert FitzConfig to RAGConfig
+            # FitzConfig is the top-level config, RAGConfig is the pipeline-specific config
+            rag_config = self._convert_to_rag_config(config)
+
+            # Use the factory method to create RAGPipeline from config
+            # This properly initializes all components (retriever, llm, rgs, context)
+            self._pipeline = RAGPipeline.from_config(rag_config)
             self._config = config
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize Classic RAG engine: {e}") from e
+
+    def _convert_to_rag_config(self, fitz_config: FitzConfig) -> RAGConfig:
+        """
+        Convert FitzConfig to RAGConfig.
+
+        FitzConfig is the engine-level config, RAGConfig is the pipeline-specific config.
+        This method bridges the two.
+
+        Args:
+            fitz_config: The engine configuration
+
+        Returns:
+            RAGConfig suitable for RAGPipeline.from_config()
+        """
+        # Map FitzConfig fields to RAGConfig fields
+        rag_config = RAGConfig(
+            llm=PipelinePluginConfig(
+                plugin_name=fitz_config.chat.plugin_name,
+                kwargs=fitz_config.chat.kwargs
+            ),
+            embedding=PipelinePluginConfig(
+                plugin_name=fitz_config.embedding.plugin_name,
+                kwargs=fitz_config.embedding.kwargs
+            ),
+            vector_db=PipelinePluginConfig(
+                plugin_name=fitz_config.vector_db.plugin_name,
+                kwargs=fitz_config.vector_db.kwargs
+            ),
+            rerank=RerankConfig(
+                enabled=fitz_config.rerank is not None,
+                plugin_name=fitz_config.rerank.plugin_name if fitz_config.rerank else None,
+                kwargs=fitz_config.rerank.kwargs if fitz_config.rerank else {}
+            ),
+            # Pipeline plugin config - this determines which pipeline plugin to use
+            # For now, we'll use the standard pipeline
+            retriever=RetrieverConfig(
+                plugin_name="dense",  # Default to dense retrieval
+                collection="default",  # This should come from config or be parameterized
+                top_k=5  # Default
+            ),
+            rgs=RGSConfig(),  # Use defaults
+            logging=LoggingConfig()  # Use defaults
+        )
+
+        return rag_config
 
     def answer(self, query: Query) -> Answer:
         """
@@ -94,15 +145,13 @@ class ClassicRagEngine:
             raise QueryError("Query text cannot be empty")
 
         try:
-            # Extract RAG-specific parameters from query
-            rag_kwargs = self._extract_rag_params(query)
+            # Extract RAG-specific parameters from query (if any)
+            # For now, RAGPipeline.run() just takes the query text
+            # Future: pass constraints via pipeline kwargs if needed
 
             # Run the RAG pipeline
             # Note: RAGPipeline.run() returns RGSAnswer
-            rag_answer: RGSAnswer = self._pipeline.run(
-                query=query.text,
-                **rag_kwargs
-            )
+            rag_answer: RGSAnswer = self._pipeline.run(query.text)
 
             # Convert RAG-specific answer to paradigm-agnostic Answer
             return self._convert_to_core_answer(rag_answer, query)
@@ -112,51 +161,13 @@ class ClassicRagEngine:
             raise
         except Exception as e:
             # Classify other exceptions appropriately
-            if "retriev" in str(e).lower() or "vector" in str(e).lower():
+            error_msg = str(e).lower()
+            if "retriev" in error_msg or "vector" in error_msg:
                 raise KnowledgeError(f"Failed to retrieve knowledge: {e}") from e
-            elif "generat" in str(e).lower() or "llm" in str(e).lower():
+            elif "generat" in error_msg or "llm" in error_msg:
                 raise GenerationError(f"Failed to generate answer: {e}") from e
             else:
                 raise GenerationError(f"Failed to answer query: {e}") from e
-
-    def _extract_rag_params(self, query: Query) -> Dict[str, Any]:
-        """
-        Extract RAG-specific parameters from query metadata and constraints.
-
-        Maps core Query/Constraints to RAG pipeline parameters.
-
-        Args:
-            query: The query object
-
-        Returns:
-            Dictionary of RAG-specific parameters for RAGPipeline.run()
-        """
-        kwargs = {}
-
-        # Apply constraints if present
-        if query.constraints:
-            # Map max_sources to top_k
-            if query.constraints.max_sources is not None:
-                kwargs["top_k"] = query.constraints.max_sources
-
-            # Pass filters as metadata filters
-            if query.constraints.filters:
-                kwargs["metadata_filters"] = query.constraints.filters
-
-            # Pass through any RAG-specific constraint metadata
-            if query.constraints.metadata:
-                # Allow overriding specific RAG parameters via constraints
-                # e.g., constraints.metadata = {"rerank": False, "temperature": 0.3}
-                for key, value in query.constraints.metadata.items():
-                    if key in ["rerank", "temperature", "top_k", "model"]:
-                        kwargs[key] = value
-
-        # Pass through query metadata
-        # This allows engine-specific hints like {"temperature": 0.5}
-        if query.metadata:
-            kwargs.update(query.metadata)
-
-        return kwargs
 
     def _convert_to_core_answer(self, rag_answer: RGSAnswer, original_query: Query) -> Answer:
         """
@@ -173,10 +184,11 @@ class ClassicRagEngine:
         provenance = []
         if hasattr(rag_answer, "sources") and rag_answer.sources:
             for source_ref in rag_answer.sources:
+                # RGSSourceRef has: source_id, text, metadata
                 prov = Provenance(
-                    source_id=source_ref.chunk_id if hasattr(source_ref, "chunk_id") else str(source_ref),
-                    excerpt=source_ref.text if hasattr(source_ref, "text") else None,
-                    metadata=source_ref.metadata if hasattr(source_ref, "metadata") else {}
+                    source_id=getattr(source_ref, "source_id", str(source_ref)),
+                    excerpt=getattr(source_ref, "text", None),
+                    metadata=getattr(source_ref, "metadata", {})
                 )
                 provenance.append(prov)
 

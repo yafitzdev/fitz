@@ -17,8 +17,8 @@ import typer
 
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import CLI, PIPELINE
-from fitz.engines.classic_rag.pipeline.config.loader import load_config
-from fitz.engines.classic_rag.pipeline.config.schema import RAGConfig
+from fitz.engines.classic_rag.config.loader import load_config
+from fitz.engines.classic_rag.config.schema import RAGConfig
 from fitz.engines.classic_rag.pipeline.pipeline.engine import create_pipeline_from_yaml
 
 logger = get_logger(__name__)

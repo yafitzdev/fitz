@@ -1,16 +1,28 @@
 # tests/test_default_preset_resolves.py
-from fitz.engines.classic_rag.config.loader import load_config
-from fitz.engines.classic_rag.config.schema import FitzConfig
+"""
+Test that default configuration resolves correctly.
+
+Note: The old preset system has been removed. This test now verifies
+that the unified config loads correctly.
+"""
+
+from fitz.engines.classic_rag.config import load_config, ClassicRagConfig
 
 
 def test_default_preset_resolves_to_runtime_config():
+    """Test that default config loads and has all required fields."""
     cfg = load_config()
 
-    assert isinstance(cfg, FitzConfig)
+    assert isinstance(cfg, ClassicRagConfig)
 
-    assert cfg.chat.plugin_name
+    # Required plugin configs
+    assert cfg.llm.plugin_name
     assert cfg.embedding.plugin_name
     assert cfg.vector_db.plugin_name
-    assert cfg.pipeline.plugin_name
 
-    assert cfg.rerank is None or cfg.rerank.plugin_name
+    # Retriever is required
+    assert cfg.retriever.plugin_name
+    assert cfg.retriever.collection
+
+    # Rerank is optional but should have a default
+    assert cfg.rerank is not None

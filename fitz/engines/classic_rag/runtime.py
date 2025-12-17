@@ -1,3 +1,4 @@
+# fitz/engines/classic_rag/runtime.py
 """
 Classic RAG Runtime - Canonical entry point for Classic RAG execution.
 
@@ -8,23 +9,19 @@ Philosophy:
     - Single source of truth for RAG execution
     - Clean separation: runtime orchestrates, engine executes
     - All RAG execution flows through run_classic_rag()
-    - Auto-registers with global engine registry
-
-UPDATED: Now registers with the global engine registry on import.
 """
 
 from typing import Optional, Dict, Any
 
-from fitz.core import Query, Answer, Constraints
+from fitz.core import Query, Answer, Provenance, Constraints
 
-from fitz.engines.classic_rag.config.schema import FitzConfig
-from fitz.engines.classic_rag.config.loader import load_config
-from fitz.engines.classic_rag.engine import ClassicRagEngine
+from fitz.engines.classic_rag.config import load_config, ClassicRagConfig
+from fitz.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
 
 
 def run_classic_rag(
     query: str,
-    config: Optional[FitzConfig] = None,
+    config: Optional[ClassicRagConfig] = None,
     config_path: Optional[str] = None,
     constraints: Optional[Constraints] = None,
     metadata: Optional[Dict[str, Any]] = None,
@@ -35,26 +32,20 @@ def run_classic_rag(
     This is the canonical entry point for all Classic RAG execution.
     It handles:
     - Configuration loading (if not provided)
-    - Engine initialization
-    - Query object construction
-    - Answer generation
+    - Pipeline initialization
+    - Query execution
+    - Answer conversion to core types
     
     Args:
         query: The question text
-        config: Optional pre-loaded FitzConfig. If not provided, will load
+        config: Optional pre-loaded ClassicRagConfig. If not provided, will load
                from config_path or default location
         config_path: Optional path to config file. Ignored if config provided
-        constraints: Optional query-time constraints (filters, limits)
-        metadata: Optional engine-specific metadata/hints
+        constraints: Optional query-time constraints (not yet fully supported)
+        metadata: Optional engine-specific metadata/hints (not yet fully supported)
     
     Returns:
         Answer object with generated text and source provenance
-    
-    Raises:
-        ConfigurationError: If config cannot be loaded
-        QueryError: If query is invalid
-        KnowledgeError: If retrieval fails
-        GenerationError: If answer generation fails
     
     Examples:
         Simple usage:
@@ -64,86 +55,71 @@ def run_classic_rag(
         With custom config:
         >>> config = load_config("my_config.yaml")
         >>> answer = run_classic_rag("Explain entanglement", config=config)
-        
-        With constraints:
-        >>> constraints = Constraints(max_sources=5, filters={"topic": "physics"})
-        >>> answer = run_classic_rag(
-        ...     "What is superposition?",
-        ...     constraints=constraints
-        ... )
-        
-        With engine hints:
-        >>> answer = run_classic_rag(
-        ...     "Summarize the paper",
-        ...     metadata={"temperature": 0.3, "model": "claude-3-opus"}
-        ... )
     """
     # Load config if not provided
     if config is None:
         config = load_config(config_path)
     
-    # Initialize engine
-    engine = ClassicRagEngine(config)
+    # Create RAGPipeline using the from_config factory
+    pipeline = RAGPipeline.from_config(config)
     
-    # Build Query object
-    query_obj = Query(
-        text=query,
-        constraints=constraints,
-        metadata=metadata or {}
+    # Run the pipeline - it returns RGSAnswer
+    rag_answer = pipeline.run(query)
+    
+    # Convert to core Answer type
+    provenance = []
+    if hasattr(rag_answer, "sources") and rag_answer.sources:
+        for source_ref in rag_answer.sources:
+            prov = Provenance(
+                source_id=getattr(source_ref, "source_id", str(source_ref)),
+                excerpt=getattr(source_ref, "text", None),
+                metadata=getattr(source_ref, "metadata", {})
+            )
+            provenance.append(prov)
+    
+    answer_metadata = {
+        "engine": "classic_rag",
+        "query_text": query,
+    }
+    
+    if hasattr(rag_answer, "metadata") and rag_answer.metadata:
+        answer_metadata["rag_metadata"] = rag_answer.metadata
+    
+    return Answer(
+        text=rag_answer.answer if hasattr(rag_answer, "answer") else str(rag_answer),
+        provenance=provenance,
+        metadata=answer_metadata
     )
-    
-    # Execute and return
-    return engine.answer(query_obj)
 
 
 def create_classic_rag_engine(
-    config: Optional[FitzConfig] = None,
+    config: Optional[ClassicRagConfig] = None,
     config_path: Optional[str] = None,
-) -> ClassicRagEngine:
+) -> RAGPipeline:
     """
-    Create and return a Classic RAG engine instance.
+    Create and return a Classic RAG pipeline instance.
     
     This is useful when you want to:
-    - Reuse an engine across multiple queries (more efficient)
-    - Access engine internals or configuration
+    - Reuse a pipeline across multiple queries (more efficient)
+    - Access pipeline internals
     - Implement custom execution logic
     
     For simple one-off queries, use run_classic_rag() instead.
     
     Args:
-        config: Optional pre-loaded FitzConfig
+        config: Optional pre-loaded ClassicRagConfig
         config_path: Optional path to config file
     
     Returns:
-        Initialized ClassicRagEngine instance
-    
-    Raises:
-        ConfigurationError: If config cannot be loaded or engine initialization fails
-    
-    Examples:
-        Create and reuse engine:
-        >>> engine = create_classic_rag_engine("config.yaml")
-        >>> 
-        >>> # Execute multiple queries with same engine
-        >>> q1 = Query(text="What is quantum computing?")
-        >>> answer1 = engine.answer(q1)
-        >>> 
-        >>> q2 = Query(text="Explain entanglement")
-        >>> answer2 = engine.answer(q2)
-        
-        Access engine config:
-        >>> engine = create_classic_rag_engine()
-        >>> print(engine.config.chat.plugin_name)
+        Initialized RAGPipeline instance
     """
-    # Load config if not provided
     if config is None:
         config = load_config(config_path)
     
-    # Create and return engine
-    return ClassicRagEngine(config)
+    return RAGPipeline.from_config(config)
 
 
-# Convenience alias for the main entry point
+# Convenience alias
 run = run_classic_rag
 
 
@@ -152,31 +128,28 @@ run = run_classic_rag
 # =============================================================================
 
 def _register_classic_rag_engine():
-    """
-    Register Classic RAG engine with the global registry.
-    
-    This is called automatically on module import to ensure
-    Classic RAG is always available via the universal runner.
-    """
+    """Register Classic RAG engine with the global registry."""
     from fitz.runtime.registry import EngineRegistry
     
-    # Define factory function for registry
-    def classic_rag_factory(config: FitzConfig) -> ClassicRagEngine:
-        """Factory for creating Classic RAG engines."""
-        return ClassicRagEngine(config)
+    def classic_rag_factory(config):
+        """Factory for creating Classic RAG pipelines."""
+        if config is None:
+            config = load_config(None)
+        elif isinstance(config, dict):
+            config = ClassicRagConfig.from_dict(config)
+        
+        return RAGPipeline.from_config(config)
     
-    # Register with global registry
     try:
         registry = EngineRegistry.get_global()
         registry.register(
             name="classic_rag",
             factory=classic_rag_factory,
             description="Retrieval-augmented generation using vector search and LLM synthesis",
-            config_type=FitzConfig,
+            config_type=ClassicRagConfig,
         )
     except ValueError:
-        # Already registered (can happen in testing)
-        pass
+        pass  # Already registered
 
 
 # Auto-register on import

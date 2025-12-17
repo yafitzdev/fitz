@@ -1,93 +1,93 @@
-# fitz/core/config/loader.py
+# fitz/engines/classic_rag/config/loader.py
 """
-Configuration loader for Fitz.
+Configuration loader for Classic RAG engine.
 
-Responsibilities:
-- Load default config (meta)
-- Load user config (meta)
-- Expand ${ENV_VAR} placeholders
-- Resolve preset
-- Normalize preset into runtime config
-- Validate resolved config via FitzConfig
+This is the SINGLE loader for Classic RAG configuration.
+The old loaders in pipeline/config/ have been consolidated here.
+
+Usage:
+    >>> from fitz.engines.classic_rag.config.loader import load_config
+    >>> config = load_config()  # Loads default.yaml
+    >>> config = load_config("my_config.yaml")  # Loads custom config
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any
+from typing import Optional
 
 import yaml
 
-from fitz.engines.classic_rag.config.normalize import normalize_preset
-from fitz.engines.classic_rag.config.schema import FitzConfig, FitzMetaConfig
-from fitz.logging.logger import get_logger
-from fitz.logging.tags import CLI
+from fitz.engines.classic_rag.config.schema import ClassicRagConfig
 
-logger = get_logger(__name__)
 
+# Export for backwards compatibility
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "default.yaml"
 
 
-def _expand_env(value: object) -> object:
-    if isinstance(value, str):
-        return os.path.expandvars(value)
-    if isinstance(value, dict):
-        return {k: _expand_env(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_expand_env(v) for v in value]
-    return value
-
-
-def _deep_merge(a: dict[str, object], b: dict[str, object]) -> dict[str, object]:
-    out = dict(a)
-    for k, v in b.items():
-        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
-            out[k] = _deep_merge(out[k], v)
-        else:
-            out[k] = v
-    return out
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
-
+def _load_yaml(path: Path) -> dict:
+    """Load YAML file and return dict."""
     with path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-
-    if not isinstance(data, dict):
-        raise TypeError(f"Config root must be a mapping, got: {type(data).__name__}")
-
-    return _expand_env(data)
+        return yaml.safe_load(f) or {}
 
 
-def load_config(user_config_path: Path | None = None) -> FitzConfig:
+def _default_config_path() -> Path:
+    """Get path to default.yaml in this directory."""
+    return DEFAULT_CONFIG_PATH
+
+
+def load_config(path: Optional[str] = None) -> ClassicRagConfig:
     """
-    Load and validate Fitz runtime configuration.
-
-    Flow:
-    1. Load meta config
-    2. Merge user meta config
-    3. Resolve preset
-    4. Normalize preset into runtime shape
-    5. Validate runtime config
+    Load Classic RAG configuration.
+    
+    Args:
+        path: Optional path to YAML config file.
+              If None, loads the built-in default.yaml.
+    
+    Returns:
+        Validated ClassicRagConfig instance
+    
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        ValueError: If config path points to a directory
+        ValidationError: If config doesn't match schema
+    
+    Examples:
+        Load default config:
+        >>> config = load_config()
+        
+        Load custom config:
+        >>> config = load_config("my_config.yaml")
     """
-    logger.debug(f"{CLI} Loading default config from {DEFAULT_CONFIG_PATH}")
-    meta_raw = _load_yaml(DEFAULT_CONFIG_PATH)
+    if path is None:
+        config_path = _default_config_path()
+    else:
+        config_path = Path(path)
+        if config_path.is_dir():
+            raise ValueError(f"Config path points to a directory: {config_path}")
+    
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    raw = _load_yaml(config_path)
+    return ClassicRagConfig.from_dict(raw)
 
-    if user_config_path:
-        logger.debug(f"{CLI} Loading user config from {user_config_path}")
-        user_raw = _load_yaml(user_config_path)
-        meta_raw = _deep_merge(meta_raw, user_raw)
 
-    meta = FitzMetaConfig.model_validate(meta_raw)
-
-    preset_name = meta.default_preset
-    if preset_name not in meta.presets:
-        raise ValueError(f"Unknown preset: {preset_name}")
-
-    preset = meta.presets[preset_name]
-    normalized = normalize_preset(preset)
-
-    return FitzConfig.model_validate(normalized)
+def load_config_dict(path: Optional[str] = None) -> dict:
+    """
+    Load configuration as raw dictionary (for advanced use cases).
+    
+    Most users should use load_config() instead.
+    
+    Args:
+        path: Optional path to YAML config file.
+    
+    Returns:
+        Raw configuration dictionary
+    """
+    if path is None:
+        config_path = _default_config_path()
+    else:
+        config_path = Path(path)
+    
+    return _load_yaml(config_path)
