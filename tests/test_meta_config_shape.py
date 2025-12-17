@@ -1,4 +1,4 @@
-from fitz.core.config.loader import DEFAULT_CONFIG_PATH, _load_yaml
+from fitz.engines.classic_rag.config.loader import DEFAULT_CONFIG_PATH, _load_yaml
 
 
 def test_default_yaml_is_meta_config():

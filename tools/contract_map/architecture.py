@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import Dict
-
-from fitz.core._contracts.rules import allowed_importers
-from fitz.core.config.architecture import load_architecture_mapping
+from fitz.engines.classic_rag.contracts.rules import allowed_importers
+from fitz.engines.classic_rag.config.architecture import load_architecture_mapping
 
 
 class RoleResolver:

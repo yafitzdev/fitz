@@ -5,7 +5,7 @@ from typing import Dict
 
 import yaml
 
-from fitz.core._contracts.rules import role_by_name
+from fitz.engines.classic_rag.contracts.rules import role_by_name
 
 
 class ArchitectureConfigError(RuntimeError):

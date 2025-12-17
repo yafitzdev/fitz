@@ -70,7 +70,7 @@ def command(
         logger.info(f"{CLI}{PIPELINE} Using preset: {preset}")
 
         # Import here to avoid circular dependency
-        from fitz.core.config.presets import get_preset
+        from fitz.engines.classic_rag.config.presets import get_preset
 
         try:
             preset_config = get_preset(preset)

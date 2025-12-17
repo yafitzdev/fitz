@@ -1,7 +1,7 @@
 # tests/test_default_config_loads_and_validates_minimally.py
 
-from fitz.core.config.loader import load_config
-from fitz.core.config.schema import FitzConfig
+from fitz.engines.classic_rag.config.loader import load_config
+from fitz.engines.classic_rag.config.schema import FitzConfig
 
 
 def test_default_config_loads_and_validates_base_schema():

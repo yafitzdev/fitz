@@ -1,6 +1,6 @@
 # tests/test_default_preset_resolves.py
-from fitz.core.config.loader import load_config
-from fitz.core.config.schema import FitzConfig
+from fitz.engines.classic_rag.config.loader import load_config
+from fitz.engines.classic_rag.config.schema import FitzConfig
 
 
 def test_default_preset_resolves_to_runtime_config():

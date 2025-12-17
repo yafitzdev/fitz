@@ -19,8 +19,8 @@ from typing import Any
 
 import yaml
 
-from fitz.core.config.normalize import normalize_preset
-from fitz.core.config.schema import FitzConfig, FitzMetaConfig
+from fitz.engines.classic_rag.config.normalize import normalize_preset
+from fitz.engines.classic_rag.config.schema import FitzConfig, FitzMetaConfig
 from fitz.core.logging.logger import get_logger
 from fitz.core.logging.tags import CLI
 

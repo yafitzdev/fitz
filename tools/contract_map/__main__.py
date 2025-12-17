@@ -32,7 +32,6 @@ from tools.contract_map.common import (
     REPO_ROOT,
     ContractMap,
     HealthIssue,
-    module_name_from_path,
 )
 from tools.contract_map.discovery import render_discovery_section, scan_all_discoveries
 from tools.contract_map.imports import build_import_graph, render_import_graph_section
@@ -267,8 +266,8 @@ def render_architecture_section() -> str:
     lines.append("")
 
     try:
-        from fitz.core._contracts.roles import ROLES
-        from fitz.core.config.architecture import load_architecture_mapping
+        from fitz.engines.classic_rag.contracts.roles import ROLES
+        from fitz.engines.classic_rag.config.architecture import load_architecture_mapping
 
         # Show role mappings
         lines.append("### Role Mappings")
