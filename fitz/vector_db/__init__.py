@@ -1,7 +1,6 @@
 # core/vector_db/__init__.py
 from __future__ import annotations
 
-from .base import SearchResult, VectorDBPlugin
-from .engine import VectorDBEngine
+from fitz.vector_db.base import SearchResult, VectorDBPlugin
 
 __all__ = ["SearchResult", "VectorDBEngine", "VectorDBPlugin"]
