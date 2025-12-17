@@ -14,11 +14,11 @@ This gives new users confidence that Fitz is working correctly.
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from pathlib import Path
 from typing import Optional
+import os
 
 import typer
 
@@ -193,7 +193,7 @@ def check_system() -> tuple[bool, dict]:
     else:
         print_success(f"Python {major}.{minor}")
 
-    # Check for LLM providers
+    # Check for LLM providers (in order of preference for quickstart)
     if os.getenv("COHERE_API_KEY"):
         details["llm_provider"] = "cohere"
         details["embedding_provider"] = "cohere"
@@ -204,35 +204,36 @@ def check_system() -> tuple[bool, dict]:
         print_success("OpenAI API key found")
     elif os.getenv("ANTHROPIC_API_KEY"):
         details["llm_provider"] = "anthropic"
-        # Anthropic doesn't have embeddings, check for alternatives
+        # Anthropic doesn't have embeddings, need alternative
         if os.getenv("COHERE_API_KEY"):
             details["embedding_provider"] = "cohere"
         elif os.getenv("OPENAI_API_KEY"):
             details["embedding_provider"] = "openai"
         else:
-            # Try local
             details["embedding_provider"] = "local"
         print_success("Anthropic API key found")
     else:
-        # Check Ollama
+        # Check Ollama for local
         try:
             import httpx
             response = httpx.get("http://localhost:11434/api/tags", timeout=2)
             if response.status_code == 200:
                 details["llm_provider"] = "local"
                 details["embedding_provider"] = "local"
-                print_success("Ollama is running")
+                print_success("Ollama is running (local)")
         except Exception:
             pass
 
     if not details["llm_provider"]:
-        details["issues"].append("No LLM provider found (set COHERE_API_KEY, OPENAI_API_KEY, or install Ollama)")
+        details["issues"].append(
+            "No LLM provider found. Set COHERE_API_KEY, OPENAI_API_KEY, "
+            "or install Ollama for local use."
+        )
 
     if not details["embedding_provider"]:
         details["issues"].append("No embedding provider found")
 
-    # Check for vector database (prefer Qdrant over FAISS for quickstart)
-    # Qdrant doesn't need to know embedding dimension at init time
+    # Check for vector database (prefer Qdrant, fall back to FAISS)
     qdrant_available = False
     try:
         import httpx
@@ -248,7 +249,6 @@ def check_system() -> tuple[bool, dict]:
     except Exception:
         pass
 
-    # Fall back to FAISS if Qdrant not available
     if not qdrant_available:
         try:
             import faiss
@@ -258,7 +258,9 @@ def check_system() -> tuple[bool, dict]:
             pass
 
     if not details["vector_db"]:
-        details["issues"].append("No vector database found (install faiss-cpu or start Qdrant)")
+        details["issues"].append(
+            "No vector database found. Install faiss-cpu or start Qdrant."
+        )
 
     success = len(details["issues"]) == 0
     return success, details
@@ -291,9 +293,12 @@ def generate_quickstart_config(
         vector_db: str,
         qdrant_host: str = "localhost",
         qdrant_port: str = "6333",
-        embedding_dim: int = 1024,  # Cohere embed-english-v3.0 dimension
 ) -> str:
-    """Generate a minimal config for quickstart."""
+    """
+    Generate a minimal config for quickstart.
+
+    Note: FAISS no longer needs dim - it auto-detects on first upsert.
+    """
 
     # LLM configs
     llm_configs = {
@@ -318,7 +323,7 @@ def generate_quickstart_config(
     model: llama3.2:1b""",
     }
 
-    # Embedding configs (with known dimensions)
+    # Embedding configs
     embedding_configs = {
         "cohere": """embedding:
   plugin_name: cohere
@@ -334,28 +339,17 @@ def generate_quickstart_config(
     model: nomic-embed-text""",
     }
 
-    # Embedding dimensions for FAISS
-    embedding_dims = {
-        "cohere": 1024,  # embed-english-v3.0
-        "openai": 1536,  # text-embedding-3-small
-        "local": 768,  # nomic-embed-text
-    }
-
-    dim = embedding_dims.get(embedding_provider, embedding_dim)
-
     # Vector DB configs
+    # Note: FAISS uses FitzPaths.vector_db() by default, no need to specify path
     vector_db_configs = {
         "qdrant": f"""vector_db:
   plugin_name: qdrant
   kwargs:
     host: "{qdrant_host}"
     port: {qdrant_port}""",
-        "local-faiss": f"""vector_db:
+        "local-faiss": """vector_db:
   plugin_name: local-faiss
-  kwargs:
-    dim: {dim}
-    path: ".fitz/vector_db"
-    persist: true""",
+  kwargs: {}""",
     }
 
     config = f"""# Fitz Quickstart Configuration
@@ -441,16 +435,9 @@ def run_ingestion(
             vectors.append(vec)
 
         # Step 4: Store in vector DB
+        # All vector DBs now have the same interface - no special handling needed!
         VectorDBPluginCls = get_vector_db_plugin(vector_db_plugin)
-
-        if vector_db_plugin == "local-faiss":
-            dim = len(vectors[0])
-            from fitz.backends.local_vector_db.config import LocalVectorDBConfig
-            # Use .fitz/vector_db in CWD to match the generated config
-            config = LocalVectorDBConfig(path=Path.cwd() / ".fitz" / "vector_db")
-            vdb_client = VectorDBPluginCls(dim=dim, config=config)
-        else:
-            vdb_client = VectorDBPluginCls()
+        vdb_client = VectorDBPluginCls()
 
         writer = VectorDBWriter(client=vdb_client)
         writer.upsert(collection=collection, chunks=chunks, vectors=vectors)
@@ -459,6 +446,8 @@ def run_ingestion(
 
     except Exception as e:
         print_error(f"Ingestion failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False, 0
 
 
@@ -529,6 +518,8 @@ def command(
         fitz quickstart           # Run full quickstart
         fitz quickstart --clean   # Clean and re-run
     """
+    # Import FitzPaths for consistent path management
+    from fitz.core.paths import FitzPaths
 
     TOTAL_STEPS = 5 if not skip_query else 4
 
@@ -545,17 +536,21 @@ def command(
         print("Let's verify your setup works end-to-end!")
         print("=" * 60)
 
-    # Paths
-    fitz_dir = Path.cwd() / ".fitz"
-    quickstart_dir = fitz_dir / "quickstart_docs"
-    config_path = fitz_dir / "quickstart_config.yaml"
+    # Use FitzPaths for all paths
+    quickstart_dir = FitzPaths.quickstart_docs()
+    config_path = FitzPaths.quickstart_config()
     collection = "quickstart"
 
     # Clean if requested
-    if clean and quickstart_dir.exists():
-        shutil.rmtree(quickstart_dir)
+    if clean:
+        if quickstart_dir.exists():
+            shutil.rmtree(quickstart_dir)
         if config_path.exists():
             config_path.unlink()
+        # Also clean vector DB for quickstart collection
+        vector_db_path = FitzPaths.vector_db()
+        if vector_db_path.exists():
+            shutil.rmtree(vector_db_path)
         print_info("Cleaned previous quickstart data")
 
     # =========================================================================
@@ -605,7 +600,7 @@ def command(
         qdrant_host=details.get("qdrant_host", "localhost"),
         qdrant_port=details.get("qdrant_port", "6333"),
     )
-    fitz_dir.mkdir(exist_ok=True)
+    FitzPaths.ensure_workspace()
     config_path.write_text(config)
     print_success(f"Config saved to .fitz/quickstart_config.yaml")
     print_info(f"  LLM: {llm_provider}")

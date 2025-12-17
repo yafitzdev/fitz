@@ -1,3 +1,4 @@
+# fitz/core/__init__.py
 """
 Fitz Core - Paradigm-agnostic contracts for knowledge engines.
 
@@ -10,6 +11,7 @@ Public API:
     - Answer: Output from engines
     - Provenance: Source attribution
     - Constraints: Query-time constraints
+    - FitzPaths: Central path management
     - Exceptions: Standard error hierarchy
 
 Examples:
@@ -31,28 +33,35 @@ Examples:
     >>> print(answer.text)
     >>> for source in answer.provenance:
     ...     print(f"Source: {source.source_id}")
+    
+    Using FitzPaths:
+    >>> from fitz.core import FitzPaths
+    >>> config_path = FitzPaths.config()
+    >>> vector_db_path = FitzPaths.vector_db()
 """
-
-from .answer import Answer
-from .constraints import Constraints
 
 # Core protocol
 from .engine import KnowledgeEngine
 
+# Core types
+from .query import Query
+from .answer import Answer
+from .provenance import Provenance
+from .constraints import Constraints
+
+# Path management
+from .paths import FitzPaths, get_workspace, get_vector_db_path, get_config_path
+
 # Core exceptions
 from .exceptions import (
-    ConfigurationError,
     EngineError,
-    GenerationError,
-    KnowledgeError,
     QueryError,
+    KnowledgeError,
+    GenerationError,
+    ConfigurationError,
     TimeoutError,
     UnsupportedOperationError,
 )
-from .provenance import Provenance
-
-# Core types
-from .query import Query
 
 __all__ = [
     # Protocol
@@ -62,6 +71,11 @@ __all__ = [
     "Answer",
     "Provenance",
     "Constraints",
+    # Path Management
+    "FitzPaths",
+    "get_workspace",
+    "get_vector_db_path",
+    "get_config_path",
     # Exceptions
     "EngineError",
     "QueryError",
