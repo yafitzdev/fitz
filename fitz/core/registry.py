@@ -51,13 +51,19 @@ class DuplicatePluginError(PluginRegistryError):
 
 
 # Specific error classes for backwards compat
-class LLMRegistryError(PluginRegistryError):
-    """Error from LLM registry."""
+class LLMRegistryError(PluginNotFoundError):
+    """Error from LLM registry.
+
+    Inherits from PluginNotFoundError for consistent exception handling.
+    """
     pass
 
 
-class VectorDBRegistryError(PluginRegistryError):
-    """Error from Vector DB registry."""
+class VectorDBRegistryError(PluginNotFoundError):
+    """Error from Vector DB registry.
+
+    Inherits from PluginNotFoundError for consistent exception handling.
+    """
     pass
 
 
@@ -246,6 +252,9 @@ PIPELINE_REGISTRY = PluginRegistry(
 # LLM Registry (special case: multi-type registry)
 # =============================================================================
 
+# Valid LLM plugin types
+VALID_LLM_TYPES = frozenset({"chat", "embedding", "rerank"})
+
 # Combined view of all LLM plugin types
 LLM_REGISTRY: Dict[str, Dict[str, Type[Any]]] = {}
 _LLM_DISCOVERED = False
@@ -280,17 +289,27 @@ def get_llm_plugin(*, plugin_name: str, plugin_type: str) -> Type[Any]:
         Plugin class
 
     Raises:
-        LLMRegistryError: If plugin not found
+        ValueError: If plugin_type is not valid (not chat/embedding/rerank)
+        PluginNotFoundError: If plugin not found
+        LLMRegistryError: If plugin not found (subclass of PluginNotFoundError)
     """
+    # Validate plugin_type first
+    if plugin_type not in VALID_LLM_TYPES:
+        raise ValueError(
+            f"Invalid LLM plugin type: {plugin_type!r}. "
+            f"Must be one of: {sorted(VALID_LLM_TYPES)}"
+        )
+
     _discover_llm_plugins()
-    try:
-        return LLM_REGISTRY[plugin_type][plugin_name]
-    except KeyError:
-        available = sorted(LLM_REGISTRY.get(plugin_type, {}).keys())
+
+    if plugin_name not in LLM_REGISTRY[plugin_type]:
+        available = sorted(LLM_REGISTRY[plugin_type].keys())
         raise LLMRegistryError(
             f"Unknown {plugin_type} plugin: {plugin_name!r}. "
             f"Available: {available}"
         )
+
+    return LLM_REGISTRY[plugin_type][plugin_name]
 
 
 def available_llm_plugins(plugin_type: str) -> List[str]:
