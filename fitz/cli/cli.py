@@ -59,7 +59,7 @@ def _register_commands():
     """Register commands after module initialization to avoid circular imports."""
     from fitz.cli import doctor
     from fitz.cli import help as help_module
-    from fitz.cli import init, plugins, quickstart, db
+    from fitz.cli import init, plugins, quickstart, db, chunk
     from fitz.cli.query import command as query_command
     from fitz.cli.config import command as config_command
 
@@ -78,6 +78,9 @@ def _register_commands():
 
     # Database inspection command
     app.command("db")(friendly_errors(db.command))
+
+    # Chunking preview command
+    app.command("chunk")(friendly_errors(chunk.command))
 
 
 # Call immediately during module initialization
