@@ -143,16 +143,60 @@ Architecture enforces separation: engines can be added or removed without destab
 ---
 
 ## 💻 CLI
+
+### Core Commands
+
+| Command | Description |
+|---------|-------------|
+| `fitz init` | Interactive setup wizard |
+| `fitz query "question"` | Query your knowledge base |
+| `fitz config` | Show current configuration |
+| `fitz db` | List/inspect vector collections |
+| `fitz chunk ./file.txt` | Preview chunking strategies |
+| `fitz doctor` | System diagnostics |
+| `fitz plugins` | List all available plugins |
+
+### Ingestion Commands
+
+| Command | Description |
+|---------|-------------|
+| `fitz ingest ./docs collection` | Ingest documents into collection |
+| `fitz ingest ./docs coll --chunk-size 500` | Custom chunk size |
+| `fitz ingest validate ./docs` | Validate before ingesting |
+| `fitz ingest plugins` | List ingest plugins |
+
+### Database Commands
+
+| Command | Description |
+|---------|-------------|
+| `fitz db` | List all collections |
+| `fitz db default` | Inspect 'default' collection |
+| `fitz db my_docs -n 10` | Show 10 sample chunks |
+
+### Chunking Preview
+
+| Command | Description |
+|---------|-------------|
+| `fitz chunk ./doc.txt` | Preview with defaults (1000 chars) |
+| `fitz chunk ./doc.txt --size 500` | Smaller chunks |
+| `fitz chunk ./docs/ --stats` | Stats only, no content |
+| `fitz chunk --list` | List available chunkers |
+
+### Examples
+
 ```bash
-# First-time setup
-fitz init                # Interactive config wizard
-fitz quickstart          # End-to-end test with sample docs
+# Setup and first query
+fitz init
+fitz ingest ./documents knowledge_base
+fitz query "What are the main topics?"
 
-# Daily usage
-fitz-ingest run ./docs --collection my_kb
-fitz-pipeline query "What is X?" --collection my_kb
+# Inspect what's stored
+fitz db knowledge_base
 
-# Diagnostics
+# Preview chunking before committing
+fitz chunk ./large_doc.pdf --size 500 --stats
+
+# Check system health
 fitz doctor
 ```
 
