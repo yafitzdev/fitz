@@ -7,9 +7,11 @@ Single implementation of plugin registry logic used by all plugin types:
 - Chunking
 - Retriever
 - Pipeline
+- LLM (YAML-based, via fitz.llm.registry)
+- Vector DB (YAML-based, via fitz.vector_db.registry)
 
-NOTE: LLM plugins use fitz.llm.registry (YAML-based)
-NOTE: Vector DB plugins use fitz.vector_db.registry (YAML-based)
+This module is the SINGLE SOURCE OF TRUTH for all registry access.
+Import everything from here, not from domain-specific modules.
 """
 from __future__ import annotations
 
@@ -20,6 +22,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Type
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Exceptions
+# =============================================================================
 
 
 class PluginRegistryError(Exception):
@@ -45,6 +52,11 @@ class LLMRegistryError(PluginNotFoundError):
 class VectorDBRegistryError(PluginNotFoundError):
     """Error from Vector DB registry."""
     pass
+
+
+# =============================================================================
+# PluginRegistry Class
+# =============================================================================
 
 
 @dataclass
@@ -187,7 +199,11 @@ class PluginRegistry:
                 logger.debug(f"Skipping {name}: {e}")
 
 
-# Pre-configured registries
+# =============================================================================
+# Pre-configured Registries (Python-based plugins)
+# =============================================================================
+
+
 INGEST_REGISTRY = PluginRegistry(
     name="ingest",
     scan_packages=["fitz.ingest.ingestion.plugins"],
@@ -213,6 +229,118 @@ PIPELINE_REGISTRY = PluginRegistry(
 )
 
 
+# =============================================================================
+# Convenience Functions for Python-based Registries
+# =============================================================================
+
+
+def get_ingest_plugin(plugin_name: str) -> Type[Any]:
+    """Get an ingestion plugin by name."""
+    return INGEST_REGISTRY.get(plugin_name)
+
+
+def available_ingest_plugins() -> List[str]:
+    """List available ingestion plugins."""
+    return INGEST_REGISTRY.list_available()
+
+
+def get_chunking_plugin(plugin_name: str) -> Type[Any]:
+    """Get a chunking plugin by name."""
+    return CHUNKING_REGISTRY.get(plugin_name)
+
+
+def available_chunking_plugins() -> List[str]:
+    """List available chunking plugins."""
+    return CHUNKING_REGISTRY.list_available()
+
+
+def get_retriever_plugin(plugin_name: str) -> Type[Any]:
+    """Get a retriever plugin by name."""
+    return RETRIEVER_REGISTRY.get(plugin_name)
+
+
+def available_retriever_plugins() -> List[str]:
+    """List available retriever plugins."""
+    return RETRIEVER_REGISTRY.list_available()
+
+
+def get_pipeline_plugin(plugin_name: str) -> Type[Any]:
+    """Get a pipeline plugin by name."""
+    return PIPELINE_REGISTRY.get(plugin_name)
+
+
+def available_pipeline_plugins() -> List[str]:
+    """List available pipeline plugins."""
+    return PIPELINE_REGISTRY.list_available()
+
+
+# =============================================================================
+# Re-exports from YAML-based Registries (LLM and Vector DB)
+# =============================================================================
+# These are lazy imports to avoid circular dependencies at module load time.
+
+
+def get_llm_plugin(plugin_name: str, plugin_type: str, **kwargs: Any) -> Any:
+    """
+    Get an LLM plugin instance.
+
+    Args:
+        plugin_name: Name of the plugin (e.g., 'openai', 'anthropic', 'local')
+        plugin_type: Type of plugin ('chat', 'embedding', 'rerank')
+        **kwargs: Plugin configuration
+
+    Returns:
+        LLM plugin instance
+    """
+    from fitz.llm.registry import get_llm_plugin as _get_llm_plugin
+    return _get_llm_plugin(plugin_name=plugin_name, plugin_type=plugin_type, **kwargs)
+
+
+def available_llm_plugins(plugin_type: str) -> List[str]:
+    """
+    List available LLM plugins for a given type.
+
+    Args:
+        plugin_type: Type of plugin ('chat', 'embedding', 'rerank')
+
+    Returns:
+        Sorted list of plugin names
+    """
+    from fitz.llm.registry import available_llm_plugins as _available_llm_plugins
+    return _available_llm_plugins(plugin_type)
+
+
+def get_vector_db_plugin(plugin_name: str, **kwargs: Any) -> Any:
+    """
+    Get a vector DB plugin instance.
+
+    Args:
+        plugin_name: Name of the plugin (e.g., 'qdrant', 'pinecone', 'local-faiss')
+        **kwargs: Plugin configuration (host, port, etc.)
+
+    Returns:
+        Vector DB plugin instance
+    """
+    from fitz.vector_db.registry import get_vector_db_plugin as _get_vector_db_plugin
+    return _get_vector_db_plugin(plugin_name, **kwargs)
+
+
+def available_vector_db_plugins() -> List[str]:
+    """
+    List available vector DB plugins.
+
+    Returns:
+        Sorted list of plugin names
+    """
+    from fitz.vector_db.registry import available_vector_db_plugins as _available_vector_db_plugins
+    return _available_vector_db_plugins()
+
+
+# =============================================================================
+# Public API
+# =============================================================================
+
+
 __all__ = [
     # Exceptions
     "PluginRegistryError",
@@ -227,4 +355,18 @@ __all__ = [
     "CHUNKING_REGISTRY",
     "RETRIEVER_REGISTRY",
     "PIPELINE_REGISTRY",
+    # Python-based plugin accessors
+    "get_ingest_plugin",
+    "available_ingest_plugins",
+    "get_chunking_plugin",
+    "available_chunking_plugins",
+    "get_retriever_plugin",
+    "available_retriever_plugins",
+    "get_pipeline_plugin",
+    "available_pipeline_plugins",
+    # YAML-based plugin accessors (re-exported)
+    "get_llm_plugin",
+    "available_llm_plugins",
+    "get_vector_db_plugin",
+    "available_vector_db_plugins",
 ]
