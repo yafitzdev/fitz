@@ -1,0 +1,43 @@
+# fitz/llm/yaml_plugins/embedding/ollama.yaml
+# Ollama Embedding Plugin - Local embeddings
+#
+# Documentation: https://github.com/ollama/ollama/blob/main/docs/api.md#generate-embeddings
+# Required: Ollama running locally (no API key needed)
+
+plugin_name: "ollama"
+plugin_type: "embedding"
+version: "1.0"
+
+provider:
+  name: "ollama"
+  base_url: "http://localhost:11434"
+
+auth:
+  type: "none"
+  header_name: ""
+  header_format: ""
+  env_vars: []
+
+health_check:
+  path: "/api/tags"
+  method: "GET"
+  timeout: 2
+
+endpoint:
+  path: "/api/embeddings"
+  method: "POST"
+  timeout: 30
+
+defaults:
+  model: "nomic-embed-text"
+
+request:
+  input_field: "prompt"
+  input_wrap: "string"
+  static_fields: {}
+  param_map:
+    model: "model"
+
+response:
+  embeddings_path: "embedding"
+  is_array: false

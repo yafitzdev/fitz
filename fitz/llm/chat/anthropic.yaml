@@ -1,0 +1,46 @@
+# fitz/llm/yaml_plugins/chat/anthropic.yaml
+# Anthropic Chat Plugin - Messages API
+#
+# Documentation: https://docs.anthropic.com/en/api/messages
+# Required: ANTHROPIC_API_KEY environment variable
+
+plugin_name: "anthropic"
+plugin_type: "chat"
+version: "1.0"
+
+provider:
+  name: "anthropic"
+  base_url: "https://api.anthropic.com/v1"
+
+auth:
+  type: "header"
+  header_name: "x-api-key"
+  header_format: "{key}"
+  env_vars:
+    - "ANTHROPIC_API_KEY"
+
+endpoint:
+  path: "/messages"
+  method: "POST"
+  timeout: 120
+
+defaults:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 4096
+  temperature: 0.2
+
+request:
+  messages_transform: "anthropic_chat"
+  static_fields:
+    anthropic-version: "2023-06-01"
+  param_map:
+    model: "model"
+    temperature: "temperature"
+    max_tokens: "max_tokens"
+
+response:
+  content_path: "content[0].text"
+  metadata_paths:
+    stop_reason: "stop_reason"
+    tokens_input: "usage.input_tokens"
+    tokens_output: "usage.output_tokens"

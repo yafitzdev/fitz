@@ -1,0 +1,45 @@
+# fitz/llm/yaml_plugins/chat/openai.yaml
+# OpenAI Chat Plugin - Chat Completions API
+#
+# Documentation: https://platform.openai.com/docs/api-reference/chat
+# Required: OPENAI_API_KEY environment variable
+
+plugin_name: "openai"
+plugin_type: "chat"
+version: "1.0"
+
+provider:
+  name: "openai"
+  base_url: "https://api.openai.com/v1"
+
+auth:
+  type: "bearer"
+  header_name: "Authorization"
+  header_format: "Bearer {key}"
+  env_vars:
+    - "OPENAI_API_KEY"
+
+endpoint:
+  path: "/chat/completions"
+  method: "POST"
+  timeout: 120
+
+defaults:
+  model: "gpt-4o-mini"
+  temperature: 0.2
+
+request:
+  messages_transform: "openai_chat"
+  static_fields: {}
+  param_map:
+    model: "model"
+    temperature: "temperature"
+    max_tokens: "max_tokens"
+
+response:
+  content_path: "choices[0].message.content"
+  is_array: false
+  metadata_paths:
+    finish_reason: "choices[0].finish_reason"
+    tokens_input: "usage.prompt_tokens"
+    tokens_output: "usage.completion_tokens"

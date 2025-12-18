@@ -1,0 +1,54 @@
+# fitz/llm/yaml_plugins/chat/azure_openai.yaml
+# Azure OpenAI Chat Plugin
+#
+# Documentation: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference
+# Required environment variables:
+#   - AZURE_OPENAI_API_KEY
+#   - AZURE_OPENAI_ENDPOINT
+#   - AZURE_OPENAI_DEPLOYMENT (or pass deployment_name kwarg)
+
+plugin_name: "azure_openai"
+plugin_type: "chat"
+version: "1.0"
+
+provider:
+  name: "azure_openai"
+  # {endpoint} is replaced at runtime from AZURE_OPENAI_ENDPOINT
+  base_url: "{endpoint}/openai/deployments/{deployment}"
+
+auth:
+  type: "header"
+  header_name: "api-key"
+  header_format: "{key}"
+  env_vars:
+    - "AZURE_OPENAI_API_KEY"
+
+# Additional required env vars specific to Azure
+required_env:
+  - name: "AZURE_OPENAI_ENDPOINT"
+    inject_as: "endpoint"
+  - name: "AZURE_OPENAI_DEPLOYMENT"
+    inject_as: "deployment"
+
+endpoint:
+  path: "/chat/completions"
+  method: "POST"
+  timeout: 120
+
+defaults:
+  api_version: "2024-02-15-preview"
+  temperature: 0.2
+
+request:
+  messages_transform: "openai_chat"
+  static_fields: {}
+  param_map:
+    temperature: "temperature"
+    max_tokens: "max_tokens"
+
+response:
+  content_path: "choices[0].message.content"
+  metadata_paths:
+    finish_reason: "choices[0].finish_reason"
+    tokens_input: "usage.prompt_tokens"
+    tokens_output: "usage.completion_tokens"

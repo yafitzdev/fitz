@@ -1,0 +1,49 @@
+# fitz/llm/yaml_plugins/embedding/azure_openai.yaml
+# Azure OpenAI Embedding Plugin
+#
+# Documentation: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#embeddings
+# Required environment variables:
+#   - AZURE_OPENAI_API_KEY
+#   - AZURE_OPENAI_ENDPOINT
+#   - AZURE_OPENAI_EMBEDDING_DEPLOYMENT (or pass deployment kwarg)
+
+plugin_name: "azure_openai"
+plugin_type: "embedding"
+version: "1.0"
+
+provider:
+  name: "azure_openai"
+  base_url: "{endpoint}/openai/deployments/{deployment}"
+
+auth:
+  type: "header"
+  header_name: "api-key"
+  header_format: "{key}"
+  env_vars:
+    - "AZURE_OPENAI_API_KEY"
+
+required_env:
+  - name: "AZURE_OPENAI_ENDPOINT"
+    inject_as: "endpoint"
+  - name: "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"
+    inject_as: "deployment"
+
+endpoint:
+  path: "/embeddings"
+  method: "POST"
+  timeout: 30
+
+defaults:
+  api_version: "2024-02-15-preview"
+
+request:
+  input_field: "input"
+  input_wrap: "string"
+  static_fields: {}
+  param_map:
+    dimensions: "dimensions"
+
+response:
+  embeddings_path: "data[0].embedding"
+  is_array: true
+  array_index: 0

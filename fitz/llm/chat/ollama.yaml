@@ -1,0 +1,49 @@
+# fitz/llm/yaml_plugins/chat/ollama.yaml
+# Ollama Chat Plugin - Local LLM
+#
+# Documentation: https://github.com/ollama/ollama/blob/main/docs/api.md
+# Required: Ollama running locally (no API key needed)
+
+plugin_name: "ollama"
+plugin_type: "chat"
+version: "1.0"
+
+provider:
+  name: "ollama"
+  base_url: "http://localhost:11434"
+
+auth:
+  type: "none"
+  header_name: ""
+  header_format: ""
+  env_vars: []
+
+# Health check to verify Ollama is running
+health_check:
+  path: "/api/tags"
+  method: "GET"
+  timeout: 2
+
+endpoint:
+  path: "/api/chat"
+  method: "POST"
+  timeout: 120
+
+defaults:
+  model: "llama3.2"
+  temperature: 0.2
+
+request:
+  messages_transform: "ollama_chat"
+  static_fields:
+    stream: false
+  param_map:
+    model: "model"
+    temperature: "options.temperature"
+
+response:
+  content_path: "message.content"
+  metadata_paths:
+    done: "done"
+    total_duration: "total_duration"
+    eval_count: "eval_count"

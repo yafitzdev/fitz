@@ -1,0 +1,43 @@
+# fitz/llm/yaml_plugins/embedding/cohere.yaml
+# Cohere Embedding Plugin - Embed API
+#
+# Documentation: https://docs.cohere.com/reference/embed
+# Required: COHERE_API_KEY environment variable
+
+plugin_name: "cohere"
+plugin_type: "embedding"
+version: "1.0"
+
+provider:
+  name: "cohere"
+  base_url: "https://api.cohere.ai/v1"
+
+auth:
+  type: "bearer"
+  header_name: "Authorization"
+  header_format: "Bearer {key}"
+  env_vars:
+    - "COHERE_API_KEY"
+
+endpoint:
+  path: "/embed"
+  method: "POST"
+  timeout: 30
+
+defaults:
+  model: "embed-english-v3.0"
+  input_type: "search_document"
+
+request:
+  input_field: "texts"
+  input_wrap: "list"
+  static_fields: {}
+  param_map:
+    model: "model"
+    input_type: "input_type"
+    dimensions: "output_dimension"
+
+response:
+  embeddings_path: "embeddings[0]"
+  is_array: true
+  array_index: 0
