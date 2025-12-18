@@ -1,8 +1,10 @@
-# Fitz 🎯 Stable Knowledge Access, Today and Tomorrow
+# Fitz 
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](CHANGELOG.md)
+
+## 🎯 Stable Knowledge Access, Today and Tomorrow
 
 Fitz is a **knowledge access platform** for teams that need reliable, configurable retrieval **today**, without locking themselves into a single reasoning paradigm **tomorrow**.
 
