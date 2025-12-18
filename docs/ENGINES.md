@@ -1,4 +1,3 @@
-# ENGINES.md
 # Fitz Engine Architecture
 
 This document explains Fitz's multi-engine architecture and how different knowledge paradigms are supported.
