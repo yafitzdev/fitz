@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
 from dataclasses import dataclass
 from typing import Optional
 
@@ -100,6 +101,92 @@ class SystemStatus:
             return "faiss"
         return "faiss"  # Default fallback
 
+    @property
+    def best_rerank(self) -> Optional[str]:
+        """Return the best available rerank provider (or None if none available)."""
+        # Currently only Cohere supports reranking
+        if self.api_keys["cohere"].available:
+            return "cohere"
+        return None
+
+    @property
+    def qdrant_host(self) -> str:
+        """Return the detected Qdrant host or default."""
+        if self.qdrant.available and self.qdrant.host:
+            return self.qdrant.host
+        return os.getenv("QDRANT_HOST", "localhost")
+
+    @property
+    def qdrant_port(self) -> int:
+        """Return the detected Qdrant port or default."""
+        if self.qdrant.available and self.qdrant.port:
+            return self.qdrant.port
+        return int(os.getenv("QDRANT_PORT", "6333"))
+
+
+# =============================================================================
+# Network Helpers
+# =============================================================================
+
+
+def _get_local_ip() -> Optional[str]:
+    """Get the local machine's IP address on the LAN."""
+    try:
+        # Create a socket to determine local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.1)
+        # Connect to a public IP (doesn't actually send data)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+        return local_ip
+    except Exception:
+        return None
+
+
+def _get_lan_hosts_to_try() -> list[str]:
+    """
+    Build a list of hosts to try for LAN service detection.
+
+    Returns hosts in priority order:
+    1. QDRANT_HOST env var (if set)
+    2. localhost / 127.0.0.1
+    3. Common LAN gateway IPs (where services often run)
+    4. Same subnet as local machine
+    """
+    hosts = []
+
+    # 1. Environment variable (highest priority)
+    env_host = os.getenv("QDRANT_HOST")
+    if env_host:
+        hosts.append(env_host)
+
+    # 2. Localhost variants
+    hosts.extend(["localhost", "127.0.0.1"])
+
+    # 3. Get local IP and try common LAN patterns
+    local_ip = _get_local_ip()
+    if local_ip:
+        # Parse the subnet (e.g., 192.168.178.x)
+        parts = local_ip.split(".")
+        if len(parts) == 4:
+            subnet = ".".join(parts[:3])
+
+            # Common addresses where services run on LANs
+            common_hosts = [
+                f"{subnet}.1",  # Router/gateway
+                f"{subnet}.2",  # Common server address
+                f"{subnet}.100",  # DHCP range start
+                f"{subnet}.254",  # Often used for servers
+            ]
+
+            # Add hosts we haven't seen yet
+            for h in common_hosts:
+                if h not in hosts:
+                    hosts.append(h)
+
+    return hosts
+
 
 # =============================================================================
 # Service Detection
@@ -169,8 +256,8 @@ def detect_qdrant() -> ServiceStatus:
 
     Checks these addresses in order:
     1. QDRANT_HOST env var (if set)
-    2. localhost
-    3. 127.0.0.1
+    2. localhost / 127.0.0.1
+    3. Common LAN addresses (gateway, .2, .100, .254)
 
     Returns:
         ServiceStatus with host/port if found
@@ -184,20 +271,17 @@ def detect_qdrant() -> ServiceStatus:
             details="httpx not installed",
         )
 
-    # Build list of hosts to try
-    env_host = os.getenv("QDRANT_HOST")
+    # Build list of hosts to try (includes LAN scanning)
+    hosts_to_try = _get_lan_hosts_to_try()
     port = int(os.getenv("QDRANT_PORT", "6333"))
 
-    hosts_to_try = []
-    if env_host:
-        hosts_to_try.append(env_host)
-    hosts_to_try.extend(["localhost", "127.0.0.1"])
-
+    tried_hosts = []
     for host in hosts_to_try:
+        tried_hosts.append(host)
         try:
             response = httpx.get(
                 f"http://{host}:{port}/collections",
-                timeout=2.0,
+                timeout=1.0,  # Short timeout for LAN scanning
             )
             if response.status_code == 200:
                 data = response.json()
@@ -222,10 +306,16 @@ def detect_qdrant() -> ServiceStatus:
             logger.debug(f"Qdrant not found at {host}:{port}: {e}")
             continue
 
+    # Build informative error message
+    if len(tried_hosts) <= 2:
+        tried_str = f"tried {', '.join(tried_hosts)}"
+    else:
+        tried_str = f"tried {tried_hosts[0]}, {tried_hosts[1]}, and {len(tried_hosts) - 2} LAN addresses"
+
     return ServiceStatus(
         name="Qdrant",
         available=False,
-        details=f"Not running (tried localhost:{port})",
+        details=f"Not running ({tried_str}:{port})",
     )
 
 
