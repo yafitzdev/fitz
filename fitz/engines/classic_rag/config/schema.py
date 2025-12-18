@@ -25,7 +25,7 @@ class PluginConfig(BaseModel):
     """
     Generic plugin configuration block.
 
-    Used for LLM, embedding, vector_db, and other pluggable components.
+    Used for chat, embedding, vector_db, and other pluggable components.
 
     Examples:
         >>> config = PluginConfig(
@@ -108,15 +108,15 @@ class ClassicRagConfig(BaseModel):
 
         Create from dict:
         >>> config = ClassicRagConfig.from_dict({
-        ...     "llm": {"plugin_name": "openai", "kwargs": {"model": "gpt-4"}},
+        ...     "chat": {"plugin_name": "openai", "kwargs": {"model": "gpt-4"}},
         ...     "embedding": {"plugin_name": "openai", "kwargs": {}},
         ...     "vector_db": {"plugin_name": "qdrant", "kwargs": {}},
         ...     "retriever": {"plugin_name": "dense", "collection": "docs", "top_k": 5},
         ... })
     """
 
-    # Required plugins
-    llm: PluginConfig = Field(..., description="LLM/Chat plugin configuration")
+    # Required plugins - 'chat' is the canonical name (not 'llm')
+    chat: PluginConfig = Field(..., description="Chat/LLM plugin configuration")
     embedding: PluginConfig = Field(..., description="Embedding plugin configuration")
     vector_db: PluginConfig = Field(..., description="Vector database plugin configuration")
 

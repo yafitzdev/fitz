@@ -47,7 +47,7 @@ def generate_config(
 ) -> str:
     """Generate YAML config based on user choices."""
 
-    # Chat (LLM) configs
+    # Chat configs - 'chat' is the canonical config key
     chat_configs = {
         "cohere": """chat:
   plugin_name: cohere
@@ -115,7 +115,7 @@ def generate_config(
 # Documentation: https://github.com/yafitzdev/fitz
 
 # =============================================================================
-# Chat (LLM) Configuration
+# Chat Configuration
 # =============================================================================
 {chat_configs.get(chat_provider, chat_configs['cohere'])}
 

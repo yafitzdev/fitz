@@ -295,7 +295,7 @@ def _detect_schema(data: Dict[str, Any], config_type: Optional[str]) -> Optional
 
         return IngestConfig
 
-    if "llm" in data or "retriever" in data or "vector_db" in data:
+    if "chat" in data or "retriever" in data or "vector_db" in data:
         from fitz.engines.classic_rag.config.schema import ClassicRagConfig
 
         return ClassicRagConfig

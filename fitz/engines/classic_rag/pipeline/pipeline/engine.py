@@ -133,12 +133,12 @@ class RAGPipeline:
         vector_client = VectorDBCls(**cfg.vector_db.kwargs)
         logger.info(f"{VECTOR_DB} Using vector DB plugin='{cfg.vector_db.plugin_name}'")
 
-        # Chat LLM
+        # Chat LLM - uses cfg.chat (not cfg.llm)
         ChatCls = resolve_llm_plugin(
             plugin_type="chat",
-            requested_name=cfg.llm.plugin_name,
+            requested_name=cfg.chat.plugin_name,
         )
-        chat_plugin = ChatCls(**cfg.llm.kwargs)
+        chat_plugin = ChatCls(**cfg.chat.kwargs)
         chat_engine = ChatEngine(chat_plugin)
 
         # Embedding
@@ -209,6 +209,5 @@ def create_pipeline_from_yaml(path: Optional[str] = None) -> RAGPipeline:
     Returns:
         Configured RAGPipeline instance
     """
-    logger.debug(f"{PIPELINE} Loading config from YAML")
     cfg = load_config(path)
     return RAGPipeline.from_config(cfg)
