@@ -1,339 +1,189 @@
-# README.md
-# Fitz v0.3.1 - Multi-Engine Knowledge Platform
+# Fitz 🎯 Stable Knowledge Access, Today and Tomorrow
 
-[![Tests](https://img.shields.io/github/actions/workflow/status/yafitzdev/fitz/ci.yml?label=tests)](https://github.com/yafitzdev/fitz/actions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](CHANGELOG.md)
 
-**Fitz** is a modular knowledge engine platform that supports multiple retrieval-generation paradigms. Build RAG applications today, experiment with CLaRa's compression-native approach, or create your own custom engine.
+Fitz is a **knowledge access platform** for teams that need reliable, configurable retrieval **today**, without locking themselves into a single reasoning paradigm **tomorrow**.
 
----
-
-## What's New in v0.3.1
-
-- ✅ **Multi-Engine Architecture**: Pluggable engine system with standardized interfaces
-- ✅ **CLaRa Engine**: Apple's Continuous Latent Reasoning with 16x-128x document compression
-- ✅ **Universal Runtime**: `run(query, engine="clara")` - switch engines with one parameter
-- ✅ **Custom Engine Support**: Implement `KnowledgeEngine` protocol and register
-- ✅ **Forward Compatible**: Your code won't break when new engines are added
-
-This enables:
-
-- ✅ **Clean abstractions**: Query → Engine → Answer (paradigm-agnostic)
-- ✅ **Multiple paradigms**: Classic RAG today, CLaRa for research, custom engines anytime
-- ✅ **Better organization**: Engines are self-contained, infrastructure is shared
+You ingest your knowledge once. How it gets queried can evolve.
 
 ---
 
-## Quick Start
+## 🤔 Why Fitz Exists
 
-### Installation
+Organizations repeatedly rebuild the same systems: ingest documents, chunk them, embed them, retrieve them, generate answers. Every time the reasoning method changes, everything breaks.
+
+**The insight:** Reasoning methods evolve faster than knowledge.
+
+- RAG today
+- Compression-native models tomorrow
+- Something else after that
+
+But the knowledge layer remains.
+
+Most RAG tools optimize *one method*. Fitz stabilizes the **knowledge layer itself**.
+
+---
+
+## 🧠 The Mental Model
+
+```
+  Your Knowledge
+      ↓
+  Fitz (Knowledge Access Layer)
+      ↓
+  Engines (replaceable)
+      ↓
+  Answer
+```
+
+**What stays stable:** Ingested documents, chunking decisions, metadata, provenance, API contracts.
+
+**What can change:** Retrieval strategies, reasoning methods, model providers, compression techniques.
+
+You optimize for **stability where it matters** and **flexibility where change is inevitable**.
+
+---
+
+## ⚖️ How Fitz Is Different
+
+This isn't a critique of other tools. It's a design difference.
+
+| | LangChain & Similar | Fitz |
+|---|---------------------|------|
+| **Optimizes for** | Flows & prompt chains | Knowledge stability |
+| **Assumes** | Rapid experimentation | Systems live for years |
+| **Switching paradigms** | Often means refactoring | Means changing engines |
+| **Best for** | Exploring ideas | Building infrastructure |
+
+If you're exploring ideas, LangChain is excellent. If you're building infrastructure that will outlive your current model choices, Fitz is designed for that.
+
+---
+
+## 🚀 Quick Start
 
 ```bash
 pip install fitz
-
-# With CLaRa support (requires GPU with 16GB+ VRAM)
-pip install fitz[clara]
 ```
-
-### Basic Usage
 
 ```python
 from fitz.engines.classic_rag import run_classic_rag
 
-# Simple query
-answer = run_classic_rag("What is quantum computing?")
+answer = run_classic_rag("What does our contract say about termination?")
 print(answer.text)
-
-# View sources
-for source in answer.provenance:
-    print(f"Source: {source.source_id}")
-    print(f"Excerpt: {source.excerpt}")
 ```
 
-### Advanced Usage
-
-```python
-from fitz.core import Query, Constraints
-from fitz.engines.classic_rag import create_classic_rag_engine
-
-# Create reusable engine
-engine = create_classic_rag_engine("config.yaml")
-
-# Query with constraints
-query = Query(
-    text="Explain quantum entanglement",
-    constraints=Constraints(
-        max_sources=5,
-        filters={"topic": "physics"}
-    )
-)
-
-answer = engine.answer(query)
-```
+That's it. Classic RAG works out of the box.
 
 ---
 
-## Available Engines
+## ⚙️ Engines
 
-### Classic RAG (Production Ready)
+Engines encapsulate *how* knowledge is queried. They're not plugins. They're paradigms.
 
-Traditional Retrieval-Augmented Generation - the default engine for production use.
+### Classic RAG (Default) ✅
+
+Production-ready retrieval-augmented generation.
 
 ```python
 from fitz.engines.classic_rag import run_classic_rag
 
-answer = run_classic_rag("What is machine learning?")
+answer = run_classic_rag("What is our refund policy?")
+
+for source in answer.provenance:
+    print(f"{source.source_id}: {source.excerpt}")
 ```
 
-**Best for**: Production deployments, general knowledge bases, fine-grained retrieval control.
+### CLaRa (Experimental) 🧪
 
-### CLaRa (Experimental)
-
-Apple's Continuous Latent Reasoning - compression-native RAG with 16x-128x document compression.
+Compression-native reasoning for large document collections. 16x to 128x compression with unified retrieval and generation.
 
 ```python
-from fitz.engines.clara import run_clara, create_clara_engine
+from fitz.engines.clara import create_clara_engine
 
-# Create engine and add documents
 engine = create_clara_engine()
-engine.add_documents(["Document 1...", "Document 2..."])
-
-# Query
-answer = engine.answer(Query(text="What patterns emerge?"))
+engine.add_documents(my_documents)
+answer = engine.answer(Query(text="What patterns emerge across these reports?"))
 ```
 
-**Best for**: Research, large document collections, multi-hop reasoning queries.
-
-> ⚠️ **Hardware Requirements for CLaRa**:
-> - **GPU**: 16GB+ VRAM (RTX 4090, A100, etc.)
-> - **RAM**: 32GB+ for CPU fallback
-> - **Disk**: ~14GB for model download
-> 
-> The CLaRa engine is fully implemented and tested, but the underlying 7B parameter model requires significant compute resources. For development/testing without a powerful GPU, use the Classic RAG engine.
+> Engines are interchangeable. Your knowledge is not.
 
 ---
 
-## Architecture
+## ✅ When Fitz Makes Sense
+
+- Internal company knowledge bases
+- Compliance-sensitive environments
+- Teams running local and cloud LLMs
+- Long-lived systems where methods will change
+
+## ❌ When Fitz Is Not a Fit
+
+- Prompt-only experiments
+- One-off demos
+- No ingestion, no retrieval needed
+
+---
+
+## 📁 Project Structure
 
 ```
 fitz/
-├── core/                  # Paradigm-agnostic contracts
-│   ├── engine.py          # KnowledgeEngine protocol
-│   ├── query.py           # Query type
-│   └── answer.py          # Answer type
-├── engines/
-│   ├── classic_rag/       # Traditional RAG (production ready)
-│   │   ├── engine.py      # ClassicRagEngine
-│   │   ├── runtime.py     # run_classic_rag()
-│   │   ├── pipeline/      # RAG pipeline logic
-│   │   ├── retrieval/     # Retrieval plugins
-│   │   └── generation/    # Generation logic
-│   └── clara/             # CLaRa engine (experimental)
-│       ├── engine.py      # ClaraEngine
-│       ├── runtime.py     # run_clara()
-│       └── config/        # CLaRa configuration
-├── runtime/               # Multi-engine orchestration
-├── llm/                   # Shared LLM service
-├── vector_db/             # Shared vector DB service
-└── ingest/                # Shared ingestion
+├── core/        # Stable contracts (Query, Answer, Provenance)
+├── engines/     # Reasoning paradigms (classic_rag, clara)
+├── ingest/      # Knowledge ingestion
+├── runtime/     # Engine orchestration
+├── llm/         # LLM plugins
+└── vector_db/   # Vector DB plugins
 ```
 
-**Key principle:** Query → Engine → Answer
-
-All engines implement the same `KnowledgeEngine` protocol:
-```python
-def answer(self, query: Query) -> Answer:
-    ...
-```
+Architecture enforces separation: engines can be added or removed without destabilizing the core.
 
 ---
 
-## CLI
-
-### Query Command
+## 💻 CLI
 
 ```bash
-# Basic query
-fitz-pipeline query "What is quantum computing?"
+# Ingest documents
+fitz-ingest run ./docs --collection my_kb
 
-# With constraints
-fitz-pipeline query "Explain X" --max-sources 5
+# Query
+fitz-pipeline query "What is X?" --collection my_kb
 
-# With filters
-fitz-pipeline query "What is Y?" --filters '{"topic": "physics"}'
-
-# With preset
-fitz-pipeline query "Analyze this" --preset local
-```
-
-### Config Command
-
-```bash
-# Show resolved configuration
-fitz-pipeline config show
-
-# Show with custom config
-fitz-pipeline config show --config my_config.yaml
+# Check system health
+fitz doctor
 ```
 
 ---
 
-## Configuration
+## 📐 Design Principles
 
-### Classic RAG Config
-
-```yaml
-llm:
-  plugin_name: openai
-  kwargs:
-    model: gpt-4
-
-embedding:
-  plugin_name: openai
-  kwargs:
-    model: text-embedding-3-small
-
-vector_db:
-  plugin_name: qdrant
-  kwargs:
-    url: http://localhost:6333
-
-retriever:
-  plugin_name: dense
-  collection: my_knowledge
-  top_k: 5
-
-rgs:
-  max_chunks: 10
-  enable_citations: true
-  strict_grounding: true
-```
-
-### CLaRa Config
-
-```yaml
-clara:
-  model:
-    model_name_or_path: "apple/CLaRa-7B-Instruct"
-    variant: "instruct"
-    device: "cuda"
-    torch_dtype: "bfloat16"
-  
-  compression:
-    compression_rate: 16
-    doc_max_length: 2048
-  
-  retrieval:
-    top_k: 5
-  
-  generation:
-    max_new_tokens: 256
-```
-
-### Local Development (No API Keys)
-
-```yaml
-llm:
-  plugin_name: local
-  kwargs:
-    model: llama3.2
-
-embedding:
-  plugin_name: local
-  kwargs:
-    model: nomic-embed-text
-
-vector_db:
-  plugin_name: local-faiss
-```
+- **Explicit over clever** | No hidden magic
+- **Stable contracts** | The API doesn't break when internals change
+- **Knowledge outlives methods** | Ingest once, query many ways
+- **Engines are paradigms** | Not just config switches
 
 ---
 
-## Custom Engines
+## 💡 Philosophy
 
-Create your own engine by implementing the `KnowledgeEngine` protocol:
+RAG is a method.  
+Knowledge access is a strategy.
 
-```python
-from fitz.core import Query, Answer, Provenance
-from fitz.runtime import EngineRegistry
-
-class MyCustomEngine:
-    def answer(self, query: Query) -> Answer:
-        # Your logic here
-        return Answer(
-            text="Generated answer",
-            provenance=[Provenance(source_id="src_1", excerpt="...")],
-            metadata={"engine": "my_custom"}
-        )
-
-# Register
-registry = EngineRegistry.get_global()
-registry.register("my_custom", lambda c: MyCustomEngine())
-
-# Use
-from fitz import run
-answer = run("Question?", engine="my_custom")
-```
+Fitz is built for the strategy.
 
 ---
 
-## Migration Guide (v0.2.x → v0.3.0)
+## 📚 Documentation
 
-### Old Code (v0.2.x)
-```python
-from fitz.pipeline.pipeline.engine import RAGPipeline
-from fitz.pipeline.config.loader import load_config
-
-config = load_config()
-pipeline = RAGPipeline.from_config(config)
-result = pipeline.run("What is X?")
-
-print(result.answer)
-for source in result.sources:
-    print(source.chunk_id)
-```
-
-### New Code (v0.3.0)
-```python
-from fitz.engines.classic_rag import run_classic_rag
-
-answer = run_classic_rag("What is X?")
-
-print(answer.text)
-for source in answer.provenance:
-    print(source.source_id)
-```
-
-### Breaking Changes
-
-1. **Import paths changed**: `fitz.pipeline.*` → `fitz.engines.classic_rag.*`
-2. **Answer format changed**: `RGSAnswer.answer` → `Answer.text`
-3. **Source format changed**: `sources` → `provenance`
-4. **Entry point changed**: `RAGPipeline.run()` → `run_classic_rag()`
+- [Engine Guide](docs/ENGINES.md) | Choosing and using engines
+- [Architecture](docs/architecture.md) | Deep dive for contributors  
+- [Migration Guide](docs/MIGRATION.md) | Upgrading from previous versions
+- [Changelog](CHANGELOG.md) | Release history
 
 ---
 
-## Examples
+## 📄 License
 
-See `examples/` directory:
-- `quickstart.py` - Basic usage
-- `full_pipeline.py` - Complete example with all features
-- `ingestion_example.py` - Document ingestion
-
----
-
-## Contributing
-
-The engine architecture makes it easier to contribute:
-- Add new engines in `fitz/engines/<name>/`
-- Share infrastructure (`llm/`, `vector_db/`, etc.)
-- Don't touch core contracts unless absolutely necessary
-
----
-
-## Support
-
-- Documentation: https://fitz.readthedocs.io
-- Issues: https://github.com/yafitzdev/fitz/issues
-- Discussions: https://github.com/yafitzdev/fitz/discussions
+MIT
