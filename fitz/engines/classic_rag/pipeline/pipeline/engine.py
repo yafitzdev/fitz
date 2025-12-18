@@ -4,13 +4,16 @@ RAGPipeline - Core orchestration for retrieval-augmented generation.
 
 Flow: vector_db → retrieval → context-processing → rgs → llm → final answer
 """
-
 from __future__ import annotations
 
 from typing import Optional
 
 from fitz.engines.classic_rag.config import ClassicRagConfig, load_config
-from fitz.engines.classic_rag.errors.llm import LLMError
+from fitz.engines.classic_rag.exceptions import (
+    LLMError,
+    PipelineError,
+    RGSGenerationError,
+)
 from fitz.engines.classic_rag.generation.retrieval_guided.synthesis import (
     RGS,
     RGSAnswer,
@@ -19,7 +22,6 @@ from fitz.engines.classic_rag.generation.retrieval_guided.synthesis import (
     RGSConfig as RGSRuntimeConfig,
 )
 from fitz.engines.classic_rag.pipeline.context.pipeline import ContextPipeline
-from fitz.engines.classic_rag.pipeline.exceptions.pipeline import PipelineError, RGSGenerationError
 from fitz.engines.classic_rag.retrieval.runtime.engine import RetrieverEngine
 from fitz.llm.registry import get_llm_plugin
 from fitz.logging.logger import get_logger
@@ -34,18 +36,12 @@ class RAGPipeline:
     RAG Pipeline orchestrator.
 
     Flow: vector_db → retrieval → context-processing → rgs → llm → final answer
-
-    Usage:
-        >>> from fitz.engines.classic_rag.config import load_config
-        >>> config = load_config()
-        >>> pipeline = RAGPipeline.from_config(config)
-        >>> answer = pipeline.run("What is quantum computing?")
     """
 
     def __init__(
         self,
         retriever: RetrieverEngine,
-        chat,  # Chat plugin directly
+        chat,
         rgs: RGS,
         context: ContextPipeline | None = None,
     ):
@@ -57,15 +53,7 @@ class RAGPipeline:
         logger.info(f"{PIPELINE} RAGPipeline initialized")
 
     def run(self, query: str) -> RGSAnswer:
-        """
-        Execute the RAG pipeline for a query.
-
-        Args:
-            query: The user's question
-
-        Returns:
-            RGSAnswer with answer text and source references
-        """
+        """Execute the RAG pipeline for a query."""
         logger.info(f"{PIPELINE} Running pipeline for query='{query[:50]}...'")
 
         # Step 1: Retrieve relevant chunks
@@ -112,28 +100,17 @@ class RAGPipeline:
 
     @classmethod
     def from_config(cls, cfg: ClassicRagConfig) -> "RAGPipeline":
-        """
-        Create a RAGPipeline from configuration.
-
-        This is the primary factory method for creating pipelines.
-
-        Args:
-            cfg: ClassicRagConfig with all pipeline settings
-
-        Returns:
-            Configured RAGPipeline instance
-        """
+        """Create a RAGPipeline from configuration."""
         logger.info(f"{PIPELINE} Constructing RAGPipeline from config")
 
-        # Vector DB - YAML plugin system (returns instance)
+        # Vector DB
         vector_client = get_vector_db_plugin(
             cfg.vector_db.plugin_name,
             **cfg.vector_db.kwargs
         )
         logger.info(f"{VECTOR_DB} Using vector DB plugin='{cfg.vector_db.plugin_name}'")
 
-        # Chat LLM - get_llm_plugin returns an INSTANCE, not a class
-        # kwargs are passed to the plugin factory, not to __init__ again
+        # Chat LLM
         chat_plugin = get_llm_plugin(
             plugin_type="chat",
             plugin_name=cfg.chat.plugin_name,
@@ -141,7 +118,7 @@ class RAGPipeline:
         )
         logger.info(f"{PIPELINE} Using chat plugin='{cfg.chat.plugin_name}'")
 
-        # Embedding - get_llm_plugin returns an INSTANCE
+        # Embedding
         embedder = get_llm_plugin(
             plugin_type="embedding",
             plugin_name=cfg.embedding.plugin_name,
@@ -149,7 +126,7 @@ class RAGPipeline:
         )
         logger.info(f"{PIPELINE} Using embedding plugin='{cfg.embedding.plugin_name}'")
 
-        # Rerank (optional) - get_llm_plugin returns an INSTANCE
+        # Rerank (optional)
         rerank_plugin = None
         if cfg.rerank.enabled:
             rerank_plugin = get_llm_plugin(
@@ -185,29 +162,18 @@ class RAGPipeline:
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> "RAGPipeline":
-        """
-        Create a RAGPipeline from a configuration dictionary.
+        """Create a RAGPipeline from a configuration dictionary."""
+        cfg = ClassicRagConfig.model_validate(config_dict)
+        return cls.from_config(cfg)
 
-        Args:
-            config_dict: Configuration dictionary matching ClassicRagConfig schema
-
-        Returns:
-            RAGPipeline instance
-        """
-        logger.info(f"{PIPELINE} Creating RAGPipeline from dict")
-        cfg = ClassicRagConfig.from_dict(config_dict)
+    @classmethod
+    def from_yaml(cls, config_path: str) -> "RAGPipeline":
+        """Create a RAGPipeline from a YAML configuration file."""
+        cfg = load_config(config_path)
         return cls.from_config(cfg)
 
 
-def create_pipeline_from_yaml(path: Optional[str] = None) -> RAGPipeline:
-    """
-    Create a RAGPipeline from a YAML config file.
-
-    Args:
-        path: Path to YAML config file. If None, uses default config.
-
-    Returns:
-        Configured RAGPipeline instance
-    """
+def create_pipeline_from_yaml(path: str | None = None) -> RAGPipeline:
+    """Create a RAGPipeline from a YAML config file."""
     cfg = load_config(path)
     return RAGPipeline.from_config(cfg)

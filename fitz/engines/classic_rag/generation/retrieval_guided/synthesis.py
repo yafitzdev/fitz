@@ -1,76 +1,70 @@
-# pipeline/generation/synthesis.py
+# fitz/engines/classic_rag/generation/retrieval_guided/synthesis.py
 """
-Retrieval-Guided Synthesis (RGS)
+Retrieval-Guided Synthesis (RGS) - Generates grounded answers from retrieved chunks.
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-    Dict,
-    List,
-    Mapping,
-    Protocol,
-    Sequence,
-    Union,
-    runtime_checkable,
-)
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
-from fitz.engines.classic_rag.generation.exceptions.base import GenerationError
-from fitz.engines.classic_rag.generation.prompting import (
-    PromptAssembler,
-    PromptConfig,
-    PromptProfile,
-    PromptSlots,
-)
+from fitz.engines.classic_rag.exceptions import PipelineError, RGSGenerationError
+from fitz.engines.classic_rag.generation.prompting.assembler import PromptAssembler
+from fitz.engines.classic_rag.generation.prompting.profiles import PromptProfile
+from fitz.engines.classic_rag.generation.prompting.slots import PromptSlots
 
 
-@runtime_checkable
-class SupportsRGSChunk(Protocol):
-    id: str
-    content: str
-    metadata: Dict[str, Any]
-
-
-ChunkInput = Union[SupportsRGSChunk, Mapping[str, Any]]
-
-
-@dataclass(frozen=True, slots=True)
+@dataclass
 class RGSConfig:
+    """Configuration for Retrieval-Guided Synthesis."""
+
     enable_citations: bool = True
     strict_grounding: bool = True
-    answer_style: str | None = None
-    max_chunks: int | None = 8
-    max_answer_chars: int | None = None
+    answer_style: Optional[str] = None
+    max_chunks: Optional[int] = 8
+    max_answer_chars: Optional[int] = None
     include_query_in_context: bool = True
     source_label_prefix: str = "S"
+    prompt_config: Optional[Dict[str, str]] = None
 
-    prompt_config: PromptConfig | None = None
+
+@dataclass
+class RGSPrompt:
+    """Structured prompt for RGS."""
+
+    system: str
+    user: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class RGSSourceRef:
+    """Reference to a source chunk."""
+
     source_id: str
     index: int
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class RGSAnswer:
+    """Structured answer from RGS."""
+
     answer: str
-    sources: List[RGSSourceRef]
+    sources: List[RGSSourceRef] = field(default_factory=list)
 
 
-@dataclass(frozen=True, slots=True)
-class RGSPrompt:
-    system: str
-    user: str
+# Type alias for chunk-like inputs
+ChunkInput = Union[Dict[str, Any], Any]
 
 
 class RGS:
-    def __init__(self, config: RGSConfig | None = None) -> None:
-        self.config: RGSConfig = config or RGSConfig()
+    """
+    Retrieval-Guided Synthesis engine.
+
+    Builds prompts and structures answers from retrieved chunks.
+    """
+
+    def __init__(self, config: Optional[RGSConfig] = None):
+        self.config = config or RGSConfig()
         self._assembler = PromptAssembler(
             defaults=PromptSlots(),
             overrides=self.config.prompt_config,
@@ -78,15 +72,17 @@ class RGS:
         )
 
     def build_prompt(self, query: str, chunks: Sequence[ChunkInput]) -> RGSPrompt:
+        """Build system and user prompts from query and chunks."""
         try:
             limited = self._limit_chunks(chunks)
             system_prompt = self._build_system_prompt()
             user_prompt = self._build_user_prompt(query, limited)
             return RGSPrompt(system=system_prompt, user=user_prompt)
         except Exception as e:
-            raise GenerationError("Failed to build RGS answer") from e
+            raise RGSGenerationError("Failed to build RGS prompt") from e
 
     def build_answer(self, raw_answer: str, chunks: Sequence[ChunkInput]) -> RGSAnswer:
+        """Structure raw LLM output into RGSAnswer with source references."""
         try:
             limited = self._limit_chunks(chunks)
             sources: List[RGSSourceRef] = []
@@ -101,86 +97,62 @@ class RGS:
             raise PipelineError("Failed to build RGS answer") from e
 
     def _limit_chunks(self, chunks: Sequence[ChunkInput]) -> List[ChunkInput]:
+        """Limit chunks to max_chunks config."""
         if self.config.max_chunks is None:
             return list(chunks)
         return list(chunks[: self.config.max_chunks])
 
     def _build_system_prompt(self) -> str:
+        """Build the system prompt."""
         return self._assembler.build_system(
-            strict_grounding=self.config.strict_grounding,
             enable_citations=self.config.enable_citations,
-            source_label_prefix=self.config.source_label_prefix,
+            strict_grounding=self.config.strict_grounding,
             answer_style=self.config.answer_style,
-            max_answer_chars=self.config.max_answer_chars,
+            source_label_prefix=self.config.source_label_prefix,
         )
 
     def _build_user_prompt(self, query: str, chunks: Sequence[ChunkInput]) -> str:
-        context_items: list[str] = []
-        prefix = self.config.source_label_prefix
+        """Build the user prompt with context and query."""
+        context_parts = []
 
         for idx, chunk in enumerate(chunks, start=1):
-            label = f"[{prefix}{idx}]" if self.config.enable_citations else ""
-            content = self._get_chunk_content(chunk).strip()
-            metadata = self._get_chunk_metadata(chunk)
+            content = self._get_chunk_content(chunk)
+            label = f"[{self.config.source_label_prefix}{idx}]"
+            context_parts.append(f"{label}\n{content}")
 
-            if metadata:
-                meta_str = self._format_metadata(metadata)
-                header = f"{label} (metadata: {meta_str})" if label else f"(metadata: {meta_str})"
-            else:
-                header = label
-
-            if header:
-                item = self._assembler.format_context_item(header=header, content=content)
-            else:
-                item = self._assembler.format_context_item(header="", content=content).lstrip("\n")
-
-            context_items.append(item)
+        context = "\n\n".join(context_parts)
 
         return self._assembler.build_user(
             query=query,
-            context_items=context_items,
+            context=context,
             include_query_in_context=self.config.include_query_in_context,
-            user_instructions=(
-                self.config.prompt_config.user_instructions
-                if self.config.prompt_config is not None
-                else None
-            ),
         )
 
-    @staticmethod
-    def _get_chunk_id(chunk: ChunkInput, fallback_index: int) -> str:
-        if hasattr(chunk, "id") and isinstance(getattr(chunk, "id"), str):
-            return getattr(chunk, "id")
+    def _get_chunk_content(self, chunk: ChunkInput) -> str:
+        """Extract content from chunk-like object."""
+        if isinstance(chunk, dict):
+            return str(chunk.get("content") or chunk.get("text") or "")
+        return str(getattr(chunk, "content", None) or getattr(chunk, "text", "") or "")
 
-        if isinstance(chunk, Mapping) and isinstance(chunk.get("id"), str):
-            return chunk["id"]
+    def _get_chunk_id(self, chunk: ChunkInput, index: int) -> str:
+        """Extract or generate chunk ID."""
+        if isinstance(chunk, dict):
+            return str(chunk.get("id") or chunk.get("chunk_id") or f"chunk_{index}")
+        return str(getattr(chunk, "id", None) or getattr(chunk, "chunk_id", None) or f"chunk_{index}")
 
-        return f"chunk_{fallback_index}"
+    def _get_chunk_metadata(self, chunk: ChunkInput) -> Dict[str, Any]:
+        """Extract metadata from chunk-like object."""
+        if isinstance(chunk, dict):
+            meta = chunk.get("metadata", {})
+            return dict(meta) if isinstance(meta, Mapping) else {}
+        meta = getattr(chunk, "metadata", {})
+        return dict(meta) if isinstance(meta, Mapping) else {}
 
-    @staticmethod
-    def _get_chunk_content(chunk: ChunkInput) -> str:
-        if hasattr(chunk, "content") and isinstance(getattr(chunk, "content"), str):
-            return getattr(chunk, "content")
 
-        if isinstance(chunk, Mapping) and isinstance(chunk.get("content"), str):
-            return chunk["content"]
-
-        raise ValueError("Chunk missing required 'content' field")
-
-    @staticmethod
-    def _get_chunk_metadata(chunk: ChunkInput) -> Dict[str, Any]:
-        if hasattr(chunk, "metadata") and isinstance(getattr(chunk, "metadata"), Mapping):
-            return dict(getattr(chunk, "metadata"))
-
-        if isinstance(chunk, Mapping) and isinstance(chunk.get("metadata"), Mapping):
-            return dict(chunk["metadata"])
-
-        return {}
-
-    @staticmethod
-    def _format_metadata(metadata: Mapping[str, Any], max_items: int = 3) -> str:
-        items = list(metadata.items())[:max_items]
-        parts = [f"{k}={v!r}" for k, v in items]
-        if len(metadata) > max_items:
-            parts.append("...")
-        return ", ".join(parts)
+__all__ = [
+    "RGS",
+    "RGSConfig",
+    "RGSPrompt",
+    "RGSAnswer",
+    "RGSSourceRef",
+]

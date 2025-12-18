@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from fitz.engines.classic_rag.errors.llm import LLMError
+from fitz.engines.classic_rag.exceptions import LLMError
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import PIPELINE
 

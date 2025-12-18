@@ -2,7 +2,7 @@
 
 import pytest
 
-from fitz.engines.classic_rag.errors.llm import LLMError
+from fitz.engines.classic_rag.exceptions import LLMError
 from fitz.engines.classic_rag.generation.retrieval_guided.synthesis import RGS, RGSConfig
 from fitz.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
 

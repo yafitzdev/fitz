@@ -19,7 +19,7 @@ from fitz.core import (
     QueryError,
 )
 from fitz.engines.classic_rag.config.loader import load_config as load_rag_config
-from fitz.engines.classic_rag.errors.llm import LLMError
+from fitz.engines.classic_rag.exceptions import LLMError
 from fitz.engines.classic_rag.runtime import run_classic_rag
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import CLI, PIPELINE
@@ -44,6 +44,7 @@ def command(
         "-p",
         help="Use a named preset (e.g., 'local' for offline mode). "
         "Available: local, openai, azure, cohere",
+
     ),
     max_sources: Optional[int] = typer.Option(
         None,

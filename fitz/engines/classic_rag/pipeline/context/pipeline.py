@@ -1,11 +1,11 @@
-# pipeline/context/pipeline.py
+# fitz/engines/classic_rag/pipeline/context/pipeline.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
+from fitz.engines.classic_rag.exceptions import PipelineError
 from fitz.engines.classic_rag.models.chunk import Chunk
-from fitz.engines.classic_rag.pipeline.exceptions.pipeline import PipelineError
 
 from .steps.dedupe import DedupeStep
 from .steps.group import GroupByDocumentStep
