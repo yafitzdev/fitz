@@ -1,92 +1,101 @@
 # tools/contract_map/discovery.py
-"""Plugin discovery and namespace scanning."""
+"""
+Plugin discovery scanning for contract map.
+
+Scans all plugin namespaces and reports what's discovered,
+including any failures or duplicates.
+"""
 from __future__ import annotations
 
 import importlib
 import pkgutil
 from typing import Callable, Dict, List, Tuple
 
-from .common import DiscoveryReport
-
-# ---------------------------------------------------------------------------
-# Plugin predicates (declared, not inferred)
-# ---------------------------------------------------------------------------
-
-PluginPredicate = Tuple[Callable[[type], bool], Callable[[type], str]]
+from tools.contract_map.common import DiscoveryReport
 
 
-def _simple_plugin_id(cls: type) -> str:
+def _simple_plugin_id(cls) -> str:
     return f"{cls.__module__}.{cls.__name__}"
 
 
-PLUGIN_PREDICATES: Dict[str, PluginPredicate] = {
-    # --- LLM plugins (new fitz.llm.* paths) ---
+# ---------------------------------------------------------------------------
+# Discovery Predicates
+# ---------------------------------------------------------------------------
+
+# Map namespace -> (predicate, plugin_id_fn, allow_reexport)
+PLUGIN_PREDICATES: Dict[str, Tuple[Callable, Callable, bool]] = {
+    # --- llm (chat, embedding, rerank) ---
     "fitz.llm.chat.plugins": (
         lambda cls: (
-            isinstance(cls, type)
-            and isinstance(getattr(cls, "plugin_name", None), str)
-            and getattr(cls, "plugin_type", None) == "chat"
-            and callable(getattr(cls, "chat", None))
+                isinstance(getattr(cls, "plugin_name", None), str)
+                and getattr(cls, "plugin_type", None) == "chat"
+                and callable(getattr(cls, "chat", None))
         ),
         _simple_plugin_id,
+        False,  # Must be defined in module
     ),
     "fitz.llm.embedding.plugins": (
         lambda cls: (
-            isinstance(cls, type)
-            and isinstance(getattr(cls, "plugin_name", None), str)
-            and getattr(cls, "plugin_type", None) == "embedding"
-            and callable(getattr(cls, "embed", None))
+                isinstance(getattr(cls, "plugin_name", None), str)
+                and getattr(cls, "plugin_type", None) == "embedding"
+                and callable(getattr(cls, "embed", None))
         ),
         _simple_plugin_id,
+        False,
     ),
     "fitz.llm.rerank.plugins": (
         lambda cls: (
-            isinstance(cls, type)
-            and isinstance(getattr(cls, "plugin_name", None), str)
-            and getattr(cls, "plugin_type", None) == "rerank"
-            and callable(getattr(cls, "rerank", None))
+                isinstance(getattr(cls, "plugin_name", None), str)
+                and getattr(cls, "plugin_type", None) == "rerank"
+                and callable(getattr(cls, "rerank", None))
         ),
         _simple_plugin_id,
+        False,
     ),
-    # --- vector DB (new fitz.vector_db.* path) ---
+    # --- vector_db (NEW: allow_reexport=True for re-exported plugins like local-faiss) ---
     "fitz.vector_db.plugins": (
         lambda cls: (
-            isinstance(getattr(cls, "plugin_name", None), str)
-            and getattr(cls, "plugin_type", None) == "vector_db"
-            and callable(getattr(cls, "search", None))
+                isinstance(getattr(cls, "plugin_name", None), str)
+                and getattr(cls, "plugin_type", None) == "vector_db"
+                and callable(getattr(cls, "search", None))
         ),
         _simple_plugin_id,
+        True,  # Allow re-exports (e.g., FaissLocalVectorDB from backends)
     ),
     # --- retrieval (under engines/classic_rag) ---
     "fitz.engines.classic_rag.retrieval.runtime.plugins": (
         lambda cls: (
-            isinstance(getattr(cls, "plugin_name", None), str)
-            and callable(getattr(cls, "retrieve", None))
+                isinstance(getattr(cls, "plugin_name", None), str)
+                and callable(getattr(cls, "retrieve", None))
         ),
         _simple_plugin_id,
+        False,
     ),
     # --- pipeline (under engines/classic_rag) ---
     "fitz.engines.classic_rag.pipeline.pipeline.plugins": (
         lambda cls: (
-            isinstance(getattr(cls, "plugin_name", None), str)
-            and callable(getattr(cls, "build", None))
+                isinstance(getattr(cls, "plugin_name", None), str)
+                and callable(getattr(cls, "build", None))
         ),
         _simple_plugin_id,
+        False,
     ),
     # --- ingest ---
     "fitz.ingest.chunking.plugins": (
         lambda cls: (
-            isinstance(getattr(cls, "plugin_name", None), str)
-            and callable(getattr(cls, "chunk_text", None))
+                isinstance(getattr(cls, "plugin_name", None), str)
+                and callable(getattr(cls, "chunk_text", None))
         ),
         _simple_plugin_id,
+        False,
     ),
     "fitz.ingest.ingestion.plugins": (
         lambda cls: (
-            isinstance(getattr(cls, "plugin_name", None), str)
-            and callable(getattr(cls, "ingest", None))
+                isinstance(getattr(cls, "plugin_name", None), str)
+                and callable(getattr(cls, "ingest", None))
         ),
         _simple_plugin_id,
+        False,
     ),
 }
 
@@ -126,10 +135,14 @@ def scan_discovery(namespace: str, note: str) -> DiscoveryReport:
             duplicates=[],
         )
 
-    predicate, plugin_id = PLUGIN_PREDICATES.get(
-        namespace,
-        (lambda _: False, _simple_plugin_id),
-    )
+    # Get predicate config - now includes allow_reexport flag
+    predicate_config = PLUGIN_PREDICATES.get(namespace)
+    if predicate_config is None:
+        predicate = lambda _: False
+        plugin_id = _simple_plugin_id
+        allow_reexport = False
+    else:
+        predicate, plugin_id, allow_reexport = predicate_config
 
     for mod_info in pkgutil.iter_modules(pkg_path):
         modules_scanned += 1
@@ -145,8 +158,13 @@ def scan_discovery(namespace: str, note: str) -> DiscoveryReport:
         for obj in vars(mod).values():
             if not isinstance(obj, type):
                 continue
-            if getattr(obj, "__module__", None) != actual_name:
+
+            # Check module match - skip if class is from different module
+            # UNLESS allow_reexport is True for this namespace
+            obj_module = getattr(obj, "__module__", None)
+            if not allow_reexport and obj_module != actual_name:
                 continue
+
             if not predicate(obj):
                 continue
 

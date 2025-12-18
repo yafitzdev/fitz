@@ -56,31 +56,56 @@ class ArchitectureViolation:
     count: int
 
 
-def check_registry_health(cm: ContractMap) -> None:
-    """Check if registries are populated and add health issues."""
+def check_discovery_health(cm: ContractMap) -> None:
+    """
+    Check if plugin discovery found expected plugins.
 
-    def registry_nonempty(name_contains: str) -> bool:
-        for r in cm.registries:
-            if name_contains in r.name and r.plugins:
-                return True
-        return False
+    Uses cm.discovery (the scan results) rather than cm.registries
+    to avoid false positives from lazy initialization.
+    """
+    if not cm.discovery:
+        return
 
-    if not registry_nonempty("LLM_REGISTRY"):
+    # Check for discovery failures
+    total_failures = sum(len(r.failures) for r in cm.discovery)
+    if total_failures > 0:
         cm.health.append(
             HealthIssue(
-                level="ERROR",
-                message="LLM registry appears empty. Likely cause: discovery not triggered or plugin imports failing.",
+                level="WARN",
+                message=f"{total_failures} plugin discovery failure(s) detected (see Discovery Report).",
             )
         )
 
-    if not registry_nonempty("RETRIEVER_REGISTRY"):
+    # Check for duplicates
+    total_duplicates = sum(len(r.duplicates) for r in cm.discovery)
+    if total_duplicates > 0:
         cm.health.append(
             HealthIssue(
-                level="ERROR",
-                message="Retriever registry appears empty. Likely cause: fitz.engines.classic_rag.retrieval.plugins package missing/empty or import failures.",
+                level="WARN",
+                message=f"{total_duplicates} duplicate plugin name(s) detected (see Discovery Report).",
             )
         )
 
+    # Check specific namespaces that should have plugins
+    expected_namespaces = {
+        "fitz.llm.chat.plugins": "chat",
+        "fitz.llm.embedding.plugins": "embedding",
+        "fitz.vector_db.plugins": "vector_db",
+        "fitz.engines.classic_rag.retrieval.runtime.plugins": "retriever",
+    }
+
+    for report in cm.discovery:
+        if report.namespace in expected_namespaces:
+            if not report.plugins_found:
+                plugin_type = expected_namespaces[report.namespace]
+                cm.health.append(
+                    HealthIssue(
+                        level="WARN",
+                        message=f"No {plugin_type} plugins discovered in {report.namespace}",
+                    )
+                )
+
+    # Check for import failures recorded during extraction
     if cm.import_failures:
         cm.health.append(
             HealthIssue(
@@ -188,9 +213,6 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
     extract_protocols(cm, verbose=verbose)
     extract_registries(cm, verbose=verbose)
 
-    # Check health
-    check_registry_health(cm)
-
     # Build graphs and analysis
     cm.import_graph = build_import_graph(REPO_ROOT, excludes=DEFAULT_LAYOUT_EXCLUDES)
     cm.entrypoints = discover_entrypoints(REPO_ROOT, excludes=DEFAULT_LAYOUT_EXCLUDES)
@@ -199,6 +221,9 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
     cm.config_surface = compute_config_surface(cm, excludes=DEFAULT_LAYOUT_EXCLUDES)
     cm.invariants = compute_invariants(cm)
     cm.stats = compute_stats(REPO_ROOT, excludes=DEFAULT_LAYOUT_EXCLUDES)
+
+    # Check health AFTER discovery is populated
+    check_discovery_health(cm)
 
     # Validate architecture contracts
     arch_violations = validate_architecture_contracts(cm)
@@ -229,7 +254,7 @@ def render_health_section(cm: ContractMap) -> str:
 
     lines = ["## Health"]
     for h in cm.health:
-        lines.append(f"- **{h.lel}**: {h.message}")
+        lines.append(f"- **{h.level}**: {h.message}")
     lines.append("")
     return "\n".join(lines)
 
@@ -370,7 +395,7 @@ def render_markdown(cm: ContractMap, *, verbose: bool, layout_depth: int | None)
     sections.append(render_meta_section(cm))
     sections.append(render_layout_section(layout_depth=layout_depth))
     sections.append(render_architecture_section())
-    sections.append(render_architecture_violations_section(cm))  # NEW: Architecture Violations
+    sections.append(render_architecture_violations_section(cm))
     sections.append(render_import_graph_section(cm.import_graph))
     sections.append(render_entrypoints_section(cm.entrypoints))
     sections.append(render_discovery_section(cm.discovery))
@@ -412,20 +437,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Generate a contract map from the current codebase."
     )
-    parser.add_argument("--format", choices=["md", "json"], default="md", help="Output format")
     parser.add_argument(
-        "--out", type=str, default=None, help="Write output to a file (otherwise prints to stdout)"
-    )
-    parser.add_argument(
-        "--verbose", action="store_true", help="Include tracebacks for import/discovery failures"
-    )
-    parser.add_argument(
-        "--fail-on-errors",
+        "-v",
+        "--verbose",
         action="store_true",
-        help="Exit non-zero if any ERROR health issues exist",
+        help="Include detailed traceback in failures",
     )
     parser.add_argument(
-        "--layout-depth", type=int, default=None, help="Max depth for Project Layout tree"
+        "--layout-depth",
+        type=int,
+        default=None,
+        help="Max depth for project layout (default: unlimited)",
     )
 
     args = parser.parse_args(argv)
@@ -434,21 +456,10 @@ def main(argv: list[str] | None = None) -> int:
     cm = build_contract_map(verbose=args.verbose, layout_depth=args.layout_depth)
 
     print("Rendering output...", file=sys.stderr)
-    if args.format == "json":
-        text = render_json(cm)
-    else:
-        text = render_markdown(cm, verbose=args.verbose, layout_depth=args.layout_depth)
+    text = render_markdown(cm, verbose=args.verbose, layout_depth=args.layout_depth)
 
-    if args.out:
-        out_path = Path(args.out)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(text, encoding="utf-8")
-        print(f"Wrote output to {out_path}", file=sys.stderr)
-    else:
-        sys.stdout.write(text)
-
-    if args.fail_on_errors and any(h.level == "ERROR" for h in cm.health):
-        return 2
+    # Always print to stdout (original behavior)
+    print(text)
 
     return 0
 
