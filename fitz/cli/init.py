@@ -1,4 +1,9 @@
-# fitz/cli/init.py
+# File: fitz/cli/init.py
+# Complete fixed version with:
+# 1. Consistent provider display (shows models)
+# 2. Engine auto-discovery and selection
+# 3. Correct config keys (chat not llm)
+
 """
 Interactive setup wizard for Fitz.
 
@@ -31,19 +36,107 @@ except ImportError:
 
 
 # =============================================================================
+# Engine Discovery
+# =============================================================================
+
+
+def detect_engines() -> dict[str, str]:
+    """
+    Auto-discover all registered engines from the EngineRegistry.
+
+    Returns:
+        Dict mapping engine names to descriptions
+    """
+    # Import engines to trigger registration
+    try:
+        import fitz.engines.classic_rag  # noqa
+    except ImportError:
+        pass
+
+    try:
+        import fitz.engines.clara  # noqa
+    except ImportError:
+        pass
+
+    # Get engines from registry
+    try:
+        from fitz.runtime import list_engines_with_info
+        return list_engines_with_info()
+    except ImportError:
+        # Fallback if runtime not available
+        return {"classic_rag": "Retrieval-augmented generation using vector search"}
+
+
+def prompt_engine_choice(engines: dict[str, str]) -> str:
+    """
+    Prompt user to select an engine.
+
+    Args:
+        engines: Dict of engine_name -> description
+
+    Returns:
+        Selected engine name
+    """
+    if not engines:
+        raise ValueError("No engines available")
+
+    # If only one engine, auto-select
+    if len(engines) == 1:
+        engine = list(engines.keys())[0]
+        if RICH_AVAILABLE:
+            console.print(f"  [dim]Engine:[/dim] [green]{engine}[/green] [dim](auto-selected)[/dim]")
+        else:
+            print(f"  Engine: {engine} (auto-selected)")
+        return engine
+
+    # Show available engines
+    if RICH_AVAILABLE:
+        console.print("\n[bold blue]Available Engines[/bold blue]")
+        for i, (name, desc) in enumerate(engines.items(), 1):
+            status = "[bold green]Production[/bold green]" if name == "classic_rag" else "[yellow]Experimental[/yellow]"
+            console.print(f"  {i}. [bold]{name}[/bold] ({status})")
+            console.print(f"     [dim]{desc}[/dim]")
+    else:
+        print("\nAvailable Engines:")
+        for i, (name, desc) in enumerate(engines.items(), 1):
+            status = "Production" if name == "classic_rag" else "Experimental"
+            print(f"  {i}. {name} ({status})")
+            print(f"     {desc}")
+
+    # Get user choice
+    choices = list(engines.keys())
+    default_idx = 0  # Default to first (classic_rag if present)
+    if "classic_rag" in choices:
+        default_idx = choices.index("classic_rag")
+
+    if RICH_AVAILABLE:
+        choice = Prompt.ask(
+            "\nSelect engine",
+            choices=[str(i) for i in range(1, len(choices) + 1)],
+            default=str(default_idx + 1)
+        )
+    else:
+        choice = input(f"\nSelect engine [1-{len(choices)}] ({default_idx + 1}): ").strip()
+        if not choice:
+            choice = str(default_idx + 1)
+
+    return choices[int(choice) - 1]
+
+
+# =============================================================================
 # Config Generation
 # =============================================================================
 
 
 def generate_config(
-    chat_provider: str,
-    embedding_provider: str,
-    vector_db: str,
-    qdrant_host: str = "localhost",
-    qdrant_port: int = 6333,
-    collection: str = "default",
-    enable_rerank: bool = False,
-    rerank_provider: str = "cohere",
+        chat_provider: str,
+        embedding_provider: str,
+        vector_db: str,
+        qdrant_host: str = "localhost",
+        qdrant_port: int = 6333,
+        collection: str = "default",
+        enable_rerank: bool = False,
+        rerank_provider: str = "cohere",
 ) -> str:
     """Generate YAML config based on user choices."""
 
@@ -226,10 +319,10 @@ def prompt_confirm(prompt: str, default: bool = True) -> bool:
 
 
 def auto_select_or_prompt(
-    category: str,
-    available: list[str],
-    default: str,
-    prompt_text: str,
+        category: str,
+        available: list[str],
+        default: str,
+        prompt_text: str,
 ) -> str:
     """
     Auto-select if only one option, otherwise prompt user.
@@ -262,17 +355,17 @@ def auto_select_or_prompt(
 
 
 def command(
-    non_interactive: bool = typer.Option(
-        False,
-        "--non-interactive",
-        "-y",
-        help="Use detected defaults without prompting",
-    ),
-    show_config: bool = typer.Option(
-        False,
-        "--show-config",
-        help="Only show what config would be generated",
-    ),
+        non_interactive: bool = typer.Option(
+            False,
+            "--non-interactive",
+            "-y",
+            help="Use detected defaults without prompting",
+        ),
+        show_config: bool = typer.Option(
+            False,
+            "--show-config",
+            help="Only show what config would be generated",
+        ),
 ) -> None:
     """
     Initialize Fitz with an interactive setup wizard.
@@ -301,14 +394,35 @@ def command(
         print("=" * 60)
 
     # ==========================================================================
-    # Detection Phase (using centralized detection)
+    # Engine Selection (NEW!)
+    # ==========================================================================
+
+    engines = detect_engines()
+
+    if non_interactive or len(engines) == 1:
+        engine = "classic_rag" if "classic_rag" in engines else list(engines.keys())[0]
+    else:
+        engine = prompt_engine_choice(engines)
+
+    # For now, only classic_rag is fully supported
+    if engine != "classic_rag":
+        if RICH_AVAILABLE:
+            console.print(f"\n[yellow]⚠ Setup wizard for '{engine}' coming soon![/yellow]")
+            console.print("Please create config manually or use defaults.")
+        else:
+            print(f"\n⚠ Setup wizard for '{engine}' coming soon!")
+            print("Please create config manually or use defaults.")
+        raise typer.Exit(code=0)
+
+    # ==========================================================================
+    # Detection Phase (FIXED: Consistent display)
     # ==========================================================================
 
     print_header("Checking Chat Providers...")
 
     system = detect_all()
 
-    # Display chat providers with consistent model info
+    # Display chat providers with consistent model info (FIXED!)
     if system.api_keys["cohere"].available:
         print_status("Cohere", True, "command-r-08-2024")
     else:
@@ -342,7 +456,7 @@ def command(
         print_status("Ollama", False, "Not running")
 
     print_header("Checking Rerank Providers...")
-    # Currently only Cohere supports reranking
+    # Currently only Cohere supports reranking (FIXED: removed "Available")
     if system.api_keys["cohere"].available:
         print_status("Cohere", True, "rerank-english-v3.0")
     else:
@@ -437,7 +551,7 @@ def command(
                 print("Please install FAISS (pip install faiss-cpu) or start Qdrant.")
             raise typer.Exit(code=1)
 
-        # Auto-select or prompt for each category
+        # Prompt for choices
         chat_choice = auto_select_or_prompt(
             "Chat",
             available_chat,
@@ -452,7 +566,7 @@ def command(
             "Select embedding provider",
         )
 
-        # Rerank: auto-select if available, skip if not
+        # Rerank
         if available_rerank:
             if len(available_rerank) == 1:
                 rerank_choice = available_rerank[0]
@@ -581,7 +695,7 @@ def command(
 Your configuration is ready! Next steps:
 
 1. Ingest some documents:
-   fitz ingest ./your_docs {collection_name}
+   fitz-ingest run ./your_docs --collection {collection_name}
 
 2. Query your documents:
    fitz query "What is in my documents?"
