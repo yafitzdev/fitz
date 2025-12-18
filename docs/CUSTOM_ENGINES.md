@@ -1,4 +1,3 @@
-# CUSTOM_ENGINES.md
 # Creating Custom Engines
 
 This guide walks you through creating your own knowledge engine for Fitz.
