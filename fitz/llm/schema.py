@@ -1,4 +1,4 @@
-# fitz/llm/yaml_plugins/schema.py
+# fitz/llm/schema.py
 """
 Pydantic schemas for YAML plugin validation.
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class AuthType(str, Enum):
@@ -45,6 +45,8 @@ class MessageTransform(str, Enum):
 class AuthConfig(BaseModel):
     """Authentication configuration for a provider."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: AuthType = AuthType.BEARER
     header_name: str = "Authorization"
     header_format: str = "Bearer {key}"
@@ -66,6 +68,8 @@ class AuthConfig(BaseModel):
 class ProviderConfig(BaseModel):
     """Provider connection details."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(..., description="Provider name for credential resolution")
     base_url: str = Field(..., description="API base URL")
 
@@ -84,6 +88,8 @@ class ProviderConfig(BaseModel):
 
 class EndpointConfig(BaseModel):
     """API endpoint configuration."""
+
+    model_config = ConfigDict(extra="forbid")
 
     path: str = Field(..., description="API endpoint path")
     method: Literal["GET", "POST", "PUT", "DELETE"] = "POST"
@@ -105,6 +111,8 @@ class EndpointConfig(BaseModel):
 class HealthCheckConfig(BaseModel):
     """Optional health check for local services."""
 
+    model_config = ConfigDict(extra="forbid")
+
     path: str = "/health"
     method: Literal["GET", "POST"] = "GET"
     timeout: int = Field(default=2, ge=1, le=10)
@@ -118,6 +126,8 @@ class HealthCheckConfig(BaseModel):
 class RequiredEnvConfig(BaseModel):
     """Additional required environment variables (e.g., for Azure)."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(..., description="Environment variable name")
     inject_as: str = Field(..., description="Placeholder name to inject into base_url/config")
     default: str | None = Field(default=None, description="Optional default value")
@@ -130,6 +140,8 @@ class RequiredEnvConfig(BaseModel):
 
 class ChatRequestConfig(BaseModel):
     """Request transformation for chat plugins."""
+
+    model_config = ConfigDict(extra="forbid")
 
     messages_transform: MessageTransform = MessageTransform.OPENAI_CHAT
     static_fields: dict[str, Any] = Field(default_factory=dict)
@@ -145,6 +157,8 @@ class ChatRequestConfig(BaseModel):
 class ChatResponseConfig(BaseModel):
     """Response extraction for chat plugins."""
 
+    model_config = ConfigDict(extra="forbid")
+
     # JSONPath-like dot notation to content
     content_path: str = Field(..., description="Path to response text")
 
@@ -158,6 +172,8 @@ class ChatResponseConfig(BaseModel):
 
 class ChatPluginSpec(BaseModel):
     """Complete specification for a chat plugin."""
+
+    model_config = ConfigDict(extra="forbid")
 
     plugin_name: str = Field(..., min_length=1, max_length=50)
     plugin_type: Literal["chat"] = "chat"
@@ -190,6 +206,8 @@ class ChatPluginSpec(BaseModel):
 class EmbeddingRequestConfig(BaseModel):
     """Request configuration for embedding plugins."""
 
+    model_config = ConfigDict(extra="forbid")
+
     input_field: str = Field(default="input", description="Field name for input text")
     input_wrap: InputWrap = Field(default=InputWrap.LIST, description="How to wrap input")
 
@@ -204,6 +222,8 @@ class EmbeddingRequestConfig(BaseModel):
 class EmbeddingResponseConfig(BaseModel):
     """Response extraction for embedding plugins."""
 
+    model_config = ConfigDict(extra="forbid")
+
     embeddings_path: str = Field(..., description="Path to embedding vector(s)")
 
     # For batch responses
@@ -213,6 +233,8 @@ class EmbeddingResponseConfig(BaseModel):
 
 class EmbeddingPluginSpec(BaseModel):
     """Complete specification for an embedding plugin."""
+
+    model_config = ConfigDict(extra="forbid")
 
     plugin_name: str = Field(..., min_length=1, max_length=50)
     plugin_type: Literal["embedding"] = "embedding"
@@ -238,6 +260,8 @@ class EmbeddingPluginSpec(BaseModel):
 class RerankRequestConfig(BaseModel):
     """Request configuration for rerank plugins."""
 
+    model_config = ConfigDict(extra="forbid")
+
     query_field: str = Field(default="query", description="Field name for query")
     documents_field: str = Field(default="documents", description="Field name for documents")
 
@@ -253,6 +277,8 @@ class RerankRequestConfig(BaseModel):
 class RerankResponseConfig(BaseModel):
     """Response extraction for rerank plugins."""
 
+    model_config = ConfigDict(extra="forbid")
+
     results_path: str = Field(..., description="Path to results array")
     result_index_path: str = Field(default="index", description="Path to index within result")
     result_score_path: str = Field(default="relevance_score", description="Path to score within result")
@@ -260,6 +286,8 @@ class RerankResponseConfig(BaseModel):
 
 class RerankPluginSpec(BaseModel):
     """Complete specification for a rerank plugin."""
+
+    model_config = ConfigDict(extra="forbid")
 
     plugin_name: str = Field(..., min_length=1, max_length=50)
     plugin_type: Literal["rerank"] = "rerank"

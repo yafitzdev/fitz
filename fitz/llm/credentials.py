@@ -1,4 +1,4 @@
-# core/llm/credentials.py
+# fitz/llm/credentials.py
 """
 Centralized credential resolution for LLM providers.
 
@@ -38,6 +38,7 @@ PROVIDER_ENV_MAP: dict[str, list[str]] = {
 
 
 class CredentialError(RuntimeError):
+    """Raised when credentials cannot be resolved."""
     pass
 
 

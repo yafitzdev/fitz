@@ -1,4 +1,4 @@
-# fitz/llm/yaml_plugins/chat/anthropic.yaml
+# fitz/llm/chat/anthropic.yaml
 # Anthropic Chat Plugin - Messages API
 #
 # Documentation: https://docs.anthropic.com/en/api/messages

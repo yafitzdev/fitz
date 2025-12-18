@@ -1,4 +1,4 @@
-# fitz/llm/yaml_plugins/embedding/openai.yaml
+# fitz/llm/embedding/openai.yaml
 # OpenAI Embedding Plugin - Embeddings API
 #
 # Documentation: https://platform.openai.com/docs/api-reference/embeddings

@@ -1,4 +1,4 @@
-# fitz/llm/yaml_plugins/transforms.py
+# fitz/llm/transforms.py
 """
 Message transformation strategies for different LLM provider formats.
 

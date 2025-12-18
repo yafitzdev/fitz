@@ -1,4 +1,4 @@
-# fitz/llm/yaml_plugins/loader.py
+# fitz/llm/loader.py
 """
 YAML plugin loader with schema validation.
 
@@ -15,7 +15,7 @@ from typing import TypeVar
 import yaml
 from pydantic import ValidationError
 
-from fitz.llm.yaml_plugins.schema import (
+from fitz.llm.schema import (
     ChatPluginSpec,
     EmbeddingPluginSpec,
     PluginSpec,
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=PluginSpec)
 
-# Directory containing YAML plugin definitions
+# Directory containing YAML plugin definitions (fitz/llm/)
 YAML_PLUGINS_DIR = Path(__file__).parent
 
 
@@ -63,7 +63,11 @@ class YAMLPluginValidationError(YAMLPluginError, ValueError):
 
 
 def _get_yaml_path(plugin_type: str, plugin_name: str) -> Path:
-    """Get the path to a YAML plugin file."""
+    """Get the path to a YAML plugin file.
+
+    Structure: fitz/llm/{plugin_type}/{plugin_name}.yaml
+    Example: fitz/llm/chat/openai.yaml
+    """
     return YAML_PLUGINS_DIR / plugin_type / f"{plugin_name}.yaml"
 
 

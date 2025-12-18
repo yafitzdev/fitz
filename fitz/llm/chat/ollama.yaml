@@ -1,4 +1,4 @@
-# fitz/llm/yaml_plugins/chat/ollama.yaml
+# fitz/llm/chat/ollama.yaml
 # Ollama Chat Plugin - Local LLM
 #
 # Documentation: https://github.com/ollama/ollama/blob/main/docs/api.md

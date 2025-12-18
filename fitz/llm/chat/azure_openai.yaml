@@ -1,4 +1,4 @@
-# fitz/llm/yaml_plugins/chat/azure_openai.yaml
+# fitz/llm/chat/azure_openai.yaml
 # Azure OpenAI Chat Plugin
 #
 # Documentation: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference

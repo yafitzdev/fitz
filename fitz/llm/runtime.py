@@ -1,4 +1,4 @@
-# fitz/llm/yaml_plugins/runtime.py
+# fitz/llm/runtime.py
 """
 Generic plugin runtime that executes YAML-defined plugins.
 
@@ -21,19 +21,19 @@ from fitz.core.http import (
     raise_for_status,
 )
 from fitz.llm.credentials import CredentialError, resolve_api_key
-from fitz.llm.yaml_plugins.loader import (
+from fitz.llm.loader import (
     load_chat_plugin,
     load_embedding_plugin,
     load_rerank_plugin,
 )
-from fitz.llm.yaml_plugins.schema import (
+from fitz.llm.schema import (
     AuthType,
     ChatPluginSpec,
     EmbeddingPluginSpec,
     InputWrap,
     RerankPluginSpec,
 )
-from fitz.llm.yaml_plugins.transforms import get_transformer
+from fitz.llm.transforms import get_transformer
 
 logger = logging.getLogger(__name__)
 
@@ -145,26 +145,18 @@ class YAMLPluginBase:
 
     def _create_client(self) -> Any:
         """Create the HTTP client with appropriate auth headers."""
-        headers: dict[str, str] = {}
+        extra_headers: dict[str, str] = {}
 
         if self._api_key and self.spec.auth.type != AuthType.NONE:
             header_value = self.spec.auth.header_format.format(key=self._api_key)
-            headers[self.spec.auth.header_name] = header_value
-
-        # Map timeout names to seconds
-        timeout_map = {
-            "chat": 120,
-            "embedding": 30,
-            "rerank": 30,
-        }
-        timeout = timeout_map.get(self.spec.plugin_type, self.spec.endpoint.timeout)
+            extra_headers[self.spec.auth.header_name] = header_value
 
         try:
             return create_api_client(
                 base_url=self._base_url,
-                api_key=self._api_key,
+                api_key=None,  # We handle auth via headers ourselves
                 timeout_type=self.spec.plugin_type,
-                extra_headers=headers if headers else None,
+                headers=extra_headers if extra_headers else None,
             )
         except HTTPClientNotAvailable:
             raise RuntimeError(
@@ -263,7 +255,8 @@ class YAMLChatClient(YAMLPluginBase):
         # Add mapped parameters
         for fitz_name, provider_name in self.spec.request.param_map.items():
             if fitz_name in self.params:
-                payload[provider_name] = self.params[fitz_name]
+                # Handle nested param paths like "options.temperature"
+                self._set_nested_param(payload, provider_name, self.params[fitz_name])
 
         # Make request
         response = self._make_request(payload)
@@ -275,6 +268,16 @@ class YAMLChatClient(YAMLPluginBase):
         except (KeyError, IndexError) as e:
             logger.warning(f"Failed to extract response: {e}. Full response: {response}")
             return ""
+
+    def _set_nested_param(self, payload: dict, path: str, value: Any) -> None:
+        """Set a parameter at a potentially nested path (e.g., 'options.temperature')."""
+        parts = path.split(".")
+        current = payload
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        current[parts[-1]] = value
 
 
 # =============================================================================

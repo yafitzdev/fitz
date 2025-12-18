@@ -1,4 +1,4 @@
-# fitz/llm/yaml_plugins/chat/cohere.yaml
+# fitz/llm/chat/cohere.yaml
 # Cohere Chat Plugin - v1 Chat API
 #
 # Documentation: https://docs.cohere.com/reference/chat
