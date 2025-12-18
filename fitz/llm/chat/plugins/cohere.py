@@ -2,10 +2,12 @@
 """
 Cohere chat plugin using centralized HTTP client and credentials.
 
-Uses Cohere v1 Chat API which expects:
-- preamble: system message
-- message: user message
-- chat_history: conversation history
+Required:
+    - model: Chat model name (must be specified in config)
+    - COHERE_API_KEY environment variable OR api_key parameter
+
+Optional:
+    - temperature: Sampling temperature (default: 0.2)
 """
 
 from __future__ import annotations
@@ -38,11 +40,11 @@ class CohereChatClient:
     plugin_type = "chat"
 
     def __init__(
-        self,
-        api_key: str | None = None,
-        model: str = "command-r-plus",
-        temperature: float = 0.2,
-        base_url: str = "https://api.cohere.ai/v1",
+            self,
+            model: str,
+            api_key: str | None = None,
+            temperature: float = 0.2,
+            base_url: str = "https://api.cohere.ai/v1",
     ) -> None:
         # Use centralized credential resolution
         try:

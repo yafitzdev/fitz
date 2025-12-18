@@ -31,10 +31,10 @@ class CohereRerankClient:
     plugin_type = "rerank"
 
     def __init__(
-        self,
-        api_key: str | None = None,
-        model: str = "rerank-english-v3.0",
-        base_url: str = "https://api.cohere.ai/v1",
+            self,
+            model: str,
+            api_key: str | None = None,
+            base_url: str = "https://api.cohere.ai/v1",
     ) -> None:
         # Use centralized credential resolution
         try:

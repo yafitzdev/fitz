@@ -22,23 +22,11 @@ from fitz.llm.credentials import CredentialError, resolve_api_key
 
 @dataclass
 class CohereEmbeddingClient:
-    """
-    Cohere embedding plugin using centralized HTTP client and credentials.
+    plugin_name = "cohere"
+    plugin_type = "embedding"
 
-    Required:
-        - COHERE_API_KEY environment variable OR api_key parameter
-
-    Optional:
-        - model: Embedding model (default: embed-english-v3.0)
-        - input_type: Type of input (default: search_document for ingestion)
-        - output_dimension: Dimension reduction (default: None - full dimensions)
-    """
-
-    plugin_name: str = "cohere"
-    plugin_type: str = "embedding"
-
+    model: str
     api_key: str | None = None
-    model: str | None = None
     input_type: str | None = None
     output_dimension: int | None = None
     base_url: str = "https://api.cohere.ai/v1"
@@ -59,7 +47,10 @@ class CohereEmbeddingClient:
         self._api_key = key
 
         # Set defaults (still allow env var override for model-specific settings)
-        self.model = self.model or os.getenv("COHERE_EMBED_MODEL") or "embed-english-v3.0"
+        if not self.model:
+            raise ValueError("model parameter is required")
+            # Keep input_type default since it's plugin-specific behavior
+        self.input_type = self.input_type or "search_document"
         self.input_type = (
             self.input_type or os.getenv("COHERE_EMBED_INPUT_TYPE") or "search_document"
         )

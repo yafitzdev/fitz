@@ -34,12 +34,12 @@ class OpenAIChatClient:
     plugin_type = "chat"
 
     def __init__(
-        self,
-        api_key: str | None = None,
-        model: str = "gpt-4o-mini",
-        temperature: float = 0.2,
-        max_tokens: int | None = None,
-        base_url: str | None = None,
+            self,
+            model: str,
+            api_key: str | None = None,
+            temperature: float = 0.2,
+            max_tokens: int | None = None,
+            base_url: str | None = None,
     ) -> None:
         if OpenAI is None:
             raise RuntimeError("Install openai: `pip install openai`")
