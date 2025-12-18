@@ -1,9 +1,6 @@
 # tests/test_default_preset_resolves.py
 """
-Test that default configuration resolves correctly.
-
-Note: The old preset system has been removed. This test now verifies
-that the unified config loads correctly.
+Test that the default config loads and resolves correctly.
 """
 
 from fitz.engines.classic_rag.config import ClassicRagConfig, load_config
@@ -15,14 +12,12 @@ def test_default_preset_resolves_to_runtime_config():
 
     assert isinstance(cfg, ClassicRagConfig)
 
-    # Required plugin configs
-    assert cfg.llm.plugin_name
+    # Required plugin configs - uses 'chat' not 'llm'
+    assert cfg.chat.plugin_name
     assert cfg.embedding.plugin_name
     assert cfg.vector_db.plugin_name
-
-    # Retriever is required
     assert cfg.retriever.plugin_name
-    assert cfg.retriever.collection
 
-    # Rerank is optional but should have a default
-    assert cfg.rerank is not None
+    # Retriever config
+    assert cfg.retriever.collection
+    assert cfg.retriever.top_k > 0

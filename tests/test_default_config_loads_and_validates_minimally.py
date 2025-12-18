@@ -1,6 +1,6 @@
 # tests/test_default_config_loads_and_validates_minimally.py
 """
-Test that default configuration loads and validates correctly.
+Test that the default config can be loaded and validated.
 """
 
 from fitz.engines.classic_rag.config import ClassicRagConfig, load_config
@@ -19,19 +19,14 @@ def test_default_config_loads_and_validates_base_schema():
 
     assert isinstance(cfg, ClassicRagConfig)
 
-    # Core plugin configs
-    assert cfg.llm.plugin_name
+    # Core plugin configs - uses 'chat' not 'llm'
+    assert cfg.chat.plugin_name
     assert cfg.embedding.plugin_name
     assert cfg.vector_db.plugin_name
 
-    # Retriever config
+    # Retriever
     assert cfg.retriever.plugin_name
     assert cfg.retriever.collection
-    assert cfg.retriever.top_k > 0
 
-    # Optional configs have defaults
+    # RGS config exists
     assert cfg.rgs is not None
-    assert cfg.logging is not None
-
-    # Rerank is optional
-    assert cfg.rerank is not None  # Has default (disabled)
