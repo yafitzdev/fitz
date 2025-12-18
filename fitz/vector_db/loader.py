@@ -256,31 +256,31 @@ class GenericVectorDBPlugin:
     def _ensure_collection(self, collection: str, upsert_op: Dict):
         """Create collection if it doesn't exist (best-effort)."""
         try:
-            context = {
-                'collection': collection,
-                'vector_dim': self._vector_dim,
-                **self.kwargs,
-            }
+            endpoint = Template(upsert_op['create_collection_endpoint']).render(
+                {'collection': collection, **self.kwargs}
+            )
 
-            endpoint = Template(upsert_op['create_collection_endpoint']).render(context)
-            body = self.spec.render_template(upsert_op['create_collection_body'], context)
+            body = self.spec.render_template(
+                upsert_op.get('create_collection_body', {}),
+                {'collection': collection, 'vector_dim': self._vector_dim, **self.kwargs}
+            )
 
             response = self.client.request(
                 method=upsert_op['create_collection_method'],
                 url=endpoint,
-                json=body,
+                json=body if body else None,
             )
 
-            # Accept 200/201 (created) or 409 (already exists)
+            # Ignore "already exists" errors (usually 409)
             if response.status_code not in [200, 201, 409]:
                 response.raise_for_status()
 
         except Exception:
-            # Collection might already exist - continue
+            # Best-effort - collection might already exist
             pass
 
-    def delete_collection(self, collection: str) -> bool:
-        """Delete a collection. Returns True if deleted."""
+    def delete_collection(self, collection: str) -> None:
+        """Delete a collection."""
         if 'delete_collection' not in self.spec.operations:
             raise NotImplementedError(
                 f"{self.plugin_name} does not support delete_collection"
@@ -290,16 +290,16 @@ class GenericVectorDBPlugin:
         context = {'collection': collection, **self.kwargs}
 
         endpoint = Template(op['endpoint']).render(context)
-        body = self.spec.render_template(op.get('body', {}), context)
 
         response = self.client.request(
             method=op['method'],
             url=endpoint,
-            json=body if body else None,
         )
 
-        success_codes = op['response'].get('success_codes', [200])
-        return response.status_code in success_codes
+        # Handle acceptable status codes
+        success_codes = op.get('response', {}).get('success_codes', [200, 204])
+        if response.status_code not in success_codes:
+            response.raise_for_status()
 
     def list_collections(self) -> List[str]:
         """List all collections."""
@@ -309,8 +309,11 @@ class GenericVectorDBPlugin:
             )
 
         op = self.spec.operations['list_collections']
+        context = {**self.kwargs}
 
-        response = self.client.get(op['endpoint'])
+        endpoint = Template(op['endpoint']).render(context)
+
+        response = self.client.get(endpoint)
         response.raise_for_status()
 
         data = response.json()
@@ -319,14 +322,12 @@ class GenericVectorDBPlugin:
         if not collections:
             return []
 
+        # Extract collection names
         name_field = op['response'].get('name_field', 'name')
-        return [
-            c[name_field] if isinstance(c, dict) else str(c)
-            for c in collections
-        ]
+        return [c[name_field] if isinstance(c, dict) else c for c in collections]
 
-    def get_collection_stats(self, collection: str) -> Dict:
-        """Get collection statistics."""
+    def get_collection_stats(self, collection: str) -> Dict[str, Any]:
+        """Get statistics for a collection."""
         if 'get_stats' not in self.spec.operations:
             raise NotImplementedError(
                 f"{self.plugin_name} does not support get_collection_stats"
@@ -353,10 +354,13 @@ class GenericVectorDBPlugin:
 
 
 def load_vector_db_spec(plugin_name: str) -> VectorDBSpec:
-    """Load vector DB specification from YAML file."""
-    # Look for YAML file in plugins directory
-    plugin_dir = Path(__file__).parent
-    yaml_path = plugin_dir / f"{plugin_name}.yaml"
+    """Load vector DB specification from YAML file.
+
+    Looks for YAML files in fitz/vector_db/plugins/ directory.
+    """
+    # Look for YAML file in plugins subdirectory
+    plugins_dir = Path(__file__).parent / "plugins"
+    yaml_path = plugins_dir / f"{plugin_name}.yaml"
 
     if not yaml_path.exists():
         raise ValueError(

@@ -39,6 +39,16 @@ except ImportError:
 # Engine Discovery
 # =============================================================================
 
+def _is_local_plugin(plugin_name: str) -> bool:
+    """Check if a plugin is local/Ollama-based (doesn't require API keys)."""
+    plugin_lower = plugin_name.lower()
+    return any(x in plugin_lower for x in ("ollama", "local", "offline"))
+
+
+def _is_faiss_plugin(plugin_name: str) -> bool:
+    """Check if a plugin is FAISS-based (local vector DB)."""
+    plugin_lower = plugin_name.lower()
+    return "faiss" in plugin_lower or plugin_lower == "local"
 
 def detect_engines() -> dict[str, str]:
     """
@@ -435,7 +445,7 @@ def command(
     for plugin in sorted(available_chat):
         # Check if plugin is available (has API key or is local)
         available = False
-        if plugin in ["ollama", "local"]:
+        if _is_local_plugin(plugin):
             available = system.ollama.available
         elif plugin in system.api_keys:
             available = system.api_keys[plugin].available
@@ -446,7 +456,7 @@ def command(
     print_header("Available Embedding Plugins")
     for plugin in sorted(available_embeddings):
         available = False
-        if plugin in ["ollama", "local"]:
+        if _is_local_plugin(plugin):
             available = system.ollama.available
         elif plugin in system.api_keys:
             available = system.api_keys[plugin].available
@@ -466,7 +476,7 @@ def command(
     print_header("Available Vector Database Plugins")
     for plugin in sorted(available_vector_dbs):
         available = False
-        if plugin in ["local-faiss", "faiss"]:
+        if _is_faiss_plugin(plugin):
             available = system.faiss.available
         elif plugin == "qdrant":
             available = system.qdrant.available

@@ -1,4 +1,4 @@
-# File: fitz/llm/registry.py
+# fitz/llm/registry.py
 """
 Central LLM plugin registry - YAML-based system.
 
@@ -15,8 +15,7 @@ Design principle: NO SILENT FALLBACK
 """
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, List, Type
+from typing import Any, List
 
 from fitz.llm.loader import YAMLPluginNotFoundError, list_yaml_plugins
 from fitz.llm.runtime import (
@@ -25,25 +24,12 @@ from fitz.llm.runtime import (
     YAMLRerankClient,
 )
 
-
-# =============================================================================
-# Errors
-# =============================================================================
-
-
-class PluginRegistryError(Exception):
-    """Base error for plugin registry operations."""
-    pass
-
-
-class PluginNotFoundError(PluginRegistryError, ValueError):
-    """Raised when requested plugin doesn't exist."""
-    pass
-
-
-class LLMRegistryError(PluginNotFoundError):
-    """Error from LLM registry."""
-    pass
+# Import exception classes from core.registry for consistent hierarchy
+from fitz.core.registry import (
+    PluginRegistryError,
+    PluginNotFoundError,
+    LLMRegistryError,
+)
 
 
 # =============================================================================
@@ -153,6 +139,7 @@ def resolve_llm_plugin(*, plugin_type: str, requested_name: str, **kwargs) -> An
 # These are kept for backwards compatibility with code that imports them
 # They don't do anything - the real registry is the functions above
 
+
 class _DummyRegistry:
     """Dummy registry object for backwards compatibility."""
 
@@ -188,7 +175,7 @@ __all__ = [
     "CHAT_REGISTRY",
     "EMBEDDING_REGISTRY",
     "RERANK_REGISTRY",
-    # Errors
+    # Errors (re-exported from core.registry)
     "LLMRegistryError",
     "PluginRegistryError",
     "PluginNotFoundError",

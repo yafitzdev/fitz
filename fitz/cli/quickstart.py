@@ -343,13 +343,11 @@ def run_ingestion(
             collection=collection,
         )
 
-        # Create embedder
-        EmbedderClass = get_llm_plugin(plugin_name=embedding_plugin, plugin_type="embedding")
-        embedder = EmbedderClass()
+        # Create embedder - get_llm_plugin returns an INSTANCE directly
+        embedder = get_llm_plugin(plugin_name=embedding_plugin, plugin_type="embedding")
 
-        # Create vector DB writer
-        VectorDBClass = get_vector_db_plugin(vector_db_plugin)
-        vector_db = VectorDBClass()
+        # Create vector DB writer - get_vector_db_plugin returns an INSTANCE directly
+        vector_db = get_vector_db_plugin(vector_db_plugin)
         writer = VectorDBWriter(client=vector_db)
 
         # Create pipeline

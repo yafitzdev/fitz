@@ -7,11 +7,7 @@ Architecture:
 - PluginNotFoundError is raised for unknown plugins (most registries)
 - PluginRegistryError wraps PluginNotFoundError for get_ingest_plugin
 - Each plugin type has its own registry instance
-
-Import locations:
-- LLM plugins (chat, embedding, rerank): fitz.llm.registry
-- Vector DB plugins: fitz.core.registry or fitz.vector_db.registry
-- Ingest plugins: fitz.core.registry or fitz.ingest.ingestion.registry
+- LLM plugins use fitz.llm.registry but exceptions come from fitz.core.registry
 """
 import pytest
 
@@ -51,16 +47,17 @@ def test_registry_error_message_is_helpful():
 
 def test_all_registries_use_same_pattern():
     """All plugin registries should follow the same pattern."""
-    # Import from correct locations
+    # Import exceptions from core.registry (the single source of truth)
     from fitz.core.registry import (
         PluginNotFoundError,
         PluginRegistryError,
         get_vector_db_plugin,
     )
     from fitz.ingest.ingestion.registry import get_ingest_plugin
-    from fitz.llm.registry import get_llm_plugin, LLMRegistryError
+    # Import get_llm_plugin from llm.registry, but exceptions are from core.registry
+    from fitz.llm.registry import get_llm_plugin
 
-    # LLM raises LLMRegistryError (subclass of PluginNotFoundError)
+    # LLM raises LLMRegistryError which is a subclass of PluginNotFoundError
     with pytest.raises(PluginNotFoundError):
         get_llm_plugin(plugin_name="__fake__", plugin_type="chat")
 
@@ -68,6 +65,6 @@ def test_all_registries_use_same_pattern():
     with pytest.raises(PluginNotFoundError):
         get_vector_db_plugin("__fake__")
 
-    # get_ingest_plugin raises PluginRegistryError
+    # get_ingest_plugin wraps in PluginRegistryError
     with pytest.raises(PluginRegistryError):
         get_ingest_plugin("__fake__")
