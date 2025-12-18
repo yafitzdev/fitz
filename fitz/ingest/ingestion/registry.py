@@ -2,7 +2,7 @@
 """Ingestion plugin registry."""
 from __future__ import annotations
 
-from typing import List, Type, Any
+from typing import Any, List, Type
 
 from fitz.core.registry import INGEST_REGISTRY, PluginNotFoundError
 

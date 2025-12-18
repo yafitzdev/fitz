@@ -18,7 +18,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 # =============================================================================
 # Enums
 # =============================================================================
@@ -26,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 class AuthType(str, Enum):
     """Supported authentication types."""
+
     BEARER = "bearer"
     HEADER = "header"
     QUERY = "query"
@@ -34,6 +34,7 @@ class AuthType(str, Enum):
 
 class InputWrap(str, Enum):
     """How to wrap input for embedding APIs."""
+
     LIST = "list"
     STRING = "string"
     OBJECT = "object"
@@ -41,6 +42,7 @@ class InputWrap(str, Enum):
 
 class MessageTransform(str, Enum):
     """Predefined message transformation strategies."""
+
     OPENAI_CHAT = "openai_chat"
     COHERE_CHAT = "cohere_chat"
     ANTHROPIC_CHAT = "anthropic_chat"
@@ -279,7 +281,9 @@ class RerankResponseConfig(BaseModel):
 
     results_path: str = Field(..., description="Path to results array")
     result_index_path: str = Field(default="index", description="Path to index within result")
-    result_score_path: str = Field(default="relevance_score", description="Path to score within result")
+    result_score_path: str = Field(
+        default="relevance_score", description="Path to score within result"
+    )
 
 
 class RerankPluginSpec(BasePluginSpec):

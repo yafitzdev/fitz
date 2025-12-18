@@ -15,10 +15,9 @@ from __future__ import annotations
 
 from typing import Any, List
 
+from fitz.core.registry import LLMRegistryError
 from fitz.llm.loader import YAMLPluginNotFoundError, list_yaml_plugins
 from fitz.llm.runtime import create_yaml_client
-from fitz.core.registry import LLMRegistryError
-
 
 VALID_LLM_TYPES = frozenset({"chat", "embedding", "rerank"})
 
@@ -69,13 +68,10 @@ def get_llm_plugin(*, plugin_name: str, plugin_type: str, **kwargs: Any) -> Any:
     except YAMLPluginNotFoundError:
         available = available_llm_plugins(plugin_type)
         raise LLMRegistryError(
-            f"Unknown {plugin_type} plugin: {plugin_name!r}. "
-            f"Available: {available}"
+            f"Unknown {plugin_type} plugin: {plugin_name!r}. " f"Available: {available}"
         )
     except Exception as e:
-        raise LLMRegistryError(
-            f"Failed to load {plugin_type} plugin '{plugin_name}': {e}"
-        ) from e
+        raise LLMRegistryError(f"Failed to load {plugin_type} plugin '{plugin_name}': {e}") from e
 
 
 __all__ = [

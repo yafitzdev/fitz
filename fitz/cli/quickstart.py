@@ -12,17 +12,17 @@ This command:
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from pathlib import Path
 
 import typer
 
+from fitz.core.detect import detect_all
+
 # Import plugin registries for discovery
 from fitz.llm.registry import available_llm_plugins
 from fitz.vector_db.registry import available_vector_db_plugins
-from fitz.core.detect import detect_all
 
 # Rich for pretty output (optional, falls back gracefully)
 try:
@@ -333,8 +333,8 @@ def run_ingestion(
     Returns (success, num_chunks).
     """
     try:
+        from fitz.ingest.config.schema import ChunkerConfig, IngestConfig, IngesterConfig
         from fitz.ingest.pipeline.ingestion_pipeline import IngestionPipeline
-        from fitz.ingest.config.schema import IngestConfig, IngesterConfig, ChunkerConfig
         from fitz.llm.registry import get_llm_plugin
         from fitz.vector_db.registry import get_vector_db_plugin
         from fitz.vector_db.writer import VectorDBWriter
@@ -369,6 +369,7 @@ def run_ingestion(
     except Exception as e:
         print_error(f"Ingestion failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False, 0
 
@@ -406,6 +407,7 @@ def run_test_query(collection: str, config_path: Path) -> tuple[bool, str, list[
     except Exception as e:
         print_error(f"Query failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False, str(e), []
 

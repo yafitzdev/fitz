@@ -34,6 +34,7 @@ class ChunkerConfig(BaseModel):
         ...     kwargs={"chunk_size": 1000, "chunk_overlap": 200}
         ... )
     """
+
     plugin_name: str = Field(..., description="Chunker plugin name")
     kwargs: dict[str, Any] = Field(default_factory=dict, description="All chunker parameters")
 

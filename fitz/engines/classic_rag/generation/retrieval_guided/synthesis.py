@@ -138,7 +138,9 @@ class RGS:
         """Extract or generate chunk ID."""
         if isinstance(chunk, dict):
             return str(chunk.get("id") or chunk.get("chunk_id") or f"chunk_{index}")
-        return str(getattr(chunk, "id", None) or getattr(chunk, "chunk_id", None) or f"chunk_{index}")
+        return str(
+            getattr(chunk, "id", None) or getattr(chunk, "chunk_id", None) or f"chunk_{index}"
+        )
 
     def _get_chunk_metadata(self, chunk: ChunkInput) -> Dict[str, Any]:
         """Extract metadata from chunk-like object."""

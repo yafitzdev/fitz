@@ -31,26 +31,31 @@ logger = logging.getLogger(__name__)
 
 class PluginRegistryError(Exception):
     """Base error for plugin registry operations."""
+
     pass
 
 
 class PluginNotFoundError(PluginRegistryError):
     """Raised when requested plugin doesn't exist."""
+
     pass
 
 
 class DuplicatePluginError(PluginRegistryError):
     """Raised when two plugins have the same name."""
+
     pass
 
 
 class LLMRegistryError(PluginNotFoundError):
     """Error from LLM registry."""
+
     pass
 
 
 class VectorDBRegistryError(PluginNotFoundError):
     """Error from Vector DB registry."""
+
     pass
 
 
@@ -293,6 +298,7 @@ def get_llm_plugin(plugin_name: str, plugin_type: str, **kwargs: Any) -> Any:
         LLM plugin instance
     """
     from fitz.llm.registry import get_llm_plugin as _get_llm_plugin
+
     return _get_llm_plugin(plugin_name=plugin_name, plugin_type=plugin_type, **kwargs)
 
 
@@ -307,6 +313,7 @@ def available_llm_plugins(plugin_type: str) -> List[str]:
         Sorted list of plugin names
     """
     from fitz.llm.registry import available_llm_plugins as _available_llm_plugins
+
     return _available_llm_plugins(plugin_type)
 
 
@@ -322,6 +329,7 @@ def get_vector_db_plugin(plugin_name: str, **kwargs: Any) -> Any:
         Vector DB plugin instance
     """
     from fitz.vector_db.registry import get_vector_db_plugin as _get_vector_db_plugin
+
     return _get_vector_db_plugin(plugin_name, **kwargs)
 
 
@@ -333,6 +341,7 @@ def available_vector_db_plugins() -> List[str]:
         Sorted list of plugin names
     """
     from fitz.vector_db.registry import available_vector_db_plugins as _available_vector_db_plugins
+
     return _available_vector_db_plugins()
 
 

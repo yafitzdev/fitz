@@ -16,7 +16,6 @@ Hierarchy:
 """
 from fitz.core.exceptions import EngineError, GenerationError
 
-
 # =============================================================================
 # Pipeline Errors
 # =============================================================================
@@ -24,11 +23,13 @@ from fitz.core.exceptions import EngineError, GenerationError
 
 class PipelineError(EngineError):
     """Pipeline orchestration failed."""
+
     pass
 
 
 class RGSGenerationError(PipelineError, GenerationError):
     """RGS prompt generation or answer synthesis failed."""
+
     pass
 
 
@@ -39,21 +40,25 @@ class RGSGenerationError(PipelineError, GenerationError):
 
 class RetrieverError(EngineError):
     """General retrieval failure."""
+
     pass
 
 
 class EmbeddingError(RetrieverError):
     """Embedding model failed (API failure, invalid input, etc.)."""
+
     pass
 
 
 class VectorSearchError(RetrieverError):
     """Vector database lookup failed."""
+
     pass
 
 
 class RerankError(RetrieverError):
     """Reranking failed or returned invalid data."""
+
     pass
 
 
@@ -64,11 +69,13 @@ class RerankError(RetrieverError):
 
 class LLMError(EngineError):
     """LLM call failed."""
+
     pass
 
 
 class LLMResponseError(LLMError):
     """LLM returned invalid or unparseable response."""
+
     pass
 
 
@@ -79,6 +86,7 @@ class LLMResponseError(LLMError):
 
 class ConfigError(EngineError):
     """Configuration error."""
+
     pass
 
 

@@ -39,6 +39,7 @@ PROVIDER_ENV_MAP: dict[str, list[str]] = {
 
 class CredentialError(RuntimeError):
     """Raised when credentials cannot be resolved."""
+
     pass
 
 

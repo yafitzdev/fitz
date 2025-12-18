@@ -6,7 +6,6 @@ Flow: vector_db → retrieval → context-processing → rgs → llm → final a
 """
 from __future__ import annotations
 
-from typing import Optional
 
 from fitz.engines.classic_rag.config import ClassicRagConfig, load_config
 from fitz.engines.classic_rag.exceptions import (
@@ -104,25 +103,18 @@ class RAGPipeline:
         logger.info(f"{PIPELINE} Constructing RAGPipeline from config")
 
         # Vector DB
-        vector_client = get_vector_db_plugin(
-            cfg.vector_db.plugin_name,
-            **cfg.vector_db.kwargs
-        )
+        vector_client = get_vector_db_plugin(cfg.vector_db.plugin_name, **cfg.vector_db.kwargs)
         logger.info(f"{VECTOR_DB} Using vector DB plugin='{cfg.vector_db.plugin_name}'")
 
         # Chat LLM
         chat_plugin = get_llm_plugin(
-            plugin_type="chat",
-            plugin_name=cfg.chat.plugin_name,
-            **cfg.chat.kwargs
+            plugin_type="chat", plugin_name=cfg.chat.plugin_name, **cfg.chat.kwargs
         )
         logger.info(f"{PIPELINE} Using chat plugin='{cfg.chat.plugin_name}'")
 
         # Embedding
         embedder = get_llm_plugin(
-            plugin_type="embedding",
-            plugin_name=cfg.embedding.plugin_name,
-            **cfg.embedding.kwargs
+            plugin_type="embedding", plugin_name=cfg.embedding.plugin_name, **cfg.embedding.kwargs
         )
         logger.info(f"{PIPELINE} Using embedding plugin='{cfg.embedding.plugin_name}'")
 
@@ -130,9 +122,7 @@ class RAGPipeline:
         rerank_plugin = None
         if cfg.rerank.enabled:
             rerank_plugin = get_llm_plugin(
-                plugin_type="rerank",
-                plugin_name=cfg.rerank.plugin_name,
-                **cfg.rerank.kwargs
+                plugin_type="rerank", plugin_name=cfg.rerank.plugin_name, **cfg.rerank.kwargs
             )
             logger.info(f"{PIPELINE} Using rerank plugin='{cfg.rerank.plugin_name}'")
 

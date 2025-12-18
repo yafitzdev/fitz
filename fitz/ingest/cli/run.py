@@ -76,9 +76,9 @@ def _raw_to_chunks(raw_docs: Iterable[Any]) -> list[Chunk]:
 
 
 def _embed_with_progress(
-        embed_plugin: Any,
-        chunks: List[Chunk],
-        show_progress: bool = True,
+    embed_plugin: Any,
+    chunks: List[Chunk],
+    show_progress: bool = True,
 ) -> List[List[float]]:
     """Embed chunks with progress bar.
 
@@ -94,13 +94,13 @@ def _embed_with_progress(
 
     if RICH_AVAILABLE and show_progress and len(chunks) > 1:
         with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                TimeRemainingColumn(),
-                console=console,
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
         ) as progress:
             task = progress.add_task("Embedding...", total=len(chunks))
 
@@ -120,44 +120,44 @@ def _embed_with_progress(
 
 
 def command(
-        source: Path = typer.Argument(
-            ...,
-            help="Source to ingest (file or directory).",
-        ),
-        collection: str = typer.Argument(
-            "default",
-            help="Target collection name.",
-        ),
-        ingest_plugin: str = typer.Option(
-            "local",
-            "--ingest",
-            "-i",
-            help="Ingestion plugin name.",
-        ),
-        embedding_plugin: str = typer.Option(
-            "cohere",
-            "--embedding",
-            "-e",
-            help="Embedding plugin name.",
-        ),
-        vector_db_plugin: str = typer.Option(
-            "qdrant",
-            "--vector-db",
-            "-v",
-            help="Vector DB plugin name.",
-        ),
-        batch_size: int = typer.Option(
-            50,
-            "--batch-size",
-            "-b",
-            help="Batch size for vector DB writes.",
-        ),
-        quiet: bool = typer.Option(
-            False,
-            "--quiet",
-            "-q",
-            help="Suppress progress output.",
-        ),
+    source: Path = typer.Argument(
+        ...,
+        help="Source to ingest (file or directory).",
+    ),
+    collection: str = typer.Argument(
+        "default",
+        help="Target collection name.",
+    ),
+    ingest_plugin: str = typer.Option(
+        "local",
+        "--ingest",
+        "-i",
+        help="Ingestion plugin name.",
+    ),
+    embedding_plugin: str = typer.Option(
+        "cohere",
+        "--embedding",
+        "-e",
+        help="Embedding plugin name.",
+    ),
+    vector_db_plugin: str = typer.Option(
+        "qdrant",
+        "--vector-db",
+        "-v",
+        help="Vector DB plugin name.",
+    ),
+    batch_size: int = typer.Option(
+        50,
+        "--batch-size",
+        "-b",
+        help="Batch size for vector DB writes.",
+    ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Suppress progress output.",
+    ),
 ) -> None:
     """
     Ingest documents into a vector database.
@@ -294,8 +294,8 @@ def command(
 
     # Batch write
     for i in range(0, len(chunks), batch_size):
-        batch_chunks = chunks[i: i + batch_size]
-        batch_vectors = vectors[i: i + batch_size]
+        batch_chunks = chunks[i : i + batch_size]
+        batch_vectors = vectors[i : i + batch_size]
         writer.upsert(collection=collection, chunks=batch_chunks, vectors=batch_vectors)
         logger.debug(f"{VECTOR_DB} Wrote batch {i // batch_size + 1}")
 

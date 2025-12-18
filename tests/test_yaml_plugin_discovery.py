@@ -28,9 +28,7 @@ class TestYAMLPluginDiscovery:
             pytest.skip("No YAML chat plugins")
 
         instance = get_llm_plugin(
-            plugin_name=yaml_plugins[0],
-            plugin_type="chat",
-            api_key="test_key_for_testing"
+            plugin_name=yaml_plugins[0], plugin_type="chat", api_key="test_key_for_testing"
         )
 
         assert hasattr(instance, "plugin_name")

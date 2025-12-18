@@ -50,7 +50,7 @@ def extract_path(data: Any, path: str, *, default: Any = None, strict: bool = Tr
     # Split path into parts, handling both dots and brackets
     # "items[0].text" -> ["items", "0", "text"]
     # "result.collections" -> ["result", "collections"]
-    parts = re.split(r'\.|\[|\]', path)
+    parts = re.split(r"\.|\[|\]", path)
     parts = [p for p in parts if p]  # Remove empty strings
 
     current = data
@@ -65,11 +65,9 @@ def extract_path(data: Any, path: str, *, default: Any = None, strict: bool = Tr
                 current = getattr(current, part)
             else:
                 if strict:
-                    raise KeyError(
-                        f"Cannot traverse {type(current).__name__} with key {part!r}"
-                    )
+                    raise KeyError(f"Cannot traverse {type(current).__name__} with key {part!r}")
                 return default
-        except (KeyError, IndexError, TypeError) as e:
+        except (KeyError, IndexError, TypeError):
             if strict:
                 raise
             return default

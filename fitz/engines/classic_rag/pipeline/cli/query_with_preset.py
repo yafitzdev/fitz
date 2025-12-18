@@ -44,7 +44,6 @@ def command(
         "-p",
         help="Use a named preset (e.g., 'local' for offline mode). "
         "Available: local, openai, azure, cohere",
-
     ),
     max_sources: Optional[int] = typer.Option(
         None,

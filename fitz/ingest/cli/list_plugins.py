@@ -12,15 +12,16 @@ from typing import Optional
 
 import typer
 
+from fitz.core.registry import (
+    available_ingest_plugins,
+    get_ingest_plugin,
+)
+
 # Import from correct locations:
 # - LLM plugins (embedding, rerank) are in fitz.llm.registry
 # - Ingest plugins are in fitz.core.registry
 # - Vector DB plugins are in fitz.vector_db.registry
 from fitz.llm.registry import available_llm_plugins
-from fitz.core.registry import (
-    available_ingest_plugins,
-    get_ingest_plugin,
-)
 from fitz.vector_db.registry import available_vector_db_plugins
 
 

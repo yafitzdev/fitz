@@ -2,7 +2,7 @@
 """Chunking plugin registry."""
 from __future__ import annotations
 
-from typing import List, Type, Any
+from typing import Any, List, Type
 
 from fitz.core.registry import CHUNKING_REGISTRY, PluginNotFoundError
 

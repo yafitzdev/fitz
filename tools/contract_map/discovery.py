@@ -26,6 +26,7 @@ def _simple_plugin_id(cls) -> str:
 # YAML Plugin Discovery
 # ---------------------------------------------------------------------------
 
+
 def scan_yaml_plugins(plugin_dir: str, plugin_type: str) -> DiscoveryReport:
     """
     Scan for YAML-based plugins (LLM and Vector DB).
@@ -38,21 +39,20 @@ def scan_yaml_plugins(plugin_dir: str, plugin_type: str) -> DiscoveryReport:
         DiscoveryReport with YAML plugins found
     """
     import sys
-    from pathlib import Path
 
     # Find the fitz package root
-    fitz_locations = [p for p in sys.path if Path(p).name in ('fitz', 'src', '')]
+    fitz_locations = [p for p in sys.path if Path(p).name in ("fitz", "src", "")]
 
     yaml_path = None
     for loc in fitz_locations:
-        candidate = Path(loc) / plugin_dir.replace('.', '/')
+        candidate = Path(loc) / plugin_dir.replace(".", "/")
         if candidate.exists():
             yaml_path = candidate
             break
 
     # Try relative to cwd as fallback
     if yaml_path is None:
-        yaml_path = Path.cwd() / plugin_dir.replace('.', '/')
+        yaml_path = Path.cwd() / plugin_dir.replace(".", "/")
 
     if not yaml_path.exists():
         return DiscoveryReport(
@@ -87,8 +87,8 @@ PLUGIN_PREDICATES: Dict[str, Tuple[Callable, Callable, bool]] = {
     # --- retrieval (under engines/classic_rag) ---
     "fitz.engines.classic_rag.retrieval.runtime.plugins": (
         lambda cls: (
-                isinstance(getattr(cls, "plugin_name", None), str)
-                and callable(getattr(cls, "retrieve", None))
+            isinstance(getattr(cls, "plugin_name", None), str)
+            and callable(getattr(cls, "retrieve", None))
         ),
         _simple_plugin_id,
         False,
@@ -96,8 +96,8 @@ PLUGIN_PREDICATES: Dict[str, Tuple[Callable, Callable, bool]] = {
     # --- pipeline (under engines/classic_rag) ---
     "fitz.engines.classic_rag.pipeline.pipeline.plugins": (
         lambda cls: (
-                isinstance(getattr(cls, "plugin_name", None), str)
-                and callable(getattr(cls, "build", None))
+            isinstance(getattr(cls, "plugin_name", None), str)
+            and callable(getattr(cls, "build", None))
         ),
         _simple_plugin_id,
         False,
@@ -105,8 +105,8 @@ PLUGIN_PREDICATES: Dict[str, Tuple[Callable, Callable, bool]] = {
     # --- chunking (under ingest) ---
     "fitz.ingest.chunking.plugins": (
         lambda cls: (
-                isinstance(getattr(cls, "plugin_name", None), str)
-                and callable(getattr(cls, "chunk_text", None))
+            isinstance(getattr(cls, "plugin_name", None), str)
+            and callable(getattr(cls, "chunk_text", None))
         ),
         _simple_plugin_id,
         False,
@@ -114,8 +114,8 @@ PLUGIN_PREDICATES: Dict[str, Tuple[Callable, Callable, bool]] = {
     # --- ingestion (under ingest) ---
     "fitz.ingest.ingestion.plugins": (
         lambda cls: (
-                isinstance(getattr(cls, "plugin_name", None), str)
-                and callable(getattr(cls, "ingest", None))
+            isinstance(getattr(cls, "plugin_name", None), str)
+            and callable(getattr(cls, "ingest", None))
         ),
         _simple_plugin_id,
         False,
@@ -227,10 +227,8 @@ def scan_all_discoveries() -> List[DiscoveryReport]:
         scan_yaml_plugins("fitz/llm/chat", "LLM chat"),
         scan_yaml_plugins("fitz/llm/embedding", "LLM embedding"),
         scan_yaml_plugins("fitz/llm/rerank", "LLM rerank"),
-
         # Vector DB plugins - YAML-based
         scan_yaml_plugins("fitz/vector_db/plugins", "Vector DB"),
-
         # Python-based plugins
         scan_discovery(
             "fitz.engines.classic_rag.retrieval.runtime.plugins",
@@ -241,12 +239,10 @@ def scan_all_discoveries() -> List[DiscoveryReport]:
             "RAG pipeline plugins (Python discovery)",
         ),
         scan_discovery(
-            "fitz.ingest.chunking.plugins",
-            "Ingest chunking plugins (Python discovery)"
+            "fitz.ingest.chunking.plugins", "Ingest chunking plugins (Python discovery)"
         ),
         scan_discovery(
-            "fitz.ingest.ingestion.plugins",
-            "Ingest ingestion plugins (Python discovery)"
+            "fitz.ingest.ingestion.plugins", "Ingest ingestion plugins (Python discovery)"
         ),
     ]
 

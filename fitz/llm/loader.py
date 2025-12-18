@@ -35,11 +35,13 @@ _SPEC_CLASSES: dict[str, type[PluginSpec]] = {
 
 class YAMLPluginError(Exception):
     """Base error for YAML plugin operations."""
+
     pass
 
 
 class YAMLPluginNotFoundError(YAMLPluginError, FileNotFoundError):
     """YAML plugin file not found."""
+
     pass
 
 
@@ -103,11 +105,14 @@ def _load_plugin_cached(plugin_type: str, plugin_name: str) -> PluginSpec:
 @overload
 def load_plugin(plugin_type: Literal["chat"], plugin_name: str) -> ChatPluginSpec: ...
 
+
 @overload
 def load_plugin(plugin_type: Literal["embedding"], plugin_name: str) -> EmbeddingPluginSpec: ...
 
+
 @overload
 def load_plugin(plugin_type: Literal["rerank"], plugin_name: str) -> RerankPluginSpec: ...
+
 
 @overload
 def load_plugin(plugin_type: str, plugin_name: str) -> PluginSpec: ...
@@ -147,10 +152,7 @@ def list_yaml_plugins(plugin_type: str) -> list[str]:
     if not plugin_dir.exists():
         return []
 
-    return sorted(
-        p.stem for p in plugin_dir.glob("*.yaml")
-        if not p.stem.startswith("_")
-    )
+    return sorted(p.stem for p in plugin_dir.glob("*.yaml") if not p.stem.startswith("_"))
 
 
 def clear_cache() -> None:

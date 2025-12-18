@@ -20,7 +20,6 @@ from .common import (
     Hotspot,
     iter_python_files,
 )
-from .discovery import scan_discovery
 
 
 def read_pyproject() -> dict[str, Any] | None:
@@ -133,6 +132,7 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
     # Add YAML plugin implementations
     try:
         from fitz.llm.registry import available_llm_plugins
+
         impl["ChatPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("chat")]
         impl["EmbeddingPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("embedding")]
         impl["RerankPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("rerank")]
@@ -143,6 +143,7 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
 
     try:
         from fitz.vector_db.registry import available_vector_db_plugins
+
         impl["VectorDBPlugin"] = [f"{p} (YAML)" for p in available_vector_db_plugins()]
     except Exception:
         impl["VectorDBPlugin"] = []
@@ -150,6 +151,7 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
     # Scan Python plugins
     for ns, iface in expected:
         from tools.contract_map.discovery import scan_discovery
+
         rep = scan_discovery(ns, note="hotspot scan")
         impl[iface] = rep.plugins_found
 

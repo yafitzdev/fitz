@@ -11,7 +11,7 @@ Detects available providers and creates a working configuration.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any, Dict
 
 import typer
 
@@ -39,6 +39,7 @@ except ImportError:
 # Engine Discovery
 # =============================================================================
 
+
 def _is_local_plugin(plugin_name: str) -> bool:
     """Check if a plugin is local/Ollama-based (doesn't require API keys)."""
     plugin_lower = plugin_name.lower()
@@ -49,6 +50,7 @@ def _is_faiss_plugin(plugin_name: str) -> bool:
     """Check if a plugin is FAISS-based (local vector DB)."""
     plugin_lower = plugin_name.lower()
     return "faiss" in plugin_lower or plugin_lower == "local"
+
 
 def detect_engines() -> dict[str, str]:
     """
@@ -71,6 +73,7 @@ def detect_engines() -> dict[str, str]:
     # Get engines from registry
     try:
         from fitz.runtime import list_engines_with_info
+
         return list_engines_with_info()
     except ImportError:
         # Fallback if runtime not available
@@ -86,7 +89,9 @@ def prompt_engine_choice(engines: dict[str, str]) -> str:
     if len(engines) == 1:
         engine = list(engines.keys())[0]
         if RICH_AVAILABLE:
-            console.print(f"  [dim]Engine:[/dim] [green]{engine}[/green] [dim](auto-selected)[/dim]")
+            console.print(
+                f"  [dim]Engine:[/dim] [green]{engine}[/green] [dim](auto-selected)[/dim]"
+            )
         else:
             print(f"  Engine: {engine} (auto-selected)")
         return engine
@@ -95,7 +100,11 @@ def prompt_engine_choice(engines: dict[str, str]) -> str:
     if RICH_AVAILABLE:
         console.print("\n[bold blue]Available Engines[/bold blue]")
         for i, (name, desc) in enumerate(engines.items(), 1):
-            status = "[bold green]Production[/bold green]" if name == "classic_rag" else "[yellow]Experimental[/yellow]"
+            status = (
+                "[bold green]Production[/bold green]"
+                if name == "classic_rag"
+                else "[yellow]Experimental[/yellow]"
+            )
             console.print(f"  {i}. [bold]{name}[/bold] ({status})")
             console.print(f"     [dim]{desc}[/dim]")
     else:
@@ -115,7 +124,7 @@ def prompt_engine_choice(engines: dict[str, str]) -> str:
         choice = Prompt.ask(
             "\nSelect engine",
             choices=[str(i) for i in range(1, len(choices) + 1)],
-            default=str(default_idx + 1)
+            default=str(default_idx + 1),
         )
     else:
         choice = input(f"\nSelect engine [1-{len(choices)}] ({default_idx + 1}): ").strip()
@@ -150,6 +159,7 @@ def get_plugin_defaults(plugin_name: str, plugin_type: str) -> Dict[str, Any]:
         # Try to get default model from plugin class
         try:
             from fitz.llm.registry import get_llm_plugin
+
             plugin_cls = get_llm_plugin(plugin_name=plugin_name, plugin_type="chat")
             # Look for default model in class attributes
             if hasattr(plugin_cls, "default_model"):
@@ -179,7 +189,7 @@ def generate_plugin_config(plugin_name: str, plugin_type: str, **kwargs) -> str:
             if isinstance(value, str):
                 kwargs_lines.append(f'    {key}: "{value}"')
             else:
-                kwargs_lines.append(f'    {key}: {value}')
+                kwargs_lines.append(f"    {key}: {value}")
         kwargs_str = "\n".join(kwargs_lines)
     else:
         kwargs_str = "    {}"
@@ -195,14 +205,14 @@ def generate_plugin_config(plugin_name: str, plugin_type: str, **kwargs) -> str:
 
 
 def generate_config(
-        chat_provider: str,
-        embedding_provider: str,
-        vector_db: str,
-        qdrant_host: str = "localhost",
-        qdrant_port: int = 6333,
-        collection: str = "default",
-        enable_rerank: bool = False,
-        rerank_provider: str | None = None,
+    chat_provider: str,
+    embedding_provider: str,
+    vector_db: str,
+    qdrant_host: str = "localhost",
+    qdrant_port: int = 6333,
+    collection: str = "default",
+    enable_rerank: bool = False,
+    rerank_provider: str | None = None,
 ) -> str:
     """Generate YAML config dynamically based on selected plugins."""
 
@@ -338,10 +348,10 @@ def prompt_confirm(prompt: str, default: bool = True) -> bool:
 
 
 def auto_select_or_prompt(
-        category: str,
-        available: list[str],
-        default: str,
-        prompt_text: str,
+    category: str,
+    available: list[str],
+    default: str,
+    prompt_text: str,
 ) -> str:
     """Auto-select if only one option, otherwise prompt user."""
     if len(available) == 1:
@@ -363,17 +373,17 @@ def auto_select_or_prompt(
 
 
 def command(
-        non_interactive: bool = typer.Option(
-            False,
-            "--non-interactive",
-            "-y",
-            help="Use detected defaults without prompting",
-        ),
-        show_config: bool = typer.Option(
-            False,
-            "--show-config",
-            help="Only show what config would be generated",
-        ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        "-y",
+        help="Use detected defaults without prompting",
+    ),
+    show_config: bool = typer.Option(
+        False,
+        "--show-config",
+        help="Only show what config would be generated",
+    ),
 ) -> None:
     """
     Initialize Fitz with an interactive setup wizard.
@@ -642,6 +652,7 @@ def command(
 
     if RICH_AVAILABLE:
         from rich.syntax import Syntax
+
         console.print(Syntax(config, "yaml", theme="monokai", line_numbers=False))
     else:
         print(config)

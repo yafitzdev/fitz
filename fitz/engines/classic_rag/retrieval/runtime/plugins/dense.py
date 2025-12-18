@@ -7,9 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List, Protocol, runtime_checkable
 
-from fitz.engines.classic_rag.exceptions import EmbeddingError
+from fitz.engines.classic_rag.exceptions import EmbeddingError, RerankError, VectorSearchError
 from fitz.engines.classic_rag.models.chunk import Chunk
-from fitz.engines.classic_rag.exceptions import RerankError, VectorSearchError
 from fitz.engines.classic_rag.retrieval.runtime.base import RetrievalPlugin
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import RETRIEVER
@@ -30,12 +29,14 @@ class VectorSearchClient(Protocol):
 @runtime_checkable
 class Embedder(Protocol):
     """Protocol for embedding plugins."""
+
     def embed(self, text: str) -> list[float]: ...
 
 
 @runtime_checkable
 class Reranker(Protocol):
     """Protocol for rerank plugins."""
+
     def rerank(self, query: str, documents: list[Any], top_n: int | None = None) -> list[Any]: ...
 
 

@@ -41,7 +41,7 @@ def test_all_registries_use_same_pattern():
     """All plugin registries should follow the same pattern."""
     from fitz.core.registry import PluginNotFoundError
     from fitz.ingest.ingestion.registry import get_ingest_plugin
-    from fitz.llm.registry import get_llm_plugin, LLMRegistryError
+    from fitz.llm.registry import LLMRegistryError, get_llm_plugin
     from fitz.vector_db.registry import get_vector_db_plugin
 
     # LLM raises LLMRegistryError

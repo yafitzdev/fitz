@@ -56,9 +56,7 @@ def test_get_llm_plugin_returns_instance_if_present():
         # YAML plugins return instances, not classes
         # Pass api_key to avoid credential errors in tests
         instance = get_llm_plugin(
-            plugin_name="cohere",
-            plugin_type=kind,
-            api_key="test_key_for_testing"
+            plugin_name="cohere", plugin_type=kind, api_key="test_key_for_testing"
         )
 
         # Should be an instance with plugin_name and plugin_type attributes

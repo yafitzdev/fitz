@@ -195,10 +195,7 @@ class GeminiChatTransform:
             if role == "system":
                 system_instruction = {"parts": [{"text": content}]}
             elif role in self.ROLE_MAP:
-                contents.append({
-                    "role": self.ROLE_MAP[role],
-                    "parts": [{"text": content}]
-                })
+                contents.append({"role": self.ROLE_MAP[role], "parts": [{"text": content}]})
 
         result: dict[str, Any] = {"contents": contents}
 
@@ -263,9 +260,6 @@ def get_transformer(name: str) -> MessageTransformer:
     """
     if name not in TRANSFORM_REGISTRY:
         available = sorted(TRANSFORM_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown message transform: {name!r}. "
-            f"Available: {available}"
-        )
+        raise ValueError(f"Unknown message transform: {name!r}. " f"Available: {available}")
 
     return TRANSFORM_REGISTRY[name]()
