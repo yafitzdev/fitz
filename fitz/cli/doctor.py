@@ -1,29 +1,21 @@
 # fitz/cli/doctor.py
 """
-Doctor command for Fitz CLI.
-
-Runs comprehensive diagnostics on your Fitz setup.
+Doctor command: Run diagnostics on Fitz setup.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 
-# Import centralized detection
-from fitz.core.detect import (
-    ProviderStatus,
-    detect_all,
-)
+from fitz.core.detect import detect_all
 
-# Rich for pretty output (optional)
+# Rich for pretty output
 try:
     from rich.console import Console
     from rich.panel import Panel
-    from rich.table import Table
 
     RICH_AVAILABLE = True
     console = Console()
@@ -32,65 +24,55 @@ except ImportError:
     console = None
 
 
-def print_status(name: str, status: str, details: str = "", ok: bool = True) -> None:
+def print_status(name: str, status: str, details: str, ok: bool) -> None:
     """Print a status line."""
     if RICH_AVAILABLE:
-        icon = "✓" if ok else "✗" if status == "ERROR" else "⚠"
-        color = "green" if ok else "red" if status == "ERROR" else "yellow"
+        icon = "✓" if ok else "⚠" if status == "WARN" or status == "INFO" else "✗"
+        color = "green" if ok else "yellow" if status == "WARN" or status == "INFO" else "red"
         console.print(f"  [{color}]{icon}[/{color}] {name}: {details}")
     else:
-        icon = "✓" if ok else "✗" if status == "ERROR" else "⚠"
+        icon = "✓" if ok else "⚠" if status == "WARN" else "✗"
         print(f"  {icon} {name}: {details}")
 
 
-def print_provider_status(provider: ProviderStatus) -> None:
+def print_provider_status(provider) -> None:
     """Print status for a provider."""
-    status = "OK" if provider.available else "INFO"
-    print_status(provider.name, status, provider.details, provider.available)
+    print_status(provider.name, "OK" if provider.available else "WARN", provider.details, provider.available)
 
 
 def check_python() -> tuple[bool, str]:
     """Check Python version."""
-    version = sys.version.split()[0]
-    major, minor = sys.version_info[:2]
-    ok = major >= 3 and minor >= 10
-    return ok, f"Python {version}" + ("" if ok else " (3.10+ required)")
+    import sys
+    version = f"Python {sys.version.split()[0]}"
+    ok = sys.version_info >= (3, 10)
+    return ok, version
 
 
 def check_fitz_dir() -> tuple[bool, str]:
-    """Check for .fitz directory."""
+    """Check if .fitz directory exists."""
     fitz_dir = Path.cwd() / ".fitz"
-    if fitz_dir.exists():
-        config = fitz_dir / "config.yaml"
-        if config.exists():
-            return True, ".fitz/config.yaml exists"
+    config_file = fitz_dir / "config.yaml"
+
+    if config_file.exists():
+        return True, ".fitz/config.yaml exists"
+    elif fitz_dir.exists():
         return True, ".fitz/ exists (no config.yaml)"
-    return False, ".fitz/ not found (run: fitz init)"
+    else:
+        return False, "Not found (run 'fitz init')"
 
 
 def check_config() -> tuple[bool, str, Optional[dict]]:
-    """Check if config is valid."""
-    config_paths = [
-        Path.cwd() / ".fitz" / "config.yaml",
-        Path.cwd() / "fitz" / "engines" / "classic_rag" / "config" / "default.yaml",
-    ]
-
-    for path in config_paths:
-        if path.exists():
-            try:
-                import yaml
-
-                with open(path) as f:
-                    config = yaml.safe_load(f)
-                return True, f"Config loaded from {path.name}", config
-            except Exception as e:
-                return False, f"Config error: {e}", None
-
-    return False, "No config found", None
+    """Check if config can be loaded."""
+    try:
+        from fitz.engines.classic_rag.config.loader import load_config_dict
+        config = load_config_dict()
+        return True, "Config loaded from config.yaml", config
+    except Exception as e:
+        return False, f"Failed to load: {e}", None
 
 
 def check_dependencies() -> list[tuple[str, bool, str]]:
-    """Check required Python dependencies."""
+    """Check required dependencies."""
     deps = []
 
     packages = [
@@ -115,10 +97,14 @@ def check_dependencies() -> list[tuple[str, bool, str]]:
 
 
 def test_chat(config: dict) -> tuple[bool, str]:
-    """Test chat/LLM configuration."""
-    llm_cfg = config.get("llm", {})
-    plugin = llm_cfg.get("plugin_name", "?")
-    model = llm_cfg.get("kwargs", {}).get("model", "default")
+    """Test chat configuration."""
+    chat_cfg = config.get("chat", {})
+    plugin = chat_cfg.get("plugin_name", "?")
+    model = chat_cfg.get("kwargs", {}).get("model", "default")
+
+    if plugin == "?":
+        return False, "Not configured (missing 'chat' in config)"
+
     return True, f"Plugin '{plugin}' model '{model}'"
 
 
@@ -127,16 +113,17 @@ def test_embedding(config: dict) -> tuple[bool, str]:
     emb_cfg = config.get("embedding", {})
     plugin = emb_cfg.get("plugin_name", "?")
     model = emb_cfg.get("kwargs", {}).get("model", "default")
-    return True, f"Plugin '{plugin}'" + (
-        f" model '{model}'" if model != "default" else " configured"
-    )
+
+    if plugin == "?":
+        return False, "Not configured"
+
+    return True, f"Plugin '{plugin}'" + (f" model '{model}'" if model != "default" else " configured")
 
 
 def test_rerank(config: dict) -> tuple[bool, str]:
     """Test rerank configuration."""
     rerank_cfg = config.get("rerank", {})
 
-    # Check if rerank is configured
     if not rerank_cfg:
         return False, "Not configured (optional)"
 
@@ -158,8 +145,8 @@ def test_rerank(config: dict) -> tuple[bool, str]:
 
 
 def command(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
-    test_connections: bool = typer.Option(False, "--test", "-t", help="Test actual connections"),
+        verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
+        test_connections: bool = typer.Option(False, "--test", "-t", help="Test actual connections"),
 ) -> None:
     """
     Run diagnostics on your Fitz setup.
@@ -250,7 +237,7 @@ def command(
     if config:
         print("\n⚙️  Configuration:")
 
-        # Chat (was "LLM")
+        # Chat
         ok, msg = test_chat(config)
         print_status("Chat", "OK" if ok else "WARN", msg, ok)
         if not ok:
@@ -262,14 +249,14 @@ def command(
         if not ok:
             warnings.append(f"Embedding: {msg}")
 
-        # Rerank (NEW)
+        # Rerank
         ok, msg = test_rerank(config)
         print_status("Rerank", "OK" if ok else "INFO", msg, ok)
 
         # Show configured values in verbose mode
         if verbose:
             print("\n  Configured values:")
-            print(f"    Chat: {config.get('llm', {}).get('plugin_name', '?')}")
+            print(f"    Chat: {config.get('chat', {}).get('plugin_name', '?')}")
             print(f"    Embedding: {config.get('embedding', {}).get('plugin_name', '?')}")
             print(f"    Rerank: {config.get('rerank', {}).get('plugin_name', 'disabled')}")
             print(f"    Vector DB: {config.get('vector_db', {}).get('plugin_name', '?')}")
@@ -287,7 +274,6 @@ def command(
             from qdrant_client import QdrantClient
 
             vdb_cfg = config.get("vector_db", {}).get("kwargs", {})
-            # Use detected host/port as fallback
             host = vdb_cfg.get("host", system.qdrant_host)
             port = vdb_cfg.get("port", system.qdrant_port)
             client = QdrantClient(host=host, port=port, timeout=5)
@@ -304,7 +290,6 @@ def command(
 
         # Test embedding
         try:
-            # This would need actual embedding test implementation
             print_status("Embedding test", "SKIP", "Not implemented", True)
         except Exception as e:
             print_status("Embedding test", "ERROR", str(e), False)
