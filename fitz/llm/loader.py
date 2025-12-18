@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import TypeVar
+from typing import Literal, overload
 
 import yaml
 from pydantic import ValidationError
@@ -24,10 +24,20 @@ from fitz.llm.schema import (
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=PluginSpec)
-
 # Directory containing YAML plugin definitions (fitz/llm/)
 YAML_PLUGINS_DIR = Path(__file__).parent
+
+# Mapping of plugin types to their spec classes
+_SPEC_CLASSES: dict[str, type[PluginSpec]] = {
+    "chat": ChatPluginSpec,
+    "embedding": EmbeddingPluginSpec,
+    "rerank": RerankPluginSpec,
+}
+
+
+# =============================================================================
+# Exceptions
+# =============================================================================
 
 
 class YAMLPluginError(Exception):
@@ -58,7 +68,7 @@ class YAMLPluginValidationError(YAMLPluginError, ValueError):
 
 
 # =============================================================================
-# Plugin Loading
+# Internal Helpers
 # =============================================================================
 
 
@@ -88,8 +98,41 @@ def _load_yaml_file(path: Path) -> dict:
     return data
 
 
-def _validate_spec(data: dict, spec_class: type[T], path: Path) -> T:
-    """Validate YAML data against a Pydantic schema."""
+# =============================================================================
+# Core Generic Loader (Single Implementation)
+# =============================================================================
+
+
+@lru_cache(maxsize=256)
+def _load_plugin_cached(plugin_type: str, plugin_name: str) -> PluginSpec:
+    """
+    Load and validate a plugin specification (cached).
+
+    This is the single implementation for all plugin types.
+    The cache key is (plugin_type, plugin_name).
+
+    Args:
+        plugin_type: Type of plugin ("chat", "embedding", "rerank")
+        plugin_name: Name of the plugin (e.g., "cohere", "openai")
+
+    Returns:
+        Validated PluginSpec
+
+    Raises:
+        ValueError: If plugin_type is invalid
+        YAMLPluginNotFoundError: If plugin file doesn't exist
+        YAMLPluginValidationError: If plugin fails validation
+    """
+    if plugin_type not in _SPEC_CLASSES:
+        raise ValueError(
+            f"Invalid plugin type: {plugin_type!r}. "
+            f"Must be one of: {sorted(_SPEC_CLASSES.keys())}"
+        )
+
+    spec_class = _SPEC_CLASSES[plugin_type]
+    path = _get_yaml_path(plugin_type, plugin_name)
+    data = _load_yaml_file(path)
+
     try:
         return spec_class.model_validate(data)
     except ValidationError as e:
@@ -97,73 +140,32 @@ def _validate_spec(data: dict, spec_class: type[T], path: Path) -> T:
 
 
 # =============================================================================
-# Public API
+# Type-Safe Public API
 # =============================================================================
 
 
-@lru_cache(maxsize=128)
-def load_chat_plugin(plugin_name: str) -> ChatPluginSpec:
-    """Load and validate a chat plugin specification.
+@overload
+def load_plugin(plugin_type: Literal["chat"], plugin_name: str) -> ChatPluginSpec: ...
 
-    Args:
-        plugin_name: Name of the plugin (e.g., "cohere", "openai")
+@overload
+def load_plugin(plugin_type: Literal["embedding"], plugin_name: str) -> EmbeddingPluginSpec: ...
 
-    Returns:
-        Validated ChatPluginSpec
+@overload
+def load_plugin(plugin_type: Literal["rerank"], plugin_name: str) -> RerankPluginSpec: ...
 
-    Raises:
-        YAMLPluginNotFoundError: If plugin file doesn't exist
-        YAMLPluginValidationError: If plugin fails validation
-    """
-    path = _get_yaml_path("chat", plugin_name)
-    data = _load_yaml_file(path)
-    return _validate_spec(data, ChatPluginSpec, path)
-
-
-@lru_cache(maxsize=128)
-def load_embedding_plugin(plugin_name: str) -> EmbeddingPluginSpec:
-    """Load and validate an embedding plugin specification.
-
-    Args:
-        plugin_name: Name of the plugin (e.g., "cohere", "openai")
-
-    Returns:
-        Validated EmbeddingPluginSpec
-
-    Raises:
-        YAMLPluginNotFoundError: If plugin file doesn't exist
-        YAMLPluginValidationError: If plugin fails validation
-    """
-    path = _get_yaml_path("embedding", plugin_name)
-    data = _load_yaml_file(path)
-    return _validate_spec(data, EmbeddingPluginSpec, path)
-
-
-@lru_cache(maxsize=128)
-def load_rerank_plugin(plugin_name: str) -> RerankPluginSpec:
-    """Load and validate a rerank plugin specification.
-
-    Args:
-        plugin_name: Name of the plugin (e.g., "cohere")
-
-    Returns:
-        Validated RerankPluginSpec
-
-    Raises:
-        YAMLPluginNotFoundError: If plugin file doesn't exist
-        YAMLPluginValidationError: If plugin fails validation
-    """
-    path = _get_yaml_path("rerank", plugin_name)
-    data = _load_yaml_file(path)
-    return _validate_spec(data, RerankPluginSpec, path)
+@overload
+def load_plugin(plugin_type: str, plugin_name: str) -> PluginSpec: ...
 
 
 def load_plugin(plugin_type: str, plugin_name: str) -> PluginSpec:
     """Load and validate any plugin specification.
 
+    This is the primary entry point for loading plugins. It returns
+    the appropriate spec type based on the plugin_type.
+
     Args:
         plugin_type: Type of plugin ("chat", "embedding", "rerank")
-        plugin_name: Name of the plugin
+        plugin_name: Name of the plugin (e.g., "cohere", "openai")
 
     Returns:
         Validated PluginSpec (ChatPluginSpec, EmbeddingPluginSpec, or RerankPluginSpec)
@@ -172,20 +174,60 @@ def load_plugin(plugin_type: str, plugin_name: str) -> PluginSpec:
         ValueError: If plugin_type is invalid
         YAMLPluginNotFoundError: If plugin file doesn't exist
         YAMLPluginValidationError: If plugin fails validation
+
+    Examples:
+        >>> spec = load_plugin("chat", "openai")
+        >>> spec.plugin_name
+        'openai'
     """
-    loaders = {
-        "chat": load_chat_plugin,
-        "embedding": load_embedding_plugin,
-        "rerank": load_rerank_plugin,
-    }
+    return _load_plugin_cached(plugin_type, plugin_name)
 
-    if plugin_type not in loaders:
-        raise ValueError(
-            f"Invalid plugin type: {plugin_type!r}. "
-            f"Must be one of: {sorted(loaders.keys())}"
-        )
 
-    return loaders[plugin_type](plugin_name)
+def load_chat_plugin(plugin_name: str) -> ChatPluginSpec:
+    """Load and validate a chat plugin specification.
+
+    Type-safe wrapper around load_plugin() for chat plugins.
+
+    Args:
+        plugin_name: Name of the plugin (e.g., "cohere", "openai")
+
+    Returns:
+        Validated ChatPluginSpec
+    """
+    return _load_plugin_cached("chat", plugin_name)  # type: ignore[return-value]
+
+
+def load_embedding_plugin(plugin_name: str) -> EmbeddingPluginSpec:
+    """Load and validate an embedding plugin specification.
+
+    Type-safe wrapper around load_plugin() for embedding plugins.
+
+    Args:
+        plugin_name: Name of the plugin (e.g., "cohere", "openai")
+
+    Returns:
+        Validated EmbeddingPluginSpec
+    """
+    return _load_plugin_cached("embedding", plugin_name)  # type: ignore[return-value]
+
+
+def load_rerank_plugin(plugin_name: str) -> RerankPluginSpec:
+    """Load and validate a rerank plugin specification.
+
+    Type-safe wrapper around load_plugin() for rerank plugins.
+
+    Args:
+        plugin_name: Name of the plugin (e.g., "cohere")
+
+    Returns:
+        Validated RerankPluginSpec
+    """
+    return _load_plugin_cached("rerank", plugin_name)  # type: ignore[return-value]
+
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
 
 
 def list_yaml_plugins(plugin_type: str) -> list[str]:
@@ -195,8 +237,18 @@ def list_yaml_plugins(plugin_type: str) -> list[str]:
         plugin_type: Type of plugin ("chat", "embedding", "rerank")
 
     Returns:
-        List of plugin names
+        Sorted list of plugin names
+
+    Examples:
+        >>> list_yaml_plugins("chat")
+        ['anthropic', 'cohere', 'openai', ...]
     """
+    if plugin_type not in _SPEC_CLASSES:
+        raise ValueError(
+            f"Invalid plugin type: {plugin_type!r}. "
+            f"Must be one of: {sorted(_SPEC_CLASSES.keys())}"
+        )
+
     plugin_dir = YAML_PLUGINS_DIR / plugin_type
 
     if not plugin_dir.exists():
@@ -213,6 +265,21 @@ def clear_cache() -> None:
 
     Useful for testing or when YAML files are modified.
     """
-    load_chat_plugin.cache_clear()
-    load_embedding_plugin.cache_clear()
-    load_rerank_plugin.cache_clear()
+    _load_plugin_cached.cache_clear()
+
+
+__all__ = [
+    # Primary API
+    "load_plugin",
+    # Type-safe wrappers
+    "load_chat_plugin",
+    "load_embedding_plugin",
+    "load_rerank_plugin",
+    # Utilities
+    "list_yaml_plugins",
+    "clear_cache",
+    # Exceptions
+    "YAMLPluginError",
+    "YAMLPluginNotFoundError",
+    "YAMLPluginValidationError",
+]

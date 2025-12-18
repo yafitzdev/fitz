@@ -14,6 +14,7 @@ from fitz.llm.loader import (
     load_rerank_plugin,
     load_plugin,
     list_yaml_plugins,
+    clear_cache,
     YAMLPluginError,
     YAMLPluginNotFoundError,
     YAMLPluginValidationError,
@@ -38,6 +39,7 @@ __all__ = [
     "load_rerank_plugin",
     "load_plugin",
     "list_yaml_plugins",
+    "clear_cache",
     # Errors
     "YAMLPluginError",
     "YAMLPluginNotFoundError",

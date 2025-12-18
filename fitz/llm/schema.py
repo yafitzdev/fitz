@@ -4,6 +4,12 @@ Pydantic schemas for YAML plugin validation.
 
 These schemas ensure YAML plugin definitions are correct BEFORE runtime,
 catching typos, missing fields, and invalid values early.
+
+Schema hierarchy:
+- BasePluginSpec: Common fields shared by all plugin types
+  - ChatPluginSpec: Chat/completion plugins
+  - EmbeddingPluginSpec: Text embedding plugins
+  - RerankPluginSpec: Document reranking plugins
 """
 from __future__ import annotations
 
@@ -11,6 +17,11 @@ from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+# =============================================================================
+# Enums
+# =============================================================================
 
 
 class AuthType(str, Enum):
@@ -38,7 +49,7 @@ class MessageTransform(str, Enum):
 
 
 # =============================================================================
-# Auth Configuration
+# Shared Configuration Components
 # =============================================================================
 
 
@@ -60,11 +71,6 @@ class AuthConfig(BaseModel):
         return v
 
 
-# =============================================================================
-# Provider Configuration
-# =============================================================================
-
-
 class ProviderConfig(BaseModel):
     """Provider connection details."""
 
@@ -79,11 +85,6 @@ class ProviderConfig(BaseModel):
         if not v.startswith(("http://", "https://", "{")):
             raise ValueError("base_url must start with http://, https://, or be a {placeholder}")
         return v.rstrip("/")
-
-
-# =============================================================================
-# Endpoint Configuration
-# =============================================================================
 
 
 class EndpointConfig(BaseModel):
@@ -103,11 +104,6 @@ class EndpointConfig(BaseModel):
         return v
 
 
-# =============================================================================
-# Health Check Configuration
-# =============================================================================
-
-
 class HealthCheckConfig(BaseModel):
     """Optional health check for local services."""
 
@@ -118,11 +114,6 @@ class HealthCheckConfig(BaseModel):
     timeout: int = Field(default=2, ge=1, le=10)
 
 
-# =============================================================================
-# Required Environment Variables
-# =============================================================================
-
-
 class RequiredEnvConfig(BaseModel):
     """Additional required environment variables (e.g., for Azure)."""
 
@@ -131,6 +122,49 @@ class RequiredEnvConfig(BaseModel):
     name: str = Field(..., description="Environment variable name")
     inject_as: str = Field(..., description="Placeholder name to inject into base_url/config")
     default: str | None = Field(default=None, description="Optional default value")
+
+
+# =============================================================================
+# Base Plugin Specification
+# =============================================================================
+
+
+class BasePluginSpec(BaseModel):
+    """
+    Base specification shared by all plugin types.
+
+    Contains common fields that every plugin needs:
+    - Identity: plugin_name, version
+    - Connection: provider, auth, endpoint
+    - Configuration: defaults, required_env
+
+    Subclasses add:
+    - plugin_type: Literal type discriminator
+    - request: Type-specific request configuration
+    - response: Type-specific response extraction
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Identity
+    plugin_name: str = Field(..., min_length=1, max_length=50)
+    version: str = "1.0"
+
+    # Connection
+    provider: ProviderConfig
+    auth: AuthConfig = Field(default_factory=AuthConfig)
+    endpoint: EndpointConfig
+
+    # Configuration
+    defaults: dict[str, Any] = Field(default_factory=dict)
+    required_env: list[RequiredEnvConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_auth_env_vars(self) -> "BasePluginSpec":
+        """Ensure auth has env_vars if type is not none."""
+        if self.auth.type != AuthType.NONE and not self.auth.env_vars:
+            raise ValueError(f"auth.env_vars required when auth.type is {self.auth.type}")
+        return self
 
 
 # =============================================================================
@@ -159,43 +193,20 @@ class ChatResponseConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    # JSONPath-like dot notation to content
     content_path: str = Field(..., description="Path to response text")
-
-    # Optional metadata extraction
     metadata_paths: dict[str, str] = Field(default_factory=dict)
-
-    # For array responses (like OpenAI choices)
     is_array: bool = False
     array_index: int = 0
 
 
-class ChatPluginSpec(BaseModel):
+class ChatPluginSpec(BasePluginSpec):
     """Complete specification for a chat plugin."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    plugin_name: str = Field(..., min_length=1, max_length=50)
     plugin_type: Literal["chat"] = "chat"
-    version: str = "1.0"
-
-    provider: ProviderConfig
-    auth: AuthConfig = Field(default_factory=AuthConfig)
-    endpoint: EndpointConfig
-
-    defaults: dict[str, Any] = Field(default_factory=dict)
-    required_env: list[RequiredEnvConfig] = Field(default_factory=list)
     health_check: HealthCheckConfig | None = None
 
     request: ChatRequestConfig
     response: ChatResponseConfig
-
-    @model_validator(mode="after")
-    def validate_auth_env_vars(self) -> "ChatPluginSpec":
-        """Ensure auth has env_vars if type is not none."""
-        if self.auth.type != AuthType.NONE and not self.auth.env_vars:
-            raise ValueError(f"auth.env_vars required when auth.type is {self.auth.type}")
-        return self
 
 
 # =============================================================================
@@ -225,27 +236,14 @@ class EmbeddingResponseConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     embeddings_path: str = Field(..., description="Path to embedding vector(s)")
-
-    # For batch responses
     is_array: bool = True
     array_index: int = 0
 
 
-class EmbeddingPluginSpec(BaseModel):
+class EmbeddingPluginSpec(BasePluginSpec):
     """Complete specification for an embedding plugin."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    plugin_name: str = Field(..., min_length=1, max_length=50)
     plugin_type: Literal["embedding"] = "embedding"
-    version: str = "1.0"
-
-    provider: ProviderConfig
-    auth: AuthConfig = Field(default_factory=AuthConfig)
-    endpoint: EndpointConfig
-
-    defaults: dict[str, Any] = Field(default_factory=dict)
-    required_env: list[RequiredEnvConfig] = Field(default_factory=list)
     health_check: HealthCheckConfig | None = None
 
     request: EmbeddingRequestConfig
@@ -284,21 +282,10 @@ class RerankResponseConfig(BaseModel):
     result_score_path: str = Field(default="relevance_score", description="Path to score within result")
 
 
-class RerankPluginSpec(BaseModel):
+class RerankPluginSpec(BasePluginSpec):
     """Complete specification for a rerank plugin."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    plugin_name: str = Field(..., min_length=1, max_length=50)
     plugin_type: Literal["rerank"] = "rerank"
-    version: str = "1.0"
-
-    provider: ProviderConfig
-    auth: AuthConfig = Field(default_factory=AuthConfig)
-    endpoint: EndpointConfig
-
-    defaults: dict[str, Any] = Field(default_factory=dict)
-    required_env: list[RequiredEnvConfig] = Field(default_factory=list)
 
     request: RerankRequestConfig
     response: RerankResponseConfig
@@ -309,3 +296,33 @@ class RerankPluginSpec(BaseModel):
 # =============================================================================
 
 PluginSpec = ChatPluginSpec | EmbeddingPluginSpec | RerankPluginSpec
+
+
+__all__ = [
+    # Enums
+    "AuthType",
+    "InputWrap",
+    "MessageTransform",
+    # Shared configs
+    "AuthConfig",
+    "ProviderConfig",
+    "EndpointConfig",
+    "HealthCheckConfig",
+    "RequiredEnvConfig",
+    # Base spec
+    "BasePluginSpec",
+    # Chat
+    "ChatRequestConfig",
+    "ChatResponseConfig",
+    "ChatPluginSpec",
+    # Embedding
+    "EmbeddingRequestConfig",
+    "EmbeddingResponseConfig",
+    "EmbeddingPluginSpec",
+    # Rerank
+    "RerankRequestConfig",
+    "RerankResponseConfig",
+    "RerankPluginSpec",
+    # Union
+    "PluginSpec",
+]
