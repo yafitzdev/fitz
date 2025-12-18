@@ -2,7 +2,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.3-green.svg)](CHANGELOG.md)
 
 ## 🎯 Stable Knowledge Access, Today and Tomorrow
 
@@ -225,8 +225,7 @@ Fitz is built for the strategy.
 ## 📚 Documentation
 
 - [Engine Guide](docs/ENGINES.md) | Choosing and using engines
-- [Architecture](docs/architecture.md) | Deep dive for contributors  
-- [Migration Guide](docs/MIGRATION.md) | Upgrading from previous versions
+- [Architecture](docs/architecture.md) | Deep dive for contributors
 - [Changelog](CHANGELOG.md) | Release history
 
 ---

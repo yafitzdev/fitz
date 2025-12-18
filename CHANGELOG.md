@@ -11,6 +11,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.3] - 2025-12-19
+
+### 🎉 Highlights
+
+**YAML-based Plugin System** - LLM and Vector DB plugins are now defined entirely in YAML, not Python. Adding new providers is now as simple as creating a YAML file.
+
+### 🚀 Added
+
+- **YAML-based LLM plugins**: Chat, Embedding, and Rerank plugins now use YAML specs
+  - `fitz/llm/chat/*.yaml` - Chat plugins (OpenAI, Cohere, Anthropic, Azure, Ollama)
+  - `fitz/llm/embedding/*.yaml` - Embedding plugins  
+  - `fitz/llm/rerank/*.yaml` - Rerank plugins
+- **YAML-based Vector DB plugins**: Vector databases now use YAML specs
+  - `fitz/vector_db/plugins/qdrant.yaml`
+  - `fitz/vector_db/plugins/pinecone.yaml`
+  - `fitz/vector_db/plugins/local_faiss.yaml`
+- **Generic plugin runtime**: `GenericVectorDBPlugin` and `YAMLPluginBase` execute YAML specs at runtime
+- **Provider-agnostic features**: YAML `features` section for provider-specific behavior
+  - `requires_uuid_ids`: Auto-convert string IDs to UUIDs
+  - `auto_detect`: Service discovery configuration
+- **Message transforms**: Pluggable message format transformers for different LLM APIs
+  - `openai_chat`, `cohere_chat`, `anthropic_chat`, `ollama_chat`, `gemini_chat`
+
+### 🔄 Changed
+
+- **LLM plugins**: Migrated from Python classes to YAML specifications
+- **Vector DB plugins**: Migrated from Python classes to YAML specifications  
+- **Plugin discovery**: Now scans `*.yaml` files instead of `*.py` modules
+- **fitz/core/registry.py**: Single source of truth for all plugin access
+
+### 🐛 Fixed
+
+- **Qdrant 400 Bad Request**: String IDs now converted to UUIDs automatically
+- **Auto-create collection**: Collections created on first upsert (handles 404)
+- **Import errors in CLI**: Fixed by adding re-exports to `fitz/core/registry.py`
+
+---
+
 ## [0.3.2] - 2025-12-18
 
 ### 🔄 Changed
@@ -229,7 +267,8 @@ Initial release of Fitz RAG framework.
 
 ---
 
-[Unreleased]: https://github.com/yafitzdev/fitz/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/yafitzdev/fitz/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/yafitzdev/fitz/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/yafitzdev/fitz/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/yafitzdev/fitz/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/yafitzdev/fitz/compare/v0.2.0...v0.3.0
