@@ -7,12 +7,12 @@ from fitz.core.registry import (
     PluginNotFoundError,
     PluginRegistryError,
     available_chunking_plugins,
-    get_chunker_plugin,
+    get_chunking_plugin,
     get_chunking_plugin,
 )
 
 __all__ = [
-    "get_chunker_plugin",
+    "get_chunking_plugin",
     "get_chunking_plugin",
     "available_chunking_plugins",
     "CHUNKING_REGISTRY",

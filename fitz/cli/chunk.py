@@ -123,7 +123,7 @@ def command(
         fitz chunk ./docs/ --stats            # Stats for whole directory
         fitz chunk --list                     # Show available chunkers
     """
-    from fitz.core.registry import available_chunking_plugins, get_chunker_plugin
+    from fitz.core.registry import available_chunking_plugins, get_chunking_plugin
 
     # List mode
     if list_chunkers:
@@ -143,7 +143,7 @@ def command(
 
     # Get chunker
     try:
-        ChunkerCls = get_chunker_plugin(chunker)
+        ChunkerCls = get_chunking_plugin(chunker)
     except Exception:
         typer.echo(f"Error: Unknown chunker '{chunker}'")
         typer.echo()

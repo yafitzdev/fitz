@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 from fitz.engines.classic_rag.models.chunk import Chunk
 from fitz.ingest.chunking.base import ChunkerPlugin
-from fitz.ingest.chunking.registry import get_chunker_plugin
+from fitz.ingest.chunking.registry import get_chunking_plugin
 from fitz.ingest.config.schema import ChunkerConfig
 from fitz.ingest.exceptions.chunking import IngestionChunkingError
 from fitz.ingest.exceptions.config import IngestionConfigError
@@ -34,7 +34,7 @@ class ChunkingEngine:
             raise IngestionConfigError("ChunkerConfig.plugin_name is required")
 
         try:
-            PluginCls = get_chunker_plugin(cfg.plugin_name)
+            PluginCls = get_chunking_plugin(cfg.plugin_name)
         except Exception as e:
             raise IngestionConfigError(f"Unknown chunker plugin {cfg.plugin_name!r}") from e
 

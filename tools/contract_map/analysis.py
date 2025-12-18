@@ -151,7 +151,7 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
             "get_pipeline_plugin(",
             "available_pipeline_plugins(",
         ),
-        "ChunkerPlugin": ("fitz.ingest.chunking", "get_chunker_plugin(", "ChunkingEngine"),
+        "ChunkerPlugin": ("fitz.ingest.chunking", "get_chunking_plugin(", "ChunkingEngine"),
         "IngestPlugin": ("fitz.ingest.ingestion", "get_ingest_plugin(", "IngestionEngine"),
     }
 
