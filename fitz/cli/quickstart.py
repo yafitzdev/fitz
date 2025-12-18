@@ -327,6 +327,9 @@ def run_ingestion(
     """
     Run document ingestion.
 
+    Connection details are auto-detected from fitz.core.detect.
+    No need to pass host/port - single source of truth!
+
     Returns (success, num_chunks).
     """
     try:
@@ -343,10 +346,11 @@ def run_ingestion(
             collection=collection,
         )
 
-        # Create embedder - get_llm_plugin returns an INSTANCE directly
+        # Create embedder - returns an instance directly
         embedder = get_llm_plugin(plugin_name=embedding_plugin, plugin_type="embedding")
 
-        # Create vector DB writer - get_vector_db_plugin returns an INSTANCE directly
+        # Create vector DB - auto-detects connection from fitz.core.detect!
+        # No need to pass host/port - it's handled automatically
         vector_db = get_vector_db_plugin(vector_db_plugin)
         writer = VectorDBWriter(client=vector_db)
 
@@ -524,7 +528,7 @@ def command(
     FitzPaths.ensure_workspace()
     config_path.write_text(config)
     print_success("Config saved to .fitz/quickstart_config.yaml")
-    print_info(f"  LLM: {llm_provider}")
+    print_info(f"  Chat: {llm_provider}")
     print_info(f"  Embedding: {embedding_provider}")
     print_info(f"  Vector DB: {vector_db}")
 

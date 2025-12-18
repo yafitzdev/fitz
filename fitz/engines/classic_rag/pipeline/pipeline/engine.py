@@ -1,4 +1,4 @@
-# File: fitz/engines/classic_rag/pipeline/pipeline/engine.py
+# fitz/engines/classic_rag/pipeline/pipeline/engine.py
 """
 RAGPipeline - Core orchestration for retrieval-augmented generation.
 
@@ -21,7 +21,7 @@ from fitz.engines.classic_rag.generation.retrieval_guided.synthesis import (
 from fitz.engines.classic_rag.pipeline.context.pipeline import ContextPipeline
 from fitz.engines.classic_rag.pipeline.exceptions.pipeline import PipelineError, RGSGenerationError
 from fitz.engines.classic_rag.retrieval.runtime.engine import RetrieverEngine
-from fitz.llm.registry import resolve_llm_plugin
+from fitz.llm.registry import get_llm_plugin
 from fitz.logging.logger import get_logger
 from fitz.logging.tags import PIPELINE, VECTOR_DB
 from fitz.vector_db.registry import get_vector_db_plugin
@@ -125,35 +125,39 @@ class RAGPipeline:
         """
         logger.info(f"{PIPELINE} Constructing RAGPipeline from config")
 
-        # Vector DB - YAML plugin system
+        # Vector DB - YAML plugin system (returns instance)
         vector_client = get_vector_db_plugin(
             cfg.vector_db.plugin_name,
             **cfg.vector_db.kwargs
         )
         logger.info(f"{VECTOR_DB} Using vector DB plugin='{cfg.vector_db.plugin_name}'")
 
-        # Chat LLM - use plugin directly
-        ChatCls = resolve_llm_plugin(
+        # Chat LLM - get_llm_plugin returns an INSTANCE, not a class
+        # kwargs are passed to the plugin factory, not to __init__ again
+        chat_plugin = get_llm_plugin(
             plugin_type="chat",
-            requested_name=cfg.chat.plugin_name,
+            plugin_name=cfg.chat.plugin_name,
+            **cfg.chat.kwargs
         )
-        chat_plugin = ChatCls(**cfg.chat.kwargs)
+        logger.info(f"{PIPELINE} Using chat plugin='{cfg.chat.plugin_name}'")
 
-        # Embedding - use plugin directly
-        EmbedCls = resolve_llm_plugin(
+        # Embedding - get_llm_plugin returns an INSTANCE
+        embedder = get_llm_plugin(
             plugin_type="embedding",
-            requested_name=cfg.embedding.plugin_name,
+            plugin_name=cfg.embedding.plugin_name,
+            **cfg.embedding.kwargs
         )
-        embedder = EmbedCls(**cfg.embedding.kwargs)
+        logger.info(f"{PIPELINE} Using embedding plugin='{cfg.embedding.plugin_name}'")
 
-        # Rerank (optional) - use plugin directly
+        # Rerank (optional) - get_llm_plugin returns an INSTANCE
         rerank_plugin = None
         if cfg.rerank.enabled:
-            RerankCls = resolve_llm_plugin(
+            rerank_plugin = get_llm_plugin(
                 plugin_type="rerank",
-                requested_name=cfg.rerank.plugin_name,
+                plugin_name=cfg.rerank.plugin_name,
+                **cfg.rerank.kwargs
             )
-            rerank_plugin = RerankCls(**cfg.rerank.kwargs)
+            logger.info(f"{PIPELINE} Using rerank plugin='{cfg.rerank.plugin_name}'")
 
         # Retriever
         retriever = RetrieverEngine.from_name(

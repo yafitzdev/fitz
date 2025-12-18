@@ -1,9 +1,15 @@
 # fitz/vector_db/loader.py
+"""
+Vector DB plugin loader with YAML specifications.
+
+Auto-detects connection details from fitz.core.detect (single source of truth).
+"""
 
 from __future__ import annotations
 
 import os
 import importlib
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import yaml
@@ -38,7 +44,7 @@ class VectorDBSpec:
         """Build base URL from template and kwargs."""
         template = self.connection.get('base_url', '')
 
-        # Apply defaults
+        # Apply defaults from YAML spec
         context = {}
         if 'default_host' in self.connection:
             context['host'] = kwargs.get('host', self.connection['default_host'])
@@ -81,9 +87,23 @@ class VectorDBSpec:
         return {}
 
     def render_template(self, template: Any, context: Dict[str, Any]) -> Any:
-        """Render Jinja2 templates in values recursively."""
+        """Render Jinja2 templates in values recursively.
+
+        Special handling: If the template is exactly "{{var}}", return the actual
+        object from context instead of a string representation. This allows
+        passing lists, dicts, etc. through templates without stringification.
+        """
         if isinstance(template, str):
             if '{{' in template:
+                # Check if it's a simple variable substitution like "{{points}}"
+                # In that case, return the actual object, not a string
+                stripped = template.strip()
+                if stripped.startswith('{{') and stripped.endswith('}}'):
+                    var_name = stripped[2:-2].strip()
+                    if var_name in context:
+                        # Return the actual object, not stringified
+                        return context[var_name]
+                # Otherwise do normal Jinja2 rendering
                 return Template(template).render(context)
             return template
         elif isinstance(template, dict):
@@ -233,6 +253,10 @@ class GenericVectorDBPlugin:
         # Transform points to provider format
         transformed_points = self.spec.transform_points(points, 'upsert')
 
+        # For Qdrant: Convert string IDs to UUIDs (Qdrant requires int or UUID)
+        if self.plugin_name == "qdrant":
+            transformed_points = self._convert_ids_for_qdrant(transformed_points)
+
         # Build context
         context = {
             'collection': collection,
@@ -278,6 +302,50 @@ class GenericVectorDBPlugin:
         except Exception:
             # Best-effort - collection might already exist
             pass
+
+    def _convert_ids_for_qdrant(self, points: List[Dict]) -> List[Dict]:
+        """
+        Convert string IDs to UUIDs for Qdrant compatibility.
+
+        Qdrant REST API requires point IDs to be integers or UUIDs.
+        String IDs like "doc.txt:0" are converted to deterministic UUIDs
+        using uuid5 (based on the string content).
+
+        The original string ID is preserved in the payload as '_original_id'
+        so it can be retrieved later.
+        """
+        converted = []
+        for point in points:
+            new_point = dict(point)
+            original_id = point.get('id')
+
+            # If ID is already an int or valid UUID string, keep it
+            if isinstance(original_id, int):
+                converted.append(new_point)
+                continue
+
+            # Try to parse as UUID
+            try:
+                uuid.UUID(str(original_id))
+                # It's already a valid UUID string
+                converted.append(new_point)
+                continue
+            except (ValueError, TypeError):
+                pass
+
+            # Convert string ID to deterministic UUID
+            string_id = str(original_id)
+            new_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, string_id))
+            new_point['id'] = new_uuid
+
+            # Preserve original ID in payload
+            if 'payload' not in new_point:
+                new_point['payload'] = {}
+            new_point['payload']['_original_id'] = string_id
+
+            converted.append(new_point)
+
+        return converted
 
     def delete_collection(self, collection: str) -> None:
         """Delete a collection."""
@@ -371,9 +439,46 @@ def load_vector_db_spec(plugin_name: str) -> VectorDBSpec:
     return VectorDBSpec(yaml_path)
 
 
+def _get_auto_detected_kwargs(plugin_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Auto-detect connection parameters from fitz.core.detect if not provided.
+
+    This is the SINGLE SOURCE OF TRUTH for connection detection.
+
+    Args:
+        plugin_name: Name of the plugin (e.g., 'qdrant')
+        kwargs: User-provided kwargs (may override auto-detection)
+
+    Returns:
+        kwargs with auto-detected values filled in where not provided
+    """
+    result = dict(kwargs)
+
+    # Only auto-detect for known plugins that need it
+    if plugin_name == "qdrant":
+        # Only auto-detect if host/port not explicitly provided
+        if 'host' not in result or 'port' not in result:
+            try:
+                from fitz.core.detect import get_qdrant_connection
+                detected_host, detected_port = get_qdrant_connection()
+
+                if 'host' not in result:
+                    result['host'] = detected_host
+                if 'port' not in result:
+                    result['port'] = detected_port
+            except ImportError:
+                # fitz.core.detect not available, fall back to YAML defaults
+                pass
+
+    return result
+
+
 def create_vector_db_plugin(plugin_name: str, **kwargs):
     """
     Create a vector DB plugin from YAML specification.
+
+    Connection details are AUTO-DETECTED from fitz.core.detect if not provided.
+    This ensures a single source of truth for service discovery.
 
     For HTTP-based plugins: Returns GenericVectorDBPlugin
     For local plugins: Returns the specific Python implementation
@@ -381,18 +486,24 @@ def create_vector_db_plugin(plugin_name: str, **kwargs):
     Args:
         plugin_name: Name of the plugin (e.g., 'qdrant', 'pinecone', 'local-faiss')
         **kwargs: Plugin-specific configuration (host, port, api_key, etc.)
+                  If not provided, auto-detected from fitz.core.detect
 
     Returns:
         Vector DB plugin instance
 
     Examples:
+        # Auto-detect Qdrant connection (recommended)
+        >>> db = create_vector_db_plugin('qdrant')
+
+        # Explicit override
         >>> db = create_vector_db_plugin('qdrant', host='localhost', port=6333)
-        >>> db = create_vector_db_plugin('pinecone', index_name='my-index', project_id='abc')
+
+        # Local FAISS (no network needed)
         >>> db = create_vector_db_plugin('local-faiss', path='/tmp/vectors')
     """
     spec = load_vector_db_spec(plugin_name)
 
-    # Handle local implementations (e.g., FAISS)
+    # Handle local implementations (e.g., FAISS) - no auto-detection needed
     if spec.is_local():
         class_path = spec.get_local_class_path()
         if not class_path:
@@ -407,5 +518,8 @@ def create_vector_db_plugin(plugin_name: str, **kwargs):
 
         return PluginClass(**kwargs)
 
+    # For HTTP-based plugins, auto-detect connection if not provided
+    resolved_kwargs = _get_auto_detected_kwargs(plugin_name, kwargs)
+
     # HTTP-based plugins use generic implementation
-    return GenericVectorDBPlugin(spec, **kwargs)
+    return GenericVectorDBPlugin(spec, **resolved_kwargs)
