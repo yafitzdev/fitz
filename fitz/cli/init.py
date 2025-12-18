@@ -687,7 +687,7 @@ def command(
 Your configuration is ready! Next steps:
 
 1. Ingest some documents:
-   fitz-ingest run ./your_docs --collection {collection_name}
+   fitz ingest ./your_docs {collection_name}
 
 2. Query your documents:
    fitz query "What is in my documents?"

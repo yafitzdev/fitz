@@ -1,15 +1,14 @@
-# fitz/cli/quickstart.py
+# File: fitz/cli/quickstart.py
+# PLUGIN-AGNOSTIC VERSION - Uses registries for discovery
+
 """
-Quickstart command for Fitz CLI.
+Quickstart command: Run end-to-end test.
 
-One command to verify everything works end-to-end:
-1. Check system requirements
-2. Create sample documents
-3. Ingest them
-4. Run a test query
-5. Show success!
-
-This gives new users confidence that Fitz is working correctly.
+This command:
+1. Checks system for required dependencies
+2. Creates sample documents about RAG
+3. Ingests them into a vector database
+4. Runs a test query to verify everything works
 """
 
 from __future__ import annotations
@@ -21,7 +20,12 @@ from pathlib import Path
 
 import typer
 
-# Rich for pretty output (optional)
+# Import plugin registries for discovery
+from fitz.llm.registry import available_llm_plugins
+from fitz.vector_db.registry import available_vector_db_plugins
+from fitz.core.detect import detect_all
+
+# Rich for pretty output (optional, falls back gracefully)
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -33,54 +37,40 @@ except ImportError:
     RICH_AVAILABLE = False
     console = None
 
+
 # =============================================================================
-# Sample Documents (Built-in knowledge base about RAG)
+# Sample Documents
 # =============================================================================
 
 SAMPLE_DOCUMENTS = {
-    "what_is_rag.txt": """# What is RAG (Retrieval-Augmented Generation)?
+    "what_is_rag.txt": """# What is RAG?
 
-RAG (Retrieval-Augmented Generation) is an AI architecture that combines information 
-retrieval with language model generation. It was introduced by Facebook AI Research 
-in 2020 to address the limitation of LLMs having static, outdated knowledge.
+RAG (Retrieval-Augmented Generation) is a technique that combines information retrieval with language model generation. The system first retrieves relevant documents from a knowledge base using semantic search, then uses those documents as context for generating accurate responses.
 
-## How RAG Works
+Key benefits of RAG:
+- Reduces hallucinations by grounding responses in retrieved facts
+- Enables access to up-to-date information not in training data
+- Provides source attribution for answers
+- Allows knowledge base updates without retraining
 
-1. **Query Processing**: The user's question is converted into a vector embedding
-2. **Retrieval**: Similar documents are found using vector similarity search
-3. **Context Building**: Retrieved documents are formatted as context
-4. **Generation**: An LLM generates an answer grounded in the retrieved context
-
-## Benefits of RAG
-
-- **Reduced Hallucination**: Answers are grounded in actual documents
-- **Up-to-date Information**: Knowledge base can be updated without retraining
-- **Source Attribution**: Responses can cite their sources
-- **Domain Adaptation**: Works with any document collection
+RAG is particularly useful for question-answering systems, chatbots, and any application requiring factual accuracy with source citations.
 """,
-    "vector_databases.txt": """# Vector Databases for RAG
+    "vector_databases.txt": """# Vector Databases
 
-Vector databases are specialized databases designed to store and query 
-high-dimensional vector embeddings. They are essential for RAG systems.
+Vector databases are specialized storage systems designed to store and query high-dimensional embedding vectors. They enable semantic search by converting text into numerical vectors and finding similar vectors using distance metrics like cosine similarity.
 
-## Popular Vector Databases
+Popular vector databases include:
+- Qdrant: High-performance vector search engine
+- Pinecone: Managed vector database service
+- Weaviate: Open-source vector search engine
+- Milvus: Scalable vector database
+- Chroma: Lightweight vector store
 
-- **Qdrant**: Open-source, Rust-based, excellent filtering support
-- **Pinecone**: Managed service, easy to use, good for production
-- **Milvus**: Open-source, highly scalable, GPU acceleration
-- **FAISS**: Facebook's library, great for local development
-- **Weaviate**: GraphQL API, hybrid search capabilities
-
-## Key Concepts
-
-- **Embedding**: A numerical vector representation of text (e.g., 768 or 1536 dimensions)
-- **Similarity Search**: Finding vectors closest to a query vector
-- **HNSW**: Hierarchical Navigable Small World - efficient approximate search algorithm
-- **Cosine Similarity**: Common metric for comparing embedding vectors
+These databases are essential components in modern RAG systems, enabling fast similarity search across millions of documents.
 """,
     "building_rag_pipeline.txt": """# Building a RAG Pipeline
 
-A RAG pipeline consists of several components working together.
+A production-ready RAG pipeline typically consists of several components:
 
 ## Core Components
 
@@ -165,13 +155,13 @@ def print_info(message: str) -> None:
 
 
 # =============================================================================
-# System Check
+# System Check (PLUGIN-AGNOSTIC!)
 # =============================================================================
 
 
 def check_system() -> tuple[bool, dict]:
     """
-    Check system requirements and available providers.
+    Check system requirements and available providers using plugin registries.
 
     Returns (success, details) where details contains:
     - llm_provider: name of available LLM provider
@@ -192,72 +182,52 @@ def check_system() -> tuple[bool, dict]:
     else:
         print_success(f"Python {major}.{minor}")
 
-    # Check for LLM providers (in order of preference for quickstart)
-    if os.getenv("COHERE_API_KEY"):
-        details["llm_provider"] = "cohere"
-        details["embedding_provider"] = "cohere"
-        print_success("Cohere API key found")
-    elif os.getenv("OPENAI_API_KEY"):
-        details["llm_provider"] = "openai"
-        details["embedding_provider"] = "openai"
-        print_success("OpenAI API key found")
-    elif os.getenv("ANTHROPIC_API_KEY"):
-        details["llm_provider"] = "anthropic"
-        # Anthropic doesn't have embeddings, need alternative
-        if os.getenv("COHERE_API_KEY"):
-            details["embedding_provider"] = "cohere"
-        elif os.getenv("OPENAI_API_KEY"):
-            details["embedding_provider"] = "openai"
-        else:
-            details["embedding_provider"] = "local"
-        print_success("Anthropic API key found")
-    else:
-        # Check Ollama for local
-        try:
-            import httpx
+    # Get system status
+    system = detect_all()
 
-            response = httpx.get("http://localhost:11434/api/tags", timeout=2)
-            if response.status_code == 200:
-                details["llm_provider"] = "local"
-                details["embedding_provider"] = "local"
-                print_success("Ollama is running (local)")
-        except Exception:
-            pass
+    # Discover available plugins from registries
+    available_chat = available_llm_plugins("chat")
+    available_embeddings = available_llm_plugins("embedding")
+    available_vector_dbs = available_vector_db_plugins()
+
+    # Find first available chat plugin
+    for plugin in available_chat:
+        if plugin in ["ollama", "local"] and system.ollama.available:
+            details["llm_provider"] = plugin
+            print_success(f"{plugin.capitalize()} is running (local)")
+            break
+        elif plugin in system.api_keys and system.api_keys[plugin].available:
+            details["llm_provider"] = plugin
+            print_success(f"{plugin.capitalize()} API key found")
+            break
 
     if not details["llm_provider"]:
-        details["issues"].append(
-            "No LLM provider found. Set COHERE_API_KEY, OPENAI_API_KEY, "
-            "or install Ollama for local use."
-        )
+        details["issues"].append("No LLM provider found. Set an API key or install Ollama.")
+
+    # Find first available embedding plugin
+    for plugin in available_embeddings:
+        if plugin in ["ollama", "local"] and system.ollama.available:
+            details["embedding_provider"] = plugin
+            break
+        elif plugin in system.api_keys and system.api_keys[plugin].available:
+            details["embedding_provider"] = plugin
+            break
 
     if not details["embedding_provider"]:
         details["issues"].append("No embedding provider found")
 
-    # Check for vector database (prefer Qdrant, fall back to FAISS)
-    qdrant_available = False
-    try:
-        import httpx
-
-        host = os.getenv("QDRANT_HOST", "localhost")
-        port = os.getenv("QDRANT_PORT", "6333")
-        response = httpx.get(f"http://{host}:{port}/collections", timeout=2)
-        if response.status_code == 200:
-            details["vector_db"] = "qdrant"
-            details["qdrant_host"] = host
-            details["qdrant_port"] = port
-            qdrant_available = True
-            print_success(f"Qdrant available at {host}:{port}")
-    except Exception:
-        pass
-
-    if not qdrant_available:
-        try:
-            import faiss
-
-            details["vector_db"] = "local-faiss"
+    # Find first available vector database
+    for plugin in available_vector_dbs:
+        if plugin in ["local-faiss", "faiss"] and system.faiss.available:
+            details["vector_db"] = plugin
             print_success("FAISS available (local vector DB)")
-        except ImportError:
-            pass
+            break
+        elif plugin == "qdrant" and system.qdrant.available:
+            details["vector_db"] = plugin
+            details["qdrant_host"] = system.qdrant.host or "localhost"
+            details["qdrant_port"] = system.qdrant.port or 6333
+            print_success(f"Qdrant available at {details['qdrant_host']}:{details['qdrant_port']}")
+            break
 
     if not details["vector_db"]:
         details["issues"].append("No vector database found. Install faiss-cpu or start Qdrant.")
@@ -285,7 +255,7 @@ def create_sample_documents(base_dir: Path) -> list[Path]:
 
 
 # =============================================================================
-# Config Generation
+# Config Generation (PLUGIN-AGNOSTIC!)
 # =============================================================================
 
 
@@ -297,71 +267,39 @@ def generate_quickstart_config(
     qdrant_port: str = "6333",
 ) -> str:
     """
-    Generate a minimal config for quickstart.
-
-    Note: FAISS no longer needs dim - it auto-detects on first upsert.
+    Generate a minimal config for quickstart using dynamic plugin config.
     """
+    # Chat config (using 'chat' not 'llm')
+    chat_config = f"""chat:
+  plugin_name: {llm_provider}
+  kwargs:
+    temperature: 0.2"""
 
-    # Chat/LLM configs (using 'chat' key to match ClassicRagConfig schema)
-    chat_configs = {
-        "cohere": """chat:
-  plugin_name: cohere
-  kwargs:
-    model: command-r-08-2024
-    temperature: 0.2""",
-        "openai": """chat:
-  plugin_name: openai
-  kwargs:
-    model: gpt-4o-mini
-    temperature: 0.2""",
-        "anthropic": """chat:
-  plugin_name: anthropic
-  kwargs:
-    model: claude-sonnet-4-20250514
-    temperature: 0.2""",
-        "local": """chat:
-  plugin_name: local
-  kwargs:
-    model: llama3.2:1b""",
-    }
+    # Embedding config
+    embedding_config = f"""embedding:
+  plugin_name: {embedding_provider}
+  kwargs: {{}}"""
 
-    # Embedding configs
-    embedding_configs = {
-        "cohere": """embedding:
-  plugin_name: cohere
-  kwargs:
-    model: embed-english-v3.0""",
-        "openai": """embedding:
-  plugin_name: openai
-  kwargs:
-    model: text-embedding-3-small""",
-        "local": """embedding:
-  plugin_name: local
-  kwargs:
-    model: nomic-embed-text""",
-    }
-
-    # Vector DB configs
-    # Note: FAISS uses FitzPaths.vector_db() by default, no need to specify path
-    vector_db_configs = {
-        "qdrant": f"""vector_db:
+    # Vector DB config
+    if vector_db == "qdrant":
+        vector_db_config = f"""vector_db:
   plugin_name: qdrant
   kwargs:
     host: "{qdrant_host}"
-    port: {qdrant_port}""",
-        "local-faiss": """vector_db:
-  plugin_name: local-faiss
-  kwargs: {}""",
-    }
+    port: {qdrant_port}"""
+    else:
+        vector_db_config = f"""vector_db:
+  plugin_name: {vector_db}
+  kwargs: {{}}"""
 
     config = f"""# Fitz Quickstart Configuration
 # Auto-generated by: fitz quickstart
 
-{chat_configs.get(llm_provider, chat_configs["cohere"])}
+{chat_config}
 
-{embedding_configs.get(embedding_provider, embedding_configs["cohere"])}
+{embedding_config}
 
-{vector_db_configs.get(vector_db, vector_db_configs["local-faiss"])}
+{vector_db_config}
 
 retriever:
   plugin_name: dense
@@ -393,69 +331,26 @@ def run_ingestion(
     Returns (success, num_chunks).
     """
     try:
-        from fitz.engines.classic_rag.models.chunk import Chunk
-        from fitz.ingest.ingestion.engine import IngestionEngine
-        from fitz.ingest.ingestion.registry import get_ingest_plugin
-        from fitz.llm.embedding.engine import EmbeddingEngine
-        from fitz.llm.registry import get_llm_plugin
-        from fitz.vector_db.registry import get_vector_db_plugin
-        from fitz.vector_db.writer import VectorDBWriter
+        from fitz.ingest.pipeline.ingestion_pipeline import IngestionPipeline
 
-        # Step 1: Ingest documents
-        IngestPluginCls = get_ingest_plugin("local")
-        ingest_plugin = IngestPluginCls()
-        ingest_engine = IngestionEngine(plugin=ingest_plugin, kwargs={})
-        raw_docs = list(ingest_engine.run(str(docs_path)))
+        # Create pipeline
+        pipeline = IngestionPipeline(
+            ingester_plugin="local",
+            chunker_plugin="simple",
+            embedding_plugin=embedding_plugin,
+            vector_db_plugin=vector_db_plugin,
+        )
 
-        # Step 2: Convert to chunks
-        chunks = []
-        for i, doc in enumerate(raw_docs):
-            content = getattr(doc, "content", "") or getattr(doc, "text", "") or ""
-            path = getattr(doc, "path", f"doc_{i}")
+        # Run ingestion
+        num_chunks = pipeline.ingest(
+            source=str(docs_path),
+            collection=collection,
+        )
 
-            # Simple paragraph-based chunking
-            paragraphs = [
-                p.strip() for p in content.split("\n\n") if p.strip() and len(p.strip()) > 50
-            ]
-
-            for j, para in enumerate(paragraphs):
-                chunks.append(
-                    Chunk(
-                        id=f"{Path(path).stem}:{j}",
-                        doc_id=str(path),
-                        chunk_index=j,
-                        content=para,
-                        metadata={"source": str(path)},
-                    )
-                )
-
-        if not chunks:
-            return False, 0
-
-        # Step 3: Generate embeddings
-        EmbedPluginCls = get_llm_plugin(plugin_name=embedding_plugin, plugin_type="embedding")
-        embed_engine = EmbeddingEngine(EmbedPluginCls())
-
-        vectors = []
-        for chunk in chunks:
-            vec = embed_engine.embed(chunk.content)
-            vectors.append(vec)
-
-        # Step 4: Store in vector DB
-        # All vector DBs now have the same interface - no special handling needed!
-        VectorDBPluginCls = get_vector_db_plugin(vector_db_plugin)
-        vdb_client = VectorDBPluginCls()
-
-        writer = VectorDBWriter(client=vdb_client)
-        writer.upsert(collection=collection, chunks=chunks, vectors=vectors)
-
-        return True, len(chunks)
+        return True, num_chunks
 
     except Exception as e:
         print_error(f"Ingestion failed: {e}")
-        import traceback
-
-        traceback.print_exc()
         return False, 0
 
 
@@ -464,9 +359,9 @@ def run_ingestion(
 # =============================================================================
 
 
-def run_test_query(collection: str, config_path: Path) -> tuple[bool, str, list]:
+def run_test_query(collection: str, config_path: Path) -> tuple[bool, str, list[str]]:
     """
-    Run a test query.
+    Run a test query through the pipeline.
 
     Returns (success, answer_text, sources).
     """
@@ -492,7 +387,6 @@ def run_test_query(collection: str, config_path: Path) -> tuple[bool, str, list]
     except Exception as e:
         print_error(f"Query failed: {e}")
         import traceback
-
         traceback.print_exc()
         return False, str(e), []
 
