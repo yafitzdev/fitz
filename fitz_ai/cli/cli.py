@@ -39,15 +39,21 @@ app = typer.Typer(
 
 def _register_sub_apps():
     """Register ingest and pipeline sub-apps after module initialization."""
-    # Import here to avoid circular imports at module load time
-    from fitz_ai.ingest.cli import app as ingest_app
-
-    app.add_typer(ingest_app, name="ingest")
+    # Try to import ingest CLI, but don't fail if not present
+    try:
+        from fitz_ai.cli import app as ingest_app
+        app.add_typer(ingest_app, name="ingest")
+    except (ImportError, ModuleNotFoundError):
+        # Ingest CLI not available - skip it
+        pass
 
     # Keep pipeline as hidden alias for backwards compatibility
-    from fitz_ai.engines.classic_rag.pipeline.cli import app as pipeline_app
-
-    app.add_typer(pipeline_app, name="pipeline", hidden=True)
+    try:
+        from fitz_ai.cli import app as pipeline_app
+        app.add_typer(pipeline_app, name="pipeline", hidden=True)
+    except (ImportError, ModuleNotFoundError):
+        # Pipeline CLI not available - skip it
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -57,11 +63,11 @@ def _register_sub_apps():
 
 def _register_commands():
     """Register commands after module initialization to avoid circular imports."""
-    from fitz_ai.cli import chunk, db, doctor
-    from fitz_ai.cli import help as help_module
-    from fitz_ai.cli import init, plugins, quickstart
-    from fitz_ai.cli.config import command as config_command
-    from fitz_ai.cli.query import command as query_command
+    from fitz_ai.cli.commands import chunk, db, doctor
+    from fitz_ai.cli.commands import help as help_module
+    from fitz_ai.cli.commands import init, plugins, quickstart
+    from fitz_ai.cli.commands import command as config_command
+    from fitz_ai.cli.commands import command as query_command
 
     # Wrap commands with friendly error handling
     app.command("help")(friendly_errors(help_module.command))
