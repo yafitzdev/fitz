@@ -250,21 +250,24 @@ def command(
         else:
             typer.echo(f"[2/4] Chunking with {chunker}...")
 
-    # Build chunker kwargs dynamically based on CLI parameters
+    # Build chunker kwargs dynamically based on CLI parameters AND chunker type
     chunker_kwargs: Dict[str, Any] = {}
 
-    # Add common parameters (only if non-default to keep kwargs clean)
-    if chunk_size != 1000:
-        chunker_kwargs["chunk_size"] = chunk_size
-    if chunk_overlap > 0:
-        chunker_kwargs["chunk_overlap"] = chunk_overlap
-
-    # Add section-based chunker parameters (only for relevant chunkers)
+    # Section-based chunkers use different parameters
     if "section" in chunker.lower():
+        # Section chunkers: min_section_chars, max_section_chars, preserve_short_sections
         if min_section_chars != 50:
             chunker_kwargs["min_section_chars"] = min_section_chars
         if max_section_chars != 3000:
             chunker_kwargs["max_section_chars"] = max_section_chars
+        # Always include preserve_short_sections for section chunkers
+        chunker_kwargs["preserve_short_sections"] = True
+    else:
+        # Standard chunkers: chunk_size, chunk_overlap
+        if chunk_size != 1000:
+            chunker_kwargs["chunk_size"] = chunk_size
+        if chunk_overlap > 0:
+            chunker_kwargs["chunk_overlap"] = chunk_overlap
 
     # Create chunker config and engine
     chunker_config = ChunkerConfig(plugin_name=chunker, kwargs=chunker_kwargs)

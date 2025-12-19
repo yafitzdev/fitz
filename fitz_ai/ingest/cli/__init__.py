@@ -19,9 +19,17 @@ try:
 except ImportError:
     HAS_ERROR_HANDLER = False
 
+
     def friendly_errors(func):
         return func
 
+# Try to import interactive mode, but don't fail if questionary not installed
+try:
+    from fitz_ai.ingest.cli.interactive import run_interactive_ingestion, integrate_with_run_command
+
+    HAS_INTERACTIVE = True
+except ImportError:
+    HAS_INTERACTIVE = False
 
 # Create main app - invoke_without_command enables default command behavior
 app = typer.Typer(
@@ -39,27 +47,29 @@ def _register_commands():
     @app.callback(invoke_without_command=True)
     @friendly_errors
     def main(
-        ctx: typer.Context,
-        source: str = typer.Argument(None, help="Source to ingest (file or directory)."),
-        collection: str = typer.Argument(None, help="Target collection name."),
-        ingest_plugin: str = typer.Option("local", "--ingest", "-i", help="Ingestion plugin name."),
-        # Chunker options
-        chunker: str = typer.Option("simple", "--chunker", "-c", help="Chunking plugin to use."),
-        chunk_size: int = typer.Option(1000, "--chunk-size", help="Target chunk size in characters."),
-        chunk_overlap: int = typer.Option(0, "--chunk-overlap", help="Overlap between chunks in characters."),
-        min_section_chars: int = typer.Option(50, "--min-section-chars", help="Minimum section size for section-based chunkers."),
-        max_section_chars: int = typer.Option(3000, "--max-section-chars", help="Maximum section size for section-based chunkers."),
-        # Other options
-        embedding_plugin: str = typer.Option(
-            "cohere", "--embedding", "-e", help="Embedding plugin name."
-        ),
-        vector_db_plugin: str = typer.Option(
-            "qdrant", "--vector-db", "-v", help="Vector DB plugin name."
-        ),
-        batch_size: int = typer.Option(
-            50, "--batch-size", "-b", help="Batch size for vector DB writes."
-        ),
-        quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress progress output."),
+            ctx: typer.Context,
+            source: str = typer.Argument(None, help="Source to ingest (file or directory)."),
+            collection: str = typer.Argument(None, help="Target collection name."),
+            ingest_plugin: str = typer.Option("local", "--ingest", "-i", help="Ingestion plugin name."),
+            # Chunker options
+            chunker: str = typer.Option("simple", "--chunker", "-c", help="Chunking plugin to use."),
+            chunk_size: int = typer.Option(1000, "--chunk-size", help="Target chunk size in characters."),
+            chunk_overlap: int = typer.Option(0, "--chunk-overlap", help="Overlap between chunks in characters."),
+            min_section_chars: int = typer.Option(50, "--min-section-chars",
+                                                  help="Minimum section size for section-based chunkers."),
+            max_section_chars: int = typer.Option(3000, "--max-section-chars",
+                                                  help="Maximum section size for section-based chunkers."),
+            # Other options
+            embedding_plugin: str = typer.Option(
+                "cohere", "--embedding", "-e", help="Embedding plugin name."
+            ),
+            vector_db_plugin: str = typer.Option(
+                "qdrant", "--vector-db", "-v", help="Vector DB plugin name."
+            ),
+            batch_size: int = typer.Option(
+                50, "--batch-size", "-b", help="Batch size for vector DB writes."
+            ),
+            quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress progress output."),
     ):
         """
         Ingest documents into a vector database.
@@ -74,9 +84,20 @@ def _register_commands():
         if ctx.invoked_subcommand is not None:
             return
 
-        # If no source provided, show help
+        # If no source provided, run interactive mode (if available)
         if source is None:
-            typer.echo(ctx.get_help())
+            if HAS_INTERACTIVE:
+                # Run interactive mode
+                config = run_interactive_ingestion()
+                if config:
+                    integrate_with_run_command(config)
+            else:
+                # Fallback to help if questionary not installed
+                typer.echo(ctx.get_help())
+                typer.echo()
+                typer.echo("💡 TIP: Install questionary for interactive mode:")
+                typer.echo("   pip install questionary")
+
             raise typer.Exit(0)
 
         # Import Path here to avoid issues
@@ -110,7 +131,6 @@ def _register_commands():
 
 # Register commands immediately
 _register_commands()
-
 
 if __name__ == "__main__":
     app()
