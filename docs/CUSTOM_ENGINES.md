@@ -21,8 +21,8 @@ Fitz's pluggable architecture makes it easy to add custom engines. You just need
 ```python
 # my_engine.py
 
-from fitz.core import Query, Answer, Provenance
-from fitz.runtime import EngineRegistry
+from fitz_ai.core import Query, Answer, Provenance
+from fitz_ai.runtime import EngineRegistry
 
 class MySimpleEngine:
     """A minimal custom engine."""
@@ -169,7 +169,7 @@ def load_my_engine_config(config_path: Optional[str] = None) -> MyEngineConfig:
 from typing import Optional, Dict, Any, List
 import logging
 
-from fitz.core import (
+from fitz_ai.core import (
     Query,
     Answer,
     Provenance,
@@ -178,7 +178,7 @@ from fitz.core import (
     GenerationError,
     ConfigurationError,
 )
-from fitz.engines.my_engine.config.schema import MyEngineConfig
+from fitz_ai.engines.my_engine.config.schema import MyEngineConfig
 
 logger = logging.getLogger(__name__)
 
@@ -369,8 +369,8 @@ class MyEngine:
 from typing import Optional, Union, List
 from pathlib import Path
 
-from fitz.core import Query, Answer, Constraints
-from fitz.engines.my_engine.config.schema import (
+from fitz_ai.core import Query, Answer, Constraints
+from fitz_ai.engines.my_engine.config.schema import (
     MyEngineConfig,
     load_my_engine_config,
 )
@@ -403,7 +403,7 @@ def run_my_engine(
     global _cached_engine, _cached_config_path
     
     # Import here to avoid circular imports
-    from fitz.engines.my_engine.engine import MyEngine
+    from fitz_ai.engines.my_engine.engine import MyEngine
     
     # Reuse cached engine if config unchanged
     current_path = str(config_path) if config_path else None
@@ -434,7 +434,7 @@ def create_my_engine(
     config_path: Optional[Union[str, Path]] = None,
 ) -> "MyEngine":
     """Create a reusable MyEngine instance."""
-    from fitz.engines.my_engine.engine import MyEngine
+    from fitz_ai.engines.my_engine.engine import MyEngine
     
     if config is None:
         config = load_my_engine_config(str(config_path) if config_path else None)
@@ -458,12 +458,12 @@ def clear_engine_cache() -> None:
 MyEngine - Custom knowledge engine for Fitz.
 
 Usage:
-    >>> from fitz.engines.my_engine import run_my_engine
+    >>> from fitz_ai.engines.my_engine import run_my_engine
     >>> answer = run_my_engine("What is X?", documents=["..."])
 """
 
 # Configuration
-from fitz.engines.my_engine.config.schema import (
+from fitz_ai.engines.my_engine.config.schema import (
     MyEngineConfig,
     MyEngineModelConfig,
     MyEngineRetrievalConfig,
@@ -471,10 +471,10 @@ from fitz.engines.my_engine.config.schema import (
 )
 
 # Engine
-from fitz.engines.my_engine.engine import MyEngine
+from fitz_ai.engines.my_engine.engine import MyEngine
 
 # Runtime
-from fitz.engines.my_engine.runtime import (
+from fitz_ai.engines.my_engine.runtime import (
     run_my_engine,
     create_my_engine,
     clear_engine_cache,
@@ -494,7 +494,7 @@ __all__ = [
 
 # Register with global registry
 def _register_engine():
-    from fitz.runtime import EngineRegistry
+    from fitz_ai.runtime import EngineRegistry
     
     registry = EngineRegistry.get_global()
     
@@ -518,13 +518,13 @@ _register_engine()
 # tests/test_my_engine.py
 
 import pytest
-from fitz.core import Query, Answer, Provenance, QueryError, KnowledgeError
+from fitz_ai.core import Query, Answer, Provenance, QueryError, KnowledgeError
 
 class TestMyEngine:
     
     @pytest.fixture
     def engine(self):
-        from fitz.engines.my_engine import MyEngine, MyEngineConfig
+        from fitz_ai.engines.my_engine import MyEngine, MyEngineConfig
         return MyEngine(MyEngineConfig())
     
     def test_implements_protocol(self, engine):
@@ -558,7 +558,7 @@ class TestMyEngine:
 ```python
 def test_my_engine_via_universal_runtime():
     from fitz import run
-    from fitz.runtime import list_engines
+    from fitz_ai.runtime import list_engines
     
     # Verify registration
     assert "my_engine" in list_engines()
@@ -576,7 +576,7 @@ def test_my_engine_via_universal_runtime():
 Use Fitz's exception hierarchy:
 
 ```python
-from fitz.core import QueryError, KnowledgeError, GenerationError, ConfigurationError
+from fitz_ai.core import QueryError, KnowledgeError, GenerationError, ConfigurationError
 
 # Configuration issues
 raise ConfigurationError("Invalid model path")

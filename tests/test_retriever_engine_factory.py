@@ -1,5 +1,5 @@
 # tests/test_retriever_engine_factory.py
-from fitz.engines.classic_rag.retrieval.runtime.engine import RetrieverEngine
+from fitz_ai.engines.classic_rag.retrieval.runtime.engine import RetrieverEngine
 
 
 class MockClient:

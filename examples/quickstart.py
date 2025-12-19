@@ -5,8 +5,8 @@ This example demonstrates the new paradigm-agnostic engine interface.
 The code is cleaner and more forward-compatible with future engines (CLaRa, etc.).
 """
 
-from fitz.core import Constraints, Query
-from fitz.engines.classic_rag import create_classic_rag_engine, run_classic_rag
+from fitz_ai.core import Constraints, Query
+from fitz_ai.engines.classic_rag import create_classic_rag_engine, run_classic_rag
 
 # ============================================================================
 # OPTION 1: Simple one-off query (easiest)
@@ -112,7 +112,7 @@ def error_handling():
     print("ERROR HANDLING")
     print("=" * 60)
 
-    from fitz.core import KnowledgeError, QueryError
+    from fitz_ai.core import KnowledgeError, QueryError
 
     try:
         # Empty query will raise QueryError

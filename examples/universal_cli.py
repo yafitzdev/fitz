@@ -10,8 +10,8 @@ from typing import Optional
 
 import typer
 
-from fitz.core import Constraints, GenerationError, KnowledgeError, QueryError
-from fitz.runtime import list_engines, list_engines_with_info, run
+from fitz_ai.core import Constraints, GenerationError, KnowledgeError, QueryError
+from fitz_ai.runtime import list_engines, list_engines_with_info, run
 
 app = typer.Typer(help="Universal Fitz CLI")
 

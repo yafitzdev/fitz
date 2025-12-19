@@ -1,4 +1,0 @@
-[console_scripts]
-fitz = fitz.cli.cli:app
-fitz-ingest = fitz.ingest.cli:app
-fitz-pipeline = fitz.engines.classic_rag.pipeline.cli:app

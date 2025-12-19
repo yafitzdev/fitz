@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 
 [project]
-name = "fitz"
+name = "fitz-ai"
 version = "0.3.3"
 description = "A modular, production-ready engine platform with clean architecture and comprehensive observability."
 readme = "README.md"
@@ -21,6 +21,7 @@ dependencies = [
     "httpx>=0.24",
     "typing-extensions>=4.7",
     "typer>=0.9",
+    "jinja2>=3.1",   # ← ADD THIS
 ]
 
 
@@ -45,13 +46,14 @@ Changelog = "https://github.com/yafitzdev/fitz/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["fitz_ai*"]
 exclude = ["tests*", "tools*", "examples*"]
 
 
 [project.scripts]
-fitz = "fitz.cli.cli:app"
-fitz-ingest = "fitz.ingest.cli:app"
-fitz-pipeline = "fitz.engines.classic_rag.pipeline.cli:app"
+fitz = "fitz_ai.cli.cli:app"
+fitz-ingest = "fitz_ai.ingest.cli:app"
+fitz-pipeline = "fitz_ai.engines.classic_rag.pipeline.cli:app"
 
 
 [tool.black]

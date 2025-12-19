@@ -1,5 +1,5 @@
 # tests/test_context_pipeline_weird_inputs.py
-from fitz.engines.classic_rag.pipeline.context.pipeline import ContextPipeline
+from fitz_ai.engines.classic_rag.pipeline.context.pipeline import ContextPipeline
 
 
 class Obj:

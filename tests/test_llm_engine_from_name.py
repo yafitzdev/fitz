@@ -1,7 +1,7 @@
 import pytest
 
-from fitz.llm import get_llm_plugin
-from fitz.llm.registry import LLMRegistryError
+from fitz_ai.llm import get_llm_plugin
+from fitz_ai.llm.registry import LLMRegistryError
 
 
 def test_get_llm_plugin_requires_keywords():

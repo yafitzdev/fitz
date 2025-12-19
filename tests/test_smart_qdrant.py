@@ -21,7 +21,7 @@ import pytest
 def qdrant_available() -> bool:
     """Check if Qdrant is available."""
     try:
-        from fitz.vector_db.plugins.qdrant import QdrantVectorDB
+        from fitz_ai.vector_db.plugins.qdrant import QdrantVectorDB
 
         db = QdrantVectorDB()
         db.list_collections()
@@ -40,7 +40,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def qdrant_db():
     """Create a Qdrant client for testing."""
-    from fitz.vector_db.plugins.qdrant import QdrantVectorDB
+    from fitz_ai.vector_db.plugins.qdrant import QdrantVectorDB
 
     return QdrantVectorDB()
 
@@ -139,7 +139,7 @@ class TestErrorMessages:
 
     def test_collection_not_found_error(self, qdrant_db):
         """Test that searching non-existent collection gives helpful error."""
-        from fitz.vector_db.plugins.qdrant import QdrantCollectionError
+        from fitz_ai.vector_db.plugins.qdrant import QdrantCollectionError
 
         with pytest.raises(QdrantCollectionError) as exc_info:
             qdrant_db.search(

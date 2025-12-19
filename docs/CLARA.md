@@ -41,8 +41,8 @@ pip install transformers torch
 ## Quick Start
 
 ```python
-from fitz.engines.clara import create_clara_engine
-from fitz.core import Query
+from fitz_ai.engines.clara import create_clara_engine
+from fitz_ai.core import Query
 
 # Create engine (downloads ~14GB model on first run)
 engine = create_clara_engine()
@@ -64,7 +64,7 @@ print(answer.text)
 ### Default Configuration
 
 ```python
-from fitz.engines.clara.config.schema import ClaraConfig
+from fitz_ai.engines.clara.config.schema import ClaraConfig
 
 config = ClaraConfig()
 # Uses apple/CLaRa-7B-Instruct with 16x compression
@@ -73,7 +73,7 @@ config = ClaraConfig()
 ### Custom Configuration
 
 ```python
-from fitz.engines.clara.config.schema import (
+from fitz_ai.engines.clara.config.schema import (
     ClaraConfig,
     ClaraModelConfig,
     ClaraCompressionConfig,
@@ -169,7 +169,7 @@ class ClaraEngine:
 ### Convenience Functions
 
 ```python
-from fitz.engines.clara import (
+from fitz_ai.engines.clara import (
     run_clara,           # Quick one-off query
     create_clara_engine, # Create reusable engine
     clear_engine_cache,  # Clear cached engine

@@ -27,11 +27,11 @@ Find and replace these patterns:
 
 | Find | Replace |
 |------|---------|
-| `from fitz.pipeline.pipeline.engine import RAGPipeline` | `from fitz.engines.classic_rag import run_classic_rag` |
-| `from fitz.pipeline.config.loader import load_config` | `from fitz.engines.classic_rag.config import load_config` |
-| `from fitz.core.llm` | `from fitz.llm` |
-| `from fitz.core.embedding` | `from fitz.llm.embedding` |
-| `from fitz.core.vector_db` | `from fitz.vector_db` |
+| `from fitz_ai.pipeline.pipeline.engine import RAGPipeline` | `from fitz_ai.engines.classic_rag import run_classic_rag` |
+| `from fitz_ai.pipeline.config.loader import load_config` | `from fitz_ai.engines.classic_rag.config import load_config` |
+| `from fitz_ai.core.llm` | `from fitz_ai.llm` |
+| `from fitz_ai.core.embedding` | `from fitz_ai.llm.embedding` |
+| `from fitz_ai.core.vector_db` | `from fitz_ai.vector_db` |
 
 ### Step 2: Update Entry Point
 
@@ -43,7 +43,7 @@ result = pipeline.run("What is X?")
 print(result.answer)
 
 # NEW
-from fitz.engines.classic_rag import run_classic_rag
+from fitz_ai.engines.classic_rag import run_classic_rag
 answer = run_classic_rag("What is X?")
 print(answer.text)
 ```
@@ -80,49 +80,49 @@ pytest
 
 ```python
 # OLD
-from fitz.pipeline.models.answer import RGSAnswer
-from fitz.pipeline.models.source import RGSSourceRef
+from fitz_ai.pipeline.models.answer import RGSAnswer
+from fitz_ai.pipeline.models.source import RGSSourceRef
 
 # NEW
-from fitz.core import Answer, Provenance
+from fitz_ai.core import Answer, Provenance
 ```
 
 #### LLM Services
 
 ```python
 # OLD
-from fitz.core.llm.chat.engine import ChatEngine
-from fitz.core.llm.embedding.engine import EmbeddingEngine
-from fitz.core.llm.rerank.engine import RerankEngine
+from fitz_ai.core.llm.chat.engine import ChatEngine
+from fitz_ai.core.llm.embedding.engine import EmbeddingEngine
+from fitz_ai.core.llm.rerank.engine import RerankEngine
 
 # NEW
-from fitz.llm.chat import ChatEngine
-from fitz.llm.embedding import EmbeddingEngine
-from fitz.llm.rerank import RerankEngine
+from fitz_ai.llm.chat import ChatEngine
+from fitz_ai.llm.embedding import EmbeddingEngine
+from fitz_ai.llm.rerank import RerankEngine
 ```
 
 #### Vector Database
 
 ```python
 # OLD
-from fitz.core.vector_db.engine import VectorDBEngine
+from fitz_ai.core.vector_db.engine import VectorDBEngine
 
 # NEW
-from fitz.vector_db import VectorDBEngine
+from fitz_ai.vector_db import VectorDBEngine
 ```
 
 #### Configuration
 
 ```python
 # OLD
-from fitz.pipeline.config.loader import load_config
-from fitz.pipeline.config.schema import FitzConfig
+from fitz_ai.pipeline.config.loader import load_config
+from fitz_ai.pipeline.config.schema import FitzConfig
 
 # NEW
-from fitz.engines.classic_rag.config import load_config
-from fitz.engines.classic_rag.config.schema import FitzConfig
+from fitz_ai.engines.classic_rag.config import load_config
+from fitz_ai.engines.classic_rag.config.schema import FitzConfig
 # Or use the new ClassicRagConfig alias
-from fitz.engines.classic_rag.config import ClassicRagConfig
+from fitz_ai.engines.classic_rag.config import ClassicRagConfig
 ```
 
 ---
@@ -133,8 +133,8 @@ from fitz.engines.classic_rag.config import ClassicRagConfig
 
 **Old API (v0.2.x)**:
 ```python
-from fitz.pipeline.pipeline.engine import RAGPipeline
-from fitz.pipeline.config.loader import load_config
+from fitz_ai.pipeline.pipeline.engine import RAGPipeline
+from fitz_ai.pipeline.config.loader import load_config
 
 # Load config and create pipeline
 config = load_config("config.yaml")
@@ -152,7 +152,7 @@ print(result.metadata)
 **New API (v0.3.0)**:
 ```python
 # Option 1: Simple function (recommended for most cases)
-from fitz.engines.classic_rag import run_classic_rag
+from fitz_ai.engines.classic_rag import run_classic_rag
 
 answer = run_classic_rag("What is quantum computing?")
 print(answer.text)
@@ -165,8 +165,8 @@ from fitz import run
 answer = run("What is quantum computing?", engine="classic_rag")
 
 # Option 3: Reusable engine (for repeated queries)
-from fitz.engines.classic_rag import create_classic_rag_engine
-from fitz.core import Query
+from fitz_ai.engines.classic_rag import create_classic_rag_engine
+from fitz_ai.core import Query
 
 engine = create_classic_rag_engine("config.yaml")
 query = Query(text="What is quantum computing?")
@@ -268,8 +268,8 @@ fitz engines --verbose
 
 ```python
 # ============= OLD (v0.2.x) =============
-from fitz.pipeline.pipeline.engine import RAGPipeline
-from fitz.pipeline.config.loader import load_config
+from fitz_ai.pipeline.pipeline.engine import RAGPipeline
+from fitz_ai.pipeline.config.loader import load_config
 
 def answer_question(question: str) -> str:
     config = load_config()
@@ -278,7 +278,7 @@ def answer_question(question: str) -> str:
     return result.answer
 
 # ============= NEW (v0.3.0) =============
-from fitz.engines.classic_rag import run_classic_rag
+from fitz_ai.engines.classic_rag import run_classic_rag
 
 def answer_question(question: str) -> str:
     answer = run_classic_rag(question)
@@ -326,8 +326,8 @@ class RAGService:
         return self.pipeline.run(question)
 
 # ============= NEW (v0.3.0) =============
-from fitz.engines.classic_rag import create_classic_rag_engine
-from fitz.core import Query
+from fitz_ai.engines.classic_rag import create_classic_rag_engine
+from fitz_ai.core import Query
 
 class RAGService:
     def __init__(self, config_path: str):
@@ -342,7 +342,7 @@ class RAGService:
 ```python
 # ============= NEW (v0.3.0 only) =============
 from fitz import run
-from fitz.runtime import list_engines
+from fitz_ai.runtime import list_engines
 
 class KnowledgeService:
     def query(self, question: str, engine: str = "classic_rag"):
@@ -371,10 +371,10 @@ The `fitz.pipeline` module has been moved. Update your imports:
 
 ```python
 # OLD
-from fitz.pipeline.pipeline.engine import RAGPipeline
+from fitz_ai.pipeline.pipeline.engine import RAGPipeline
 
 # NEW
-from fitz.engines.classic_rag import run_classic_rag
+from fitz_ai.engines.classic_rag import run_classic_rag
 ```
 
 ### AttributeError: 'Answer' object has no attribute 'answer'
@@ -428,8 +428,8 @@ python -m tools.contract_map --fail-on-errors
 
 # 3. Verify imports
 python -c "from fitz import run; print('✓ Universal runtime')"
-python -c "from fitz.engines.classic_rag import run_classic_rag; print('✓ Classic RAG')"
-python -c "from fitz.core import Query, Answer, Provenance; print('✓ Core types')"
+python -c "from fitz_ai.engines.classic_rag import run_classic_rag; print('✓ Classic RAG')"
+python -c "from fitz_ai.core import Query, Answer, Provenance; print('✓ Core types')"
 ```
 
 ---

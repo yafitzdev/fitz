@@ -1,5 +1,5 @@
 # tests/test_rgs_chunk_limit.py
-from fitz.engines.classic_rag.generation.retrieval_guided.synthesis import RGS, RGSConfig
+from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import RGS, RGSConfig
 
 
 def test_rgs_respects_max_chunks():

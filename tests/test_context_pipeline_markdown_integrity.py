@@ -1,5 +1,5 @@
 # tests/test_context_pipeline_markdown_integrity.py
-from fitz.engines.classic_rag.pipeline.context.pipeline import ContextPipeline
+from fitz_ai.engines.classic_rag.pipeline.context.pipeline import ContextPipeline
 
 
 def test_context_pipeline_markdown_integrity():

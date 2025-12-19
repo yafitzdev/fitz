@@ -9,8 +9,8 @@ Architecture note:
 """
 import pytest
 
-from fitz.llm import available_llm_plugins, get_llm_plugin
-from fitz.llm.registry import LLMRegistryError
+from fitz_ai.llm import available_llm_plugins, get_llm_plugin
+from fitz_ai.llm.registry import LLMRegistryError
 
 
 def test_available_llm_plugins_smoke():
@@ -26,7 +26,7 @@ def test_available_llm_plugins_smoke():
 
 def test_vector_db_has_separate_registry():
     """Vector DB plugins use a separate registry, not LLM registry."""
-    from fitz.vector_db.registry import available_vector_db_plugins
+    from fitz_ai.vector_db.registry import available_vector_db_plugins
 
     result = available_vector_db_plugins()
     assert isinstance(result, list)

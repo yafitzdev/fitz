@@ -14,7 +14,7 @@ from unittest.mock import Mock
 import pytest
 
 # Core imports
-from fitz.core import (
+from fitz_ai.core import (
     Answer,
     Constraints,
     GenerationError,
@@ -26,7 +26,7 @@ from fitz.core import (
 )
 
 # Runtime imports
-from fitz.runtime import (
+from fitz_ai.runtime import (
     EngineRegistry,
     create_engine,
     get_engine_registry,
@@ -298,7 +298,7 @@ class TestErrorHandling:
 
     def test_query_error_hierarchy(self):
         """Test exception hierarchy."""
-        from fitz.core import EngineError
+        from fitz_ai.core import EngineError
 
         assert issubclass(QueryError, EngineError)
         assert issubclass(KnowledgeError, EngineError)
@@ -310,7 +310,7 @@ class TestErrorHandling:
             raise QueryError("Test error")
 
         # Test catching as EngineError
-        from fitz.core import EngineError
+        from fitz_ai.core import EngineError
 
         with pytest.raises(EngineError):
             raise QueryError("Test error")

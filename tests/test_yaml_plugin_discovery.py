@@ -2,8 +2,8 @@
 """Tests for YAML plugin discovery system."""
 import pytest
 
-from fitz.llm import available_llm_plugins, get_llm_plugin, list_yaml_plugins
-from fitz.llm.registry import LLMRegistryError
+from fitz_ai.llm import available_llm_plugins, get_llm_plugin, list_yaml_plugins
+from fitz_ai.llm.registry import LLMRegistryError
 
 
 class TestYAMLPluginDiscovery:

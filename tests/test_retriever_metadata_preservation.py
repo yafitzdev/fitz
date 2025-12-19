@@ -1,7 +1,7 @@
 # tests/test_retriever_metadata_preservation.py
 from dataclasses import dataclass
 
-from fitz.engines.classic_rag.retrieval.runtime.plugins.dense import DenseRetrievalPlugin
+from fitz_ai.engines.classic_rag.retrieval.runtime.plugins.dense import DenseRetrievalPlugin
 
 
 @dataclass

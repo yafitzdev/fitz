@@ -1,6 +1,6 @@
 # tests/test_context_pipeline.py
-from fitz.engines.classic_rag.models.chunk import Chunk
-from fitz.engines.classic_rag.pipeline.context.pipeline import ContextPipeline
+from fitz_ai.engines.classic_rag.models.chunk import Chunk
+from fitz_ai.engines.classic_rag.pipeline.context.pipeline import ContextPipeline
 
 
 def test_context_pipeline_end_to_end():

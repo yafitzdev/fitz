@@ -3,7 +3,7 @@
 Test that the default config loads and resolves correctly.
 """
 
-from fitz.engines.classic_rag.config import ClassicRagConfig, load_config
+from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
 
 
 def test_default_preset_resolves_to_runtime_config():

@@ -11,8 +11,8 @@ import pytest
 
 pytest.importorskip("faiss")
 
-from fitz.backends.local_vector_db.faiss import FaissLocalVectorDB
-from fitz.core.paths import FitzPaths
+from fitz_ai.backends.local_vector_db.faiss import FaissLocalVectorDB
+from fitz_ai.core.paths import FitzPaths
 
 
 def test_local_faiss_vector_db_uses_fitz_paths_default(tmp_path):

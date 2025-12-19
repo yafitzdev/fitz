@@ -13,8 +13,8 @@ import pytest
 
 pytest.importorskip("faiss")
 
-from fitz.backends.local_vector_db.faiss import FaissLocalVectorDB
-from fitz.engines.classic_rag.models.chunk import Chunk
+from fitz_ai.backends.local_vector_db.faiss import FaissLocalVectorDB
+from fitz_ai.engines.classic_rag.models.chunk import Chunk
 
 
 def _make_chunk(i: int, dim: int) -> Chunk:

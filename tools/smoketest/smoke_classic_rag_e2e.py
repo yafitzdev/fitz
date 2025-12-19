@@ -458,7 +458,7 @@ def reranking(
     print("TEST 6: RERANKING")
     print("=" * 60)
 
-    from fitz.engines.classic_rag.models.chunk import Chunk
+    from fitz_ai.engines.classic_rag.models.chunk import Chunk
 
     query = "What is RAG and how does it work with vector databases?"
 
@@ -500,8 +500,8 @@ def rgs_prompt_building(chunks: list[dict], config: TestConfig) -> tuple[dict, b
     print("TEST 7: RGS PROMPT BUILDING")
     print("=" * 60)
 
-    from fitz.engines.classic_rag.generation.retrieval_guided.synthesis import RGS, RGSConfig
-    from fitz.engines.classic_rag.models.chunk import Chunk
+    from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import RGS, RGSConfig
+    from fitz_ai.engines.classic_rag.models.chunk import Chunk
 
     query = "What is RAG and how does it work?"
 
@@ -564,7 +564,7 @@ def answer_formatting(response: str, chunks: list[dict], config: TestConfig) -> 
     print("TEST 9: ANSWER FORMATTING")
     print("=" * 60)
 
-    from fitz.core import Answer, Provenance
+    from fitz_ai.core import Answer, Provenance
 
     # Build provenance from chunks
     provenance = []

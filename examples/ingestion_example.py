@@ -18,9 +18,9 @@ Run with:
 
 from pathlib import Path
 
-from fitz.ingest.chunking.plugins.simple import SimpleChunker
-from fitz.ingest.ingestion.registry import get_ingest_plugin
-from fitz.ingest.validation.documents import ValidationConfig, validate
+from fitz_ai.ingest.chunking.plugins.simple import SimpleChunker
+from fitz_ai.ingest.ingestion.registry import get_ingest_plugin
+from fitz_ai.ingest.validation.documents import ValidationConfig, validate
 
 
 def main():

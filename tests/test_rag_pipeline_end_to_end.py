@@ -1,8 +1,8 @@
 # tests/test_rag_pipeline_end_to_end.py
 from __future__ import annotations
 
-from fitz.engines.classic_rag.generation.retrieval_guided.synthesis import RGS, RGSAnswer, RGSConfig
-from fitz.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
+from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import RGS, RGSAnswer, RGSConfig
+from fitz_ai.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
 
 
 class DummyRetriever:

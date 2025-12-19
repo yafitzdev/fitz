@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 # Core imports
-from fitz.core import (
+from fitz_ai.core import (
     Answer,
     Constraints,
     KnowledgeError,
@@ -26,7 +26,7 @@ class TestClaraConfig:
 
     def test_default_config(self):
         """Test default configuration values."""
-        from fitz.engines.clara.config.schema import (
+        from fitz_ai.engines.clara.config.schema import (
             ClaraConfig,
         )
 
@@ -40,7 +40,7 @@ class TestClaraConfig:
 
     def test_custom_config(self):
         """Test custom configuration."""
-        from fitz.engines.clara.config.schema import (
+        from fitz_ai.engines.clara.config.schema import (
             ClaraCompressionConfig,
             ClaraConfig,
             ClaraModelConfig,
@@ -62,7 +62,7 @@ class TestClaraConfig:
 
     def test_load_config_from_yaml(self, tmp_path):
         """Test loading config from YAML file."""
-        from fitz.engines.clara.config.schema import load_clara_config
+        from fitz_ai.engines.clara.config.schema import load_clara_config
 
         config_content = """
 clara:
@@ -86,7 +86,7 @@ clara:
 
     def test_load_config_missing_file(self):
         """Test loading config from missing file raises error."""
-        from fitz.engines.clara.config.schema import load_clara_config
+        from fitz_ai.engines.clara.config.schema import load_clara_config
 
         with pytest.raises(FileNotFoundError):
             load_clara_config("/nonexistent/path.yaml")
@@ -132,8 +132,8 @@ class TestClaraEngine:
                 "transformers": mock_transformers,
             },
         ):
-            from fitz.engines.clara.config.schema import ClaraConfig
-            from fitz.engines.clara.engine import ClaraEngine
+            from fitz_ai.engines.clara.config.schema import ClaraConfig
+            from fitz_ai.engines.clara.engine import ClaraEngine
 
             config = ClaraConfig()
             engine = ClaraEngine(config)
@@ -275,7 +275,7 @@ class TestClaraRuntime:
     @pytest.fixture(autouse=True)
     def clear_cache(self):
         """Clear engine cache before each test."""
-        from fitz.engines.clara.runtime import clear_engine_cache
+        from fitz_ai.engines.clara.runtime import clear_engine_cache
 
         clear_engine_cache()
         yield
@@ -303,7 +303,7 @@ class TestClaraRuntime:
                 "transformers": mock_transformers,
             },
         ):
-            from fitz.engines.clara.runtime import create_clara_engine
+            from fitz_ai.engines.clara.runtime import create_clara_engine
 
             engine = create_clara_engine()
 
@@ -317,8 +317,8 @@ class TestClaraRegistration:
     def test_clara_registered(self):
         """Test that CLaRa is registered in the engine registry."""
         # Import clara module to trigger registration
-        import fitz.engines.clara  # noqa
-        from fitz.runtime import get_engine_registry
+        import fitz_ai.engines.clara  # noqa
+        from fitz_ai.runtime import get_engine_registry
 
         registry = get_engine_registry()
         engines = registry.list()
@@ -337,7 +337,7 @@ class TestClaraIntegration:
 
     def test_clara_answer_format_matches_classic_rag(self):
         """Test that CLaRa answers have the same format as Classic RAG."""
-        from fitz.core import Answer
+        from fitz_ai.core import Answer
 
         # Both engines should return Answer objects
         answer = Answer(

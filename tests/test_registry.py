@@ -9,9 +9,9 @@ Architecture:
 """
 import pytest
 
-from fitz.core.registry import PluginNotFoundError
-from fitz.ingest.ingestion.plugins.local_fs import LocalFSIngestPlugin
-from fitz.ingest.ingestion.registry import get_ingest_plugin
+from fitz_ai.core.registry import PluginNotFoundError
+from fitz_ai.ingest.ingestion.plugins.local_fs import LocalFSIngestPlugin
+from fitz_ai.ingest.ingestion.registry import get_ingest_plugin
 
 
 def test_registry_returns_correct_plugin():
@@ -39,10 +39,10 @@ def test_registry_error_message_is_helpful():
 
 def test_all_registries_use_same_pattern():
     """All plugin registries should follow the same pattern."""
-    from fitz.core.registry import PluginNotFoundError
-    from fitz.ingest.ingestion.registry import get_ingest_plugin
-    from fitz.llm.registry import LLMRegistryError, get_llm_plugin
-    from fitz.vector_db.registry import get_vector_db_plugin
+    from fitz_ai.core.registry import PluginNotFoundError
+    from fitz_ai.ingest.ingestion.registry import get_ingest_plugin
+    from fitz_ai.llm.registry import LLMRegistryError, get_llm_plugin
+    from fitz_ai.vector_db.registry import get_vector_db_plugin
 
     # LLM raises LLMRegistryError
     with pytest.raises(LLMRegistryError):

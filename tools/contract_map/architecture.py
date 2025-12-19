@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from fitz.engines.classic_rag.config.architecture import load_architecture_mapping
-from fitz.engines.classic_rag.contracts.rules import allowed_importers
+from fitz_ai.engines.classic_rag.config.architecture import load_architecture_mapping
+from fitz_ai.engines.classic_rag.contracts.rules import allowed_importers
 
 
 class RoleResolver:

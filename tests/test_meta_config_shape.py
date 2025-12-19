@@ -6,7 +6,7 @@ Note: The old meta config with presets has been removed.
 This test now verifies the direct config structure.
 """
 
-from fitz.engines.classic_rag.config.loader import DEFAULT_CONFIG_PATH, _load_yaml
+from fitz_ai.engines.classic_rag.config.loader import DEFAULT_CONFIG_PATH, _load_yaml
 
 
 def test_default_yaml_has_correct_structure():

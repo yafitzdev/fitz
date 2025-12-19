@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from fitz.vector_db.writer import VectorDBWriter, compute_chunk_hash
+from fitz_ai.vector_db.writer import VectorDBWriter, compute_chunk_hash
 
 
 @dataclass

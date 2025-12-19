@@ -103,7 +103,7 @@ python -m tools.contract_map --fail-on-errors
 All engines implement the same protocol:
 
 ```python
-from fitz.core import KnowledgeEngine, Query, Answer
+from fitz_ai.core import KnowledgeEngine, Query, Answer
 
 class MyEngine(KnowledgeEngine):
     def answer(self, query: Query) -> Answer:
@@ -218,7 +218,7 @@ Engines are the core abstraction in Fitz. Each engine is a complete implementati
 2. **Implement the KnowledgeEngine protocol**
    ```python
    # fitz/engines/my_engine/engine.py
-   from fitz.core import KnowledgeEngine, Query, Answer, Provenance
+   from fitz_ai.core import KnowledgeEngine, Query, Answer, Provenance
    
    class MyEngine:
        """My custom knowledge engine."""
@@ -238,7 +238,7 @@ Engines are the core abstraction in Fitz. Each engine is a complete implementati
 3. **Register with the engine registry**
    ```python
    # fitz/engines/my_engine/__init__.py
-   from fitz.runtime import EngineRegistry
+   from fitz_ai.runtime import EngineRegistry
    
    def _register():
        registry = EngineRegistry.get_global()
@@ -254,7 +254,7 @@ Engines are the core abstraction in Fitz. Each engine is a complete implementati
 4. **Add convenience functions**
    ```python
    # fitz/engines/my_engine/runtime.py
-   from fitz.core import Answer
+   from fitz_ai.core import Answer
    
    def run_my_engine(query: str, **kwargs) -> Answer:
        """Execute a query with MyEngine."""
@@ -402,8 +402,8 @@ from typing import Any
 from pydantic import BaseModel
 
 # Local imports (absolute)
-from fitz.core import Answer, Query
-from fitz.logging.logger import get_logger
+from fitz_ai.core import Answer, Query
+from fitz_ai.logging.logger import get_logger
 
 logger = get_logger(__name__)
 

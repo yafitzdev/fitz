@@ -70,7 +70,7 @@ pip install fitz
 ```
 
 ```python
-from fitz.engines.classic_rag import run_classic_rag
+from fitz_ai.engines.classic_rag import run_classic_rag
 
 answer = run_classic_rag("What does our contract say about termination?")
 print(answer.text)
@@ -89,7 +89,7 @@ Engines encapsulate *how* knowledge is queried. They're not plugins. They're par
 Production-ready retrieval-augmented generation.
 
 ```python
-from fitz.engines.classic_rag import run_classic_rag
+from fitz_ai.engines.classic_rag import run_classic_rag
 
 answer = run_classic_rag("What is our refund policy?")
 
@@ -102,7 +102,7 @@ for source in answer.provenance:
 Compression-native reasoning for large document collections. 16x to 128x compression with unified retrieval and generation.
 
 ```python
-from fitz.engines.clara import create_clara_engine
+from fitz_ai.engines.clara import create_clara_engine
 
 engine = create_clara_engine()
 engine.add_documents(my_documents)

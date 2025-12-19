@@ -131,7 +131,7 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
     # For YAML-based plugins, we'll use the registry directly
     # Add YAML plugin implementations
     try:
-        from fitz.llm.registry import available_llm_plugins
+        from fitz_ai.llm.registry import available_llm_plugins
 
         impl["ChatPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("chat")]
         impl["EmbeddingPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("embedding")]
@@ -142,7 +142,7 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
         impl["RerankPlugin"] = []
 
     try:
-        from fitz.vector_db.registry import available_vector_db_plugins
+        from fitz_ai.vector_db.registry import available_vector_db_plugins
 
         impl["VectorDBPlugin"] = [f"{p} (YAML)" for p in available_vector_db_plugins()]
     except Exception:

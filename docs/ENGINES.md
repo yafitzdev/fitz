@@ -44,7 +44,7 @@ All engines implement the same interface, defined in `fitz/core/`:
 
 ```python
 from typing import Protocol
-from fitz.core import Query, Answer
+from fitz_ai.core import Query, Answer
 
 class KnowledgeEngine(Protocol):
     """Protocol that all knowledge engines must implement."""
@@ -112,7 +112,7 @@ Query → Embed → Vector Search → Rerank → Context Build → LLM → Answe
 
 **Usage**:
 ```python
-from fitz.engines.classic_rag import run_classic_rag
+from fitz_ai.engines.classic_rag import run_classic_rag
 
 answer = run_classic_rag("What is quantum computing?")
 ```
@@ -168,7 +168,7 @@ Query → Encode → Cosine Similarity → Top-K → Generate
 
 **Usage**:
 ```python
-from fitz.engines.clara import run_clara, create_clara_engine
+from fitz_ai.engines.clara import run_clara, create_clara_engine
 
 # Quick query
 answer = run_clara("What causes climate change?", documents=docs)
@@ -229,7 +229,7 @@ The engine registry manages engine discovery and instantiation.
 ### Listing Engines
 
 ```python
-from fitz.runtime import list_engines, list_engines_with_info
+from fitz_ai.runtime import list_engines, list_engines_with_info
 
 # Simple list
 engines = list_engines()
@@ -247,7 +247,7 @@ info = list_engines_with_info()
 
 ```python
 from fitz import run
-from fitz.runtime import create_engine
+from fitz_ai.runtime import create_engine
 
 # Via universal runtime
 answer = run("Question?", engine="clara")
@@ -265,7 +265,7 @@ Engines auto-register when their module is imported:
 # In fitz/engines/clara/__init__.py
 
 def _register_clara_engine():
-    from fitz.runtime import EngineRegistry
+    from fitz_ai.runtime import EngineRegistry
     
     registry = EngineRegistry.get_global()
     registry.register(
@@ -328,7 +328,7 @@ _register_clara_engine()
 ### Initialization
 
 ```python
-from fitz.engines.clara import create_clara_engine
+from fitz_ai.engines.clara import create_clara_engine
 
 # Engine is initialized with config
 engine = create_clara_engine(config=my_config)
@@ -351,7 +351,7 @@ engine.add_documents([
 ### Querying
 
 ```python
-from fitz.core import Query, Constraints
+from fitz_ai.core import Query, Constraints
 
 # Create query with constraints
 query = Query(
@@ -373,7 +373,7 @@ answer = engine.answer(query)
 engine.clear_knowledge_base()
 
 # For cached engines (runtime functions)
-from fitz.engines.clara import clear_engine_cache
+from fitz_ai.engines.clara import clear_engine_cache
 clear_engine_cache()
 ```
 
