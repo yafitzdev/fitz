@@ -1,0 +1,71 @@
+# fitz_ai/vector_db/plugins/custom.yaml
+#
+# Custom Vector Database Plugin
+#
+# Use this when connecting to a vector DB not directly supported by Fitz.
+# Define your own endpoints in config.yaml under vector_db.kwargs.
+#
+# Example config.yaml:
+#
+#   vector_db:
+#     plugin_name: custom
+#     kwargs:
+#       base_url: "http://localhost:8000"
+#
+#       # Required: How to insert/update vectors
+#       upsert:
+#         method: POST
+#         endpoint: "/collections/{collection}/points"
+#         body: '{"points": {points}}'
+#
+#       # Required: How to search for similar vectors
+#       search:
+#         method: POST
+#         endpoint: "/collections/{collection}/search"
+#         body: '{"vector": {query_vector}, "limit": {limit}}'
+#         results_path: "results"  # JSONPath to results array
+#         mapping:
+#           id: "id"
+#           score: "score"
+#           payload: "metadata"
+#
+#       # Optional: List collections
+#       list_collections:
+#         method: GET
+#         endpoint: "/collections"
+#         collections_path: "collections"
+#         name_field: "name"  # or null if array of strings
+#
+#       # Optional: Get collection stats
+#       get_stats:
+#         method: GET
+#         endpoint: "/collections/{collection}/stats"
+#         stats_path: "stats"
+#
+#       # Optional: Delete collection
+#       delete_collection:
+#         method: DELETE
+#         endpoint: "/collections/{collection}"
+#
+#       # Optional: Auth header
+#       auth:
+#         header: "Authorization"
+#         value_env: "MY_VECTOR_DB_KEY"  # reads from env var
+#         format: "Bearer {key}"  # optional, default is just the key
+
+name: custom
+type: vector_db
+description: Custom vector database - define your own endpoints
+
+features:
+  requires_uuid_ids: false
+  auto_detect: null
+
+connection:
+  # Custom plugin reads everything from kwargs
+  type: custom
+
+operations:
+  # All operations are defined in config.yaml kwargs
+  # This plugin just provides the framework
+  python_class: fitz_ai.vector_db.custom.CustomVectorDB

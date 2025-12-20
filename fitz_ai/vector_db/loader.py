@@ -2,6 +2,11 @@
 """
 Vector DB plugin loader with YAML specifications.
 
+Supports three types of plugins:
+1. HTTP-based (Qdrant, Pinecone) - operations defined in YAML
+2. Local (FAISS) - Python class implementation
+3. Custom - user defines operations in config.yaml
+
 Auto-detects connection details from fitz_ai.core.detect (single source of truth).
 """
 
@@ -49,6 +54,10 @@ class VectorDBSpec:
     def is_local(self) -> bool:
         """Check if this is a local (non-HTTP) plugin."""
         return self.connection.get("type") == "local"
+
+    def is_custom(self) -> bool:
+        """Check if this is a custom plugin (user-defined operations)."""
+        return self.connection.get("type") == "custom"
 
     def get_local_class_path(self) -> Optional[str]:
         """Get Python class path for local implementations."""
@@ -134,6 +143,9 @@ class VectorDBSpec:
         transform = op_spec.get("point_transform", {})
 
         if transform.get("identity"):
+            return points
+
+        if not transform:
             return points
 
         transformed = []
@@ -465,11 +477,21 @@ def create_vector_db_plugin(plugin_name: str, **kwargs):
     """
     Create a vector DB plugin from YAML specification.
 
+    Supports three types of plugins:
+    1. HTTP-based (Qdrant, Pinecone) - operations defined in YAML
+    2. Local (FAISS) - Python class implementation
+    3. Custom - user defines operations in config.yaml kwargs
+
     Connection details are AUTO-DETECTED based on the YAML spec's
     'features.auto_detect' field. This is provider-agnostic.
 
-    For HTTP-based plugins: Returns GenericVectorDBPlugin
-    For local plugins: Returns the specific Python implementation
+    Args:
+        plugin_name: Name of the plugin (e.g., 'qdrant', 'custom', 'local_faiss')
+        **kwargs: Plugin configuration. For 'custom' plugin, must include
+                  'base_url', 'upsert', and 'search' operation definitions.
+
+    Returns:
+        Vector DB plugin instance
     """
     spec = load_vector_db_spec(plugin_name)
 
@@ -485,7 +507,20 @@ def create_vector_db_plugin(plugin_name: str, **kwargs):
 
         return PluginClass(**kwargs)
 
+    # Handle custom plugins (user-defined operations in config.yaml)
+    if spec.is_custom():
+        from fitz_ai.vector_db.custom import CustomVectorDB
+        return CustomVectorDB(**kwargs)
+
     # For HTTP-based plugins, auto-detect connection based on YAML spec
     resolved_kwargs = _get_auto_detected_kwargs(spec, kwargs)
 
     return GenericVectorDBPlugin(spec, **resolved_kwargs)
+
+
+__all__ = [
+    "VectorDBSpec",
+    "GenericVectorDBPlugin",
+    "load_vector_db_spec",
+    "create_vector_db_plugin",
+]
