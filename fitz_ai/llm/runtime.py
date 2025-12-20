@@ -171,6 +171,15 @@ class YAMLEmbeddingClient(YAMLPluginBase):
     spec: EmbeddingPluginSpec
 
     def embed(self, text: str) -> list[float]:
+        """
+        Embed a single text.
+
+        Args:
+            text: Text to embed
+
+        Returns:
+            Embedding vector as list of floats
+        """
         input_config = self.spec.request
 
         if input_config.input_wrap == InputWrap.LIST:
@@ -195,6 +204,74 @@ class YAMLEmbeddingClient(YAMLPluginBase):
         except (KeyError, IndexError) as e:
             raise RuntimeError(f"Failed to extract embedding: {e}. Response: {response}") from e
 
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """
+        Embed multiple texts in a single API call.
+
+        This is much more efficient than calling embed() repeatedly:
+        - Cohere supports up to 96 texts per call
+        - OpenAI supports up to 2048 texts per call
+
+        Args:
+            texts: List of texts to embed
+
+        Returns:
+            List of embedding vectors (same order as input)
+        """
+        if not texts:
+            return []
+
+        # Single text - use regular embed
+        if len(texts) == 1:
+            return [self.embed(texts[0])]
+
+        input_config = self.spec.request
+
+        # Only LIST wrap mode supports true batching
+        if input_config.input_wrap != InputWrap.LIST:
+            # Fall back to sequential embedding
+            return [self.embed(text) for text in texts]
+
+        # Build batch payload
+        payload = {input_config.input_field: texts}
+        payload.update(input_config.static_fields)
+
+        for fitz_name, provider_name in input_config.param_map.items():
+            if fitz_name in self.params:
+                payload[provider_name] = self.params[fitz_name]
+
+        response = self._make_request(payload)
+
+        try:
+            # For batch, we need to extract ALL embeddings
+            # The response path might be "embeddings[0]" for single or "embeddings" for batch
+            embeddings_path = self.spec.response.embeddings_path
+
+            # If path ends with [0], get the parent array for batch
+            if "[0]" in embeddings_path:
+                batch_path = embeddings_path.replace("[0]", "")
+            else:
+                batch_path = embeddings_path
+
+            embeddings = extract_path(response, batch_path)
+
+            # Validate we got a list of embeddings
+            if isinstance(embeddings, list) and len(embeddings) > 0:
+                if isinstance(embeddings[0], list):
+                    # List of lists - correct format
+                    return [list(e) for e in embeddings]
+                else:
+                    # Single embedding returned as flat list
+                    # This shouldn't happen for batch, but handle gracefully
+                    return [list(embeddings)]
+            else:
+                raise RuntimeError(f"Unexpected embeddings format: {type(embeddings)}")
+
+        except (KeyError, IndexError) as e:
+            raise RuntimeError(
+                f"Failed to extract batch embeddings: {e}. Response: {response}"
+            ) from e
+
 
 class YAMLRerankClient(YAMLPluginBase):
     """Rerank plugin client."""
@@ -203,10 +280,10 @@ class YAMLRerankClient(YAMLPluginBase):
     spec: RerankPluginSpec
 
     def rerank(
-        self,
-        query: str,
-        documents: list[str],
-        top_n: int | None = None,
+            self,
+            query: str,
+            documents: list[str],
+            top_n: int | None = None,
     ) -> list[tuple[int, float]]:
         if not documents:
             return []
@@ -251,19 +328,19 @@ _CLIENT_CLASSES: dict[str, type[YAMLPluginBase]] = {
 
 @overload
 def create_yaml_client(
-    plugin_type: Literal["chat"], plugin_name: str, **kwargs: Any
+        plugin_type: Literal["chat"], plugin_name: str, **kwargs: Any
 ) -> YAMLChatClient: ...
 
 
 @overload
 def create_yaml_client(
-    plugin_type: Literal["embedding"], plugin_name: str, **kwargs: Any
+        plugin_type: Literal["embedding"], plugin_name: str, **kwargs: Any
 ) -> YAMLEmbeddingClient: ...
 
 
 @overload
 def create_yaml_client(
-    plugin_type: Literal["rerank"], plugin_name: str, **kwargs: Any
+        plugin_type: Literal["rerank"], plugin_name: str, **kwargs: Any
 ) -> YAMLRerankClient: ...
 
 

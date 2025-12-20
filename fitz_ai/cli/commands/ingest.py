@@ -1,4 +1,4 @@
-# fitz_ai/cli/commands/ingest.py
+# fitz_ai/cli/v2/commands/ingest.py
 """
 Interactive document ingestion.
 
@@ -165,28 +165,167 @@ def _load_config() -> dict:
 
 
 # =============================================================================
-# Embedding with Progress
+# Batch Embedding with Progress
 # =============================================================================
 
 
-def _embed_chunks(
-    embedder: Any,
-    chunks: List[Chunk],
-    show_progress: bool = True,
-) -> List[List[float]]:
-    """Embed chunks with progress bar."""
-    vectors = []
+def _has_batch_embed(embedder: Any) -> bool:
+    """Check if embedder supports batch embedding."""
+    return hasattr(embedder, 'embed_batch') or hasattr(embedder, 'embed_texts')
 
-    if RICH and show_progress and len(chunks) > 1:
+
+def _embed_batch_native(embedder: Any, texts: List[str]) -> List[List[float]]:
+    """Call native batch embed if available."""
+    if hasattr(embedder, 'embed_batch'):
+        return embedder.embed_batch(texts)
+    elif hasattr(embedder, 'embed_texts'):
+        return embedder.embed_texts(texts)
+    else:
+        raise NotImplementedError("No batch embed method")
+
+
+def _is_batch_size_error(error: Exception) -> bool:
+    """Check if error is due to batch size being too large."""
+    error_str = str(error).lower()
+    indicators = [
+        "too many",
+        "batch size",
+        "maximum",
+        "limit",
+        "exceeded",
+        "too large",
+        "rate limit",
+        "413",  # Payload too large
+        "400",  # Bad request (often batch size)
+    ]
+    return any(ind in error_str for ind in indicators)
+
+
+def _embed_chunks(
+        embedder: Any,
+        chunks: List[Chunk],
+        batch_size: int = 96,
+        show_progress: bool = True,
+) -> List[List[float]]:
+    """
+    Embed chunks with adaptive batching and progress bar.
+
+    Batching significantly reduces API calls:
+    - 1000 chunks with batch_size=96 = ~11 API calls instead of 1000
+
+    Adaptive batch sizing:
+    - Starts at batch_size (default 96)
+    - If batch fails, halves batch size and retries
+    - Continues halving until batch_size=1 (single embedding)
+    - Remembers working batch size for remaining chunks
+
+    Args:
+        embedder: Embedding plugin with embed() method
+        chunks: List of chunks to embed
+        batch_size: Initial batch size (will adapt down if needed)
+        show_progress: Whether to show progress bar
+
+    Returns:
+        List of embedding vectors
+    """
+    vectors: List[List[float]] = []
+    total_chunks = len(chunks)
+
+    # Check if embedder has native batch support
+    has_native_batch = _has_batch_embed(embedder)
+
+    if not has_native_batch:
+        # Fall back to single embedding
+        return _embed_chunks_sequential(embedder, chunks, show_progress)
+
+    # Adaptive batch embedding
+    current_batch_size = batch_size
+    position = 0
+
+    if RICH and show_progress:
         with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TimeElapsedColumn(),
-            console=console,
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=console,
         ) as progress:
-            task = progress.add_task("Embedding...", total=len(chunks))
+            task = progress.add_task(
+                f"Embedding (batch={current_batch_size})...",
+                total=total_chunks
+            )
+
+            while position < total_chunks:
+                batch_end = min(position + current_batch_size, total_chunks)
+                batch_texts = [c.content for c in chunks[position:batch_end]]
+
+                try:
+                    batch_vectors = _embed_batch_native(embedder, batch_texts)
+                    vectors.extend(batch_vectors)
+                    position = batch_end
+                    progress.update(task, advance=len(batch_texts))
+
+                except Exception as e:
+                    if _is_batch_size_error(e) and current_batch_size > 1:
+                        # Halve batch size and retry
+                        current_batch_size = max(1, current_batch_size // 2)
+                        progress.update(
+                            task,
+                            description=f"Embedding (batch={current_batch_size})..."
+                        )
+                        if current_batch_size == 1:
+                            _print(f"Falling back to single embedding", "yellow" if RICH else "")
+                    else:
+                        # Not a batch size error or already at batch_size=1
+                        raise
+    else:
+        # Non-rich progress
+        while position < total_chunks:
+            batch_end = min(position + current_batch_size, total_chunks)
+            batch_texts = [c.content for c in chunks[position:batch_end]]
+
+            try:
+                batch_vectors = _embed_batch_native(embedder, batch_texts)
+                vectors.extend(batch_vectors)
+
+                if show_progress:
+                    print(f"  Embedded {batch_end}/{total_chunks} (batch={current_batch_size})...")
+
+                position = batch_end
+
+            except Exception as e:
+                if _is_batch_size_error(e) and current_batch_size > 1:
+                    # Halve batch size and retry
+                    old_size = current_batch_size
+                    current_batch_size = max(1, current_batch_size // 2)
+                    if show_progress:
+                        print(f"  Batch size {old_size} failed, trying {current_batch_size}...")
+                else:
+                    raise
+
+    return vectors
+
+
+def _embed_chunks_sequential(
+        embedder: Any,
+        chunks: List[Chunk],
+        show_progress: bool = True,
+) -> List[List[float]]:
+    """Embed chunks one at a time (fallback when batch not available)."""
+    vectors: List[List[float]] = []
+    total_chunks = len(chunks)
+
+    if RICH and show_progress and total_chunks > 1:
+        with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=console,
+        ) as progress:
+            task = progress.add_task("Embedding...", total=total_chunks)
             for chunk in chunks:
                 vectors.append(embedder.embed(chunk.content))
                 progress.update(task, advance=1)
@@ -194,7 +333,7 @@ def _embed_chunks(
         for i, chunk in enumerate(chunks):
             vectors.append(embedder.embed(chunk.content))
             if show_progress and (i + 1) % 20 == 0:
-                print(f"  Embedded {i + 1}/{len(chunks)}...")
+                print(f"  Embedded {i + 1}/{total_chunks}...")
 
     return vectors
 
@@ -205,16 +344,16 @@ def _embed_chunks(
 
 
 def command(
-    source: Optional[Path] = typer.Argument(
-        None,
-        help="Source file or directory (will prompt if not provided).",
-    ),
-    non_interactive: bool = typer.Option(
-        False,
-        "--non-interactive",
-        "-y",
-        help="Use defaults without prompting.",
-    ),
+        source: Optional[Path] = typer.Argument(
+            None,
+            help="Source file or directory (will prompt if not provided).",
+        ),
+        non_interactive: bool = typer.Option(
+            False,
+            "--non-interactive",
+            "-y",
+            help="Use defaults without prompting.",
+        ),
 ) -> None:
     """
     Ingest documents into the vector database.
@@ -411,8 +550,11 @@ def command(
         _error(f"Failed to initialize embedder: {e}")
         raise typer.Exit(1)
 
+    # Use batch size of 96 (Cohere max) for efficiency
+    embed_batch_size = 96
+
     try:
-        vectors = _embed_chunks(embedder, chunks)
+        vectors = _embed_chunks(embedder, chunks, batch_size=embed_batch_size)
     except Exception as e:
         _error(f"Embedding failed: {e}")
         raise typer.Exit(1)
