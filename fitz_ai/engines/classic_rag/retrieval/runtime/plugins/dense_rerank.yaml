@@ -13,14 +13,14 @@ description: "Dense retrieval with reranking, threshold filtering, and deduplica
 
 steps:
   - type: vector_search
-    k: 50                      # Large candidate pool
+    k: 40                      # Large candidate pool
 
   - type: rerank
     k: 15                      # Keep top 15 after reranking
     enabled_if: reranker
 
   - type: threshold
-    threshold: 0.4             # Filter low-confidence results
+    threshold: 0.6             # Filter low-confidence results
     score_key: rerank_score
     fallback_key: vector_score
 
