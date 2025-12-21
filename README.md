@@ -152,56 +152,154 @@ Architecture enforces separation: engines can be added or removed without destab
 | Command | Description |
 |---------|-------------|
 | `fitz init` | Interactive setup wizard |
+| `fitz ingest [path]` | Ingest documents into vector DB |
 | `fitz query "question"` | Query your knowledge base |
-| `fitz config` | Show current configuration |
-| `fitz db` | List/inspect vector collections |
-| `fitz chunk ./file.txt` | Preview chunking strategies |
+| `fitz config` | View/manage configuration |
 | `fitz doctor` | System diagnostics |
-| `fitz plugins` | List all available plugins |
 
-### Ingestion Commands
+### Quick Start
 
-| Command | Description |
-|---------|-------------|
-| `fitz ingest ./docs collection` | Ingest documents into collection |
-| `fitz ingest ./docs coll --chunk-size 500` | Custom chunk size |
-| `fitz ingest validate ./docs` | Validate before ingesting |
-| `fitz ingest plugins` | List ingest plugins |
+```bash
+# 1. Setup (detects Ollama, Qdrant, API keys automatically)
+fitz init
 
-### Database Commands
+# 2. Ingest documents
+fitz ingest ./my-documents
 
-| Command | Description |
-|---------|-------------|
-| `fitz db` | List all collections |
-| `fitz db default` | Inspect 'default' collection |
-| `fitz db my_docs -n 10` | Show 10 sample chunks |
+# 3. Query
+fitz query "What are the main topics?"
 
-### Chunking Preview
+# 4. Verify everything works
+fitz doctor --test
+```
 
-| Command | Description |
-|---------|-------------|
-| `fitz chunk ./doc.txt` | Preview with defaults (1000 chars) |
-| `fitz chunk ./doc.txt --size 500` | Smaller chunks |
-| `fitz chunk ./docs/ --stats` | Stats only, no content |
-| `fitz chunk --list` | List available chunkers |
+### Command Details
+
+#### `fitz init`
+Interactive setup wizard. Detects available providers and creates config.
+
+```bash
+fitz init              # Interactive mode
+fitz init -y           # Auto-detect defaults
+fitz init --show       # Preview without saving
+```
+
+#### `fitz ingest`
+Ingest documents into your vector database.
+
+```bash
+fitz ingest                    # Interactive prompts
+fitz ingest ./docs             # Ingest specific directory
+fitz ingest ./docs -y          # Non-interactive with defaults
+```
+
+Prompts for: collection name, chunker type, chunk size, overlap.
+
+#### `fitz query`
+Query your knowledge base with RAG.
+
+```bash
+fitz query "your question"              # Basic query
+fitz query "your question" --stream     # Streaming response
+```
+
+Returns answer with source citations.
+
+#### `fitz config`
+Manage configuration.
+
+```bash
+fitz config              # Show summary
+fitz config --raw        # Show YAML
+fitz config --json       # JSON output
+fitz config --edit       # Open in $EDITOR
+fitz config --path       # Show file location
+```
+
+#### `fitz doctor`
+System diagnostics.
+
+```bash
+fitz doctor              # Quick check
+fitz doctor -v           # Verbose (shows optional deps)
+fitz doctor --test       # Test connections
+```
+
+Checks: Python version, dependencies, Ollama/Qdrant/FAISS availability, API keys, connections.
 
 ### Examples
 
 ```bash
-# Setup and first query
-fitz init
-fitz ingest ./documents knowledge_base
-fitz query "What are the main topics?"
+# Local-first setup (no API keys)
+ollama serve
+docker run -p 6333:6333 qdrant/qdrant
+fitz init  # Select ollama + qdrant
+fitz ingest ./docs -y
+fitz query "What's in my docs?"
 
-# Inspect what's stored
-fitz db knowledge_base
+# Cloud setup
+export COHERE_API_KEY="your-key"
+fitz init -y
+fitz ingest ./docs -y
+fitz query "Your question"
 
-# Preview chunking before committing
-fitz chunk ./large_doc.pdf --size 500 --stats
-
-# Check system health
-fitz doctor
+# Check everything is working
+fitz doctor --test
 ```
+
+### Environment Variables
+
+```bash
+# API Keys (choose one or use Ollama)
+export COHERE_API_KEY="..."       # Recommended
+export OPENAI_API_KEY="..."       # Alternative
+export AZURE_OPENAI_API_KEY="..." # Alternative
+
+# Azure specific (if using Azure)
+export AZURE_OPENAI_ENDPOINT="..."
+export AZURE_OPENAI_API_VERSION="2024-02-15-preview"
+```
+
+### Configuration File
+
+Created at `~/.fitz/fitz.yaml`:
+
+```yaml
+chat:
+  plugin_name: cohere
+  kwargs:
+    model: command-a-03-2025
+    temperature: 0.2
+
+embedding:
+  plugin_name: cohere
+  kwargs:
+    model: embed-english-v3.0
+
+vector_db:
+  plugin_name: qdrant
+  kwargs:
+    host: "localhost"
+    port: 6333
+
+retriever:
+  plugin_name: dense
+  collection: default
+  top_k: 5
+
+rerank:
+  enabled: true
+  plugin_name: cohere
+  kwargs:
+    model: rerank-v3.5
+
+rgs:
+  enable_citations: true
+  strict_grounding: true
+  max_chunks: 8
+```
+
+Edit with: `fitz config --edit` or `vim ~/.fitz/fitz.yaml`
 
 ---
 
