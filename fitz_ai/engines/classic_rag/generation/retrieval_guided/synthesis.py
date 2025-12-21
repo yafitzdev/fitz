@@ -42,6 +42,10 @@ class RGSSourceRef:
     source_id: str
     index: int
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Added fields for proper source display
+    doc_id: Optional[str] = None
+    content: Optional[str] = None
+    text: Optional[str] = None  # Alias for content
 
 
 @dataclass
@@ -90,7 +94,17 @@ class RGS:
             for idx, chunk in enumerate(limited, start=1):
                 cid = self._get_chunk_id(chunk, idx)
                 meta = self._get_chunk_metadata(chunk)
-                sources.append(RGSSourceRef(source_id=cid, index=idx, metadata=meta))
+                doc_id = self._get_chunk_doc_id(chunk)
+                content = self._get_chunk_content(chunk)
+
+                sources.append(RGSSourceRef(
+                    source_id=cid,
+                    index=idx,
+                    metadata=meta,
+                    doc_id=doc_id,
+                    content=content,
+                    text=content,  # Alias for backwards compatibility
+                ))
 
             return RGSAnswer(answer=raw_answer, sources=sources)
         except Exception as e:
@@ -140,6 +154,24 @@ class RGS:
             return str(chunk.get("id") or chunk.get("chunk_id") or f"chunk_{index}")
         return str(
             getattr(chunk, "id", None) or getattr(chunk, "chunk_id", None) or f"chunk_{index}"
+        )
+
+    def _get_chunk_doc_id(self, chunk: ChunkInput) -> str:
+        """Extract document ID from chunk-like object."""
+        if isinstance(chunk, dict):
+            return str(
+                chunk.get("doc_id")
+                or chunk.get("document_id")
+                or chunk.get("source_file")
+                or chunk.get("source")
+                or "unknown"
+            )
+        return str(
+            getattr(chunk, "doc_id", None)
+            or getattr(chunk, "document_id", None)
+            or getattr(chunk, "source_file", None)
+            or getattr(chunk, "source", None)
+            or "unknown"
         )
 
     def _get_chunk_metadata(self, chunk: ChunkInput) -> Dict[str, Any]:
