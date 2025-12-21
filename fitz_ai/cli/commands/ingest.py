@@ -83,9 +83,7 @@ def _load_config() -> dict:
         return load_config_dict(FitzPaths.config())
     except ConfigNotFoundError:
         ui.error("No config found. Run 'fitz init' first.")
-        raise typer.Exit(1)
-    except Exception as e:
-        ui.error(f"Failed to load config: {e}")
+        ui.info("Run: fitz init")
         raise typer.Exit(1)
 
 
@@ -124,6 +122,23 @@ def _is_batch_size_error(error: Exception) -> bool:
         "400",  # Bad request (often batch size)
     ]
     return any(ind in error_str for ind in indicators)
+
+
+def _embed_chunks_sequential(
+    embedder: Any,
+    chunks: List[Chunk],
+    show_progress: bool = True,
+) -> List[List[float]]:
+    """Embed chunks one at a time (fallback when batch not available)."""
+    vectors: List[List[float]] = []
+    total_chunks = len(chunks)
+
+    with ui.progress("Embedding", total=total_chunks) as update:
+        for chunk in chunks:
+            vectors.append(embedder.embed(chunk.content))
+            update(1)
+
+    return vectors
 
 
 def _embed_chunks(
@@ -180,21 +195,39 @@ def _embed_chunks(
     return vectors
 
 
-def _embed_chunks_sequential(
-    embedder: Any,
-    chunks: List[Chunk],
-    show_progress: bool = True,
-) -> List[List[float]]:
-    """Embed chunks one at a time (fallback when batch not available)."""
-    vectors: List[List[float]] = []
-    total_chunks = len(chunks)
+# =============================================================================
+# Chunker Parameter Mapping
+# =============================================================================
 
-    with ui.progress("Embedding", total=total_chunks) as update:
-        for chunk in chunks:
-            vectors.append(embedder.embed(chunk.content))
-            update(1)
 
-    return vectors
+def _get_chunker_kwargs(chunker: str, chunk_size: int, chunk_overlap: int) -> dict:
+    """
+    Map generic CLI parameters to chunker-specific kwargs.
+
+    Different chunkers use different parameter names:
+    - simple: chunk_size
+    - pdf_sections: max_section_chars (doesn't use overlap)
+    - overlap: chunk_size, chunk_overlap
+    """
+    # Map chunker names to their parameter schemas
+    if chunker == "pdf_sections":
+        # PDF sections chunker uses different parameter names
+        kwargs = {
+            "max_section_chars": chunk_size,  # Map chunk_size to max_section_chars
+            # pdf_sections doesn't use overlap - it splits by sections
+        }
+    elif chunker == "overlap":
+        # Overlap chunker uses both chunk_size and chunk_overlap
+        kwargs = {"chunk_size": chunk_size}
+        if chunk_overlap > 0:
+            kwargs["chunk_overlap"] = chunk_overlap
+    else:
+        # Default/simple chunker
+        kwargs = {"chunk_size": chunk_size}
+        if chunk_overlap > 0:
+            kwargs["chunk_overlap"] = chunk_overlap
+
+    return kwargs
 
 
 # =============================================================================
@@ -292,11 +325,20 @@ def command(
         # Chunking strategy
         chunker = ui.prompt_choice("Chunking strategy", available_chunkers, "simple")
 
-        # Chunk size
-        chunk_size = ui.prompt_int("Chunk size (characters)", 1000)
+        # Chunk size (with context-appropriate prompt based on chunker)
+        if chunker == "pdf_sections":
+            chunk_size = ui.prompt_int(
+                "Max section size (characters)",
+                3000,  # Default for pdf_sections
+            )
+        else:
+            chunk_size = ui.prompt_int("Chunk size (characters)", 1000)
 
-        # Chunk overlap
-        chunk_overlap = ui.prompt_int("Chunk overlap", 0)
+        # Chunk overlap (only for chunkers that support it)
+        if chunker == "pdf_sections":
+            chunk_overlap = 0  # PDF sections doesn't use overlap
+        else:
+            chunk_overlap = ui.prompt_int("Chunk overlap", 0)
 
         print()
 
@@ -361,9 +403,8 @@ def command(
 
     ui.step(2, 4, f"Chunking ({chunker})...")
 
-    chunker_kwargs = {"chunk_size": chunk_size}
-    if chunk_overlap > 0:
-        chunker_kwargs["chunk_overlap"] = chunk_overlap
+    # FIX: Map CLI parameters to chunker-specific kwargs
+    chunker_kwargs = _get_chunker_kwargs(chunker, chunk_size, chunk_overlap)
 
     chunker_config = ChunkerConfig(plugin_name=chunker, kwargs=chunker_kwargs)
 
@@ -388,12 +429,13 @@ def command(
     ui.success(f"Created {len(chunks)} chunks")
 
     # =========================================================================
-    # Step 3: Generate embeddings
+    # Step 3: Embed chunks
     # =========================================================================
 
     ui.step(3, 4, f"Embedding ({embedding_plugin})...")
 
     try:
+        # FIX: get_llm_plugin returns an INSTANCE, not a class
         embedder = get_llm_plugin(plugin_type="embedding", plugin_name=embedding_plugin)
     except Exception as e:
         ui.error(f"Failed to initialize embedder: {e}")
@@ -403,54 +445,52 @@ def command(
     embed_batch_size = 96
 
     try:
+        # FIX: Pass embedder instance to _embed_chunks
         vectors = _embed_chunks(embedder, chunks, batch_size=embed_batch_size)
     except Exception as e:
-        ui.error(f"Embedding failed: {e}")
+        ui.error(f"Failed to embed chunks: {e}")
         raise typer.Exit(1)
 
     ui.success(f"Generated {len(vectors)} embeddings")
 
     # =========================================================================
-    # Step 4: Write to vector DB
+    # Step 4: Store in vector DB
     # =========================================================================
 
-    ui.step(4, 4, f"Writing to {vector_db_plugin}...")
+    ui.step(4, 4, "Storing in vector database...")
 
     try:
-        vdb = get_vector_db_plugin(vector_db_plugin)
-        writer = VectorDBWriter(client=vdb)
-    except Exception as e:
-        ui.error(f"Failed to connect to vector DB: {e}")
-        raise typer.Exit(1)
+        # FIX: get_vector_db_plugin returns an INSTANCE, not a class
+        vector_client = get_vector_db_plugin(vector_db_plugin)
 
-    batch_size = 50
-    try:
-        for i in range(0, len(chunks), batch_size):
-            batch_chunks = chunks[i : i + batch_size]
-            batch_vectors = vectors[i : i + batch_size]
-            writer.upsert(
-                collection=collection, chunks=batch_chunks, vectors=batch_vectors
-            )
-    except Exception as e:
-        ui.error(f"Failed to write: {e}")
-        raise typer.Exit(1)
+        # Write to vector DB
+        writer = VectorDBWriter(client=vector_client)
+        writer.upsert(collection=collection, chunks=chunks, vectors=vectors)
 
-    ui.success(f"Written to '{collection}'")
+        ui.success(f"Stored {len(chunks)} chunks in collection '{collection}'")
+    except Exception as e:
+        ui.error(f"Failed to store in vector DB: {e}")
+        raise typer.Exit(1)
 
     # =========================================================================
-    # Done
+    # Success!
     # =========================================================================
 
     print()
     if RICH:
         console.print(
-            Panel.fit(
-                f"[green bold]Success![/green bold]\n\n"
-                f"Ingested [bold]{len(chunks)}[/bold] chunks into [bold]'{collection}'[/bold]\n\n"
-                f'[dim]Query with:[/dim] fitz query "your question"',
+            Panel(
+                f"[bold green]✓[/bold green] Successfully ingested {len(raw_docs)} documents\n"
+                f"[bold green]✓[/bold green] Created {len(chunks)} chunks\n"
+                f"[bold green]✓[/bold green] Stored in collection: [cyan]{collection}[/cyan]",
+                title="Ingestion Complete",
                 border_style="green",
             )
         )
     else:
-        print(f"Success! Ingested {len(chunks)} chunks into '{collection}'")
-        print('\nQuery with: fitz query "your question"')
+        print("=" * 60)
+        print("Ingestion Complete!")
+        print("=" * 60)
+        print(f"✓ Ingested {len(raw_docs)} documents")
+        print(f"✓ Created {len(chunks)} chunks")
+        print(f"✓ Stored in collection: {collection}")

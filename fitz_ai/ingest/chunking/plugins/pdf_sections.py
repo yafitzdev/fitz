@@ -1,9 +1,10 @@
 # fitz_ai/ingest/chunking/plugins/pdf_sections.py
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
 
@@ -67,87 +68,86 @@ class PdfSectionChunker:
         1. All caps line (3-50 chars)
         2. Starts with numbered pattern
         3. Contains section keyword and is title case
-        4. Short line (<80 chars) that's mostly uppercase
+        4. Ends with colon
         """
-        stripped = line.strip()
+        line_stripped = line.strip()
 
-        if not stripped or len(stripped) < 3:
+        if not line_stripped:
             return False
 
-        # Check for all caps (common in PDF headers)
-        if stripped.isupper() and 3 <= len(stripped) <= 50:
+        # All caps (common for headers)
+        if (
+                line_stripped.isupper()
+                and 3 <= len(line_stripped) <= 50
+                and not line_stripped.isdigit()
+        ):
             return True
 
-        # Check numbered patterns
+        # Numbered section patterns
         for pattern in self._SECTION_PATTERNS:
-            if pattern.match(stripped):
+            if pattern.match(line_stripped):
                 return True
 
-        # Check for section keywords in title case
-        lower = stripped.lower()
+        # Section keywords with title case
+        line_lower = line_stripped.lower()
         for keyword in self._SECTION_KEYWORDS:
-            if keyword in lower and stripped[0].isupper():
-                # Title case check: first letter uppercase, rest mostly lowercase
-                words = stripped.split()
-                if len(words) <= 4 and any(w[0].isupper() for w in words if w):
-                    return True
+            if keyword in line_lower and line_stripped[0].isupper():
+                return True
 
-        # Check for short lines with high uppercase ratio (potential headers)
-        if len(stripped) < 80:
-            upper_count = sum(1 for c in stripped if c.isupper())
-            alpha_count = sum(1 for c in stripped if c.isalpha())
-            if alpha_count > 0 and upper_count / alpha_count > 0.6:
+        # Ends with colon (often indicates header)
+        if line_stripped.endswith(":") and 3 <= len(line_stripped) <= 100:
+            words = line_stripped.split()
+            if len(words) <= 8:  # Headers are typically short
                 return True
 
         return False
 
-    def _split_into_sections(self, text: str) -> List[tuple[str, str]]:
+    def _split_into_sections(self, text: str) -> List[Tuple[str, str]]:
         """
-        Split text into sections based on detected headers.
+        Split text into (header, content) tuples based on detected sections.
 
         Returns:
-            List of (header, content) tuples
+            List of (section_header, section_content) tuples
         """
         lines = text.split("\n")
-        sections: List[tuple[str, str]] = []
-
-        current_header = "Preamble"
-        current_content: List[str] = []
+        sections: List[Tuple[str, str]] = []
+        current_header = "Introduction"
+        current_lines: List[str] = []
 
         for line in lines:
             if self._is_section_header(line):
                 # Save previous section
-                if current_content:
-                    content = "\n".join(current_content).strip()
+                if current_lines:
+                    content = "\n".join(current_lines).strip()
                     if content:
                         sections.append((current_header, content))
 
                 # Start new section
                 current_header = line.strip()
-                current_content = []
+                current_lines = []
             else:
-                current_content.append(line)
+                current_lines.append(line)
 
         # Save final section
-        if current_content:
-            content = "\n".join(current_content).strip()
+        if current_lines:
+            content = "\n".join(current_lines).strip()
             if content:
                 sections.append((current_header, content))
 
         return sections
 
     def _split_large_section(
-        self, header: str, content: str, max_chars: int
-    ) -> List[tuple[str, str]]:
+            self, header: str, content: str, max_chars: int
+    ) -> List[Tuple[str, str]]:
         """
-        Split a large section into smaller chunks while preserving context.
+        Split a large section into smaller parts if it exceeds max_chars.
 
         Splits on paragraph boundaries when possible.
         """
         if len(content) <= max_chars:
             return [(header, content)]
 
-        chunks: List[tuple[str, str]] = []
+        chunks: List[Tuple[str, str]] = []
         paragraphs = content.split("\n\n")
 
         current_chunk: List[str] = []
@@ -240,8 +240,8 @@ class PdfSectionChunker:
         for header, content in sections:
             # Skip very short sections unless preserve_short_sections is True
             if (
-                not self.preserve_short_sections
-                and len(content) < self.min_section_chars
+                    not self.preserve_short_sections
+                    and len(content) < self.min_section_chars
             ):
                 continue
 
