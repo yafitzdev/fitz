@@ -244,7 +244,7 @@ class TestClaraEngine:
         mock_engine._generate = MagicMock(return_value=("Answer", [0, 1, 2]))
 
         query = Query(text="Question?", constraints=Constraints(max_sources=3))
-        answer = mock_engine.answer(query)
+        mock_engine.answer(query)
 
         # Verify retrieve was called with constrained top_k
         mock_engine._retrieve.assert_called_once()

@@ -507,7 +507,7 @@ class TestPluginIntegration:
 
         # These should have defaults even if not in YAML
         assert spec.version == "1.0"
-        assert spec.response.is_array == False
+        assert not spec.response.is_array
         assert spec.response.array_index == 0
 
     def test_cache_functionality(self):

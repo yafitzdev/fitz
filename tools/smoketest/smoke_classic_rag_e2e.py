@@ -167,10 +167,9 @@ class MockLLM:
         self.last_messages = messages
 
         # Extract question from user message
-        user_msg = ""
         for msg in messages:
             if msg.get("role") == "user":
-                user_msg = msg.get("content", "")
+                msg.get("content", "")
                 break
 
         # Generate a mock answer that references sources

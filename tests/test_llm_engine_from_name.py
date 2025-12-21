@@ -6,7 +6,7 @@ from fitz_ai.llm.registry import LLMRegistryError
 
 def test_get_llm_plugin_requires_keywords():
     # Ensures your public API stays explicit.
-    cls = get_llm_plugin(plugin_name="cohere", plugin_type="chat") if True else None
+    get_llm_plugin(plugin_name="cohere", plugin_type="chat") if True else None
     # If "cohere" isn't present in your build, the above would raise.
     # So we only assert API shape here.
     assert True

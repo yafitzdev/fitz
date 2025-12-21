@@ -71,7 +71,7 @@ def _check_dependencies() -> list[tuple[str, bool, str]]:
     results = []
     for item in packages:
         name = item[0]
-        desc = item[1]
+        item[1]
         pip_pkg = item[2] if len(item) > 2 else item[0]
 
         try:
@@ -98,7 +98,7 @@ def _check_optional_dependencies() -> list[tuple[str, bool, str]]:
     for item in packages:
         name = item[0]
         desc = item[1]
-        import_name = item[2] if len(item) > 2 else item[0]
+        item[2] if len(item) > 2 else item[0]
 
         try:
             mod = __import__(name.replace("-", "_"))
@@ -141,7 +141,7 @@ def _test_chat(config: dict) -> tuple[bool, str]:
             return False, "Not configured"
 
         # Just try to instantiate
-        plugin = get_llm_plugin(plugin_type="chat", plugin_name=plugin_name)
+        get_llm_plugin(plugin_type="chat", plugin_name=plugin_name)
         return True, f"{plugin_name} ready"
 
     except Exception as e:
@@ -182,7 +182,7 @@ def _test_rerank(config: dict) -> tuple[bool, str]:
             return False, "Enabled but no plugin"
 
         # Just try to instantiate
-        plugin = get_llm_plugin(plugin_type="rerank", plugin_name=plugin_name)
+        get_llm_plugin(plugin_type="rerank", plugin_name=plugin_name)
         return True, f"{plugin_name} ready"
 
     except Exception as e:
