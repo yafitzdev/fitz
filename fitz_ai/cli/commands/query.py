@@ -6,6 +6,7 @@ Usage:
     fitz query                     # Interactive mode
     fitz query "What is RAG?"      # Direct query
     fitz query -c my_collection    # Specify collection
+    fitz query -r dense_rerank     # Specify retrieval strategy
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
 from fitz_ai.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
+from fitz_ai.engines.classic_rag.retrieval.runtime import available_retrieval_plugins
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.vector_db.registry import get_vector_db_plugin
 
@@ -49,7 +51,8 @@ def _get_collections(raw_config: dict) -> List[str]:
     """Get list of collections from vector DB."""
     try:
         vdb_plugin = raw_config.get("vector_db", {}).get("plugin_name", "qdrant")
-        vdb = get_vector_db_plugin(vdb_plugin)
+        vdb_kwargs = raw_config.get("vector_db", {}).get("kwargs", {})
+        vdb = get_vector_db_plugin(vdb_plugin, **vdb_kwargs)
         return sorted(vdb.list_collections())
     except Exception:
         return []
@@ -83,7 +86,7 @@ def _select_collection(collections: List[str], default: str) -> str:
             from rich.prompt import Prompt
             response = Prompt.ask("Select collection number", default="1")
         else:
-            response = input(f"Select collection number [1]: ").strip()
+            response = input("Select collection number [1]: ").strip()
             if not response:
                 response = "1"
 
@@ -93,6 +96,48 @@ def _select_collection(collections: List[str], default: str) -> str:
                 return sorted_collections[selection - 1]
             else:
                 ui.error(f"Please enter a number between 1 and {len(sorted_collections)}")
+        except ValueError:
+            ui.error("Please enter a valid number")
+
+
+def _select_retrieval(retrievals: List[str], default: str) -> str:
+    """Let user select a retrieval strategy via numbered menu."""
+    if not retrievals:
+        ui.warning("No retrieval plugins found. Using default.")
+        return default
+
+    if len(retrievals) == 1:
+        ui.info(f"Retrieval: {retrievals[0]} (only one available)")
+        return retrievals[0]
+
+    # Sort retrievals: default first, then alphabetically
+    sorted_retrievals = sorted(retrievals)
+    if default in sorted_retrievals:
+        sorted_retrievals.remove(default)
+        sorted_retrievals.insert(0, default)
+
+    # Show available retrievals with numbers
+    ui.info("Available retrieval strategies:")
+    for idx, retrieval in enumerate(sorted_retrievals, 1):
+        marker = " (default)" if retrieval == default else ""
+        ui.info(f"  [{idx}] {retrieval}{marker}")
+
+    # Prompt for number selection (default is always 1)
+    while True:
+        if RICH:
+            from rich.prompt import Prompt
+            response = Prompt.ask("Select retrieval strategy", default="1")
+        else:
+            response = input("Select retrieval strategy [1]: ").strip()
+            if not response:
+                response = "1"
+
+        try:
+            selection = int(response)
+            if 1 <= selection <= len(sorted_retrievals):
+                return sorted_retrievals[selection - 1]
+            else:
+                ui.error(f"Please enter a number between 1 and {len(sorted_retrievals)}")
         except ValueError:
             ui.error("Please enter a valid number")
 
@@ -162,6 +207,12 @@ def command(
             "-c",
             help="Collection to query (uses config default if not specified).",
         ),
+        retrieval: Optional[str] = typer.Option(
+            None,
+            "--retrieval",
+            "-r",
+            help="Retrieval strategy/plugin (e.g., dense, dense_rerank).",
+        ),
         top_k: Optional[int] = typer.Option(
             None,
             "--top-k",
@@ -196,6 +247,7 @@ def command(
 
     Options:
         fitz query "question" -c my_collection
+        fitz query "question" -r dense_rerank
         fitz query "question" -k 10
         fitz query "question" --no-rerank
     """
@@ -204,45 +256,69 @@ def command(
     # =========================================================================
 
     raw_config, typed_config = _load_config_safe()
-    default_collection = typed_config.retriever.collection
+    default_collection = typed_config.retrieval.collection
+    default_retrieval = typed_config.retrieval.plugin_name
 
     # =========================================================================
-    # Collection selection (if not specified via -c flag)
+    # Get available retrieval plugins
     # =========================================================================
 
-    if collection:
-        # User specified collection via flag
-        typed_config.retriever.collection = collection
+    available_retrievals = available_retrieval_plugins()
+
+    # =========================================================================
+    # Interactive prompts (question first, then collection, then retrieval)
+    # =========================================================================
+
+    # Prompt for question if not provided
+    if question is None:
+        question_text = ui.prompt_text("Question")
     else:
-        # Show collection menu (whether question provided or not)
+        question_text = question
+
+    # Collection selection
+    if collection:
+        typed_config.retrieval.collection = collection
+    else:
         collections = _get_collections(raw_config)
         if collections and len(collections) > 1:
             selected = _select_collection(collections, default_collection)
-            typed_config.retriever.collection = selected
+            typed_config.retrieval.collection = selected
             print()
         elif collections:
-            # Only one collection available
             ui.info(f"Collection: {collections[0]} (only one available)")
-            typed_config.retriever.collection = collections[0]
+            typed_config.retrieval.collection = collections[0]
+
+    # Retrieval strategy selection
+    if retrieval:
+        typed_config.retrieval.plugin_name = retrieval
+    else:
+        if len(available_retrievals) > 1:
+            selected_retrieval = _select_retrieval(available_retrievals, default_retrieval)
+            typed_config.retrieval.plugin_name = selected_retrieval
+            print()
+        elif available_retrievals:
+            ui.info(f"Retrieval: {available_retrievals[0]} (only one available)")
+            typed_config.retrieval.plugin_name = available_retrievals[0]
 
     # Override top_k if specified
     if top_k:
-        typed_config.retriever.top_k = top_k
+        typed_config.retrieval.top_k = top_k
 
     # Disable rerank if requested
     if no_rerank:
         typed_config.rerank.enabled = False
 
     # Get display info
-    display_collection = typed_config.retriever.collection
+    display_collection = typed_config.retrieval.collection
+    display_retrieval = typed_config.retrieval.plugin_name
     display_chat = raw_config.get("chat", {}).get("plugin_name", "?")
 
     # =========================================================================
-    # Query loop
+    # Query execution
     # =========================================================================
 
     if interactive:
-        ui.info(f"Interactive mode - Collection: {display_collection}")
+        ui.info(f"Interactive mode - Collection: {display_collection}, Retrieval: {display_retrieval}")
         ui.info("Type 'quit' or 'exit' to end session")
         print()
 
@@ -263,12 +339,8 @@ def command(
 
     else:
         # Single query mode
-        if question is None:
-            question_text = ui.prompt_text("Question")
-        else:
-            question_text = question
-
         ui.info(f"Collection: {display_collection}")
+        ui.info(f"Retrieval: {display_retrieval}")
         ui.info(f"Chat: {display_chat}")
         print()
 

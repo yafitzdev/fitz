@@ -19,6 +19,7 @@ from fitz_ai.core.detect import detect_all
 from fitz_ai.llm.loader import load_plugin
 from fitz_ai.llm.registry import available_llm_plugins
 from fitz_ai.vector_db.registry import available_vector_db_plugins
+from fitz_ai.engines.classic_rag.retrieval.runtime import available_retrieval_plugins
 
 # =============================================================================
 # Helpers
@@ -119,6 +120,7 @@ def _generate_config(
     embedding_model: str,
     vector_db: str,
     collection: str,
+    retrieval: str,
     rerank: str | None,
     rerank_model: str,
     qdrant_host: str,
@@ -180,9 +182,9 @@ vector_db:
   plugin_name: {vector_db}
   kwargs:{vdb_kwargs if vdb_kwargs else " {}"}
 
-# Retriever
-retriever:
-  plugin_name: dense
+# Retrieval (YAML-based plugin)
+retrieval:
+  plugin_name: {retrieval}
   collection: {collection}
   top_k: 5
 {rerank_section}
@@ -273,12 +275,15 @@ def command(
     all_embedding = available_llm_plugins("embedding")
     all_rerank = available_llm_plugins("rerank")
     all_vector_db = available_vector_db_plugins()
+    all_retrieval = available_retrieval_plugins()
 
     # Filter to available only
     avail_chat = _filter_available_plugins(all_chat, "chat", system)
     avail_embedding = _filter_available_plugins(all_embedding, "embedding", system)
     avail_rerank = _filter_available_plugins(all_rerank, "rerank", system)
     avail_vector_db = _filter_available_plugins(all_vector_db, "vector_db", system)
+    # Retrieval plugins are always available (they're local YAML definitions)
+    avail_retrieval = all_retrieval
 
     # =========================================================================
     # Validate Minimum Requirements
@@ -311,6 +316,7 @@ def command(
         embedding_choice = avail_embedding[0]
         embedding_model = _get_default_model("embedding", embedding_choice)
         vector_db_choice = avail_vector_db[0]
+        retrieval_choice = avail_retrieval[0] if avail_retrieval else "dense"
         rerank_choice = avail_rerank[0] if avail_rerank else None
         rerank_model = (
             _get_default_model("rerank", rerank_choice) if rerank_choice else ""
@@ -323,6 +329,7 @@ def command(
             + (f" ({embedding_model})" if embedding_model else "")
         )
         ui.info(f"Vector DB: {vector_db_choice}")
+        ui.info(f"Retrieval: {retrieval_choice}")
         ui.info(
             f"Rerank: {rerank_choice or 'disabled'}"
             + (f" ({rerank_model})" if rerank_model else "")
@@ -346,6 +353,11 @@ def command(
         # Vector DB
         vector_db_choice = _auto_or_prompt(
             "Vector DB", avail_vector_db, avail_vector_db[0], "Select vector database"
+        )
+
+        # Retrieval plugin
+        retrieval_choice = _auto_or_prompt(
+            "Retrieval", avail_retrieval, "dense", "Select retrieval plugin"
         )
 
         # Rerank is optional
@@ -376,6 +388,7 @@ def command(
         embedding_model=embedding_model,
         vector_db=vector_db_choice,
         collection=collection_name,
+        retrieval=retrieval_choice,
         rerank=rerank_choice,
         rerank_model=rerank_model,
         qdrant_host=qdrant_host,

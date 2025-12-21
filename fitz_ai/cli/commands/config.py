@@ -62,7 +62,7 @@ def _show_config_summary(config: dict) -> None:
         table.add_row("Vector DB", vdb_plugin, vdb_details)
 
         # Retriever
-        ret = config.get("retriever", {})
+        ret = config.get("retrieval", {})
         ret_plugin = ret.get("plugin_name", "dense")
         ret_collection = ret.get("collection", "default")
         ret_top_k = ret.get("top_k", 5)
@@ -100,7 +100,7 @@ def _show_config_summary(config: dict) -> None:
         vdb = config.get("vector_db", {})
         print(f"  Vector DB: {vdb.get('plugin_name', '?')}")
 
-        ret = config.get("retriever", {})
+        ret = config.get("retrieval", {})
         print(
             f"  Retriever: {ret.get('plugin_name', 'dense')} (collection={ret.get('collection', 'default')})"
         )
