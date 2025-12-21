@@ -166,7 +166,9 @@ class EngineRegistry:
         """
         if name not in self._engines:
             available = ", ".join(self.list())
-            raise ConfigurationError(f"Unknown engine: '{name}'. Available engines: {available}")
+            raise ConfigurationError(
+                f"Unknown engine: '{name}'. Available engines: {available}"
+            )
 
         return self._engines[name].factory
 
@@ -190,7 +192,9 @@ class EngineRegistry:
         """
         if name not in self._engines:
             available = ", ".join(self.list())
-            raise ConfigurationError(f"Unknown engine: '{name}'. Available engines: {available}")
+            raise ConfigurationError(
+                f"Unknown engine: '{name}'. Available engines: {available}"
+            )
 
         return self._engines[name]
 
@@ -254,7 +258,10 @@ class EngineRegistry:
         def decorator(factory: Callable[[Any], KnowledgeEngine]) -> Callable:
             registry = EngineRegistry.get_global()
             registry.register(
-                name=name, factory=factory, description=description, config_type=config_type
+                name=name,
+                factory=factory,
+                description=description,
+                config_type=config_type,
             )
             return factory
 

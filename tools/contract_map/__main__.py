@@ -3,6 +3,7 @@
 Main entry point for contract map generation.
 Combines all sections into a comprehensive report.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -291,7 +292,9 @@ def render_architecture_section() -> str:
     lines.append("")
 
     try:
-        from fitz_ai.engines.classic_rag.config.architecture import load_architecture_mapping
+        from fitz_ai.engines.classic_rag.config.architecture import (
+            load_architecture_mapping,
+        )
         from fitz_ai.engines.classic_rag.contracts.roles import ROLES
 
         # Show role mappings

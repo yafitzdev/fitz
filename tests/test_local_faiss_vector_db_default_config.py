@@ -93,8 +93,16 @@ def test_local_faiss_reload_from_disk(tmp_path):
     db1.upsert(
         "collection",
         [
-            {"id": "doc1", "vector": [1.0, 0.0, 0.0, 0.0], "payload": {"title": "First"}},
-            {"id": "doc2", "vector": [0.0, 1.0, 0.0, 0.0], "payload": {"title": "Second"}},
+            {
+                "id": "doc1",
+                "vector": [1.0, 0.0, 0.0, 0.0],
+                "payload": {"title": "First"},
+            },
+            {
+                "id": "doc2",
+                "vector": [0.0, 1.0, 0.0, 0.0],
+                "payload": {"title": "Second"},
+            },
         ],
     )
 

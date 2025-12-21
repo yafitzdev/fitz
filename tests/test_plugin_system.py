@@ -12,9 +12,8 @@ Tests:
 Run with: pytest tests/test_plugin_system.py -v
 """
 
-import pytest
-from pathlib import Path
 
+import pytest
 
 # =============================================================================
 # Schema Defaults Tests
@@ -216,7 +215,7 @@ class TestChatPlugins:
 
     def test_chat_plugin_structure_consistency(self):
         """Test that all chat plugins have consistent structure."""
-        from fitz_ai.llm.loader import load_plugin, list_plugins
+        from fitz_ai.llm.loader import list_plugins, load_plugin
 
         plugins = list_plugins("chat")
 
@@ -236,7 +235,7 @@ class TestChatPlugins:
 
     def test_plugin_not_found(self):
         """Test error when plugin doesn't exist."""
-        from fitz_ai.llm.loader import load_plugin, YAMLPluginNotFoundError
+        from fitz_ai.llm.loader import YAMLPluginNotFoundError, load_plugin
 
         with pytest.raises(YAMLPluginNotFoundError):
             load_plugin("chat", "nonexistent_plugin")
@@ -261,7 +260,7 @@ class TestEmbeddingPlugins:
 
     def test_load_embedding_plugin(self):
         """Test loading an embedding plugin."""
-        from fitz_ai.llm.loader import load_plugin, list_plugins
+        from fitz_ai.llm.loader import list_plugins, load_plugin
 
         plugins = list_plugins("embedding")
         if not plugins:
@@ -278,7 +277,7 @@ class TestEmbeddingPlugins:
 
     def test_embedding_plugin_structure(self):
         """Test embedding plugin has correct structure."""
-        from fitz_ai.llm.loader import load_plugin, list_plugins
+        from fitz_ai.llm.loader import list_plugins, load_plugin
 
         plugins = list_plugins("embedding")
 
@@ -310,7 +309,7 @@ class TestRerankPlugins:
 
     def test_load_rerank_plugin(self):
         """Test loading a rerank plugin."""
-        from fitz_ai.llm.loader import load_plugin, list_plugins
+        from fitz_ai.llm.loader import list_plugins, load_plugin
 
         plugins = list_plugins("rerank")
         if not plugins:
@@ -395,10 +394,13 @@ class TestFaissVectorDB:
 
         db = FaissLocalVectorDB(path=temp_faiss_path)
 
-        db.upsert("stats_test", [
-            {"id": "s1", "vector": [1.0, 2.0, 3.0], "payload": {}},
-            {"id": "s2", "vector": [4.0, 5.0, 6.0], "payload": {}},
-        ])
+        db.upsert(
+            "stats_test",
+            [
+                {"id": "s1", "vector": [1.0, 2.0, 3.0], "payload": {}},
+                {"id": "s2", "vector": [4.0, 5.0, 6.0], "payload": {}},
+            ],
+        )
 
         stats = db.get_collection_stats("stats_test")
 
@@ -462,9 +464,10 @@ class TestFaissVectorDB:
 
         # Create and populate
         db1 = FaissLocalVectorDB(path=temp_faiss_path)
-        db1.upsert("persist_test", [
-            {"id": "p1", "vector": [1.0, 2.0], "payload": {"data": "test"}}
-        ])
+        db1.upsert(
+            "persist_test",
+            [{"id": "p1", "vector": [1.0, 2.0], "payload": {"data": "test"}}],
+        )
 
         # Create new instance pointing to same path
         db2 = FaissLocalVectorDB(path=temp_faiss_path)
@@ -509,7 +512,7 @@ class TestPluginIntegration:
 
     def test_cache_functionality(self):
         """Test that plugin loading is cached."""
-        from fitz_ai.llm.loader import load_plugin, clear_cache
+        from fitz_ai.llm.loader import clear_cache, load_plugin
 
         clear_cache()
 
@@ -522,7 +525,7 @@ class TestPluginIntegration:
 
     def test_all_chat_plugins_valid(self):
         """Test that all chat plugins pass validation."""
-        from fitz_ai.llm.loader import load_plugin, list_plugins
+        from fitz_ai.llm.loader import list_plugins, load_plugin
 
         plugins = list_plugins("chat")
 

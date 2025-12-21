@@ -1,5 +1,6 @@
 # tests/test_yaml_plugin_discovery.py
 """Tests for YAML plugin discovery system."""
+
 import pytest
 
 from fitz_ai.llm import available_llm_plugins, get_llm_plugin, list_plugins
@@ -28,7 +29,9 @@ class TestYAMLPluginDiscovery:
             pytest.skip("No YAML chat plugins")
 
         instance = get_llm_plugin(
-            plugin_name=yaml_plugins[0], plugin_type="chat", api_key="test_key_for_testing"
+            plugin_name=yaml_plugins[0],
+            plugin_type="chat",
+            api_key="test_key_for_testing",
         )
 
         assert hasattr(instance, "plugin_name")

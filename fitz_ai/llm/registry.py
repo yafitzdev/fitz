@@ -11,6 +11,7 @@ Design principle: NO SILENT FALLBACK
 - If user configures "cohere", they get cohere or an error
 - Plugins are YAML files, not Python modules
 """
+
 from __future__ import annotations
 
 from typing import Any, List
@@ -68,10 +69,12 @@ def get_llm_plugin(*, plugin_name: str, plugin_type: str, **kwargs: Any) -> Any:
     except YAMLPluginNotFoundError:
         available = available_llm_plugins(plugin_type)
         raise LLMRegistryError(
-            f"Unknown {plugin_type} plugin: {plugin_name!r}. " f"Available: {available}"
+            f"Unknown {plugin_type} plugin: {plugin_name!r}. Available: {available}"
         )
     except Exception as e:
-        raise LLMRegistryError(f"Failed to load {plugin_type} plugin '{plugin_name}': {e}") from e
+        raise LLMRegistryError(
+            f"Failed to load {plugin_type} plugin '{plugin_name}': {e}"
+        ) from e
 
 
 __all__ = [

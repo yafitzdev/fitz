@@ -137,10 +137,7 @@ class PdfSectionChunker:
         return sections
 
     def _split_large_section(
-            self,
-            header: str,
-            content: str,
-            max_chars: int
+        self, header: str, content: str, max_chars: int
     ) -> List[tuple[str, str]]:
         """
         Split a large section into smaller chunks while preserving context.
@@ -164,14 +161,16 @@ class PdfSectionChunker:
             if para_size > max_chars:
                 if current_chunk:
                     chunk_content = "\n\n".join(current_chunk).strip()
-                    chunk_header = f"{header} (Part {part_num})" if part_num > 1 else header
+                    chunk_header = (
+                        f"{header} (Part {part_num})" if part_num > 1 else header
+                    )
                     chunks.append((chunk_header, chunk_content))
                     part_num += 1
                     current_chunk = []
                     current_size = 0
 
                 # Split large paragraph by sentences
-                sentences = re.split(r'(?<=[.!?])\s+', para)
+                sentences = re.split(r"(?<=[.!?])\s+", para)
                 temp_chunk: List[str] = []
                 temp_size = 0
 
@@ -224,7 +223,9 @@ class PdfSectionChunker:
         Returns:
             List of Chunk objects, one per section (or section part)
         """
-        doc_id = str(base_meta.get("doc_id") or base_meta.get("source_file") or "unknown")
+        doc_id = str(
+            base_meta.get("doc_id") or base_meta.get("source_file") or "unknown"
+        )
 
         # Split into sections
         sections = self._split_into_sections(text)
@@ -238,14 +239,15 @@ class PdfSectionChunker:
 
         for header, content in sections:
             # Skip very short sections unless preserve_short_sections is True
-            if not self.preserve_short_sections and len(content) < self.min_section_chars:
+            if (
+                not self.preserve_short_sections
+                and len(content) < self.min_section_chars
+            ):
                 continue
 
             # Split large sections if needed
             section_parts = self._split_large_section(
-                header,
-                content,
-                self.max_section_chars
+                header, content, self.max_section_chars
             )
 
             for part_header, part_content in section_parts:

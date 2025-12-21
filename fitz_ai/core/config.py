@@ -255,7 +255,7 @@ def _resolve_config_path(
         pass
 
     raise ConfigNotFoundError(
-        "No config file specified and no default found. " "Run 'fitz init' to create one."
+        "No config file specified and no default found. Run 'fitz init' to create one."
     )
 
 

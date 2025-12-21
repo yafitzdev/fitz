@@ -33,7 +33,9 @@ class LocalChatLLM:
     the model selection.
     """
 
-    def __init__(self, runtime: LocalLLMRuntime, cfg: LocalChatConfig | None = None) -> None:
+    def __init__(
+        self, runtime: LocalLLMRuntime, cfg: LocalChatConfig | None = None
+    ) -> None:
         self._rt = runtime
         self._cfg = cfg or LocalChatConfig()
 

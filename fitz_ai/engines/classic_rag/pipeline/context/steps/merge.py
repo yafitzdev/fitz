@@ -38,7 +38,9 @@ class MergeAdjacentStep:
             ch_index = int(chd.get("chunk_index", 0))
 
             if ch_index == prev_index + 1:
-                current["content"] = f"{current.get('content', '')}\n{chd.get('content', '')}"
+                current["content"] = (
+                    f"{current.get('content', '')}\n{chd.get('content', '')}"
+                )
                 merged_ids.append(chd["id"])
                 prev_index = ch_index
                 continue

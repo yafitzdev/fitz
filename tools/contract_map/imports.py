@@ -8,6 +8,7 @@ This module distinguishes between:
 Only module-level imports are considered for architecture violations,
 since lazy imports don't create circular dependencies or architectural coupling.
 """
+
 from __future__ import annotations
 
 import ast
@@ -25,7 +26,9 @@ from .common import (
 )
 
 
-def resolve_from_import(*, current_module: str, module: str | None, level: int) -> str | None:
+def resolve_from_import(
+    *, current_module: str, module: str | None, level: int
+) -> str | None:
     """Resolve a relative import to an absolute module name."""
     if level <= 0:
         return module
@@ -175,15 +178,21 @@ def build_import_graph(root: Path, *, excludes: set[str]) -> ImportGraph:
     violations: List[str] = []
     for (src, dst), count in module_level_counts.items():
         if src == "core" and dst in {"pipeline", "ingest"}:
-            violations.append(f"VIOLATION: core imports {dst} at module level ({count}x)")
+            violations.append(
+                f"VIOLATION: core imports {dst} at module level ({count}x)"
+            )
         if src == "ingest" and dst == "pipeline":
-            violations.append(f"VIOLATION: ingest imports pipeline at module level ({count}x)")
+            violations.append(
+                f"VIOLATION: ingest imports pipeline at module level ({count}x)"
+            )
 
     # Add info about lazy imports that would have been violations
     lazy_would_violate: List[str] = []
     for (src, dst), count in lazy_counts.items():
         if src == "core" and dst in {"pipeline", "ingest"}:
-            lazy_would_violate.append(f"(lazy/OK) core imports {dst} inside functions ({count}x)")
+            lazy_would_violate.append(
+                f"(lazy/OK) core imports {dst} inside functions ({count}x)"
+            )
         if src == "ingest" and dst == "pipeline":
             lazy_would_violate.append(
                 f"(lazy/OK) ingest imports pipeline inside functions ({count}x)"

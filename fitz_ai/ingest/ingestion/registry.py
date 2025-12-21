@@ -1,5 +1,6 @@
 # fitz_ai/ingest/ingestion/registry.py
 """Ingestion plugin registry."""
+
 from __future__ import annotations
 
 from typing import Any, List, Type

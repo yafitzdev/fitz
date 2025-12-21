@@ -4,8 +4,8 @@ RAGPipeline - Core orchestration for retrieval-augmented generation.
 
 Flow: vector_db → retrieval → context-processing → rgs → llm → final answer
 """
-from __future__ import annotations
 
+from __future__ import annotations
 
 from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
 from fitz_ai.engines.classic_rag.exceptions import (
@@ -103,7 +103,9 @@ class RAGPipeline:
         logger.info(f"{PIPELINE} Constructing RAGPipeline from config")
 
         # Vector DB
-        vector_client = get_vector_db_plugin(cfg.vector_db.plugin_name, **cfg.vector_db.kwargs)
+        vector_client = get_vector_db_plugin(
+            cfg.vector_db.plugin_name, **cfg.vector_db.kwargs
+        )
         logger.info(f"{VECTOR_DB} Using vector DB plugin='{cfg.vector_db.plugin_name}'")
 
         # Chat LLM
@@ -114,7 +116,9 @@ class RAGPipeline:
 
         # Embedding
         embedder = get_llm_plugin(
-            plugin_type="embedding", plugin_name=cfg.embedding.plugin_name, **cfg.embedding.kwargs
+            plugin_type="embedding",
+            plugin_name=cfg.embedding.plugin_name,
+            **cfg.embedding.kwargs,
         )
         logger.info(f"{PIPELINE} Using embedding plugin='{cfg.embedding.plugin_name}'")
 
@@ -122,7 +126,9 @@ class RAGPipeline:
         rerank_plugin = None
         if cfg.rerank.enabled:
             rerank_plugin = get_llm_plugin(
-                plugin_type="rerank", plugin_name=cfg.rerank.plugin_name, **cfg.rerank.kwargs
+                plugin_type="rerank",
+                plugin_name=cfg.rerank.plugin_name,
+                **cfg.rerank.kwargs,
             )
             logger.info(f"{PIPELINE} Using rerank plugin='{cfg.rerank.plugin_name}'")
 
@@ -148,7 +154,9 @@ class RAGPipeline:
         rgs = RGS(config=rgs_cfg)
 
         logger.info(f"{PIPELINE} RAGPipeline successfully created")
-        return cls(retriever=retriever, chat=chat_plugin, rgs=rgs, context=ContextPipeline())
+        return cls(
+            retriever=retriever, chat=chat_plugin, rgs=rgs, context=ContextPipeline()
+        )
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> "RAGPipeline":

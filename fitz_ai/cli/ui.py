@@ -25,19 +25,19 @@ import typer
 
 try:
     from rich.console import Console
-    from rich.panel import Panel
-    from rich.prompt import Prompt, Confirm, IntPrompt
-    from rich.table import Table
-    from rich.syntax import Syntax
     from rich.markdown import Markdown
+    from rich.panel import Panel
     from rich.progress import (
+        BarColumn,
         Progress,
         SpinnerColumn,
-        TextColumn,
-        BarColumn,
         TaskProgressColumn,
+        TextColumn,
         TimeElapsedColumn,
     )
+    from rich.prompt import Confirm, IntPrompt, Prompt
+    from rich.syntax import Syntax
+    from rich.table import Table
 
     console = Console()
     RICH = True
@@ -225,10 +225,10 @@ class UI:
             return response in ("y", "yes")
 
     def prompt_path(
-            self,
-            prompt: str,
-            default: str = ".",
-            must_exist: bool = True,
+        self,
+        prompt: str,
+        default: str = ".",
+        must_exist: bool = True,
     ) -> Path:
         """Prompt for a path with optional validation."""
         while True:
@@ -252,10 +252,10 @@ class UI:
     # -------------------------------------------------------------------------
 
     def table(
-            self,
-            headers: list[str],
-            rows: list[list[str]],
-            title: str = "",
+        self,
+        headers: list[str],
+        rows: list[list[str]],
+        title: str = "",
     ) -> None:
         """Print a table."""
         if RICH:
@@ -276,13 +276,17 @@ class UI:
                     col_widths[i] = max(col_widths[i], len(str(cell)))
 
             # Header
-            header_line = "  ".join(h.ljust(col_widths[i]) for i, h in enumerate(headers))
+            header_line = "  ".join(
+                h.ljust(col_widths[i]) for i, h in enumerate(headers)
+            )
             print(header_line)
             print("-" * len(header_line))
 
             # Rows
             for row in rows:
-                row_line = "  ".join(str(c).ljust(col_widths[i]) for i, c in enumerate(row))
+                row_line = "  ".join(
+                    str(c).ljust(col_widths[i]) for i, c in enumerate(row)
+                )
                 print(row_line)
 
     # -------------------------------------------------------------------------
@@ -308,9 +312,9 @@ class UI:
     # -------------------------------------------------------------------------
 
     def progress(
-            self,
-            description: str = "Working...",
-            total: Optional[int] = None,
+        self,
+        description: str = "Working...",
+        total: Optional[int] = None,
     ):
         """
         Create a progress context manager.

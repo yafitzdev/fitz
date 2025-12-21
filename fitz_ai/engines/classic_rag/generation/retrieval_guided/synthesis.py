@@ -2,6 +2,7 @@
 """
 Retrieval-Guided Synthesis (RGS) - Generates grounded answers from retrieved chunks.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -97,14 +98,16 @@ class RGS:
                 doc_id = self._get_chunk_doc_id(chunk)
                 content = self._get_chunk_content(chunk)
 
-                sources.append(RGSSourceRef(
-                    source_id=cid,
-                    index=idx,
-                    metadata=meta,
-                    doc_id=doc_id,
-                    content=content,
-                    text=content,  # Alias for backwards compatibility
-                ))
+                sources.append(
+                    RGSSourceRef(
+                        source_id=cid,
+                        index=idx,
+                        metadata=meta,
+                        doc_id=doc_id,
+                        content=content,
+                        text=content,  # Alias for backwards compatibility
+                    )
+                )
 
             return RGSAnswer(answer=raw_answer, sources=sources)
         except Exception as e:
@@ -153,7 +156,9 @@ class RGS:
         if isinstance(chunk, dict):
             return str(chunk.get("id") or chunk.get("chunk_id") or f"chunk_{index}")
         return str(
-            getattr(chunk, "id", None) or getattr(chunk, "chunk_id", None) or f"chunk_{index}"
+            getattr(chunk, "id", None)
+            or getattr(chunk, "chunk_id", None)
+            or f"chunk_{index}"
         )
 
     def _get_chunk_doc_id(self, chunk: ChunkInput) -> str:

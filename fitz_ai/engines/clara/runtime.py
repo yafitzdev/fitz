@@ -69,7 +69,11 @@ def run_clara(
     current_config_path = str(config_path) if config_path else None
 
     # Reuse cached engine if config hasn't changed
-    if _cached_engine is not None and _cached_config_path == current_config_path and config is None:
+    if (
+        _cached_engine is not None
+        and _cached_config_path == current_config_path
+        and config is None
+    ):
         engine = _cached_engine
     else:
         # Create new engine

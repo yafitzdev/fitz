@@ -4,6 +4,7 @@ Vector DB plugin registry - YAML-based system.
 
 Handles discovery and instantiation of vector DB plugins from YAML specs.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

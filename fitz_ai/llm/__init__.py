@@ -4,6 +4,7 @@ LLM plugin system for Fitz.
 
 All LLM plugins are YAML-based. Use get_llm_plugin() to get instances.
 """
+
 from __future__ import annotations
 
 from fitz_ai.llm.loader import (

@@ -31,7 +31,9 @@ class LocalEmbedder:
     It exposes a single `embed(text: str)` method.
     """
 
-    def __init__(self, runtime: LocalLLMRuntime, cfg: LocalEmbedderConfig | None = None) -> None:
+    def __init__(
+        self, runtime: LocalLLMRuntime, cfg: LocalEmbedderConfig | None = None
+    ) -> None:
         self._rt = runtime
         self._cfg = cfg or LocalEmbedderConfig()
 

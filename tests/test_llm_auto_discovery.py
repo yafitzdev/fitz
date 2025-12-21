@@ -7,6 +7,7 @@ Architecture note:
 - Vector DB plugins have their OWN registry (fitz_ai.vector_db.registry)
 - Do NOT mix them!
 """
+
 import pytest
 
 from fitz_ai.llm import available_llm_plugins, get_llm_plugin

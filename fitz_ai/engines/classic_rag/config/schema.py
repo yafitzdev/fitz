@@ -35,7 +35,9 @@ class PluginConfig(BaseModel):
     """
 
     plugin_name: str = Field(..., description="Plugin name in the central registry")
-    kwargs: dict[str, Any] = Field(default_factory=dict, description="Plugin init kwargs")
+    kwargs: dict[str, Any] = Field(
+        default_factory=dict, description="Plugin init kwargs"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -118,13 +120,17 @@ class ClassicRagConfig(BaseModel):
     # Required plugins - 'chat' is the canonical name (not 'llm')
     chat: PluginConfig = Field(..., description="Chat/LLM plugin configuration")
     embedding: PluginConfig = Field(..., description="Embedding plugin configuration")
-    vector_db: PluginConfig = Field(..., description="Vector database plugin configuration")
+    vector_db: PluginConfig = Field(
+        ..., description="Vector database plugin configuration"
+    )
 
     # Retriever (required)
     retriever: RetrieverConfig = Field(..., description="Retriever configuration")
 
     # Optional components
-    rerank: RerankConfig = Field(default_factory=RerankConfig, description="Reranker configuration")
+    rerank: RerankConfig = Field(
+        default_factory=RerankConfig, description="Reranker configuration"
+    )
     rgs: RGSConfig = Field(default_factory=RGSConfig, description="RGS configuration")
     logging: LoggingConfig = Field(
         default_factory=LoggingConfig, description="Logging configuration"

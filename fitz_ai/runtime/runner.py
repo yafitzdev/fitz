@@ -190,7 +190,9 @@ def list_engines_with_info() -> Dict[str, str]:
     return registry.list_with_descriptions()
 
 
-def _load_engine_config(engine_name: str, config_path: Optional[Union[str, Path]] = None):
+def _load_engine_config(
+    engine_name: str, config_path: Optional[Union[str, Path]] = None
+):
     """
     Load configuration for a specific engine.
 
@@ -209,7 +211,9 @@ def _load_engine_config(engine_name: str, config_path: Optional[Union[str, Path]
     """
     # Import here to avoid circular dependencies
     if engine_name == "classic_rag":
-        from fitz_ai.engines.classic_rag.config.loader import load_config as load_rag_config
+        from fitz_ai.engines.classic_rag.config.loader import (
+            load_config as load_rag_config,
+        )
 
         return load_rag_config(str(config_path) if config_path else None)
 
@@ -217,7 +221,9 @@ def _load_engine_config(engine_name: str, config_path: Optional[Union[str, Path]
         # Future: CLaRa config loader
         # from fitz_ai.engines.clara.config.loader import load_config as load_clara_config
         # return load_clara_config(str(config_path) if config_path else None)
-        raise ConfigurationError(f"Config loading not yet implemented for engine: {engine_name}")
+        raise ConfigurationError(
+            f"Config loading not yet implemented for engine: {engine_name}"
+        )
 
     else:
         # For custom engines, return None - they should provide config explicitly

@@ -18,7 +18,9 @@ class PackWindowStep:
     - No splitting of chunks
     """
 
-    def __call__(self, chunks: list[Any], max_chars: int | None = None) -> list[ChunkDict]:
+    def __call__(
+        self, chunks: list[Any], max_chars: int | None = None
+    ) -> list[ChunkDict]:
         canonical = [_to_chunk_dict(ch) for ch in chunks]
 
         if max_chars is None:

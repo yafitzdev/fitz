@@ -7,6 +7,7 @@ Architecture:
 - LLM plugins use fitz_ai.llm.registry (YAML-based)
 - Vector DB plugins use fitz_ai.vector_db.registry (YAML-based)
 """
+
 import pytest
 
 from fitz_ai.core.registry import PluginNotFoundError

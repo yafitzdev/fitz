@@ -29,7 +29,7 @@ import os
 import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +213,7 @@ def _check_qdrant_http(host: str, port: int, timeout: float = 1.0) -> Optional[d
     """
     try:
         import httpx
+
         response = httpx.get(
             f"http://{host}:{port}/collections",
             timeout=timeout,
@@ -231,8 +232,8 @@ def _get_config_qdrant_host() -> Optional[str]:
     This allows detection to use a previously configured host.
     """
     try:
-        from fitz_ai.core.paths import FitzPaths
         from fitz_ai.core.config import load_config_dict
+        from fitz_ai.core.paths import FitzPaths
 
         config_path = FitzPaths.config()
         if config_path.exists():
@@ -294,7 +295,9 @@ def _build_lan_scan_hosts(port: int) -> List[str]:
     common_endings = [
         1,  # Gateway/router
         2,  # Often first server after gateway
-        3, 4, 5,  # Small network servers
+        3,
+        4,
+        5,  # Small network servers
         10,  # Common static IP
         50,  # Mid-range static
         100,  # DHCP range start or static
@@ -317,11 +320,11 @@ def _build_lan_scan_hosts(port: int) -> List[str]:
 
 
 def _scan_hosts_concurrent(
-        hosts: List[str],
-        port: int,
-        check_fn,
-        max_workers: int = 10,
-        timeout: float = 0.5,
+    hosts: List[str],
+    port: int,
+    check_fn,
+    max_workers: int = 10,
+    timeout: float = 0.5,
 ) -> Optional[Tuple[str, any]]:
     """
     Scan multiple hosts concurrently and return the first successful result.
@@ -339,8 +342,7 @@ def _scan_hosts_concurrent(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all checks
         future_to_host = {
-            executor.submit(check_fn, host, port, timeout): host
-            for host in hosts
+            executor.submit(check_fn, host, port, timeout): host for host in hosts
         }
 
         # Return first successful result

@@ -26,8 +26,7 @@ app = typer.Typer(
 
 def _register_commands() -> None:
     """Register all commands."""
-    from fitz_ai.cli.commands import init, ingest, query, doctor
-    from fitz_ai.cli.commands import config
+    from fitz_ai.cli.commands import config, doctor, ingest, init, query
 
     app.command("init")(init.command)
     app.command("ingest")(ingest.command)

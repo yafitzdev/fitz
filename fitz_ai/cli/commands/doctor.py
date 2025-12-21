@@ -15,11 +15,11 @@ from typing import Optional
 
 import typer
 
-from fitz_ai.core.config import load_config_dict, ConfigNotFoundError
+from fitz_ai.cli.ui import RICH, Panel, console, ui
+from fitz_ai.core.config import load_config_dict
 from fitz_ai.core.detect import detect_all
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
-from fitz_ai.cli.ui import ui, console, RICH, Panel
 
 logger = get_logger(__name__)
 
@@ -353,7 +353,11 @@ def command(
         embedding = config.get("embedding", {}).get("plugin_name", "?")
         vector_db = config.get("vector_db", {}).get("plugin_name", "?")
         rerank = config.get("rerank", {})
-        rerank_str = rerank.get("plugin_name", "disabled") if rerank.get("enabled") else "disabled"
+        rerank_str = (
+            rerank.get("plugin_name", "disabled")
+            if rerank.get("enabled")
+            else "disabled"
+        )
 
         ui.info(f"Chat: {chat}")
         ui.info(f"Embedding: {embedding}")
@@ -368,11 +372,13 @@ def command(
 
     if issues:
         if RICH:
-            console.print(Panel(
-                "\n".join(f"[red]✗[/red] {issue}" for issue in issues),
-                title="[red]Issues Found[/red]",
-                border_style="red",
-            ))
+            console.print(
+                Panel(
+                    "\n".join(f"[red]✗[/red] {issue}" for issue in issues),
+                    title="[red]Issues Found[/red]",
+                    border_style="red",
+                )
+            )
         else:
             print("Issues Found:")
             for issue in issues:

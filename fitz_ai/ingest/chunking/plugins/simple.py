@@ -23,7 +23,9 @@ class SimpleChunker:
     def chunk_text(self, text: str, base_meta: Dict[str, Any]) -> List[Chunk]:
         size = max(1, int(self.chunk_size))
 
-        doc_id = str(base_meta.get("doc_id") or base_meta.get("source_file") or "unknown")
+        doc_id = str(
+            base_meta.get("doc_id") or base_meta.get("source_file") or "unknown"
+        )
 
         chunks: List[Chunk] = []
         chunk_index = 0

@@ -37,7 +37,9 @@ def validate(
             continue
 
         if content != doc.content:
-            doc = RawDocument(path=doc.path, content=content, metadata=dict(doc.metadata))
+            doc = RawDocument(
+                path=doc.path, content=content, metadata=dict(doc.metadata)
+            )
 
         valid.append(doc)
 

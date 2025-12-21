@@ -120,7 +120,9 @@ def run_single_test(test_func, test_name: str) -> TestResult:
         # Unexpected error
         print(f"✗ {test_name} failed with unexpected error: {type(e).__name__}: {e}")
         return TestResult(
-            name=test_name, passed=False, error_message=f"Unexpected error: {type(e).__name__}: {e}"
+            name=test_name,
+            passed=False,
+            error_message=f"Unexpected error: {type(e).__name__}: {e}",
         )
 
 
@@ -182,7 +184,9 @@ def main() -> int:
     print("FITZ LOCAL LLM SMOKETEST")
     print("=" * 60)
     print("\nTesting local LLM components (chat, embedding, rerank)...")
-    print("(For detailed pytest output, run: pytest tools/smoketest/smoke_local_llm.py)\n")
+    print(
+        "(For detailed pytest output, run: pytest tools/smoketest/smoke_local_llm.py)\n"
+    )
 
     # Run all tests and collect results
     results = []

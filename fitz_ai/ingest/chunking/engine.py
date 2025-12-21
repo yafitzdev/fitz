@@ -36,7 +36,9 @@ class ChunkingEngine:
         try:
             PluginCls = get_chunking_plugin(cfg.plugin_name)
         except Exception as e:
-            raise IngestionConfigError(f"Unknown chunker plugin {cfg.plugin_name!r}") from e
+            raise IngestionConfigError(
+                f"Unknown chunker plugin {cfg.plugin_name!r}"
+            ) from e
 
         # Simple: just pass all kwargs to the plugin
         # The plugin defines what parameters it accepts
@@ -74,14 +76,20 @@ class ChunkingEngine:
 
         if text is None:
             # Fallback: try to read from disk (for backwards compatibility)
-            logger.warning(f"{CHUNKING} raw_doc has no 'content' attribute, falling back to disk read")
+            logger.warning(
+                f"{CHUNKING} raw_doc has no 'content' attribute, falling back to disk read"
+            )
             if path is None or not path.exists() or not path.is_file():
-                raise IngestionChunkingError(f"File does not exist or is not a file: {path_str}")
+                raise IngestionChunkingError(
+                    f"File does not exist or is not a file: {path_str}"
+                )
             try:
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except Exception as e:
                 logger.error(f"{CHUNKING} Failed reading file '{path}': {e}")
-                raise IngestionChunkingError(f"Failed reading file for chunking: {path}") from e
+                raise IngestionChunkingError(
+                    f"Failed reading file for chunking: {path}"
+                ) from e
 
         if not text or not text.strip():
             logger.warning(f"{CHUNKING} Empty content for document: {path_str}")
@@ -99,7 +107,9 @@ class ChunkingEngine:
             raise
         except Exception as e:
             logger.error(f"{CHUNKING} Chunking plugin failed for '{path_str}': {e}")
-            raise IngestionChunkingError(f"Chunking plugin failed for file '{path_str}'") from e
+            raise IngestionChunkingError(
+                f"Chunking plugin failed for file '{path_str}'"
+            ) from e
 
         logger.debug(f"{CHUNKING} Extracted {len(chunks)} chunks from '{path_str}'")
         return chunks

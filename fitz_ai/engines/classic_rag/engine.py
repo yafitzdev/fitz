@@ -76,7 +76,9 @@ class ClassicRagEngine:
             self._pipeline = RAGPipeline.from_config(rag_config)
             self._config = config
         except Exception as e:
-            raise ConfigurationError(f"Failed to initialize Classic RAG engine: {e}") from e
+            raise ConfigurationError(
+                f"Failed to initialize Classic RAG engine: {e}"
+            ) from e
 
     def _convert_to_rag_config(self, fitz_config: FitzConfig) -> RAGConfig:
         """
@@ -97,14 +99,18 @@ class ClassicRagEngine:
                 plugin_name=fitz_config.chat.plugin_name, kwargs=fitz_config.chat.kwargs
             ),
             embedding=PipelinePluginConfig(
-                plugin_name=fitz_config.embedding.plugin_name, kwargs=fitz_config.embedding.kwargs
+                plugin_name=fitz_config.embedding.plugin_name,
+                kwargs=fitz_config.embedding.kwargs,
             ),
             vector_db=PipelinePluginConfig(
-                plugin_name=fitz_config.vector_db.plugin_name, kwargs=fitz_config.vector_db.kwargs
+                plugin_name=fitz_config.vector_db.plugin_name,
+                kwargs=fitz_config.vector_db.kwargs,
             ),
             rerank=RerankConfig(
                 enabled=fitz_config.rerank is not None,
-                plugin_name=fitz_config.rerank.plugin_name if fitz_config.rerank else None,
+                plugin_name=fitz_config.rerank.plugin_name
+                if fitz_config.rerank
+                else None,
                 kwargs=fitz_config.rerank.kwargs if fitz_config.rerank else {},
             ),
             # Pipeline plugin config - this determines which pipeline plugin to use
@@ -170,7 +176,9 @@ class ClassicRagEngine:
             else:
                 raise GenerationError(f"Failed to answer query: {e}") from e
 
-    def _convert_to_core_answer(self, rag_answer: RGSAnswer, original_query: Query) -> Answer:
+    def _convert_to_core_answer(
+        self, rag_answer: RGSAnswer, original_query: Query
+    ) -> Answer:
         """
         Convert RAG-specific RGSAnswer to paradigm-agnostic Answer.
 
@@ -205,7 +213,9 @@ class ClassicRagEngine:
 
         # Return core Answer
         return Answer(
-            text=rag_answer.answer if hasattr(rag_answer, "answer") else str(rag_answer),
+            text=rag_answer.answer
+            if hasattr(rag_answer, "answer")
+            else str(rag_answer),
             provenance=provenance,
             metadata=answer_metadata,
         )

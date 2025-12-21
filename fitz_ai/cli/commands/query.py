@@ -10,17 +10,17 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Optional, List
+from typing import List, Optional
 
 import typer
 
-from fitz_ai.core.config import load_config_dict, ConfigNotFoundError
+from fitz_ai.cli.ui import RICH, Markdown, Panel, Table, console, ui
+from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
-from fitz_ai.engines.classic_rag.config import load_config, ClassicRagConfig
+from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
 from fitz_ai.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
-from fitz_ai.vector_db.registry import get_vector_db_plugin
 from fitz_ai.logging.logger import get_logger
-from fitz_ai.cli.ui import ui, console, RICH, Panel, Table, Markdown
+from fitz_ai.vector_db.registry import get_vector_db_plugin
 
 logger = get_logger(__name__)
 
@@ -71,7 +71,11 @@ def _select_collection(collections: List[str], default: str) -> str:
         marker = " (default)" if c == default else ""
         ui.info(f"  • {c}{marker}")
 
-    return ui.prompt_choice("Select collection", collections, default if default in collections else collections[0])
+    return ui.prompt_choice(
+        "Select collection",
+        collections,
+        default if default in collections else collections[0],
+    )
 
 
 # =============================================================================
@@ -85,14 +89,16 @@ def _display_answer(answer, show_sources: bool = True) -> None:
 
     if RICH:
         # Answer panel
-        console.print(Panel(
-            Markdown(answer.answer),
-            title="[bold green]Answer[/bold green]",
-            border_style="green",
-        ))
+        console.print(
+            Panel(
+                Markdown(answer.answer),
+                title="[bold green]Answer[/bold green]",
+                border_style="green",
+            )
+        )
 
         # Sources table
-        if show_sources and hasattr(answer, 'sources') and answer.sources:
+        if show_sources and hasattr(answer, "sources") and answer.sources:
             print()
             table = Table(title="Sources")
             table.add_column("#", style="dim", width=3)
@@ -100,8 +106,8 @@ def _display_answer(answer, show_sources: bool = True) -> None:
             table.add_column("Excerpt", style="dim", max_width=60)
 
             for i, source in enumerate(answer.sources[:5], 1):
-                doc_id = getattr(source, 'doc_id', getattr(source, 'source_file', '?'))
-                content = getattr(source, 'content', getattr(source, 'text', ''))
+                doc_id = getattr(source, "doc_id", getattr(source, "source_file", "?"))
+                content = getattr(source, "content", getattr(source, "text", ""))
                 excerpt = content[:100] + "..." if len(content) > 100 else content
                 excerpt = excerpt.replace("\n", " ")
                 table.add_row(str(i), doc_id, excerpt)
@@ -114,10 +120,10 @@ def _display_answer(answer, show_sources: bool = True) -> None:
         print(answer.answer)
         print()
 
-        if show_sources and hasattr(answer, 'sources') and answer.sources:
+        if show_sources and hasattr(answer, "sources") and answer.sources:
             print("Sources:")
             for i, source in enumerate(answer.sources[:5], 1):
-                doc_id = getattr(source, 'doc_id', getattr(source, 'source_file', '?'))
+                doc_id = getattr(source, "doc_id", getattr(source, "source_file", "?"))
                 print(f"  [{i}] {doc_id}")
 
 
@@ -127,38 +133,38 @@ def _display_answer(answer, show_sources: bool = True) -> None:
 
 
 def command(
-        question: Optional[str] = typer.Argument(
-            None,
-            help="Question to ask (will prompt if not provided).",
-        ),
-        collection: Optional[str] = typer.Option(
-            None,
-            "--collection",
-            "-c",
-            help="Collection to query (uses config default if not specified).",
-        ),
-        top_k: Optional[int] = typer.Option(
-            None,
-            "--top-k",
-            "-k",
-            help="Number of chunks to retrieve.",
-        ),
-        no_rerank: bool = typer.Option(
-            False,
-            "--no-rerank",
-            help="Disable reranking.",
-        ),
-        no_sources: bool = typer.Option(
-            False,
-            "--no-sources",
-            help="Don't show source documents.",
-        ),
-        interactive: bool = typer.Option(
-            False,
-            "--interactive",
-            "-i",
-            help="Interactive mode (continuous Q&A).",
-        ),
+    question: Optional[str] = typer.Argument(
+        None,
+        help="Question to ask (will prompt if not provided).",
+    ),
+    collection: Optional[str] = typer.Option(
+        None,
+        "--collection",
+        "-c",
+        help="Collection to query (uses config default if not specified).",
+    ),
+    top_k: Optional[int] = typer.Option(
+        None,
+        "--top-k",
+        "-k",
+        help="Number of chunks to retrieve.",
+    ),
+    no_rerank: bool = typer.Option(
+        False,
+        "--no-rerank",
+        help="Disable reranking.",
+    ),
+    no_sources: bool = typer.Option(
+        False,
+        "--no-sources",
+        help="Don't show source documents.",
+    ),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        "-i",
+        help="Interactive mode (continuous Q&A).",
+    ),
 ) -> None:
     """
     Query your knowledge base.

@@ -9,7 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class IngesterConfig(BaseModel):
     plugin_name: str = Field(..., description="Ingester plugin name")
-    kwargs: dict[str, Any] = Field(default_factory=dict, description="Ingester init kwargs")
+    kwargs: dict[str, Any] = Field(
+        default_factory=dict, description="Ingester init kwargs"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -36,7 +38,9 @@ class ChunkerConfig(BaseModel):
     """
 
     plugin_name: str = Field(..., description="Chunker plugin name")
-    kwargs: dict[str, Any] = Field(default_factory=dict, description="All chunker parameters")
+    kwargs: dict[str, Any] = Field(
+        default_factory=dict, description="All chunker parameters"
+    )
 
     model_config = ConfigDict(extra="forbid")
 

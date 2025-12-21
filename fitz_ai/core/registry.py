@@ -13,6 +13,7 @@ Single implementation of plugin registry logic used by all plugin types:
 This module is the SINGLE SOURCE OF TRUTH for all registry access.
 Import everything from here, not from domain-specific modules.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -340,7 +341,9 @@ def available_vector_db_plugins() -> List[str]:
     Returns:
         Sorted list of plugin names
     """
-    from fitz_ai.vector_db.registry import available_vector_db_plugins as _available_vector_db_plugins
+    from fitz_ai.vector_db.registry import (
+        available_vector_db_plugins as _available_vector_db_plugins,
+    )
 
     return _available_vector_db_plugins()
 

@@ -14,6 +14,7 @@ Hierarchy:
     │   └── LLMResponseError - Invalid LLM response
     └── ConfigError - Configuration failures
 """
+
 from fitz_ai.core.exceptions import EngineError, GenerationError
 
 # =============================================================================

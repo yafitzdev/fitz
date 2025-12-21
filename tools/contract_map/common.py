@@ -1,5 +1,6 @@
 # tools/contract_map/common.py
 """Shared data structures, utilities, and constants for contract map generation."""
+
 from __future__ import annotations
 
 import importlib
@@ -243,7 +244,11 @@ def fmt_type(tp: Any) -> str:
 def is_pydantic_model(obj: Any) -> bool:
     """Check if an object is a Pydantic model class."""
     try:
-        return isinstance(obj, type) and issubclass(obj, BaseModel) and obj is not BaseModel
+        return (
+            isinstance(obj, type)
+            and issubclass(obj, BaseModel)
+            and obj is not BaseModel
+        )
     except Exception:
         return False
 
@@ -255,7 +260,9 @@ def safe_import(cm: ContractMap, module: str, *, verbose: bool) -> object | None
     except Exception as exc:
         tb = traceback.format_exc() if verbose else None
         cm.import_failures.append(
-            ImportFailure(module=module, error=f"{type(exc).__name__}: {exc}", traceback=tb)
+            ImportFailure(
+                module=module, error=f"{type(exc).__name__}: {exc}", traceback=tb
+            )
         )
         return None
 

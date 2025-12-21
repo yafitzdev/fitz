@@ -5,6 +5,7 @@ Generic plugin runtime that executes YAML-defined plugins.
 This is the "engine" that reads YAML plugin specs and performs the actual
 HTTP calls, credential resolution, and response parsing.
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,7 +52,11 @@ class YAMLPluginBase:
         # Resolve required env vars
         self._env_values: dict[str, str] = {}
         for req_env in spec.required_env:
-            value = kwargs.get(req_env.inject_as) or os.getenv(req_env.name) or req_env.default
+            value = (
+                kwargs.get(req_env.inject_as)
+                or os.getenv(req_env.name)
+                or req_env.default
+            )
             if not value:
                 raise ValueError(
                     f"{req_env.name} is required. "
@@ -67,7 +72,9 @@ class YAMLPluginBase:
             try:
                 self._api_key = resolve_api_key(
                     provider=spec.provider.name,
-                    config={"api_key": kwargs.get("api_key")} if kwargs.get("api_key") else None,
+                    config={"api_key": kwargs.get("api_key")}
+                    if kwargs.get("api_key")
+                    else None,
                 )
             except CredentialError as e:
                 raise RuntimeError(str(e)) from e
@@ -160,7 +167,9 @@ class YAMLChatClient(YAMLPluginBase):
             content = extract_path(response, self.spec.response.content_path)
             return str(content) if content else ""
         except (KeyError, IndexError) as e:
-            logger.warning(f"Failed to extract response: {e}. Full response: {response}")
+            logger.warning(
+                f"Failed to extract response: {e}. Full response: {response}"
+            )
             return ""
 
 
@@ -202,7 +211,9 @@ class YAMLEmbeddingClient(YAMLPluginBase):
             embedding = extract_path(response, self.spec.response.embeddings_path)
             return list(embedding)
         except (KeyError, IndexError) as e:
-            raise RuntimeError(f"Failed to extract embedding: {e}. Response: {response}") from e
+            raise RuntimeError(
+                f"Failed to extract embedding: {e}. Response: {response}"
+            ) from e
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """
@@ -280,10 +291,10 @@ class YAMLRerankClient(YAMLPluginBase):
     spec: RerankPluginSpec
 
     def rerank(
-            self,
-            query: str,
-            documents: list[str],
-            top_n: int | None = None,
+        self,
+        query: str,
+        documents: list[str],
+        top_n: int | None = None,
     ) -> list[tuple[int, float]]:
         if not documents:
             return []
@@ -328,27 +339,31 @@ _CLIENT_CLASSES: dict[str, type[YAMLPluginBase]] = {
 
 @overload
 def create_yaml_client(
-        plugin_type: Literal["chat"], plugin_name: str, **kwargs: Any
+    plugin_type: Literal["chat"], plugin_name: str, **kwargs: Any
 ) -> YAMLChatClient: ...
 
 
 @overload
 def create_yaml_client(
-        plugin_type: Literal["embedding"], plugin_name: str, **kwargs: Any
+    plugin_type: Literal["embedding"], plugin_name: str, **kwargs: Any
 ) -> YAMLEmbeddingClient: ...
 
 
 @overload
 def create_yaml_client(
-        plugin_type: Literal["rerank"], plugin_name: str, **kwargs: Any
+    plugin_type: Literal["rerank"], plugin_name: str, **kwargs: Any
 ) -> YAMLRerankClient: ...
 
 
 @overload
-def create_yaml_client(plugin_type: str, plugin_name: str, **kwargs: Any) -> YAMLPluginBase: ...
+def create_yaml_client(
+    plugin_type: str, plugin_name: str, **kwargs: Any
+) -> YAMLPluginBase: ...
 
 
-def create_yaml_client(plugin_type: str, plugin_name: str, **kwargs: Any) -> YAMLPluginBase:
+def create_yaml_client(
+    plugin_type: str, plugin_name: str, **kwargs: Any
+) -> YAMLPluginBase:
     """
     Create a YAML plugin client.
 

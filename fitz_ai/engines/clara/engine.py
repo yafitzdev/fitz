@@ -120,7 +120,9 @@ class ClaraEngine:
         elif model_config.load_in_4bit:
             load_kwargs["load_in_4bit"] = True
 
-        self._model = AutoModel.from_pretrained(model_config.model_name_or_path, **load_kwargs)
+        self._model = AutoModel.from_pretrained(
+            model_config.model_name_or_path, **load_kwargs
+        )
 
         # Move to device if not using quantization
         if not (model_config.load_in_8bit or model_config.load_in_4bit):
@@ -129,7 +131,9 @@ class ClaraEngine:
         self._model.eval()
         logger.info(f"CLaRa model loaded on {model_config.device}")
 
-    def add_documents(self, documents: List[str], doc_ids: Optional[List[str]] = None) -> List[str]:
+    def add_documents(
+        self, documents: List[str], doc_ids: Optional[List[str]] = None
+    ) -> List[str]:
         """
         Add documents to the knowledge base.
 
@@ -219,7 +223,9 @@ class ClaraEngine:
                 embeddings = self._model.encode_documents(flat_docs)
             else:
                 # Use tokenizer + model hidden states
-                tokenizer = self._model.tokenizer if hasattr(self._model, "tokenizer") else None
+                tokenizer = (
+                    self._model.tokenizer if hasattr(self._model, "tokenizer") else None
+                )
                 if tokenizer:
                     inputs = tokenizer(
                         flat_docs,
@@ -336,11 +342,15 @@ class ClaraEngine:
 
             # Compute similarities with all documents
             doc_ids = list(self._compressed_docs.keys())
-            doc_embeddings = torch.stack([self._compressed_docs[doc_id] for doc_id in doc_ids])
+            doc_embeddings = torch.stack(
+                [self._compressed_docs[doc_id] for doc_id in doc_ids]
+            )
 
             # Cosine similarity
             query_embedding = query_embedding.to(doc_embeddings.device)
-            similarities = F.cosine_similarity(query_embedding.unsqueeze(0), doc_embeddings, dim=-1)
+            similarities = F.cosine_similarity(
+                query_embedding.unsqueeze(0), doc_embeddings, dim=-1
+            )
 
             # Get top-k
             top_k = min(top_k, len(doc_ids))
@@ -407,7 +417,9 @@ class ClaraEngine:
                     max_new_tokens=gen_config.max_new_tokens,
                 )
                 return outputs[0], (
-                    topk_indices.tolist() if hasattr(topk_indices, "tolist") else topk_indices
+                    topk_indices.tolist()
+                    if hasattr(topk_indices, "tolist")
+                    else topk_indices
                 )
 
             elif variant == "instruct" and hasattr(self._model, "generate_from_text"):

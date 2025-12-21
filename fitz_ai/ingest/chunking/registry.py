@@ -1,5 +1,6 @@
 # fitz_ai/ingest/chunking/registry.py
 """Chunking plugin registry."""
+
 from __future__ import annotations
 
 from typing import Any, List, Type

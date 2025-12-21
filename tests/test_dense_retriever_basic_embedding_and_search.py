@@ -2,7 +2,9 @@
 from dataclasses import dataclass
 
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
-from fitz_ai.engines.classic_rag.retrieval.runtime.plugins.dense import DenseRetrievalPlugin
+from fitz_ai.engines.classic_rag.retrieval.runtime.plugins.dense import (
+    DenseRetrievalPlugin,
+)
 
 
 @dataclass
@@ -38,7 +40,9 @@ def test_dense_retriever_calls_embed_and_search():
     retriever_cfg = type("Cfg", (), {"collection": "col", "top_k": 2})
     embedder = MockEmbedder()
 
-    retr = DenseRetrievalPlugin(client=client, retriever_cfg=retriever_cfg, embedder=embedder)
+    retr = DenseRetrievalPlugin(
+        client=client, retriever_cfg=retriever_cfg, embedder=embedder
+    )
 
     out = retr.retrieve("q")
 

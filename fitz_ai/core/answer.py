@@ -78,4 +78,6 @@ class Answer:
     def __post_init__(self):
         """Validate answer after initialization."""
         if self.text is None:
-            raise ValueError("Answer text cannot be None (use empty string for no answer)")
+            raise ValueError(
+                "Answer text cannot be None (use empty string for no answer)"
+            )

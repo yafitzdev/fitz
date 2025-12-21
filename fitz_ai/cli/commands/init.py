@@ -14,12 +14,11 @@ from typing import Any
 
 import typer
 
+from fitz_ai.cli.ui import RICH, console, ui
 from fitz_ai.core.detect import detect_all
-from fitz_ai.llm.registry import available_llm_plugins
 from fitz_ai.llm.loader import load_plugin
+from fitz_ai.llm.registry import available_llm_plugins
 from fitz_ai.vector_db.registry import available_vector_db_plugins
-from fitz_ai.cli.ui import ui, console, RICH
-
 
 # =============================================================================
 # Helpers
@@ -36,12 +35,16 @@ def _is_faiss_plugin(name: str) -> bool:
     return "faiss" in name.lower()
 
 
-def _auto_or_prompt(category: str, available: list[str], default: str, prompt: str) -> str:
+def _auto_or_prompt(
+    category: str, available: list[str], default: str, prompt: str
+) -> str:
     """Auto-select if one option, otherwise prompt."""
     if len(available) == 1:
         choice = available[0]
         if RICH:
-            console.print(f"  [dim]{category}:[/dim] [green]{choice}[/green] [dim](auto)[/dim]")
+            console.print(
+                f"  [dim]{category}:[/dim] [green]{choice}[/green] [dim](auto)[/dim]"
+            )
         else:
             print(f"  {category}: {choice} (auto)")
         return choice
@@ -72,9 +75,9 @@ def _prompt_model(plugin_type: str, plugin_name: str) -> str:
 
 
 def _filter_available_plugins(
-        plugins: list[str],
-        plugin_type: str,
-        system: Any,
+    plugins: list[str],
+    plugin_type: str,
+    system: Any,
 ) -> list[str]:
     """Filter plugins to only those that are available."""
     available = []
@@ -110,16 +113,16 @@ def _filter_available_plugins(
 
 
 def _generate_config(
-        chat: str,
-        chat_model: str,
-        embedding: str,
-        embedding_model: str,
-        vector_db: str,
-        collection: str,
-        rerank: str | None,
-        rerank_model: str,
-        qdrant_host: str,
-        qdrant_port: int,
+    chat: str,
+    chat_model: str,
+    embedding: str,
+    embedding_model: str,
+    vector_db: str,
+    collection: str,
+    rerank: str | None,
+    rerank_model: str,
+    qdrant_host: str,
+    qdrant_port: int,
 ) -> str:
     """Generate YAML configuration."""
 
@@ -201,18 +204,18 @@ logging:
 
 
 def command(
-        non_interactive: bool = typer.Option(
-            False,
-            "--non-interactive",
-            "-y",
-            help="Use detected defaults without prompting.",
-        ),
-        show_config: bool = typer.Option(
-            False,
-            "--show",
-            "-s",
-            help="Preview config without saving.",
-        ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        "-y",
+        help="Use detected defaults without prompting.",
+    ),
+    show_config: bool = typer.Option(
+        False,
+        "--show",
+        "-s",
+        help="Preview config without saving.",
+    ),
 ) -> None:
     """
     Initialize Fitz with an interactive setup wizard.
@@ -232,7 +235,9 @@ def command(
     # =========================================================================
 
     ui.panel(
-        "[bold]Fitz Setup Wizard[/bold]\n[dim]Let's configure your RAG pipeline[/dim]" if RICH else "Fitz Setup Wizard\nLet's configure your RAG pipeline",
+        "[bold]Fitz Setup Wizard[/bold]\n[dim]Let's configure your RAG pipeline[/dim]"
+        if RICH
+        else "Fitz Setup Wizard\nLet's configure your RAG pipeline",
         style="blue",
     )
 
@@ -245,9 +250,16 @@ def command(
     system = detect_all()
 
     # Show detection results
-    ui.status("Ollama", system.ollama.available, system.ollama.details if not system.ollama.available else "")
-    ui.status("Qdrant", system.qdrant.available,
-              f"{system.qdrant.host}:{system.qdrant.port}" if system.qdrant.available else "")
+    ui.status(
+        "Ollama",
+        system.ollama.available,
+        system.ollama.details if not system.ollama.available else "",
+    )
+    ui.status(
+        "Qdrant",
+        system.qdrant.available,
+        f"{system.qdrant.host}:{system.qdrant.port}" if system.qdrant.available else "",
+    )
     ui.status("FAISS", system.faiss.available)
 
     for name, key_status in system.api_keys.items():
@@ -300,34 +312,50 @@ def command(
         embedding_model = _get_default_model("embedding", embedding_choice)
         vector_db_choice = avail_vector_db[0]
         rerank_choice = avail_rerank[0] if avail_rerank else None
-        rerank_model = _get_default_model("rerank", rerank_choice) if rerank_choice else ""
+        rerank_model = (
+            _get_default_model("rerank", rerank_choice) if rerank_choice else ""
+        )
         collection_name = "default"
 
         ui.info(f"Chat: {chat_choice}" + (f" ({chat_model})" if chat_model else ""))
-        ui.info(f"Embedding: {embedding_choice}" + (f" ({embedding_model})" if embedding_model else ""))
+        ui.info(
+            f"Embedding: {embedding_choice}"
+            + (f" ({embedding_model})" if embedding_model else "")
+        )
         ui.info(f"Vector DB: {vector_db_choice}")
-        ui.info(f"Rerank: {rerank_choice or 'disabled'}" + (f" ({rerank_model})" if rerank_model else ""))
+        ui.info(
+            f"Rerank: {rerank_choice or 'disabled'}"
+            + (f" ({rerank_model})" if rerank_model else "")
+        )
         ui.info(f"Collection: {collection_name}")
     else:
         # Interactive selection
 
         # Chat plugin + model
-        chat_choice = _auto_or_prompt("Chat", avail_chat, avail_chat[0], "Select chat plugin")
+        chat_choice = _auto_or_prompt(
+            "Chat", avail_chat, avail_chat[0], "Select chat plugin"
+        )
         chat_model = _prompt_model("chat", chat_choice)
 
         # Embedding plugin + model
-        embedding_choice = _auto_or_prompt("Embedding", avail_embedding, avail_embedding[0], "Select embedding plugin")
+        embedding_choice = _auto_or_prompt(
+            "Embedding", avail_embedding, avail_embedding[0], "Select embedding plugin"
+        )
         embedding_model = _prompt_model("embedding", embedding_choice)
 
         # Vector DB
-        vector_db_choice = _auto_or_prompt("Vector DB", avail_vector_db, avail_vector_db[0], "Select vector database")
+        vector_db_choice = _auto_or_prompt(
+            "Vector DB", avail_vector_db, avail_vector_db[0], "Select vector database"
+        )
 
         # Rerank is optional
         rerank_choice = None
         rerank_model = ""
         if avail_rerank:
             if ui.prompt_confirm("Enable reranking?", default=True):
-                rerank_choice = _auto_or_prompt("Rerank", avail_rerank, avail_rerank[0], "Select rerank plugin")
+                rerank_choice = _auto_or_prompt(
+                    "Rerank", avail_rerank, avail_rerank[0], "Select rerank plugin"
+                )
                 rerank_model = _prompt_model("rerank", rerank_choice)
         else:
             ui.info("Rerank: not available")

@@ -1,5 +1,6 @@
 # tools/contract_map/analysis.py
 """Code analysis: hotspots, config surface, stats, entrypoints, and invariants."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -46,7 +47,9 @@ def discover_entrypoints(root: Path, *, excludes: set[str]) -> List[Entrypoint]:
         if isinstance(scripts, dict):
             for name, target in sorted(scripts.items()):
                 if isinstance(target, str):
-                    eps.append(Entrypoint(kind="console_script", name=name, target=target))
+                    eps.append(
+                        Entrypoint(kind="console_script", name=name, target=target)
+                    )
 
         tool = data.get("tool") or {}
         poetry = tool.get("poetry") or {}
@@ -54,14 +57,20 @@ def discover_entrypoints(root: Path, *, excludes: set[str]) -> List[Entrypoint]:
         if isinstance(poetry_scripts, dict):
             for name, target in sorted(poetry_scripts.items()):
                 if isinstance(target, str):
-                    eps.append(Entrypoint(kind="poetry_script", name=name, target=target))
+                    eps.append(
+                        Entrypoint(kind="poetry_script", name=name, target=target)
+                    )
 
     for p in iter_python_files(root, excludes=excludes):
         rel = p.relative_to(root)
         if p.name == "__main__.py":
-            eps.append(Entrypoint(kind="module_main", name=str(rel.parent), target=str(rel)))
+            eps.append(
+                Entrypoint(kind="module_main", name=str(rel.parent), target=str(rel))
+            )
         if p.name == "cli.py":
-            eps.append(Entrypoint(kind="cli_module", name=str(rel.parent), target=str(rel)))
+            eps.append(
+                Entrypoint(kind="cli_module", name=str(rel.parent), target=str(rel))
+            )
 
     eps.sort(key=lambda e: (e.kind, e.name, e.target))
     return eps
@@ -85,7 +94,11 @@ def list_loader_modules() -> List[str]:
     import importlib
 
     out: List[str] = []
-    for pkg in ("core.config", "fitz_ai.engines.classic_rag.pipeline.config", "fitz_ai.ingest.config"):
+    for pkg in (
+        "core.config",
+        "fitz_ai.engines.classic_rag.pipeline.config",
+        "fitz_ai.ingest.config",
+    ):
         mod = f"{pkg}.loader"
         try:
             importlib.import_module(mod)
@@ -97,7 +110,12 @@ def list_loader_modules() -> List[str]:
 
 def find_load_callsites(root: Path, *, excludes: set[str]) -> List[str]:
     """Find files that call config loading functions."""
-    needles = ("load_config(", "load_rag_config(", "load_ingest_config(", "load_fitz_config(")
+    needles = (
+        "load_config(",
+        "load_rag_config(",
+        "load_ingest_config(",
+        "load_fitz_config(",
+    )
     hits: List[str] = []
 
     for p in iter_python_files(root, excludes=excludes):
@@ -134,7 +152,9 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
         from fitz_ai.llm.registry import available_llm_plugins
 
         impl["ChatPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("chat")]
-        impl["EmbeddingPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("embedding")]
+        impl["EmbeddingPlugin"] = [
+            f"{p} (YAML)" for p in available_llm_plugins("embedding")
+        ]
         impl["RerankPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("rerank")]
     except Exception:
         impl["ChatPlugin"] = []
@@ -163,8 +183,16 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
             'plugin_type="embedding"',
             "plugin_type='embedding'",
         ),
-        "RerankPlugin": ("fitz_ai.llm.rerank", 'plugin_type="rerank"', "plugin_type='rerank'"),
-        "VectorDBPlugin": ("fitz_ai.vector_db", 'plugin_type="vector_db"', "plugin_type='vector_db'"),
+        "RerankPlugin": (
+            "fitz_ai.llm.rerank",
+            'plugin_type="rerank"',
+            "plugin_type='rerank'",
+        ),
+        "VectorDBPlugin": (
+            "fitz_ai.vector_db",
+            'plugin_type="vector_db"',
+            "plugin_type='vector_db'",
+        ),
         "RetrievalPlugin": (
             "fitz_ai.engines.classic_rag.retrieval.registry",
             "get_retriever_plugin(",
@@ -175,8 +203,16 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
             "get_pipeline_plugin(",
             "available_pipeline_plugins(",
         ),
-        "ChunkerPlugin": ("fitz_ai.ingest.chunking", "get_chunker_plugin(", "ChunkingEngine"),
-        "IngestPlugin": ("fitz_ai.ingest.ingestion", "get_ingest_plugin(", "IngestionEngine"),
+        "ChunkerPlugin": (
+            "fitz_ai.ingest.chunking",
+            "get_chunker_plugin(",
+            "ChunkingEngine",
+        ),
+        "IngestPlugin": (
+            "fitz_ai.ingest.ingestion",
+            "get_ingest_plugin(",
+            "IngestionEngine",
+        ),
     }
 
     for p in iter_python_files(root, excludes=excludes):
@@ -243,7 +279,9 @@ def compute_stats(root: Path, *, excludes: set[str]) -> CodeStats:
 
 def compute_config_surface(cm: ContractMap, *, excludes: set[str]) -> ConfigSurface:
     """Compute the configuration surface area."""
-    config_models = [f"{m.module}.{m.name}" for m in cm.models if ".config.schema" in m.module]
+    config_models = [
+        f"{m.module}.{m.name}" for m in cm.models if ".config.schema" in m.module
+    ]
     default_yamls = find_default_yamls(REPO_ROOT, excludes=excludes)
     loaders = list_loader_modules()
     load_callsites = find_load_callsites(REPO_ROOT, excludes=excludes)
@@ -265,13 +303,23 @@ def compute_invariants(cm: ContractMap) -> List[str]:
             inv.append(f"Chunk required fields: {', '.join(req)}")
 
     for p in cm.protocols:
-        if p.name in {"EmbeddingPlugin", "RerankPlugin", "ChatPlugin", "VectorDBPlugin"}:
+        if p.name in {
+            "EmbeddingPlugin",
+            "RerankPlugin",
+            "ChatPlugin",
+            "VectorDBPlugin",
+        }:
             for meth in p.methods:
                 if meth.returns:
                     inv.append(f"{p.name}.{meth.name} returns {meth.returns}")
 
     for r in cm.registries:
-        if r.name in {"LLM_REGISTRY", "RETRIEVER_REGISTRY", "CHUNKER_REGISTRY", "REGISTRY"}:
+        if r.name in {
+            "LLM_REGISTRY",
+            "RETRIEVER_REGISTRY",
+            "CHUNKER_REGISTRY",
+            "REGISTRY",
+        }:
             inv.append(f"{r.module}.{r.name} plugins: {len(r.plugins)}")
 
     return inv
@@ -391,7 +439,10 @@ def analyze_any_breakdown(root, excludes):
                 # Categorize
                 if "kwargs: dict[str, Any]" in line or "kwargs: Dict[str, Any]" in line:
                     categories["legitimate_kwargs"] += 1
-                elif "metadata: dict[str, Any]" in line or "metadata: Dict[str, Any]" in line:
+                elif (
+                    "metadata: dict[str, Any]" in line
+                    or "metadata: Dict[str, Any]" in line
+                ):
                     categories["legitimate_metadata"] += 1
                 elif "messages: list[dict[str, Any]]" in line:
                     categories["legitimate_messages"] += 1
@@ -423,7 +474,11 @@ def render_any_breakdown_section(stats):
     lines.append("### By Category")
     lines.append("")
 
-    legit = cats["legitimate_kwargs"] + cats["legitimate_metadata"] + cats["legitimate_messages"]
+    legit = (
+        cats["legitimate_kwargs"]
+        + cats["legitimate_metadata"]
+        + cats["legitimate_messages"]
+    )
     lazy = cats["lazy_type"] + cats["lazy_return"] + cats["lazy_param"]
 
     lines.append(f"- **Legitimate (Keep)**: ~{legit}")
@@ -517,8 +572,12 @@ def render_exception_analysis_section(stats):
 
     lines.append("### Patterns Found")
     lines.append("")
-    lines.append(f"- **Silent failures** (`except: continue`): {patterns['bare_except_continue']}")
-    lines.append(f"- **Silent ignores** (`except: pass`): {patterns['bare_except_pass']}")
+    lines.append(
+        f"- **Silent failures** (`except: continue`): {patterns['bare_except_continue']}"
+    )
+    lines.append(
+        f"- **Silent ignores** (`except: pass`): {patterns['bare_except_pass']}"
+    )
     lines.append(f"- **Logged exceptions**: {patterns['logged_exceptions']}")
     lines.append(f"- **Re-raised exceptions**: {patterns['reraise_exceptions']}")
     lines.append("")

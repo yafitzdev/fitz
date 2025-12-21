@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import httpx
 
@@ -63,7 +63,7 @@ def _substitute_vars(template: str, context: Dict[str, Any]) -> str:
 
         return str(value)
 
-    return re.sub(r'\{(\w+)\}', replacer, template)
+    return re.sub(r"\{(\w+)\}", replacer, template)
 
 
 def _extract_path(data: Any, path: str, default: Any = None) -> Any:
@@ -71,7 +71,7 @@ def _extract_path(data: Any, path: str, default: Any = None) -> Any:
     if not path:
         return data
 
-    parts = path.split('.')
+    parts = path.split(".")
     current = data
 
     for part in parts:
@@ -115,16 +115,16 @@ class CustomVectorDB:
             auth: Authentication config
             timeout: Request timeout in seconds (default: 30)
         """
-        self.base_url = kwargs.get('base_url')
+        self.base_url = kwargs.get("base_url")
         if not self.base_url:
             raise ValueError("custom vector DB requires 'base_url' in kwargs")
 
         # Store operation configs
-        self._upsert_config = kwargs.get('upsert')
-        self._search_config = kwargs.get('search')
-        self._list_config = kwargs.get('list_collections')
-        self._stats_config = kwargs.get('get_stats')
-        self._delete_config = kwargs.get('delete_collection')
+        self._upsert_config = kwargs.get("upsert")
+        self._search_config = kwargs.get("search")
+        self._list_config = kwargs.get("list_collections")
+        self._stats_config = kwargs.get("get_stats")
+        self._delete_config = kwargs.get("delete_collection")
 
         # Validate required operations
         if not self._upsert_config:
@@ -134,12 +134,12 @@ class CustomVectorDB:
 
         # Build headers
         headers = {}
-        auth_config = kwargs.get('auth')
+        auth_config = kwargs.get("auth")
         if auth_config:
             headers.update(self._build_auth_headers(auth_config))
 
         # Create HTTP client
-        timeout = kwargs.get('timeout', 30)
+        timeout = kwargs.get("timeout", 30)
         self.client = httpx.Client(
             base_url=self.base_url,
             headers=headers,
@@ -150,35 +150,35 @@ class CustomVectorDB:
 
     def _build_auth_headers(self, auth_config: Dict) -> Dict[str, str]:
         """Build authentication headers from config."""
-        header_name = auth_config.get('header', 'Authorization')
+        header_name = auth_config.get("header", "Authorization")
 
         # Get key from environment
-        env_var = auth_config.get('value_env')
+        env_var = auth_config.get("value_env")
         if env_var:
             key = os.getenv(env_var)
             if not key:
                 raise ValueError(f"Environment variable {env_var} not set")
         else:
-            key = auth_config.get('value', '')
+            key = auth_config.get("value", "")
 
         # Apply format if specified
-        format_str = auth_config.get('format', '{key}')
-        header_value = format_str.replace('{key}', key)
+        format_str = auth_config.get("format", "{key}")
+        header_value = format_str.replace("{key}", key)
 
         return {header_name: header_value}
 
     def _execute_operation(
-            self,
-            config: Dict,
-            context: Dict[str, Any],
+        self,
+        config: Dict,
+        context: Dict[str, Any],
     ) -> httpx.Response:
         """Execute an HTTP operation based on config."""
-        method = config.get('method', 'POST').upper()
-        endpoint = _substitute_vars(config.get('endpoint', ''), context)
+        method = config.get("method", "POST").upper()
+        endpoint = _substitute_vars(config.get("endpoint", ""), context)
 
         # Build body if present
         body = None
-        body_template = config.get('body')
+        body_template = config.get("body")
         if body_template:
             body_str = _substitute_vars(body_template, context)
             try:
@@ -204,15 +204,15 @@ class CustomVectorDB:
     def upsert(self, collection: str, points: List[Dict[str, Any]]) -> None:
         """Insert or update points in collection."""
         context = {
-            'collection': collection,
-            'points': points,
+            "collection": collection,
+            "points": points,
         }
 
         # If there's a point_transform, apply it
-        transform = self._upsert_config.get('point_transform')
+        transform = self._upsert_config.get("point_transform")
         if transform:
             points = self._transform_points(points, transform)
-            context['points'] = points
+            context["points"] = points
 
         response = self._execute_operation(self._upsert_config, context)
         response.raise_for_status()
@@ -220,18 +220,18 @@ class CustomVectorDB:
         logger.debug(f"Upserted {len(points)} points to {collection}")
 
     def search(
-            self,
-            collection_name: str,
-            query_vector: List[float],
-            limit: int,
-            with_payload: bool = True,
+        self,
+        collection_name: str,
+        query_vector: List[float],
+        limit: int,
+        with_payload: bool = True,
     ) -> List[SearchResult]:
         """Search for similar vectors."""
         context = {
-            'collection': collection_name,
-            'query_vector': query_vector,
-            'limit': limit,
-            'with_payload': with_payload,
+            "collection": collection_name,
+            "query_vector": query_vector,
+            "limit": limit,
+            "with_payload": with_payload,
         }
 
         response = self._execute_operation(self._search_config, context)
@@ -240,17 +240,17 @@ class CustomVectorDB:
         data = response.json()
 
         # Extract results using configured path
-        results_path = self._search_config.get('results_path', '')
+        results_path = self._search_config.get("results_path", "")
         results = _extract_path(data, results_path, default=[])
 
         if not results:
             return []
 
         # Map results to SearchResult objects
-        mapping = self._search_config.get('mapping', {})
-        id_field = mapping.get('id', 'id')
-        score_field = mapping.get('score', 'score')
-        payload_field = mapping.get('payload', 'payload')
+        mapping = self._search_config.get("mapping", {})
+        id_field = mapping.get("id", "id")
+        score_field = mapping.get("score", "score")
+        payload_field = mapping.get("payload", "payload")
 
         search_results = []
         for item in results:
@@ -258,11 +258,13 @@ class CustomVectorDB:
             result_score = _extract_path(item, score_field)
             result_payload = _extract_path(item, payload_field, default={})
 
-            search_results.append(SearchResult(
-                id=str(result_id) if result_id else "",
-                score=float(result_score) if result_score is not None else None,
-                payload=result_payload if isinstance(result_payload, dict) else {},
-            ))
+            search_results.append(
+                SearchResult(
+                    id=str(result_id) if result_id else "",
+                    score=float(result_score) if result_score is not None else None,
+                    payload=result_payload if isinstance(result_payload, dict) else {},
+                )
+            )
 
         return search_results
 
@@ -294,16 +296,13 @@ class CustomVectorDB:
         data = response.json()
 
         # Extract collections using configured path
-        collections_path = self._list_config.get('collections_path', '')
+        collections_path = self._list_config.get("collections_path", "")
         collections = _extract_path(data, collections_path, default=[])
 
         # Extract names if needed
-        name_field = self._list_config.get('name_field')
+        name_field = self._list_config.get("name_field")
         if name_field and collections:
-            return [
-                c[name_field] if isinstance(c, dict) else c
-                for c in collections
-            ]
+            return [c[name_field] if isinstance(c, dict) else c for c in collections]
 
         return list(collections)
 
@@ -314,14 +313,14 @@ class CustomVectorDB:
                 "get_collection_stats not configured. Add 'get_stats' to vector_db.kwargs"
             )
 
-        context = {'collection': collection}
+        context = {"collection": collection}
         response = self._execute_operation(self._stats_config, context)
         response.raise_for_status()
 
         data = response.json()
 
         # Extract stats using configured path
-        stats_path = self._stats_config.get('stats_path', '')
+        stats_path = self._stats_config.get("stats_path", "")
         return _extract_path(data, stats_path, default={})
 
     def delete_collection(self, collection: str) -> None:
@@ -331,7 +330,7 @@ class CustomVectorDB:
                 "delete_collection not configured. Add 'delete_collection' to vector_db.kwargs"
             )
 
-        context = {'collection': collection}
+        context = {"collection": collection}
         response = self._execute_operation(self._delete_config, context)
 
         # Accept 404 as success (already deleted)
@@ -342,11 +341,11 @@ class CustomVectorDB:
 
     def __del__(self):
         """Cleanup HTTP client."""
-        if hasattr(self, 'client'):
+        if hasattr(self, "client"):
             try:
                 self.client.close()
             except Exception:
                 pass
 
 
-__all__ = ['CustomVectorDB']
+__all__ = ["CustomVectorDB"]

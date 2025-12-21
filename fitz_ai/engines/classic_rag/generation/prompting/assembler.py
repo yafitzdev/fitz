@@ -61,7 +61,9 @@ class PromptAssembler:
             parts.append(self.slot("system_safety"))
 
         if enable_citations:
-            parts.append(f"Use citations like [{source_label_prefix}1], [{source_label_prefix}2].")
+            parts.append(
+                f"Use citations like [{source_label_prefix}1], [{source_label_prefix}2]."
+            )
 
         if answer_style:
             parts.append(f"Preferred style: {answer_style}.")
@@ -95,7 +97,9 @@ class PromptAssembler:
         ]
 
         instructions = (
-            user_instructions if user_instructions is not None else self.slot("user_instructions")
+            user_instructions
+            if user_instructions is not None
+            else self.slot("user_instructions")
         )
         if instructions and instructions.strip():
             parts.extend([instructions.strip(), ""])

@@ -251,9 +251,9 @@ def get_field_type(plugin_type: str, field_name: str) -> Optional[str]:
 
 
 def validate_plugin_fields(
-        plugin_type: str,
-        plugin_data: Dict[str, Any],
-        strict: bool = False,
+    plugin_type: str,
+    plugin_data: Dict[str, Any],
+    strict: bool = False,
 ) -> List[str]:
     """
     Validate plugin data against the schema.
@@ -291,8 +291,7 @@ def validate_plugin_fields(
         options = field_info.get("options")
         if options and value not in options:
             errors.append(
-                f"Invalid value for {field_name}: {value!r}. "
-                f"Must be one of: {options}"
+                f"Invalid value for {field_name}: {value!r}. Must be one of: {options}"
             )
 
     return errors

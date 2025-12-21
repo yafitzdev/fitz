@@ -74,7 +74,9 @@ def resolve_api_key(
     # 1. Explicit config
     api_key = cfg.get("api_key")
     if api_key:
-        logger.debug(f"{CHAT} Using API key from explicit config for provider '{provider}'")
+        logger.debug(
+            f"{CHAT} Using API key from explicit config for provider '{provider}'"
+        )
         return api_key
 
     # 2. Provider-specific env vars
@@ -82,7 +84,9 @@ def resolve_api_key(
     for env_name in env_vars:
         value = os.getenv(env_name)
         if value:
-            logger.debug(f"{CHAT} Using API key from env '{env_name}' for provider '{provider}'")
+            logger.debug(
+                f"{CHAT} Using API key from env '{env_name}' for provider '{provider}'"
+            )
             return value
 
     # 3. Generic fallback

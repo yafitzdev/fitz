@@ -1,5 +1,6 @@
 # fitz_ai/engines/classic_rag/retrieval/runtime/registry.py
 """Retriever plugin registry."""
+
 from __future__ import annotations
 
 from typing import Any, List, Type

@@ -11,17 +11,17 @@ Usage:
 
 from __future__ import annotations
 
-from pathlib import Path
 import json
 import os
 import subprocess
+from pathlib import Path
 
 import typer
 
-from fitz_ai.core.config import load_config_dict, ConfigNotFoundError
+from fitz_ai.cli.ui import RICH, Table, console, ui
+from fitz_ai.core.config import load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
-from fitz_ai.cli.ui import ui, console, RICH, Table
 
 logger = get_logger(__name__)
 
@@ -66,7 +66,9 @@ def _show_config_summary(config: dict) -> None:
         ret_plugin = ret.get("plugin_name", "dense")
         ret_collection = ret.get("collection", "default")
         ret_top_k = ret.get("top_k", 5)
-        table.add_row("Retriever", ret_plugin, f"collection={ret_collection}, top_k={ret_top_k}")
+        table.add_row(
+            "Retriever", ret_plugin, f"collection={ret_collection}, top_k={ret_top_k}"
+        )
 
         # Rerank
         rerank = config.get("rerank", {})
@@ -99,7 +101,9 @@ def _show_config_summary(config: dict) -> None:
         print(f"  Vector DB: {vdb.get('plugin_name', '?')}")
 
         ret = config.get("retriever", {})
-        print(f"  Retriever: {ret.get('plugin_name', 'dense')} (collection={ret.get('collection', 'default')})")
+        print(
+            f"  Retriever: {ret.get('plugin_name', 'dense')} (collection={ret.get('collection', 'default')})"
+        )
 
         rerank = config.get("rerank", {})
         if rerank.get("enabled"):

@@ -8,6 +8,7 @@ Categorizes Any usage into:
 - Converter (needs Protocol)
 - Reflection (acceptable in tools)
 """
+
 from __future__ import annotations
 
 import re
@@ -167,7 +168,9 @@ def analyze_any_usage(
                 category = categorize_any_occurrence(str(rel_path), line)
 
                 # Track by category
-                analysis.by_category[category] = analysis.by_category.get(category, 0) + any_count
+                analysis.by_category[category] = (
+                    analysis.by_category.get(category, 0) + any_count
+                )
 
                 # Store occurrence
                 context = extract_context(py_file, line_num - 1)
@@ -209,9 +212,13 @@ def render_any_analysis_section(analysis: AnyAnalysis) -> str:
 
     # Group categories
     legitimate = sum(
-        count for cat, count in analysis.by_category.items() if cat.startswith("legitimate")
+        count
+        for cat, count in analysis.by_category.items()
+        if cat.startswith("legitimate")
     )
-    lazy = sum(count for cat, count in analysis.by_category.items() if cat.startswith("lazy"))
+    lazy = sum(
+        count for cat, count in analysis.by_category.items() if cat.startswith("lazy")
+    )
     converter = analysis.by_category.get("converter", 0)
     reflection = analysis.by_category.get("reflection", 0)
     other = analysis.by_category.get("other", 0)
@@ -253,17 +260,25 @@ def render_any_analysis_section(analysis: AnyAnalysis) -> str:
     lines.append("")
 
     if lazy > 0:
-        lines.append(f"1. **Fix Lazy Typing** ({lazy} mentions): Type erasure and lazy parameters")
+        lines.append(
+            f"1. **Fix Lazy Typing** ({lazy} mentions): Type erasure and lazy parameters"
+        )
         lines.append("   - Replace `Type[Any]` with specific types")
         lines.append("   - Replace `-> Any:` with concrete return types")
         lines.append("   - Replace parameter `Any` with `object` or specific types")
 
     if converter > 0:
-        lines.append(f"2. **Add Protocols** ({converter} mentions): Converter functions")
+        lines.append(
+            f"2. **Add Protocols** ({converter} mentions): Converter functions"
+        )
         lines.append("   - Create `@runtime_checkable` Protocols")
-        lines.append("   - Replace `chunk_like: Any` with `chunk_like: ChunkLike | dict`")
+        lines.append(
+            "   - Replace `chunk_like: Any` with `chunk_like: ChunkLike | dict`"
+        )
 
-    lines.append(f"3. **Keep Legitimate** ({legitimate} mentions): Config, metadata, messages")
+    lines.append(
+        f"3. **Keep Legitimate** ({legitimate} mentions): Config, metadata, messages"
+    )
     lines.append("   - These are correctly typed")
     lines.append("")
 

@@ -15,7 +15,8 @@ from typing import Any, List, Optional
 
 import typer
 
-from fitz_ai.core.config import load_config_dict, ConfigNotFoundError
+from fitz_ai.cli.ui import RICH, Panel, console, ui
+from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.core.registry import available_chunking_plugins
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
@@ -24,10 +25,9 @@ from fitz_ai.ingest.config.schema import ChunkerConfig
 from fitz_ai.ingest.ingestion.engine import IngestionEngine
 from fitz_ai.ingest.ingestion.registry import get_ingest_plugin
 from fitz_ai.llm.registry import get_llm_plugin
+from fitz_ai.logging.logger import get_logger
 from fitz_ai.vector_db.registry import get_vector_db_plugin
 from fitz_ai.vector_db.writer import VectorDBWriter
-from fitz_ai.logging.logger import get_logger
-from fitz_ai.cli.ui import ui, console, RICH, Panel
 
 logger = get_logger(__name__)
 
@@ -45,13 +45,17 @@ def _show_files(raw_docs: List, max_show: int = 8) -> None:
     # Extract file paths/names
     files = []
     for doc in raw_docs:
-        path = getattr(doc, 'path', None) or getattr(doc, 'source_file', None) or getattr(doc, 'doc_id', '?')
-        if hasattr(path, 'name'):
+        path = (
+            getattr(doc, "path", None)
+            or getattr(doc, "source_file", None)
+            or getattr(doc, "doc_id", "?")
+        )
+        if hasattr(path, "name"):
             # Path object - get just the filename
             files.append(str(path.name))
         else:
             # String - get last part
-            files.append(str(path).split('/')[-1].split('\\')[-1])
+            files.append(str(path).split("/")[-1].split("\\")[-1])
 
     # Show files
     show_count = min(len(files), max_show)
@@ -92,14 +96,14 @@ def _load_config() -> dict:
 
 def _has_batch_embed(embedder: Any) -> bool:
     """Check if embedder supports batch embedding."""
-    return hasattr(embedder, 'embed_batch') or hasattr(embedder, 'embed_texts')
+    return hasattr(embedder, "embed_batch") or hasattr(embedder, "embed_texts")
 
 
 def _embed_batch_native(embedder: Any, texts: List[str]) -> List[List[float]]:
     """Call native batch embed if available."""
-    if hasattr(embedder, 'embed_batch'):
+    if hasattr(embedder, "embed_batch"):
         return embedder.embed_batch(texts)
-    elif hasattr(embedder, 'embed_texts'):
+    elif hasattr(embedder, "embed_texts"):
         return embedder.embed_texts(texts)
     else:
         raise NotImplementedError("No batch embed method")
@@ -123,10 +127,10 @@ def _is_batch_size_error(error: Exception) -> bool:
 
 
 def _embed_chunks(
-        embedder: Any,
-        chunks: List[Chunk],
-        batch_size: int = 96,
-        show_progress: bool = True,
+    embedder: Any,
+    chunks: List[Chunk],
+    batch_size: int = 96,
+    show_progress: bool = True,
 ) -> List[List[float]]:
     """
     Embed chunks with adaptive batching and progress bar.
@@ -151,7 +155,9 @@ def _embed_chunks(
     current_batch_size = batch_size
     position = 0
 
-    with ui.progress(f"Embedding (batch={current_batch_size})", total=total_chunks) as update:
+    with ui.progress(
+        f"Embedding (batch={current_batch_size})", total=total_chunks
+    ) as update:
         while position < total_chunks:
             batch_end = min(position + current_batch_size, total_chunks)
             batch_texts = [c.content for c in chunks[position:batch_end]]
@@ -175,9 +181,9 @@ def _embed_chunks(
 
 
 def _embed_chunks_sequential(
-        embedder: Any,
-        chunks: List[Chunk],
-        show_progress: bool = True,
+    embedder: Any,
+    chunks: List[Chunk],
+    show_progress: bool = True,
 ) -> List[List[float]]:
     """Embed chunks one at a time (fallback when batch not available)."""
     vectors: List[List[float]] = []
@@ -197,16 +203,16 @@ def _embed_chunks_sequential(
 
 
 def command(
-        source: Optional[Path] = typer.Argument(
-            None,
-            help="Source file or directory (will prompt if not provided).",
-        ),
-        non_interactive: bool = typer.Option(
-            False,
-            "--non-interactive",
-            "-y",
-            help="Use defaults without prompting.",
-        ),
+    source: Optional[Path] = typer.Argument(
+        None,
+        help="Source file or directory (will prompt if not provided).",
+    ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        "-y",
+        help="Use defaults without prompting.",
+    ),
 ) -> None:
     """
     Ingest documents into the vector database.
@@ -300,15 +306,17 @@ def command(
 
     if not non_interactive:
         if RICH:
-            console.print(Panel(
-                f"[bold]Source:[/bold] {source}\n"
-                f"[bold]Collection:[/bold] {collection}\n"
-                f"[bold]Chunker:[/bold] {chunker} (size={chunk_size}, overlap={chunk_overlap})\n"
-                f"[bold]Embedding:[/bold] {embedding_plugin}\n"
-                f"[bold]Vector DB:[/bold] {vector_db_plugin}",
-                title="Summary",
-                border_style="green",
-            ))
+            console.print(
+                Panel(
+                    f"[bold]Source:[/bold] {source}\n"
+                    f"[bold]Collection:[/bold] {collection}\n"
+                    f"[bold]Chunker:[/bold] {chunker} (size={chunk_size}, overlap={chunk_overlap})\n"
+                    f"[bold]Embedding:[/bold] {embedding_plugin}\n"
+                    f"[bold]Vector DB:[/bold] {vector_db_plugin}",
+                    title="Summary",
+                    border_style="green",
+                )
+            )
         else:
             print("\nSummary:")
             print(f"  Source: {source}")
@@ -418,9 +426,11 @@ def command(
     batch_size = 50
     try:
         for i in range(0, len(chunks), batch_size):
-            batch_chunks = chunks[i:i + batch_size]
-            batch_vectors = vectors[i:i + batch_size]
-            writer.upsert(collection=collection, chunks=batch_chunks, vectors=batch_vectors)
+            batch_chunks = chunks[i : i + batch_size]
+            batch_vectors = vectors[i : i + batch_size]
+            writer.upsert(
+                collection=collection, chunks=batch_chunks, vectors=batch_vectors
+            )
     except Exception as e:
         ui.error(f"Failed to write: {e}")
         raise typer.Exit(1)
@@ -433,12 +443,14 @@ def command(
 
     print()
     if RICH:
-        console.print(Panel.fit(
-            f"[green bold]Success![/green bold]\n\n"
-            f"Ingested [bold]{len(chunks)}[/bold] chunks into [bold]'{collection}'[/bold]\n\n"
-            f"[dim]Query with:[/dim] fitz query \"your question\"",
-            border_style="green",
-        ))
+        console.print(
+            Panel.fit(
+                f"[green bold]Success![/green bold]\n\n"
+                f"Ingested [bold]{len(chunks)}[/bold] chunks into [bold]'{collection}'[/bold]\n\n"
+                f'[dim]Query with:[/dim] fitz query "your question"',
+                border_style="green",
+            )
+        )
     else:
         print(f"Success! Ingested {len(chunks)} chunks into '{collection}'")
-        print(f"\nQuery with: fitz query \"your question\"")
+        print('\nQuery with: fitz query "your question"')

@@ -1,5 +1,6 @@
 # fitz_ai/engines/classic_rag/pipeline/pipeline/registry.py
 """Pipeline plugin registry."""
+
 from __future__ import annotations
 
 from typing import Any, List, Type

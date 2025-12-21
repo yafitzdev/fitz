@@ -1,5 +1,8 @@
 # tests/test_rgs_metadata_format.py
-from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import RGS, RGSConfig
+from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import (
+    RGS,
+    RGSConfig,
+)
 
 
 def test_rgs_metadata_format():
@@ -7,7 +10,11 @@ def test_rgs_metadata_format():
     rgs = RGS(RGSConfig())
 
     chunks = [
-        {"id": "1", "content": "alpha", "metadata": {"file": "doc1", "a": 1, "b": 2, "c": 3}},
+        {
+            "id": "1",
+            "content": "alpha",
+            "metadata": {"file": "doc1", "a": 1, "b": 2, "c": 3},
+        },
     ]
 
     prompt = rgs.build_prompt("Q?", chunks)

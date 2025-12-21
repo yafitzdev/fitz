@@ -63,7 +63,9 @@ class HTTPClientNotAvailable(HTTPClientError):
     """Raised when httpx is not installed."""
 
     def __init__(self):
-        super().__init__("httpx is required for HTTP API calls. " "Install with: pip install httpx")
+        super().__init__(
+            "httpx is required for HTTP API calls. Install with: pip install httpx"
+        )
 
 
 @dataclass
@@ -273,7 +275,9 @@ def handle_api_error(
         details = None
         try:
             error_data = exc.response.json()
-            details = error_data.get("message") or error_data.get("error", {}).get("message")
+            details = error_data.get("message") or error_data.get("error", {}).get(
+                "message"
+            )
         except Exception:
             details = exc.response.text[:200] if exc.response.text else None
 

@@ -14,4 +14,8 @@ def test_context_pipeline_cross_file_dedupe():
     # No cross-file dedupe; also doc_id currently falls back to "unknown"
     assert len(out) == 3
     assert [c.doc_id for c in out] == ["unknown", "unknown", "unknown"]
-    assert [c.content for c in out] == ["Hello WORLD", "  hello   world ", "HELLO WORLD "]
+    assert [c.content for c in out] == [
+        "Hello WORLD",
+        "  hello   world ",
+        "HELLO WORLD ",
+    ]

@@ -33,9 +33,14 @@ def _to_chunk_dict(chunk_like: Any) -> ChunkDict:
             metadata = {}
 
         doc_id = str(
-            data.get("doc_id") or data.get("document_id") or data.get("source") or "unknown"
+            data.get("doc_id")
+            or data.get("document_id")
+            or data.get("source")
+            or "unknown"
         )
-        chunk_index = int(data.get("chunk_index") if data.get("chunk_index") is not None else 0)
+        chunk_index = int(
+            data.get("chunk_index") if data.get("chunk_index") is not None else 0
+        )
         chunk_id = data.get("id")
         if chunk_id is None or str(chunk_id).strip() == "":
             chunk_id = f"{doc_id}:{chunk_index}"

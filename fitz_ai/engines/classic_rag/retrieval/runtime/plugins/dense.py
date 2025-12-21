@@ -2,12 +2,17 @@
 """
 Dense retrieval plugin using vector search.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, List, Protocol, runtime_checkable
 
-from fitz_ai.engines.classic_rag.exceptions import EmbeddingError, RerankError, VectorSearchError
+from fitz_ai.engines.classic_rag.exceptions import (
+    EmbeddingError,
+    RerankError,
+    VectorSearchError,
+)
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
 from fitz_ai.engines.classic_rag.retrieval.runtime.base import RetrievalPlugin
 from fitz_ai.logging.logger import get_logger
@@ -38,7 +43,7 @@ class Reranker(Protocol):
     """Protocol for rerank plugins."""
 
     def rerank(
-            self, query: str, documents: list[str], top_n: int | None = None
+        self, query: str, documents: list[str], top_n: int | None = None
     ) -> list[tuple[int, float]]: ...
 
 
@@ -106,7 +111,9 @@ class DenseRetrievalPlugin(RetrievalPlugin):
         chunks: List[Chunk] = []
 
         for idx, hit in enumerate(hits):
-            payload = getattr(hit, "payload", None) or getattr(hit, "metadata", None) or {}
+            payload = (
+                getattr(hit, "payload", None) or getattr(hit, "metadata", None) or {}
+            )
             if not isinstance(payload, dict):
                 payload = {}
 
@@ -180,6 +187,8 @@ class DenseRetrievalPlugin(RetrievalPlugin):
                 )
                 reranked_chunks.append(reranked_chunk)
 
-        logger.debug(f"{RETRIEVER} Reranked {len(chunks)} chunks → {len(reranked_chunks)} results")
+        logger.debug(
+            f"{RETRIEVER} Reranked {len(chunks)} chunks → {len(reranked_chunks)} results"
+        )
 
         return reranked_chunks

@@ -1,5 +1,6 @@
 # tools/contract_map/models.py
 """Extract models and protocols from the codebase."""
+
 from __future__ import annotations
 
 import inspect
@@ -58,7 +59,9 @@ def extract_pydantic_fields(model_cls: Type[Any]) -> List[ModelField]:
     hints = getattr(model_cls, "__annotations__", {}) or {}
     for name in sorted(hints.keys()):
         fields.append(
-            ModelField(name=name, type=fmt_type(hints[name]), required=True, default=None)
+            ModelField(
+                name=name, type=fmt_type(hints[name]), required=True, default=None
+            )
         )
     return fields
 
@@ -139,7 +142,9 @@ def extract_models(cm: ContractMap, *, verbose: bool) -> None:
                     ModelField(name=k, type=fmt_type(hints[k]), required=True)
                     for k in sorted(hints.keys())
                 ]
-                cm.models.append(ModelContract(module=mod_name, name=obj.__name__, fields=fields))
+                cm.models.append(
+                    ModelContract(module=mod_name, name=obj.__name__, fields=fields)
+                )
 
     cm.models.sort(key=lambda m: (m.module, m.name))
 

@@ -15,7 +15,6 @@ Run with: pytest fitz_ai/vector_db/tests/test_generic_vector_db_plugin.py -v
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from pathlib import Path
@@ -24,6 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from fitz_ai.vector_db.base import SearchResult
 from fitz_ai.vector_db.loader import (
     GenericVectorDBPlugin,
     VectorDBSpec,
@@ -31,8 +31,6 @@ from fitz_ai.vector_db.loader import (
     create_vector_db_plugin,
     load_vector_db_spec,
 )
-from fitz_ai.vector_db.base import SearchResult
-
 
 # =============================================================================
 # Fixtures
@@ -219,14 +217,14 @@ class TestPointTransformation:
     """Tests for point format transformation."""
 
     def test_qdrant_identity_transform(
-            self, qdrant_spec: VectorDBSpec, sample_points: List[Dict]
+        self, qdrant_spec: VectorDBSpec, sample_points: List[Dict]
     ):
         """Qdrant uses identity transform (no changes)."""
         transformed = qdrant_spec.transform_points(sample_points, "upsert")
         assert transformed == sample_points
 
     def test_pinecone_transform(
-            self, pinecone_spec: VectorDBSpec, sample_points: List[Dict]
+        self, pinecone_spec: VectorDBSpec, sample_points: List[Dict]
     ):
         """Pinecone transforms vector->values, payload->metadata."""
         transformed = pinecone_spec.transform_points(sample_points, "upsert")
@@ -248,7 +246,7 @@ class TestGenericVectorDBPlugin:
 
     @patch("fitz_ai.vector_db.loader.httpx.Client")
     def test_search_returns_search_results(
-            self, mock_client_class, qdrant_spec: VectorDBSpec
+        self, mock_client_class, qdrant_spec: VectorDBSpec
     ):
         """Search returns properly formatted SearchResult objects."""
         # Setup mock
@@ -282,7 +280,7 @@ class TestGenericVectorDBPlugin:
 
     @patch("fitz_ai.vector_db.loader.httpx.Client")
     def test_upsert_converts_ids_for_qdrant(
-            self, mock_client_class, qdrant_spec: VectorDBSpec, sample_points: List[Dict]
+        self, mock_client_class, qdrant_spec: VectorDBSpec, sample_points: List[Dict]
     ):
         """Qdrant upsert converts string IDs to UUIDs."""
         mock_response = MagicMock()
@@ -319,7 +317,7 @@ class TestGenericVectorDBPlugin:
     @patch.dict(os.environ, {"PINECONE_API_KEY": "test-api-key"})
     @patch("fitz_ai.vector_db.loader.httpx.Client")
     def test_upsert_no_uuid_conversion_for_pinecone(
-            self, mock_client_class, pinecone_spec: VectorDBSpec, sample_points: List[Dict]
+        self, mock_client_class, pinecone_spec: VectorDBSpec, sample_points: List[Dict]
     ):
         """Pinecone upsert keeps original string IDs."""
         mock_response = MagicMock()
@@ -392,7 +390,7 @@ class TestGenericVectorDBPlugin:
 
     @patch("fitz_ai.vector_db.loader.httpx.Client")
     def test_auto_create_collection_on_404(
-            self, mock_client_class, qdrant_spec: VectorDBSpec, sample_points: List[Dict]
+        self, mock_client_class, qdrant_spec: VectorDBSpec, sample_points: List[Dict]
     ):
         """Auto-creates collection when upsert gets 404."""
         # First call returns 404, second succeeds
@@ -498,7 +496,10 @@ class TestCreateVectorDBPlugin:
         # The test validates that the loader attempts to load the class
         try:
             plugin = create_vector_db_plugin("local_faiss")
-            assert plugin.plugin_name == "local_faiss" or plugin.plugin_name == "local-faiss"
+            assert (
+                plugin.plugin_name == "local_faiss"
+                or plugin.plugin_name == "local-faiss"
+            )
         except ImportError:
             # faiss not installed - that's fine, we tested the path
             pytest.skip("faiss not installed")
@@ -601,7 +602,9 @@ class TestYAMLSchemaCompliance:
             search_op = spec.operations.get("search", {})
             response = search_op.get("response", {})
 
-            assert "results_path" in response, f"{spec.name} search missing results_path"
+            assert "results_path" in response, (
+                f"{spec.name} search missing results_path"
+            )
             assert "mapping" in response, f"{spec.name} search missing mapping"
 
 

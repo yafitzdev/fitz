@@ -1,7 +1,9 @@
 # tests/test_retriever_metadata_preservation.py
 from dataclasses import dataclass
 
-from fitz_ai.engines.classic_rag.retrieval.runtime.plugins.dense import DenseRetrievalPlugin
+from fitz_ai.engines.classic_rag.retrieval.runtime.plugins.dense import (
+    DenseRetrievalPlugin,
+)
 
 
 @dataclass
@@ -28,7 +30,12 @@ def test_retriever_preserves_metadata():
     hits = [
         Hit(
             id="h",
-            payload={"doc_id": "doc", "content": "text", "chunk_index": 7, "keep_me": 123},
+            payload={
+                "doc_id": "doc",
+                "content": "text",
+                "chunk_index": 7,
+                "keep_me": 123,
+            },
             score=0.42,
         )
     ]

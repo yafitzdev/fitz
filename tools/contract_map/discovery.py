@@ -8,6 +8,7 @@ including any failures or duplicates.
 NOTE: LLM plugins (chat, embedding, rerank) and Vector DB plugins use YAML files,
       not Python modules. We scan for .yaml files instead.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -239,10 +240,12 @@ def scan_all_discoveries() -> List[DiscoveryReport]:
             "RAG pipeline plugins (Python discovery)",
         ),
         scan_discovery(
-            "fitz_ai.ingest.chunking.plugins", "Ingest chunking plugins (Python discovery)"
+            "fitz_ai.ingest.chunking.plugins",
+            "Ingest chunking plugins (Python discovery)",
         ),
         scan_discovery(
-            "fitz_ai.ingest.ingestion.plugins", "Ingest ingestion plugins (Python discovery)"
+            "fitz_ai.ingest.ingestion.plugins",
+            "Ingest ingestion plugins (Python discovery)",
         ),
     ]
 

@@ -31,7 +31,9 @@ def load_architecture_mapping(
         data = yaml.safe_load(f)
 
     if not isinstance(data, dict):
-        raise ArchitectureConfigError("architecture.yaml must contain a mapping at top level")
+        raise ArchitectureConfigError(
+            "architecture.yaml must contain a mapping at top level"
+        )
 
     mapping = data.get("mapping")
     if not isinstance(mapping, dict):
@@ -49,7 +51,9 @@ def load_architecture_mapping(
             raise ArchitectureConfigError(f"Invalid role for {package!r}: {role!r}")
 
         if role not in known_roles:
-            raise ArchitectureConfigError(f"Unknown role {role!r} for package {package!r}")
+            raise ArchitectureConfigError(
+                f"Unknown role {role!r} for package {package!r}"
+            )
 
         resolved[package] = role
 

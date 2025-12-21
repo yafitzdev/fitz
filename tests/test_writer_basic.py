@@ -21,8 +21,12 @@ class DummyClient:
 
 
 def test_compute_chunk_hash_is_deterministic():
-    a = DummyChunk(id="1", doc_id="d", chunk_index=0, content="hello", metadata={"x": 1})
-    b = DummyChunk(id="2", doc_id="d", chunk_index=0, content="hello", metadata={"x": 999})
+    a = DummyChunk(
+        id="1", doc_id="d", chunk_index=0, content="hello", metadata={"x": 1}
+    )
+    b = DummyChunk(
+        id="2", doc_id="d", chunk_index=0, content="hello", metadata={"x": 999}
+    )
     assert compute_chunk_hash(a) == compute_chunk_hash(b)
 
 
@@ -38,10 +42,18 @@ def test_writer_upsert_builds_payload_and_calls_client():
 
     chunks = [
         DummyChunk(
-            id="c1", doc_id="docA", chunk_index=0, content="alpha", metadata={"file": "a.txt"}
+            id="c1",
+            doc_id="docA",
+            chunk_index=0,
+            content="alpha",
+            metadata={"file": "a.txt"},
         ),
         DummyChunk(
-            id="c2", doc_id="docA", chunk_index=1, content="beta", metadata={"file": "a.txt"}
+            id="c2",
+            doc_id="docA",
+            chunk_index=1,
+            content="beta",
+            metadata={"file": "a.txt"},
         ),
     ]
     vectors = [[0.1, 0.2], [0.3, 0.4]]
