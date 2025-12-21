@@ -2,7 +2,7 @@
 
 This directory contains example scripts demonstrating fitz usage.
 
-## Examples
+## Examples 
 
 | File | Description |
 |------|-------------|
