@@ -5,29 +5,24 @@ Configuration for Classic RAG engine.
 This package provides:
 - ClassicRagConfig: The main configuration schema
 - load_config: Configuration loader function
-- Supporting schemas (PluginConfig, RetrieverConfig, etc.)
+- Supporting schemas (PluginConfig, RetrievalConfig, etc.)
 
 Usage:
     >>> from fitz_ai.engines.classic_rag.config import load_config, ClassicRagConfig
     >>> config = load_config("config.yaml")
 """
 
-from .loader import (  # Backwards compatibility exports
+from .loader import (
     DEFAULT_CONFIG_PATH,
-    _load_yaml,
     load_config,
     load_config_dict,
 )
-from .schema import (  # Main config; Sub-configs; Backwards compatibility aliases
+from .schema import (
     ClassicRagConfig,
-    EnginePluginConfig,
-    FitzConfig,
     LoggingConfig,
-    PipelinePluginConfig,
     PluginConfig,
-    RAGConfig,
     RerankConfig,
-    RetrieverConfig,
+    RetrievalConfig,
     RGSConfig,
 )
 
@@ -38,15 +33,10 @@ __all__ = [
     "load_config_dict",
     # Sub-configs
     "PluginConfig",
-    "RetrieverConfig",
+    "RetrievalConfig",
     "RerankConfig",
     "RGSConfig",
     "LoggingConfig",
-    # Backwards compatibility
-    "RAGConfig",
-    "PipelinePluginConfig",
-    "EnginePluginConfig",
-    "FitzConfig",
+    # Constants
     "DEFAULT_CONFIG_PATH",
-    "_load_yaml",
 ]

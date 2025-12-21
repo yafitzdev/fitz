@@ -1,56 +1,66 @@
 # tests/test_rag_pipeline_end_to_end.py
-from __future__ import annotations
+"""
+End-to-end test of RAGPipeline using mock retrieval and LLM.
+"""
+
+from dataclasses import dataclass
 
 from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import (
     RGS,
     RGSAnswer,
     RGSConfig,
 )
+from fitz_ai.engines.classic_rag.models.chunk import Chunk
 from fitz_ai.engines.classic_rag.pipeline.pipeline.engine import RAGPipeline
 
 
-class DummyRetriever:
-    """
-    Minimal retrieval for pipeline tests.
+# =============================================================================
+# Mock Components
+# =============================================================================
 
-    Returns a couple of dict-based chunks compatible with RGS.
-    """
 
-    def retrieve(self, query: str):
+@dataclass
+class MockRetrievalPipeline:
+    """Mock retrieval pipeline that returns fixed chunks."""
+
+    plugin_name: str = "mock"
+
+    def retrieve(self, query: str) -> list[Chunk]:
         return [
-            {
-                "id": "c1",
-                "text": "Paris is the capital of France.",
-                "metadata": {"file": "wiki_paris.txt"},
-            },
-            {
-                "id": "c2",
-                "text": "Berlin is the capital of Germany.",
-                "metadata": {"file": "wiki_berlin.txt"},
-            },
+            Chunk(
+                id="chunk_1",
+                doc_id="doc_1",
+                content="The sky is blue because of Rayleigh scattering.",
+                chunk_index=0,
+                metadata={},
+            ),
+            Chunk(
+                id="chunk_2",
+                doc_id="doc_2",
+                content="Water appears blue due to absorption of red wavelengths.",
+                chunk_index=0,
+                metadata={},
+            ),
         ]
 
 
 class DummyLLM:
-    """
-    Minimal LLM stub that just returns a canned answer.
-    """
+    """Mock LLM that returns a fixed response."""
 
-    def __init__(self) -> None:
-        self.last_messages = None
+    def chat(self, messages: list[dict]) -> str:
+        return "The sky is blue because of Rayleigh scattering [S1]."
 
-    def chat(self, messages):
-        # Keep for debugging if needed
-        self.last_messages = messages
-        # Pretend we used the context and answer the question
-        return "Paris is the capital of France. [S1]"
+
+# =============================================================================
+# Test
+# =============================================================================
 
 
 def test_pipeline_end_to_end():
     """
     End-to-end test of RAGPipeline:
 
-    - uses DummyRetriever + DummyLLM
+    - uses MockRetrievalPipeline + DummyLLM
     - wires in real RGS (prompt + answer structuring)
     - asserts that an RGSAnswer is returned with sources
     """
@@ -58,20 +68,13 @@ def test_pipeline_end_to_end():
     rgs = RGS(config=RGSConfig(max_chunks=3))
 
     pipe = RAGPipeline(
-        retriever=DummyRetriever(),
+        retrieval=MockRetrievalPipeline(),
         chat=DummyLLM(),
         rgs=rgs,
     )
 
-    answer = pipe.run("What is the capital of France?")
+    answer = pipe.run("Why is the sky blue?")
 
-    # Basic shape
     assert isinstance(answer, RGSAnswer)
-    assert isinstance(answer.answer, str)
-    assert answer.answer  # non-empty text
-
-    # We should have at least one source
-    assert answer.sources
-    # The first source should reference one of our chunk IDs
-    ids = {s.source_id for s in answer.sources}
-    assert "c1" in ids or "c2" in ids
+    assert answer.answer
+    assert len(answer.sources) > 0

@@ -1,0 +1,24 @@
+# fitz_ai/engines/classic_rag/retrieval/runtime/plugins/dense.yaml
+#
+# Dense Retrieval Plugin
+#
+# This YAML file defines the retrieval pipeline for dense (vector) search.
+# The steps reference standard Python step classes that are written once
+# and reused across different retrieval plugins.
+
+plugin_name: dense
+description: "Standard dense retrieval using vector search with optional reranking"
+
+# Pipeline steps - executed in order
+# Each step references a Python class in fitz_ai.engines.classic_rag.retrieval.steps
+steps:
+  - type: vector_search
+    k: 25                      # Initial candidates to retrieve
+
+  - type: rerank
+    k: 10                      # Top-k after reranking
+    enabled_if: reranker       # Only run if reranker dependency is provided
+
+  - type: limit
+    k: 5                       # Final chunks returned (uses retrieval.top_k from config)
+    use_config: top_k          # Override k with value from retrieval config

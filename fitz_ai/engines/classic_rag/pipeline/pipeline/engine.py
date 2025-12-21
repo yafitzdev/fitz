@@ -2,7 +2,7 @@
 """
 RAGPipeline - Core orchestration for retrieval-augmented generation.
 
-Flow: vector_db → retrieval → context-processing → rgs → llm → final answer
+Flow: retrieval (YAML plugin) → context-processing → rgs → llm → answer
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import (
     RGSConfig as RGSRuntimeConfig,
 )
 from fitz_ai.engines.classic_rag.pipeline.context.pipeline import ContextPipeline
-from fitz_ai.engines.classic_rag.retrieval.runtime.engine import RetrieverEngine
+from fitz_ai.engines.classic_rag.retrieval.runtime.registry import get_retrieval_plugin
 from fitz_ai.llm.registry import get_llm_plugin
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.logging.tags import PIPELINE, VECTOR_DB
@@ -34,33 +34,33 @@ class RAGPipeline:
     """
     RAG Pipeline orchestrator.
 
-    Flow: vector_db → retrieval → context-processing → rgs → llm → final answer
+    Flow: retrieval (YAML plugin) → context-processing → rgs → llm → answer
     """
 
     def __init__(
         self,
-        retriever: RetrieverEngine,
+        retrieval,  # RetrievalPipelineFromYaml
         chat,
         rgs: RGS,
         context: ContextPipeline | None = None,
     ):
-        self.retriever = retriever
+        self.retrieval = retrieval
         self.chat = chat
         self.rgs = rgs
         self.context = context or ContextPipeline()
 
-        logger.info(f"{PIPELINE} RAGPipeline initialized")
+        logger.info(f"{PIPELINE} RAGPipeline initialized with {retrieval.plugin_name} retrieval")
 
     def run(self, query: str) -> RGSAnswer:
         """Execute the RAG pipeline for a query."""
         logger.info(f"{PIPELINE} Running pipeline for query='{query[:50]}...'")
 
-        # Step 1: Retrieve relevant chunks
+        # Step 1: Retrieve relevant chunks (using YAML-based plugin)
         try:
-            raw_chunks = self.retriever.retrieve(query)
+            raw_chunks = self.retrieval.retrieve(query)
         except Exception as exc:
-            logger.error(f"{PIPELINE} Retriever failed: {exc}")
-            raise PipelineError("Retriever failed") from exc
+            logger.error(f"{PIPELINE} Retrieval failed: {exc}")
+            raise PipelineError("Retrieval failed") from exc
 
         # Step 2: Process context (dedupe, group, merge, pack)
         try:
@@ -123,23 +123,25 @@ class RAGPipeline:
         logger.info(f"{PIPELINE} Using embedding plugin='{cfg.embedding.plugin_name}'")
 
         # Rerank (optional)
-        rerank_plugin = None
-        if cfg.rerank.enabled:
-            rerank_plugin = get_llm_plugin(
+        reranker = None
+        if cfg.rerank.enabled and cfg.rerank.plugin_name:
+            reranker = get_llm_plugin(
                 plugin_type="rerank",
                 plugin_name=cfg.rerank.plugin_name,
                 **cfg.rerank.kwargs,
             )
             logger.info(f"{PIPELINE} Using rerank plugin='{cfg.rerank.plugin_name}'")
 
-        # Retriever
-        retriever = RetrieverEngine.from_name(
-            cfg.retriever.plugin_name,
-            client=vector_client,
-            retriever_cfg=cfg.retriever,
+        # Retrieval (YAML-based plugin)
+        retrieval = get_retrieval_plugin(
+            plugin_name=cfg.retrieval.plugin_name,
+            vector_client=vector_client,
             embedder=embedder,
-            rerank_engine=rerank_plugin,
+            collection=cfg.retrieval.collection,
+            reranker=reranker,
+            top_k=cfg.retrieval.top_k,
         )
+        logger.info(f"{PIPELINE} Using retrieval plugin='{cfg.retrieval.plugin_name}'")
 
         # RGS
         rgs_cfg = RGSRuntimeConfig(
@@ -155,13 +157,13 @@ class RAGPipeline:
 
         logger.info(f"{PIPELINE} RAGPipeline successfully created")
         return cls(
-            retriever=retriever, chat=chat_plugin, rgs=rgs, context=ContextPipeline()
+            retrieval=retrieval, chat=chat_plugin, rgs=rgs, context=ContextPipeline()
         )
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> "RAGPipeline":
         """Create a RAGPipeline from a configuration dictionary."""
-        cfg = ClassicRagConfig.model_validate(config_dict)
+        cfg = ClassicRagConfig.from_dict(config_dict)
         return cls.from_config(cfg)
 
     @classmethod

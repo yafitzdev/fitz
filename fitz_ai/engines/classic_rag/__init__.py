@@ -1,3 +1,4 @@
+# fitz_ai/engines/classic_rag/__init__.py
 """
 Classic RAG Engine - Retrieval-Augmented Generation implementation.
 
@@ -16,16 +17,13 @@ Examples:
 
     Advanced usage:
     >>> from fitz_ai.engines.classic_rag import ClassicRagEngine
-    >>> from fitz_ai.engines.classic_rag.config.loader import load_config
-    >>> from fitz_ai.core import Query, Constraints
+    >>> from fitz_ai.engines.classic_rag.config import load_config
+    >>> from fitz_ai.core import Query
     >>>
     >>> config = load_config("my_config.yaml")
     >>> engine = ClassicRagEngine(config)
     >>>
-    >>> query = Query(
-    ...     text="Explain entanglement",
-    ...     constraints=Constraints(max_sources=5)
-    ... )
+    >>> query = Query(text="Explain entanglement")
     >>> answer = engine.answer(query)
 """
 

@@ -1,9 +1,6 @@
 # tests/test_meta_config_shape.py
 """
 Test that default.yaml has the correct structure.
-
-Note: The old meta config with presets has been removed.
-This test now verifies the direct config structure.
 """
 
 from fitz_ai.engines.classic_rag.config.loader import DEFAULT_CONFIG_PATH, _load_yaml
@@ -17,7 +14,7 @@ def test_default_yaml_has_correct_structure():
     - chat: Chat/LLM plugin config
     - embedding: Embedding plugin config
     - vector_db: Vector database config
-    - retriever: Retriever config
+    - retrieval: Retrieval config (YAML plugin reference)
 
     Optional:
     - rerank: Reranker config
@@ -30,13 +27,13 @@ def test_default_yaml_has_correct_structure():
     assert "chat" in data, "Missing 'chat' config"
     assert "embedding" in data, "Missing 'embedding' config"
     assert "vector_db" in data, "Missing 'vector_db' config"
-    assert "retriever" in data, "Missing 'retriever' config"
+    assert "retrieval" in data, "Missing 'retrieval' config"
 
     # Plugin configs should have plugin_name
     assert "plugin_name" in data["chat"]
     assert "plugin_name" in data["embedding"]
     assert "plugin_name" in data["vector_db"]
-    assert "plugin_name" in data["retriever"]
+    assert "plugin_name" in data["retrieval"]
 
-    # Retriever should have collection
-    assert "collection" in data["retriever"]
+    # Retrieval should have collection
+    assert "collection" in data["retrieval"]

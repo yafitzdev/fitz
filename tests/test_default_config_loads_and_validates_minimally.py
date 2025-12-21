@@ -24,9 +24,9 @@ def test_default_config_loads_and_validates_base_schema():
     assert cfg.embedding.plugin_name
     assert cfg.vector_db.plugin_name
 
-    # Retriever
-    assert cfg.retriever.plugin_name
-    assert cfg.retriever.collection
+    # Retrieval (YAML plugin reference)
+    assert cfg.retrieval.plugin_name
+    assert cfg.retrieval.collection
 
     # RGS config exists
     assert cfg.rgs is not None

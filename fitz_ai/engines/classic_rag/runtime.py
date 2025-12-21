@@ -4,11 +4,6 @@ Classic RAG Runtime - Canonical entry point for Classic RAG execution.
 
 This module provides the single, stable way to execute Classic RAG queries.
 All other entry points (CLI, API, etc.) should route through this runtime.
-
-Philosophy:
-    - Single source of truth for RAG execution
-    - Clean separation: runtime orchestrates, engine executes
-    - All RAG execution flows through run_classic_rag()
 """
 
 from typing import Any, Dict, Optional
@@ -29,40 +24,21 @@ def run_classic_rag(
     Execute a Classic RAG query.
 
     This is the canonical entry point for all Classic RAG execution.
-    It handles:
-    - Configuration loading (if not provided)
-    - Pipeline initialization
-    - Query execution
-    - Answer conversion to core types
 
     Args:
         query: The question text
-        config: Optional pre-loaded ClassicRagConfig. If not provided, will load
-               from config_path or default location
-        config_path: Optional path to config file. Ignored if config provided
-        constraints: Optional query-time constraints (not yet fully supported)
-        metadata: Optional engine-specific metadata/hints (not yet fully supported)
+        config: Optional pre-loaded ClassicRagConfig
+        config_path: Optional path to config file
+        constraints: Optional query-time constraints
+        metadata: Optional engine-specific metadata
 
     Returns:
         Answer object with generated text and source provenance
-
-    Examples:
-        Simple usage:
-        >>> answer = run_classic_rag("What is quantum computing?")
-        >>> print(answer.text)
-
-        With custom config:
-        >>> config = load_config("my_config.yaml")
-        >>> answer = run_classic_rag("Explain entanglement", config=config)
     """
-    # Load config if not provided
     if config is None:
         config = load_config(config_path)
 
-    # Create RAGPipeline using the from_config factory
     pipeline = RAGPipeline.from_config(config)
-
-    # Run the pipeline - it returns RGSAnswer
     rag_answer = pipeline.run(query)
 
     # Convert to core Answer type
@@ -97,13 +73,6 @@ def create_classic_rag_engine(
 ) -> RAGPipeline:
     """
     Create and return a Classic RAG pipeline instance.
-
-    This is useful when you want to:
-    - Reuse a pipeline across multiple queries (more efficient)
-    - Access pipeline internals
-    - Implement custom execution logic
-
-    For simple one-off queries, use run_classic_rag() instead.
 
     Args:
         config: Optional pre-loaded ClassicRagConfig

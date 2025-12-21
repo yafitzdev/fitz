@@ -1,0 +1,31 @@
+# fitz_ai/engines/classic_rag/retrieval/runtime/plugins/dense_rerank.yaml
+#
+# Dense Retrieval with Reranking and Threshold
+#
+# A more sophisticated retrieval pipeline that includes:
+# - Larger initial candidate pool
+# - Cross-encoder reranking
+# - Score threshold filtering
+# - Deduplication
+
+plugin_name: dense_rerank
+description: "Dense retrieval with reranking, threshold filtering, and deduplication"
+
+steps:
+  - type: vector_search
+    k: 50                      # Large candidate pool
+
+  - type: rerank
+    k: 15                      # Keep top 15 after reranking
+    enabled_if: reranker
+
+  - type: threshold
+    threshold: 0.4             # Filter low-confidence results
+    score_key: rerank_score
+    fallback_key: vector_score
+
+  - type: dedupe                # Remove duplicate content
+
+  - type: limit
+    k: 5
+    use_config: top_k
