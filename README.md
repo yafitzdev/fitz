@@ -3,7 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/fitz-ai.svg)](https://pypi.org/project/fitz-ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.4-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.5-green.svg)](CHANGELOG.md)
 
 ## 🎯 Stable Knowledge Access, Today and Tomorrow
 
