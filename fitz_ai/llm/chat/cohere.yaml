@@ -1,6 +1,6 @@
 # fitz_ai/llm/chat/cohere.yaml
 #
-# Cohere Chat Plugin - v1 Chat API
+# Cohere Chat Plugin - v2 Chat API
 # Documentation: https://docs.cohere.com/reference/chat
 #
 # Available models (as of 2025):
@@ -13,14 +13,14 @@
 # =============================================================================
 plugin_name: "cohere"
 plugin_type: "chat"
-version: "1.0"
+version: "2.0"
 
 # =============================================================================
 # PROVIDER
 # =============================================================================
 provider:
   name: "cohere"
-  base_url: "https://api.cohere.ai/v1"
+  base_url: "https://api.cohere.ai/v2"
 
 # =============================================================================
 # AUTHENTICATION
@@ -54,7 +54,7 @@ endpoint:
 # DEFAULTS
 # =============================================================================
 defaults:
-  model: "command-r-plus-08-2024"
+  model: "command-a-03-2025"
   temperature: 0.2
   max_tokens: null
 

@@ -1,6 +1,6 @@
 # fitz_ai/llm/embedding/cohere.yaml
 #
-# Cohere Embedding Plugin - Embed API
+# Cohere Embedding Plugin - v2 Embed API
 # Documentation: https://docs.cohere.com/reference/embed
 
 # =============================================================================
@@ -8,14 +8,14 @@
 # =============================================================================
 plugin_name: "cohere"
 plugin_type: "embedding"
-version: "1.0"
+version: "2.0"
 
 # =============================================================================
 # PROVIDER
 # =============================================================================
 provider:
   name: "cohere"
-  base_url: "https://api.cohere.ai/v1"
+  base_url: "https://api.cohere.ai/v2"
 
 # =============================================================================
 # AUTHENTICATION
