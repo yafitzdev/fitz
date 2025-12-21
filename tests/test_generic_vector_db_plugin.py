@@ -86,7 +86,7 @@ def mock_httpx_client():
     mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {"result": []}
+    mock_response.json.return_value = {"result": {"points": []}}
     mock_response.raise_for_status = MagicMock()
     mock_client.request.return_value = mock_response
     mock_client.get.return_value = mock_response
@@ -254,11 +254,14 @@ class TestGenericVectorDBPlugin:
         # Setup mock
         mock_response = MagicMock()
         mock_response.status_code = 200
+        # FIX: Qdrant 1.0+ /points/query returns {"result": {"points": [...]}}
         mock_response.json.return_value = {
-            "result": [
-                {"id": "abc-123", "score": 0.95, "payload": {"text": "hello"}},
-                {"id": "def-456", "score": 0.87, "payload": {"text": "world"}},
-            ]
+            "result": {
+                "points": [
+                    {"id": "abc-123", "score": 0.95, "payload": {"text": "hello"}},
+                    {"id": "def-456", "score": 0.87, "payload": {"text": "world"}},
+                ]
+            }
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -523,10 +526,13 @@ class TestFullWorkflow:
 
         search_response = MagicMock()
         search_response.status_code = 200
+        # FIX: Qdrant 1.0+ /points/query returns {"result": {"points": [...]}}
         search_response.json.return_value = {
-            "result": [
-                {"id": "doc1", "score": 0.95, "payload": {"text": "result 1"}},
-            ]
+            "result": {
+                "points": [
+                    {"id": "doc1", "score": 0.95, "payload": {"text": "result 1"}},
+                ]
+            }
         }
         search_response.raise_for_status = MagicMock()
 
