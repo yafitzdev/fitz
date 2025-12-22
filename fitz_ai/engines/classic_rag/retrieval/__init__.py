@@ -1,44 +1,55 @@
 # fitz_ai/engines/classic_rag/retrieval/__init__.py
 """
-Retrieval Runtime - YAML-based plugin system.
+Retrieval subsystem for Classic RAG.
 
-The retrieval system uses YAML files to define retrieval pipelines
-that orchestrate standard Python step classes.
+Provides YAML-based retrieval plugins with composable step pipelines.
 
 Usage:
-    from fitz_ai.engines.classic_rag.retrieval.runtime import (
+    from fitz_ai.engines.classic_rag.retrieval import (
         get_retrieval_plugin,
         available_retrieval_plugins,
     )
 
-    pipeline = get_retrieval_plugin(
-        plugin_name="dense",
-        vector_client=my_client,
-        embedder=my_embedder,
-        collection="my_docs",
+    # Or import steps directly
+    from fitz_ai.engines.classic_rag.retrieval.steps import (
+        VectorSearchStep,
+        RerankStep,
+        ThresholdStep,
+        LimitStep,
+        DedupeStep,
     )
-
-    chunks = pipeline.retrieve("my query")
 """
 
-from fitz_ai.engines.classic_rag.retrieval.registry import (
-    PluginNotFoundError,
-    available_retrieval_plugins,
-    get_retrieval_plugin,
+# Re-export step classes for convenience
+from .steps import (
+    STEP_REGISTRY,
+    DedupeStep,
+    Embedder,
+    LimitStep,
+    Reranker,
+    RerankStep,
+    RetrievalStep,
+    ThresholdStep,
+    VectorClient,
+    VectorSearchStep,
+    get_step_class,
+    list_available_steps,
 )
 
 __all__ = [
-    # Main API
-    "get_retrieval_plugin",
-    "available_retrieval_plugins",
-    "create_retrieval_pipeline",
-    # Types
-    "RetrievalPipelineFromYaml",
-    "RetrievalDependencies",
-    "RetrievalPluginSpec",
-    # Utilities
-    "list_available_plugins",
-    "load_plugin_spec",
-    # Errors
-    "PluginNotFoundError",
+    # Step classes
+    "RetrievalStep",
+    "VectorSearchStep",
+    "RerankStep",
+    "ThresholdStep",
+    "LimitStep",
+    "DedupeStep",
+    # Protocols
+    "VectorClient",
+    "Embedder",
+    "Reranker",
+    # Registry
+    "STEP_REGISTRY",
+    "get_step_class",
+    "list_available_steps",
 ]

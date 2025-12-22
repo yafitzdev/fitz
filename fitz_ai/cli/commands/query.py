@@ -20,7 +20,7 @@ from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
 from fitz_ai.engines.classic_rag.pipeline.engine import RAGPipeline
-from fitz_ai.engines.classic_rag.retrieval.runtime import available_retrieval_plugins
+from fitz_ai.engines.classic_rag.retrieval import available_retrieval_plugins
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.vector_db.registry import get_vector_db_plugin
 
