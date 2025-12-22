@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Sequence
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.logging.tags import PIPELINE
 
-from fitz_ai.engines.classic_rag.constraints.base import ConstraintResult
+from ..base import ConstraintResult
 
 if TYPE_CHECKING:
     from fitz_ai.engines.classic_rag.models.chunk import Chunk
@@ -208,6 +208,7 @@ class ConflictAwareConstraint:
 
         return ConstraintResult.deny(
             reason=reason,
+            signal="disputed",
             conflicts=conflicts,
             conflict_count=len(conflicts),
         )

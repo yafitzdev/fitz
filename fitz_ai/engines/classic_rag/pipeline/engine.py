@@ -2,24 +2,29 @@
 """
 RAGPipeline - Core orchestration for retrieval-augmented generation.
 
-Flow: retrieval → constraints → context-processing → rgs → llm → answer
+Flow: retrieval → constraints → answer_mode → context-processing → rgs → llm → answer
 """
 
 from __future__ import annotations
 
 from typing import Sequence
 
+from fitz_ai.core.answer_mode import AnswerMode
+from fitz_ai.core.answer_mode_resolver import resolve_answer_mode
 from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
 from fitz_ai.engines.classic_rag.constraints import (
-    ConflictAwareConstraint,
     ConstraintPlugin,
     ConstraintResult,
     apply_constraints,
+    get_default_constraints,
 )
 from fitz_ai.engines.classic_rag.exceptions import (
     LLMError,
     PipelineError,
     RGSGenerationError,
+)
+from fitz_ai.engines.classic_rag.generation.answer_mode_instructions import (
+    get_mode_instruction,
 )
 from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import (
     RGS,
@@ -36,31 +41,6 @@ from fitz_ai.logging.tags import PIPELINE, VECTOR_DB
 from fitz_ai.vector_db.registry import get_vector_db_plugin
 
 logger = get_logger(__name__)
-
-
-# =============================================================================
-# Constrained Answer Handling
-# =============================================================================
-
-CONSTRAINED_SYSTEM_SUFFIX = """
-
-IMPORTANT: The retrieved sources contain conflicting information.
-You MUST:
-- Acknowledge the disagreement explicitly
-- Present BOTH/ALL perspectives found in the sources
-- Use epistemic language ("sources disagree", "some documents state X while others state Y")
-- Do NOT assert a single authoritative conclusion
-- Do NOT pick a side unless the user explicitly asks you to resolve the conflict
-"""
-
-
-def _build_constrained_prompt_suffix(constraint_result: ConstraintResult) -> str:
-    """Build a prompt suffix that instructs LLM to handle conflicts."""
-    if constraint_result.allow_decisive_answer:
-        return ""
-
-    reason = constraint_result.reason or "conflicting information detected"
-    return f"\n\nNote: {reason}. Present all perspectives without choosing one."
 
 
 # =============================================================================
@@ -88,10 +68,10 @@ class RAGPipeline:
         self.rgs = rgs
         self.context = context or ContextPipeline()
 
-        # Default constraint: ConflictAwareConstraint
+        # Default constraints: ConflictAware + InsufficientEvidence
         # Users can override by passing constraints=[] to disable
         if constraints is None:
-            self.constraints: list[ConstraintPlugin] = [ConflictAwareConstraint()]
+            self.constraints: list[ConstraintPlugin] = get_default_constraints()
         else:
             self.constraints = list(constraints)
 
@@ -111,29 +91,29 @@ class RAGPipeline:
             logger.error(f"{PIPELINE} Retrieval failed: {exc}")
             raise PipelineError("Retrieval failed") from exc
 
-        # Step 2: Apply constraints (NEW)
-        constraint_result = apply_constraints(query, raw_chunks, self.constraints)
+        # Step 2: Apply constraints
+        constraint_results = self._apply_all_constraints(query, raw_chunks)
 
-        # Step 3: Process context (dedupe, group, merge, pack)
+        # Step 3: Resolve answer mode from constraint signals
+        answer_mode = resolve_answer_mode(constraint_results)
+        logger.info(f"{PIPELINE} Answer mode resolved: {answer_mode.value}")
+
+        # Step 4: Process context (dedupe, group, merge, pack)
         try:
             chunks = self.context.process(raw_chunks)
         except Exception as exc:
             logger.error(f"{PIPELINE} Context processing failed: {exc}")
             raise PipelineError("Context processing failed") from exc
 
-        # Step 4: Build RGS prompt (modified if constraints deny)
+        # Step 5: Build RGS prompt with answer mode instruction
         try:
             prompt = self.rgs.build_prompt(query, chunks)
-
-            # If constraints deny decisive answer, modify system prompt
-            if not constraint_result.allow_decisive_answer:
-                prompt = self._apply_constraint_to_prompt(prompt, constraint_result)
-
+            prompt = self._apply_answer_mode_to_prompt(prompt, answer_mode)
         except Exception as exc:
             logger.error(f"{PIPELINE} Failed to build RGS prompt: {exc}")
             raise RGSGenerationError("Failed to build RGS prompt") from exc
 
-        # Step 5: Generate answer via LLM
+        # Step 6: Generate answer via LLM
         messages = [
             {"role": "system", "content": prompt.system},
             {"role": "user", "content": prompt.user},
@@ -145,46 +125,49 @@ class RAGPipeline:
             logger.error(f"{PIPELINE} LLM chat failed: {exc}")
             raise LLMError("LLM chat operation failed") from exc
 
-        # Step 6: Structure the answer
+        # Step 7: Structure the answer with mode
         try:
-            answer = self.rgs.build_answer(raw, chunks)
-
-            # Add constraint metadata to answer
-            if not constraint_result.allow_decisive_answer:
-                answer = self._add_constraint_metadata(answer, constraint_result)
-
-            logger.info(f"{PIPELINE} Pipeline run completed")
+            answer = self.rgs.build_answer(raw, chunks, mode=answer_mode)
+            logger.info(f"{PIPELINE} Pipeline run completed (mode={answer_mode.value})")
             return answer
         except Exception as exc:
             logger.error(f"{PIPELINE} Failed to structure RGS answer: {exc}")
             raise RGSGenerationError("Failed to build RGS answer") from exc
 
-    def _apply_constraint_to_prompt(
+    def _apply_all_constraints(
         self,
-        prompt,
-        constraint_result: ConstraintResult,
-    ):
-        """Modify prompt to handle constrained answers."""
+        query: str,
+        chunks,
+    ) -> list[ConstraintResult]:
+        """Apply all constraints and return individual results."""
+        results: list[ConstraintResult] = []
+
+        for constraint in self.constraints:
+            try:
+                result = constraint.apply(query, chunks)
+                results.append(result)
+            except Exception as e:
+                logger.warning(
+                    f"{PIPELINE} Constraint '{constraint.name}' raised exception: {e}"
+                )
+                # Fail-safe: continue without this constraint's result
+                continue
+
+        return results
+
+    def _apply_answer_mode_to_prompt(self, prompt, answer_mode: AnswerMode):
+        """Prepend answer mode instruction to system prompt."""
         from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import (
             RGSPrompt,
         )
 
-        modified_system = prompt.system + CONSTRAINED_SYSTEM_SUFFIX
+        instruction = get_mode_instruction(answer_mode)
+        modified_system = f"{instruction}\n\n{prompt.system}"
 
         return RGSPrompt(
             system=modified_system,
             user=prompt.user,
         )
-
-    def _add_constraint_metadata(
-        self,
-        answer: RGSAnswer,
-        constraint_result: ConstraintResult,
-    ) -> RGSAnswer:
-        """Add constraint information to answer metadata."""
-        # RGSAnswer doesn't have metadata field, so we return as-is
-        # In a future iteration, this could be added to a wrapper type
-        return answer
 
     @classmethod
     def from_config(

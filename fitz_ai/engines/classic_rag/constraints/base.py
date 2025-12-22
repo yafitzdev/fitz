@@ -22,11 +22,13 @@ class ConstraintResult:
     Attributes:
         allow_decisive_answer: If False, generation must avoid authoritative conclusions
         reason: Human-readable explanation (shown to user if answer is constrained)
+        signal: Epistemic signal for AnswerMode resolution (e.g., "disputed", "abstain")
         metadata: Additional constraint-specific data for debugging/logging
     """
 
     allow_decisive_answer: bool
     reason: str | None = None
+    signal: str | None = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -35,9 +37,14 @@ class ConstraintResult:
         return cls(allow_decisive_answer=True)
 
     @classmethod
-    def deny(cls, reason: str, **metadata: Any) -> "ConstraintResult":
+    def deny(cls, reason: str, signal: str | None = None, **metadata: Any) -> "ConstraintResult":
         """Factory for denying decisive answers."""
-        return cls(allow_decisive_answer=False, reason=reason, metadata=metadata)
+        return cls(
+            allow_decisive_answer=False,
+            reason=reason,
+            signal=signal,
+            metadata=metadata,
+        )
 
 
 @runtime_checkable

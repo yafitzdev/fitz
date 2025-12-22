@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Sequence
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.logging.tags import PIPELINE
 
-from fitz_ai.engines.classic_rag.constraints.base import ConstraintResult
+from ..base import ConstraintResult
 
 if TYPE_CHECKING:
     from fitz_ai.engines.classic_rag.models.chunk import Chunk
@@ -242,6 +242,7 @@ class InsufficientEvidenceConstraint:
             logger.info(f"{PIPELINE} InsufficientEvidenceConstraint: no chunks retrieved")
             return ConstraintResult.deny(
                 reason="No evidence retrieved",
+                signal="abstain",
                 evidence_count=0,
             )
 
@@ -265,6 +266,7 @@ class InsufficientEvidenceConstraint:
                 )
                 return ConstraintResult.deny(
                     reason="No explicit causal evidence found",
+                    signal="abstain",
                     evidence_count=evidence_count,
                     query_type="causal",
                 )
@@ -281,6 +283,7 @@ class InsufficientEvidenceConstraint:
                 )
                 return ConstraintResult.deny(
                     reason="No direct assertion found in retrieved evidence",
+                    signal="abstain",
                     evidence_count=evidence_count,
                     query_type="fact",
                 )

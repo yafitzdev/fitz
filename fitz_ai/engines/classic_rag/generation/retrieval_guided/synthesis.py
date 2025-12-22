@@ -6,12 +6,15 @@ Retrieval-Guided Synthesis (RGS) - Generates grounded answers from retrieved chu
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Union
 
 from fitz_ai.engines.classic_rag.exceptions import PipelineError, RGSGenerationError
 from fitz_ai.engines.classic_rag.generation.prompting.assembler import PromptAssembler
 from fitz_ai.engines.classic_rag.generation.prompting.profiles import PromptProfile
 from fitz_ai.engines.classic_rag.generation.prompting.slots import PromptSlots
+
+if TYPE_CHECKING:
+    from fitz_ai.core.answer_mode import AnswerMode
 
 
 @dataclass
@@ -55,6 +58,13 @@ class RGSAnswer:
 
     answer: str
     sources: List[RGSSourceRef] = field(default_factory=list)
+    mode: Optional["AnswerMode"] = None
+    """
+    Epistemic posture of the answer.
+
+    Set by the pipeline based on constraint evaluation.
+    None if constraints were not applied.
+    """
 
 
 # Type alias for chunk-like inputs
@@ -86,7 +96,12 @@ class RGS:
         except Exception as e:
             raise RGSGenerationError("Failed to build RGS prompt") from e
 
-    def build_answer(self, raw_answer: str, chunks: Sequence[ChunkInput]) -> RGSAnswer:
+    def build_answer(
+            self,
+            raw_answer: str,
+            chunks: Sequence[ChunkInput],
+            mode: Optional["AnswerMode"] = None,
+    ) -> RGSAnswer:
         """Structure raw LLM output into RGSAnswer with source references."""
         try:
             limited = self._limit_chunks(chunks)
@@ -109,7 +124,7 @@ class RGS:
                     )
                 )
 
-            return RGSAnswer(answer=raw_answer, sources=sources)
+            return RGSAnswer(answer=raw_answer, sources=sources, mode=mode)
         except Exception as e:
             raise PipelineError("Failed to build RGS answer") from e
 

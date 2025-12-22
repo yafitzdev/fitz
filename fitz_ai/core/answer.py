@@ -1,3 +1,4 @@
+# fitz_ai/core/answer.py
 """
 Answer - Paradigm-agnostic answer representation.
 
@@ -5,9 +6,12 @@ An Answer encapsulates the response from a knowledge engine.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from .provenance import Provenance
+
+if TYPE_CHECKING:
+    from fitz_ai.core.answer_mode import AnswerMode
 
 
 @dataclass
@@ -18,6 +22,7 @@ class Answer:
     An answer contains:
     - text: The answer text
     - provenance: List of sources used to generate the answer
+    - mode: Epistemic posture of the answer (CONFIDENT, QUALIFIED, DISPUTED, ABSTAIN)
     - metadata: Engine-specific metadata about how the answer was generated
 
     Examples:
@@ -32,6 +37,13 @@ class Answer:
         >>> answer = Answer(
         ...     text="Quantum computing uses qubits which can exist in superposition...",
         ...     provenance=provenance
+        ... )
+
+        Answer with mode:
+        >>> from fitz_ai.core.answer_mode import AnswerMode
+        >>> answer = Answer(
+        ...     text="Sources disagree on this classification...",
+        ...     mode=AnswerMode.DISPUTED
         ... )
 
         Answer with engine metadata:
@@ -58,6 +70,20 @@ class Answer:
     - Classic RAG: chunks retrieved from vector DB
     - CLaRa: documents consulted during reasoning
     - Future engines: whatever makes sense for their paradigm
+    """
+
+    mode: Optional["AnswerMode"] = None
+    """
+    Epistemic posture of the answer.
+
+    Indicates how certain the answer should be interpreted:
+    - CONFIDENT: Evidence clearly supports this answer
+    - QUALIFIED: Answer has noted uncertainty or limitations
+    - DISPUTED: Sources disagree; answer presents multiple perspectives
+    - ABSTAIN: Insufficient evidence to answer definitively
+
+    If None, no epistemic assessment was performed (e.g., engine doesn't
+    support constraints, or constraints were disabled).
     """
 
     metadata: Dict[str, Any] = field(default_factory=dict)
