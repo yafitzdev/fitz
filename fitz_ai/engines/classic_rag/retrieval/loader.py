@@ -1,11 +1,11 @@
-# fitz_ai/engines/classic_rag/retrieval/runtime/loader.py
+# fitz_ai/engines/classic_rag/retrieval/loader.py
 """
 YAML-based Retrieval Plugin Loader.
 
 Loads retrieval plugin definitions from YAML files and builds
 executable pipelines using the standard step classes.
 
-Plugin YAML files live in: fitz_ai/engines/classic_rag/retrieval/runtime/plugins/*.yaml
+Plugin YAML files live in: fitz_ai/engines/classic_rag/retrieval/plugins/*.yaml
 """
 
 from __future__ import annotations

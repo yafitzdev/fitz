@@ -20,6 +20,15 @@ Usage:
     )
 """
 
+# Re-export registry functions
+from .registry import (
+    PluginNotFoundError,
+    RetrievalDependencies,
+    RetrievalPipelineFromYaml,
+    available_retrieval_plugins,
+    get_retrieval_plugin,
+)
+
 # Re-export step classes for convenience
 from .steps import (
     STEP_REGISTRY,
@@ -37,6 +46,12 @@ from .steps import (
 )
 
 __all__ = [
+    # Registry functions
+    "get_retrieval_plugin",
+    "available_retrieval_plugins",
+    "PluginNotFoundError",
+    "RetrievalPipelineFromYaml",
+    "RetrievalDependencies",
     # Step classes
     "RetrievalStep",
     "VectorSearchStep",

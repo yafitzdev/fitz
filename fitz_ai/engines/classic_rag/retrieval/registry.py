@@ -1,4 +1,4 @@
-# fitz_ai/engines/classic_rag/retrieval/runtime/registry.py
+# fitz_ai/engines/classic_rag/retrieval/registry.py
 """
 Retrieval Plugin Registry (YAML-based).
 

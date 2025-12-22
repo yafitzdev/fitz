@@ -1,4 +1,4 @@
-# fitz_ai/engines/classic_rag/retrieval/runtime/plugins/__init__.py
+# fitz_ai/engines/classic_rag/retrieval/plugins/__init__.py
 """
 YAML-based retrieval plugins.
 

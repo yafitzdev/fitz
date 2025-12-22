@@ -19,7 +19,7 @@ from fitz_ai.core.detect import detect_all
 from fitz_ai.llm.loader import load_plugin
 from fitz_ai.llm.registry import available_llm_plugins
 from fitz_ai.vector_db.registry import available_vector_db_plugins
-from fitz_ai.engines.classic_rag.retrieval.runtime import available_retrieval_plugins
+from fitz_ai.engines.classic_rag.retrieval import available_retrieval_plugins
 
 # =============================================================================
 # Helpers
