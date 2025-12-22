@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Sequence
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.logging.tags import PIPELINE
 
-from .base import ConstraintResult
+from fitz_ai.engines.classic_rag.constraints.base import ConstraintResult
 
 if TYPE_CHECKING:
     from fitz_ai.engines.classic_rag.models.chunk import Chunk
