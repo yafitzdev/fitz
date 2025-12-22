@@ -1,4 +1,4 @@
-# fitz_ai/engines/classic_rag/generation/answer_mode_instructions.py
+# fitz_ai/engines/classic_rag/generation/instructions.py
 """
 Answer Mode Instructions - Maps AnswerMode to synthesis instructions.
 

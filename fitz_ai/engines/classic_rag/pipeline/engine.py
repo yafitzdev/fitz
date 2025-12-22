@@ -23,7 +23,7 @@ from fitz_ai.engines.classic_rag.exceptions import (
     PipelineError,
     RGSGenerationError,
 )
-from fitz_ai.engines.classic_rag.generation.answer_mode_instructions import (
+from fitz_ai.engines.classic_rag.generation.answer_mode.instructions import (
     get_mode_instruction,
 )
 from fitz_ai.engines.classic_rag.generation.retrieval_guided.synthesis import (
