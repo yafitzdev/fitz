@@ -234,7 +234,7 @@ def command(
     # Initialize components
     # =========================================================================
 
-    ui.step(1, 4, "Initializing...")
+    ui.step(1, 3, "Initializing...")
 
     try:
         # State manager
@@ -269,7 +269,7 @@ def command(
     # Run diff ingestion
     # =========================================================================
 
-    ui.step(2, 4, "Scanning files...")
+    ui.step(2, 3, "Scanning files...")
 
     try:
         summary = run_diff_ingest(
@@ -292,7 +292,7 @@ def command(
     # Summary
     # =========================================================================
 
-    ui.step(4, 4, "Complete!")
+    ui.step(3, 3, "Complete!")
     print()
 
     if RICH:
