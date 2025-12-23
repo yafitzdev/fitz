@@ -130,13 +130,28 @@ class UI:
         else:
             print(msg)
 
-    def header(self, title: str) -> None:
-        """Print a command header."""
+    def header(self, title: str, subtitle: str = "") -> None:
+        """
+        Print a command header.
+
+        Creates a fitted box (minimal width) around the title for consistency
+        across all CLI commands.
+
+        Args:
+            title: Main header title
+            subtitle: Optional subtitle (dim text below title)
+        """
         if RICH:
-            console.print(Panel.fit(f"[bold]{title}[/bold]", border_style="blue"))
+            if subtitle:
+                content = f"[bold]{title}[/bold]\n[dim]{subtitle}[/dim]"
+            else:
+                content = f"[bold]{title}[/bold]"
+            console.print(Panel.fit(content, border_style="blue"))
         else:
             print(f"\n{'=' * 50}")
             print(title)
+            if subtitle:
+                print(subtitle)
             print("=" * 50)
 
     def section(self, title: str) -> None:
@@ -197,7 +212,16 @@ class UI:
             print(f"  {icon} {name}{detail_str}")
 
     def panel(self, content: str, title: str = "", style: str = "blue") -> None:
-        """Print content in a panel."""
+        """
+        Print content in a panel (full-width).
+
+        For fitted/minimal boxes, use header() instead.
+
+        Args:
+            content: Panel content
+            title: Optional panel title
+            style: Border style color
+        """
         if RICH:
             console.print(Panel(content, title=title, border_style=style))
         else:
@@ -206,6 +230,26 @@ class UI:
             print(content)
             if title:
                 print("-" * (len(title) + 8))
+
+    def summary_panel(self, content: str, title: str = "", style: str = "green") -> None:
+        """
+        Print a summary panel (full-width, typically at end of command).
+
+        Args:
+            content: Panel content
+            title: Panel title
+            style: Border style color
+        """
+        if RICH:
+            console.print(Panel(content, title=title, border_style=style))
+        else:
+            width = 60
+            print("=" * width)
+            if title:
+                print(f" {title}")
+                print("=" * width)
+            print(content)
+            print("=" * width)
 
     def rule(self, title: str = "") -> None:
         """Print a horizontal rule."""
@@ -224,51 +268,55 @@ class UI:
     def prompt_text(self, prompt: str, default: str = "") -> str:
         """Prompt for text input."""
         if RICH:
-            if default:
-                return Prompt.ask(prompt, default=default)
-            else:
-                return Prompt.ask(prompt)
+            return Prompt.ask(prompt, default=default)
         else:
-            if default:
-                response = input(f"{prompt} [{default}]: ").strip()
-                return response if response else default
-            else:
-                return input(f"{prompt}: ").strip()
+            response = input(f"{prompt} ({default}): ").strip()
+            return response if response else default
 
-    def prompt_int(self, prompt: str, default: int) -> int:
+    def prompt_int(self, prompt: str, default: int = 0) -> int:
         """Prompt for integer input."""
         if RICH:
             return IntPrompt.ask(prompt, default=default)
         else:
-            while True:
-                response = input(f"{prompt} [{default}]: ").strip()
-                if not response:
-                    return default
-                try:
-                    return int(response)
-                except ValueError:
-                    print("Please enter a valid number.")
+            response = input(f"{prompt} ({default}): ").strip()
+            try:
+                return int(response) if response else default
+            except ValueError:
+                return default
 
-    def prompt_choice(self, prompt: str, choices: list[str], default: str = "") -> str:
-        """
-        Prompt for choice from list (simple inline format).
-
-        For a better UX with numbered selection, use prompt_numbered_choice().
-        """
-        if not default and choices:
-            default = choices[0]
-
+    def prompt_confirm(self, prompt: str, default: bool = True) -> bool:
+        """Prompt for yes/no confirmation."""
         if RICH:
-            return Prompt.ask(prompt, choices=choices, default=default)
+            return Confirm.ask(prompt, default=default)
         else:
-            choices_str = "/".join(choices)
-            while True:
-                response = input(f"{prompt} [{choices_str}] ({default}): ").strip()
-                if not response:
-                    return default
-                if response in choices:
-                    return response
-                print(f"Choose from: {', '.join(choices)}")
+            yn = "Y/n" if default else "y/N"
+            response = input(f"{prompt} [{yn}]: ").strip().lower()
+            if not response:
+                return default
+            return response in ("y", "yes")
+
+    def prompt_path(
+            self,
+            prompt: str,
+            default: str = ".",
+            must_exist: bool = True,
+    ) -> Path:
+        """Prompt for a path with optional validation."""
+        while True:
+            if RICH:
+                path_str = Prompt.ask(prompt, default=default)
+            else:
+                response = input(f"{prompt} [{default}]: ").strip()
+                path_str = response if response else default
+
+            path = Path(path_str).expanduser().resolve()
+
+            if not must_exist or path.exists():
+                return path
+            else:
+                self.error(f"Path does not exist: {path}")
+                if not self.prompt_confirm("Try again?", default=True):
+                    raise typer.Exit(1)
 
     def prompt_numbered_choice(
             self,
@@ -277,7 +325,7 @@ class UI:
             default: str = "",
     ) -> str:
         """
-        Prompt user to select from numbered choices.
+        Prompt for a numbered choice selection.
 
         The default option is always shown at position [1].
 
@@ -289,12 +337,12 @@ class UI:
             → cohere
 
         Args:
-            prompt: The prompt text to display
-            choices: List of choices to select from
+            prompt: Prompt text
+            choices: List of choices
             default: Default choice (will be shown first)
 
         Returns:
-            The selected choice
+            Selected choice string
         """
         if not choices:
             return default
@@ -348,40 +396,6 @@ class UI:
                     console.print("  [red]Please enter a number[/red]")
                 else:
                     print("  Please enter a number")
-
-    def prompt_confirm(self, prompt: str, default: bool = True) -> bool:
-        """Prompt for yes/no confirmation."""
-        if RICH:
-            return Confirm.ask(prompt, default=default)
-        else:
-            yn = "Y/n" if default else "y/N"
-            response = input(f"{prompt} [{yn}]: ").strip().lower()
-            if not response:
-                return default
-            return response in ("y", "yes")
-
-    def prompt_path(
-            self,
-            prompt: str,
-            default: str = ".",
-            must_exist: bool = True,
-    ) -> Path:
-        """Prompt for a path with optional validation."""
-        while True:
-            if RICH:
-                path_str = Prompt.ask(prompt, default=default)
-            else:
-                response = input(f"{prompt} [{default}]: ").strip()
-                path_str = response if response else default
-
-            path = Path(path_str).expanduser().resolve()
-
-            if not must_exist or path.exists():
-                return path
-            else:
-                self.error(f"Path does not exist: {path}")
-                if not self.prompt_confirm("Try again?", default=True):
-                    raise typer.Exit(1)
 
     # -------------------------------------------------------------------------
     # Table Methods

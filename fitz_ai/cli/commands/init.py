@@ -165,9 +165,9 @@ vector_db:
 
 # Retrieval (YAML-based plugin)
 # The plugin defines the retrieval pipeline steps.
-# Collection is set per-query or during ingestion.
 retrieval:
   plugin_name: {retrieval}
+  collection: default
   top_k: 5
 {rerank_section}
 # RGS (Retrieval-Guided Synthesis)
@@ -215,15 +215,10 @@ def command(
     from fitz_ai.core.paths import FitzPaths
 
     # =========================================================================
-    # Header
+    # Header (uses ui.header for consistent fitted box styling)
     # =========================================================================
 
-    ui.panel(
-        "[bold]Fitz Setup Wizard[/bold]\n[dim]Let's configure your RAG pipeline[/dim]"
-        if RICH
-        else "Fitz Setup Wizard\nLet's configure your RAG pipeline",
-        style="blue",
-    )
+    ui.header("Fitz Init", "Let's configure your RAG pipeline")
 
     # =========================================================================
     # Detect System
@@ -278,21 +273,20 @@ def command(
 
     if not avail_embedding:
         ui.error("No embedding plugins available!")
+        ui.info("Set an API key (COHERE_API_KEY, OPENAI_API_KEY) or start Ollama.")
         raise typer.Exit(1)
 
     if not avail_vector_db:
         ui.error("No vector database available!")
-        ui.info("Install FAISS (pip install faiss-cpu) or start Qdrant.")
+        ui.info("Start Qdrant or install FAISS (pip install faiss-cpu).")
         raise typer.Exit(1)
 
     # =========================================================================
-    # User Selection
+    # Select Plugins
     # =========================================================================
 
-    ui.section("Configuration")
-
     if non_interactive:
-        # Use best available for each (prefer non-local options)
+        # Auto-select best defaults
         chat_choice = get_preferred_default(avail_chat)
         chat_model = _get_default_model("chat", chat_choice)
         embedding_choice = get_preferred_default(avail_embedding)
@@ -300,60 +294,44 @@ def command(
         vector_db_choice = get_preferred_default(avail_vector_db)
         retrieval_choice = get_preferred_default(avail_retrieval, "dense")
         rerank_choice = get_preferred_default(avail_rerank) if avail_rerank else None
-        rerank_model = (
-            _get_default_model("rerank", rerank_choice) if rerank_choice else ""
-        )
+        rerank_model = _get_default_model("rerank", rerank_choice) if rerank_choice else ""
 
-        ui.info(f"Chat: {chat_choice}" + (f" ({chat_model})" if chat_model else ""))
-        ui.info(
-            f"Embedding: {embedding_choice}"
-            + (f" ({embedding_model})" if embedding_model else "")
-        )
-        ui.info(f"Vector DB: {vector_db_choice}")
-        ui.info(f"Retrieval: {retrieval_choice}")
-        ui.info(
-            f"Rerank: {rerank_choice or 'not available'}"
-            + (f" ({rerank_model})" if rerank_model else "")
-        )
     else:
-        # Interactive selection with numbered choices
+        # Interactive selection
+        ui.section("Configuration")
 
-        # Chat plugin + model
+        # Chat
         chat_choice = ui.prompt_numbered_choice(
             "Chat plugin", avail_chat, get_preferred_default(avail_chat)
         )
         chat_model = _prompt_model("chat", chat_choice)
 
-        print()  # Spacing between sections
-
-        # Embedding plugin + model
+        # Embedding
+        print()
         embedding_choice = ui.prompt_numbered_choice(
             "Embedding plugin", avail_embedding, get_preferred_default(avail_embedding)
         )
         embedding_model = _prompt_model("embedding", embedding_choice)
 
-        print()
-
         # Vector DB
+        print()
         vector_db_choice = ui.prompt_numbered_choice(
             "Vector database", avail_vector_db, get_preferred_default(avail_vector_db)
         )
 
+        # Retrieval
         print()
-
-        # Retrieval plugin
         retrieval_choice = ui.prompt_numbered_choice(
-            "Retrieval plugin", avail_retrieval, get_preferred_default(avail_retrieval, "dense")
+            "Retrieval strategy", avail_retrieval, get_preferred_default(avail_retrieval, "dense")
         )
 
-        print()
-
-        # Rerank configuration
-        # The retrieval plugin controls whether reranking is used (via enabled_if).
+        # Rerank (optional)
+        # Note: Reranking is controlled by the retrieval plugin via `enabled_if: reranker`.
         # We just configure which reranker service is available.
         rerank_choice = None
         rerank_model = ""
         if avail_rerank:
+            print()
             rerank_choice = ui.prompt_numbered_choice(
                 "Rerank plugin", avail_rerank, get_preferred_default(avail_rerank)
             )
