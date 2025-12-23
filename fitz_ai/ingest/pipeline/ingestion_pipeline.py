@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fitz_ai.ingest.chunking.engine import ChunkingEngine
-from fitz_ai.ingest.config.schema import IngestConfig
+from fitz_ai.engines.classic_rag.config import IngestConfig
 from fitz_ai.ingest.ingestion.engine import IngestionEngine
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.logging.tags import PIPELINE

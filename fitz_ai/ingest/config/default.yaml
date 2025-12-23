@@ -1,9 +1,0 @@
-ingester:
-  plugin_name: local
-  options: {}
-
-chunker:
-  plugin_name: simple
-  options: {}
-
-collection: default_collection

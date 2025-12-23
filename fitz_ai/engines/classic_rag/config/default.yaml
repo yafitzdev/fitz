@@ -65,3 +65,22 @@ rgs:
 # =============================================================================
 logging:
   level: INFO
+
+# =============================================================================
+# Ingestion (document processing pipeline)
+# =============================================================================
+ingest:
+  ingester:
+    plugin_name: local
+    kwargs: {}
+
+  chunking:
+    default:
+      plugin_name: simple
+      kwargs:
+        chunk_size: 1000
+        chunk_overlap: 0
+    by_extension: {}
+    warn_on_fallback: true
+
+  collection: default

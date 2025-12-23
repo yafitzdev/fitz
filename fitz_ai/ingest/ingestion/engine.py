@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable
 
-from fitz_ai.ingest.config.schema import IngestConfig
+from fitz_ai.engines.classic_rag.config import IngestConfig
 from fitz_ai.ingest.exceptions.config import IngestionConfigError
 from fitz_ai.ingest.ingestion.base import IngestPlugin, RawDocument
 from fitz_ai.ingest.ingestion.registry import get_ingest_plugin

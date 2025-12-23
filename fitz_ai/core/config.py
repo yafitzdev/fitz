@@ -280,7 +280,7 @@ def _detect_schema(data: Dict[str, Any], config_type: Optional[str]) -> Optional
         return ClassicRagConfig
 
     if config_type == "ingest":
-        from fitz_ai.ingest.config.schema import IngestConfig
+        from fitz_ai.engines.classic_rag.config import IngestConfig
 
         return IngestConfig
 
@@ -290,8 +290,8 @@ def _detect_schema(data: Dict[str, Any], config_type: Optional[str]) -> Optional
         return ClaraConfig
 
     # Auto-detect from content (lazy imports to avoid architecture violations)
-    if "ingester" in data and "chunker" in data:
-        from fitz_ai.ingest.config.schema import IngestConfig
+    if "ingester" in data and "chunking" in data:
+        from fitz_ai.engines.classic_rag.config import IngestConfig
 
         return IngestConfig
 
@@ -361,8 +361,7 @@ def load_ingest_config(path: Union[str, Path]):
 
     Convenience wrapper for load_config(path, config_type="ingest").
     """
-    # Lazy import to avoid architecture violation
-    from fitz_ai.ingest.config.schema import IngestConfig
+    from fitz_ai.engines.classic_rag.config import IngestConfig
 
     return load_config(path, schema=IngestConfig, config_type="ingest")
 

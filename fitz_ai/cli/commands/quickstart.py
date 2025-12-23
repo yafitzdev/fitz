@@ -351,7 +351,7 @@ def _run_ingestion(
     """
     from fitz_ai.core.config import load_config_dict
     from fitz_ai.ingest.chunking.engine import ChunkingEngine
-    from fitz_ai.ingest.config.schema import ChunkerConfig
+    from fitz_ai.engines.classic_rag.config import ChunkingRouterConfig, ExtensionChunkerConfig
     from fitz_ai.ingest.ingestion.engine import IngestionEngine
     from fitz_ai.ingest.ingestion.registry import get_ingest_plugin
     from fitz_ai.llm.registry import get_llm_plugin
@@ -386,11 +386,13 @@ def _run_ingestion(
         ui.info("Chunking documents...")
 
     # Simple chunker only accepts chunk_size (no overlap parameter)
-    chunker_config = ChunkerConfig(
-        plugin_name="simple",
-        kwargs={"chunk_size": 1000},
+    chunking_config = ChunkingRouterConfig(
+        default=ExtensionChunkerConfig(
+            plugin_name="simple",
+            kwargs={"chunk_size": 1000},
+        ),
     )
-    chunking_engine = ChunkingEngine.from_config(chunker_config)
+    chunking_engine = ChunkingEngine.from_config(chunking_config)
 
     chunks: List = []
     for raw_doc in raw_docs:

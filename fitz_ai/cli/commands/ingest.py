@@ -56,7 +56,7 @@ def _build_chunking_router_config(config: dict):
               kwargs: {...}
           warn_on_fallback: true
     """
-    from fitz_ai.ingest.config.schema import (
+    from fitz_ai.engines.classic_rag.config import (
         ChunkingRouterConfig,
         ExtensionChunkerConfig,
     )

@@ -14,7 +14,7 @@ Usage:
         ChunkingEngine,
         ChunkerPlugin,
     )
-    from fitz_ai.ingest.config.schema import ChunkingRouterConfig
+    from fitz_ai.engines.classic_rag.config import ChunkingRouterConfig
 
     config = ChunkingRouterConfig(...)
     router = ChunkingRouter.from_config(config)

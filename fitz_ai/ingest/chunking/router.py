@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
 from fitz_ai.ingest.chunking.base import ChunkerPlugin
 from fitz_ai.ingest.chunking.registry import get_chunking_plugin
-from fitz_ai.ingest.config.schema import ChunkingRouterConfig
+from fitz_ai.engines.classic_rag.config import ChunkingRouterConfig
 from fitz_ai.ingest.exceptions.chunking import IngestionChunkingError
 
 if TYPE_CHECKING:
