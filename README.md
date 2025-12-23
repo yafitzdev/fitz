@@ -5,330 +5,266 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.3.5-green.svg)](CHANGELOG.md)
 
-## 🎯 Stable Knowledge Access, Today and Tomorrow
-
-fitz-ai is a **knowledge access platform** for teams that need reliable, configurable retrieval **today**, without locking themselves into a single reasoning paradigm **tomorrow**.
-
-You ingest your knowledge once. How it gets queried can evolve.
-
----
-
-## 🤔 Why fitz-ai Exists
-
-Organizations repeatedly rebuild the same systems: ingest documents, chunk them, embed them, retrieve them, generate answers. Every time the reasoning method changes, everything breaks.
-
-**The insight:** Reasoning methods evolve faster than knowledge.
-
-- RAG today
-- Compression-native models tomorrow
-- Something else after that
-
-But the knowledge layer remains.
-
-Most RAG tools optimize *one method*. fitz-ai stabilizes the **knowledge layer itself**.
-
----
-
-## 🧠 The Mental Model
-
-```
-  Your Knowledge
-      ↓
-  fitz-ai (Knowledge Access Layer)
-      ↓
-  Engines (replaceable)
-      ↓
-  Answer
-```
-
-**What stays stable:** Ingested documents, chunking decisions, metadata, provenance, API contracts.
-
-**What can change:** Retrieval strategies, reasoning methods, model providers, compression techniques.
-
-You optimize for **stability where it matters** and **flexibility where change is inevitable**.
-
----
-
-## ⚖️ How fitz-ai Is Different
-
-This isn't a critique of other tools. It's a design difference.
-
-| | LangChain & Similar | fitz-ai |
-|---|---------------------|------|
-| **Optimizes for** | Flows & prompt chains | Knowledge stability |
-| **Assumes** | Rapid experimentation | Systems live for years |
-| **Switching paradigms** | Often means refactoring | Means changing engines |
-| **Best for** | Exploring ideas | Building infrastructure |
-
-If you're exploring ideas, LangChain is excellent. If you're building infrastructure that will outlive your current model choices, fitz-ai is designed for that.
-
----
-
-## 🚀 Quick Start
+**RAG in 5 minutes. No infrastructure. No boilerplate.**
 
 ```bash
 pip install fitz-ai
+fitz quickstart ./docs "What is our refund policy?"
 ```
 
-```python
-from fitz_ai.engines.classic_rag import run_classic_rag
-
-answer = run_classic_rag("What does our contract say about termination?")
-print(answer.text)
-```
-
-That's it. Classic RAG works out of the box.
+That's it. Your documents are now searchable with AI.
 
 ---
 
-## ⚙️ Engines
+## The Problem with RAG Today
 
-Engines encapsulate *how* knowledge is queried. They're not plugins. They're paradigms.
+Building RAG shouldn't require a PhD in prompt engineering. Yet here we are:
 
-### Classic RAG (Default) ✅
+| Framework | Lines to "Hello World" | External Services | Time to First Answer |
+|-----------|------------------------|-------------------|---------------------|
+| LangChain | 50+ | Vector DB required | 30+ min |
+| LlamaIndex | 30+ | Vector DB required | 20+ min |
+| **fitz-ai** | **2** | **None** | **5 min** |
 
-Production-ready retrieval-augmented generation.
+**LangChain** gives you infinite flexibility—and infinite ways to shoot yourself in the foot. Chains, agents, callbacks, memory modules... great for building the next ChatGPT, overkill for "search my docs."
 
-```python
-from fitz_ai.engines.classic_rag import run_classic_rag
+**LlamaIndex** is better for pure retrieval, but still assumes you want to configure chunk sizes, embedding models, index types, and vector stores before asking your first question.
 
-answer = run_classic_rag("What is our refund policy?")
-
-for source in answer.provenance:
-    print(f"{source.source_id}: {source.excerpt}")
-```
-
-### CLaRa (Experimental) 🧪
-
-Compression-native reasoning for large document collections. 16x to 128x compression with unified retrieval and generation.
-
-```python
-from fitz_ai.engines.clara import create_clara_engine
-
-engine = create_clara_engine()
-engine.add_documents(my_documents)
-answer = engine.answer(Query(text="What patterns emerge across these reports?"))
-```
-
-> Engines are interchangeable. Your knowledge is not.
+**fitz-ai** assumes you want answers. Configuration is optional.
 
 ---
 
-## ✅ When fitz-ai Makes Sense
+## What Makes Fitz Different
 
-- Internal company knowledge bases
-- Compliance-sensitive environments
-- Teams running local and cloud LLMs
-- Long-lived systems where methods will change
-
-## ❌ When fitz-ai Is Not a Fit
-
-- Prompt-only experiments
-- One-off demos
-- No ingestion, no retrieval needed
-
----
-
-## 📁 Project Structure
-
-```
-fitz_ai/
-├── core/        # Stable contracts (Query, Answer, Provenance)
-├── engines/     # Reasoning paradigms (classic_rag, clara)
-├── ingest/      # Knowledge ingestion
-├── runtime/     # Engine orchestration
-├── llm/         # LLM plugins
-└── vector_db/   # Vector DB plugins
-```
-
-Architecture enforces separation: engines can be added or removed without destabilizing the core.
-
----
-
-## 💻 CLI
-
-### Core Commands
-
-| Command | Description |
-|---------|-------------|
-| `fitz init` | Interactive setup wizard |
-| `fitz ingest [path]` | Ingest documents into vector DB |
-| `fitz query "question"` | Query your knowledge base |
-| `fitz config` | View/manage configuration |
-| `fitz doctor` | System diagnostics |
-
-### Quick Start
+### 1. Zero-Config Start, Full Control Later
 
 ```bash
-# 1. Setup (detects Ollama, Qdrant, API keys automatically)
-fitz init
+# Day 1: Just works
+fitz quickstart ./contracts "What are the payment terms?"
 
-# 2. Ingest documents
-fitz ingest ./my-documents
-
-# 3. Query
-fitz query "What are the main topics?"
-
-# 4. Verify everything works
-fitz doctor --test
+# Day 30: Full customization when you need it
+fitz init                    # Configure everything
+fitz ingest ./docs           # Fine-tune chunking
+fitz query "..." --retrieval dense_rerank
 ```
 
-### Command Details
+Most RAG frameworks force you to understand the entire stack before you can ask a single question. Fitz inverts this: start with answers, learn the internals only if you need them.
 
-#### `fitz init`
-Interactive setup wizard. Detects available providers and creates config.
+### 2. Epistemic Honesty Built-In
 
-```bash
-fitz init              # Interactive mode
-fitz init -y           # Auto-detect defaults
-fitz init --show       # Preview without saving
+When your documents don't contain the answer, fitz says so:
+
+```
+Q: "What was our Q4 revenue?"
+A: "I cannot find Q4 revenue figures in the provided documents. 
+    The available financial data covers Q1-Q3 only."
+    
+    Mode: ABSTAIN
 ```
 
-#### `fitz ingest`
-Ingest documents into your vector database.
+Three constraint plugins run automatically:
+- **ConflictAwareConstraint**: Detects contradictions across sources
+- **InsufficientEvidenceConstraint**: Blocks confident answers without evidence  
+- **CausalAttributionConstraint**: Prevents hallucinated cause-effect claims
 
-```bash
-fitz ingest                    # Interactive prompts
-fitz ingest ./docs             # Ingest specific directory
-fitz ingest ./docs -y          # Non-interactive with defaults
-```
+No prompt engineering required. No "be careful" system messages. Just honest answers.
 
-Prompts for: collection name, chunker type, chunk size, overlap.
-
-#### `fitz query`
-Query your knowledge base with RAG.
-
-```bash
-fitz query "your question"              # Basic query
-fitz query "your question" --stream     # Streaming response
-```
-
-Returns answer with source citations.
-
-#### `fitz config`
-Manage configuration.
-
-```bash
-fitz config              # Show summary
-fitz config --raw        # Show YAML
-fitz config --json       # JSON output
-fitz config --edit       # Open in $EDITOR
-fitz config --path       # Show file location
-```
-
-#### `fitz doctor`
-System diagnostics.
-
-```bash
-fitz doctor              # Quick check
-fitz doctor -v           # Verbose (shows optional deps)
-fitz doctor --test       # Test connections
-```
-
-Checks: Python version, dependencies, Ollama/Qdrant/FAISS availability, API keys, connections.
-
-### Examples
-
-```bash
-# Local-first setup (no API keys)
-ollama serve
-docker run -p 6333:6333 qdrant/qdrant
-fitz init  # Select ollama + qdrant
-fitz ingest ./docs -y
-fitz query "What's in my docs?"
-
-# Cloud setup
-export COHERE_API_KEY="your-key"
-fitz init -y
-fitz ingest ./docs -y
-fitz query "Your question"
-
-# Check everything is working
-fitz doctor --test
-```
-
-### Environment Variables
-
-```bash
-# API Keys (choose one or use Ollama)
-export COHERE_API_KEY="..."       # Recommended
-export OPENAI_API_KEY="..."       # Alternative
-export AZURE_OPENAI_API_KEY="..." # Alternative
-
-# Azure specific (if using Azure)
-export AZURE_OPENAI_ENDPOINT="..."
-export AZURE_OPENAI_API_VERSION="2024-02-15-preview"
-```
-
-### Configuration File
-
-Created at `~/.fitz/fitz.yaml`:
+### 3. YAML-Defined Everything
 
 ```yaml
-chat:
-  plugin_name: cohere
-  kwargs:
-    model: command-a-03-2025
-    temperature: 0.2
-
-embedding:
-  plugin_name: cohere
-  kwargs:
-    model: embed-english-v3.0
-
-vector_db:
-  plugin_name: qdrant
-  kwargs:
-    host: "localhost"
-    port: 6333
-
-retriever:
-  plugin_name: dense
-  collection: default
-  top_k: 5
-
-rerank:
-  enabled: true
-  plugin_name: cohere
-  kwargs:
-    model: rerank-v3.5
-
-rgs:
-  enable_citations: true
-  strict_grounding: true
-  max_chunks: 8
+# Add a new LLM provider: just drop a YAML file
+# fitz_ai/llm/chat/my_provider.yaml
+plugin_name: "my_provider"
+plugin_type: "chat"
+endpoint:
+  path: "/v1/chat/completions"
+  method: "POST"
+defaults:
+  model: "my-model"
+  temperature: 0.2
 ```
 
-Edit with: `fitz config --edit` or `vim ~/.fitz/fitz.yaml`
+LangChain requires you to subclass `BaseChatModel` and implement 47 methods. Fitz plugins are YAML files. Adding OpenAI, Cohere, Anthropic, Ollama, or your custom endpoint is the same: describe the API, done.
 
 ---
 
-## 📐 Design Principles
+## Quick Start
 
-- **Explicit over clever** | No hidden magic
-- **Stable contracts** | The API doesn't break when internals change
-- **Knowledge outlives methods** | Ingest once, query many ways
-- **Engines are paradigms** | Not just config switches
+```bash
+pip install fitz-ai
+fitz quickstart ./docs "Your question here"
+```
+
+That's it. Fitz will prompt you for anything it needs.
+
+Want to go fully local with Ollama? No problem:
+
+```bash
+ollama pull llama3.2
+ollama pull nomic-embed-text
+fitz quickstart ./docs "Your question here"
+```
+
+No data leaves your machine. No API costs. Same interface.
+
+**Data privacy**: Fitz runs entirely on your infrastructure. No telemetry, no cloud, no external calls except to the LLM provider you configure.
+
+**Production deployments**: For Qdrant, Docker, and API serving, see the [Deployment Guide](docs/deployment.md).
 
 ---
 
-## 💡 Philosophy
+## Real-World Usage
 
-RAG is a method.  
-Knowledge access is a strategy.
+### Personal Chatbot
 
-fitz-ai is built for the strategy.
+```bash
+# Point fitz at your notes, journals, or saved articles
+fitz ingest ~/Documents/notes --collection personal
+
+# Chat with your own knowledge base
+fitz query "What did I write about productivity last month?"
+fitz query "Summarize my notes on Python async"
+```
+
+### Internal Knowledge Base
+
+```bash
+# Ingest your company docs once
+fitz ingest ./wiki ./policies ./runbooks
+
+# Anyone can query
+fitz query "How do I request PTO?"
+fitz query "What's the incident response process?"
+fitz query "Who approves expenses over $5000?"
+```
+
+### Code Repository Q&A
+
+```bash
+fitz ingest ./src --collection codebase
+fitz query "How does the authentication flow work?"
+fitz query "Where is the rate limiting implemented?"
+```
+
+### Research Paper Analysis
+
+```bash
+fitz ingest ./papers --collection research
+fitz query "What methods achieve SOTA on ImageNet?"
+fitz query "Compare transformer vs CNN approaches"
+```
 
 ---
 
-## 📚 Documentation
+## Architecture
 
-- [Engine Guide](docs/ENGINES.md) | Choosing and using engines
-- [Architecture](docs/architecture.md) | Deep dive for contributors
-- [Changelog](CHANGELOG.md) | Release history
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         fitz-ai                             │
+├─────────────────────────────────────────────────────────────┤
+│  CLI Layer                                                  │
+│  quickstart | init | ingest | query | config | doctor       │
+├─────────────────────────────────────────────────────────────┤
+│  Engines                                                    │
+│  ┌─────────────┐  ┌─────────────┐                          │
+│  │ Classic RAG │  │   CLaRa     │  (pluggable)             │
+│  └─────────────┘  └─────────────┘                          │
+├─────────────────────────────────────────────────────────────┤
+│  Plugin System (all YAML-defined)                          │
+│  ┌────────┐ ┌───────────┐ ┌────────┐ ┌─────────┐          │
+│  │  LLM   │ │ Embedding │ │ Rerank │ │VectorDB │          │
+│  └────────┘ └───────────┘ └────────┘ └─────────┘          │
+│  openai, cohere, anthropic, ollama, azure...               │
+├─────────────────────────────────────────────────────────────┤
+│  Retrieval Pipelines (YAML-composed)                       │
+│  dense.yaml | dense_rerank.yaml | custom...                │
+├─────────────────────────────────────────────────────────────┤
+│  Constraints (epistemic safety)                            │
+│  ConflictAware | InsufficientEvidence | CausalAttribution  │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 📄 License
+## CLI Reference
+
+```bash
+fitz quickstart [PATH] [QUESTION]  # Zero-config RAG (start here)
+fitz init                          # Interactive setup wizard
+fitz ingest [PATH]                 # Ingest documents
+fitz query "question"              # Query knowledge base
+fitz config                        # View/edit configuration
+fitz doctor                        # System diagnostics
+```
+
+---
+
+## Comparison
+
+| | fitz-ai | LangChain | LlamaIndex |
+|--|---------|-----------|------------|
+| Time to first answer | 5 min | 30+ min | 20+ min |
+| Config required to start | None | Yes | Yes |
+| Knows when to say "I don't know" | Built-in | DIY | DIY |
+| Add new LLM provider | Drop a YAML | Subclass + 200 LOC | Subclass + 150 LOC |
+| Swap retrieval paradigm | Change 1 line | Rewrite pipeline | Rewrite pipeline |
+
+**Choose fitz-ai if**: You want to query your documents with AI, not build an AI platform.
+
+**Choose LangChain if**: You're building complex agent workflows with tool use, memory, and multi-step reasoning.
+
+**Choose LlamaIndex if**: You need deep customization of retrieval strategies across heterogeneous data sources.
+
+---
+
+## Beyond RAG
+
+> **RAG is a method. Knowledge access is a strategy.**
+
+Fitz is not a RAG framework. It's a knowledge platform that *currently* uses RAG as its primary engine.
+
+```python
+from fitz_ai import run
+
+# Today: Classic RAG
+answer = run("What are the payment terms?", engine="classic_rag")
+
+# Also available: CLaRa (compressed RAG, 16x smaller context)
+answer = run("What are the payment terms?", engine="clara")
+
+# Tomorrow: GraphRAG, HyDE, or whatever comes next
+answer = run("What are the payment terms?", engine="graph_rag")
+```
+
+The engine is an implementation detail. Your ingested knowledge, your queries, your workflow—all stay the same. When a better retrieval paradigm emerges, swap one line, not your entire codebase.
+
+---
+
+## Philosophy
+
+**Principles:**
+- **Explicit over clever**: No magic. Read the config, know what happens.
+- **Answers over architecture**: Optimize for time-to-insight, not flexibility.
+- **Honest over helpful**: Better to say "I don't know" than hallucinate.
+- **Files over frameworks**: YAML plugins over class hierarchies.
+
+---
+
+## License
 
 MIT
+
+---
+
+## About
+
+Solo project by [Yan Fitzner](https://github.com/yafitzdev). ~15k lines of Python. 350+ tests. Built from scratch—no LangChain or LlamaIndex under the hood.
+
+---
+
+## Links
+
+- [GitHub](https://github.com/yafitzdev/fitz-ai)
+- [PyPI](https://pypi.org/project/fitz-ai/)
+- [Changelog](CHANGELOG.md)
+- [CLI Documentation](docs/CLI.md)
