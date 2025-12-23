@@ -4,6 +4,7 @@
 
 ```bash
 pip install fitz-ai
+
 fitz quickstart ./docs "What is our refund policy?"
 ```
 
@@ -87,6 +88,7 @@ LangChain requires you to subclass `BaseChatModel` and implement 47 methods. Fit
 
 ```bash
 pip install fitz-ai
+
 fitz quickstart ./docs "Your question here"
 ```
 
@@ -95,8 +97,11 @@ That's it. Fitz will prompt you for anything it needs.
 Want to go fully local with Ollama? No problem:
 
 ```bash
+pip install fitz-ai
+
 ollama pull llama3.2
 ollama pull nomic-embed-text
+
 fitz quickstart ./docs "Your question here"
 ```
 
