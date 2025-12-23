@@ -334,6 +334,11 @@ class ClassicRagConfig(BaseModel):
         default=None, description="Ingestion pipeline configuration"
     )
 
+    # Chunking (optional - can be at top level for convenience, used by fitz ingest)
+    chunking: ChunkingRouterConfig | None = Field(
+        default=None, description="Chunking configuration (top-level for CLI convenience)"
+    )
+
     model_config = ConfigDict(extra="forbid")
 
     @classmethod

@@ -41,6 +41,15 @@ class RecursiveChunker:
         default_factory=lambda: ["\n\n", "\n", ". ", ", ", " ", ""]
     )
 
+    @property
+    def chunker_id(self) -> str:
+        """
+        Unique identifier including parameters that affect chunk output.
+
+        Format: "recursive:{chunk_size}:{chunk_overlap}"
+        """
+        return f"{self.plugin_name}:{self.chunk_size}:{self.chunk_overlap}"
+
     def _split_text(self, text: str, separators: List[str]) -> List[str]:
         """
         Recursively split text using the separator hierarchy.
