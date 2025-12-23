@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import typer
 
-from fitz_ai.cli.ui import RICH, console, get_preferred_default, ui
+from fitz_ai.cli.ui import RICH, console, get_first_available, ui
 from fitz_ai.core.registry import (
     available_chunking_plugins,
     available_llm_plugins,
@@ -348,21 +348,36 @@ def command(
 
     # Load defaults from default.yaml (single source of truth)
     default_config = _load_default_config()
+
+    # Plugin defaults from default.yaml
+    default_chat = default_config.get("chat", {}).get("plugin_name", "cohere")
+    default_embedding = default_config.get("embedding", {}).get("plugin_name", "cohere")
+    default_vector_db = default_config.get("vector_db", {}).get("plugin_name", "local_faiss")
+    default_retrieval = default_config.get("retrieval", {}).get("plugin_name", "dense")
+    default_rerank = default_config.get("rerank", {}).get("plugin_name", "cohere")
+
+    # Chunking defaults from default.yaml
     default_ingest = default_config.get("ingest", {})
     default_chunking = default_ingest.get("chunking", {}).get("default", {})
     default_chunker = default_chunking.get("plugin_name", "recursive")
     default_chunk_size = default_chunking.get("kwargs", {}).get("chunk_size", 1000)
     default_chunk_overlap = default_chunking.get("kwargs", {}).get("chunk_overlap", 200)
 
+    # Helper to get default if available, otherwise first available
+    def _get_default_or_first(choices: list[str], default: str) -> str:
+        if default in choices:
+            return default
+        return get_first_available(choices, default)
+
     if non_interactive:
-        # Auto-select best defaults
-        chat_choice = get_preferred_default(avail_chat)
+        # Use defaults from default.yaml if available
+        chat_choice = _get_default_or_first(avail_chat, default_chat)
         chat_model = _get_default_model("chat", chat_choice)
-        embedding_choice = get_preferred_default(avail_embedding)
+        embedding_choice = _get_default_or_first(avail_embedding, default_embedding)
         embedding_model = _get_default_model("embedding", embedding_choice)
-        vector_db_choice = get_preferred_default(avail_vector_db)
-        retrieval_choice = get_preferred_default(avail_retrieval, "dense")
-        rerank_choice = get_preferred_default(avail_rerank) if avail_rerank else None
+        vector_db_choice = _get_default_or_first(avail_vector_db, default_vector_db)
+        retrieval_choice = _get_default_or_first(avail_retrieval, default_retrieval)
+        rerank_choice = _get_default_or_first(avail_rerank, default_rerank) if avail_rerank else None
         rerank_model = _get_default_model("rerank", rerank_choice) if rerank_choice else ""
         # Chunking defaults from default.yaml
         chunker_choice = default_chunker
@@ -375,27 +390,27 @@ def command(
 
         # Chat
         chat_choice = ui.prompt_numbered_choice(
-            "Chat plugin", avail_chat, get_preferred_default(avail_chat)
+            "Chat plugin", avail_chat, _get_default_or_first(avail_chat, default_chat)
         )
         chat_model = _prompt_model("chat", chat_choice)
 
         # Embedding
         print()
         embedding_choice = ui.prompt_numbered_choice(
-            "Embedding plugin", avail_embedding, get_preferred_default(avail_embedding)
+            "Embedding plugin", avail_embedding, _get_default_or_first(avail_embedding, default_embedding)
         )
         embedding_model = _prompt_model("embedding", embedding_choice)
 
         # Vector DB
         print()
         vector_db_choice = ui.prompt_numbered_choice(
-            "Vector database", avail_vector_db, get_preferred_default(avail_vector_db)
+            "Vector database", avail_vector_db, _get_default_or_first(avail_vector_db, default_vector_db)
         )
 
         # Retrieval
         print()
         retrieval_choice = ui.prompt_numbered_choice(
-            "Retrieval strategy", avail_retrieval, get_preferred_default(avail_retrieval, "dense")
+            "Retrieval strategy", avail_retrieval, _get_default_or_first(avail_retrieval, default_retrieval)
         )
 
         # Rerank (optional)
@@ -404,7 +419,7 @@ def command(
         if avail_rerank:
             print()
             rerank_choice = ui.prompt_numbered_choice(
-                "Rerank plugin", avail_rerank, get_preferred_default(avail_rerank)
+                "Rerank plugin", avail_rerank, _get_default_or_first(avail_rerank, default_rerank)
             )
             rerank_model = _prompt_model("rerank", rerank_choice)
         else:

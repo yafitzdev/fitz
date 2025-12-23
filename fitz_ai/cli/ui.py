@@ -13,9 +13,6 @@ Usage:
 
     # Numbered choice selection
     choice = ui.prompt_numbered_choice("Select plugin", ["cohere", "local_ollama"], "cohere")
-
-    # Smart defaults (prefers non-local)
-    default = get_preferred_default(["local_faiss", "qdrant"])  # Returns "qdrant"
 """
 
 from __future__ import annotations
@@ -63,45 +60,19 @@ except ImportError:
 # =============================================================================
 
 
-def is_local_plugin(name: str) -> bool:
+def get_first_available(choices: list[str], fallback: str = "") -> str:
     """
-    Check if a plugin is local/offline-based.
-
-    Local plugins (like local_ollama, local_faiss) should be treated as
-    fallbacks rather than defaults.
-
-    Args:
-        name: Plugin name to check
-
-    Returns:
-        True if plugin is local/offline-based
-    """
-    return any(x in name.lower() for x in ("ollama", "local", "offline"))
-
-
-def get_preferred_default(choices: list[str], fallback: str = "") -> str:
-    """
-    Get the preferred default from a list of choices.
-
-    Prioritizes non-local options over local ones (local_faiss, local_ollama).
-    Local options should be fallbacks, not defaults.
+    Get the first available choice from a list.
 
     Args:
         choices: List of available choices
         fallback: Fallback if no choices available
 
     Returns:
-        Best default choice (non-local preferred)
+        First choice, or fallback if list is empty
     """
     if not choices:
         return fallback
-
-    # Find first non-local option
-    for choice in choices:
-        if not is_local_plugin(choice):
-            return choice
-
-    # All options are local, return first one
     return choices[0]
 
 
@@ -560,8 +531,7 @@ __all__ = [
     "RICH",
     "UI",
     # Plugin utilities
-    "is_local_plugin",
-    "get_preferred_default",
+    "get_first_available",
     # Re-export Rich components for advanced use
     "Panel",
     "Table",
