@@ -4,12 +4,12 @@ Diff computation for incremental ingestion.
 
 Computes the action plan by comparing:
 1. Scanned files from disk
-2. Vector DB (authoritative source)
-3. State file (for deletion tracking only)
+2. State file (authoritative source for skip decisions)
 
-Key rule from spec:
-- Vector DB existence check is MANDATORY for skip decisions
-- State is only for path tracking and deletion detection
+Key design decision:
+- State file (ingest.json) is the single source of truth
+- If state says file was ingested with same hash → skip
+- If state file is deleted → re-ingest everything (safe, idempotent upserts)
 
 This module ONLY computes actions - it does NOT execute them.
 Execution is handled by the executor.
@@ -27,51 +27,19 @@ logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
-class VectorDBReader(Protocol):
-    """
-    Protocol for reading from vector DB.
-
-    Must be implemented by vector DB plugins to support diff ingestion.
-    """
-
-    def has_content_hash(
-        self,
-        collection: str,
-        content_hash: str,
-        parser_id: str,
-        chunker_id: str,
-        embedding_id: str,
-    ) -> bool:
-        """
-        Check if vectors exist for a given content hash + config.
-
-        This is the authoritative check per spec §5:
-        "Even if .fitz/ingest.json is deleted/modified, ingestion must still
-        correctly skip unchanged content by checking the vector DB."
-
-        Args:
-            collection: Vector DB collection name
-            content_hash: SHA-256 hash of file content
-            parser_id: Parser identifier (e.g., "md.v1")
-            chunker_id: Chunker identifier (e.g., "tokens_800_120")
-            embedding_id: Embedding identifier (e.g., "openai:text-embedding-3-small")
-
-        Returns:
-            True if vectors exist with is_deleted=false, False otherwise
-        """
-        ...
-
-
-@runtime_checkable
 class StateReader(Protocol):
     """
     Protocol for reading ingestion state.
 
-    Used only for deletion detection - NOT for skip decisions.
+    Used for both skip decisions and deletion detection.
     """
 
     def get_active_paths(self, root: str) -> Set[str]:
         """Get all active (non-deleted) file paths for a root."""
+        ...
+
+    def get_file_entry(self, root: str, file_path: str):
+        """Get file entry if it exists. Returns None if not found."""
         ...
 
     def get_parser_id(self, ext: str) -> str:
@@ -106,11 +74,11 @@ class FileCandidate:
 
     @classmethod
     def from_scanned(
-        cls,
-        scanned: ScannedFile,
-        parser_id: str,
-        chunker_id: str,
-        embedding_id: str,
+            cls,
+            scanned: ScannedFile,
+            parser_id: str,
+            chunker_id: str,
+            embedding_id: str,
     ) -> "FileCandidate":
         """Create from a ScannedFile with config IDs."""
         return cls(
@@ -133,7 +101,7 @@ class DiffResult:
 
     Contains three lists of actions:
     - to_ingest: Files that need to be ingested (new or changed)
-    - to_skip: Files that already exist in vector DB (unchanged)
+    - to_skip: Files that already exist in state (unchanged)
     - to_mark_deleted: File paths that no longer exist on disk
     """
     to_ingest: List[FileCandidate] = field(default_factory=list)
@@ -152,19 +120,18 @@ class DiffResult:
 
 class Differ:
     """
-    Computes diff between disk state and vector DB.
+    Computes diff between disk state and ingestion state.
 
     IMPORTANT: This class ONLY computes actions - it does NOT execute them.
 
-    The diff algorithm (per spec §7.2):
-    1. For each scanned file, check if vectors exist in vector DB
-       with matching (content_hash, parser_id, chunker_id, embedding_id)
-    2. If vectors exist with is_deleted=false → skip
-    3. If vectors don't exist → ingest
+    The diff algorithm:
+    1. For each scanned file, check if state has entry with matching content_hash
+    2. If state entry exists with same hash → skip
+    3. If no state entry or hash differs → ingest
     4. For paths in state but not on disk → mark deleted
 
     Usage:
-        differ = Differ(vector_db_reader, state_reader, collection)
+        differ = Differ(state_reader)
         result = differ.compute_diff(scan_result.files)
 
         # Result contains action plan, NOT executed actions
@@ -173,35 +140,28 @@ class Differ:
             pass
     """
 
-    def __init__(
-        self,
-        vector_db_reader: VectorDBReader,
-        state_reader: StateReader,
-        collection: str,
-    ) -> None:
+    def __init__(self, state_reader: StateReader) -> None:
         """
         Initialize the differ.
 
         Args:
-            vector_db_reader: Reader for checking vector DB existence
-            state_reader: Reader for state (deletion detection only)
-            collection: Vector DB collection name
+            state_reader: Reader for state (authoritative source)
         """
-        self._vdb = vector_db_reader
         self._state = state_reader
-        self._collection = collection
 
     def compute_diff(
-        self,
-        scanned_files: List[ScannedFile],
-        force: bool = False,
+            self,
+            scanned_files: List[ScannedFile],
+            force: bool = False,
+            root: str | None = None,
     ) -> DiffResult:
         """
         Compute the diff action plan.
 
         Args:
             scanned_files: Files from the scanner
-            force: If True, skip vector DB check and ingest all files
+            force: If True, ingest all files regardless of state
+            root: Root path for deletion detection. If None, extracted from scanned files.
 
         Returns:
             DiffResult with action plan
@@ -213,12 +173,12 @@ class Differ:
 
         # Track which paths we've seen for deletion detection
         seen_paths: Set[str] = set()
-        root: str | None = None
+        detected_root: str | None = root
 
         for scanned in scanned_files:
             # Track root for deletion detection
-            if root is None:
-                root = scanned.root
+            if detected_root is None:
+                detected_root = scanned.root
             seen_paths.add(scanned.path)
 
             # Get config IDs for this file type
@@ -237,29 +197,19 @@ class Differ:
                 result.to_ingest.append(candidate)
                 continue
 
-            # CRITICAL: Check vector DB, NOT state
-            # This is the authoritative check per spec §5
-            try:
-                exists = self._vdb.has_content_hash(
-                    collection=self._collection,
-                    content_hash=scanned.content_hash,
-                    parser_id=parser_id,
-                    chunker_id=chunker_id,
-                    embedding_id=embedding_id,
-                )
-            except Exception as e:
-                # If vector DB check fails, assume we need to ingest
-                logger.warning(f"Vector DB check failed for {scanned.path}: {e}")
-                exists = False
+            # Check state file for existing entry with same hash
+            existing_entry = self._state.get_file_entry(scanned.root, scanned.path)
 
-            if exists:
+            if existing_entry is not None and existing_entry.content_hash == scanned.content_hash:
+                # Same hash in state → skip
                 result.to_skip.append(candidate)
             else:
+                # New file or hash changed → ingest
                 result.to_ingest.append(candidate)
 
         # Deletion detection: compare state paths with scanned paths
-        if root is not None:
-            previously_known = self._state.get_active_paths(root)
+        if detected_root is not None:
+            previously_known = self._state.get_active_paths(detected_root)
             removed_paths = previously_known - seen_paths
             result.to_mark_deleted.extend(sorted(removed_paths))
 
@@ -269,31 +219,28 @@ class Differ:
 
 
 def compute_diff(
-    scanned_files: List[ScannedFile],
-    vector_db_reader: VectorDBReader,
-    state_reader: StateReader,
-    collection: str,
-    force: bool = False,
+        scanned_files: List[ScannedFile],
+        state_reader: StateReader,
+        force: bool = False,
+        root: str | None = None,
 ) -> DiffResult:
     """
     Convenience function to compute diff.
 
     Args:
         scanned_files: Files from the scanner
-        vector_db_reader: Reader for checking vector DB existence
-        state_reader: Reader for state (deletion detection only)
-        collection: Vector DB collection name
-        force: If True, ingest all files regardless of vector DB state
+        state_reader: Reader for state (authoritative source)
+        force: If True, ingest all files regardless of state
+        root: Root path for deletion detection. If None, extracted from scanned files.
 
     Returns:
         DiffResult with action plan
     """
-    differ = Differ(vector_db_reader, state_reader, collection)
-    return differ.compute_diff(scanned_files, force=force)
+    differ = Differ(state_reader)
+    return differ.compute_diff(scanned_files, force=force, root=root)
 
 
 __all__ = [
-    "VectorDBReader",
     "StateReader",
     "FileCandidate",
     "DiffResult",

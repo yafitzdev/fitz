@@ -4,7 +4,7 @@ Diff ingest executor.
 
 Orchestrates the full incremental ingestion pipeline:
 1. Scan files
-2. Compute diff (via vector DB + state)
+2. Compute diff (via state file - authoritative source)
 3. Ingest new/changed files
 4. Mark deletions in vector DB
 5. Update state
@@ -32,8 +32,8 @@ from fitz_ai.ingest.chunking.base import ChunkerPlugin
 from fitz_ai.ingest.hashing import compute_chunk_id
 from fitz_ai.ingest.state import IngestStateManager
 
-from .differ import DiffResult, FileCandidate, VectorDBReader
-from .scanner import FileScanner, ScanResult
+from .differ import DiffResult, FileCandidate
+from .scanner import FileScanner
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +43,17 @@ class VectorDBWriter(Protocol):
     """Protocol for writing to vector DB."""
 
     def upsert(
-        self,
-        collection: str,
-        points: List[Dict[str, Any]],
+            self,
+            collection: str,
+            points: List[Dict[str, Any]],
     ) -> None:
         """Upsert points into collection."""
         ...
 
     def mark_deleted(
-        self,
-        collection: str,
-        source_path: str,
+            self,
+            collection: str,
+            source_path: str,
     ) -> int:
         """
         Mark all vectors for a source path as deleted.
@@ -121,7 +121,7 @@ class DiffIngestExecutor:
 
     This is the orchestrator that:
     1. Scans files
-    2. Computes diff
+    2. Computes diff (using state file as authority)
     3. Ingests new/changed files
     4. Marks deletions
     5. Updates state
@@ -129,11 +129,10 @@ class DiffIngestExecutor:
     Usage:
         executor = DiffIngestExecutor(
             state_manager=state_manager,
-            vector_db_reader=reader,
             vector_db_writer=writer,
             embedder=embedder,
             parser=parser,
-            chunker=chunker_plugin,  # ChunkerPlugin instance
+            chunker=chunker_plugin,
             collection="my_collection",
         )
 
@@ -142,22 +141,20 @@ class DiffIngestExecutor:
     """
 
     def __init__(
-        self,
-        *,
-        state_manager: IngestStateManager,
-        vector_db_reader: VectorDBReader,
-        vector_db_writer: VectorDBWriter,
-        embedder: Embedder,
-        parser: Parser,
-        chunker: ChunkerPlugin,
-        collection: str,
+            self,
+            *,
+            state_manager: IngestStateManager,
+            vector_db_writer: VectorDBWriter,
+            embedder: Embedder,
+            parser: Parser,
+            chunker: ChunkerPlugin,
+            collection: str,
     ) -> None:
         """
         Initialize the executor.
 
         Args:
-            state_manager: Manager for ingest state
-            vector_db_reader: Reader for checking vector existence
+            state_manager: Manager for ingest state (authoritative source)
             vector_db_writer: Writer for upserting vectors
             embedder: Embedder for creating vectors
             parser: Parser for extracting text from files
@@ -165,7 +162,6 @@ class DiffIngestExecutor:
             collection: Vector DB collection name
         """
         self._state = state_manager
-        self._vdb_reader = vector_db_reader
         self._vdb_writer = vector_db_writer
         self._embedder = embedder
         self._parser = parser
@@ -173,16 +169,16 @@ class DiffIngestExecutor:
         self._collection = collection
 
     def run(
-        self,
-        source: str | Path,
-        force: bool = False,
+            self,
+            source: str | Path,
+            force: bool = False,
     ) -> IngestSummary:
         """
         Run the incremental ingestion pipeline.
 
         Args:
             source: Path to directory or file to ingest
-            force: If True, ingest everything regardless of vector DB state
+            force: If True, ingest everything regardless of state
 
         Returns:
             IngestSummary with results
@@ -202,19 +198,13 @@ class DiffIngestExecutor:
             summary.errors += 1
             summary.error_details.append(f"Scan error: {path}: {error}")
 
-        if scan_result.total_scanned == 0:
-            logger.warning("No files found to ingest")
-            summary.finished_at = datetime.utcnow()
-            return summary
-
-        # 2. Compute diff
+        # 2. Compute diff (state file is authoritative)
         logger.info("Computing diff...")
-        differ = Differ(
-            vector_db_reader=self._vdb_reader,
-            state_reader=self._state.state,
-            collection=self._collection,
-        )
-        diff = differ.compute_diff(scan_result.files, force=force)
+        differ = Differ(state_reader=self._state.state)
+
+        # Use resolved source path as root for deletion detection
+        root_path = str(Path(source).resolve())
+        diff = differ.compute_diff(scan_result.files, force=force, root=root_path)
 
         summary.skipped = len(diff.to_skip)
 
@@ -358,37 +348,34 @@ def _hash_text(text: str) -> str:
 
 
 def run_diff_ingest(
-    source: str | Path,
-    *,
-    state_manager: IngestStateManager,
-    vector_db_reader: VectorDBReader,
-    vector_db_writer: VectorDBWriter,
-    embedder: Embedder,
-    parser: Parser,
-    chunker: ChunkerPlugin,
-    collection: str,
-    force: bool = False,
+        source: str | Path,
+        *,
+        state_manager: IngestStateManager,
+        vector_db_writer: VectorDBWriter,
+        embedder: Embedder,
+        parser: Parser,
+        chunker: ChunkerPlugin,
+        collection: str,
+        force: bool = False,
 ) -> IngestSummary:
     """
     Convenience function to run diff ingestion.
 
     Args:
         source: Path to directory or file
-        state_manager: Manager for ingest state
-        vector_db_reader: Reader for checking vector existence
+        state_manager: Manager for ingest state (authoritative source)
         vector_db_writer: Writer for upserting vectors
         embedder: Embedder for creating vectors
         parser: Parser for extracting text from files
         chunker: ChunkerPlugin for splitting text (must have chunk_text method)
         collection: Vector DB collection name
-        force: If True, ingest everything regardless of vector DB state
+        force: If True, ingest everything regardless of state
 
     Returns:
         IngestSummary with results
     """
     executor = DiffIngestExecutor(
         state_manager=state_manager,
-        vector_db_reader=vector_db_reader,
         vector_db_writer=vector_db_writer,
         embedder=embedder,
         parser=parser,

@@ -4,12 +4,12 @@ Incremental (diff) ingestion for Fitz.
 
 This package implements content-hash based incremental ingestion:
 - Only ingest files that have changed
-- Skip files that already exist in vector DB
+- Skip files that match state file (authoritative source)
 - Track deletions via state file
 
 Key components:
 - Scanner: Walks directories and computes content hashes
-- Differ: Computes action plan by querying vector DB (authoritative)
+- Differ: Computes action plan by checking state file
 - Executor: Orchestrates the full pipeline
 
 Usage:
@@ -19,11 +19,10 @@ Usage:
     summary = run_diff_ingest(
         source="./documents",
         state_manager=IngestStateManager(),
-        vector_db_reader=reader,
         vector_db_writer=writer,
         embedder=embedder,
         parser=parser,
-        chunker=chunker_plugin,  # ChunkerPlugin with chunk_text method
+        chunker=chunker_plugin,
         collection="my_docs",
     )
     print(summary)  # "scanned 10, ingested 3, skipped 7, ..."
@@ -34,7 +33,6 @@ from .differ import (
     DiffResult,
     FileCandidate,
     StateReader,
-    VectorDBReader,
     compute_diff,
 )
 from .executor import (
@@ -61,7 +59,6 @@ __all__ = [
     "FileScanner",
     "scan_directory",
     # Differ
-    "VectorDBReader",
     "StateReader",
     "FileCandidate",
     "DiffResult",

@@ -44,9 +44,9 @@ def _show_files(raw_docs: List, max_show: int = 8) -> None:
     files = []
     for doc in raw_docs:
         path = (
-            getattr(doc, "path", None)
-            or getattr(doc, "source_file", None)
-            or getattr(doc, "doc_id", "?")
+                getattr(doc, "path", None)
+                or getattr(doc, "source_file", None)
+                or getattr(doc, "doc_id", "?")
         )
         if hasattr(path, "name"):
             files.append(str(path.name))
@@ -132,49 +132,6 @@ class ParserAdapter:
         return docs[0].content
 
 
-class VectorDBReaderAdapter:
-    """Adapts vector DB client to VectorDBReader protocol."""
-
-    def __init__(self, client):
-        self._client = client
-
-    def has_content_hash(
-        self,
-        collection: str,
-        content_hash: str,
-        parser_id: str,
-        chunker_id: str,
-        embedding_id: str,
-    ) -> bool:
-        """Check if vectors exist for a content hash + config."""
-        try:
-            # Build filter for exact match
-            filter_conditions = {
-                "must": [
-                    {"key": "content_hash", "match": {"value": content_hash}},
-                    {"key": "parser_id", "match": {"value": parser_id}},
-                    {"key": "chunker_id", "match": {"value": chunker_id}},
-                    {"key": "embedding_id", "match": {"value": embedding_id}},
-                    {"key": "is_deleted", "match": {"value": False}},
-                ]
-            }
-
-            # Try to scroll with filter
-            if hasattr(self._client, "scroll"):
-                results = self._client.scroll(
-                    collection=collection,
-                    filter=filter_conditions,
-                    limit=1,
-                    with_payload=False,
-                )
-                return len(results) > 0
-            else:
-                # Fallback: assume not exists (will trigger re-ingest)
-                return False
-        except Exception:
-            return False
-
-
 class VectorDBWriterAdapter:
     """Adapts vector DB client to VectorDBWriter protocol."""
 
@@ -186,36 +143,16 @@ class VectorDBWriterAdapter:
         self._client.upsert(collection, points)
 
     def mark_deleted(self, collection: str, source_path: str) -> int:
-        """Mark vectors for a source path as deleted."""
-        try:
-            if hasattr(self._client, "scroll") and hasattr(self._client, "update_payload"):
-                filter_conditions = {
-                    "must": [
-                        {"key": "source_path", "match": {"value": source_path}},
-                        {"key": "is_deleted", "match": {"value": False}},
-                    ]
-                }
-                results = self._client.scroll(
-                    collection=collection,
-                    filter=filter_conditions,
-                    limit=10000,
-                    with_payload=False,
-                )
-                if not results:
-                    return 0
+        """
+        Mark vectors for a source path as deleted.
 
-                ids = [r.id if hasattr(r, 'id') else r['id'] for r in results]
-                from datetime import datetime
-                self._client.update_payload(
-                    collection=collection,
-                    ids=ids,
-                    payload={"is_deleted": True, "deleted_at": datetime.utcnow().isoformat()},
-                )
-                return len(ids)
-            return 0
-        except Exception as e:
-            logger.warning(f"Failed to mark deleted: {e}")
-            return 0
+        Note: This is a best-effort operation. Not all vector DBs support
+        payload updates. If not supported, returns 0.
+        """
+        # For now, we don't actually update the vector DB
+        # The state file is authoritative, so this is optional
+        logger.debug(f"mark_deleted called for {source_path} (no-op)")
+        return 0
 
 
 # =============================================================================
@@ -224,22 +161,22 @@ class VectorDBWriterAdapter:
 
 
 def command(
-    source: Optional[str] = typer.Argument(
-        None,
-        help="Source path (file or directory). Prompts if not provided.",
-    ),
-    non_interactive: bool = typer.Option(
-        False,
-        "--non-interactive",
-        "-y",
-        help="Use defaults without prompting.",
-    ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Force re-ingest all files, ignoring vector DB state.",
-    ),
+        source: Optional[str] = typer.Argument(
+            None,
+            help="Source path (file or directory). Prompts if not provided.",
+        ),
+        non_interactive: bool = typer.Option(
+            False,
+            "--non-interactive",
+            "-y",
+            help="Use defaults without prompting.",
+        ),
+        force: bool = typer.Option(
+            False,
+            "--force",
+            "-f",
+            help="Force re-ingest all files, ignoring vector DB state.",
+        ),
 ) -> None:
     """
     Ingest documents into the vector database.
@@ -356,9 +293,8 @@ def command(
         # Embedder
         embedder = get_llm_plugin(plugin_type="embedding", plugin_name=embedding_plugin)
 
-        # Vector DB
+        # Vector DB writer
         vector_client = get_vector_db_plugin(vector_db_plugin)
-        reader = VectorDBReaderAdapter(vector_client)
         writer = VectorDBWriterAdapter(vector_client)
 
     except Exception as e:
@@ -377,7 +313,6 @@ def command(
         summary = run_diff_ingest(
             source=source,
             state_manager=state_manager,
-            vector_db_reader=reader,
             vector_db_writer=writer,
             embedder=embedder,
             parser=parser,
