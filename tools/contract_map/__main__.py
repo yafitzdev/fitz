@@ -92,7 +92,7 @@ def check_discovery_health(cm: ContractMap) -> None:
         "fitz_ai.llm.chat.plugins": "chat",
         "fitz_ai.llm.embedding.plugins": "embedding",
         "fitz_ai.vector_db.plugins": "vector_db",
-        "fitz_ai.engines.classic_rag.retrieval.runtime.plugins": "retriever",
+        "fitz_ai.engines.classic_rag.retrieval.plugins": "retriever",
     }
 
     for report in cm.discovery:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from fitz_ai.engines.classic_rag.config.schema import RAGConfig
+from fitz_ai.engines.classic_rag.config.schema import ClassicRagConfig
 
 
 class Pipeline(Protocol):
@@ -19,4 +19,4 @@ class PipelinePlugin(Protocol):
 
     plugin_name: str
 
-    def build(self, cfg: RAGConfig) -> Pipeline: ...
+    def build(self, cfg: ClassicRagConfig) -> Pipeline: ...

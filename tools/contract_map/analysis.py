@@ -140,7 +140,7 @@ def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
     # Vector DB plugins are also YAML-based
     expected = [
         # Python-based plugins only
-        ("fitz_ai.engines.classic_rag.retrieval.runtime.plugins", "RetrievalPlugin"),
+        ("fitz_ai.engines.classic_rag.retrieval.plugins", "RetrievalPlugin"),
         ("fitz_ai.engines.classic_rag.pipeline.pipeline.plugins", "PipelinePlugin"),
         ("fitz_ai.ingest.chunking.plugins", "ChunkerPlugin"),
         ("fitz_ai.ingest.ingestion.plugins", "IngestPlugin"),

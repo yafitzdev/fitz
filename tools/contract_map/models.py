@@ -156,8 +156,8 @@ def extract_protocols(cm: ContractMap, *, verbose: bool) -> None:
         # Vector DB protocols
         "fitz_ai.vector_db.base",
         # Engine protocols (classic_rag)
-        "fitz_ai.engines.classic_rag.retrieval.runtime.base",
-        "fitz_ai.engines.classic_rag.pipeline.pipeline.base",
+        "fitz_ai.engines.classic_rag.retrieval.base",
+        "fitz_ai.engines.classic_rag.pipeline.base",
         # Ingest protocols
         "fitz_ai.ingest.chunking.base",
         "fitz_ai.ingest.ingestion.base",

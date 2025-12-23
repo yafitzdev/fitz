@@ -1,4 +1,4 @@
-# File: tools/contract_map/discovery.py
+# tools/contract_map/discovery.py
 """
 Plugin discovery scanning for contract map.
 
@@ -16,7 +16,7 @@ import pkgutil
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple
 
-from tools.contract_map.common import DiscoveryReport
+from tools.contract_map.common import DiscoveryReport, REPO_ROOT
 
 
 def _simple_plugin_id(cls) -> str:
@@ -53,7 +53,7 @@ def scan_yaml_plugins(plugin_dir: str, plugin_type: str) -> DiscoveryReport:
 
     # Try relative to cwd as fallback
     if yaml_path is None:
-        yaml_path = Path.cwd() / plugin_dir.replace(".", "/")
+        yaml_path = REPO_ROOT / plugin_dir.replace(".", "/")
 
     if not yaml_path.exists():
         return DiscoveryReport(
@@ -85,17 +85,8 @@ def scan_yaml_plugins(plugin_dir: str, plugin_type: str) -> DiscoveryReport:
 
 # Map namespace -> (predicate, plugin_id_fn, allow_reexport)
 PLUGIN_PREDICATES: Dict[str, Tuple[Callable, Callable, bool]] = {
-    # --- retrieval (under engines/classic_rag) ---
-    "fitz_ai.engines.classic_rag.retrieval.runtime.plugins": (
-        lambda cls: (
-            isinstance(getattr(cls, "plugin_name", None), str)
-            and callable(getattr(cls, "retrieve", None))
-        ),
-        _simple_plugin_id,
-        False,
-    ),
     # --- pipeline (under engines/classic_rag) ---
-    "fitz_ai.engines.classic_rag.pipeline.pipeline.plugins": (
+    "fitz_ai.engines.classic_rag.pipeline.plugins": (
         lambda cls: (
             isinstance(getattr(cls, "plugin_name", None), str)
             and callable(getattr(cls, "build", None))
@@ -230,15 +221,14 @@ def scan_all_discoveries() -> List[DiscoveryReport]:
         scan_yaml_plugins("fitz_ai/llm/rerank", "LLM rerank"),
         # Vector DB plugins - YAML-based
         scan_yaml_plugins("fitz_ai/vector_db/plugins", "Vector DB"),
-        # Python-based plugins
+        # Retrieval plugins - YAML-based (not Python)
+        scan_yaml_plugins("fitz_ai/engines/classic_rag/retrieval/plugins", "RAG retrieval"),
+        # Pipeline plugins - Python-based
         scan_discovery(
-            "fitz_ai.engines.classic_rag.retrieval.runtime.plugins",
-            "RAG retriever plugins (Python discovery)",
-        ),
-        scan_discovery(
-            "fitz_ai.engines.classic_rag.pipeline.pipeline.plugins",
+            "fitz_ai.engines.classic_rag.pipeline.plugins",
             "RAG pipeline plugins (Python discovery)",
         ),
+        # Ingest plugins - Python-based
         scan_discovery(
             "fitz_ai.ingest.chunking.plugins",
             "Ingest chunking plugins (Python discovery)",

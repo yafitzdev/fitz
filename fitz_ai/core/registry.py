@@ -224,7 +224,7 @@ CHUNKING_REGISTRY = PluginRegistry(
 
 RETRIEVER_REGISTRY = PluginRegistry(
     name="retriever",
-    scan_packages=["fitz_ai.engines.classic_rag.retrieval.runtime.plugins"],
+    scan_packages=["fitz_ai.engines.classic_rag.retrieval.plugins"],
     required_method="retrieve",
 )
 

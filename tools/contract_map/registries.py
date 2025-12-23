@@ -1,4 +1,4 @@
-# File: tools/contract_map/registries.py
+# tools/contract_map/registries.py
 """Extract plugin registries from the codebase."""
 
 from __future__ import annotations
@@ -208,18 +208,6 @@ def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
     if vdb:
         cm.registries.append(vdb)
 
-    # Retriever registry - Python-based
-    rr = extract_registry_plugins(
-        cm,
-        "fitz_ai.engines.classic_rag.retrieval.runtime.registry",
-        dict_attr="RETRIEVER_REGISTRY",
-        discover_fns=("_auto_discover",),
-        note="Lazy discovery over fitz_ai.engines.classic_rag.retrieval.runtime.plugins.*",
-        verbose=verbose,
-    )
-    if rr:
-        cm.registries.append(rr)
-
     # Chunker registry - Python-based
     cr = extract_registry_plugins(
         cm,
@@ -245,11 +233,12 @@ def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
         cm.registries.append(ir)
 
     # Pipeline registry - Python-based
+    # Fixed: was "pipeline.pipeline.registry", now "pipeline.registry"
     pr = extract_pipeline_registry(
         cm,
-        "fitz_ai.engines.classic_rag.pipeline.pipeline.registry",
+        "fitz_ai.engines.classic_rag.pipeline.registry",
         list_fn="available_pipeline_plugins",
-        note="Lazy discovery over pipeline.pipeline.plugins.*",
+        note="Lazy discovery over pipeline.plugins.*",
         verbose=verbose,
     )
     if pr:
