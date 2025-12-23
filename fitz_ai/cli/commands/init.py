@@ -25,6 +25,18 @@ logger = get_logger(__name__)
 
 
 # =============================================================================
+# Default Config Loading
+# =============================================================================
+
+
+def _load_default_config() -> dict:
+    """Load the default configuration from default.yaml."""
+    from fitz_ai.engines.classic_rag.config import load_config_dict
+
+    return load_config_dict()
+
+
+# =============================================================================
 # System Detection
 # =============================================================================
 
@@ -334,6 +346,14 @@ def command(
     # Select Plugins
     # =========================================================================
 
+    # Load defaults from default.yaml (single source of truth)
+    default_config = _load_default_config()
+    default_ingest = default_config.get("ingest", {})
+    default_chunking = default_ingest.get("chunking", {}).get("default", {})
+    default_chunker = default_chunking.get("plugin_name", "recursive")
+    default_chunk_size = default_chunking.get("kwargs", {}).get("chunk_size", 1000)
+    default_chunk_overlap = default_chunking.get("kwargs", {}).get("chunk_overlap", 200)
+
     if non_interactive:
         # Auto-select best defaults
         chat_choice = get_preferred_default(avail_chat)
@@ -344,10 +364,10 @@ def command(
         retrieval_choice = get_preferred_default(avail_retrieval, "dense")
         rerank_choice = get_preferred_default(avail_rerank) if avail_rerank else None
         rerank_model = _get_default_model("rerank", rerank_choice) if rerank_choice else ""
-        # Chunking defaults
-        chunker_choice = "simple"
-        chunk_size = 1000
-        chunk_overlap = 0
+        # Chunking defaults from default.yaml
+        chunker_choice = default_chunker
+        chunk_size = default_chunk_size
+        chunk_overlap = default_chunk_overlap
 
     else:
         # Interactive selection
@@ -390,14 +410,14 @@ def command(
         else:
             ui.info("Rerank: not available (no rerank plugins detected)")
 
-        # Chunking
+        # Chunking (defaults from default.yaml)
         print()
         ui.print("Chunking configuration:", "bold")
         chunker_choice = ui.prompt_numbered_choice(
-            "Default chunker", avail_chunkers, "simple"
+            "Default chunker", avail_chunkers, default_chunker
         )
-        chunk_size = ui.prompt_int("Chunk size", 1000)
-        chunk_overlap = ui.prompt_int("Chunk overlap", 0)
+        chunk_size = ui.prompt_int("Chunk size", default_chunk_size)
+        chunk_overlap = ui.prompt_int("Chunk overlap", default_chunk_overlap)
 
     # =========================================================================
     # Generate Config

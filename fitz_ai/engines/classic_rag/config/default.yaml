@@ -76,10 +76,10 @@ ingest:
 
   chunking:
     default:
-      plugin_name: simple
+      plugin_name: recursive
       kwargs:
         chunk_size: 1000
-        chunk_overlap: 0
+        chunk_overlap: 200
     by_extension: {}
     warn_on_fallback: true
 

@@ -351,7 +351,11 @@ def _run_ingestion(
     """
     from fitz_ai.core.config import load_config_dict
     from fitz_ai.ingest.chunking.engine import ChunkingEngine
-    from fitz_ai.engines.classic_rag.config import ChunkingRouterConfig, ExtensionChunkerConfig
+    from fitz_ai.engines.classic_rag.config import (
+        ChunkingRouterConfig,
+        ExtensionChunkerConfig,
+        load_config_dict as load_default_config_dict,
+    )
     from fitz_ai.ingest.ingestion.engine import IngestionEngine
     from fitz_ai.ingest.ingestion.registry import get_ingest_plugin
     from fitz_ai.llm.registry import get_llm_plugin
@@ -385,13 +389,35 @@ def _run_ingestion(
     if verbose:
         ui.info("Chunking documents...")
 
-    # Simple chunker only accepts chunk_size (no overlap parameter)
-    chunking_config = ChunkingRouterConfig(
-        default=ExtensionChunkerConfig(
-            plugin_name="simple",
-            kwargs={"chunk_size": 1000},
-        ),
-    )
+    # Load chunking config from user config, fall back to package defaults
+    chunking_cfg = config.get("chunking") or config.get("ingest", {}).get("chunking")
+    if chunking_cfg:
+        default_cfg = chunking_cfg.get("default", {})
+        chunking_config = ChunkingRouterConfig(
+            default=ExtensionChunkerConfig(
+                plugin_name=default_cfg.get("plugin_name", "recursive"),
+                kwargs=default_cfg.get("kwargs", {}),
+            ),
+            by_extension={
+                ext: ExtensionChunkerConfig(
+                    plugin_name=ext_cfg.get("plugin_name", "simple"),
+                    kwargs=ext_cfg.get("kwargs", {}),
+                )
+                for ext, ext_cfg in chunking_cfg.get("by_extension", {}).items()
+            },
+            warn_on_fallback=chunking_cfg.get("warn_on_fallback", True),
+        )
+    else:
+        # Fall back to package defaults from default.yaml
+        default_config = load_default_config_dict()
+        default_ingest = default_config.get("ingest", {})
+        default_chunking = default_ingest.get("chunking", {}).get("default", {})
+        chunking_config = ChunkingRouterConfig(
+            default=ExtensionChunkerConfig(
+                plugin_name=default_chunking.get("plugin_name", "recursive"),
+                kwargs=default_chunking.get("kwargs", {}),
+            ),
+        )
     chunking_engine = ChunkingEngine.from_config(chunking_config)
 
     chunks: List = []
