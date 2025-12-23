@@ -65,7 +65,21 @@ Three constraint plugins run automatically:
 
 No prompt engineering required. No "be careful" system messages. Just honest answers.
 
-### 3. YAML-Defined Everything
+### 3. Full Provenance
+
+Every answer includes sources - which documents, which chunks, what scores:
+
+```
+Answer: The refund policy allows returns within 30 days of purchase...
+
+Sources:
+  [1] policies/refund.md [chunk 3] (vec=0.847, rerank=0.92)
+  [2] faq/payments.md [chunk 1] (vec=0.812, rerank=0.87)
+```
+
+No black boxes. Audit every answer back to its source.
+
+### 4. YAML-Defined Everything
 
 ```yaml
 # Add a new LLM provider: just drop a YAML file
@@ -217,6 +231,7 @@ fitz doctor                        # System diagnostics
 | Time to first answer | 5 min | 30+ min | 20+ min |
 | Config required to start | None | Yes | Yes |
 | Knows when to say "I don't know" | Built-in | DIY | DIY |
+| Source citations | Automatic | Manual setup | Manual setup |
 | Add new LLM provider | Drop a YAML | Subclass + 200 LOC | Subclass + 150 LOC |
 | Swap retrieval paradigm | Change 1 line | Rewrite pipeline | Rewrite pipeline |
 
