@@ -1,6 +1,6 @@
 # fitz_ai/cli/commands/__init__.py
-"""V2 CLI commands."""
+"""CLI commands."""
 
-from fitz_ai.cli.commands import config
+from fitz_ai.cli.commands import config, doctor, ingest, init, query, quickstart
 
-__all__ = ["init", "ingest", "query", "config", "doctor"]
+__all__ = ["config", "doctor", "ingest", "init", "query", "quickstart"]

@@ -55,11 +55,12 @@ classifiers = [
 dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
-    "qdrant-client>=1.7",
     "httpx>=0.24",
     "typing-extensions>=4.7",
     "typer>=0.9",
     "jinja2>=3.1",
+    # FAISS included by default for zero-friction quickstart
+    "faiss-cpu>=1.7.0",
 ]
 
 
@@ -70,10 +71,14 @@ ingest = [
     "python-docx",
 ]
 
-# Local/offline capabilities
+# Local LLM capabilities (Ollama)
 local = [
     "ollama>=0.1.0",
-    "faiss-cpu>=1.7.0",
+]
+
+# Qdrant support (for production deployments)
+qdrant = [
+    "qdrant-client>=1.7",
 ]
 
 # Development tools
@@ -91,7 +96,7 @@ all = [
     "pdfminer.six",
     "python-docx",
     "ollama>=0.1.0",
-    "faiss-cpu>=1.7.0",
+    "qdrant-client>=1.7",
 ]
 
 
