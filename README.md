@@ -217,7 +217,7 @@ fitz query "Which papers cite attention mechanisms for NLP?"
 fitz quickstart [PATH] [QUESTION]  # Zero-config RAG (start here)
 fitz init                          # Interactive setup wizard
 fitz ingest [PATH]                 # Ingest documents
-fitz query "question"              # Query knowledge base
+fitz query [QUESTION]              # Query knowledge base
 fitz config                        # View/edit configuration
 fitz doctor                        # System diagnostics
 ```
