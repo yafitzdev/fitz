@@ -1,17 +1,16 @@
 # fitz_ai/ingest/chunking/plugins/overlap.py
 """
-Overlap chunker - character-based chunking with overlap.
+Overlap chunker (DEPRECATED).
 
-This is essentially an alias for SimpleChunker with a different plugin_name,
-provided for backwards compatibility and clarity when overlap is the primary
-concern.
+This chunker is deprecated - use SimpleChunker with chunk_overlap parameter instead.
+Kept for backwards compatibility only.
 
 Chunker ID format: "overlap:{chunk_size}:{chunk_overlap}"
-Example: "overlap:1000:200" for 1000-char chunks with 200-char overlap
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
@@ -21,26 +20,32 @@ from fitz_ai.engines.classic_rag.models.chunk import Chunk
 @dataclass
 class OverlapChunker:
     """
-    Character-based chunker with configurable overlap.
+    Fixed-size chunker with overlap (DEPRECATED).
 
-    Identical to SimpleChunker but with a distinct plugin_name for
-    cases where you want to explicitly use overlap chunking.
+    DEPRECATED: Use SimpleChunker with chunk_overlap parameter instead.
 
-    The overlap helps maintain context across chunk boundaries, which
-    can improve retrieval quality for queries that span chunk boundaries.
+    This class is kept for backwards compatibility. It delegates to the
+    same logic as SimpleChunker.
 
     Example:
-        >>> chunker = OverlapChunker(chunk_size=1000, chunk_overlap=200)
-        >>> chunker.chunker_id
-        'overlap:1000:200'
+        >>> # Deprecated:
+        >>> chunker = OverlapChunker(chunk_size=1000, chunk_overlap=100)
+        >>> # Use instead:
+        >>> chunker = SimpleChunker(chunk_size=1000, chunk_overlap=100)
     """
 
     plugin_name: str = field(default="overlap", repr=False)
     chunk_size: int = 1000
-    chunk_overlap: int = 200  # Default to 200 for overlap chunker
+    chunk_overlap: int = 100
 
     def __post_init__(self) -> None:
-        """Validate parameters."""
+        """Validate parameters and warn about deprecation."""
+        warnings.warn(
+            "OverlapChunker is deprecated. Use SimpleChunker with chunk_overlap parameter instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         if self.chunk_size < 1:
             raise ValueError(f"chunk_size must be >= 1, got {self.chunk_size}")
         if self.chunk_overlap < 0:
@@ -52,23 +57,19 @@ class OverlapChunker:
 
     @property
     def chunker_id(self) -> str:
-        """
-        Unique identifier for this chunker configuration.
-
-        Format: "overlap:{chunk_size}:{chunk_overlap}"
-        """
+        """Unique identifier for this chunker configuration."""
         return f"{self.plugin_name}:{self.chunk_size}:{self.chunk_overlap}"
 
     def chunk_text(self, text: str, base_meta: Dict[str, Any]) -> List[Chunk]:
         """
-        Split text into overlapping character chunks.
+        Split text into overlapping chunks.
 
         Args:
             text: The text content to chunk.
             base_meta: Base metadata to include in each chunk.
 
         Returns:
-            List of Chunk objects with overlapping content.
+            List of Chunk objects.
         """
         if not text or not text.strip():
             return []
@@ -80,7 +81,6 @@ class OverlapChunker:
         chunks: List[Chunk] = []
         chunk_index = 0
 
-        # Step size: how far to advance after each chunk
         step = self.chunk_size - self.chunk_overlap
         if step < 1:
             step = 1

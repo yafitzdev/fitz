@@ -1,9 +1,21 @@
 # fitz_ai/ingest/chunking/plugins/pdf_sections.py
+"""
+Section-based PDF chunker.
+
+Detects sections in PDF text by identifying:
+- Lines with all caps (common for headers)
+- Lines with title case followed by newlines
+- Numbered sections (1. 2. 3. or 1.1, 1.2, etc.)
+- Common section keywords (Introduction, Abstract, Conclusion, etc.)
+
+Chunker ID format: "pdf_sections:{max_section_chars}:{min_section_chars}"
+Example: "pdf_sections:3000:50"
+"""
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
@@ -16,20 +28,18 @@ class PdfSectionChunker:
 
     Detects sections in PDF text by identifying:
     - Lines with all caps (common for headers)
-    - Lines with title case followed by newlines
     - Numbered sections (1. 2. 3. or 1.1, 1.2, etc.)
-    - Common section keywords (Introduction, Abstract, Conclusion, etc.)
+    - Common section keywords (Introduction, Abstract, etc.)
 
     Chunks are created for each detected section, preserving document structure.
 
-    Args:
-        plugin_name: Plugin identifier
-        min_section_chars: Minimum characters for a valid section (default: 50)
-        max_section_chars: Maximum characters per section before splitting (default: 3000)
-        preserve_short_sections: If True, keep sections shorter than min_section_chars (default: True)
+    Example:
+        >>> chunker = PdfSectionChunker(max_section_chars=3000)
+        >>> chunker.chunker_id
+        'pdf_sections:3000:50'
     """
 
-    plugin_name: str = "pdf_sections"
+    plugin_name: str = field(default="pdf_sections", repr=False)
     min_section_chars: int = 50
     max_section_chars: int = 3000
     preserve_short_sections: bool = True
@@ -60,6 +70,22 @@ class PdfSectionChunker:
         "summary",
     ]
 
+    def __post_init__(self) -> None:
+        """Validate parameters."""
+        if self.max_section_chars < 100:
+            raise ValueError(f"max_section_chars must be >= 100, got {self.max_section_chars}")
+        if self.min_section_chars < 1:
+            raise ValueError(f"min_section_chars must be >= 1, got {self.min_section_chars}")
+        if self.min_section_chars >= self.max_section_chars:
+            raise ValueError(
+                f"min_section_chars ({self.min_section_chars}) must be < max_section_chars ({self.max_section_chars})"
+            )
+
+    @property
+    def chunker_id(self) -> str:
+        """Unique identifier for this chunker configuration."""
+        return f"{self.plugin_name}:{self.max_section_chars}:{self.min_section_chars}"
+
     def _is_section_header(self, line: str) -> bool:
         """
         Determine if a line is likely a section header.
@@ -68,79 +94,80 @@ class PdfSectionChunker:
         1. All caps line (3-50 chars)
         2. Starts with numbered pattern
         3. Contains section keyword and is title case
-        4. Ends with colon
+        4. Short line (< 80 chars) ending without punctuation
         """
-        line_stripped = line.strip()
-
-        if not line_stripped:
+        line = line.strip()
+        if not line:
             return False
 
-        # All caps (common for headers)
-        if (
-                line_stripped.isupper()
-                and 3 <= len(line_stripped) <= 50
-                and not line_stripped.isdigit()
-        ):
+        # All caps detection (3-50 chars)
+        if line.isupper() and 3 <= len(line) <= 50:
             return True
 
         # Numbered section patterns
         for pattern in self._SECTION_PATTERNS:
-            if pattern.match(line_stripped):
+            if pattern.match(line):
                 return True
 
-        # Section keywords with title case
-        line_lower = line_stripped.lower()
+        # Section keyword detection
+        line_lower = line.lower()
         for keyword in self._SECTION_KEYWORDS:
-            if keyword in line_lower and line_stripped[0].isupper():
+            if line_lower.startswith(keyword) and len(line) < 80:
                 return True
 
-        # Ends with colon (often indicates header)
-        if line_stripped.endswith(":") and 3 <= len(line_stripped) <= 100:
-            words = line_stripped.split()
-            if len(words) <= 8:  # Headers are typically short
-                return True
+        # Title case short line without ending punctuation
+        if (
+            len(line) < 80
+            and line[0].isupper()
+            and not line.endswith((".", ",", ";", ":", "?", "!"))
+            and line.istitle()
+        ):
+            return True
 
         return False
 
     def _split_into_sections(self, text: str) -> List[Tuple[str, str]]:
         """
-        Split text into (header, content) tuples based on detected sections.
+        Split text into sections based on detected headers.
 
-        Returns:
-            List of (section_header, section_content) tuples
+        Returns list of (header, content) tuples.
         """
         lines = text.split("\n")
         sections: List[Tuple[str, str]] = []
-        current_header = "Introduction"
-        current_lines: List[str] = []
+
+        current_header = "Document"
+        current_content: List[str] = []
 
         for line in lines:
             if self._is_section_header(line):
                 # Save previous section
-                if current_lines:
-                    content = "\n".join(current_lines).strip()
+                if current_content:
+                    content = "\n".join(current_content).strip()
                     if content:
                         sections.append((current_header, content))
 
                 # Start new section
                 current_header = line.strip()
-                current_lines = []
+                current_content = []
             else:
-                current_lines.append(line)
+                current_content.append(line)
 
         # Save final section
-        if current_lines:
-            content = "\n".join(current_lines).strip()
+        if current_content:
+            content = "\n".join(current_content).strip()
             if content:
                 sections.append((current_header, content))
 
         return sections
 
     def _split_large_section(
-            self, header: str, content: str, max_chars: int
+        self,
+        header: str,
+        content: str,
+        max_chars: int,
     ) -> List[Tuple[str, str]]:
         """
-        Split a large section into smaller parts if it exceeds max_chars.
+        Split a large section into smaller chunks.
 
         Splits on paragraph boundaries when possible.
         """
@@ -217,12 +244,15 @@ class PdfSectionChunker:
         Chunk PDF text by detected sections.
 
         Args:
-            text: Raw PDF text content
+            text: Raw PDF text content.
             base_meta: Base metadata including doc_id, source_file, etc.
 
         Returns:
-            List of Chunk objects, one per section (or section part)
+            List of Chunk objects, one per section (or section part).
         """
+        if not text or not text.strip():
+            return []
+
         doc_id = str(
             base_meta.get("doc_id") or base_meta.get("source_file") or "unknown"
         )
@@ -240,8 +270,8 @@ class PdfSectionChunker:
         for header, content in sections:
             # Skip very short sections unless preserve_short_sections is True
             if (
-                    not self.preserve_short_sections
-                    and len(content) < self.min_section_chars
+                not self.preserve_short_sections
+                and len(content) < self.min_section_chars
             ):
                 continue
 
@@ -272,3 +302,6 @@ class PdfSectionChunker:
                 chunk_index += 1
 
         return chunks
+
+
+__all__ = ["PdfSectionChunker"]
