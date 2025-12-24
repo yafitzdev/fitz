@@ -19,7 +19,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # =============================================================================
 # Plugin Configuration
 # =============================================================================
@@ -173,9 +172,7 @@ class IngestConfig(BaseModel):
     """
 
     ingester: IngesterConfig = Field(..., description="Ingestion plugin config")
-    chunking: ChunkingRouterConfig = Field(
-        ..., description="Chunking router config"
-    )
+    chunking: ChunkingRouterConfig = Field(..., description="Chunking router config")
     collection: str = Field(..., description="Target vector DB collection")
 
     model_config = ConfigDict(extra="forbid")
@@ -206,7 +203,9 @@ class RetrievalConfig(BaseModel):
     - dense_rerank: Vector search + rerank + threshold + dedupe
     """
 
-    plugin_name: str = Field(default="dense", description="Retrieval plugin name (references YAML file)")
+    plugin_name: str = Field(
+        default="dense", description="Retrieval plugin name (references YAML file)"
+    )
     collection: str = Field(..., description="Vector DB collection name")
     top_k: int = Field(default=5, ge=1, description="Final number of chunks to return")
 
@@ -315,10 +314,14 @@ class ClassicRagConfig(BaseModel):
     # Required plugins
     chat: PluginConfig = Field(..., description="Chat/LLM plugin configuration")
     embedding: PluginConfig = Field(..., description="Embedding plugin configuration")
-    vector_db: PluginConfig = Field(..., description="Vector database plugin configuration")
+    vector_db: PluginConfig = Field(
+        ..., description="Vector database plugin configuration"
+    )
 
     # Retrieval (new step-based config)
-    retrieval: RetrievalConfig = Field(..., description="Retrieval pipeline configuration")
+    retrieval: RetrievalConfig = Field(
+        ..., description="Retrieval pipeline configuration"
+    )
 
     # Optional components
     rerank: RerankConfig = Field(
@@ -336,7 +339,8 @@ class ClassicRagConfig(BaseModel):
 
     # Chunking (optional - can be at top level for convenience, used by fitz ingest)
     chunking: ChunkingRouterConfig | None = Field(
-        default=None, description="Chunking configuration (top-level for CLI convenience)"
+        default=None,
+        description="Chunking configuration (top-level for CLI convenience)",
     )
 
     model_config = ConfigDict(extra="forbid")

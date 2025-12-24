@@ -53,7 +53,9 @@ def detect_system():
 # =============================================================================
 
 
-def _filter_available_plugins(plugins: list[str], plugin_type: str, system) -> list[str]:
+def _filter_available_plugins(
+    plugins: list[str], plugin_type: str, system
+) -> list[str]:
     """Filter plugins to only those that are available."""
     available = []
 
@@ -80,17 +82,23 @@ def _filter_available_plugins(plugins: list[str], plugin_type: str, system) -> l
 
         # API-based plugins require API keys
         if "cohere" in plugin_lower:
-            if system.api_keys.get("cohere", type("", (), {"available": False})).available:
+            if system.api_keys.get(
+                "cohere", type("", (), {"available": False})
+            ).available:
                 available.append(plugin)
             continue
 
         if "openai" in plugin_lower or "azure" in plugin_lower:
-            if system.api_keys.get("openai", type("", (), {"available": False})).available:
+            if system.api_keys.get(
+                "openai", type("", (), {"available": False})
+            ).available:
                 available.append(plugin)
             continue
 
         if "anthropic" in plugin_lower:
-            if system.api_keys.get("anthropic", type("", (), {"available": False})).available:
+            if system.api_keys.get(
+                "anthropic", type("", (), {"available": False})
+            ).available:
                 available.append(plugin)
             continue
 
@@ -292,12 +300,16 @@ def command(
     ui.status(
         "Ollama",
         system.ollama.available,
-        f"{system.ollama.host}:{system.ollama.port}" if system.ollama.available else system.ollama.details,
+        f"{system.ollama.host}:{system.ollama.port}"
+        if system.ollama.available
+        else system.ollama.details,
     )
     ui.status(
         "Qdrant",
         system.qdrant.available,
-        f"{system.qdrant.host}:{system.qdrant.port}" if system.qdrant.available else system.qdrant.details,
+        f"{system.qdrant.host}:{system.qdrant.port}"
+        if system.qdrant.available
+        else system.qdrant.details,
     )
     ui.status("FAISS", system.faiss.available)
 
@@ -352,7 +364,9 @@ def command(
     # Plugin defaults from default.yaml
     default_chat = default_config.get("chat", {}).get("plugin_name", "cohere")
     default_embedding = default_config.get("embedding", {}).get("plugin_name", "cohere")
-    default_vector_db = default_config.get("vector_db", {}).get("plugin_name", "local_faiss")
+    default_vector_db = default_config.get("vector_db", {}).get(
+        "plugin_name", "local_faiss"
+    )
     default_retrieval = default_config.get("retrieval", {}).get("plugin_name", "dense")
     default_rerank = default_config.get("rerank", {}).get("plugin_name", "cohere")
 
@@ -377,8 +391,14 @@ def command(
         embedding_model = _get_default_model("embedding", embedding_choice)
         vector_db_choice = _get_default_or_first(avail_vector_db, default_vector_db)
         retrieval_choice = _get_default_or_first(avail_retrieval, default_retrieval)
-        rerank_choice = _get_default_or_first(avail_rerank, default_rerank) if avail_rerank else None
-        rerank_model = _get_default_model("rerank", rerank_choice) if rerank_choice else ""
+        rerank_choice = (
+            _get_default_or_first(avail_rerank, default_rerank)
+            if avail_rerank
+            else None
+        )
+        rerank_model = (
+            _get_default_model("rerank", rerank_choice) if rerank_choice else ""
+        )
         # Chunking defaults from default.yaml
         chunker_choice = default_chunker
         chunk_size = default_chunk_size
@@ -397,20 +417,26 @@ def command(
         # Embedding
         print()
         embedding_choice = ui.prompt_numbered_choice(
-            "Embedding plugin", avail_embedding, _get_default_or_first(avail_embedding, default_embedding)
+            "Embedding plugin",
+            avail_embedding,
+            _get_default_or_first(avail_embedding, default_embedding),
         )
         embedding_model = _prompt_model("embedding", embedding_choice)
 
         # Vector DB
         print()
         vector_db_choice = ui.prompt_numbered_choice(
-            "Vector database", avail_vector_db, _get_default_or_first(avail_vector_db, default_vector_db)
+            "Vector database",
+            avail_vector_db,
+            _get_default_or_first(avail_vector_db, default_vector_db),
         )
 
         # Retrieval
         print()
         retrieval_choice = ui.prompt_numbered_choice(
-            "Retrieval strategy", avail_retrieval, _get_default_or_first(avail_retrieval, default_retrieval)
+            "Retrieval strategy",
+            avail_retrieval,
+            _get_default_or_first(avail_retrieval, default_retrieval),
         )
 
         # Rerank (optional)
@@ -419,7 +445,9 @@ def command(
         if avail_rerank:
             print()
             rerank_choice = ui.prompt_numbered_choice(
-                "Rerank plugin", avail_rerank, _get_default_or_first(avail_rerank, default_rerank)
+                "Rerank plugin",
+                avail_rerank,
+                _get_default_or_first(avail_rerank, default_rerank),
             )
             rerank_model = _prompt_model("rerank", rerank_choice)
         else:

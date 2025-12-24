@@ -11,8 +11,8 @@ Tests:
 import pytest
 
 from fitz_ai.ingest.chunking.plugins.markdown import MarkdownChunker
-from fitz_ai.ingest.chunking.plugins.python_code import PythonCodeChunker
 from fitz_ai.ingest.chunking.plugins.pdf_sections import PdfSectionChunker
+from fitz_ai.ingest.chunking.plugins.python_code import PythonCodeChunker
 
 
 class TestMarkdownChunker:
@@ -119,7 +119,10 @@ Content here.
         # Header might be in metadata
         for chunk in chunks:
             if "Introduction" in chunk.content:
-                assert "section_header" in chunk.metadata or "Introduction" in chunk.content
+                assert (
+                    "section_header" in chunk.metadata
+                    or "Introduction" in chunk.content
+                )
 
 
 class TestPythonCodeChunker:
@@ -203,13 +206,13 @@ def my_function():
     def test_includes_imports_when_enabled(self):
         """Test that imports are included in chunks."""
         chunker = PythonCodeChunker(include_imports=True)
-        code = '''
+        code = """
 import os
 from pathlib import Path
 
 def my_function():
     return os.getcwd()
-'''
+"""
         chunks = chunker.chunk_text(code, {"doc_id": "test"})
 
         # Function chunk should include imports
@@ -225,10 +228,10 @@ def my_function():
     def test_code_element_in_metadata(self):
         """Test that code element name is in metadata."""
         chunker = PythonCodeChunker()
-        code = '''
+        code = """
 def my_function():
     pass
-'''
+"""
         chunks = chunker.chunk_text(code, {"doc_id": "test"})
 
         assert len(chunks) >= 1
@@ -313,9 +316,12 @@ This is the conclusion.
     def test_splits_large_sections(self):
         """Test that large sections are split."""
         chunker = PdfSectionChunker(max_section_chars=100)
-        text = """INTRODUCTION
+        text = (
+            """INTRODUCTION
 
-""" + "This is a very long paragraph. " * 50
+"""
+            + "This is a very long paragraph. " * 50
+        )
 
         chunks = chunker.chunk_text(text, {"doc_id": "test"})
 

@@ -11,14 +11,14 @@ if auto-discovery fails.
 # Uncomment this section if auto-discovery isn't working:
 
 # from fitz_ai.core.registry import CHUNKING_REGISTRY
-# 
+#
 # # Import and register each plugin explicitly
 # try:
 #     from .simple import SimpleChunker
 #     CHUNKING_REGISTRY.register(SimpleChunker)
 # except Exception:
 #     pass
-# 
+#
 # try:
 #     from .pdf_sections import PdfSectionChunker
 #     CHUNKING_REGISTRY.register(PdfSectionChunker)

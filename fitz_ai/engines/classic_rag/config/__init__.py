@@ -17,20 +17,17 @@ from .loader import (
     load_config,
     load_config_dict,
 )
-from .schema import (
-    # Main config
+from .schema import (  # Main config; RAG sub-configs; Ingestion configs
+    ChunkingRouterConfig,
     ClassicRagConfig,
-    # RAG sub-configs
+    ExtensionChunkerConfig,
+    IngestConfig,
+    IngesterConfig,
     LoggingConfig,
     PluginConfig,
     RerankConfig,
     RetrievalConfig,
     RGSConfig,
-    # Ingestion configs
-    ChunkingRouterConfig,
-    ExtensionChunkerConfig,
-    IngestConfig,
-    IngesterConfig,
 )
 
 __all__ = [

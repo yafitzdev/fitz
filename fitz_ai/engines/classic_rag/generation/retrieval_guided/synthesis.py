@@ -106,10 +106,10 @@ class RGS:
             raise RGSGenerationError("Failed to build RGS prompt") from e
 
     def build_answer(
-            self,
-            raw_answer: str,
-            chunks: Sequence[ChunkInput],
-            mode: "AnswerMode | None" = None,
+        self,
+        raw_answer: str,
+        chunks: Sequence[ChunkInput],
+        mode: "AnswerMode | None" = None,
     ) -> RGSAnswer:
         """Structure raw LLM output into RGSAnswer with source references."""
         try:
@@ -179,7 +179,16 @@ class RGS:
 
     def _get_chunk_doc_id(self, chunk: ChunkInput) -> str:
         """Extract document ID from chunk-like object."""
-        return str(_get_attr(chunk, "doc_id", "document_id", "source_file", "source", default="unknown"))
+        return str(
+            _get_attr(
+                chunk,
+                "doc_id",
+                "document_id",
+                "source_file",
+                "source",
+                default="unknown",
+            )
+        )
 
     def _get_chunk_metadata(self, chunk: ChunkInput) -> dict[str, Any]:
         """Extract metadata from chunk-like object."""

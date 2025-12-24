@@ -6,10 +6,8 @@ Tests for the quickstart command.
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 from fitz_ai.cli.cli import app
@@ -68,7 +66,6 @@ class TestEnsureApiKey:
         # Clear the key
         os.environ.pop("COHERE_API_KEY", None)
 
-        from fitz_ai.cli.commands.quickstart import _ensure_api_key
 
         # Would prompt - we can't easily test interactive prompts
         # but we can verify the function exists and has correct signature
@@ -151,9 +148,7 @@ class TestSaveApiKeyToShell:
         bashrc = tmp_path / ".bashrc"
         bashrc.write_text("# existing content\n")
 
-        with patch(
-            "fitz_ai.cli.commands.quickstart.Path.home", return_value=tmp_path
-        ):
+        with patch("fitz_ai.cli.commands.quickstart.Path.home", return_value=tmp_path):
             _save_api_key_to_shell("test-key-123")
 
         content = bashrc.read_text()
@@ -167,9 +162,7 @@ class TestSaveApiKeyToShell:
         bashrc = tmp_path / ".bashrc"
         bashrc.write_text('export COHERE_API_KEY="existing-key"\n')
 
-        with patch(
-            "fitz_ai.cli.commands.quickstart.Path.home", return_value=tmp_path
-        ):
+        with patch("fitz_ai.cli.commands.quickstart.Path.home", return_value=tmp_path):
             _save_api_key_to_shell("new-key-123")
 
         content = bashrc.read_text()

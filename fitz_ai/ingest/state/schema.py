@@ -136,11 +136,7 @@ class IngestState(BaseModel):
         root_entry = self.roots.get(root)
         if root_entry is None:
             return set()
-        return {
-            path
-            for path, entry in root_entry.files.items()
-            if entry.is_active()
-        }
+        return {path for path, entry in root_entry.files.items() if entry.is_active()}
 
 
 __all__ = [

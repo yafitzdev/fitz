@@ -335,7 +335,9 @@ class GenericVectorDBPlugin:
             **self.kwargs,
         }
 
-        transformed_points = self.spec.transform_points(converted_points, "upsert", context)
+        transformed_points = self.spec.transform_points(
+            converted_points, "upsert", context
+        )
         context["points"] = transformed_points
 
         endpoint = Template(op["endpoint"]).render(context)

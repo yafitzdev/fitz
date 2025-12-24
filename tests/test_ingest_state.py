@@ -4,16 +4,15 @@ Tests for fitz_ai.ingest.state module.
 """
 
 import json
-import pytest
-from datetime import datetime
 from pathlib import Path
 
+
 from fitz_ai.ingest.state import (
-    IngestStateManager,
-    IngestState,
+    EmbeddingConfig,
     FileEntry,
     FileStatus,
-    EmbeddingConfig,
+    IngestState,
+    IngestStateManager,
 )
 
 
@@ -214,16 +213,37 @@ class TestIngestStateManager:
 
         # Add some files
         manager.mark_active(
-            "/root/a.md", "/root", "sha256:a", ".md", 100, 1234567890.0,
-            "simple:1000:0", "md.v1", "cohere:embed-english-v3.0"
+            "/root/a.md",
+            "/root",
+            "sha256:a",
+            ".md",
+            100,
+            1234567890.0,
+            "simple:1000:0",
+            "md.v1",
+            "cohere:embed-english-v3.0",
         )
         manager.mark_active(
-            "/root/b.md", "/root", "sha256:b", ".md", 100, 1234567890.0,
-            "simple:1000:0", "md.v1", "cohere:embed-english-v3.0"
+            "/root/b.md",
+            "/root",
+            "sha256:b",
+            ".md",
+            100,
+            1234567890.0,
+            "simple:1000:0",
+            "md.v1",
+            "cohere:embed-english-v3.0",
         )
         manager.mark_active(
-            "/root/c.md", "/root", "sha256:c", ".md", 100, 1234567890.0,
-            "simple:1000:0", "md.v1", "cohere:embed-english-v3.0"
+            "/root/c.md",
+            "/root",
+            "sha256:c",
+            ".md",
+            100,
+            1234567890.0,
+            "simple:1000:0",
+            "md.v1",
+            "cohere:embed-english-v3.0",
         )
 
         # Delete one

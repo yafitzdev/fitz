@@ -45,7 +45,9 @@ class VectorSearchStep(RetrievalStep):
 
         Note: `chunks` parameter is ignored - this step produces initial chunks.
         """
-        logger.debug(f"{RETRIEVER} VectorSearchStep: k={self.k}, collection={self.collection}")
+        logger.debug(
+            f"{RETRIEVER} VectorSearchStep: k={self.k}, collection={self.collection}"
+        )
 
         # 1. Embed query
         try:
@@ -72,7 +74,9 @@ class VectorSearchStep(RetrievalStep):
         # 3. Convert hits to Chunks
         results: list[Chunk] = []
         for idx, hit in enumerate(hits):
-            payload = getattr(hit, "payload", None) or getattr(hit, "metadata", None) or {}
+            payload = (
+                getattr(hit, "payload", None) or getattr(hit, "metadata", None) or {}
+            )
             if not isinstance(payload, dict):
                 payload = {}
 

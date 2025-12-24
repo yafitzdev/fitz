@@ -10,7 +10,6 @@ These tests verify:
 
 from __future__ import annotations
 
-import pytest
 
 from fitz_ai.engines.classic_rag.constraints import (
     ConflictAwareConstraint,
@@ -18,7 +17,6 @@ from fitz_ai.engines.classic_rag.constraints import (
     apply_constraints,
 )
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
-
 
 # =============================================================================
 # Test Data
@@ -83,7 +81,10 @@ class TestConflictAwareConstraint:
 
         chunks = [
             make_chunk("1", "Incident 17B was classified as a security incident."),
-            make_chunk("2", "Incident 17B was an operational incident caused by misconfiguration."),
+            make_chunk(
+                "2",
+                "Incident 17B was an operational incident caused by misconfiguration.",
+            ),
         ]
 
         result = constraint.apply("Was Incident 17B a security incident?", chunks)

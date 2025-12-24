@@ -23,7 +23,7 @@ Usage:
     chunks = engine.run(raw_doc)
 """
 
-from fitz_ai.ingest.chunking.base import ChunkerPlugin, Chunk
+from fitz_ai.ingest.chunking.base import Chunk, ChunkerPlugin
 from fitz_ai.ingest.chunking.engine import ChunkingEngine
 from fitz_ai.ingest.chunking.router import ChunkingRouter
 

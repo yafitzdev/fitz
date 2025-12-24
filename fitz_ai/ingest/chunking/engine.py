@@ -14,13 +14,12 @@ Architecture:
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any, Dict, List
 
+from fitz_ai.engines.classic_rag.config import ChunkingRouterConfig
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
 from fitz_ai.ingest.chunking.router import ChunkingRouter
-from fitz_ai.engines.classic_rag.config import ChunkingRouterConfig
 from fitz_ai.ingest.exceptions.chunking import IngestionChunkingError
 from fitz_ai.ingest.exceptions.config import IngestionConfigError
 from fitz_ai.logging.logger import get_logger

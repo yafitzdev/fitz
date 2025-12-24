@@ -47,7 +47,9 @@ def _to_chunk_dict(chunk_like: Any) -> ChunkDict:
     if not isinstance(metadata, Mapping):
         metadata = {}
 
-    doc_id = str(_get_attr(chunk_like, "doc_id", "document_id", "source", default="unknown"))
+    doc_id = str(
+        _get_attr(chunk_like, "doc_id", "document_id", "source", default="unknown")
+    )
 
     chunk_index_raw = _get_attr(chunk_like, "chunk_index", default=0)
     chunk_index = int(chunk_index_raw) if chunk_index_raw is not None else 0

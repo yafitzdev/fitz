@@ -15,7 +15,6 @@ import pytest
 from fitz_ai.engines.classic_rag.constraints import CausalAttributionConstraint
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
 
-
 # =============================================================================
 # Test Data
 # =============================================================================

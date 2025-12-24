@@ -294,11 +294,13 @@ class DiffIngestExecutor:
                 "metadata": dict(chunk.metadata or {}),
             }
 
-            points.append({
-                "id": chunk_id,
-                "vector": vector,
-                "payload": payload,
-            })
+            points.append(
+                {
+                    "id": chunk_id,
+                    "vector": vector,
+                    "payload": payload,
+                }
+            )
 
         # 4. Upsert to vector DB
         self._vdb_writer.upsert(self._collection, points)

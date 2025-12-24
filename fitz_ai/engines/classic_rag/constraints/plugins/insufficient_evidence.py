@@ -42,7 +42,9 @@ FACT_QUERY_PATTERNS: tuple[re.Pattern, ...] = (
     re.compile(r"^\s*who\b", re.I),
     re.compile(r"^\s*where\b", re.I),
     re.compile(r"^\s*when\b", re.I),
-    re.compile(r"\bwhich\s+\w+\s+(is|was|are|were|does|did|has|have|supports?|caused?)\b", re.I),
+    re.compile(
+        r"\bwhich\s+\w+\s+(is|was|are|were|does|did|has|have|supports?|caused?)\b", re.I
+    ),
 )
 
 CAUSAL_QUERY_PATTERNS: tuple[re.Pattern, ...] = (
@@ -122,10 +124,37 @@ def _extract_query_keywords(query: str) -> set[str]:
     """Extract key terms from query for matching."""
     # Remove common question words and stopwords
     stopwords = {
-        "which", "what", "who", "where", "when", "why", "how",
-        "is", "was", "are", "were", "does", "did", "has", "have",
-        "the", "a", "an", "of", "in", "on", "for", "to", "and", "or",
-        "this", "that", "these", "those", "it", "its",
+        "which",
+        "what",
+        "who",
+        "where",
+        "when",
+        "why",
+        "how",
+        "is",
+        "was",
+        "are",
+        "were",
+        "does",
+        "did",
+        "has",
+        "have",
+        "the",
+        "a",
+        "an",
+        "of",
+        "in",
+        "on",
+        "for",
+        "to",
+        "and",
+        "or",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
     }
 
     words = re.findall(r"\b\w+\b", query.lower())
@@ -239,7 +268,9 @@ class InsufficientEvidenceConstraint:
 
         # Rule 1: Empty context
         if not chunks:
-            logger.info(f"{PIPELINE} InsufficientEvidenceConstraint: no chunks retrieved")
+            logger.info(
+                f"{PIPELINE} InsufficientEvidenceConstraint: no chunks retrieved"
+            )
             return ConstraintResult.deny(
                 reason="No evidence retrieved",
                 signal="abstain",

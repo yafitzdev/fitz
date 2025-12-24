@@ -15,7 +15,6 @@ from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
 from fitz_ai.engines.classic_rag.constraints import (
     ConstraintPlugin,
     ConstraintResult,
-    apply_constraints,
     get_default_constraints,
 )
 from fitz_ai.engines.classic_rag.exceptions import (

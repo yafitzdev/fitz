@@ -17,7 +17,7 @@ import typer
 
 app = typer.Typer(
     name="fitz",
-    help="Fitz - local-first RAG framework. Start with: fitz quickstart ./docs \"your question\"",
+    help='Fitz - local-first RAG framework. Start with: fitz quickstart ./docs "your question"',
     no_args_is_help=True,
     add_completion=False,
 )

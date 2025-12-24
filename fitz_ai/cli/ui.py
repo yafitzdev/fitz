@@ -202,7 +202,9 @@ class UI:
             if title:
                 print("-" * (len(title) + 8))
 
-    def summary_panel(self, content: str, title: str = "", style: str = "green") -> None:
+    def summary_panel(
+        self, content: str, title: str = "", style: str = "green"
+    ) -> None:
         """
         Print a summary panel (full-width, typically at end of command).
 
@@ -267,10 +269,10 @@ class UI:
             return response in ("y", "yes")
 
     def prompt_path(
-            self,
-            prompt: str,
-            default: str = ".",
-            must_exist: bool = True,
+        self,
+        prompt: str,
+        default: str = ".",
+        must_exist: bool = True,
     ) -> Path:
         """Prompt for a path with optional validation."""
         while True:
@@ -290,10 +292,10 @@ class UI:
                     raise typer.Exit(1)
 
     def prompt_numbered_choice(
-            self,
-            prompt: str,
-            choices: list[str],
-            default: str = "",
+        self,
+        prompt: str,
+        choices: list[str],
+        default: str = "",
     ) -> str:
         """
         Prompt for a numbered choice selection.
@@ -330,7 +332,9 @@ class UI:
             console.print(f"  [bold]{prompt}:[/bold]")
             for i, choice in enumerate(ordered_choices, 1):
                 if choice == default:
-                    console.print(f"    [cyan][{i}][/cyan] {choice} [dim](default)[/dim]")
+                    console.print(
+                        f"    [cyan][{i}][/cyan] {choice} [dim](default)[/dim]"
+                    )
                 else:
                     console.print(f"    [cyan][{i}][/cyan] {choice}")
         else:
@@ -359,7 +363,9 @@ class UI:
                     return selected
                 else:
                     if RICH:
-                        console.print(f"  [red]Please enter 1-{len(ordered_choices)}[/red]")
+                        console.print(
+                            f"  [red]Please enter 1-{len(ordered_choices)}[/red]"
+                        )
                     else:
                         print(f"  Please enter 1-{len(ordered_choices)}")
             except ValueError:
@@ -373,10 +379,10 @@ class UI:
     # -------------------------------------------------------------------------
 
     def table(
-            self,
-            headers: list[str],
-            rows: list[list[str]],
-            title: str = "",
+        self,
+        headers: list[str],
+        rows: list[list[str]],
+        title: str = "",
     ) -> None:
         """Print a table."""
         if RICH:
@@ -433,9 +439,9 @@ class UI:
     # -------------------------------------------------------------------------
 
     def progress(
-            self,
-            description: str = "Working...",
-            total: Optional[int] = None,
+        self,
+        description: str = "Working...",
+        total: Optional[int] = None,
     ):
         """
         Create a progress context manager.

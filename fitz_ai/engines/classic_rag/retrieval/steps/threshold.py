@@ -40,7 +40,9 @@ class ThresholdStep(RetrievalStep):
         if not chunks:
             return chunks
 
-        logger.debug(f"{RETRIEVER} ThresholdStep: τ={self.threshold}, input={len(chunks)}")
+        logger.debug(
+            f"{RETRIEVER} ThresholdStep: τ={self.threshold}, input={len(chunks)}"
+        )
 
         filtered: list[Chunk] = []
         for chunk in chunks:

@@ -76,7 +76,9 @@ def display_answer(answer, show_sources: bool = True) -> None:
                 excerpt = content[:70] + "..." if len(content) > 70 else content
                 excerpt = excerpt.replace("\n", " ").replace("\r", " ")
 
-                table.add_row(str(i), display_name, chunk_str, vector_str, rerank_str, excerpt)
+                table.add_row(
+                    str(i), display_name, chunk_str, vector_str, rerank_str, excerpt
+                )
 
             console.print(table)
     else:

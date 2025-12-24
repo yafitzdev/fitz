@@ -16,7 +16,7 @@ It only prevents confident collapse when evidence disagrees.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Sequence
 
 from fitz_ai.logging.logger import get_logger
@@ -36,11 +36,17 @@ logger = get_logger(__name__)
 
 # Patterns indicating explicit classification/categorization
 CLASSIFICATION_PATTERNS: tuple[re.Pattern, ...] = (
-    re.compile(r"\b(?:is|was|are|were)\s+(?:a|an|the)?\s*(\w+(?:\s+\w+)?)\s+(?:incident|event|issue|problem)", re.I),
+    re.compile(
+        r"\b(?:is|was|are|were)\s+(?:a|an|the)?\s*(\w+(?:\s+\w+)?)\s+(?:incident|event|issue|problem)",
+        re.I,
+    ),
     re.compile(r"\bclassified\s+as\s+(?:a|an)?\s*['\"]?(\w+(?:\s+\w+)?)['\"]?", re.I),
     re.compile(r"\bcategor(?:y|ized)\s+(?:as|:)\s*['\"]?(\w+(?:\s+\w+)?)['\"]?", re.I),
     re.compile(r"\btype\s*:\s*['\"]?(\w+(?:\s+\w+)?)['\"]?", re.I),
-    re.compile(r"\b(?:security|operational|infrastructure|network)\s+(?:incident|event|issue)", re.I),
+    re.compile(
+        r"\b(?:security|operational|infrastructure|network)\s+(?:incident|event|issue)",
+        re.I,
+    ),
 )
 
 # Mutually exclusive classification pairs (normalized to lowercase)
@@ -88,7 +94,7 @@ def _find_conflicts(chunks: Sequence["Chunk"]) -> list[tuple[str, str, str, str]
 
     # Compare all pairs
     for i, (id1, classes1) in enumerate(chunk_classes):
-        for id2, classes2 in chunk_classes[i + 1:]:
+        for id2, classes2 in chunk_classes[i + 1 :]:
             for term1 in classes1:
                 for term2 in classes2:
                     if _are_conflicting(term1, term2):
@@ -188,7 +194,9 @@ class ConflictAwareConstraint:
 
         # If query explicitly asks for resolution, allow decisive answer
         if _is_resolution_query(query):
-            logger.debug(f"{PIPELINE} ConflictAwareConstraint: resolution query detected, allowing")
+            logger.debug(
+                f"{PIPELINE} ConflictAwareConstraint: resolution query detected, allowing"
+            )
             return ConstraintResult.allow()
 
         # Detect conflicts
@@ -202,7 +210,9 @@ class ConflictAwareConstraint:
         for chunk1_id, class1, chunk2_id, class2 in conflicts[:3]:  # Limit to 3
             conflict_descriptions.append(f"'{class1}' vs '{class2}'")
 
-        reason = f"Conflicting classifications detected: {', '.join(conflict_descriptions)}"
+        reason = (
+            f"Conflicting classifications detected: {', '.join(conflict_descriptions)}"
+        )
 
         logger.info(f"{PIPELINE} ConflictAwareConstraint: {reason}")
 

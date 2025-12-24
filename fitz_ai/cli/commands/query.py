@@ -199,14 +199,20 @@ def command(
     # Embedding
     embedding_plugin = raw_config.get("embedding", {}).get("plugin_name", "?")
     embedding_model = raw_config.get("embedding", {}).get("kwargs", {}).get("model", "")
-    display_embedding = f"{embedding_plugin} ({embedding_model})" if embedding_model else embedding_plugin
+    display_embedding = (
+        f"{embedding_plugin} ({embedding_model})"
+        if embedding_model
+        else embedding_plugin
+    )
 
     # Rerank
     display_rerank = None
     if raw_config.get("rerank", {}).get("enabled"):
         rerank_plugin = raw_config.get("rerank", {}).get("plugin_name", "?")
         rerank_model = raw_config.get("rerank", {}).get("kwargs", {}).get("model", "")
-        display_rerank = f"{rerank_plugin} ({rerank_model})" if rerank_model else rerank_plugin
+        display_rerank = (
+            f"{rerank_plugin} ({rerank_model})" if rerank_model else rerank_plugin
+        )
 
     # =========================================================================
     # Show query info

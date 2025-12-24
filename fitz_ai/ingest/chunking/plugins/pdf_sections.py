@@ -73,9 +73,13 @@ class PdfSectionChunker:
     def __post_init__(self) -> None:
         """Validate parameters."""
         if self.max_section_chars < 100:
-            raise ValueError(f"max_section_chars must be >= 100, got {self.max_section_chars}")
+            raise ValueError(
+                f"max_section_chars must be >= 100, got {self.max_section_chars}"
+            )
         if self.min_section_chars < 1:
-            raise ValueError(f"min_section_chars must be >= 1, got {self.min_section_chars}")
+            raise ValueError(
+                f"min_section_chars must be >= 1, got {self.min_section_chars}"
+            )
         if self.min_section_chars >= self.max_section_chars:
             raise ValueError(
                 f"min_section_chars ({self.min_section_chars}) must be < max_section_chars ({self.max_section_chars})"

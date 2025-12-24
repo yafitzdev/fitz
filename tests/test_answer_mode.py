@@ -10,7 +10,6 @@ These tests verify:
 
 from __future__ import annotations
 
-import pytest
 
 from fitz_ai.core.answer_mode import AnswerMode
 from fitz_ai.core.answer_mode_resolver import resolve_answer_mode
@@ -19,7 +18,6 @@ from fitz_ai.engines.classic_rag.generation.answer_mode.instructions import (
     MODE_INSTRUCTIONS,
     get_mode_instruction,
 )
-
 
 # =============================================================================
 # Tests: AnswerMode Enum

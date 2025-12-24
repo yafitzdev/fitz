@@ -94,7 +94,7 @@ class RecursiveChunker:
                     if len(part_with_sep) > self.chunk_size:
                         # Recursively split with remaining separators
                         sub_chunks = self._split_text(
-                            part_with_sep, separators[i + 1:]
+                            part_with_sep, separators[i + 1 :]
                         )
                         chunks.extend(sub_chunks)
                         current = ""
@@ -105,7 +105,7 @@ class RecursiveChunker:
             if current.strip():
                 # Check if it's too big
                 if len(current) > self.chunk_size:
-                    sub_chunks = self._split_text(current, separators[i + 1:])
+                    sub_chunks = self._split_text(current, separators[i + 1 :])
                     chunks.extend(sub_chunks)
                 else:
                     chunks.append(current.strip())
@@ -121,7 +121,7 @@ class RecursiveChunker:
         """
         chunks = []
         for i in range(0, len(text), self.chunk_size):
-            chunk = text[i:i + self.chunk_size].strip()
+            chunk = text[i : i + self.chunk_size].strip()
             if chunk:
                 chunks.append(chunk)
         return chunks
@@ -143,12 +143,12 @@ class RecursiveChunker:
             curr_chunk = chunks[i]
 
             # Get overlap from end of previous chunk
-            overlap_text = prev_chunk[-self.chunk_overlap:]
+            overlap_text = prev_chunk[-self.chunk_overlap :]
 
             # Find a clean break point (prefer word boundary)
             space_idx = overlap_text.find(" ")
             if space_idx > 0:
-                overlap_text = overlap_text[space_idx + 1:]
+                overlap_text = overlap_text[space_idx + 1 :]
 
             # Prepend overlap to current chunk
             combined = overlap_text + " " + curr_chunk

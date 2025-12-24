@@ -11,11 +11,8 @@ the instruction it receives.
 
 from fitz_ai.core.answer_mode import AnswerMode
 
-
 MODE_INSTRUCTIONS: dict[AnswerMode, str] = {
-    AnswerMode.CONFIDENT: (
-        "Answer clearly and directly based on the evidence."
-    ),
+    AnswerMode.CONFIDENT: ("Answer clearly and directly based on the evidence."),
     AnswerMode.QUALIFIED: (
         "Answer carefully and note any uncertainty or limitations in the evidence."
     ),

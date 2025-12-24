@@ -17,15 +17,10 @@ from typing import Any
 import yaml
 
 from fitz_ai.engines.classic_rag.retrieval.steps import (
-    DedupeStep,
     Embedder,
-    LimitStep,
     Reranker,
-    RerankStep,
     RetrievalStep,
-    ThresholdStep,
     VectorClient,
-    VectorSearchStep,
     get_step_class,
 )
 from fitz_ai.logging.logger import get_logger
@@ -59,7 +54,11 @@ class StepSpec:
 
         return cls(
             type=step_type,
-            params={k: v for k, v in data.items() if k not in ("type", "enabled_if", "use_config")},
+            params={
+                k: v
+                for k, v in data.items()
+                if k not in ("type", "enabled_if", "use_config")
+            },
             enabled_if=data.get("enabled_if"),
             use_config=data.get("use_config"),
         )
@@ -144,9 +143,7 @@ def list_available_plugins() -> list[str]:
     if not PLUGINS_DIR.exists():
         return []
 
-    return [
-        p.stem for p in PLUGINS_DIR.glob("*.yaml")
-    ]
+    return [p.stem for p in PLUGINS_DIR.glob("*.yaml")]
 
 
 def build_pipeline_from_spec(
@@ -170,7 +167,9 @@ def build_pipeline_from_spec(
         if step_spec.enabled_if:
             dep_value = getattr(deps, step_spec.enabled_if, None)
             if dep_value is None:
-                logger.debug(f"{RETRIEVER} Skipping step {step_spec.type}: {step_spec.enabled_if} not provided")
+                logger.debug(
+                    f"{RETRIEVER} Skipping step {step_spec.type}: {step_spec.enabled_if} not provided"
+                )
                 continue
 
         # Build params
@@ -279,7 +278,9 @@ class RetrievalPipelineFromYaml:
         """Execute the retrieval pipeline."""
         from fitz_ai.engines.classic_rag.models.chunk import Chunk
 
-        logger.info(f"{RETRIEVER} Running {self.plugin_name} pipeline ({len(self.steps)} steps)")
+        logger.info(
+            f"{RETRIEVER} Running {self.plugin_name} pipeline ({len(self.steps)} steps)"
+        )
 
         chunks: list[Chunk] = []
 

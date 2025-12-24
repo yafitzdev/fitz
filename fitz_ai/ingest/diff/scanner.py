@@ -38,6 +38,7 @@ class ScannedFile:
 
     Contains all information needed for diff computation.
     """
+
     path: str  # Absolute path
     root: str  # Absolute path of scan root
     ext: str  # Extension (e.g., ".md")
@@ -58,6 +59,7 @@ class ScanResult:
 
     Contains all scanned files and any errors encountered.
     """
+
     root: str  # Absolute path of scan root
     files: list[ScannedFile]  # Successfully scanned files
     errors: list[tuple[str, str]]  # (path, error_message) for failed files

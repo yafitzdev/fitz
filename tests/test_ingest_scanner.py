@@ -3,15 +3,15 @@
 Tests for fitz_ai.ingest.diff.scanner module.
 """
 
-import pytest
 from pathlib import Path
 
+
 from fitz_ai.ingest.diff.scanner import (
+    SUPPORTED_EXTENSIONS,
     FileScanner,
     ScannedFile,
     ScanResult,
     scan_directory,
-    SUPPORTED_EXTENSIONS,
 )
 
 
@@ -54,8 +54,12 @@ class TestScanResult:
         result = ScanResult(
             root="/root",
             files=[
-                ScannedFile("/root/a.md", "/root", ".md", 100, 1234567890.0, "sha256:a"),
-                ScannedFile("/root/b.md", "/root", ".md", 100, 1234567890.0, "sha256:b"),
+                ScannedFile(
+                    "/root/a.md", "/root", ".md", 100, 1234567890.0, "sha256:a"
+                ),
+                ScannedFile(
+                    "/root/b.md", "/root", ".md", 100, 1234567890.0, "sha256:b"
+                ),
             ],
             errors=[("/root/c.md", "error")],
             skipped_extensions={".jpg": 2, ".exe": 1},

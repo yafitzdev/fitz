@@ -107,13 +107,15 @@ def compute_chunk_id(
         SHA-256 hash as hex string (no prefix, used as vector ID)
     """
     # Build the composite key
-    key = "|".join([
-        content_hash,
-        str(chunk_index),
-        parser_id,
-        chunker_id,
-        embedding_id,
-    ])
+    key = "|".join(
+        [
+            content_hash,
+            str(chunk_index),
+            parser_id,
+            chunker_id,
+            embedding_id,
+        ]
+    )
 
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 

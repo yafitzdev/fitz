@@ -14,7 +14,6 @@ from fitz_ai.engines.classic_rag.retrieval.loader import (
     RetrievalPipelineFromYaml,
     create_retrieval_pipeline,
     list_available_plugins,
-    load_plugin_spec,
 )
 
 if TYPE_CHECKING:

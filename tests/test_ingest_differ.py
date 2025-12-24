@@ -9,8 +9,8 @@ Key tests verify that:
 4. Config changes trigger re-ingestion
 """
 
-import pytest
-from typing import Optional, Set, Dict
+from typing import Dict, Optional, Set
+
 
 from fitz_ai.ingest.diff.differ import (
     ConfigProvider,

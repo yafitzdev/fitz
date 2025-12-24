@@ -37,26 +37,26 @@ logger = get_logger(__name__)
 
 
 def command(
-        source: Optional[Path] = typer.Argument(
-            None,
-            help="Path to documents (file or directory). Will prompt if not provided.",
-        ),
-        question: Optional[str] = typer.Argument(
-            None,
-            help="Question to ask about your documents. Will prompt if not provided.",
-        ),
-        collection: str = typer.Option(
-            "quickstart",
-            "--collection",
-            "-c",
-            help="Collection name for vector storage",
-        ),
-        verbose: bool = typer.Option(
-            False,
-            "--verbose",
-            "-v",
-            help="Show detailed progress",
-        ),
+    source: Optional[Path] = typer.Argument(
+        None,
+        help="Path to documents (file or directory). Will prompt if not provided.",
+    ),
+    question: Optional[str] = typer.Argument(
+        None,
+        help="Question to ask about your documents. Will prompt if not provided.",
+    ),
+    collection: str = typer.Option(
+        "quickstart",
+        "--collection",
+        "-c",
+        help="Collection name for vector storage",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show detailed progress",
+    ),
 ) -> None:
     """
     One-command RAG: ingest docs and ask a question.
@@ -135,7 +135,9 @@ def command(
             collection=collection,
             verbose=verbose,
         )
-        ui.success(f"Ingested {stats['documents']} documents ({stats['chunks']} chunks)")
+        ui.success(
+            f"Ingested {stats['documents']} documents ({stats['chunks']} chunks)"
+        )
 
     except Exception as e:
         ui.error(f"Ingestion failed: {e}")
@@ -179,7 +181,7 @@ def command(
     # =========================================================================
 
     ui.info("Your documents are now indexed. Run more queries with:")
-    ui.info(f"  fitz query \"your question\" --collection {collection}")
+    ui.info(f'  fitz query "your question" --collection {collection}')
 
 
 # =============================================================================
@@ -254,7 +256,9 @@ def _save_api_key_to_shell(api_key: str) -> None:
 
             # Append to file
             with open(rc_file, "a") as f:
-                f.write(f'\n# Added by fitz quickstart\nexport COHERE_API_KEY="{api_key}"\n')
+                f.write(
+                    f'\n# Added by fitz quickstart\nexport COHERE_API_KEY="{api_key}"\n'
+                )
 
             ui.success(f"Saved to ~/{rc_file.name}")
             ui.info(f"Run `source ~/{rc_file.name}` or restart your terminal")
@@ -340,9 +344,9 @@ logging:
 
 
 def _run_ingestion(
-        source: Path,
-        collection: str,
-        verbose: bool = False,
+    source: Path,
+    collection: str,
+    verbose: bool = False,
 ) -> dict:
     """
     Run document ingestion using the existing ingest pipeline.
@@ -350,12 +354,14 @@ def _run_ingestion(
     Returns dict with 'documents' and 'chunks' counts.
     """
     from fitz_ai.core.config import load_config_dict
-    from fitz_ai.ingest.chunking.engine import ChunkingEngine
     from fitz_ai.engines.classic_rag.config import (
         ChunkingRouterConfig,
         ExtensionChunkerConfig,
+    )
+    from fitz_ai.engines.classic_rag.config import (
         load_config_dict as load_default_config_dict,
     )
+    from fitz_ai.ingest.chunking.engine import ChunkingEngine
     from fitz_ai.ingest.ingestion.engine import IngestionEngine
     from fitz_ai.ingest.ingestion.registry import get_ingest_plugin
     from fitz_ai.llm.registry import get_llm_plugin
@@ -471,9 +477,9 @@ def _run_ingestion(
 
 
 def _run_query(
-        question: str,
-        collection: str,
-        verbose: bool = False,
+    question: str,
+    collection: str,
+    verbose: bool = False,
 ):
     """
     Run a query using the existing RAG pipeline.

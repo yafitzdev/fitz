@@ -51,7 +51,9 @@ class MarkdownChunker:
     def __post_init__(self) -> None:
         """Validate parameters."""
         if self.max_chunk_size < 100:
-            raise ValueError(f"max_chunk_size must be >= 100, got {self.max_chunk_size}")
+            raise ValueError(
+                f"max_chunk_size must be >= 100, got {self.max_chunk_size}"
+            )
         if self.min_chunk_size < 1:
             raise ValueError(f"min_chunk_size must be >= 1, got {self.min_chunk_size}")
         if self.min_chunk_size >= self.max_chunk_size:
@@ -100,7 +102,9 @@ class MarkdownChunker:
             if not self._is_in_code_block(match.start(), code_ranges):
                 level = len(match.group(1))
                 header_text = match.group(2).strip()
-                header_positions.append((match.start(), match.end(), header_text, level))
+                header_positions.append(
+                    (match.start(), match.end(), header_text, level)
+                )
 
         if not header_positions:
             # No headers found, return entire text as one section
@@ -172,7 +176,11 @@ class MarkdownChunker:
                 # Flush current
                 if current_chunks:
                     chunk_text = prefix + "\n\n".join(current_chunks)
-                    chunk_header = f"{header} (Part {part_num})" if header and part_num > 1 else header
+                    chunk_header = (
+                        f"{header} (Part {part_num})"
+                        if header and part_num > 1
+                        else header
+                    )
                     chunks.append((chunk_header, chunk_text.strip()))
                     part_num += 1
                     current_chunks = []
@@ -187,7 +195,9 @@ class MarkdownChunker:
             elif current_size + para_size + 2 > self.max_chunk_size and current_chunks:
                 # Flush current chunk
                 chunk_text = prefix + "\n\n".join(current_chunks)
-                chunk_header = f"{header} (Part {part_num})" if header and part_num > 1 else header
+                chunk_header = (
+                    f"{header} (Part {part_num})" if header and part_num > 1 else header
+                )
                 chunks.append((chunk_header, chunk_text.strip()))
                 part_num += 1
                 current_chunks = [para]
@@ -200,7 +210,9 @@ class MarkdownChunker:
         # Flush remaining
         if current_chunks:
             chunk_text = (prefix if part_num == 1 else "") + "\n\n".join(current_chunks)
-            chunk_header = f"{header} (Part {part_num})" if header and part_num > 1 else header
+            chunk_header = (
+                f"{header} (Part {part_num})" if header and part_num > 1 else header
+            )
             chunks.append((chunk_header, chunk_text.strip()))
 
         return chunks

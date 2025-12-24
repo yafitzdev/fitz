@@ -12,7 +12,6 @@ Tests:
 Run with: pytest tests/test_plugin_system.py -v
 """
 
-
 import pytest
 
 # =============================================================================

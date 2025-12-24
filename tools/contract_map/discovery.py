@@ -16,7 +16,7 @@ import pkgutil
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple
 
-from tools.contract_map.common import DiscoveryReport, REPO_ROOT
+from tools.contract_map.common import REPO_ROOT, DiscoveryReport
 
 
 def _simple_plugin_id(cls) -> str:
@@ -222,7 +222,9 @@ def scan_all_discoveries() -> List[DiscoveryReport]:
         # Vector DB plugins - YAML-based
         scan_yaml_plugins("fitz_ai/vector_db/plugins", "Vector DB"),
         # Retrieval plugins - YAML-based (not Python)
-        scan_yaml_plugins("fitz_ai/engines/classic_rag/retrieval/plugins", "RAG retrieval"),
+        scan_yaml_plugins(
+            "fitz_ai/engines/classic_rag/retrieval/plugins", "RAG retrieval"
+        ),
         # Pipeline plugins - Python-based
         scan_discovery(
             "fitz_ai.engines.classic_rag.pipeline.plugins",

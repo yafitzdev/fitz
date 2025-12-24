@@ -13,7 +13,6 @@ from typing import Any, Protocol, runtime_checkable
 
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
 
-
 # =============================================================================
 # Protocols for Dependencies
 # =============================================================================

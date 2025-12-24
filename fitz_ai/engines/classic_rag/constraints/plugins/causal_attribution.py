@@ -154,7 +154,9 @@ class CausalAttributionConstraint:
 
         # Check for explicit causal language
         if _has_causal_evidence(chunks):
-            logger.debug(f"{PIPELINE} CausalAttributionConstraint: causal evidence found")
+            logger.debug(
+                f"{PIPELINE} CausalAttributionConstraint: causal evidence found"
+            )
             return ConstraintResult.allow()
 
         # Causal query but no explicit causal language in evidence

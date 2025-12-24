@@ -12,7 +12,6 @@ Chunking configuration is loaded from fitz.yaml (set via fitz init).
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import typer
@@ -177,8 +176,8 @@ def command(
     config = _load_config()
 
     embedding_plugin = config.get("embedding", {}).get("plugin_name", "cohere")
-    embedding_model = config.get("embedding", {}).get("kwargs", {}).get(
-        "model", "embed-english-v3.0"
+    embedding_model = (
+        config.get("embedding", {}).get("kwargs", {}).get("model", "embed-english-v3.0")
     )
     embedding_id = f"{embedding_plugin}:{embedding_model}"
 
@@ -188,8 +187,12 @@ def command(
     # Get chunking config from fitz.yaml
     chunking_config = config.get("chunking", {})
     default_chunker = chunking_config.get("default", {}).get("plugin_name", "simple")
-    chunk_size = chunking_config.get("default", {}).get("kwargs", {}).get("chunk_size", 1000)
-    chunk_overlap = chunking_config.get("default", {}).get("kwargs", {}).get("chunk_overlap", 0)
+    chunk_size = (
+        chunking_config.get("default", {}).get("kwargs", {}).get("chunk_size", 1000)
+    )
+    chunk_overlap = (
+        chunking_config.get("default", {}).get("kwargs", {}).get("chunk_overlap", 0)
+    )
 
     # =========================================================================
     # Header

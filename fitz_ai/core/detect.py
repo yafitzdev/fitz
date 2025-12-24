@@ -621,5 +621,3 @@ def get_ollama_connection() -> tuple[str, int]:
         return status.host, status.port
 
     return "localhost", 11434
-
-

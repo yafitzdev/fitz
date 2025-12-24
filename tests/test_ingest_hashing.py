@@ -3,13 +3,14 @@
 Tests for fitz_ai.ingest.hashing module.
 """
 
-import pytest
 from pathlib import Path
 
+import pytest
+
 from fitz_ai.ingest.hashing import (
-    compute_content_hash,
     compute_bytes_hash,
     compute_chunk_id,
+    compute_content_hash,
 )
 
 

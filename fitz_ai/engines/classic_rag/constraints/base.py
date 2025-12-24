@@ -37,7 +37,9 @@ class ConstraintResult:
         return cls(allow_decisive_answer=True)
 
     @classmethod
-    def deny(cls, reason: str, signal: str | None = None, **metadata: Any) -> "ConstraintResult":
+    def deny(
+        cls, reason: str, signal: str | None = None, **metadata: Any
+    ) -> "ConstraintResult":
         """Factory for denying decisive answers."""
         return cls(
             allow_decisive_answer=False,

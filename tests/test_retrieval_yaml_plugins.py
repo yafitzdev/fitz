@@ -12,7 +12,6 @@ These tests verify that:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -20,7 +19,6 @@ import pytest
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
 from fitz_ai.engines.classic_rag.retrieval.loader import (
     RetrievalDependencies,
-    RetrievalPluginSpec,
     StepSpec,
     build_pipeline_from_spec,
     create_retrieval_pipeline,
@@ -31,7 +29,6 @@ from fitz_ai.engines.classic_rag.retrieval.registry import (
     available_retrieval_plugins,
     get_retrieval_plugin,
 )
-
 
 # =============================================================================
 # Mock Dependencies
