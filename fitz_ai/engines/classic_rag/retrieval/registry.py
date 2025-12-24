@@ -37,6 +37,7 @@ def get_retrieval_plugin(
     collection: str,
     reranker: "Reranker | None" = None,
     top_k: int = 5,
+    fetch_artifacts: bool = False,
 ) -> RetrievalPipelineFromYaml:
     """
     Get a retrieval plugin by name.
@@ -48,6 +49,7 @@ def get_retrieval_plugin(
         collection: Collection name
         reranker: Optional reranking service
         top_k: Final number of chunks to return
+        fetch_artifacts: Whether to fetch artifacts (always with score=1.0)
 
     Returns:
         Configured retrieval pipeline
@@ -63,6 +65,7 @@ def get_retrieval_plugin(
             collection=collection,
             reranker=reranker,
             top_k=top_k,
+            fetch_artifacts=fetch_artifacts,
         )
     except FileNotFoundError as e:
         raise PluginNotFoundError(str(e)) from e

@@ -196,6 +196,7 @@ class RetrievalConfig(BaseModel):
       plugin_name: dense        # References dense.yaml
       collection: my_docs
       top_k: 5
+      fetch_artifacts: true     # Include project artifacts in every query
     ```
 
     Available plugins:
@@ -208,6 +209,10 @@ class RetrievalConfig(BaseModel):
     )
     collection: str = Field(..., description="Vector DB collection name")
     top_k: int = Field(default=5, ge=1, description="Final number of chunks to return")
+    fetch_artifacts: bool = Field(
+        default=False,
+        description="Fetch artifacts (navigation index, etc.) with every query",
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -264,6 +269,53 @@ class LoggingConfig(BaseModel):
     """Logging configuration."""
 
     level: str = "INFO"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# =============================================================================
+# Enrichment Configuration
+# =============================================================================
+
+
+class EnrichmentConfig(BaseModel):
+    """
+    Configuration for content enrichment during ingestion.
+
+    Enrichment uses an LLM to generate searchable descriptions of content.
+    This improves retrieval quality, especially for code, by embedding
+    natural language descriptions instead of raw content.
+
+    Example YAML:
+        enrichment:
+          enabled: true
+          chat:
+            plugin_name: openai
+            kwargs:
+              model: gpt-4o-mini
+          python_context: true
+          cache_path: .fitz/enrichment_cache.json
+
+    Attributes:
+        enabled: Whether to enable enrichment during ingestion.
+        chat: Chat plugin config for LLM calls (uses same format as main chat).
+        python_context: Enable Python-specific context building (imports, exports, used_by).
+        cache_path: Path to enrichment cache file (relative to project root).
+    """
+
+    enabled: bool = Field(default=False, description="Enable enrichment during ingestion")
+    chat: PluginConfig | None = Field(
+        default=None,
+        description="Chat plugin for enrichment (defaults to main chat if not specified)",
+    )
+    python_context: bool = Field(
+        default=True,
+        description="Enable Python-specific context building (AST analysis)",
+    )
+    cache_path: str = Field(
+        default=".fitz/enrichment_cache.json",
+        description="Path to enrichment cache file",
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -341,6 +393,12 @@ class ClassicRagConfig(BaseModel):
     chunking: ChunkingRouterConfig | None = Field(
         default=None,
         description="Chunking configuration (top-level for CLI convenience)",
+    )
+
+    # Enrichment (optional - generates LLM descriptions for better retrieval)
+    enrichment: EnrichmentConfig = Field(
+        default_factory=EnrichmentConfig,
+        description="Enrichment configuration for improved retrieval",
     )
 
     model_config = ConfigDict(extra="forbid")

@@ -40,8 +40,26 @@ class RerankStep(RetrievalStep):
 
         logger.debug(f"{RETRIEVER} RerankStep: input={len(chunks)}, k={self.k}")
 
+        # Separate artifacts from regular chunks (artifacts keep their score=1.0)
+        artifacts: list[Chunk] = []
+        regular_chunks: list[Chunk] = []
+        for chunk in chunks:
+            if chunk.metadata.get("is_artifact"):
+                artifacts.append(chunk)
+            else:
+                regular_chunks.append(chunk)
+
+        if artifacts:
+            logger.debug(
+                f"{RETRIEVER} RerankStep: preserving {len(artifacts)} artifacts"
+            )
+
+        if not regular_chunks:
+            # Only artifacts, nothing to rerank
+            return artifacts
+
         # Extract text for reranker
-        documents = [chunk.content for chunk in chunks]
+        documents = [chunk.content for chunk in regular_chunks]
 
         try:
             # Reranker returns [(index, score), ...] sorted by relevance
@@ -52,8 +70,8 @@ class RerankStep(RetrievalStep):
         # Reorder chunks based on rerank results
         reranked: list[Chunk] = []
         for idx, score in ranked_results:
-            if 0 <= idx < len(chunks):
-                chunk = chunks[idx]
+            if 0 <= idx < len(regular_chunks):
+                chunk = regular_chunks[idx]
                 # Add rerank score to metadata
                 updated_metadata = dict(chunk.metadata)
                 updated_metadata["rerank_score"] = score
@@ -69,4 +87,6 @@ class RerankStep(RetrievalStep):
                 )
 
         logger.debug(f"{RETRIEVER} RerankStep: output={len(reranked)} chunks")
-        return reranked
+
+        # Prepend artifacts (they keep their original score=1.0)
+        return artifacts + reranked

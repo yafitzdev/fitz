@@ -215,6 +215,7 @@ class RAGPipeline:
             collection=cfg.retrieval.collection,
             reranker=reranker,
             top_k=cfg.retrieval.top_k,
+            fetch_artifacts=cfg.retrieval.fetch_artifacts,
         )
         logger.info(f"{PIPELINE} Using retrieval plugin='{cfg.retrieval.plugin_name}'")
 

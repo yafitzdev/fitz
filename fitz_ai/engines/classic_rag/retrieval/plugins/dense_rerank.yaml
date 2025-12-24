@@ -3,6 +3,7 @@
 # Dense Retrieval with Reranking and Threshold
 #
 # A more sophisticated retrieval pipeline that includes:
+# - Artifact fetching (always included with score=1.0)
 # - Larger initial candidate pool
 # - Cross-encoder reranking
 # - Deduplication
@@ -18,6 +19,9 @@ plugin_name: dense_rerank
 description: "Dense retrieval with reranking, threshold filtering, and deduplication"
 
 steps:
+  - type: artifact_fetch       # Fetch artifacts first (always included)
+    enabled_if: fetch_artifacts
+
   - type: vector_search
     k: 40                      # Large candidate pool
 

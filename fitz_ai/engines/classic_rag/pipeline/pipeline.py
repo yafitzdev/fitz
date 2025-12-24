@@ -32,11 +32,14 @@ class ContextPipeline:
     Steps:
         normalize → dedupe → group → merge → pack
 
+    Artifacts (is_artifact=True) are always included and excluded from packing.
+    Only regular chunks are subject to max_chars packing.
+
     Output:
         list[Chunk]
     """
 
-    max_chars: int = 6000
+    max_chars: int = 8000  # Budget for regular chunks only (artifacts excluded)
 
     normalize_step: NormalizeStep = field(default_factory=NormalizeStep)
     dedupe_step: DedupeStep = field(default_factory=DedupeStep)
@@ -50,7 +53,19 @@ class ContextPipeline:
 
         try:
             norm = self.normalize_step(chunks)
-            deduped = self.dedupe_step(norm)
+
+            # Separate artifacts from regular chunks
+            # Artifacts are always included (they have score=1.0 for a reason)
+            artifacts: list[ChunkDict] = []
+            regular: list[ChunkDict] = []
+            for ch in norm:
+                if ch.get("metadata", {}).get("is_artifact"):
+                    artifacts.append(ch)
+                else:
+                    regular.append(ch)
+
+            # Process regular chunks through dedupe → group → merge → pack
+            deduped = self.dedupe_step(regular)
             grouped: dict[str, list[ChunkDict]] = self.group_step(deduped)
 
             merged_per_doc: list[ChunkDict] = []
@@ -58,7 +73,10 @@ class ContextPipeline:
                 merged_per_doc.extend(self.merge_step(doc_chunks))
 
             packed = self.pack_step(merged_per_doc, max_chars=max_chars)
-            return [_chunkdict_to_chunk(d) for d in packed]
+
+            # Combine: artifacts first, then packed regular chunks
+            result = artifacts + packed
+            return [_chunkdict_to_chunk(d) for d in result]
 
         except Exception as exc:
             raise PipelineError(f"Failed context pipeline: {exc}") from exc

@@ -43,7 +43,8 @@ class VectorSearchStep(RetrievalStep):
         """
         Execute vector search.
 
-        Note: `chunks` parameter is ignored - this step produces initial chunks.
+        Any pre-existing chunks (e.g., artifacts) are preserved and prepended
+        to the search results.
         """
         logger.debug(
             f"{RETRIEVER} VectorSearchStep: k={self.k}, collection={self.collection}"
@@ -98,4 +99,12 @@ class VectorSearchStep(RetrievalStep):
             results.append(chunk)
 
         logger.debug(f"{RETRIEVER} VectorSearchStep: retrieved {len(results)} chunks")
+
+        # Preserve any pre-existing chunks (e.g., artifacts) by prepending them
+        if chunks:
+            logger.debug(
+                f"{RETRIEVER} VectorSearchStep: preserving {len(chunks)} pre-existing chunks"
+            )
+            return chunks + results
+
         return results

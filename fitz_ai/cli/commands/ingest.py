@@ -142,6 +142,12 @@ def command(
         "-f",
         help="Force re-ingest all files, ignoring state.",
     ),
+    artifacts: bool = typer.Option(
+        False,
+        "--artifacts",
+        "-a",
+        help="Generate high-level project artifacts (navigation index, interface catalog, etc.)",
+    ),
 ) -> None:
     """
     Ingest documents into the vector database.
@@ -206,6 +212,8 @@ def command(
     ui.info(f"Embedding: {embedding_id}")
     ui.info(f"Vector DB: {vector_db_plugin}")
     ui.info(f"Chunking: {default_chunker} (size={chunk_size}, overlap={chunk_overlap})")
+    if artifacts:
+        ui.info("Artifacts: enabled (will generate navigation index, interface catalog, etc.)")
     print()
 
     # =========================================================================
@@ -262,6 +270,19 @@ def command(
         vector_client = get_vector_db_plugin(vector_db_plugin)
         writer = VectorDBWriterAdapter(vector_client)
 
+        # Artifact orchestrator (optional)
+        artifact_orchestrator = None
+        if artifacts:
+            from pathlib import Path
+
+            from fitz_ai.ingest.enrichment.artifacts import ArtifactOrchestrator
+
+            artifact_orchestrator = ArtifactOrchestrator(
+                project_root=Path(source).resolve(),
+                chat_client=None,  # Structural artifacts only (no LLM)
+            )
+            ui.info("Artifact orchestrator: ready")
+
     except Exception as e:
         ui.error(f"Failed to initialize: {e}")
         raise typer.Exit(1)
@@ -284,6 +305,7 @@ def command(
             chunking_router=chunking_router,
             collection=collection,
             embedding_id=embedding_id,
+            artifact_orchestrator=artifact_orchestrator,
             force=force,
         )
     except Exception as e:
@@ -309,6 +331,8 @@ def command(
         table.add_row("Ingested", str(summary.ingested))
         table.add_row("Skipped", str(summary.skipped))
         table.add_row("Marked deleted", str(summary.marked_deleted))
+        if summary.artifacts_generated > 0:
+            table.add_row("Artifacts", str(summary.artifacts_generated))
         table.add_row("Errors", str(summary.errors))
         table.add_row("Duration", f"{summary.duration_seconds:.1f}s")
 
@@ -318,6 +342,8 @@ def command(
         print(f"  Ingested: {summary.ingested}")
         print(f"  Skipped: {summary.skipped}")
         print(f"  Marked deleted: {summary.marked_deleted}")
+        if summary.artifacts_generated > 0:
+            print(f"  Artifacts: {summary.artifacts_generated}")
         print(f"  Errors: {summary.errors}")
         print(f"  Duration: {summary.duration_seconds:.1f}s")
 

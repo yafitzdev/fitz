@@ -113,6 +113,9 @@ class RetrievalDependencies:
     # Config overrides (from retrieval config)
     top_k: int = 5
 
+    # Optional artifact fetching
+    fetch_artifacts: bool = False
+
 
 # =============================================================================
 # Plugin Loader
@@ -208,6 +211,16 @@ def _build_step(
             raise ValueError("Rerank step requires reranker dependency")
         params.setdefault("reranker", deps.reranker)
 
+    elif step_type == "artifact_fetch":
+        from fitz_ai.engines.classic_rag.retrieval.steps.artifact_fetch import (
+            SimpleArtifactClient,
+        )
+
+        params.setdefault(
+            "artifact_client", SimpleArtifactClient(deps.vector_client)
+        )
+        params.setdefault("collection", deps.collection)
+
     return step_cls(**params)
 
 
@@ -223,6 +236,7 @@ def create_retrieval_pipeline(
     collection: str,
     reranker: Reranker | None = None,
     top_k: int = 5,
+    fetch_artifacts: bool = False,
 ) -> "RetrievalPipelineFromYaml":
     """
     Create a retrieval pipeline from a YAML plugin definition.
@@ -234,6 +248,7 @@ def create_retrieval_pipeline(
         collection: Collection name
         reranker: Optional reranking service
         top_k: Final number of chunks to return
+        fetch_artifacts: Whether to fetch artifacts (always with score=1.0)
 
     Returns:
         Configured retrieval pipeline
@@ -246,6 +261,7 @@ def create_retrieval_pipeline(
         collection=collection,
         reranker=reranker,
         top_k=top_k,
+        fetch_artifacts=fetch_artifacts,
     )
 
     steps = build_pipeline_from_spec(spec, deps)

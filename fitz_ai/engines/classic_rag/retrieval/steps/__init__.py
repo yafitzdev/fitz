@@ -30,6 +30,7 @@ from .limit import LimitStep
 from .rerank import RerankStep
 from .threshold import ThresholdStep
 from .vector_search import VectorSearchStep
+from .artifact_fetch import ArtifactFetchStep, ArtifactClient
 
 # =============================================================================
 # Step Registry
@@ -41,6 +42,7 @@ STEP_REGISTRY: dict[str, type[RetrievalStep]] = {
     "threshold": ThresholdStep,
     "limit": LimitStep,
     "dedupe": DedupeStep,
+    "artifact_fetch": ArtifactFetchStep,
 }
 
 
@@ -63,12 +65,14 @@ __all__ = [
     "VectorClient",
     "Embedder",
     "Reranker",
+    "ArtifactClient",
     # Step classes
     "VectorSearchStep",
     "RerankStep",
     "ThresholdStep",
     "LimitStep",
     "DedupeStep",
+    "ArtifactFetchStep",
     # Registry functions
     "STEP_REGISTRY",
     "get_step_class",

@@ -35,6 +35,7 @@ class FileEntry(BaseModel):
     - chunker_id: Detects chunking config changes
     - parser_id: Detects parser config changes
     - embedding_id: Detects embedding config changes
+    - enricher_id: Detects enrichment config changes (optional)
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -53,6 +54,10 @@ class FileEntry(BaseModel):
     parser_id: str = Field(..., description="Parser ID used (e.g., 'md.v1')")
     embedding_id: str = Field(
         ..., description="Embedding ID used (e.g., 'cohere:embed-english-v3.0')"
+    )
+    enricher_id: Optional[str] = Field(
+        default=None,
+        description="Enricher ID used (e.g., 'llm:gpt-4o-mini:v1'), None if not enriched",
     )
 
     def is_active(self) -> bool:

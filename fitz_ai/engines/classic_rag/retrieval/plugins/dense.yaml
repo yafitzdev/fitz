@@ -12,6 +12,9 @@ description: "Standard dense retrieval using vector search with optional reranki
 # Pipeline steps - executed in order
 # Each step references a Python class in fitz_ai.engines.classic_rag.retrieval.steps
 steps:
+  - type: artifact_fetch       # Fetch artifacts first (always included)
+    enabled_if: fetch_artifacts
+
   - type: vector_search
     k: 25                      # Initial candidates to retrieve
 
