@@ -3,11 +3,9 @@
 Document ingestion with incremental (diff) support.
 
 Usage:
-    fitz ingest              # Interactive mode - prompts for source/collection
-    fitz ingest ./docs       # Ingest specific directory
-    fitz ingest ./docs -y    # Non-interactive with defaults
-
-Chunking configuration is loaded from fitz.yaml (set via fitz init).
+    fitz ingest              # Interactive mode
+    fitz ingest ./src        # Ingest specific directory
+    fitz ingest ./src -y     # Non-interactive with defaults
 """
 
 from __future__ import annotations
@@ -36,6 +34,51 @@ def _load_config() -> dict:
     except ConfigNotFoundError:
         ui.error("No config found. Run 'fitz init' first.")
         raise typer.Exit(1)
+
+
+def _get_collections(config: dict) -> List[str]:
+    """Get list of existing collections from vector DB."""
+    from fitz_ai.vector_db.registry import get_vector_db_plugin
+
+    try:
+        vdb_plugin = config.get("vector_db", {}).get("plugin_name", "qdrant")
+        vdb_kwargs = config.get("vector_db", {}).get("kwargs", {})
+        vdb = get_vector_db_plugin(vdb_plugin, **vdb_kwargs)
+        return sorted(vdb.list_collections())
+    except Exception:
+        return []
+
+
+def _suggest_collection_name(source: str) -> str:
+    """Suggest a collection name from source path."""
+    from pathlib import Path
+
+    path = Path(source).resolve()
+    # Use folder name, sanitized
+    name = path.name if path.is_dir() else path.parent.name
+    # Replace spaces/special chars with underscores
+    return name.replace(" ", "_").replace("-", "_").lower()
+
+
+def _is_code_project(source: str) -> bool:
+    """Check if source contains code files (suggests artifacts would be useful)."""
+    from pathlib import Path
+
+    code_extensions = {".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java"}
+    path = Path(source)
+
+    if path.is_file():
+        return path.suffix in code_extensions
+
+    # Check first 100 files for code
+    count = 0
+    for f in path.rglob("*"):
+        if f.is_file() and f.suffix in code_extensions:
+            return True
+        count += 1
+        if count > 100:
+            break
+    return False
 
 
 def _build_chunking_router_config(config: dict):
@@ -152,21 +195,15 @@ def command(
     """
     Ingest documents into the vector database.
 
-    Chunking configuration is loaded from fitz.yaml (set via fitz init).
-
-    Default behavior (incremental):
-    - Skip unchanged files (same content AND same config)
-    - Re-ingest files when chunking config changes
-    - Only ingest new or modified files
-    - Mark deleted files in vector DB
-
-    Use --force to re-ingest everything regardless of state.
+    Interactive mode guides you through source, collection, and artifacts.
+    Incremental by default - only processes new/changed files.
 
     Examples:
-        fitz ingest              # Interactive mode
-        fitz ingest ./docs       # Ingest specific directory
-        fitz ingest ./docs -y    # Non-interactive with defaults
-        fitz ingest --force      # Force re-ingest everything
+        fitz ingest                  # Interactive mode
+        fitz ingest ./src            # Specify source
+        fitz ingest ./src -a         # With artifacts
+        fitz ingest ./src -f         # Force re-ingest
+        fitz ingest ./src -a -y      # Non-interactive with artifacts
     """
     from fitz_ai.ingest.chunking.router import ChunkingRouter
     from fitz_ai.ingest.diff import run_diff_ingest
@@ -217,7 +254,7 @@ def command(
     print()
 
     # =========================================================================
-    # Interactive Prompts (only source and collection)
+    # Interactive Prompts
     # =========================================================================
 
     if non_interactive:
@@ -233,11 +270,40 @@ def command(
         ui.info(f"Collection: {collection}")
 
     else:
+        # 1. Source path
         if source is None:
-            source = ui.prompt_path("Source path (file or directory)", ".")
+            source = ui.prompt_path("Source path", ".")
 
+        # 2. Collection - smart selection
         if collection is None:
-            collection = ui.prompt_text("Collection name", default_collection)
+            existing_collections = _get_collections(config)
+
+            if len(existing_collections) == 1:
+                # Only one collection exists - use it
+                collection = existing_collections[0]
+                ui.info(f"Collection: {collection}")
+            elif len(existing_collections) > 1:
+                # Multiple collections - let user choose or create new
+                print()
+                suggested = _suggest_collection_name(source)
+                choices = existing_collections + [f"+ Create new: {suggested}"]
+                selected = ui.prompt_numbered_choice("Collection", choices, default_collection)
+                if selected.startswith("+ Create new:"):
+                    collection = suggested
+                else:
+                    collection = selected
+            else:
+                # No collections exist - suggest name from source folder
+                suggested = _suggest_collection_name(source)
+                collection = ui.prompt_text("Collection name", suggested)
+
+        # 3. Artifacts - prompt for code projects
+        if not artifacts and _is_code_project(source):
+            print()
+            artifacts = ui.prompt_confirm(
+                "Generate artifacts (navigation index, interface catalog)?",
+                default=True,
+            )
 
     print()
 

@@ -1,12 +1,11 @@
 # fitz_ai/cli/commands/query.py
 """
-Interactive query command.
+Query command.
 
 Usage:
     fitz query                     # Interactive mode
     fitz query "What is RAG?"      # Direct query
     fitz query -c my_collection    # Specify collection
-    fitz query -r dense_rerank     # Specify retrieval strategy
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
 from fitz_ai.engines.classic_rag.pipeline.engine import RAGPipeline
-from fitz_ai.engines.classic_rag.retrieval import available_retrieval_plugins
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.vector_db.registry import get_vector_db_plugin
 
@@ -75,34 +73,6 @@ def command(
         "-c",
         help="Collection to query (uses config default if not specified).",
     ),
-    retrieval: Optional[str] = typer.Option(
-        None,
-        "--retrieval",
-        "-r",
-        help="Retrieval strategy/plugin (e.g., dense, dense_rerank).",
-    ),
-    top_k: Optional[int] = typer.Option(
-        None,
-        "--top-k",
-        "-k",
-        help="Number of chunks to retrieve.",
-    ),
-    no_rerank: bool = typer.Option(
-        False,
-        "--no-rerank",
-        help="Disable reranking.",
-    ),
-    no_sources: bool = typer.Option(
-        False,
-        "--no-sources",
-        help="Don't show source documents.",
-    ),
-    interactive: bool = typer.Option(
-        False,
-        "--interactive",
-        "-i",
-        help="Interactive mode (continuous Q&A).",
-    ),
 ) -> None:
     """
     Query your knowledge base.
@@ -113,11 +83,8 @@ def command(
     Or ask directly:
         fitz query "What is RAG?"
 
-    Options:
+    Specify a collection:
         fitz query "question" -c my_collection
-        fitz query "question" -r dense_rerank
-        fitz query "question" -k 10
-        fitz query "question" --no-rerank
     """
     # =========================================================================
     # Header
@@ -131,16 +98,9 @@ def command(
 
     raw_config, typed_config = _load_config_safe()
     default_collection = typed_config.retrieval.collection
-    default_retrieval = typed_config.retrieval.plugin_name
 
     # =========================================================================
-    # Get available retrieval plugins
-    # =========================================================================
-
-    available_retrievals = available_retrieval_plugins()
-
-    # =========================================================================
-    # Interactive prompts (question first, then collection, then retrieval)
+    # Interactive prompts
     # =========================================================================
 
     # Prompt for question if not provided
@@ -162,30 +122,6 @@ def command(
             typed_config.retrieval.collection = selected
         elif collections:
             typed_config.retrieval.collection = collections[0]
-
-    # Retrieval strategy selection
-    if retrieval:
-        typed_config.retrieval.plugin_name = retrieval
-    else:
-        if len(available_retrievals) > 1:
-            print()
-            # Use config's retrieval as the default (set in fitz init)
-            selected_retrieval = ui.prompt_numbered_choice(
-                "Retrieval strategy",
-                available_retrievals,
-                default_retrieval,
-            )
-            typed_config.retrieval.plugin_name = selected_retrieval
-        elif available_retrievals:
-            typed_config.retrieval.plugin_name = available_retrievals[0]
-
-    # Override top_k if specified
-    if top_k:
-        typed_config.retrieval.top_k = top_k
-
-    # Disable rerank if requested
-    if no_rerank:
-        typed_config.rerank.enabled = False
 
     # Get display info
     display_collection = typed_config.retrieval.collection
@@ -238,7 +174,7 @@ def command(
     try:
         pipeline = RAGPipeline.from_config(typed_config)
         answer = pipeline.run(question_text)
-        display_answer(answer, show_sources=not no_sources)
+        display_answer(answer)
     except Exception as e:
         ui.error(f"Query failed: {e}")
         logger.exception("Query error")
