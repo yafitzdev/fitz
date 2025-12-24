@@ -24,6 +24,12 @@ def _chunkdict_to_chunk(d: ChunkDict) -> Chunk:
     )
 
 
+def _is_vip(ch: ChunkDict) -> bool:
+    """Check if chunk has VIP status (score=1.0, bypasses packing limits)."""
+    meta = ch.get("metadata", {})
+    return meta.get("rerank_score") == 1.0 or meta.get("score") == 1.0
+
+
 @dataclass
 class ContextPipeline:
     """
@@ -32,14 +38,14 @@ class ContextPipeline:
     Steps:
         normalize → dedupe → group → merge → pack
 
-    Artifacts (is_artifact=True) are always included and excluded from packing.
+    VIP chunks (score=1.0) are always included and excluded from packing.
     Only regular chunks are subject to max_chars packing.
 
     Output:
         list[Chunk]
     """
 
-    max_chars: int = 8000  # Budget for regular chunks only (artifacts excluded)
+    max_chars: int = 8000  # Budget for regular chunks only (VIP excluded)
 
     normalize_step: NormalizeStep = field(default_factory=NormalizeStep)
     dedupe_step: DedupeStep = field(default_factory=DedupeStep)
@@ -54,13 +60,13 @@ class ContextPipeline:
         try:
             norm = self.normalize_step(chunks)
 
-            # Separate artifacts from regular chunks
-            # Artifacts are always included (they have score=1.0 for a reason)
-            artifacts: list[ChunkDict] = []
+            # Separate VIP from regular chunks
+            # VIP chunks are always included (score=1.0 means "always include")
+            vip: list[ChunkDict] = []
             regular: list[ChunkDict] = []
             for ch in norm:
-                if ch.get("metadata", {}).get("is_artifact"):
-                    artifacts.append(ch)
+                if _is_vip(ch):
+                    vip.append(ch)
                 else:
                     regular.append(ch)
 
@@ -74,8 +80,8 @@ class ContextPipeline:
 
             packed = self.pack_step(merged_per_doc, max_chars=max_chars)
 
-            # Combine: artifacts first, then packed regular chunks
-            result = artifacts + packed
+            # Combine: VIP first, then packed regular chunks
+            result = vip + packed
             return [_chunkdict_to_chunk(d) for d in result]
 
         except Exception as exc:

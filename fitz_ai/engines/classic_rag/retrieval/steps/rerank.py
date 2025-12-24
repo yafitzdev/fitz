@@ -3,6 +3,7 @@
 Rerank Step - Reorder chunks using cross-encoder model.
 
 Takes chunks from previous step, reranks by relevance, returns top-k.
+VIP chunks (score=1.0) are excluded from reranking and always included.
 """
 
 from __future__ import annotations
@@ -19,12 +20,19 @@ from .base import Reranker, RetrievalStep
 logger = get_logger(__name__)
 
 
+def _is_vip(chunk: Chunk) -> bool:
+    """Check if chunk has VIP status (score=1.0, bypasses reranking)."""
+    meta = chunk.metadata
+    return meta.get("rerank_score") == 1.0 or meta.get("score") == 1.0
+
+
 @dataclass
 class RerankStep(RetrievalStep):
     """
     Rerank chunks using a cross-encoder or similar model.
 
     Takes top-k chunks from previous step, reranks them, returns top rerank_k.
+    VIP chunks (score=1.0) are excluded from reranking and always prepended.
 
     Args:
         reranker: Reranking service
@@ -40,23 +48,21 @@ class RerankStep(RetrievalStep):
 
         logger.debug(f"{RETRIEVER} RerankStep: input={len(chunks)}, k={self.k}")
 
-        # Separate artifacts from regular chunks (artifacts keep their score=1.0)
-        artifacts: list[Chunk] = []
+        # Separate VIP from regular chunks (VIP keep their score=1.0)
+        vip: list[Chunk] = []
         regular_chunks: list[Chunk] = []
         for chunk in chunks:
-            if chunk.metadata.get("is_artifact"):
-                artifacts.append(chunk)
+            if _is_vip(chunk):
+                vip.append(chunk)
             else:
                 regular_chunks.append(chunk)
 
-        if artifacts:
-            logger.debug(
-                f"{RETRIEVER} RerankStep: preserving {len(artifacts)} artifacts"
-            )
+        if vip:
+            logger.debug(f"{RETRIEVER} RerankStep: preserving {len(vip)} VIP chunks")
 
         if not regular_chunks:
-            # Only artifacts, nothing to rerank
-            return artifacts
+            # Only VIP chunks, nothing to rerank
+            return vip
 
         # Extract text for reranker
         documents = [chunk.content for chunk in regular_chunks]
@@ -88,5 +94,5 @@ class RerankStep(RetrievalStep):
 
         logger.debug(f"{RETRIEVER} RerankStep: output={len(reranked)} chunks")
 
-        # Prepend artifacts (they keep their original score=1.0)
-        return artifacts + reranked
+        # Prepend VIP chunks (they keep their original score=1.0)
+        return vip + reranked
