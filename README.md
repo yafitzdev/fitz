@@ -25,9 +25,9 @@ That's it. Your documents are now searchable with AI.
 - **Local execution possible.** FAISS and Ollama support, no API keys required to start.
 - **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
 - **Full provenance.** Every answer traces back to the exact chunk and document.
-- **Data privacy**: Fitz runs entirely on your infrastructure. No telemetry, no cloud, no external calls except to the LLM provider you configure.
+- **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
 
-Any questions? Try fitz on itself:
+Any questions left? Try fitz on itself:
 
 ```bash
 fitz quickstart ./fitz_ai "How does the chunking pipeline work?"
@@ -120,7 +120,7 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 <details>
 <summary><strong>Internal Knowledge Base</strong></summary>
 
-> Point fitz at your wiki, policies, and runbooks. Employees ask natural language questions instead of hunting through folders or pinging colleagues on Slack.
+> Point fitz at your companies wiki, policies, and runbooks. Employees ask natural language questions instead of hunting through folders or pinging colleagues on Slack.
 >
 > *Example:* A 200-person startup ingests their Notion workspace and compliance docs. New hires find answers to "How do I request PTO?" on day one—no more waiting for someone in HR to respond.
 
