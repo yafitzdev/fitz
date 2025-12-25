@@ -217,11 +217,11 @@ class YAMLEmbeddingClient(YAMLPluginBase):
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """
-        Embed multiple texts in a single API call.
+        Embed multiple texts with automatic batch size adjustment.
 
-        This is much more efficient than calling embed() repeatedly:
-        - Cohere supports up to 96 texts per call
-        - OpenAI supports up to 2048 texts per call
+        Uses recursive halving: starts with batch size of 96, and if the API
+        rejects it (too large), halves the batch size until it succeeds.
+        This handles different provider limits gracefully.
 
         Args:
             texts: List of texts to embed
@@ -243,7 +243,47 @@ class YAMLEmbeddingClient(YAMLPluginBase):
             # Fall back to sequential embedding
             return [self.embed(text) for text in texts]
 
-        # Build batch payload
+        # Start with batch size of 96 (Cohere's limit, conservative for others)
+        return self._embed_batch_with_retry(texts, batch_size=96)
+
+    def _embed_batch_with_retry(
+        self, texts: list[str], batch_size: int
+    ) -> list[list[float]]:
+        """
+        Embed texts in batches with recursive halving on failure.
+
+        If a batch fails, halves the batch size and retries.
+        Continues halving until batch_size=1, then raises the error.
+        """
+        all_embeddings: list[list[float]] = []
+
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+
+            try:
+                embeddings = self._embed_single_batch(batch)
+                all_embeddings.extend(embeddings)
+            except Exception as e:
+                if batch_size == 1:
+                    # Can't reduce further, propagate error
+                    raise
+
+                # Halve batch size and retry this batch
+                new_batch_size = max(1, batch_size // 2)
+                logger.warning(
+                    f"Batch embed failed with size {batch_size}, "
+                    f"retrying with size {new_batch_size}: {e}"
+                )
+                # Recursively process this batch with smaller size
+                embeddings = self._embed_batch_with_retry(batch, new_batch_size)
+                all_embeddings.extend(embeddings)
+
+        return all_embeddings
+
+    def _embed_single_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed a single batch of texts."""
+        input_config = self.spec.request
+
         payload = {input_config.input_field: texts}
         payload.update(input_config.static_fields)
 

@@ -49,6 +49,9 @@ class MockEmbedder:
     def embed(self, text: str) -> List[float]:
         return [0.1] * self._dim
 
+    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        return [[0.1] * self._dim for _ in texts]
+
 
 class MockParser:
     """Mock parser."""

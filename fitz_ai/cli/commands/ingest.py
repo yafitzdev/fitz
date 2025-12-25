@@ -406,7 +406,8 @@ def command(
         ui.info(f"Router: {chunking_router}")
 
         # Embedder
-        embedder = get_llm_plugin(plugin_type="embedding", plugin_name=embedding_plugin)
+        embedding_kwargs = config.get("embedding", {}).get("kwargs", {})
+        embedder = get_llm_plugin(plugin_type="embedding", plugin_name=embedding_plugin, **embedding_kwargs)
 
         # Vector DB writer
         vector_client = get_vector_db_plugin(vector_db_plugin)
