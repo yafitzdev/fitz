@@ -4,6 +4,13 @@ Base types for artifact generation.
 
 Artifacts are high-level summaries that provide context for code retrieval.
 Each artifact type serves a specific purpose in helping users find relevant code.
+
+Artifact plugins are auto-discovered from the plugins/ directory. Each plugin
+must define:
+    - plugin_name: str - Unique identifier for the artifact
+    - plugin_type: str - Always "artifact"
+    - supported_types: set[ContentType] - Content types this artifact applies to
+    - Generator class implementing ArtifactGenerator protocol
 """
 
 from __future__ import annotations
@@ -11,7 +18,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Protocol, runtime_checkable
+from typing import Any, Dict, List, Protocol, Set, runtime_checkable
+
+from fitz_ai.ingest.enrichment.base import ContentType
 
 
 class ArtifactType(str, Enum):
@@ -70,16 +79,23 @@ class ArtifactGenerator(Protocol):
     3. Returning an Artifact instance
 
     Generators can use AST parsing, LLM calls, or both.
+
+    Plugin attributes (module-level):
+        plugin_name: str - Unique identifier (e.g., "navigation_index")
+        plugin_type: str - Always "artifact"
+        supported_types: set[ContentType] - Content types this applies to
+        requires_llm: bool - Whether this generator needs an LLM client
     """
 
     artifact_type: ArtifactType
+    supported_types: Set[ContentType]
 
-    def generate(self, project_root: Path) -> Artifact:
+    def generate(self, analysis: "ProjectAnalysis") -> Artifact:
         """
-        Generate an artifact for the given project.
+        Generate an artifact from project analysis.
 
         Args:
-            project_root: Root directory of the project to analyze
+            analysis: Pre-computed project analysis data
 
         Returns:
             Generated Artifact instance

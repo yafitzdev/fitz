@@ -8,23 +8,30 @@ for understanding code structure and relationships. They are:
 2. Stored in the vector DB with special metadata
 3. Always retrieved with every query (score=1.0)
 
-Artifact Types:
-- ArchitectureNarrative: High-level system overview
-- NavigationIndex: File → purpose mapping
-- InterfaceCatalog: Protocols/interfaces with implementations
-- DataModelReference: Core models with fields
-- DependencySummary: What depends on what
+Artifact plugins are auto-discovered from the plugins/ directory.
+Each plugin must define:
+    - plugin_name: str
+    - plugin_type: str = "artifact"
+    - supported_types: set[ContentType]
+    - requires_llm: bool
+    - Generator class
+
+Available artifact types (via plugins):
+- navigation_index: File → purpose mapping
+- interface_catalog: Protocols/interfaces with implementations
+- data_model_reference: Core models with fields
+- dependency_summary: What depends on what
+- architecture_narrative: High-level system overview (requires LLM)
 
 Usage:
-    generator = ArtifactOrchestrator(
+    from fitz_ai.ingest.enrichment import EnrichmentPipeline
+
+    pipeline = EnrichmentPipeline.from_config(
+        config=config.get("enrichment"),
         project_root=Path("/path/to/project"),
         chat_client=llm_client,
     )
-    artifacts = generator.generate_all()
-
-    # Ingest artifacts
-    for artifact in artifacts:
-        ingest_artifact(artifact, collection, vector_db)
+    artifacts = pipeline.generate_artifacts()
 """
 
 from fitz_ai.ingest.enrichment.artifacts.base import (
@@ -35,14 +42,13 @@ from fitz_ai.ingest.enrichment.artifacts.base import (
     ProjectAnalysis,
 )
 from fitz_ai.ingest.enrichment.artifacts.analyzer import ProjectAnalyzer
-from fitz_ai.ingest.enrichment.artifacts.generators import (
-    ArchitectureNarrativeGenerator,
-    DataModelReferenceGenerator,
-    DependencySummaryGenerator,
-    InterfaceCatalogGenerator,
-    NavigationIndexGenerator,
+from fitz_ai.ingest.enrichment.artifacts.registry import (
+    ArtifactRegistry,
+    ArtifactPluginInfo,
+    get_artifact_registry,
+    get_artifact_plugin,
+    list_artifact_plugins,
 )
-from fitz_ai.ingest.enrichment.artifacts.orchestrator import ArtifactOrchestrator
 
 __all__ = [
     # Base types
@@ -53,12 +59,10 @@ __all__ = [
     "ProjectAnalysis",
     # Analyzer
     "ProjectAnalyzer",
-    # Generators
-    "ArchitectureNarrativeGenerator",
-    "DataModelReferenceGenerator",
-    "DependencySummaryGenerator",
-    "InterfaceCatalogGenerator",
-    "NavigationIndexGenerator",
-    # Orchestrator
-    "ArtifactOrchestrator",
+    # Registry
+    "ArtifactRegistry",
+    "ArtifactPluginInfo",
+    "get_artifact_registry",
+    "get_artifact_plugin",
+    "list_artifact_plugins",
 ]

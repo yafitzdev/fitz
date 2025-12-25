@@ -81,6 +81,64 @@ def _is_code_project(source: str) -> bool:
     return False
 
 
+def _get_available_artifacts(has_llm: bool = False) -> List[tuple]:
+    """
+    Get available artifact plugins as (name, description) tuples.
+
+    Args:
+        has_llm: Whether an LLM client is available (enables LLM-requiring artifacts)
+
+    Returns:
+        List of (name, description) tuples for available artifacts
+    """
+    from fitz_ai.ingest.enrichment.artifacts.registry import get_artifact_registry
+
+    registry = get_artifact_registry()
+    result = []
+
+    for name in registry.list_plugin_names():
+        info = registry.get_plugin(name)
+        if info is None:
+            continue
+
+        # Skip LLM-requiring artifacts if no LLM available
+        if info.requires_llm and not has_llm:
+            desc = f"{info.description} (requires LLM)"
+        else:
+            desc = info.description
+
+        result.append((name, desc))
+
+    return result
+
+
+def _parse_artifact_selection(artifacts_arg: Optional[str], available: List[str]) -> Optional[List[str]]:
+    """
+    Parse the --artifacts argument.
+
+    Args:
+        artifacts_arg: The --artifacts argument value
+        available: List of available artifact names
+
+    Returns:
+        List of selected artifact names, or None if should prompt interactively
+    """
+    if artifacts_arg is None:
+        return None  # Interactive selection
+
+    artifacts_arg = artifacts_arg.strip().lower()
+
+    if artifacts_arg == "all":
+        return available
+    elif artifacts_arg == "none":
+        return []
+    else:
+        # Comma-separated list
+        requested = [a.strip() for a in artifacts_arg.split(",")]
+        # Filter to valid names
+        return [a for a in requested if a in available]
+
+
 def _build_chunking_router_config(config: dict):
     """
     Build ChunkingRouterConfig from fitz.yaml config.
@@ -185,11 +243,11 @@ def command(
         "-f",
         help="Force re-ingest all files, ignoring state.",
     ),
-    artifacts: bool = typer.Option(
-        False,
+    artifacts: Optional[str] = typer.Option(
+        None,
         "--artifacts",
         "-a",
-        help="Generate high-level project artifacts (navigation index, interface catalog, etc.)",
+        help="Artifacts to generate: 'all', 'none', or comma-separated list (e.g. 'navigation_index,interface_catalog'). Interactive selection if not provided.",
     ),
 ) -> None:
     """
@@ -199,11 +257,13 @@ def command(
     Incremental by default - only processes new/changed files.
 
     Examples:
-        fitz ingest                  # Interactive mode
-        fitz ingest ./src            # Specify source
-        fitz ingest ./src -a         # With artifacts
+        fitz ingest                  # Interactive mode (prompts for artifacts)
+        fitz ingest ./src            # Specify source, interactive artifacts
+        fitz ingest ./src -a all     # All applicable artifacts
+        fitz ingest ./src -a none    # No artifacts
+        fitz ingest ./src -a navigation_index,interface_catalog  # Specific artifacts
         fitz ingest ./src -f         # Force re-ingest
-        fitz ingest ./src -a -y      # Non-interactive with artifacts
+        fitz ingest ./src -a all -y  # Non-interactive with all artifacts
     """
     from fitz_ai.ingest.chunking.router import ChunkingRouter
     from fitz_ai.ingest.diff import run_diff_ingest
@@ -249,8 +309,7 @@ def command(
     ui.info(f"Embedding: {embedding_id}")
     ui.info(f"Vector DB: {vector_db_plugin}")
     ui.info(f"Chunking: {default_chunker} (size={chunk_size}, overlap={chunk_overlap})")
-    if artifacts:
-        ui.info("Artifacts: enabled (will generate navigation index, interface catalog, etc.)")
+
     print()
 
     # =========================================================================
@@ -297,13 +356,26 @@ def command(
                 suggested = _suggest_collection_name(source)
                 collection = ui.prompt_text("Collection name", suggested)
 
-        # 3. Artifacts - prompt for code projects
-        if not artifacts and _is_code_project(source):
-            print()
-            artifacts = ui.prompt_confirm(
-                "Generate artifacts (navigation index, interface catalog)?",
-                default=True,
-            )
+        # 3. Artifacts - interactive multi-select for code projects
+        if artifacts is None and _is_code_project(source):
+            # Check if user has a chat LLM configured
+            has_chat_llm = bool(config.get("chat", {}).get("plugin_name"))
+            available_artifacts = _get_available_artifacts(has_llm=has_chat_llm)
+            if available_artifacts:
+                # Default to all artifacts if LLM is available, otherwise structural only
+                if has_chat_llm:
+                    defaults = [name for name, _ in available_artifacts]
+                else:
+                    defaults = [
+                        name for name, desc in available_artifacts
+                        if "requires LLM" not in desc
+                    ]
+                selected_artifacts = ui.prompt_multi_select(
+                    "Select artifacts to generate",
+                    available_artifacts,
+                    defaults=defaults,
+                )
+                artifacts = ",".join(selected_artifacts) if selected_artifacts else "none"
 
     print()
 
@@ -311,7 +383,11 @@ def command(
     # Initialize components
     # =========================================================================
 
-    ui.step(1, 3, "Initializing...")
+    # Determine total steps based on whether artifacts are enabled
+    has_artifacts = artifacts != "none" and (artifacts is not None or _is_code_project(source))
+    total_steps = 4 if has_artifacts else 3
+
+    ui.step(1, total_steps, "Initializing...")
 
     try:
         # State manager
@@ -336,18 +412,55 @@ def command(
         vector_client = get_vector_db_plugin(vector_db_plugin)
         writer = VectorDBWriterAdapter(vector_client)
 
-        # Artifact orchestrator (optional)
-        artifact_orchestrator = None
-        if artifacts:
+        # Enrichment pipeline (from config, CLI selection can override)
+        enrichment_pipeline = None
+        enrichment_cfg = config.get("enrichment", {})
+
+        # Parse artifact selection from CLI or config
+        available_artifact_names = [name for name, _ in _get_available_artifacts(has_llm=False)]
+        selected_artifacts = _parse_artifact_selection(artifacts, available_artifact_names)
+
+        # If artifacts were selected (via CLI or interactive), enable enrichment
+        if selected_artifacts is not None and len(selected_artifacts) > 0:
+            enrichment_cfg["enabled"] = True
+            enrichment_cfg["artifacts"] = {"enabled": selected_artifacts}
+        elif selected_artifacts is not None and len(selected_artifacts) == 0:
+            # Explicitly disabled via 'none'
+            enrichment_cfg["enabled"] = False
+
+        if enrichment_cfg.get("enabled", False):
             from pathlib import Path
 
-            from fitz_ai.ingest.enrichment.artifacts import ArtifactOrchestrator
+            from fitz_ai.ingest.enrichment import EnrichmentPipeline, EnrichmentConfig
+            from fitz_ai.ingest.enrichment.artifacts.registry import get_artifact_registry
 
-            artifact_orchestrator = ArtifactOrchestrator(
+            enrichment_config = EnrichmentConfig.from_dict(enrichment_cfg)
+
+            # Check if any selected artifact requires LLM
+            chat_client = None
+            if selected_artifacts:
+                registry = get_artifact_registry()
+                needs_llm = any(
+                    registry.get_plugin(name) and registry.get_plugin(name).requires_llm
+                    for name in selected_artifacts
+                )
+                if needs_llm:
+                    # Get chat client from config
+                    chat_plugin = config.get("chat", {}).get("plugin_name", "cohere")
+                    chat_client = get_llm_plugin(plugin_type="chat", plugin_name=chat_plugin)
+                    ui.info(f"Chat LLM: {chat_plugin} (for LLM-based artifacts)")
+
+            enrichment_pipeline = EnrichmentPipeline(
+                config=enrichment_config,
                 project_root=Path(source).resolve(),
-                chat_client=None,  # Structural artifacts only (no LLM)
+                chat_client=chat_client,
             )
-            ui.info("Artifact orchestrator: ready")
+
+            # Show which artifacts will be generated
+            plugins = enrichment_pipeline.get_applicable_artifact_plugins()
+            plugin_names = [p.name for p in plugins]
+            if plugin_names:
+                ui.info(f"Artifacts: {', '.join(plugin_names)}")
 
     except Exception as e:
         ui.error(f"Failed to initialize: {e}")
@@ -356,14 +469,21 @@ def command(
     ui.success("Initialized")
 
     # =========================================================================
-    # Run diff ingestion
+    # Generate artifacts (if enabled)
     # =========================================================================
 
-    ui.step(2, 3, "Scanning files...")
+    current_step = 1
+    artifacts_generated = 0
+    artifact_errors: List[str] = []
 
-    try:
-        summary = run_diff_ingest(
-            source=source,
+    if has_artifacts and enrichment_pipeline is not None:
+        current_step += 1
+        ui.step(current_step, total_steps, "Generating artifacts...")
+
+        from fitz_ai.ingest.diff.executor import DiffIngestExecutor
+
+        # Create executor for artifact generation
+        executor = DiffIngestExecutor(
             state_manager=state_manager,
             vector_db_writer=writer,
             embedder=embedder,
@@ -371,9 +491,123 @@ def command(
             chunking_router=chunking_router,
             collection=collection,
             embedding_id=embedding_id,
-            artifact_orchestrator=artifact_orchestrator,
-            force=force,
+            enrichment_pipeline=enrichment_pipeline,
         )
+
+        try:
+            if RICH:
+                from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+
+                progress = Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    TextColumn("[dim]{task.fields[name]}[/dim]"),
+                    console=console,
+                )
+
+                task_id = None
+
+                def on_artifact_progress(current: int, total: int, name: str):
+                    nonlocal task_id
+                    if task_id is None:
+                        task_id = progress.add_task("Artifacts", total=total, name="")
+                    progress.update(task_id, completed=current, name=name if name != "Done" else "")
+
+                with progress:
+                    artifacts_generated, artifact_errors = executor.ingest_artifacts(on_progress=on_artifact_progress)
+            else:
+                artifacts_generated, artifact_errors = executor.ingest_artifacts()
+
+            if artifacts_generated > 0:
+                ui.success(f"Generated {artifacts_generated} artifacts")
+            else:
+                ui.info("No artifacts generated")
+
+        except Exception as e:
+            ui.error(f"Artifact generation failed: {e}")
+            artifact_errors.append(str(e))
+
+    # =========================================================================
+    # Run diff ingestion
+    # =========================================================================
+
+    current_step += 1
+    ui.step(current_step, total_steps, "Ingesting files...")
+
+    try:
+        # Set up progress tracking
+        if RICH:
+            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+            from pathlib import Path as PathLib
+
+            progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TextColumn("[dim]{task.fields[file]}[/dim]"),
+                console=console,
+            )
+
+            task_id = None
+
+            def on_progress(current: int, total: int, file_path: str):
+                nonlocal task_id
+                if task_id is None:
+                    task_id = progress.add_task("Ingesting", total=total, file="")
+                file_name = PathLib(file_path).name if file_path != "Done" else ""
+                progress.update(task_id, completed=current, file=file_name)
+
+            with progress:
+                summary = run_diff_ingest(
+                    source=source,
+                    state_manager=state_manager,
+                    vector_db_writer=writer,
+                    embedder=embedder,
+                    parser=parser,
+                    chunking_router=chunking_router,
+                    collection=collection,
+                    embedding_id=embedding_id,
+                    enrichment_pipeline=enrichment_pipeline,
+                    force=force,
+                    on_progress=on_progress,
+                    skip_artifacts=has_artifacts,  # Skip if we already did them
+                )
+        else:
+            # Simple text progress for non-Rich mode
+            last_pct = -1
+
+            def on_progress(current: int, total: int, file_path: str):
+                nonlocal last_pct
+                if total == 0:
+                    return
+                pct = int(current * 100 / total)
+                if pct >= last_pct + 10 or current == total:
+                    print(f"  {current}/{total} ({pct}%)")
+                    last_pct = pct
+
+            summary = run_diff_ingest(
+                source=source,
+                state_manager=state_manager,
+                vector_db_writer=writer,
+                embedder=embedder,
+                parser=parser,
+                chunking_router=chunking_router,
+                collection=collection,
+                embedding_id=embedding_id,
+                enrichment_pipeline=enrichment_pipeline,
+                force=force,
+                on_progress=on_progress,
+                skip_artifacts=has_artifacts,  # Skip if we already did them
+            )
+
+        # Add artifact stats from separate step
+        summary.artifacts_generated = artifacts_generated
+        summary.errors += len(artifact_errors)
+        summary.error_details.extend(artifact_errors)
+
     except Exception as e:
         ui.error(f"Ingestion failed: {e}")
         logger.exception("Ingestion error")
@@ -383,7 +617,8 @@ def command(
     # Summary
     # =========================================================================
 
-    ui.step(3, 3, "Complete!")
+    current_step += 1
+    ui.step(current_step, total_steps, "Complete!")
     print()
 
     if RICH:

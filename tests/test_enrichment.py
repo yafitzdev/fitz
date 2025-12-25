@@ -12,10 +12,14 @@ import pytest
 from fitz_ai.ingest.enrichment import (
     CodeEnrichmentContext,
     ContentType,
-    EnrichmentCache,
     EnrichmentContext,
-    EnrichmentRouter,
-    PythonContextBuilder,
+    SummaryCache,
+    ChunkSummarizer,
+    EnrichmentPipeline,
+    EnrichmentConfig,
+)
+from fitz_ai.ingest.enrichment.context.plugins.python import (
+    Builder as PythonContextBuilder,
     PythonProjectAnalyzer,
 )
 
@@ -45,12 +49,12 @@ class TestEnrichmentContext:
         assert len(ctx.used_by) == 1
 
 
-class TestEnrichmentCache:
-    """Tests for EnrichmentCache."""
+class TestSummaryCache:
+    """Tests for SummaryCache."""
 
     def test_get_set_basic(self, tmp_path):
         cache_path = tmp_path / "cache.json"
-        cache = EnrichmentCache(cache_path)
+        cache = SummaryCache(cache_path)
 
         # Initially empty
         assert cache.get("hash1", "enricher1") is None
@@ -66,27 +70,27 @@ class TestEnrichmentCache:
         cache_path = tmp_path / "cache.json"
 
         # Write to cache
-        cache1 = EnrichmentCache(cache_path)
+        cache1 = SummaryCache(cache_path)
         cache1.set("hash1", "enricher1", "description1")
         cache1.save()
 
         # Load from cache
-        cache2 = EnrichmentCache(cache_path)
+        cache2 = SummaryCache(cache_path)
         assert cache2.get("hash1", "enricher1") == "description1"
 
     def test_context_manager(self, tmp_path):
         cache_path = tmp_path / "cache.json"
 
-        with EnrichmentCache(cache_path) as cache:
+        with SummaryCache(cache_path) as cache:
             cache.set("hash1", "enricher1", "description1")
 
         # Should be saved on exit
-        cache2 = EnrichmentCache(cache_path)
+        cache2 = SummaryCache(cache_path)
         assert cache2.get("hash1", "enricher1") == "description1"
 
     def test_clear(self, tmp_path):
         cache_path = tmp_path / "cache.json"
-        cache = EnrichmentCache(cache_path)
+        cache = SummaryCache(cache_path)
 
         cache.set("hash1", "enricher1", "description1")
         cache.set("hash2", "enricher1", "description2")
@@ -98,7 +102,7 @@ class TestEnrichmentCache:
 
     def test_contains(self, tmp_path):
         cache_path = tmp_path / "cache.json"
-        cache = EnrichmentCache(cache_path)
+        cache = SummaryCache(cache_path)
 
         cache.set("hash1", "enricher1", "description1")
         assert ("hash1", "enricher1") in cache
@@ -189,157 +193,152 @@ def func_b():
         assert "mypackage" in analysis_b.imports or "module_a" in str(analysis_b.imports)
 
 
-class TestEnrichmentRouter:
-    """Tests for EnrichmentRouter."""
+class TestChunkSummarizer:
+    """Tests for ChunkSummarizer."""
 
-    def test_basic_routing(self, tmp_path):
-        cache = EnrichmentCache(tmp_path / "cache.json")
+    def test_basic_summarization(self, tmp_path):
+        cache = SummaryCache(tmp_path / "cache.json")
 
         # Mock chat client
         mock_chat = MagicMock()
-        mock_chat.complete.return_value = "This is a test description."
+        mock_chat.chat.return_value = "This is a test description."
 
-        router = EnrichmentRouter(
+        summarizer = ChunkSummarizer(
             chat_client=mock_chat,
             cache=cache,
             enricher_id="test:v1",
         )
 
-        description = router.enrich(
+        description = summarizer.summarize(
             content="def hello(): pass",
             file_path="/path/to/file.py",
             content_hash="abc123",
         )
 
         assert description == "This is a test description."
-        mock_chat.complete.assert_called_once()
+        mock_chat.chat.assert_called_once()
 
     def test_cache_hit(self, tmp_path):
-        cache = EnrichmentCache(tmp_path / "cache.json")
+        cache = SummaryCache(tmp_path / "cache.json")
 
         # Pre-populate cache
         cache.set("abc123", "test:v1", "Cached description")
 
         mock_chat = MagicMock()
 
-        router = EnrichmentRouter(
+        summarizer = ChunkSummarizer(
             chat_client=mock_chat,
             cache=cache,
             enricher_id="test:v1",
         )
 
-        description = router.enrich(
+        description = summarizer.summarize(
             content="def hello(): pass",
             file_path="/path/to/file.py",
             content_hash="abc123",
         )
 
         assert description == "Cached description"
-        mock_chat.complete.assert_not_called()
+        mock_chat.chat.assert_not_called()
 
-    def test_python_context_integration(self, tmp_path):
-        cache = EnrichmentCache(tmp_path / "cache.json")
 
+class TestEnrichmentPipeline:
+    """Tests for the EnrichmentPipeline."""
+
+    def test_pipeline_creation(self, tmp_path):
+        """Test that pipeline can be created with default config."""
+        config = EnrichmentConfig(enabled=True)
+        pipeline = EnrichmentPipeline(
+            config=config,
+            project_root=tmp_path,
+            chat_client=None,
+        )
+
+        assert pipeline.is_enabled
+        assert not pipeline.summaries_enabled  # No chat client
+        assert pipeline.artifacts_enabled
+
+    def test_pipeline_from_dict(self, tmp_path):
+        """Test creating pipeline from dict config."""
+        pipeline = EnrichmentPipeline.from_config(
+            config={"enabled": True, "artifacts": {"auto": True}},
+            project_root=tmp_path,
+        )
+
+        assert pipeline.is_enabled
+        assert pipeline.artifacts_enabled
+
+    def test_generate_structural_artifacts(self, tmp_path):
+        """Test generating structural artifacts (no LLM required)."""
         # Create a simple Python project
-        proj = tmp_path / "project"
-        proj.mkdir()
-        (proj / "module.py").write_text("def hello(): pass")
-
-        # Analyze project
-        analyzer = PythonProjectAnalyzer(proj)
-        analyzer.analyze()
-
-        # Build router with Python support
-        mock_chat = MagicMock()
-        mock_chat.complete.return_value = "Python function description."
-
-        router = EnrichmentRouter(
-            chat_client=mock_chat,
-            cache=cache,
-            enricher_id="test:v1",
-        )
-
-        # Register Python builder
-        builder = PythonContextBuilder(analyzer)
-        router.register_builder(builder)
-
-        description = router.enrich(
-            content="def hello(): pass",
-            file_path=str(proj / "module.py"),
-            content_hash="xyz789",
-        )
-
-        assert description == "Python function description."
-
-        # Check that the prompt includes Python-specific context
-        call_args = mock_chat.complete.call_args
-        prompt = call_args[0][0]
-        assert "Python" in prompt
-        assert "def hello" in prompt or "hello" in prompt
-
-
-class TestEnrichmentIntegration:
-    """Integration tests for the full enrichment pipeline."""
-
-    def test_full_enrichment_flow(self, tmp_path):
-        """Test the complete flow from project analysis to enrichment."""
-        # Create project
         proj = tmp_path / "myproject"
         proj.mkdir()
-        (proj / "main.py").write_text('''
-"""Main module."""
+        (proj / "__init__.py").write_text("")
+        (proj / "module.py").write_text('''
+"""A simple module."""
 
-from myproject import utils
+class MyClass:
+    """My class."""
+    pass
 
-def main():
-    return utils.helper()
-''')
-        (proj / "utils.py").write_text('''
-"""Utility functions."""
-
-def helper():
-    return 42
+def my_func():
+    """My function."""
+    pass
 ''')
 
-        # Analyze
-        analyzer = PythonProjectAnalyzer(proj)
-        analyzer.analyze()
-
-        # Setup enrichment
-        cache = EnrichmentCache(tmp_path / "cache.json")
-        mock_chat = MagicMock()
-        mock_chat.complete.side_effect = [
-            "Main module that orchestrates the application.",
-            "Utility module with helper functions.",
-        ]
-
-        router = EnrichmentRouter(
-            chat_client=mock_chat,
-            cache=cache,
-            enricher_id="test:v1",
-        )
-        router.register_builder(PythonContextBuilder(analyzer))
-
-        # Enrich both files
-        desc1 = router.enrich(
-            content=(proj / "main.py").read_text(),
-            file_path=str(proj / "main.py"),
-            content_hash="hash1",
-        )
-        desc2 = router.enrich(
-            content=(proj / "utils.py").read_text(),
-            file_path=str(proj / "utils.py"),
-            content_hash="hash2",
+        config = EnrichmentConfig(enabled=True)
+        pipeline = EnrichmentPipeline(
+            config=config,
+            project_root=proj,
+            chat_client=None,
         )
 
-        assert "Main module" in desc1
-        assert "Utility module" in desc2
-        assert mock_chat.complete.call_count == 2
+        artifacts = pipeline.generate_structural_artifacts()
 
-        # Save cache
-        router.save_cache()
+        # Should generate structural artifacts (not architecture_narrative which needs LLM)
+        assert len(artifacts) > 0
+        artifact_names = [a.artifact_type.value for a in artifacts]
+        assert "navigation_index" in artifact_names
+        assert "interface_catalog" in artifact_names
+        assert "architecture_narrative" not in artifact_names
 
-        # Verify cache persistence
-        cache2 = EnrichmentCache(tmp_path / "cache.json")
-        assert cache2.get("hash1", "test:v1") == desc1
-        assert cache2.get("hash2", "test:v1") == desc2
+
+class TestArtifactPluginDiscovery:
+    """Tests for artifact plugin discovery."""
+
+    def test_plugins_discovered(self):
+        """Test that all expected plugins are discovered."""
+        from fitz_ai.ingest.enrichment.artifacts.registry import get_artifact_registry
+
+        registry = get_artifact_registry()
+        plugin_names = registry.list_plugin_names()
+
+        assert "navigation_index" in plugin_names
+        assert "interface_catalog" in plugin_names
+        assert "data_model_reference" in plugin_names
+        assert "dependency_summary" in plugin_names
+        assert "architecture_narrative" in plugin_names
+
+
+class TestContextPluginDiscovery:
+    """Tests for context plugin discovery."""
+
+    def test_plugins_discovered(self):
+        """Test that all expected plugins are discovered."""
+        from fitz_ai.ingest.enrichment.context.registry import get_context_registry
+
+        registry = get_context_registry()
+        plugin_names = registry.list_plugin_names()
+
+        assert "python" in plugin_names
+        assert "generic" in plugin_names
+
+    def test_python_extension_mapped(self):
+        """Test that .py files are mapped to Python plugin."""
+        from fitz_ai.ingest.enrichment.context.registry import get_context_registry
+
+        registry = get_context_registry()
+        plugin = registry.get_plugin_for_extension(".py")
+
+        assert plugin is not None
+        assert plugin.name == "python"

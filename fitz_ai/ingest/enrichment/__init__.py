@@ -1,43 +1,72 @@
 # fitz_ai/ingest/enrichment/__init__.py
 """
-Enrichment module for generating searchable descriptions of chunks.
+Enrichment module for enhancing document ingestion.
 
 This module provides:
-- EnrichmentContext: Context data for enrichment (extensible for different content types)
-- ContextBuilder: Protocol for building context (implement for new content types)
-- EnrichmentRouter: Routes chunks to appropriate enrichment strategies
-- EnrichmentCache: Caches generated descriptions to avoid redundant LLM calls
+- EnrichmentPipeline: Unified entry point for all enrichment operations
+- EnrichmentConfig: Configuration for enrichment behavior
+- Chunk summaries: LLM-generated descriptions for better search
+- Artifacts: Project-level insights (navigation index, interface catalog, etc.)
 
 Architecture:
     ┌─────────────────────────────────────────────────────────────┐
-    │                    EnrichmentRouter                          │
-    │  Routes chunks to appropriate strategy based on content type │
+    │                    EnrichmentPipeline                        │
+    │            (single entry point for all enrichment)           │
     └─────────────────────────────────────────────────────────────┘
-                                │
-            ┌───────────────────┼───────────────────┐
-            │                   │                   │
-            ▼                   ▼                   ▼
-    ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-    │   Python     │   │  Other Code  │   │   Documents  │
-    │  (full ctx)  │   │ (basic ctx)  │   │  (minimal)   │
-    └──────────────┘   └──────────────┘   └──────────────┘
+                               │
+           ┌───────────────────┴───────────────────┐
+           │                                       │
+           ▼                                       ▼
+    ┌──────────────┐                       ┌──────────────┐
+    │   Summary    │                       │  Artifacts   │
+    │  (chunks)    │                       │  (project)   │
+    └──────────────┘                       └──────────────┘
+           │                                       │
+           ▼                                       ▼
+    ┌──────────────┐                       ┌──────────────┐
+    │   Context    │                       │   Plugins    │
+    │   Builders   │                       │ (per type)   │
+    └──────────────┘                       └──────────────┘
 
-Extensibility:
-    To add support for a new content type:
-    1. Create a new EnrichmentContext subclass (if needed)
-    2. Implement a ContextBuilder for that type
-    3. Register it with the router
+Usage:
+    from fitz_ai.ingest.enrichment import EnrichmentPipeline, EnrichmentConfig
 
-Example:
-    # Adding JavaScript support later:
-    class JSContextBuilder(ContextBuilder):
-        supported_extensions = {".js", ".ts", ".tsx"}
+    # Create pipeline
+    pipeline = EnrichmentPipeline.from_config(
+        config=config.get("enrichment"),
+        project_root=Path("./src"),
+        chat_client=my_llm,
+    )
 
-        def build(self, file_path: str, content: str) -> CodeEnrichmentContext:
-            # Parse JS imports/exports
-            ...
+    # Generate artifacts
+    artifacts = pipeline.generate_artifacts()
+
+    # Summarize a chunk
+    description = pipeline.summarize_chunk(content, file_path, content_hash)
+
+Plugin System:
+    - Artifact plugins: fitz_ai/ingest/enrichment/artifacts/plugins/
+    - Context plugins: fitz_ai/ingest/enrichment/context/plugins/
+
+    Each plugin is auto-discovered and must define:
+    - plugin_name: str
+    - plugin_type: str ("artifact" or "context")
+    - supported_types or supported_extensions
 """
 
+# Configuration
+from fitz_ai.ingest.enrichment.config import (
+    EnrichmentConfig,
+    SummaryConfig,
+    ArtifactConfig,
+)
+
+# Pipeline (main entry point)
+from fitz_ai.ingest.enrichment.pipeline import (
+    EnrichmentPipeline,
+)
+
+# Base types
 from fitz_ai.ingest.enrichment.base import (
     ContentType,
     EnrichmentContext,
@@ -46,18 +75,43 @@ from fitz_ai.ingest.enrichment.base import (
     ContextBuilder,
     Enricher,
 )
-from fitz_ai.ingest.enrichment.cache import EnrichmentCache
-from fitz_ai.ingest.enrichment.router import (
-    EnrichmentRouter,
-    EnrichmentRouterBuilder,
-    ChatClient,
+
+# Summary components
+from fitz_ai.ingest.enrichment.summary import (
+    ChunkSummarizer,
+    SummaryCache,
 )
-from fitz_ai.ingest.enrichment.python_context import (
-    PythonProjectAnalyzer,
-    PythonContextBuilder,
+
+# Artifact components
+from fitz_ai.ingest.enrichment.artifacts import (
+    Artifact,
+    ArtifactType,
+    ArtifactGenerator,
+    ProjectAnalysis,
+    ProjectAnalyzer,
+)
+
+# Registries
+from fitz_ai.ingest.enrichment.artifacts.registry import (
+    ArtifactRegistry,
+    get_artifact_registry,
+    get_artifact_plugin,
+    list_artifact_plugins,
+)
+from fitz_ai.ingest.enrichment.context.registry import (
+    ContextRegistry,
+    get_context_registry,
+    get_context_plugin,
+    list_context_plugins,
 )
 
 __all__ = [
+    # Configuration
+    "EnrichmentConfig",
+    "SummaryConfig",
+    "ArtifactConfig",
+    # Pipeline
+    "EnrichmentPipeline",
     # Base types
     "ContentType",
     "EnrichmentContext",
@@ -65,13 +119,22 @@ __all__ = [
     "DocumentEnrichmentContext",
     "ContextBuilder",
     "Enricher",
-    # Cache
-    "EnrichmentCache",
-    # Router
-    "EnrichmentRouter",
-    "EnrichmentRouterBuilder",
-    "ChatClient",
-    # Python support
-    "PythonProjectAnalyzer",
-    "PythonContextBuilder",
+    # Summary
+    "ChunkSummarizer",
+    "SummaryCache",
+    # Artifacts
+    "Artifact",
+    "ArtifactType",
+    "ArtifactGenerator",
+    "ProjectAnalysis",
+    "ProjectAnalyzer",
+    # Registries
+    "ArtifactRegistry",
+    "get_artifact_registry",
+    "get_artifact_plugin",
+    "list_artifact_plugins",
+    "ContextRegistry",
+    "get_context_registry",
+    "get_context_plugin",
+    "list_context_plugins",
 ]

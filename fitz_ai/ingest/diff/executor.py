@@ -28,8 +28,7 @@ from fitz_ai.ingest.hashing import compute_chunk_id
 from fitz_ai.ingest.state.manager import IngestStateManager
 
 if TYPE_CHECKING:
-    from fitz_ai.ingest.enrichment.router import EnrichmentRouter
-    from fitz_ai.ingest.enrichment.artifacts.orchestrator import ArtifactOrchestrator
+    from fitz_ai.ingest.enrichment.pipeline import EnrichmentPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -132,8 +131,7 @@ class DiffIngestExecutor:
         collection: str,
         embedding_id: str,
         parser_id_func: Optional[callable] = None,
-        enrichment_router: Optional["EnrichmentRouter"] = None,
-        artifact_orchestrator: Optional["ArtifactOrchestrator"] = None,
+        enrichment_pipeline: Optional["EnrichmentPipeline"] = None,
     ) -> None:
         """
         Initialize the executor.
@@ -148,10 +146,8 @@ class DiffIngestExecutor:
             embedding_id: Current embedding configuration ID.
             parser_id_func: Function to get parser_id for extension.
                            Defaults to "{ext}.v1" format.
-            enrichment_router: Optional router for generating descriptions.
-                              If provided, descriptions are embedded instead of content.
-            artifact_orchestrator: Optional orchestrator for generating project artifacts.
-                                  If provided, generates and ingests artifacts at start.
+            enrichment_pipeline: Optional unified enrichment pipeline.
+                                Handles both chunk summaries and project artifacts.
         """
         self._state = state_manager
         self._vdb_writer = vector_db_writer
@@ -161,9 +157,8 @@ class DiffIngestExecutor:
         self._collection = collection
         self._embedding_id = embedding_id
         self._get_parser_id = parser_id_func or self._default_parser_id
-        self._enrichment_router = enrichment_router
-        self._artifact_orchestrator = artifact_orchestrator
-        self._summary: Optional[IngestSummary] = None  # Track current run stats
+        self._enrichment_pipeline = enrichment_pipeline
+        self._summary: Optional[IngestSummary] = None
 
     @staticmethod
     def _default_parser_id(ext: str) -> str:
@@ -173,14 +168,16 @@ class DiffIngestExecutor:
     @property
     def _enricher_id(self) -> Optional[str]:
         """Get the enricher ID if enrichment is enabled."""
-        if self._enrichment_router is None:
+        if self._enrichment_pipeline is None or not self._enrichment_pipeline.summaries_enabled:
             return None
-        return self._enrichment_router.enricher_id
+        return self._enrichment_pipeline._enricher_id
 
     def run(
         self,
         source: str | Path,
         force: bool = False,
+        on_progress: Optional[callable] = None,
+        skip_artifacts: bool = False,
     ) -> IngestSummary:
         """
         Run the incremental ingestion pipeline.
@@ -188,6 +185,8 @@ class DiffIngestExecutor:
         Args:
             source: Path to directory or file to ingest.
             force: If True, ingest everything regardless of state.
+            on_progress: Optional callback(current, total, file_path) for progress updates.
+            skip_artifacts: If True, skip artifact generation (caller handles separately).
 
         Returns:
             IngestSummary with results.
@@ -205,8 +204,8 @@ class DiffIngestExecutor:
             summary.errors += 1
             summary.error_details.append(f"Scan error: {path}: {error}")
 
-        # 1.5 Generate and ingest artifacts (if orchestrator provided)
-        if self._artifact_orchestrator is not None:
+        # 1.5 Generate and ingest artifacts (if pipeline provided and enabled)
+        if not skip_artifacts and self._enrichment_pipeline is not None and self._enrichment_pipeline.artifacts_enabled:
             self._ingest_artifacts(summary)
 
         # 2. Compute diff (state + config aware)
@@ -224,10 +223,16 @@ class DiffIngestExecutor:
         summary.skipped = len(diff.to_skip)
 
         # 3. Ingest files that need ingestion
-        enrichment_status = "enabled" if self._enrichment_router else "disabled"
+        summaries_enabled = self._enrichment_pipeline and self._enrichment_pipeline.summaries_enabled
+        enrichment_status = "enabled" if summaries_enabled else "disabled"
         logger.info(f"Ingesting {len(diff.to_ingest)} files (enrichment: {enrichment_status})...")
 
-        for candidate in diff.to_ingest:
+        total_to_ingest = len(diff.to_ingest)
+        for i, candidate in enumerate(diff.to_ingest):
+            # Report progress
+            if on_progress:
+                on_progress(i, total_to_ingest, candidate.path)
+
             try:
                 self._ingest_file(candidate)
                 summary.ingested += 1
@@ -249,6 +254,10 @@ class DiffIngestExecutor:
                 summary.errors += 1
                 summary.error_details.append(f"Ingest error: {candidate.path}: {e}")
                 logger.warning(f"Failed to ingest {candidate.path}: {e}")
+
+        # Final progress update
+        if on_progress and total_to_ingest > 0:
+            on_progress(total_to_ingest, total_to_ingest, "Done")
 
         # 4. Update state for skipped files (they're still active)
         for candidate in diff.to_skip:
@@ -272,8 +281,8 @@ class DiffIngestExecutor:
 
         # 6. Save state and enrichment cache
         self._state.save()
-        if self._enrichment_router:
-            self._enrichment_router.save_cache()
+        if self._enrichment_pipeline:
+            self._enrichment_pipeline.save_cache()
 
         summary.finished_at = datetime.utcnow()
         self._summary = None
@@ -323,25 +332,19 @@ class DiffIngestExecutor:
 
             # 3a. Enrichment (if enabled)
             description: Optional[str] = None
-            if self._enrichment_router is not None:
+            if self._enrichment_pipeline is not None and self._enrichment_pipeline.summaries_enabled:
                 # Compute chunk-specific hash for caching
                 chunk_content_hash = _hash_text(chunk.content)
 
-                # Check if this is a cache hit by checking before/after
-                cache_before = (chunk_content_hash, self._enrichment_router.enricher_id) in self._enrichment_router._cache
-
-                description = self._enrichment_router.enrich(
+                description = self._enrichment_pipeline.summarize_chunk(
                     content=chunk.content,
                     file_path=candidate.path,
                     content_hash=chunk_content_hash,
                 )
 
                 # Track enrichment stats
-                if self._summary is not None:
-                    if cache_before:
-                        self._summary.enrichment_cached += 1
-                    else:
-                        self._summary.enriched += 1
+                if self._summary is not None and description is not None:
+                    self._summary.enriched += 1
 
             # 3b. Embed (description if enriched, content otherwise)
             text_to_embed = description if description else chunk.content
@@ -366,7 +369,7 @@ class DiffIngestExecutor:
             # Add enrichment data to payload if available
             if description is not None:
                 payload["description"] = description
-                payload["enricher_id"] = self._enrichment_router.enricher_id
+                payload["enricher_id"] = self._enricher_id
 
             points.append(
                 {
@@ -380,7 +383,10 @@ class DiffIngestExecutor:
         self._vdb_writer.upsert(self._collection, points)
         logger.debug(f"Upserted {len(points)} chunks from {candidate.path}")
 
-    def _ingest_artifacts(self, summary: IngestSummary) -> None:
+    def ingest_artifacts(
+        self,
+        on_progress: Optional[callable] = None,
+    ) -> tuple[int, List[str]]:
         """
         Generate and ingest project artifacts.
 
@@ -388,24 +394,32 @@ class DiffIngestExecutor:
         They are stored with is_artifact=True and always retrieved with score=1.0.
 
         Args:
-            summary: IngestSummary to update with artifact stats.
-        """
-        if self._artifact_orchestrator is None:
-            return
+            on_progress: Optional callback(current, total, artifact_name) for progress.
 
+        Returns:
+            Tuple of (artifacts_generated, error_messages).
+        """
+        if self._enrichment_pipeline is None:
+            return 0, []
+
+        errors: List[str] = []
         logger.info("Generating project artifacts...")
 
         try:
-            # Generate all artifacts
-            artifacts = self._artifact_orchestrator.generate_all()
+            # Generate artifacts using the pipeline
+            artifacts = self._enrichment_pipeline.generate_artifacts()
 
             if not artifacts:
                 logger.info("No artifacts generated")
-                return
+                return 0, []
 
             # Ingest each artifact
+            total = len(artifacts)
             points = []
-            for artifact in artifacts:
+            for i, artifact in enumerate(artifacts):
+                if on_progress:
+                    on_progress(i, total, artifact.artifact_type.value)
+
                 # Create deterministic ID for artifact
                 artifact_id = f"artifact:{artifact.artifact_type.value}:{self._collection}"
 
@@ -424,16 +438,27 @@ class DiffIngestExecutor:
                     "payload": payload,
                 })
 
+            # Final progress
+            if on_progress:
+                on_progress(total, total, "Done")
+
             # Upsert all artifacts
             self._vdb_writer.upsert(self._collection, points)
-            summary.artifacts_generated = len(artifacts)
-
             logger.info(f"Ingested {len(artifacts)} artifacts")
 
+            return len(artifacts), errors
+
         except Exception as e:
-            summary.errors += 1
-            summary.error_details.append(f"Artifact generation error: {e}")
+            errors.append(f"Artifact generation error: {e}")
             logger.warning(f"Failed to generate/ingest artifacts: {e}")
+            return 0, errors
+
+    def _ingest_artifacts(self, summary: IngestSummary) -> None:
+        """Internal method for backward compatibility."""
+        count, errors = self.ingest_artifacts()
+        summary.artifacts_generated = count
+        summary.errors += len(errors)
+        summary.error_details.extend(errors)
 
 
 def _hash_text(text: str) -> str:
@@ -452,9 +477,10 @@ def run_diff_ingest(
     collection: str,
     embedding_id: str,
     parser_id_func: Optional[callable] = None,
-    enrichment_router: Optional["EnrichmentRouter"] = None,
-    artifact_orchestrator: Optional["ArtifactOrchestrator"] = None,
+    enrichment_pipeline: Optional["EnrichmentPipeline"] = None,
     force: bool = False,
+    on_progress: Optional[callable] = None,
+    skip_artifacts: bool = False,
 ) -> IngestSummary:
     """
     Convenience function to run diff ingestion.
@@ -469,9 +495,10 @@ def run_diff_ingest(
         collection: Vector DB collection name.
         embedding_id: Current embedding configuration ID.
         parser_id_func: Function to get parser_id for extension.
-        enrichment_router: Optional router for generating descriptions.
-        artifact_orchestrator: Optional orchestrator for generating project artifacts.
+        enrichment_pipeline: Optional unified enrichment pipeline.
         force: If True, ingest everything regardless of state.
+        on_progress: Optional callback(current, total, file_path) for progress updates.
+        skip_artifacts: If True, skip artifact generation (caller handles separately).
 
     Returns:
         IngestSummary with results.
@@ -485,10 +512,9 @@ def run_diff_ingest(
         collection=collection,
         embedding_id=embedding_id,
         parser_id_func=parser_id_func,
-        enrichment_router=enrichment_router,
-        artifact_orchestrator=artifact_orchestrator,
+        enrichment_pipeline=enrichment_pipeline,
     )
-    return executor.run(source, force=force)
+    return executor.run(source, force=force, on_progress=on_progress, skip_artifacts=skip_artifacts)
 
 
 __all__ = [

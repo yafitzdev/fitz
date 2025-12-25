@@ -374,6 +374,101 @@ class UI:
                 else:
                     print("  Please enter a number")
 
+    def prompt_multi_select(
+        self,
+        prompt: str,
+        choices: list[tuple[str, str]],
+        defaults: Optional[list[str]] = None,
+    ) -> list[str]:
+        """
+        Prompt for multi-select with toggle.
+
+        Example output:
+            Select artifacts:
+              [1] [x] navigation_index - File → purpose mapping
+              [2] [x] interface_catalog - Protocols with implementations
+              [3] [ ] architecture_narrative - High-level overview (requires LLM)
+            Toggle (1-3), 'a' for all, 'n' for none, Enter to confirm:
+            → navigation_index, interface_catalog
+
+        Args:
+            prompt: Prompt text
+            choices: List of (name, description) tuples
+            defaults: List of names to select by default (None = all selected)
+
+        Returns:
+            List of selected choice names
+        """
+        if not choices:
+            return []
+
+        # Initialize selection state
+        names = [name for name, _ in choices]
+        if defaults is None:
+            selected = set(names)  # All selected by default
+        else:
+            selected = set(defaults)
+
+        def _print_choices():
+            if RICH:
+                console.print(f"\n  [bold]{prompt}:[/bold]")
+                for i, (name, desc) in enumerate(choices, 1):
+                    check = "[green]x[/green]" if name in selected else " "
+                    console.print(f"    [cyan][{i}][/cyan] [{check}] {name} [dim]- {desc}[/dim]")
+            else:
+                print(f"\n  {prompt}:")
+                for i, (name, desc) in enumerate(choices, 1):
+                    check = "x" if name in selected else " "
+                    print(f"    [{i}] [{check}] {name} - {desc}")
+
+        # Interactive loop
+        while True:
+            _print_choices()
+
+            if RICH:
+                console.print(
+                    "\n  [dim]Toggle (1-{0}), 'a' for all, 'n' for none, Enter to confirm[/dim]".format(
+                        len(choices)
+                    )
+                )
+                response = Prompt.ask("  ", default="").strip().lower()
+            else:
+                print(f"\n  Toggle (1-{len(choices)}), 'a' for all, 'n' for none, Enter to confirm")
+                response = input("  : ").strip().lower()
+
+            if response == "":
+                # Confirm selection
+                result = [name for name in names if name in selected]
+                if RICH:
+                    if result:
+                        console.print(f"  [dim]→ {', '.join(result)}[/dim]")
+                    else:
+                        console.print("  [dim]→ (none)[/dim]")
+                return result
+
+            elif response == "a":
+                # Select all
+                selected = set(names)
+
+            elif response == "n":
+                # Select none
+                selected = set()
+
+            else:
+                # Toggle individual items (comma-separated)
+                for part in response.split(","):
+                    part = part.strip()
+                    try:
+                        idx = int(part)
+                        if 1 <= idx <= len(choices):
+                            name = names[idx - 1]
+                            if name in selected:
+                                selected.remove(name)
+                            else:
+                                selected.add(name)
+                    except ValueError:
+                        pass  # Ignore invalid input
+
     # -------------------------------------------------------------------------
     # Table Methods
     # -------------------------------------------------------------------------
