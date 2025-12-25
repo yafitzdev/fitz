@@ -192,8 +192,8 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 ```bash
 fitz quickstart [PATH] [QUESTION]    # Zero-config RAG (start here)
 fitz init                            # Interactive setup wizard
-fitz ingest (optional: [PATH])       # Ingest documents
-fitz query [QUESTION]                # Query knowledge base
+fitz ingest                          # Interactive ingestion
+fitz query                           # Interactive querying of knowledge base
 fitz collections                     # List and delete knowledge collections
 fitz config                          # View/edit configuration
 fitz doctor                          # System diagnostics
