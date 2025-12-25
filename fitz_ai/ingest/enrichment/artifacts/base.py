@@ -15,12 +15,16 @@ must define:
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Protocol, Set, runtime_checkable
+from typing import TYPE_CHECKING, Any, Dict, List, Protocol, Set, runtime_checkable
 
 from fitz_ai.ingest.enrichment.base import ContentType
+
+if TYPE_CHECKING:
+    from fitz_ai.engines.classic_rag.models.chunk import Chunk
 
 
 class ArtifactType(str, Enum):
@@ -66,6 +70,35 @@ class Artifact:
             "chunk_index": 0,
             **self.metadata,
         }
+
+    def to_chunk(self) -> "Chunk":
+        """
+        Convert artifact to a Chunk for vector DB storage.
+
+        This enables unified storage flow where artifacts are stored
+        alongside regular chunks in the vector database.
+
+        Returns:
+            Chunk instance with artifact metadata
+        """
+        from fitz_ai.engines.classic_rag.models.chunk import Chunk
+
+        artifact_id = hashlib.sha256(
+            f"{self.artifact_type.value}:{self.title}".encode()
+        ).hexdigest()[:16]
+
+        return Chunk(
+            id=f"artifact:{artifact_id}",
+            doc_id=f"artifact:{self.artifact_type.value}",
+            content=self.content,
+            chunk_index=0,
+            metadata={
+                "is_artifact": True,
+                "artifact_type": self.artifact_type.value,
+                "title": self.title,
+                **self.metadata,
+            },
+        )
 
 
 @runtime_checkable

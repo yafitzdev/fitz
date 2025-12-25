@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Protocol, Set, runtime_checkable
+from typing import TYPE_CHECKING, Any, Dict, List, Protocol, Set, runtime_checkable
 
 from fitz_ai.ingest.enrichment.config import EnrichmentConfig
 from fitz_ai.ingest.enrichment.base import ContentType
@@ -43,7 +43,11 @@ from fitz_ai.ingest.enrichment.artifacts.registry import (
     ArtifactRegistry,
     ArtifactPluginInfo,
 )
+from fitz_ai.ingest.enrichment.models import EnrichmentResult
 from fitz_ai.core.paths import FitzPaths
+
+if TYPE_CHECKING:
+    from fitz_ai.engines.classic_rag.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
 
@@ -310,8 +314,54 @@ class EnrichmentPipeline:
         if self._summarizer:
             self._summarizer.save_cache()
 
+    def enrich(self, chunks: List["Chunk"]) -> EnrichmentResult:
+        """
+        Unified enrichment entry point.
+
+        This is the main "box" interface for enrichment:
+        - Input: List of chunks
+        - Output: EnrichmentResult with enriched chunks + artifacts
+
+        The method:
+        1. Generates summaries for chunks (if enabled) and attaches them to metadata
+        2. Generates corpus-level artifacts (if enabled)
+        3. Returns unified result
+
+        Design note: Takes chunks (not raw docs) so future recursive
+        enrichment can feed outputs back as inputs.
+
+        Args:
+            chunks: List of chunks to enrich
+
+        Returns:
+            EnrichmentResult with enriched chunks and artifacts
+        """
+        if not self.is_enabled:
+            return EnrichmentResult(chunks=chunks, artifacts=[])
+
+        # Generate summaries and attach to chunk metadata
+        if self.summaries_enabled:
+            chunk_tuples = [
+                (c.content, c.metadata.get("file_path", ""), c.id)
+                for c in chunks
+            ]
+            summaries = self.summarize_chunks_batch(chunk_tuples)
+
+            for chunk, summary in zip(chunks, summaries):
+                if summary:
+                    chunk.metadata["summary"] = summary
+
+            # Save cache after batch summarization
+            self.save_cache()
+
+        # Generate artifacts
+        artifacts = self.generate_artifacts() if self.artifacts_enabled else []
+
+        return EnrichmentResult(chunks=chunks, artifacts=artifacts)
+
 
 __all__ = [
     "EnrichmentPipeline",
+    "EnrichmentResult",
     "ChatClient",
 ]

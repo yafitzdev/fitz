@@ -38,10 +38,13 @@ Usage:
         chat_client=my_llm,
     )
 
-    # Generate artifacts
-    artifacts = pipeline.generate_artifacts()
+    # Unified enrichment (preferred - the "box" interface)
+    result = pipeline.enrich(chunks)
+    enriched_chunks = result.chunks    # Chunks with summaries in metadata
+    artifacts = result.artifacts        # Corpus-level artifacts
 
-    # Summarize a chunk
+    # Or use individual methods if needed
+    artifacts = pipeline.generate_artifacts()
     description = pipeline.summarize_chunk(content, file_path, content_hash)
 
 Plugin System:
@@ -64,6 +67,11 @@ from fitz_ai.ingest.enrichment.config import (
 # Pipeline (main entry point)
 from fitz_ai.ingest.enrichment.pipeline import (
     EnrichmentPipeline,
+)
+
+# Models
+from fitz_ai.ingest.enrichment.models import (
+    EnrichmentResult,
 )
 
 # Base types
@@ -112,6 +120,8 @@ __all__ = [
     "ArtifactConfig",
     # Pipeline
     "EnrichmentPipeline",
+    # Models
+    "EnrichmentResult",
     # Base types
     "ContentType",
     "EnrichmentContext",
