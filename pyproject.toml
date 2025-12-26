@@ -67,7 +67,7 @@ dependencies = [
 [project.optional-dependencies]
 # Document ingestion support
 ingest = [
-    "pdfminer.six",
+    "pdfplumber>=0.10.0",
     "python-docx",
 ]
 
@@ -93,7 +93,7 @@ dev = [
 
 # Install everything at once
 all = [
-    "pdfminer.six",
+    "pdfplumber>=0.10.0",
     "python-docx",
     "ollama>=0.1.0",
     "qdrant-client>=1.7",
