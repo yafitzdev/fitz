@@ -1,4 +1,4 @@
-# fitz-ai ✨
+# fitz-ai
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/fitz-ai.svg)](https://pypi.org/project/fitz-ai/)
@@ -28,15 +28,15 @@ Built from scratch—no LangChain or LlamaIndex under the hood.
 
 ---
 
-## Why Fitz? ☀️
+## Why Fitz? 💡
 
-> - **Point at a folder. Ask a question. Get an answer with sources.**
-> - **❗Swap RAG engines in one line, no migration needed.** Fitz is designed for people who anticipate RAG to evolve.
-> - **Admits it doesn't know when the answer isn't there.** No hallucinations, no confident nonsense.
-> - **Local execution possible.** FAISS and Ollama support, no API keys required to start.
-> - **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
-> - **Full provenance.** Every answer traces back to the exact chunk and document.
-> - **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
+1. [x] **Point at a folder. Ask a question. Get an answer with sources.**
+2. [x] **❗Swap RAG engines in one line, no migration needed.** Fitz is designed for people who anticipate RAG to evolve.
+3. [x] **Admits it doesn't know when the answer isn't there.** No hallucinations, no confident nonsense.
+4. [x] **Local execution possible.** FAISS and Ollama support, no API keys required to start.
+5. [x] **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
+6. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
+7. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
 
 Any questions left? Try fitz on itself:
 
@@ -49,7 +49,7 @@ The codebase speaks for itself.
 ---
 <details>
 
-<summary><strong>🧊 Fitz vs LangChain vs LlamaIndex</strong></summary>
+<summary><strong>📦 Fitz vs LangChain vs LlamaIndex</strong></summary>
 
 #### Fitz opts for a deliberately narrower approach.
 
@@ -107,7 +107,7 @@ Fitz intentionally does less — so it can be trusted more.
 
 <details>
 
-<summary><strong>🧊 When Fitz is the right choice</strong></summary>
+<summary><strong>📦 When Fitz is the right choice</strong></summary>
 
 #### Use Fitz if you want:
 
@@ -122,7 +122,7 @@ Fitz intentionally does less — so it can be trusted more.
 ---
 <details>
 
-<summary><strong>🧊 Features</strong></summary>
+<summary><strong>📦 Features</strong></summary>
 
 #### Actually admits when it doesn't know 📚
 
@@ -235,13 +235,13 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 >
 > *Example:* A SaaS company plugs fitz into their support bot. Tier-1 questions like "How do I reset my password?" get instant answers. Their support team focuses on edge cases while fitz deflects 60% of incoming tickets.
 
-<strong>Internal Knowledge Base 📚</strong>
+<strong>Internal Knowledge Base 📖</strong>
 
 > Point fitz at your company's wiki, policies, and runbooks. Employees ask natural language questions instead of hunting through folders or pinging colleagues on Slack.
 >
 > *Example:* A 200-person startup ingests their Notion workspace and compliance docs. New hires find answers to "How do I request PTO?" on day one—no more waiting for someone in HR to respond.
 
-<strong>Continuous Intelligence & Alerting 🐶</strong>
+<strong>Continuous Intelligence & Alerting (Watchdog) 🐶</strong>
 
 > Pair fitz with cron, Airflow, or Lambda. Ingest data on a schedule, run queries automatically, trigger alerts when conditions match. Fitz provides the retrieval primitive; you wire the automation.
 >
@@ -293,7 +293,7 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 ```
 ---
 
-## CLI Reference 🗪
+## CLI Reference ⌨️
 
 ```bash
 fitz quickstart [PATH] [QUESTION]    # Zero-config RAG (start here)
@@ -308,7 +308,7 @@ fitz doctor                          # System diagnostics
 
 ---
 
-## Beyond RAG 🔮
+## Beyond RAG 🔭
 
 > **RAG is a method. Knowledge access is a strategy.**
 
@@ -331,7 +331,7 @@ The engine is an implementation detail. Your ingested knowledge, your queries, y
 
 ---
 
-## Philosophy 📍
+## Philosophy 🧭
 
 **Principles:**
 - **Explicit over clever**: No magic. Read the config, know what happens.
