@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from fitz_ai.ingest.enrichment.base import ContentType
 from fitz_ai.ingest.enrichment.artifacts.base import (
     Artifact,
     ArtifactType,
     ProjectAnalysis,
 )
+from fitz_ai.ingest.enrichment.base import ContentType
 
 plugin_name = "interface_catalog"
 plugin_type = "artifact"
@@ -55,7 +55,9 @@ class Generator:
                 if proto.get("methods"):
                     lines.append("**Methods:**")
                     for method in proto["methods"]:
-                        lines.append(f"- `{method['name']}{method.get('signature', '()')}`")
+                        lines.append(
+                            f"- `{method['name']}{method.get('signature', '()')}`"
+                        )
                     lines.append("")
 
                 implementations = self._find_implementations(proto["name"], analysis)

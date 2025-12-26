@@ -10,7 +10,6 @@ These tests verify:
 
 from __future__ import annotations
 
-
 from fitz_ai.engines.classic_rag.constraints import (
     ConflictAwareConstraint,
     ConstraintResult,

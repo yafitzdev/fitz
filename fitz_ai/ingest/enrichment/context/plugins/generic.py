@@ -22,25 +22,46 @@ supported_extensions: set[str] = set()  # Empty = fallback for any extension
 
 # Code file extensions (non-Python)
 CODE_EXTENSIONS = {
-    ".js", ".jsx", ".ts", ".tsx",
-    ".java", ".kt", ".scala",
-    ".go", ".rs",
-    ".c", ".cpp", ".h", ".hpp",
-    ".cs", ".rb", ".php",
-    ".swift", ".m", ".mm",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".java",
+    ".kt",
+    ".scala",
+    ".go",
+    ".rs",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".cs",
+    ".rb",
+    ".php",
+    ".swift",
+    ".m",
+    ".mm",
 }
 
 # Document extensions
 DOCUMENT_EXTENSIONS = {
-    ".md", ".markdown", ".rst",
-    ".txt", ".text",
-    ".html", ".htm",
+    ".md",
+    ".markdown",
+    ".rst",
+    ".txt",
+    ".text",
+    ".html",
+    ".htm",
 }
 
 # Structured data extensions
 STRUCTURED_EXTENSIONS = {
-    ".json", ".yaml", ".yml",
-    ".toml", ".ini", ".cfg",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
     ".xml",
 }
 

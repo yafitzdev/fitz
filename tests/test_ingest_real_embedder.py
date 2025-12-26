@@ -42,7 +42,9 @@ class TracingParser:
     def parse(self, path: str) -> str:
         self.parse_calls += 1
         # Return content that creates multiple chunks
-        return f"# {Path(path).name}\n\n" + ("This is test content for embedding. " * 100)
+        return f"# {Path(path).name}\n\n" + (
+            "This is test content for embedding. " * 100
+        )
 
 
 @pytest.fixture
@@ -122,7 +124,7 @@ def test_with_real_cohere_embedder(tmp_path: Path, test_files):
     t_total = time.perf_counter() - t_start
 
     print(f"\n{'=' * 70}")
-    print(f"RESULTS")
+    print("RESULTS")
     print(f"{'=' * 70}")
     print(f"  Files:          {len(files)}")
     print(f"  Chunks:         {writer.total_points}")
@@ -157,7 +159,9 @@ def test_embedder_batch_directly(tmp_path: Path):
 
     # Create test texts
     texts = [f"This is test document number {i}. " * 20 for i in range(50)]
-    print(f"[TEST] Created {len(texts)} texts, avg length: {sum(len(t) for t in texts) // len(texts)} chars")
+    print(
+        f"[TEST] Created {len(texts)} texts, avg length: {sum(len(t) for t in texts) // len(texts)} chars"
+    )
 
     # Call embed_batch directly
     print("\n[TEST] Calling embed_batch()...")
@@ -166,7 +170,7 @@ def test_embedder_batch_directly(tmp_path: Path):
     t1 = time.perf_counter()
 
     print(f"\n{'=' * 70}")
-    print(f"RESULTS")
+    print("RESULTS")
     print(f"{'=' * 70}")
     print(f"  Texts:          {len(texts)}")
     print(f"  Vectors:        {len(vectors)}")
@@ -207,17 +211,21 @@ def test_embedder_single_vs_batch(tmp_path: Path):
     for text in texts:
         embedder.embed(text)
     t_single = time.perf_counter() - t0
-    print(f"[TEST] Single calls: {t_single:.2f}s ({t_single/len(texts)*1000:.0f}ms each)")
+    print(
+        f"[TEST] Single calls: {t_single:.2f}s ({t_single / len(texts) * 1000:.0f}ms each)"
+    )
 
     # Test batch embed
     print("\n[TEST] Testing 1 embed_batch() call with 10 texts...")
     t0 = time.perf_counter()
     embedder.embed_batch(texts)
     t_batch = time.perf_counter() - t0
-    print(f"[TEST] Batch call: {t_batch:.2f}s ({t_batch/len(texts)*1000:.0f}ms per text)")
+    print(
+        f"[TEST] Batch call: {t_batch:.2f}s ({t_batch / len(texts) * 1000:.0f}ms per text)"
+    )
 
     print(f"\n{'=' * 70}")
-    print(f"RESULTS")
+    print("RESULTS")
     print(f"{'=' * 70}")
     print(f"  10 single embed() calls: {t_single:.2f}s")
     print(f"  1 embed_batch() call:    {t_batch:.2f}s")

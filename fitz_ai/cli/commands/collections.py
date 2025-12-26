@@ -102,7 +102,9 @@ def _display_collection_info(name: str, stats: Dict[str, Any]) -> None:
         table.add_column("Value", style="cyan")
 
         table.add_row("Name", name)
-        table.add_row("Chunks", str(stats.get("points_count", stats.get("vectors_count", "?"))))
+        table.add_row(
+            "Chunks", str(stats.get("points_count", stats.get("vectors_count", "?")))
+        )
         table.add_row("Vector Size", str(stats.get("vector_size", "?")))
         table.add_row("Status", stats.get("status", "ready"))
 
@@ -127,7 +129,9 @@ def _display_example_chunks(client: Any, collection: str, limit: int = 3) -> Non
             for i, record in enumerate(records, 1):
                 payload = record.payload if hasattr(record, "payload") else {}
                 content = payload.get("content", payload.get("text", ""))
-                doc_id = payload.get("doc_id", record.id if hasattr(record, "id") else "?")
+                doc_id = payload.get(
+                    "doc_id", record.id if hasattr(record, "id") else "?"
+                )
 
                 # Truncate content
                 if len(content) > 200:
@@ -135,11 +139,14 @@ def _display_example_chunks(client: Any, collection: str, limit: int = 3) -> Non
 
                 if RICH:
                     from rich.panel import Panel
-                    console.print(Panel(
-                        content or "[dim]No content[/dim]",
-                        title=f"[bold]#{i}[/bold] {doc_id}",
-                        border_style="dim",
-                    ))
+
+                    console.print(
+                        Panel(
+                            content or "[dim]No content[/dim]",
+                            title=f"[bold]#{i}[/bold] {doc_id}",
+                            border_style="dim",
+                        )
+                    )
                 else:
                     print(f"  #{i} [{doc_id}]")
                     print(f"     {content}")
@@ -215,11 +222,13 @@ def command() -> None:
             count = "?"
             status = "unknown"
 
-        collections.append({
-            "name": name,
-            "count": count,
-            "status": status,
-        })
+        collections.append(
+            {
+                "name": name,
+                "count": count,
+                "status": status,
+            }
+        )
 
     _display_collections_table(collections)
     print()

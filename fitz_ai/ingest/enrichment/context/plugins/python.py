@@ -31,9 +31,20 @@ supported_extensions = {".py", ".pyw"}
 
 
 DEFAULT_EXCLUDES = {
-    ".git", ".venv", "venv", "__pycache__", ".pytest_cache",
-    ".mypy_cache", ".ruff_cache", ".idea", ".vscode",
-    "dist", "build", "node_modules", ".tox", ".eggs",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".idea",
+    ".vscode",
+    "dist",
+    "build",
+    "node_modules",
+    ".tox",
+    ".eggs",
 }
 
 

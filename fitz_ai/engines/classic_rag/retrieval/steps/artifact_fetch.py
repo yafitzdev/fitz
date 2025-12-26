@@ -8,7 +8,7 @@ to the retrieval results with score=1.0, ensuring they are always included.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, List, Protocol, runtime_checkable
 
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
@@ -65,7 +65,9 @@ class ArtifactFetchStep(RetrievalStep):
         artifact_chunks = []
         for payload in artifact_payloads:
             chunk = Chunk(
-                id=payload.get("id", f"artifact:{payload.get('artifact_type', 'unknown')}"),
+                id=payload.get(
+                    "id", f"artifact:{payload.get('artifact_type', 'unknown')}"
+                ),
                 doc_id=payload.get("doc_id", "artifact"),
                 content=payload.get("content", ""),
                 chunk_index=0,
@@ -75,8 +77,19 @@ class ArtifactFetchStep(RetrievalStep):
                     "title": payload.get("title"),
                     "score": self.score,
                     "rerank_score": self.score,
-                    **{k: v for k, v in payload.items()
-                       if k not in ("content", "id", "doc_id", "is_artifact", "artifact_type", "title")},
+                    **{
+                        k: v
+                        for k, v in payload.items()
+                        if k
+                        not in (
+                            "content",
+                            "id",
+                            "doc_id",
+                            "is_artifact",
+                            "artifact_type",
+                            "title",
+                        )
+                    },
                 },
             )
             artifact_chunks.append(chunk)
@@ -146,11 +159,7 @@ class SimpleArtifactClient:
                 query_vector=[0.0] * 1024,  # Dummy vector
                 limit=100,
                 with_payload=True,
-                filter_={
-                    "must": [
-                        {"key": "is_artifact", "match": {"value": True}}
-                    ]
-                }
+                filter_={"must": [{"key": "is_artifact", "match": {"value": True}}]},
             )
 
             payloads = []

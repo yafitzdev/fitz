@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Protocol, Set, runtime_checkable
+from typing import Any, Dict, List, Protocol, Set, runtime_checkable
 
 from fitz_ai.ingest.enrichment.base import (
     ContentType,
@@ -45,27 +45,44 @@ logger = logging.getLogger(__name__)
 
 # Default code extensions (non-Python)
 DEFAULT_CODE_EXTENSIONS: Set[str] = {
-    ".js", ".jsx", ".ts", ".tsx",  # JavaScript/TypeScript
-    ".java", ".kt", ".scala",       # JVM
-    ".go",                          # Go
-    ".rs",                          # Rust
-    ".c", ".cpp", ".h", ".hpp",     # C/C++
-    ".cs",                          # C#
-    ".rb",                          # Ruby
-    ".php",                         # PHP
-    ".swift",                       # Swift
-    ".m", ".mm",                    # Objective-C
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",  # JavaScript/TypeScript
+    ".java",
+    ".kt",
+    ".scala",  # JVM
+    ".go",  # Go
+    ".rs",  # Rust
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",  # C/C++
+    ".cs",  # C#
+    ".rb",  # Ruby
+    ".php",  # PHP
+    ".swift",  # Swift
+    ".m",
+    ".mm",  # Objective-C
 }
 
 # Default document extensions
 DEFAULT_DOCUMENT_EXTENSIONS: Set[str] = {
-    ".md", ".markdown", ".rst",     # Markup
-    ".txt", ".text",                # Plain text
-    ".pdf",                         # PDF
-    ".html", ".htm",                # HTML
-    ".xml",                         # XML
-    ".json", ".yaml", ".yml",       # Data formats
-    ".toml", ".ini", ".cfg",        # Config files
+    ".md",
+    ".markdown",
+    ".rst",  # Markup
+    ".txt",
+    ".text",  # Plain text
+    ".pdf",  # PDF
+    ".html",
+    ".htm",  # HTML
+    ".xml",  # XML
+    ".json",
+    ".yaml",
+    ".yml",  # Data formats
+    ".toml",
+    ".ini",
+    ".cfg",  # Config files
 }
 
 
@@ -146,9 +163,7 @@ class EnrichmentRouter:
         for ext in builder.supported_extensions:
             ext_lower = ext.lower()
             if ext_lower in self._builders:
-                logger.warning(
-                    f"Overwriting existing builder for {ext_lower}"
-                )
+                logger.warning(f"Overwriting existing builder for {ext_lower}")
             self._builders[ext_lower] = builder
             logger.debug(f"Registered builder for {ext_lower}")
 
@@ -277,12 +292,18 @@ Do NOT just restate the code - explain the purpose and context."""
         # Try to infer language from extension
         ext = context.file_extension
         lang_map = {
-            ".js": "JavaScript", ".jsx": "JavaScript/React",
-            ".ts": "TypeScript", ".tsx": "TypeScript/React",
-            ".java": "Java", ".kt": "Kotlin",
-            ".go": "Go", ".rs": "Rust",
-            ".c": "C", ".cpp": "C++",
-            ".rb": "Ruby", ".php": "PHP",
+            ".js": "JavaScript",
+            ".jsx": "JavaScript/React",
+            ".ts": "TypeScript",
+            ".tsx": "TypeScript/React",
+            ".java": "Java",
+            ".kt": "Kotlin",
+            ".go": "Go",
+            ".rs": "Rust",
+            ".c": "C",
+            ".cpp": "C++",
+            ".rb": "Ruby",
+            ".php": "PHP",
         }
         language = lang_map.get(ext, "code")
 
@@ -383,6 +404,7 @@ class EnrichmentRouterBuilder:
     ) -> "EnrichmentRouterBuilder":
         """Add Python support with full context."""
         from fitz_ai.ingest.enrichment.python_context import PythonContextBuilder
+
         self._builders.append(PythonContextBuilder(analyzer))
         return self
 
@@ -391,7 +413,9 @@ class EnrichmentRouterBuilder:
         self._code_extensions = extensions
         return self
 
-    def with_document_extensions(self, extensions: Set[str]) -> "EnrichmentRouterBuilder":
+    def with_document_extensions(
+        self, extensions: Set[str]
+    ) -> "EnrichmentRouterBuilder":
         """Set custom document extensions."""
         self._document_extensions = extensions
         return self

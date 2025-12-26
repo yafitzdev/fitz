@@ -97,7 +97,6 @@ def list_loader_modules() -> List[str]:
     for pkg in (
         "core.config",
         "fitz_ai.engines.classic_rag.pipeline.config",
-        "fitz_ai.ingest.config",
     ):
         mod = f"{pkg}.loader"
         try:

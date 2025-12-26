@@ -20,12 +20,12 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from fitz_ai.ingest.enrichment.base import (
+    CodeEnrichmentContext,
     ContentType,
     EnrichmentContext,
-    CodeEnrichmentContext,
 )
-from fitz_ai.ingest.enrichment.summary.cache import SummaryCache
 from fitz_ai.ingest.enrichment.context.registry import get_context_registry
+from fitz_ai.ingest.enrichment.summary.cache import SummaryCache
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ChunkInfo:
     """Information about a chunk to summarize."""
+
     content: str
     file_path: str
     content_hash: str
@@ -42,8 +43,7 @@ class ChunkInfo:
 class ChatClient(Protocol):
     """Protocol for LLM chat clients."""
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
-        ...
+    def chat(self, messages: list[dict[str, str]]) -> str: ...
 
 
 class ChunkSummarizer:
@@ -154,11 +154,13 @@ class ChunkSummarizer:
 
         # Process in batches
         for batch_start in range(0, len(to_summarize), batch_size):
-            batch = to_summarize[batch_start:batch_start + batch_size]
+            batch = to_summarize[batch_start : batch_start + batch_size]
             batch_num = batch_start // batch_size + 1
             total_batches = (len(to_summarize) + batch_size - 1) // batch_size
 
-            logger.info(f"[SUMMARIZE] Batch {batch_num}/{total_batches}: {len(batch)} chunks")
+            logger.info(
+                f"[SUMMARIZE] Batch {batch_num}/{total_batches}: {len(batch)} chunks"
+            )
 
             descriptions = self._summarize_batch_single(batch)
 
@@ -190,10 +192,14 @@ class ChunkSummarizer:
         for i, (_, chunk) in enumerate(batch, 1):
             file_name = Path(chunk.file_path).name
             # Truncate content to avoid token limits
-            content = chunk.content[:1500] if len(chunk.content) > 1500 else chunk.content
+            content = (
+                chunk.content[:1500] if len(chunk.content) > 1500 else chunk.content
+            )
             prompt_parts.append(f"\n--- CHUNK [{i}] from {file_name} ---\n{content}\n")
 
-        prompt_parts.append("\n--- END OF CHUNKS ---\n\nNow provide numbered descriptions:")
+        prompt_parts.append(
+            "\n--- END OF CHUNKS ---\n\nNow provide numbered descriptions:"
+        )
 
         prompt = "".join(prompt_parts)
         messages = [{"role": "user", "content": prompt}]
@@ -208,7 +214,7 @@ class ChunkSummarizer:
     def _parse_batch_response(self, response: str, expected_count: int) -> list[str]:
         """Parse numbered descriptions from LLM response."""
         # Match patterns like [1], [2], etc. or 1., 2., etc.
-        pattern = r'(?:\[(\d+)\]|^(\d+)\.)\s*(.+?)(?=(?:\[\d+\]|^\d+\.|\Z))'
+        pattern = r"(?:\[(\d+)\]|^(\d+)\.)\s*(.+?)(?=(?:\[\d+\]|^\d+\.|\Z))"
         matches = re.findall(pattern, response, re.MULTILINE | re.DOTALL)
 
         descriptions: dict[int, str] = {}
@@ -222,11 +228,11 @@ class ChunkSummarizer:
 
         # If regex parsing failed, try line-by-line
         if len(descriptions) < expected_count:
-            lines = response.strip().split('\n')
+            lines = response.strip().split("\n")
             for line in lines:
                 line = line.strip()
                 # Try to match [N] or N. at start
-                m = re.match(r'(?:\[(\d+)\]|(\d+)\.)\s*(.+)', line)
+                m = re.match(r"(?:\[(\d+)\]|(\d+)\.)\s*(.+)", line)
                 if m:
                     num_str = m.group(1) or m.group(2)
                     desc = m.group(3).strip()
@@ -241,7 +247,9 @@ class ChunkSummarizer:
             if i in descriptions:
                 result.append(descriptions[i])
             else:
-                logger.warning(f"[SUMMARIZE] Missing description for chunk {i}, using fallback")
+                logger.warning(
+                    f"[SUMMARIZE] Missing description for chunk {i}, using fallback"
+                )
                 result.append("Code chunk - see source for details.")
 
         return result
@@ -257,6 +265,7 @@ class ChunkSummarizer:
 
         # Fallback to generic context
         from fitz_ai.ingest.enrichment.context.plugins.generic import Builder
+
         return Builder().build(file_path, content)
 
     def _build_prompt(self, content: str, context: EnrichmentContext) -> str:
@@ -317,12 +326,18 @@ Do NOT just restate the code - explain the purpose and context."""
         """Build prompt for non-Python code."""
         ext = context.file_extension
         lang_map = {
-            ".js": "JavaScript", ".jsx": "JavaScript/React",
-            ".ts": "TypeScript", ".tsx": "TypeScript/React",
-            ".java": "Java", ".kt": "Kotlin",
-            ".go": "Go", ".rs": "Rust",
-            ".c": "C", ".cpp": "C++",
-            ".rb": "Ruby", ".php": "PHP",
+            ".js": "JavaScript",
+            ".jsx": "JavaScript/React",
+            ".ts": "TypeScript",
+            ".tsx": "TypeScript/React",
+            ".java": "Java",
+            ".kt": "Kotlin",
+            ".go": "Go",
+            ".rs": "Rust",
+            ".c": "C",
+            ".cpp": "C++",
+            ".rb": "Ruby",
+            ".php": "PHP",
         }
         language = lang_map.get(ext, "code")
 

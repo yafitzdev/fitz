@@ -301,7 +301,9 @@ class ArtifactConfig(BaseModel):
     """
 
     auto: bool = Field(default=True, description="Auto-discover applicable plugins")
-    enabled: list[str] = Field(default_factory=list, description="Explicit plugins to run")
+    enabled: list[str] = Field(
+        default_factory=list, description="Explicit plugins to run"
+    )
     disabled: list[str] = Field(default_factory=list, description="Plugins to skip")
 
     model_config = ConfigDict(extra="forbid")
@@ -330,7 +332,9 @@ class EnrichmentConfig(BaseModel):
         artifacts: Project-level artifact configuration.
     """
 
-    enabled: bool = Field(default=False, description="Enable enrichment during ingestion")
+    enabled: bool = Field(
+        default=False, description="Enable enrichment during ingestion"
+    )
     summary: SummaryConfig = Field(
         default_factory=SummaryConfig,
         description="Chunk-level summary configuration",

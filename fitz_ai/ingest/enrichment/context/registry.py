@@ -17,7 +17,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Set, Type
 
-from fitz_ai.ingest.enrichment.base import ContextBuilder, EnrichmentContext
 
 logger = logging.getLogger(__name__)
 

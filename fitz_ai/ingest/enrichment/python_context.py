@@ -33,7 +33,6 @@ from typing import Dict, List, Set, Tuple
 from fitz_ai.ingest.enrichment.base import (
     CodeEnrichmentContext,
     ContentType,
-    ContextBuilder,
     EnrichmentContext,
 )
 
@@ -171,9 +170,7 @@ class PythonProjectAnalyzer:
 
                 if level > 0:
                     # Relative import - resolve to absolute
-                    resolved = self._resolve_relative_import(
-                        file_path, module, level
-                    )
+                    resolved = self._resolve_relative_import(file_path, module, level)
                     if resolved:
                         imports.append(resolved)
                 elif module:

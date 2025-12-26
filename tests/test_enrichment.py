@@ -3,23 +3,22 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 
 from fitz_ai.ingest.enrichment import (
+    ChunkSummarizer,
     CodeEnrichmentContext,
     ContentType,
-    EnrichmentContext,
-    SummaryCache,
-    ChunkSummarizer,
-    EnrichmentPipeline,
     EnrichmentConfig,
+    EnrichmentContext,
+    EnrichmentPipeline,
+    SummaryCache,
 )
 from fitz_ai.ingest.enrichment.context.plugins.python import (
     Builder as PythonContextBuilder,
+)
+from fitz_ai.ingest.enrichment.context.plugins.python import (
     PythonProjectAnalyzer,
 )
 
@@ -190,7 +189,9 @@ def func_b():
         # Check module_b analysis
         analysis_b = analyzer.get_analysis(str(pkg / "module_b.py"))
         assert analysis_b is not None
-        assert "mypackage" in analysis_b.imports or "module_a" in str(analysis_b.imports)
+        assert "mypackage" in analysis_b.imports or "module_a" in str(
+            analysis_b.imports
+        )
 
 
 class TestChunkSummarizer:

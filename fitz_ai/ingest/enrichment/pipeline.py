@@ -31,20 +31,20 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Protocol, Set, runtime_checkable
+from typing import TYPE_CHECKING, Any, Dict, List, Protocol, runtime_checkable
 
-from fitz_ai.ingest.enrichment.config import EnrichmentConfig
-from fitz_ai.ingest.enrichment.base import ContentType
-from fitz_ai.ingest.enrichment.summary.cache import SummaryCache
-from fitz_ai.ingest.enrichment.summary.summarizer import ChunkSummarizer, ChunkInfo
-from fitz_ai.ingest.enrichment.artifacts.base import Artifact, ProjectAnalysis
-from fitz_ai.ingest.enrichment.artifacts.analyzer import ProjectAnalyzer
-from fitz_ai.ingest.enrichment.artifacts.registry import (
-    ArtifactRegistry,
-    ArtifactPluginInfo,
-)
-from fitz_ai.ingest.enrichment.models import EnrichmentResult
 from fitz_ai.core.paths import FitzPaths
+from fitz_ai.ingest.enrichment.artifacts.analyzer import ProjectAnalyzer
+from fitz_ai.ingest.enrichment.artifacts.base import Artifact, ProjectAnalysis
+from fitz_ai.ingest.enrichment.artifacts.registry import (
+    ArtifactPluginInfo,
+    ArtifactRegistry,
+)
+from fitz_ai.ingest.enrichment.base import ContentType
+from fitz_ai.ingest.enrichment.config import EnrichmentConfig
+from fitz_ai.ingest.enrichment.models import EnrichmentResult
+from fitz_ai.ingest.enrichment.summary.cache import SummaryCache
+from fitz_ai.ingest.enrichment.summary.summarizer import ChunkInfo, ChunkSummarizer
 
 if TYPE_CHECKING:
     from fitz_ai.engines.classic_rag.models.chunk import Chunk
@@ -56,8 +56,7 @@ logger = logging.getLogger(__name__)
 class ChatClient(Protocol):
     """Protocol for LLM chat clients."""
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
-        ...
+    def chat(self, messages: list[dict[str, str]]) -> str: ...
 
 
 class EnrichmentPipeline:
@@ -150,7 +149,11 @@ class EnrichmentPipeline:
     @property
     def summaries_enabled(self) -> bool:
         """Check if chunk summaries are enabled."""
-        return self.config.enabled and self.config.summary.enabled and self._summarizer is not None
+        return (
+            self.config.enabled
+            and self.config.summary.enabled
+            and self._summarizer is not None
+        )
 
     @property
     def artifacts_enabled(self) -> bool:
@@ -201,8 +204,7 @@ class EnrichmentPipeline:
             return [None] * len(chunks)
 
         chunk_infos = [
-            ChunkInfo(content=c, file_path=f, content_hash=h)
-            for c, f, h in chunks
+            ChunkInfo(content=c, file_path=f, content_hash=h) for c, f, h in chunks
         ]
 
         return self._summarizer.summarize_batch(chunk_infos, batch_size=batch_size)
@@ -295,7 +297,9 @@ class EnrichmentPipeline:
             return []
 
         analysis = self.analyze_project()
-        plugins = [p for p in self.get_applicable_artifact_plugins() if not p.requires_llm]
+        plugins = [
+            p for p in self.get_applicable_artifact_plugins() if not p.requires_llm
+        ]
 
         artifacts: List[Artifact] = []
         for plugin in plugins:
@@ -342,8 +346,7 @@ class EnrichmentPipeline:
         # Generate summaries and attach to chunk metadata
         if self.summaries_enabled:
             chunk_tuples = [
-                (c.content, c.metadata.get("file_path", ""), c.id)
-                for c in chunks
+                (c.content, c.metadata.get("file_path", ""), c.id) for c in chunks
             ]
             summaries = self.summarize_chunks_batch(chunk_tuples)
 

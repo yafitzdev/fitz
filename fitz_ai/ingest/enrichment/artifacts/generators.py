@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 @runtime_checkable
 class ChatClient(Protocol):
     """Protocol for LLM chat clients."""
-    def complete(self, prompt: str) -> str:
-        ...
+
+    def complete(self, prompt: str) -> str: ...
 
 
 class NavigationIndexGenerator:
@@ -53,12 +53,14 @@ class NavigationIndexGenerator:
             dir_path = str(Path(file_info.relative_path).parent)
             if dir_path not in by_dir:
                 by_dir[dir_path] = []
-            by_dir[dir_path].append({
-                "path": file_info.relative_path,
-                "name": Path(file_info.relative_path).name,
-                "docstring": file_info.docstring,
-                "exports": file_info.exports,
-            })
+            by_dir[dir_path].append(
+                {
+                    "path": file_info.relative_path,
+                    "name": Path(file_info.relative_path).name,
+                    "docstring": file_info.docstring,
+                    "exports": file_info.exports,
+                }
+            )
 
         for dir_path in sorted(by_dir.keys()):
             if dir_path == ".":
@@ -130,7 +132,9 @@ class InterfaceCatalogGenerator:
                 if proto.get("methods"):
                     lines.append("**Methods:**")
                     for method in proto["methods"]:
-                        lines.append(f"- `{method['name']}{method.get('signature', '()')}`")
+                        lines.append(
+                            f"- `{method['name']}{method.get('signature', '()')}`"
+                        )
                     lines.append("")
 
                 # Find implementations
@@ -150,7 +154,9 @@ class InterfaceCatalogGenerator:
             metadata={"protocol_count": len(analysis.protocols)},
         )
 
-    def _find_implementations(self, protocol_name: str, analysis: ProjectAnalysis) -> List[Dict[str, Any]]:
+    def _find_implementations(
+        self, protocol_name: str, analysis: ProjectAnalysis
+    ) -> List[Dict[str, Any]]:
         """Find classes that implement a protocol."""
         implementations = []
         for cls in analysis.classes:

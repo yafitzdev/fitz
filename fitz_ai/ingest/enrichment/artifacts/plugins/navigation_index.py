@@ -11,12 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fitz_ai.ingest.enrichment.base import ContentType
 from fitz_ai.ingest.enrichment.artifacts.base import (
     Artifact,
     ArtifactType,
     ProjectAnalysis,
 )
+from fitz_ai.ingest.enrichment.base import ContentType
 
 plugin_name = "navigation_index"
 plugin_type = "artifact"
@@ -46,12 +46,14 @@ class Generator:
             dir_path = str(Path(file_info.relative_path).parent)
             if dir_path not in by_dir:
                 by_dir[dir_path] = []
-            by_dir[dir_path].append({
-                "path": file_info.relative_path,
-                "name": Path(file_info.relative_path).name,
-                "docstring": file_info.docstring,
-                "exports": file_info.exports,
-            })
+            by_dir[dir_path].append(
+                {
+                    "path": file_info.relative_path,
+                    "name": Path(file_info.relative_path).name,
+                    "docstring": file_info.docstring,
+                    "exports": file_info.exports,
+                }
+            )
 
         for dir_path in sorted(by_dir.keys()):
             if dir_path == ".":

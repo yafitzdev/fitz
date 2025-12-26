@@ -9,7 +9,6 @@ import logging
 import time
 from pathlib import Path
 
-import pytest
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -67,6 +66,7 @@ def test_ingest_cli_mirror():
     # State manager
     t = time.perf_counter()
     from fitz_ai.ingest.state import IngestStateManager
+
     state_manager = IngestStateManager()
     state_manager.load()
     t = log_timing("State manager", t)
@@ -93,15 +93,20 @@ def test_ingest_cli_mirror():
             elapsed = time.perf_counter() - t0
             self.parse_times.append(elapsed)
             if self.parse_count <= 5 or self.parse_count % 10 == 0:
-                print(f"    [PARSE] #{self.parse_count} {Path(path).name}: {elapsed:.3f}s")
+                print(
+                    f"    [PARSE] #{self.parse_count} {Path(path).name}: {elapsed:.3f}s"
+                )
             return docs[0].content if docs else ""
 
     parser = ParserAdapter(ingest_plugin)
 
     # Chunking router
     t = time.perf_counter()
+    from fitz_ai.engines.classic_rag.config import (
+        ChunkingRouterConfig,
+        ExtensionChunkerConfig,
+    )
     from fitz_ai.ingest.chunking.router import ChunkingRouter
-    from fitz_ai.engines.classic_rag.config import ChunkingRouterConfig, ExtensionChunkerConfig
 
     chunking = config.get("chunking", {})
     default_cfg = chunking.get("default", {})
@@ -126,16 +131,16 @@ def test_ingest_cli_mirror():
     # Embedder
     t = time.perf_counter()
     from fitz_ai.llm.registry import get_llm_plugin
+
     embedder = get_llm_plugin(
-        plugin_type="embedding",
-        plugin_name=embedding_plugin,
-        **embedding_kwargs
+        plugin_type="embedding", plugin_name=embedding_plugin, **embedding_kwargs
     )
     t = log_timing("Embedder", t, f"{embedding_plugin}")
 
     # Vector DB
     t = time.perf_counter()
     from fitz_ai.vector_db.registry import get_vector_db_plugin
+
     vector_client = get_vector_db_plugin(vector_db_plugin, **vector_db_kwargs)
     t = log_timing("Vector DB", t, f"{vector_db_plugin}")
 
@@ -158,11 +163,13 @@ def test_ingest_cli_mirror():
             elapsed = time.perf_counter() - t0
             self.upsert_times.append(elapsed)
             if self.upsert_count <= 5 or self.upsert_count % 10 == 0:
-                print(f"    [UPSERT] #{self.upsert_count} {len(points)} points: {elapsed:.3f}s (defer={defer_persist})")
+                print(
+                    f"    [UPSERT] #{self.upsert_count} {len(points)} points: {elapsed:.3f}s (defer={defer_persist})"
+                )
 
         def flush(self) -> None:
             t0 = time.perf_counter()
-            if hasattr(self._client, 'flush'):
+            if hasattr(self._client, "flush"):
                 self._client.flush()
             print(f"    [FLUSH] Persisted to disk: {time.perf_counter() - t0:.3f}s")
 
@@ -175,6 +182,7 @@ def test_ingest_cli_mirror():
     t = time.perf_counter()
 
     import tempfile
+
     test_dir = Path(tempfile.mkdtemp(prefix="fitz_test_"))
 
     # Create files that mirror a real codebase
@@ -182,15 +190,18 @@ def test_ingest_cli_mirror():
         (test_dir / f"module_{i}.py").write_text(
             f'# module_{i}.py\n"""Module {i} docstring."""\n\n'
             + "import os\nimport sys\n\n"
-            + f"class Class{i}:\n    '''Class docstring.'''\n    def method(self):\n        pass\n\n" * 5
-            + f"def function_{i}():\n    '''Function docstring.'''\n    return {i}\n\n" * 10
+            + f"class Class{i}:\n    '''Class docstring.'''\n    def method(self):\n        pass\n\n"
+            * 5
+            + f"def function_{i}():\n    '''Function docstring.'''\n    return {i}\n\n"
+            * 10
         )
 
     for i in range(5):
         (test_dir / f"readme_{i}.md").write_text(
             f"# README {i}\n\n"
             + "## Overview\n\nThis is a test markdown file.\n\n" * 20
-            + "## Details\n\n" + "Lorem ipsum dolor sit amet. " * 100
+            + "## Details\n\n"
+            + "Lorem ipsum dolor sit amet. " * 100
         )
 
     t = log_timing("Test files created", t, f"dir: {test_dir}, 25 files")
@@ -221,7 +232,9 @@ def test_ingest_cli_mirror():
 
     def on_progress(current, total, path):
         if current == 1 or current == total or current % 5 == 0:
-            print(f"    [PROGRESS] {current}/{total} - {Path(path).name if path != 'Done' else 'Done'}")
+            print(
+                f"    [PROGRESS] {current}/{total} - {Path(path).name if path != 'Done' else 'Done'}"
+            )
 
     summary = executor.run(test_dir, force=True, on_progress=on_progress)
 
@@ -237,35 +250,39 @@ def test_ingest_cli_mirror():
 
     total_time = time.perf_counter() - T0
 
-    print(f"\n[SUMMARY]")
+    print("\n[SUMMARY]")
     print(f"  Files scanned:    {summary.scanned}")
     print(f"  Files ingested:   {summary.ingested}")
     print(f"  Files skipped:    {summary.skipped}")
     print(f"  Errors:           {summary.errors}")
     print(f"  Total chunks:     {writer.total_points}")
 
-    print(f"\n[TIMING BREAKDOWN]")
+    print("\n[TIMING BREAKDOWN]")
     print(f"  Total time:       {total_time:.2f}s")
     print(f"  Ingestion time:   {t_ingest_end - t_ingest_start:.2f}s")
 
     if parser.parse_times:
-        print(f"\n[PARSING]")
+        print("\n[PARSING]")
         print(f"  Parse calls:      {parser.parse_count}")
         print(f"  Total parse time: {sum(parser.parse_times):.2f}s")
-        print(f"  Avg per file:     {sum(parser.parse_times)/len(parser.parse_times)*1000:.0f}ms")
+        print(
+            f"  Avg per file:     {sum(parser.parse_times) / len(parser.parse_times) * 1000:.0f}ms"
+        )
 
     if writer.upsert_times:
-        print(f"\n[VECTOR DB]")
+        print("\n[VECTOR DB]")
         print(f"  Upsert calls:     {writer.upsert_count}")
         print(f"  Total upsert time:{sum(writer.upsert_times):.2f}s")
-        print(f"  Avg per upsert:   {sum(writer.upsert_times)/len(writer.upsert_times)*1000:.0f}ms")
+        print(
+            f"  Avg per upsert:   {sum(writer.upsert_times) / len(writer.upsert_times) * 1000:.0f}ms"
+        )
         print(f"  Total points:     {writer.total_points}")
 
-    print(f"\n[EMBEDDING]")
-    print(f"  (See [EMBED] logs above for batch details)")
+    print("\n[EMBEDDING]")
+    print("  (See [EMBED] logs above for batch details)")
 
     if summary.errors > 0:
-        print(f"\n[ERRORS]")
+        print("\n[ERRORS]")
         for err in summary.error_details[:10]:
             print(f"  - {err}")
 
@@ -273,6 +290,7 @@ def test_ingest_cli_mirror():
 
     # Cleanup
     import shutil
+
     shutil.rmtree(test_dir, ignore_errors=True)
 
 

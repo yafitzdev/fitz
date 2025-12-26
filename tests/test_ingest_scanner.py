@@ -5,7 +5,6 @@ Tests for fitz_ai.ingest.diff.scanner module.
 
 from pathlib import Path
 
-
 from fitz_ai.ingest.diff.scanner import (
     SUPPORTED_EXTENSIONS,
     FileScanner,

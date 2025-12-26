@@ -57,44 +57,11 @@ Plugin System:
     - supported_types or supported_extensions
 """
 
-# Configuration
-from fitz_ai.ingest.enrichment.config import (
-    EnrichmentConfig,
-    SummaryConfig,
-    ArtifactConfig,
-)
-
-# Pipeline (main entry point)
-from fitz_ai.ingest.enrichment.pipeline import (
-    EnrichmentPipeline,
-)
-
-# Models
-from fitz_ai.ingest.enrichment.models import (
-    EnrichmentResult,
-)
-
-# Base types
-from fitz_ai.ingest.enrichment.base import (
-    ContentType,
-    EnrichmentContext,
-    CodeEnrichmentContext,
-    DocumentEnrichmentContext,
-    ContextBuilder,
-    Enricher,
-)
-
-# Summary components
-from fitz_ai.ingest.enrichment.summary import (
-    ChunkSummarizer,
-    SummaryCache,
-)
-
 # Artifact components
 from fitz_ai.ingest.enrichment.artifacts import (
     Artifact,
-    ArtifactType,
     ArtifactGenerator,
+    ArtifactType,
     ProjectAnalysis,
     ProjectAnalyzer,
 )
@@ -102,15 +69,48 @@ from fitz_ai.ingest.enrichment.artifacts import (
 # Registries
 from fitz_ai.ingest.enrichment.artifacts.registry import (
     ArtifactRegistry,
-    get_artifact_registry,
     get_artifact_plugin,
+    get_artifact_registry,
     list_artifact_plugins,
+)
+
+# Base types
+from fitz_ai.ingest.enrichment.base import (
+    CodeEnrichmentContext,
+    ContentType,
+    ContextBuilder,
+    DocumentEnrichmentContext,
+    Enricher,
+    EnrichmentContext,
+)
+
+# Configuration
+from fitz_ai.ingest.enrichment.config import (
+    ArtifactConfig,
+    EnrichmentConfig,
+    SummaryConfig,
 )
 from fitz_ai.ingest.enrichment.context.registry import (
     ContextRegistry,
-    get_context_registry,
     get_context_plugin,
+    get_context_registry,
     list_context_plugins,
+)
+
+# Models
+from fitz_ai.ingest.enrichment.models import (
+    EnrichmentResult,
+)
+
+# Pipeline (main entry point)
+from fitz_ai.ingest.enrichment.pipeline import (
+    EnrichmentPipeline,
+)
+
+# Summary components
+from fitz_ai.ingest.enrichment.summary import (
+    ChunkSummarizer,
+    SummaryCache,
 )
 
 __all__ = [

@@ -28,15 +28,27 @@ logger = logging.getLogger(__name__)
 
 # Directories to exclude from analysis
 DEFAULT_EXCLUDES = {
-    ".git", ".venv", "venv", "__pycache__", ".pytest_cache",
-    ".mypy_cache", ".ruff_cache", ".idea", ".vscode",
-    "dist", "build", "node_modules", ".tox", ".eggs",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".idea",
+    ".vscode",
+    "dist",
+    "build",
+    "node_modules",
+    ".tox",
+    ".eggs",
 }
 
 
 @dataclass
 class ExtractedClass:
     """Extracted class information."""
+
     name: str
     file_path: str
     bases: List[str] = field(default_factory=list)
@@ -49,6 +61,7 @@ class ExtractedClass:
 @dataclass
 class ExtractedFunction:
     """Extracted function information."""
+
     name: str
     file_path: str
     signature: str = ""
@@ -209,7 +222,10 @@ class ProjectAnalyzer:
 
         for item in node.body:
             if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if not item.name.startswith("_") or item.name in ("__init__", "__call__"):
+                if not item.name.startswith("_") or item.name in (
+                    "__init__",
+                    "__call__",
+                ):
                     sig = self._get_function_signature(item)
                     methods.append({"name": item.name, "signature": sig})
 
@@ -231,7 +247,9 @@ class ProjectAnalyzer:
             "is_pydantic": is_pydantic,
         }
 
-    def _extract_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef, file_path: str) -> Dict[str, Any]:
+    def _extract_function(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, file_path: str
+    ) -> Dict[str, Any]:
         """Extract function information."""
         return {
             "name": node.name,
@@ -241,7 +259,9 @@ class ProjectAnalyzer:
             "is_async": isinstance(node, ast.AsyncFunctionDef),
         }
 
-    def _get_function_signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    def _get_function_signature(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> str:
         """Get function signature as string."""
         args = []
         for arg in node.args.args:

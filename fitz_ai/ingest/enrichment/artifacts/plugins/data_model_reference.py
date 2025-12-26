@@ -8,12 +8,12 @@ Helps answer "what fields does X have?" questions.
 
 from __future__ import annotations
 
-from fitz_ai.ingest.enrichment.base import ContentType
 from fitz_ai.ingest.enrichment.artifacts.base import (
     Artifact,
     ArtifactType,
     ProjectAnalysis,
 )
+from fitz_ai.ingest.enrichment.base import ContentType
 
 plugin_name = "data_model_reference"
 plugin_type = "artifact"

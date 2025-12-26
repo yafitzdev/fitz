@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 @runtime_checkable
 class ChatClient(Protocol):
     """Protocol for LLM chat clients."""
-    def complete(self, prompt: str) -> str:
-        ...
+
+    def complete(self, prompt: str) -> str: ...
 
 
 class ArtifactOrchestrator:

@@ -34,19 +34,19 @@ Usage:
     artifacts = pipeline.generate_artifacts()
 """
 
+from fitz_ai.ingest.enrichment.artifacts.analyzer import ProjectAnalyzer
 from fitz_ai.ingest.enrichment.artifacts.base import (
     Artifact,
-    ArtifactType,
     ArtifactGenerator,
+    ArtifactType,
     FileInfo,
     ProjectAnalysis,
 )
-from fitz_ai.ingest.enrichment.artifacts.analyzer import ProjectAnalyzer
 from fitz_ai.ingest.enrichment.artifacts.registry import (
-    ArtifactRegistry,
     ArtifactPluginInfo,
-    get_artifact_registry,
+    ArtifactRegistry,
     get_artifact_plugin,
+    get_artifact_registry,
     list_artifact_plugins,
 )
 

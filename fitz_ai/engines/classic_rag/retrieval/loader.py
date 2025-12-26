@@ -216,9 +216,7 @@ def _build_step(
             SimpleArtifactClient,
         )
 
-        params.setdefault(
-            "artifact_client", SimpleArtifactClient(deps.vector_client)
-        )
+        params.setdefault("artifact_client", SimpleArtifactClient(deps.vector_client))
         params.setdefault("collection", deps.collection)
 
     return step_cls(**params)

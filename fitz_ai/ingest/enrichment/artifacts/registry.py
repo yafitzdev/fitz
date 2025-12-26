@@ -19,11 +19,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Protocol, Set, Type, runtime_checkable
 
 from fitz_ai.ingest.enrichment.base import ContentType
-from fitz_ai.ingest.enrichment.artifacts.base import (
-    Artifact,
-    ArtifactGenerator,
-    ProjectAnalysis,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +27,7 @@ logger = logging.getLogger(__name__)
 class ChatClient(Protocol):
     """Protocol for LLM chat clients."""
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
-        ...
+    def chat(self, messages: list[dict[str, str]]) -> str: ...
 
 
 class ArtifactPluginInfo:
@@ -159,7 +153,9 @@ class ArtifactRegistry:
         """Get all discovered plugins."""
         return list(self._plugins.values())
 
-    def get_plugins_for_type(self, content_type: ContentType) -> List[ArtifactPluginInfo]:
+    def get_plugins_for_type(
+        self, content_type: ContentType
+    ) -> List[ArtifactPluginInfo]:
         """Get plugins that support a specific content type."""
         return [
             plugin
@@ -169,11 +165,7 @@ class ArtifactRegistry:
 
     def get_plugins_by_names(self, names: List[str]) -> List[ArtifactPluginInfo]:
         """Get specific plugins by name."""
-        return [
-            self._plugins[name]
-            for name in names
-            if name in self._plugins
-        ]
+        return [self._plugins[name] for name in names if name in self._plugins]
 
     def list_plugin_names(self) -> List[str]:
         """List all plugin names."""

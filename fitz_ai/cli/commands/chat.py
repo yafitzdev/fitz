@@ -164,10 +164,14 @@ def _display_welcome(collection: str) -> None:
         console.print(
             f"\n[bold green]Chat started[/bold green] with collection: [cyan]{collection}[/cyan]"
         )
-        console.print("[dim]Type 'exit' or 'quit' to end the conversation. Press Ctrl+C to interrupt.[/dim]\n")
+        console.print(
+            "[dim]Type 'exit' or 'quit' to end the conversation. Press Ctrl+C to interrupt.[/dim]\n"
+        )
     else:
         print(f"\nChat started with collection: {collection}")
-        print("Type 'exit' or 'quit' to end the conversation. Press Ctrl+C to interrupt.\n")
+        print(
+            "Type 'exit' or 'quit' to end the conversation. Press Ctrl+C to interrupt.\n"
+        )
 
 
 def _display_goodbye() -> None:
@@ -224,7 +228,9 @@ def command(
     else:
         collections = _get_collections(raw_config)
         if not collections:
-            ui.error("No collections found. Run 'fitz ingest' first to create a collection.")
+            ui.error(
+                "No collections found. Run 'fitz ingest' first to create a collection."
+            )
             raise typer.Exit(1)
         elif len(collections) == 1:
             selected_collection = collections[0]
@@ -263,6 +269,7 @@ def command(
             try:
                 if RICH:
                     from rich.prompt import Prompt
+
                     user_input = Prompt.ask("\n[bold green]You[/bold green]")
                 else:
                     user_input = input("\nYou: ").strip()

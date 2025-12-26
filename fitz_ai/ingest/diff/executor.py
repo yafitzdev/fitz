@@ -173,7 +173,10 @@ class DiffIngestExecutor:
     @property
     def _enricher_id(self) -> Optional[str]:
         """Get the enricher ID if enrichment is enabled."""
-        if self._enrichment_pipeline is None or not self._enrichment_pipeline.summaries_enabled:
+        if (
+            self._enrichment_pipeline is None
+            or not self._enrichment_pipeline.summaries_enabled
+        ):
             return None
         return self._enrichment_pipeline._enricher_id
 
@@ -210,7 +213,11 @@ class DiffIngestExecutor:
             summary.error_details.append(f"Scan error: {path}: {error}")
 
         # 1.5 Generate and ingest artifacts (if pipeline provided and enabled)
-        if not skip_artifacts and self._enrichment_pipeline is not None and self._enrichment_pipeline.artifacts_enabled:
+        if (
+            not skip_artifacts
+            and self._enrichment_pipeline is not None
+            and self._enrichment_pipeline.artifacts_enabled
+        ):
             self._ingest_artifacts(summary)
 
         # 2. Compute diff (state + config aware)
@@ -228,19 +235,27 @@ class DiffIngestExecutor:
         summary.skipped = len(diff.to_skip)
 
         # 3. Ingest files - three phases: prepare, summarize, embed
-        summaries_enabled = self._enrichment_pipeline and self._enrichment_pipeline.summaries_enabled
+        summaries_enabled = (
+            self._enrichment_pipeline and self._enrichment_pipeline.summaries_enabled
+        )
         enrichment_status = "enabled" if summaries_enabled else "disabled"
-        logger.info(f"Ingesting {len(diff.to_ingest)} files (summaries: {enrichment_status})...")
+        logger.info(
+            f"Ingesting {len(diff.to_ingest)} files (summaries: {enrichment_status})..."
+        )
 
         total_to_ingest = len(diff.to_ingest)
 
         # Phase 1: Prepare all files (parse, chunk) - NO summarization yet
         all_prepared: List[tuple] = []  # (candidate, file_data)
-        all_chunk_info: List[tuple] = []  # (content, file_path, content_hash) for batch summarization
+        all_chunk_info: List[
+            tuple
+        ] = []  # (content, file_path, content_hash) for batch summarization
 
         for i, candidate in enumerate(diff.to_ingest):
             if on_progress:
-                on_progress(i, total_to_ingest, f"Preparing {Path(candidate.path).name}")
+                on_progress(
+                    i, total_to_ingest, f"Preparing {Path(candidate.path).name}"
+                )
 
             try:
                 file_data = self._prepare_file_no_enrich(candidate)
@@ -248,11 +263,13 @@ class DiffIngestExecutor:
                     all_prepared.append((candidate, file_data))
                     # Collect chunk info for batch summarization
                     for chunk_data in file_data["chunk_data"]:
-                        all_chunk_info.append((
-                            chunk_data["chunk"].content,
-                            candidate.path,
-                            chunk_data["content_hash"],
-                        ))
+                        all_chunk_info.append(
+                            (
+                                chunk_data["chunk"].content,
+                                candidate.path,
+                                chunk_data["content_hash"],
+                            )
+                        )
             except Exception as e:
                 summary.errors += 1
                 summary.error_details.append(f"Prepare error: {candidate.path}: {e}")
@@ -262,10 +279,14 @@ class DiffIngestExecutor:
         all_descriptions: List[str | None] = []
         if summaries_enabled and all_chunk_info:
             t0 = time.perf_counter()
-            all_descriptions = self._enrichment_pipeline.summarize_chunks_batch(all_chunk_info)
+            all_descriptions = self._enrichment_pipeline.summarize_chunks_batch(
+                all_chunk_info
+            )
             summarize_time = time.perf_counter() - t0
             summary.enriched = sum(1 for d in all_descriptions if d is not None)
-            logger.info(f"Summarized {len(all_chunk_info)} chunks in {summarize_time:.2f}s")
+            logger.info(
+                f"Summarized {len(all_chunk_info)} chunks in {summarize_time:.2f}s"
+            )
         else:
             all_descriptions = [None] * len(all_chunk_info)
 
@@ -277,7 +298,9 @@ class DiffIngestExecutor:
                 description = all_descriptions[desc_idx]
                 chunk_data["description"] = description
                 # Embed description if available, otherwise content
-                text_to_embed = description if description else chunk_data["chunk"].content
+                text_to_embed = (
+                    description if description else chunk_data["chunk"].content
+                )
                 all_texts.append(text_to_embed)
                 desc_idx += 1
 
@@ -294,16 +317,20 @@ class DiffIngestExecutor:
         vector_offset = 0
         for idx, (candidate, file_data) in enumerate(all_prepared):
             if on_progress:
-                on_progress(idx + 1, len(all_prepared), f"Saving {Path(candidate.path).name}")
+                on_progress(
+                    idx + 1, len(all_prepared), f"Saving {Path(candidate.path).name}"
+                )
 
             try:
                 num_chunks = len(file_data["chunk_data"])
                 # Get vectors for this file
-                file_vectors = all_vectors[vector_offset:vector_offset + num_chunks]
+                file_vectors = all_vectors[vector_offset : vector_offset + num_chunks]
                 vector_offset += num_chunks
 
                 # Build and upsert points (defer persist to batch at end)
-                self._upsert_file(candidate, file_data, file_vectors, defer_persist=True)
+                self._upsert_file(
+                    candidate, file_data, file_vectors, defer_persist=True
+                )
                 summary.ingested += 1
 
                 # Update state on success
@@ -325,9 +352,11 @@ class DiffIngestExecutor:
                 logger.warning(f"Failed to upsert {candidate.path}: {e}")
 
         # Flush vector DB once after all upserts
-        if hasattr(self._vdb_writer, 'flush'):
+        if hasattr(self._vdb_writer, "flush"):
             self._vdb_writer.flush()
-        elif hasattr(self._vdb_writer, '_client') and hasattr(self._vdb_writer._client, 'flush'):
+        elif hasattr(self._vdb_writer, "_client") and hasattr(
+            self._vdb_writer._client, "flush"
+        ):
             self._vdb_writer._client.flush()
 
         # Final progress update
@@ -412,16 +441,20 @@ class DiffIngestExecutor:
 
             chunk_content_hash = _hash_text(chunk.content)
 
-            chunk_data.append({
-                "chunk_id": chunk_id,
-                "chunk": chunk,
-                "content_hash": chunk_content_hash,
-                "description": None,  # Filled in by batch summarization
-            })
+            chunk_data.append(
+                {
+                    "chunk_id": chunk_id,
+                    "chunk": chunk,
+                    "content_hash": chunk_content_hash,
+                    "description": None,  # Filled in by batch summarization
+                }
+            )
 
         return {"chunk_data": chunk_data}
 
-    def _prepare_file(self, candidate: FileCandidate) -> tuple[Optional[Dict], List[str]]:
+    def _prepare_file(
+        self, candidate: FileCandidate
+    ) -> tuple[Optional[Dict], List[str]]:
         """
         Prepare a file for ingestion (parse, chunk, enrich) without embedding.
 
@@ -471,7 +504,10 @@ class DiffIngestExecutor:
 
             # Enrichment (if enabled)
             description: Optional[str] = None
-            if self._enrichment_pipeline is not None and self._enrichment_pipeline.summaries_enabled:
+            if (
+                self._enrichment_pipeline is not None
+                and self._enrichment_pipeline.summaries_enabled
+            ):
                 chunk_content_hash = _hash_text(chunk.content)
                 description = self._enrichment_pipeline.summarize_chunk(
                     content=chunk.content,
@@ -485,11 +521,13 @@ class DiffIngestExecutor:
             text_to_embed = description if description else chunk.content
             texts_to_embed.append(text_to_embed)
 
-            chunk_data.append({
-                "chunk_id": chunk_id,
-                "chunk": chunk,
-                "description": description,
-            })
+            chunk_data.append(
+                {
+                    "chunk_id": chunk_id,
+                    "chunk": chunk,
+                    "description": description,
+                }
+            )
 
         file_data = {
             "chunk_data": chunk_data,
@@ -539,15 +577,19 @@ class DiffIngestExecutor:
                 payload["description"] = data["description"]
                 payload["enricher_id"] = self._enricher_id
 
-            points.append({
-                "id": data["chunk_id"],
-                "vector": vectors[i],
-                "payload": payload,
-            })
+            points.append(
+                {
+                    "id": data["chunk_id"],
+                    "vector": vectors[i],
+                    "payload": payload,
+                }
+            )
 
         # Pass defer_persist if the writer supports it
         try:
-            self._vdb_writer.upsert(self._collection, points, defer_persist=defer_persist)
+            self._vdb_writer.upsert(
+                self._collection, points, defer_persist=defer_persist
+            )
         except TypeError:
             # Writer doesn't support defer_persist, fall back to normal upsert
             self._vdb_writer.upsert(self._collection, points)
@@ -618,7 +660,9 @@ class DiffIngestExecutor:
                     on_progress(i + 1, total, artifact.artifact_type.value)
 
                 # Create deterministic ID for artifact
-                artifact_id = f"artifact:{artifact.artifact_type.value}:{self._collection}"
+                artifact_id = (
+                    f"artifact:{artifact.artifact_type.value}:{self._collection}"
+                )
 
                 # Build payload using artifact's to_payload method
                 payload = artifact.to_payload()
@@ -626,11 +670,13 @@ class DiffIngestExecutor:
                 payload["embedding_id"] = self._embedding_id
                 payload["ingested_at"] = datetime.utcnow().isoformat()
 
-                points.append({
-                    "id": artifact_id,
-                    "vector": vectors[i],
-                    "payload": payload,
-                })
+                points.append(
+                    {
+                        "id": artifact_id,
+                        "vector": vectors[i],
+                        "payload": payload,
+                    }
+                )
 
             # Upsert all artifacts
             self._vdb_writer.upsert(self._collection, points)
@@ -704,7 +750,9 @@ def run_diff_ingest(
         parser_id_func=parser_id_func,
         enrichment_pipeline=enrichment_pipeline,
     )
-    return executor.run(source, force=force, on_progress=on_progress, skip_artifacts=skip_artifacts)
+    return executor.run(
+        source, force=force, on_progress=on_progress, skip_artifacts=skip_artifacts
+    )
 
 
 __all__ = [

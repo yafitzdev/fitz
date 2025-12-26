@@ -63,7 +63,7 @@ class TracingEmbedder:
         self._tracker.log(
             "embed_batch()",
             f"call #{self.embed_batch_calls}, num_texts={len(texts)}, "
-            f"total_chars={sum(len(t) for t in texts)}"
+            f"total_chars={sum(len(t) for t in texts)}",
         )
         if self._delay:
             time.sleep(self._delay * len(texts) * 0.1)  # Simulate batch being faster
@@ -83,11 +83,13 @@ class TracingVectorDBWriter:
         self.total_points += len(points)
         self._tracker.log(
             "upsert()",
-            f"call #{self.upsert_calls}, collection={collection}, points={len(points)}"
+            f"call #{self.upsert_calls}, collection={collection}, points={len(points)}",
         )
 
     def mark_deleted(self, collection: str, source_path: str) -> int:
-        self._tracker.log("mark_deleted()", f"collection={collection}, path={source_path}")
+        self._tracker.log(
+            "mark_deleted()", f"collection={collection}, path={source_path}"
+        )
         return 1
 
 
@@ -101,9 +103,13 @@ class TracingParser:
 
     def parse(self, path: str) -> str:
         self.parse_calls += 1
-        self._tracker.log("parse()", f"call #{self.parse_calls}, path={Path(path).name}")
+        self._tracker.log(
+            "parse()", f"call #{self.parse_calls}, path={Path(path).name}"
+        )
         # Return content that will create multiple chunks
-        return f"# File: {path}\n\n" + ("Lorem ipsum dolor sit amet. " * 50) * (self._content_size // 100)
+        return f"# File: {path}\n\n" + ("Lorem ipsum dolor sit amet. " * 50) * (
+            self._content_size // 100
+        )
 
 
 @pytest.fixture
@@ -131,13 +137,18 @@ def test_files(tmp_path: Path):
     # Create 2 large files
     for i in range(2):
         f = tmp_path / f"large_{i}.py"
-        f.write_text(f"# large file {i}\n" + "class Foo:\n    def bar(self):\n        pass\n" * 500)
+        f.write_text(
+            f"# large file {i}\n"
+            + "class Foo:\n    def bar(self):\n        pass\n" * 500
+        )
         files.append(f)
 
     return tmp_path, files
 
 
-def test_ingest_timing_detailed(tmp_path: Path, timing_tracker: TimingTracker, test_files):
+def test_ingest_timing_detailed(
+    tmp_path: Path, timing_tracker: TimingTracker, test_files
+):
     """
     Detailed timing test for ingestion pipeline.
 
@@ -206,8 +217,12 @@ def test_ingest_timing_detailed(tmp_path: Path, timing_tracker: TimingTracker, t
     print(f"{'=' * 60}")
 
     # Assertions to verify batching is working
-    assert embedder.embed_calls == 0, f"embed() should not be called, but was called {embedder.embed_calls} times"
-    assert embedder.embed_batch_calls >= 1, "embed_batch() should be called at least once"
+    assert embedder.embed_calls == 0, (
+        f"embed() should not be called, but was called {embedder.embed_calls} times"
+    )
+    assert embedder.embed_batch_calls >= 1, (
+        "embed_batch() should be called at least once"
+    )
 
     # If we have 17 files and batching works, we should have far fewer embed_batch calls than files
     if len(files) > 5:
@@ -216,12 +231,14 @@ def test_ingest_timing_detailed(tmp_path: Path, timing_tracker: TimingTracker, t
             f"Should be fewer calls if cross-file batching is working."
         )
 
-    print(f"\n[PASS] Batching is working correctly!")
+    print("\n[PASS] Batching is working correctly!")
     print(f"  - {embedder.embed_batch_calls} embed_batch calls for {len(files)} files")
     print(f"  - {embedder.total_texts_embedded} total chunks embedded")
 
 
-def test_ingest_with_real_embedder_mock(tmp_path: Path, timing_tracker: TimingTracker, test_files):
+def test_ingest_with_real_embedder_mock(
+    tmp_path: Path, timing_tracker: TimingTracker, test_files
+):
     """
     Test with a mock that simulates real API latency.
 
@@ -235,7 +252,7 @@ def test_ingest_with_real_embedder_mock(tmp_path: Path, timing_tracker: TimingTr
     source_path, files = test_files
 
     print(f"\n{'=' * 60}")
-    print(f"TEST: Simulating real API latency")
+    print("TEST: Simulating real API latency")
     print(f"{'=' * 60}\n")
 
     state_path = tmp_path / "state" / "ingest.json"

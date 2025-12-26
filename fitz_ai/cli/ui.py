@@ -414,7 +414,9 @@ class UI:
                 console.print(f"\n  [bold]{prompt}:[/bold]")
                 for i, (name, desc) in enumerate(choices, 1):
                     check = "[green]x[/green]" if name in selected else " "
-                    console.print(f"    [cyan][{i}][/cyan] [{check}] {name} [dim]- {desc}[/dim]")
+                    console.print(
+                        f"    [cyan][{i}][/cyan] [{check}] {name} [dim]- {desc}[/dim]"
+                    )
             else:
                 print(f"\n  {prompt}:")
                 for i, (name, desc) in enumerate(choices, 1):
@@ -433,7 +435,9 @@ class UI:
                 )
                 response = Prompt.ask("  ", default="").strip().lower()
             else:
-                print(f"\n  Toggle (1-{len(choices)}), 'a' for all, 'n' for none, Enter to confirm")
+                print(
+                    f"\n  Toggle (1-{len(choices)}), 'a' for all, 'n' for none, Enter to confirm"
+                )
                 response = input("  : ").strip().lower()
 
             if response == "":

@@ -66,7 +66,6 @@ class TestEnsureApiKey:
         # Clear the key
         os.environ.pop("COHERE_API_KEY", None)
 
-
         # Would prompt - we can't easily test interactive prompts
         # but we can verify the function exists and has correct signature
 

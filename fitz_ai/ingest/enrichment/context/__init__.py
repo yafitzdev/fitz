@@ -11,10 +11,10 @@ Plugins are auto-discovered from the plugins/ directory.
 """
 
 from fitz_ai.ingest.enrichment.context.registry import (
-    ContextRegistry,
     ContextPluginInfo,
-    get_context_registry,
+    ContextRegistry,
     get_context_plugin,
+    get_context_registry,
     list_context_plugins,
 )
 

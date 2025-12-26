@@ -228,7 +228,7 @@ MIT
 
 ## About
 
-Solo project by [Yan Fitzner](https://github.com/yafitzdev). ~15k lines of Python. 400+ tests. Built from scratch—no LangChain or LlamaIndex under the hood.
+Solo project by [Yan Fitzner](https://github.com/yafitzdev). ~40k lines of Python. 400+ tests. Built from scratch—no LangChain or LlamaIndex under the hood.
 
 ---
 

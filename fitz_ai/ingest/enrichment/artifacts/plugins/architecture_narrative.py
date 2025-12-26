@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from fitz_ai.ingest.enrichment.base import ContentType
 from fitz_ai.ingest.enrichment.artifacts.base import (
     Artifact,
     ArtifactType,
     ProjectAnalysis,
 )
+from fitz_ai.ingest.enrichment.base import ContentType
 
 plugin_name = "architecture_narrative"
 plugin_type = "artifact"
@@ -28,8 +28,7 @@ requires_llm = True
 class ChatClient(Protocol):
     """Protocol for LLM chat clients."""
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
-        ...
+    def chat(self, messages: list[dict[str, str]]) -> str: ...
 
 
 class Generator:

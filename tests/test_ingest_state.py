@@ -6,7 +6,6 @@ Tests for fitz_ai.ingest.state module.
 import json
 from pathlib import Path
 
-
 from fitz_ai.ingest.state import (
     EmbeddingConfig,
     FileEntry,

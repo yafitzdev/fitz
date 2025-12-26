@@ -24,13 +24,13 @@ Usage:
     )
 """
 
+from .artifact_fetch import ArtifactClient, ArtifactFetchStep
 from .base import Embedder, Reranker, RetrievalStep, VectorClient
 from .dedupe import DedupeStep
 from .limit import LimitStep
 from .rerank import RerankStep
 from .threshold import ThresholdStep
 from .vector_search import VectorSearchStep
-from .artifact_fetch import ArtifactFetchStep, ArtifactClient
 
 # =============================================================================
 # Step Registry

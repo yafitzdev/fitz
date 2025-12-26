@@ -113,7 +113,7 @@ def extract_models(cm: ContractMap, *, verbose: bool) -> None:
         "fitz_ai.engines.classic_rag.models.chunk",
         "fitz_ai.engines.classic_rag.models.document",
         # Ingest models
-        "fitz_ai.ingest.config.schema",
+        "fitz_ai.ingest.state.schema",
         "fitz_ai.ingest.ingestion.base",
     ]
 

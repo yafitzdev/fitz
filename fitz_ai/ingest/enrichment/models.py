@@ -6,6 +6,7 @@ These models define the input/output contract for the enrichment "box":
 - Input: List[Chunk]
 - Output: EnrichmentResult (enriched chunks + artifacts)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

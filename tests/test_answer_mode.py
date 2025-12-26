@@ -10,7 +10,6 @@ These tests verify:
 
 from __future__ import annotations
 
-
 from fitz_ai.core.answer_mode import AnswerMode
 from fitz_ai.core.answer_mode_resolver import resolve_answer_mode
 from fitz_ai.engines.classic_rag.constraints.base import ConstraintResult

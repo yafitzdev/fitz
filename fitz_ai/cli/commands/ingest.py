@@ -112,7 +112,9 @@ def _get_available_artifacts(has_llm: bool = False) -> List[tuple]:
     return result
 
 
-def _parse_artifact_selection(artifacts_arg: Optional[str], available: List[str]) -> Optional[List[str]]:
+def _parse_artifact_selection(
+    artifacts_arg: Optional[str], available: List[str]
+) -> Optional[List[str]]:
     """
     Parse the --artifacts argument.
 
@@ -222,7 +224,7 @@ class VectorDBWriterAdapter:
 
     def flush(self) -> None:
         """Flush any pending writes to disk."""
-        if hasattr(self._client, 'flush'):
+        if hasattr(self._client, "flush"):
             self._client.flush()
 
 
@@ -357,7 +359,9 @@ def command(
                 print()
                 suggested = _suggest_collection_name(source)
                 choices = existing_collections + [f"+ Create new: {suggested}"]
-                selected = ui.prompt_numbered_choice("Collection", choices, default_collection)
+                selected = ui.prompt_numbered_choice(
+                    "Collection", choices, default_collection
+                )
                 if selected.startswith("+ Create new:"):
                     collection = suggested
                 else:
@@ -378,7 +382,8 @@ def command(
                     defaults = [name for name, _ in available_artifacts]
                 else:
                     defaults = [
-                        name for name, desc in available_artifacts
+                        name
+                        for name, desc in available_artifacts
                         if "requires LLM" not in desc
                     ]
                 selected_artifacts = ui.prompt_multi_select(
@@ -386,7 +391,9 @@ def command(
                     available_artifacts,
                     defaults=defaults,
                 )
-                artifacts = ",".join(selected_artifacts) if selected_artifacts else "none"
+                artifacts = (
+                    ",".join(selected_artifacts) if selected_artifacts else "none"
+                )
 
     print()
 
@@ -395,7 +402,9 @@ def command(
     # =========================================================================
 
     # Determine total steps based on whether artifacts are enabled
-    has_artifacts = artifacts != "none" and (artifacts is not None or _is_code_project(source))
+    has_artifacts = artifacts != "none" and (
+        artifacts is not None or _is_code_project(source)
+    )
     total_steps = 4 if has_artifacts else 3
 
     ui.step(1, total_steps, "Initializing...")
@@ -418,7 +427,9 @@ def command(
 
         # Embedder
         embedding_kwargs = config.get("embedding", {}).get("kwargs", {})
-        embedder = get_llm_plugin(plugin_type="embedding", plugin_name=embedding_plugin, **embedding_kwargs)
+        embedder = get_llm_plugin(
+            plugin_type="embedding", plugin_name=embedding_plugin, **embedding_kwargs
+        )
 
         # Vector DB writer
         vector_client = get_vector_db_plugin(vector_db_plugin)
@@ -429,8 +440,12 @@ def command(
         enrichment_cfg = config.get("enrichment", {})
 
         # Parse artifact selection from CLI or config
-        available_artifact_names = [name for name, _ in _get_available_artifacts(has_llm=False)]
-        selected_artifacts = _parse_artifact_selection(artifacts, available_artifact_names)
+        available_artifact_names = [
+            name for name, _ in _get_available_artifacts(has_llm=False)
+        ]
+        selected_artifacts = _parse_artifact_selection(
+            artifacts, available_artifact_names
+        )
 
         # If artifacts were selected (via CLI or interactive), enable enrichment
         if selected_artifacts is not None and len(selected_artifacts) > 0:
@@ -445,8 +460,10 @@ def command(
         if enrichment_cfg.get("enabled", False):
             from pathlib import Path
 
-            from fitz_ai.ingest.enrichment import EnrichmentPipeline, EnrichmentConfig
-            from fitz_ai.ingest.enrichment.artifacts.registry import get_artifact_registry
+            from fitz_ai.ingest.enrichment import EnrichmentConfig, EnrichmentPipeline
+            from fitz_ai.ingest.enrichment.artifacts.registry import (
+                get_artifact_registry,
+            )
 
             enrichment_config = EnrichmentConfig.from_dict(enrichment_cfg)
 
@@ -461,7 +478,9 @@ def command(
                 if needs_llm:
                     # Get chat client from config
                     chat_plugin = config.get("chat", {}).get("plugin_name", "cohere")
-                    chat_client = get_llm_plugin(plugin_type="chat", plugin_name=chat_plugin)
+                    chat_client = get_llm_plugin(
+                        plugin_type="chat", plugin_name=chat_plugin
+                    )
                     ui.info(f"Chat LLM: {chat_plugin} (for LLM-based artifacts)")
 
             enrichment_pipeline = EnrichmentPipeline(
@@ -510,7 +529,13 @@ def command(
 
         try:
             if RICH:
-                from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+                from rich.progress import (
+                    BarColumn,
+                    Progress,
+                    SpinnerColumn,
+                    TaskProgressColumn,
+                    TextColumn,
+                )
 
                 progress = Progress(
                     SpinnerColumn(),
@@ -527,10 +552,14 @@ def command(
                     nonlocal task_id
                     if task_id is None:
                         task_id = progress.add_task("Artifacts", total=total, name="")
-                    progress.update(task_id, completed=current, name=name if name != "Done" else "")
+                    progress.update(
+                        task_id, completed=current, name=name if name != "Done" else ""
+                    )
 
                 with progress:
-                    artifacts_generated, artifact_errors = executor.ingest_artifacts(on_progress=on_artifact_progress)
+                    artifacts_generated, artifact_errors = executor.ingest_artifacts(
+                        on_progress=on_artifact_progress
+                    )
             else:
                 artifacts_generated, artifact_errors = executor.ingest_artifacts()
 
@@ -553,8 +582,15 @@ def command(
     try:
         # Set up progress tracking
         if RICH:
-            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
             from pathlib import Path as PathLib
+
+            from rich.progress import (
+                BarColumn,
+                Progress,
+                SpinnerColumn,
+                TaskProgressColumn,
+                TextColumn,
+            )
 
             progress = Progress(
                 SpinnerColumn(),

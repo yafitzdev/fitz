@@ -11,7 +11,6 @@ Key tests verify that:
 
 from typing import Dict, Optional, Set
 
-
 from fitz_ai.ingest.diff.differ import (
     ConfigProvider,
     Differ,

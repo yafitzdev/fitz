@@ -11,11 +11,11 @@ Components:
 - SummaryCache: Caches descriptions to avoid redundant API calls
 """
 
-from fitz_ai.ingest.enrichment.summary.summarizer import (
-    ChunkSummarizer,
-)
 from fitz_ai.ingest.enrichment.summary.cache import (
     SummaryCache,
+)
+from fitz_ai.ingest.enrichment.summary.summarizer import (
+    ChunkSummarizer,
 )
 
 __all__ = [

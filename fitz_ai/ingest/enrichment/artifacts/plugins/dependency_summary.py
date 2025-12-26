@@ -11,12 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List
 
-from fitz_ai.ingest.enrichment.base import ContentType
 from fitz_ai.ingest.enrichment.artifacts.base import (
     Artifact,
     ArtifactType,
     ProjectAnalysis,
 )
+from fitz_ai.ingest.enrichment.base import ContentType
 
 plugin_name = "dependency_summary"
 plugin_type = "artifact"
