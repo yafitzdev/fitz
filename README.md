@@ -49,7 +49,7 @@ The codebase speaks for itself.
 ---
 <details>
 
-<summary><strong>Fitz vs LangChain vs LlamaIndex</strong></summary>
+<summary><strong>🧊 Fitz vs LangChain vs LlamaIndex</strong></summary>
 
 #### Fitz opts for a deliberately narrower approach.
 
@@ -107,7 +107,7 @@ Fitz intentionally does less — so it can be trusted more.
 
 <details>
 
-<summary><strong>When Fitz is the right choice</strong></summary>
+<summary><strong>🧊 When Fitz is the right choice</strong></summary>
 
 #### Use Fitz if you want:
 
@@ -122,9 +122,9 @@ Fitz intentionally does less — so it can be trusted more.
 ---
 <details>
 
-<summary><strong>Features</strong></summary>
+<summary><strong>🧊 Features</strong></summary>
 
-#### Actually admits when it doesn't know
+#### Actually admits when it doesn't know 📚
 
 When documents don't contain the answer, fitz says so:
 
@@ -137,11 +137,11 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 ```
 
 Three constraint plugins run automatically:
-- **ConflictAwareConstraint**: Detects contradictions across sources
-- **InsufficientEvidenceConstraint**: Blocks answers without evidence
-- **CausalAttributionConstraint**: Prevents hallucinated cause-effect claims
+- **📕 ConflictAwareConstraint**: Detects contradictions across sources
+- **📗 InsufficientEvidenceConstraint**: Blocks answers without evidence
+- **📘 CausalAttributionConstraint**: Prevents hallucinated cause-effect claims
 
-#### Full Provenance
+#### Full Provenance 🗂️
 
 Every answer traces back to its source:
 
@@ -153,7 +153,7 @@ Sources:
   [2] faq/payments.md [chunk 1] (score: 0.87)
 ```
 
-#### Swappable RAG Engines
+#### Swappable RAG Engines 🔄
 
 Your data stays. Your queries stay. Only the engine changes.
 
@@ -188,7 +188,7 @@ answer = run("What are the payment terms?", engine="graph_rag")  # future
 
 No migration. No re-ingestion. No new API to learn.
 
-#### Enrichment
+#### Enrichment 📥
 
 Opt-in enrichment plugins enhance your knowledge base:
 
@@ -293,7 +293,7 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 ```
 ---
 
-## CLI Reference
+## CLI Reference 🗪
 
 ```bash
 fitz quickstart [PATH] [QUESTION]    # Zero-config RAG (start here)
@@ -341,13 +341,13 @@ The engine is an implementation detail. Your ingested knowledge, your queries, y
 
 ---
 
-## License
+## License 🪪
 
 MIT
 
 ---
 
-## Links
+## Links 🔗
 
 - [GitHub](https://github.com/yafitzdev/fitz-ai)
 - [PyPI](https://pypi.org/project/fitz-ai/)
