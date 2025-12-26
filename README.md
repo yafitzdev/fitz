@@ -95,9 +95,9 @@ Every answer in Fitz is fully auditable down to the retrieval step.
 
 | Aspect | Fitz | LangChain / LlamaIndex |
 |-----|------|------------------------|
-| Chains / agents | ❌ | ✅ |
-| Prompt graphs | ❌ | ✅ |
-| UI abstractions | ❌ | Often |
+| Chains / agents | ❎ | ✔ |
+| Prompt graphs | ❎ | ✔ |
+| UI abstractions | ❎ | Often |
 | Cognitive overhead | **Very low** | High |
 
 Fitz intentionally does less — so it can be trusted more.
