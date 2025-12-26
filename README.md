@@ -21,7 +21,10 @@ That's it. Your documents are now searchable with AI.
 
 ## About
 
-Solo project by [Yan Fitzner](https://github.com/yafitzdev). ~40k lines of Python. 400+ tests. Built from scratch—no LangChain or LlamaIndex under the hood.
+Solo project by [Yan Fitzner](https://github.com/yafitzdev). ~40k lines of Python. 400+ tests. 
+
+Built from scratch—no LangChain or LlamaIndex under the hood.
+
 
 ---
 
@@ -29,7 +32,7 @@ Solo project by [Yan Fitzner](https://github.com/yafitzdev). ~40k lines of Pytho
 
 > - **Point at a folder. Ask a question. Get an answer with sources.**
 > - **❗Swap RAG engines in one line, no migration needed.** Fitz is designed for people who anticipate RAG to evolve.
-> - **Says "I don't know" when the answer isn't there.** No hallucinations, no confident nonsense.
+> - **Admits it doesn't know when the answer isn't there.** No hallucinations, no confident nonsense.
 > - **Local execution possible.** FAISS and Ollama support, no API keys required to start.
 > - **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
 > - **Full provenance.** Every answer traces back to the exact chunk and document.
