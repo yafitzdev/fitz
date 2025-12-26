@@ -193,7 +193,7 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 
 <strong>Internal Knowledge Base 📚</strong>
 
-> Point fitz at your companies wiki, policies, and runbooks. Employees ask natural language questions instead of hunting through folders or pinging colleagues on Slack.
+> Point fitz at your company's wiki, policies, and runbooks. Employees ask natural language questions instead of hunting through folders or pinging colleagues on Slack.
 >
 > *Example:* A 200-person startup ingests their Notion workspace and compliance docs. New hires find answers to "How do I request PTO?" on day one—no more waiting for someone in HR to respond.
 
