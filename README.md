@@ -21,13 +21,13 @@ That's it. Your documents are now searchable with AI.
 
 ## Why Fitz? ☀️
 
-- **Point at a folder. Ask a question. Get an answer with sources.**
-- **Says "I don't know" when the answer isn't there.** No hallucinations, no confident nonsense.
-- **Smart chunking out of the box.** AST-aware for Python, section-based for PDFs, heading-aware for Markdown.
-- **Local execution possible.** FAISS and Ollama support, no API keys required to start.
-- **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
-- **Full provenance.** Every answer traces back to the exact chunk and document.
-- **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
+> - **Point at a folder. Ask a question. Get an answer with sources.**
+> - **RAG is a plugin and therefore swappable.** Fitz is designed for people who expect RAG to evolve and don’t want to rewrite their system when it does.
+> - **Says "I don't know" when the answer isn't there.** No hallucinations, no confident nonsense.
+> - **Local execution possible.** FAISS and Ollama support, no API keys required to start.
+> - **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
+> - **Full provenance.** Every answer traces back to the exact chunk and document.
+> - **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
 
 Any questions left? Try fitz on itself:
 
@@ -38,8 +38,83 @@ fitz quickstart ./fitz_ai "How does the chunking pipeline work?"
 The codebase speaks for itself.
 
 ---
+<details>
 
-## Features 🎁
+<summary><strong>Fitz vs LangChain vs LlamaIndex</strong></summary>
+
+LangChain and LlamaIndex are powerful **LLM application frameworks** designed to help developers build complex, end-to-end AI systems.
+
+**Fitz takes a deliberately narrower approach.**  
+It provides a **minimal, replaceable RAG engine** with strong epistemic guarantees — without locking users into a framework, ecosystem, or long-term architectural commitment.
+
+Fitz is not a competitor in scope.  
+It is an infrastructure primitive.
+
+
+### Core philosophical differences
+
+| Dimension | Fitz | LangChain | LlamaIndex |
+|--------|------|-----------|------------|
+| Primary role | **RAG engine** | LLM application framework | LLM data framework |
+| User commitment | **No framework lock-in** | High | High |
+| Engine coupling | **Swappable in one line** | Deep | Deep |
+| Design goal | Correctness & honesty | Flexibility | Data integration |
+| Long-term risk | Low | Migration-heavy | Migration-heavy |
+
+
+### Epistemic behavior (truth over fluency)
+
+| Aspect | Fitz | LangChain / LlamaIndex |
+|-----|------|------------------------|
+| “I don’t know” | **First-class behavior** | Not guaranteed |
+| Hallucination handling | Designed-in | Usually prompt-level |
+| Confidence signaling | Explicit | Implicit |
+
+Fitz treats uncertainty as a **feature**, not a failure.  
+If the system cannot support an answer with retrieved evidence, it says so.
+
+### Transparency & provenance
+
+| Capability | Fitz | LangChain / LlamaIndex |
+|---------|------|------------------------|
+| Source attribution | **Mandatory** | Optional |
+| Retrieval trace | **Explicit & structured** | Often opaque |
+| Debuggability | Built-in | Tool-dependent |
+
+Every answer in Fitz is fully auditable down to the retrieval step.
+
+### Scope & complexity
+
+| Aspect | Fitz | LangChain / LlamaIndex |
+|-----|------|------------------------|
+| Chains / agents | ❌ | ✅ |
+| Prompt graphs | ❌ | ✅ |
+| UI abstractions | ❌ | Often |
+| Cognitive overhead | **Very low** | High |
+
+Fitz intentionally does less — so it can be trusted more.
+</details>
+
+---
+
+<details>
+
+<summary><strong>When Fitz is the right choice</strong></summary>
+
+Use Fitz if you want:
+
+- A replaceable RAG engine, not a framework marriage
+- Strong epistemic guarantees (“I don’t know” is valid output)
+- Full provenance for every answer
+- A transparent, extensible plugin architecture
+- A future-proof ingestion pipeline that survives engine changes
+
+</details>
+
+---
+<details>
+
+<summary><strong>Features</strong></summary>
 
 ### Actually admits when it doesn't know
 
@@ -78,6 +153,7 @@ Opt-in enrichment plugins enhance your knowledge base:
 - **LLM-generated summaries**: Natural language descriptions for chunks, making code more discoverable via semantic search.
 
 Your question matches enriched context, not just raw text. Fully extensible—add your own enrichment plugins.
+</details>
 
 ---
 
@@ -110,31 +186,31 @@ No data leaves your machine. No API costs. Same interface.
 
 Fitz is a foundation. It handles document ingestion and grounded retrieval—you build whatever sits on top: chatbots, dashboards, alerts, or automation.
 
-<summary><strong>Chatbot Backend 🤖​</strong></summary>
+<strong>Chatbot Backend 🤖</strong>
 
 > Connect fitz to Slack, Discord, Teams, or your own UI. One function call returns an answer with sources—no hallucinations, full provenance. You handle the conversation flow; fitz handles the knowledge.
 >
 > *Example:* A SaaS company plugs fitz into their support bot. Tier-1 questions like "How do I reset my password?" get instant answers. Their support team focuses on edge cases while fitz deflects 60% of incoming tickets.
 
-<summary><strong>Internal Knowledge Base 📚</strong></summary>
+<strong>Internal Knowledge Base 📚</strong>
 
 > Point fitz at your companies wiki, policies, and runbooks. Employees ask natural language questions instead of hunting through folders or pinging colleagues on Slack.
 >
 > *Example:* A 200-person startup ingests their Notion workspace and compliance docs. New hires find answers to "How do I request PTO?" on day one—no more waiting for someone in HR to respond.
 
-<summary><strong>Continuous Intelligence & Alerting 🐶</strong></summary>
+<strong>Continuous Intelligence & Alerting 🐶</strong>
 
 > Pair fitz with cron, Airflow, or Lambda. Ingest data on a schedule, run queries automatically, trigger alerts when conditions match. Fitz provides the retrieval primitive; you wire the automation.
 >
 > *Example:* A security team ingests SIEM logs nightly. Every morning, a scheduled job asks "Were there failed logins from unusual locations?" If fitz finds evidence, an alert fires to the on-call channel before anyone checks email.
 
-<summary><strong>Web Knowledge Base 🌎</strong></summary>
+<strong>Web Knowledge Base 🌎</strong>
 
 > Scrape the web with Scrapy, BeautifulSoup, or Playwright. Save to disk, ingest with fitz. The web becomes a queryable knowledge base.
 >
 > *Example:* A football analytics hobbyist scrapes Premier League match reports. After ingesting, they ask "How did Arsenal perform against top 6 teams?" or "What tactics did Liverpool use in away games?"—insights that would take hours to compile manually.
 
-<summary><strong>Codebase Search 🐍</strong></summary>
+<strong>Codebase Search 🐍</strong>
 
 > Fitz includes built-in AST-aware chunking for Python. Functions, classes, and modules become individual searchable units with docstrings and imports preserved. Ask questions in natural language; get answers pointing to specific code.
 >
