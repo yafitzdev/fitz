@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 import typer
 
 from fitz_ai.cli.ui import RICH, console, ui
+from fitz_ai.cli.ui_display import display_sources
 from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
@@ -295,8 +296,9 @@ def command(
                 logger.exception("LLM error")
                 continue
 
-            # Display response
+            # Display response and sources
             _display_assistant_message(response)
+            display_sources(chunks, indent=12)
 
             # Update history
             history.append({"role": "user", "content": user_input})
