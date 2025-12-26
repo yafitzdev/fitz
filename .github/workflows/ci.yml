@@ -115,13 +115,11 @@ jobs:
           python -c "from fitz_ai.engines.classic_rag import run_classic_rag; print('Classic RAG imports OK')"
           python -c "from fitz_ai.llm.registry import available_llm_plugins; print('LLM registry OK')"
           python -c "from fitz_ai.vector_db.registry import available_vector_db_plugins; print('Vector DB registry OK')"
-          python -c "from fitz_ai.ingest.cli import app; print('Ingest CLI OK')"
+          python -c "from fitz_ai.ingest.state import IngestStateManager; print('Ingest imports OK')"
 
       - name: Check CLI commands are registered
         run: |
           fitz --help
-          fitz-pipeline --help
-          fitz-ingest --help
 
   # ===========================================================================
   # Coverage Report (Optional - on main branch only)

@@ -109,9 +109,7 @@ def test_ingest_cli_mirror():
             elapsed = time.perf_counter() - t0
             self.parse_times.append(elapsed)
             if self.parse_count <= 5 or self.parse_count % 10 == 0:
-                print(
-                    f"    [PARSE] #{self.parse_count} {Path(path).name}: {elapsed:.3f}s"
-                )
+                print(f"    [PARSE] #{self.parse_count} {Path(path).name}: {elapsed:.3f}s")
             return docs[0].content if docs else ""
 
     parser = ParserAdapter(ingest_plugin)
@@ -208,8 +206,7 @@ def test_ingest_cli_mirror():
             + "import os\nimport sys\n\n"
             + f"class Class{i}:\n    '''Class docstring.'''\n    def method(self):\n        pass\n\n"
             * 5
-            + f"def function_{i}():\n    '''Function docstring.'''\n    return {i}\n\n"
-            * 10
+            + f"def function_{i}():\n    '''Function docstring.'''\n    return {i}\n\n" * 10
         )
 
     for i in range(5):
