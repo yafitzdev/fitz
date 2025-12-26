@@ -116,14 +116,14 @@ def error_handling():
 
     try:
         # Empty query will raise QueryError
-        answer = run_classic_rag("")
+        _answer = run_classic_rag("")  # noqa: F841
     except QueryError as e:
         print(f"Query error: {e}")
 
     try:
         # Simulate knowledge error (this might not actually fail in practice)
         constraints = Constraints(filters={"nonexistent_field": "value"})
-        answer = run_classic_rag("Some question", constraints=constraints)
+        _answer = run_classic_rag("Some question", constraints=constraints)  # noqa: F841
     except KnowledgeError as e:
         print(f"Knowledge error: {e}")
     except Exception as e:
