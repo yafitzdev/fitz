@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.4.0-green.svg)](CHANGELOG.md)
 
-**Setup RAG in 5 minutes. No infrastructure. No boilerplate.**
+**Honest RAG in 5 minutes. Says "I don't know" when it should. No infrastructure. No boilerplate.**
 
 ```bash
 pip install fitz-ai
@@ -16,6 +16,12 @@ fitz quickstart ./docs "What is our refund policy?"
 That's it. Your documents are now searchable with AI.
 
 ![fitz-ai quickstart demo](docs/assets/quickstart_demo.gif)
+
+---
+
+## About
+
+Solo project by [Yan Fitzner](https://github.com/yafitzdev). ~40k lines of Python. 400+ tests. Built from scratch—no LangChain or LlamaIndex under the hood.
 
 ---
 
@@ -300,12 +306,6 @@ The engine is an implementation detail. Your ingested knowledge, your queries, y
 ## License
 
 MIT
-
----
-
-## About
-
-Solo project by [Yan Fitzner](https://github.com/yafitzdev). ~40k lines of Python. 400+ tests. Built from scratch—no LangChain or LlamaIndex under the hood.
 
 ---
 
