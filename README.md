@@ -62,16 +62,16 @@ RAG is how ChatGPT's "file search," Notion AI, and enterprise knowledge tools ac
 
 You can—but you'll hit walls fast.
 
-**Context window limits.** 
+**Context window limits ❌** 
 > GPT-4 accepts ~128k tokens. That's roughly 300 pages. Your company wiki, codebase, or document archive is likely 10x-100x larger. You physically cannot paste it all.
 
-**Cost explosion.**
+**Cost explosion 💥**
 > Even if you could fit everything, you'd pay for every token on every query. Sending 100k tokens costs ~\$1-3 per question. Ask 50 questions a day? That's $50-150 daily—for one user.
 
-**No selective retrieval.**
+**No selective retrieval 🚨**
 > When you paste documents, the model reads everything equally. It can't focus on what's relevant. Ask about refund policies and it's also processing your hiring guidelines, engineering specs, and meeting notes—wasting context and degrading answers.
 
-**No persistence.**
+**No persistence 💢**
 > Every conversation starts fresh. You re-upload, re-paste, re-explain. There's no knowledge base that accumulates and improves.
 
 </details>
@@ -80,16 +80,16 @@ You can—but you'll hit walls fast.
 
 ### Why Fitz?
 
-**Super fast setup.**
+**Super fast setup 🐆**
 > Point at a folder. Ask a question. Get an answer with sources. Everything else is handled by Fitz.
 
-**Honest answers.**
+**Honest answers ✅**
 > Most RAG tools confidently answer even when the answer isn't in your documents. Ask "What was our Q4 revenue?" when your docs only cover Q1-Q3, and typical RAG hallucinates a number. Fitz says: *"I cannot find Q4 revenue figures in the provided documents."*
 
-**Swap engines, keep everything else.**
+**Swap engines, keep everything else ⚙️**
 > RAG is evolving fast—GraphRAG, HyDE, ColBERT, whatever's next. Fitz lets you switch engines in one line. Your ingested data stays. Your queries stay. No migration, no re-ingestion, no new API to learn. Frameworks lock you in; Fitz lets you move.
 
-**Analytical queries that actually work.**
+**Analytical queries that actually work 📊**
 > Standard RAG fails on questions like "What are the trends?"—it retrieves random chunks instead of insights. Fitz's hierarchical RAG generates multi-level summaries during ingestion. Ask for trends, get aggregated analysis. Ask for specifics, get detail chunks. No special syntax required.
 
 
