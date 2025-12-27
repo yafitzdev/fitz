@@ -4,6 +4,7 @@
 [![PyPI version](https://badge.fury.io/py/fitz-ai.svg)](https://pypi.org/project/fitz-ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.4.1-green.svg)](CHANGELOG.md)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/yafitzdev/fitz-ai)
 
 ---
 
@@ -17,7 +18,7 @@ fitz quickstart ./docs "What is our refund policy?"
 
 That's it. Your documents are now searchable with AI.
 
-![fitz-ai quickstart demo](docs/assets/quickstart_demo.gif)
+![fitz-ai quickstart demo](https://raw.githubusercontent.com/yafitzdev/fitz-ai/main/docs/assets/quickstart_demo.gif)
 
 ---
 
@@ -78,6 +79,18 @@ You can—but you'll hit walls fast.
 
 ---
 
+### About 🧑‍🌾
+
+  Solo project by Yan Fitzner ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](https://github.com/yafitzdev)).
+
+  - ~40k lines of Python
+  - 600+ tests, 100% coverage
+  - Zero LangChain/LlamaIndex dependencies — built from scratch
+
+![fitz-ai honest_rag](https://raw.githubusercontent.com/yafitzdev/fitz-ai/main/docs/assets/honest_rag.jpg)
+
+---
+
 ### Why Fitz?
 
 **Super fast setup 🐆**
@@ -99,7 +112,8 @@ You can—but you'll hit walls fast.
 >3. [X] **Incremental ingestion.** Only reprocesses changed files, even with new chunking settings.
 >4. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
 >5. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
-####
+
+<br>
 Any questions left? Try fitz on itself:
 
 ```bash
@@ -107,16 +121,6 @@ fitz quickstart ./fitz_ai "How does the chunking pipeline work?"
 ```
 
 The codebase speaks for itself.
-
----
-
-### About 🧑‍🌾
-
-Solo project by Yan Fitzner ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](https://github.com/yafitzdev)). ~40k lines of Python. 400+ tests. 
-
-Built from scratch—no LangChain or LlamaIndex under the hood.
-
-![fitz-ai honest_rag](docs/assets/honest_rag.jpg)
 
 ---
 
