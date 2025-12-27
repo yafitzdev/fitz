@@ -61,23 +61,25 @@ dependencies = [
     "jinja2>=3.1",
     # FAISS included by default for zero-friction quickstart
     "faiss-cpu>=1.7.0",
-]
-
-
-[project.optional-dependencies]
-# Document ingestion support
-ingest = [
+    # Document ingestion support
     "pdfplumber>=0.10.0",
     "python-docx",
 ]
 
+[project.optional-dependencies]
 # Local LLM capabilities (Ollama)
 local = [
     "ollama>=0.1.0",
 ]
 
-# Qdrant support (for production deployments)
-qdrant = [
+# Knowledge map visualization (experimental)
+map = [
+    "umap-learn>=0.5.0",
+    "scikit-learn>=1.0",
+]
+
+# Remote vector DB support (Qdrant, etc.)
+remote = [
     "qdrant-client>=1.7",
 ]
 
@@ -93,10 +95,10 @@ dev = [
 
 # Install everything at once
 all = [
-    "pdfplumber>=0.10.0",
-    "python-docx",
     "ollama>=0.1.0",
     "qdrant-client>=1.7",
+    "umap-learn>=0.5.0",
+    "scikit-learn>=1.0",
 ]
 
 

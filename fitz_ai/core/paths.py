@@ -184,6 +184,33 @@ class FitzPaths:
         return cls.workspace() / "cache" / "chunks"
 
     # =========================================================================
+    # Knowledge Map
+    # =========================================================================
+
+    @classmethod
+    def knowledge_map(cls) -> Path:
+        """
+        Knowledge map state file for visualization caching.
+
+        Location: {workspace}/knowledge_map.json
+
+        This file caches:
+        - Chunk embeddings (float16) for incremental updates
+        - Document metadata for hierarchy display
+        - Collection and embedding config for cache invalidation
+        """
+        return cls.workspace() / "knowledge_map.json"
+
+    @classmethod
+    def knowledge_map_html(cls) -> Path:
+        """
+        Default output path for knowledge map HTML visualization.
+
+        Location: {workspace}/knowledge_map.html
+        """
+        return cls.workspace() / "knowledge_map.html"
+
+    # =========================================================================
     # Logs & Diagnostics
     # =========================================================================
 

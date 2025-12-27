@@ -8,6 +8,7 @@ from fitz_ai.cli.commands import (
     doctor,
     ingest,
     init,
+    map,
     query,
     quickstart,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "doctor",
     "ingest",
     "init",
+    "map",
     "query",
     "quickstart",
 ]

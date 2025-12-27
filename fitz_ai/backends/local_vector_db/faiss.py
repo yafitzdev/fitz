@@ -75,7 +75,8 @@ class FaissLocalVectorDB:
             self._faiss = faiss
         except ImportError:
             raise ImportError(
-                "faiss is required for local-faiss plugin. " "Install with: pip install faiss-cpu"
+                "faiss is required for local-faiss plugin. "
+                "Install with: pip install faiss-cpu"
             )
 
         # Resolve path
@@ -384,6 +385,56 @@ class FaissLocalVectorDB:
 
         return batch, next_offset
 
+    def scroll_with_vectors(
+        self,
+        collection: str,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
+        """
+        Scroll through records in a collection, including vectors.
+
+        Used by knowledge map to fetch embeddings for visualization.
+
+        Args:
+            collection: Collection name
+            limit: Max records to return
+            offset: Starting position
+
+        Returns:
+            Tuple of (records_with_vectors, next_offset or None if done)
+            Each record is dict with 'id', 'payload', 'vector'
+        """
+        if self._index is None:
+            return [], None
+
+        # Filter to collection and include vectors
+        matching = []
+        for i, payload in enumerate(self._payloads):
+            if payload.get("_collection") == collection:
+                record_id = self._ids[i] if i < len(self._ids) else f"id_{i}"
+                clean_payload = {k: v for k, v in payload.items() if k != "_collection"}
+
+                # Reconstruct vector from FAISS index
+                vector = self._index.reconstruct(i).tolist()
+
+                matching.append(
+                    {
+                        "id": record_id,
+                        "payload": clean_payload,
+                        "vector": vector,
+                    }
+                )
+
+        # Apply offset and limit
+        start = offset
+        end = offset + limit
+        batch = matching[start:end]
+
+        next_offset = end if end < len(matching) else None
+
+        return batch, next_offset
+
     def count(self, collection: Optional[str] = None) -> int:
         """
         Return the number of vectors.
@@ -414,7 +465,9 @@ class FaissLocalVectorDB:
 
         # Find indices to keep
         keep_indices = [
-            i for i, p in enumerate(self._payloads) if p.get("_collection") != collection
+            i
+            for i, p in enumerate(self._payloads)
+            if p.get("_collection") != collection
         ]
 
         deleted = self._index.ntotal - len(keep_indices)
@@ -448,7 +501,9 @@ class FaissLocalVectorDB:
         if self._persist:
             self._save()
 
-        logger.info(f"{VECTOR_DB} Deleted {deleted} vectors from collection '{collection}'")
+        logger.info(
+            f"{VECTOR_DB} Deleted {deleted} vectors from collection '{collection}'"
+        )
         return deleted
 
 

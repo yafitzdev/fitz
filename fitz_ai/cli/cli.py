@@ -9,6 +9,7 @@ Commands:
     fitz query         Query knowledge base
     fitz chat          Interactive conversation with your knowledge base
     fitz collections   Manage collections (list, info, delete)
+    fitz map           Visualize knowledge base as interactive graph
     fitz config        View configuration
     fitz doctor        System diagnostics
 """
@@ -34,6 +35,7 @@ def _register_commands() -> None:
         doctor,
         ingest,
         init,
+        map,
         query,
         quickstart,
     )
@@ -49,6 +51,9 @@ def _register_commands() -> None:
 
     # Collection management (interactive)
     app.command("collections")(collections.command)
+
+    # Knowledge visualization
+    app.command("map")(map.command)
 
     # Utility commands
     app.command("config")(config.command)

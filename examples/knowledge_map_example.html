@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fitz Knowledge Map</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            height: 100vh;
+            display: flex;
+        }
+        #sidebar {
+            width: 320px;
+            background: #161b22;
+            border-right: 1px solid #30363d;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        #graph {
+            flex: 1;
+            height: 100vh;
+        }
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+            color: #58a6ff;
+        }
+        .subtitle {
+            font-size: 0.85rem;
+            color: #8b949e;
+            margin-bottom: 20px;
+        }
+        .section {
+            margin-bottom: 24px;
+        }
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #8b949e;
+            margin-bottom: 12px;
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .stat-box {
+            background: #21262d;
+            border-radius: 6px;
+            padding: 12px;
+        }
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            color: #8b949e;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .legend-line {
+            width: 24px;
+            height: 2px;
+        }
+        .gap-list {
+            list-style: none;
+        }
+        .gap-item {
+            background: #f8514926;
+            border: 1px solid #f8514966;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+        .gap-item .icon {
+            color: #f85149;
+            margin-right: 6px;
+        }
+        .cluster-item {
+            background: #21262d;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .cluster-item:hover {
+            background: #30363d;
+        }
+        .cluster-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .cluster-count {
+            font-size: 0.75rem;
+            color: #8b949e;
+        }
+        #node-detail {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        #node-detail.empty {
+            justify-content: center;
+            align-items: center;
+            color: #484f58;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .detail-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .detail-type {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: #388bfd33;
+            color: #58a6ff;
+        }
+        .detail-type.doc {
+            background: #a371f733;
+            color: #a371f7;
+        }
+        .detail-type.gap {
+            background: #f8514933;
+            color: #f85149;
+        }
+        .detail-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .detail-meta {
+            font-size: 0.8rem;
+            color: #8b949e;
+            margin-bottom: 12px;
+        }
+        .detail-content {
+            background: #0d1117;
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #30363d;
+        }
+        .controls {
+            margin-bottom: 16px;
+        }
+        .slider-container {
+            margin-bottom: 12px;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            margin-bottom: 6px;
+        }
+        input[type="range"] {
+            width: 100%;
+            accent-color: #58a6ff;
+        }
+        .btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            width: 100%;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background: #30363d;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h1>📚 Knowledge Map</h1>
+        <p class="subtitle">fitz-ai knowledge base visualization</p>
+
+        <div class="section">
+            <div class="section-title">Overview</div>
+            <div class="stat-grid">
+                <div class="stat-box">
+                    <div class="stat-value" id="doc-count">5</div>
+                    <div class="stat-label">Documents</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="chunk-count">24</div>
+                    <div class="stat-label">Chunks</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="cluster-count">4</div>
+                    <div class="stat-label">Clusters</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="gap-count">2</div>
+                    <div class="stat-label">Gaps</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section controls">
+            <div class="section-title">Controls</div>
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Similarity threshold</span>
+                    <span id="threshold-value">0.70</span>
+                </div>
+                <input type="range" id="threshold" min="0.5" max="0.95" step="0.05" value="0.70">
+            </div>
+            <button class="btn" onclick="resetView()">Reset View</button>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Legend</div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #a371f7;"></div>
+                <span>Document</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #58a6ff;"></div>
+                <span>Chunk</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #f85149;"></div>
+                <span>Gap (isolated)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-line" style="background: #30363d;"></div>
+                <span>Hierarchy</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-line" style="background: #3fb95066;"></div>
+                <span>Similarity</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Detected Gaps</div>
+            <ul class="gap-list">
+                <li class="gap-item">
+                    <span class="icon">⚠</span>
+                    <strong>Error handling</strong> - mentioned but not documented
+                </li>
+                <li class="gap-item">
+                    <span class="icon">⚠</span>
+                    <strong>Authentication flow</strong> - only 1 chunk, isolated
+                </li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Clusters</div>
+            <div class="cluster-item" onclick="focusCluster('api')">
+                <div class="cluster-name">🔌 API Reference</div>
+                <div class="cluster-count">8 chunks • 2 documents</div>
+            </div>
+            <div class="cluster-item" onclick="focusCluster('config')">
+                <div class="cluster-name">⚙️ Configuration</div>
+                <div class="cluster-count">6 chunks • 1 document</div>
+            </div>
+            <div class="cluster-item" onclick="focusCluster('tutorial')">
+                <div class="cluster-name">📖 Tutorials</div>
+                <div class="cluster-count">7 chunks • 2 documents</div>
+            </div>
+            <div class="cluster-item" onclick="focusCluster('auth')">
+                <div class="cluster-name">🔐 Authentication</div>
+                <div class="cluster-count">3 chunks • 1 document</div>
+            </div>
+        </div>
+
+        <div class="section" id="node-detail" class="empty">
+            <div class="section-title">Selected Node</div>
+            <div id="detail-content" style="color: #484f58; font-size: 0.85rem;">
+                Click a node to see details
+            </div>
+        </div>
+    </div>
+
+    <div id="graph"></div>
+
+    <script>
+        // Sample data representing a knowledge base
+        const documents = [
+            { id: 'doc-api', label: 'api-reference.md', cluster: 'api', x: -200, y: -100 },
+            { id: 'doc-endpoints', label: 'endpoints.md', cluster: 'api', x: -100, y: -150 },
+            { id: 'doc-config', label: 'configuration.md', cluster: 'config', x: 200, y: -50 },
+            { id: 'doc-quickstart', label: 'quickstart.md', cluster: 'tutorial', x: 0, y: 200 },
+            { id: 'doc-advanced', label: 'advanced-usage.md', cluster: 'tutorial', x: 100, y: 250 },
+        ];
+
+        const chunks = [
+            // API cluster
+            { id: 'c1', doc: 'doc-api', label: 'REST API overview', cluster: 'api', content: 'The fitz-ai REST API provides endpoints for querying your knowledge base, managing documents, and configuring the system.' },
+            { id: 'c2', doc: 'doc-api', label: 'Query endpoint', cluster: 'api', content: 'POST /api/query - Submit a natural language query to the knowledge base. Returns ranked results with provenance.' },
+            { id: 'c3', doc: 'doc-api', label: 'Response format', cluster: 'api', content: 'All API responses follow a standard format: { answer, sources, confidence, provenance }' },
+            { id: 'c4', doc: 'doc-endpoints', label: 'POST /ingest', cluster: 'api', content: 'Ingest new documents into the knowledge base. Supports PDF, Markdown, and plain text.' },
+            { id: 'c5', doc: 'doc-endpoints', label: 'GET /collections', cluster: 'api', content: 'List all collections in the vector database with their chunk counts and metadata.' },
+            { id: 'c6', doc: 'doc-endpoints', label: 'DELETE /documents', cluster: 'api', content: 'Remove documents from the knowledge base by ID or source path.' },
+            { id: 'c7', doc: 'doc-api', label: 'Rate limiting', cluster: 'api', content: 'API requests are rate-limited to 100 requests per minute per API key.' },
+            { id: 'c8', doc: 'doc-api', label: 'Versioning', cluster: 'api', content: 'The API uses URL versioning. Current version is v1. Breaking changes increment major version.' },
+
+            // Config cluster
+            { id: 'c9', doc: 'doc-config', label: 'YAML config', cluster: 'config', content: 'Configuration is done via fitz.yaml in your project root. All settings have sensible defaults.' },
+            { id: 'c10', doc: 'doc-config', label: 'LLM settings', cluster: 'config', content: 'Configure your LLM provider: ollama (local), openai, anthropic. Set model, temperature, max_tokens.' },
+            { id: 'c11', doc: 'doc-config', label: 'Vector DB', cluster: 'config', content: 'Vector database options: faiss (local), qdrant, pinecone, weaviate. FAISS is default for local-first.' },
+            { id: 'c12', doc: 'doc-config', label: 'Embedding models', cluster: 'config', content: 'Choose embedding model based on your needs. Local: nomic-embed-text. Cloud: text-embedding-3-small.' },
+            { id: 'c13', doc: 'doc-config', label: 'Chunking strategy', cluster: 'config', content: 'Chunking options: fixed (by tokens), semantic (by meaning), recursive (by structure).' },
+            { id: 'c14', doc: 'doc-config', label: 'Retrieval params', cluster: 'config', content: 'Configure top_k, similarity_threshold, reranking, and hybrid search weights.' },
+
+            // Tutorial cluster
+            { id: 'c15', doc: 'doc-quickstart', label: 'Installation', cluster: 'tutorial', content: 'pip install fitz-ai[local] for local-first setup with Ollama and FAISS.' },
+            { id: 'c16', doc: 'doc-quickstart', label: 'First query', cluster: 'tutorial', content: 'Run: fitz quickstart ./docs "What is this about?" for zero-config RAG.' },
+            { id: 'c17', doc: 'doc-quickstart', label: 'Project init', cluster: 'tutorial', content: 'Run: fitz init to create a new fitz project with interactive configuration.' },
+            { id: 'c18', doc: 'doc-advanced', label: 'Custom engines', cluster: 'tutorial', content: 'Create custom engines by implementing the KnowledgeEngine protocol.' },
+            { id: 'c19', doc: 'doc-advanced', label: 'Plugin system', cluster: 'tutorial', content: 'Extend fitz with plugins for LLM, embedding, vector DB, and retrieval.' },
+            { id: 'c20', doc: 'doc-advanced', label: 'Hierarchical RAG', cluster: 'tutorial', content: 'Enable hierarchical enrichment for multi-level summaries and better context.' },
+            { id: 'c21', doc: 'doc-advanced', label: 'Artifacts', cluster: 'tutorial', content: 'Generate artifacts like navigation indices and interface catalogs during ingestion.' },
+
+            // Auth cluster (sparse - this is a "gap")
+            { id: 'c22', doc: 'doc-api', label: 'API keys', cluster: 'auth', content: 'Generate API keys via the CLI: fitz api-key create. Keys are stored locally.', isGap: true },
+            { id: 'c23', doc: 'doc-config', label: 'Auth config', cluster: 'auth', content: 'Authentication is optional for local deployments. Enable with auth.enabled: true', isGap: true },
+            { id: 'c24', doc: 'doc-api', label: 'Token auth', cluster: 'auth', content: 'Pass API key in Authorization header: Bearer <key>', isGap: true },
+        ];
+
+        // Similarity relationships (computed from embeddings in real implementation)
+        const similarities = [
+            { from: 'c1', to: 'c2', similarity: 0.85 },
+            { from: 'c2', to: 'c3', similarity: 0.82 },
+            { from: 'c4', to: 'c5', similarity: 0.78 },
+            { from: 'c5', to: 'c6', similarity: 0.75 },
+            { from: 'c9', to: 'c10', similarity: 0.80 },
+            { from: 'c10', to: 'c11', similarity: 0.77 },
+            { from: 'c11', to: 'c12', similarity: 0.83 },
+            { from: 'c13', to: 'c14', similarity: 0.79 },
+            { from: 'c15', to: 'c16', similarity: 0.88 },
+            { from: 'c16', to: 'c17', similarity: 0.81 },
+            { from: 'c18', to: 'c19', similarity: 0.76 },
+            { from: 'c19', to: 'c20', similarity: 0.72 },
+            { from: 'c20', to: 'c21', similarity: 0.74 },
+            // Cross-cluster similarities
+            { from: 'c3', to: 'c9', similarity: 0.65 },
+            { from: 'c14', to: 'c20', similarity: 0.68 },
+            { from: 'c1', to: 'c15', similarity: 0.60 },
+            { from: 'c7', to: 'c22', similarity: 0.55 },
+        ];
+
+        const clusterColors = {
+            'api': '#388bfd',
+            'config': '#a371f7',
+            'tutorial': '#3fb950',
+            'auth': '#f85149'
+        };
+
+        const clusterPositions = {
+            'api': { x: -200, y: -100 },
+            'config': { x: 250, y: -80 },
+            'tutorial': { x: 50, y: 220 },
+            'auth': { x: -280, y: 180 }
+        };
+
+        let currentThreshold = 0.70;
+        let network = null;
+        let allNodes = [];
+        let allEdges = [];
+
+        function buildGraph(threshold) {
+            const nodes = [];
+            const edges = [];
+
+            // Add document nodes
+            documents.forEach((doc, i) => {
+                const pos = clusterPositions[doc.cluster];
+                nodes.push({
+                    id: doc.id,
+                    label: doc.label,
+                    shape: 'box',
+                    color: {
+                        background: clusterColors[doc.cluster] + '33',
+                        border: clusterColors[doc.cluster],
+                        highlight: {
+                            background: clusterColors[doc.cluster] + '66',
+                            border: clusterColors[doc.cluster]
+                        }
+                    },
+                    font: { color: '#f0f6fc', size: 12 },
+                    borderWidth: 2,
+                    margin: 10,
+                    x: pos.x + (i % 2) * 80,
+                    y: pos.y,
+                    nodeType: 'document',
+                    cluster: doc.cluster
+                });
+            });
+
+            // Add chunk nodes
+            chunks.forEach((chunk, i) => {
+                const pos = clusterPositions[chunk.cluster];
+                const docIndex = documents.findIndex(d => d.id === chunk.doc);
+                const angle = (i * 0.8) + Math.random() * 0.5;
+                const radius = 80 + Math.random() * 60;
+
+                nodes.push({
+                    id: chunk.id,
+                    label: chunk.label,
+                    shape: 'dot',
+                    size: chunk.isGap ? 12 : 10,
+                    color: {
+                        background: chunk.isGap ? '#f85149' : clusterColors[chunk.cluster],
+                        border: chunk.isGap ? '#f85149' : clusterColors[chunk.cluster],
+                        highlight: {
+                            background: chunk.isGap ? '#ff6b6b' : clusterColors[chunk.cluster],
+                            border: '#ffffff'
+                        }
+                    },
+                    font: { color: '#8b949e', size: 10 },
+                    x: pos.x + Math.cos(angle) * radius,
+                    y: pos.y + Math.sin(angle) * radius,
+                    nodeType: 'chunk',
+                    cluster: chunk.cluster,
+                    content: chunk.content,
+                    docId: chunk.doc,
+                    isGap: chunk.isGap
+                });
+
+                // Hierarchy edge (doc -> chunk)
+                edges.push({
+                    from: chunk.doc,
+                    to: chunk.id,
+                    color: { color: '#30363d', opacity: 0.5 },
+                    width: 1,
+                    smooth: { type: 'continuous' },
+                    edgeType: 'hierarchy'
+                });
+            });
+
+            // Add similarity edges (filtered by threshold)
+            similarities.forEach(sim => {
+                if (sim.similarity >= threshold) {
+                    edges.push({
+                        from: sim.from,
+                        to: sim.to,
+                        color: {
+                            color: `rgba(63, 185, 80, ${sim.similarity * 0.6})`,
+                            highlight: '#3fb950'
+                        },
+                        width: (sim.similarity - 0.5) * 4,
+                        smooth: { type: 'continuous' },
+                        edgeType: 'similarity',
+                        similarity: sim.similarity
+                    });
+                }
+            });
+
+            return { nodes, edges };
+        }
+
+        function initGraph() {
+            const container = document.getElementById('graph');
+            const data = buildGraph(currentThreshold);
+            allNodes = data.nodes;
+            allEdges = data.edges;
+
+            const options = {
+                nodes: {
+                    font: {
+                        face: 'system-ui, -apple-system, sans-serif'
+                    }
+                },
+                edges: {
+                    smooth: {
+                        type: 'continuous',
+                        forceDirection: 'none'
+                    }
+                },
+                physics: {
+                    enabled: true,
+                    solver: 'forceAtlas2Based',
+                    forceAtlas2Based: {
+                        gravitationalConstant: -50,
+                        centralGravity: 0.01,
+                        springLength: 100,
+                        springConstant: 0.08,
+                        damping: 0.4
+                    },
+                    stabilization: {
+                        iterations: 150,
+                        updateInterval: 25
+                    }
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 100,
+                    zoomView: true,
+                    dragView: true
+                }
+            };
+
+            network = new vis.Network(container, { nodes: allNodes, edges: allEdges }, options);
+
+            network.on('click', function(params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    showNodeDetail(nodeId);
+                }
+            });
+
+            network.on('hoverNode', function(params) {
+                document.body.style.cursor = 'pointer';
+            });
+
+            network.on('blurNode', function(params) {
+                document.body.style.cursor = 'default';
+            });
+        }
+
+        function showNodeDetail(nodeId) {
+            const node = allNodes.find(n => n.id === nodeId);
+            if (!node) return;
+
+            const detailDiv = document.getElementById('detail-content');
+
+            if (node.nodeType === 'document') {
+                const docChunks = chunks.filter(c => c.doc === nodeId);
+                detailDiv.innerHTML = `
+                    <div class="detail-header">
+                        <span class="detail-type doc">Document</span>
+                    </div>
+                    <div class="detail-title">${node.label}</div>
+                    <div class="detail-meta">
+                        Cluster: ${node.cluster} • ${docChunks.length} chunks
+                    </div>
+                    <div class="detail-content">
+                        <strong>Chunks:</strong><br>
+                        ${docChunks.map(c => `• ${c.label}`).join('<br>')}
+                    </div>
+                `;
+            } else {
+                const chunk = chunks.find(c => c.id === nodeId);
+                const doc = documents.find(d => d.id === chunk.doc);
+                detailDiv.innerHTML = `
+                    <div class="detail-header">
+                        <span class="detail-type ${chunk.isGap ? 'gap' : ''}">
+                            ${chunk.isGap ? 'Gap' : 'Chunk'}
+                        </span>
+                    </div>
+                    <div class="detail-title">${chunk.label}</div>
+                    <div class="detail-meta">
+                        From: ${doc.label} • Cluster: ${chunk.cluster}
+                    </div>
+                    <div class="detail-content">${chunk.content}</div>
+                `;
+            }
+        }
+
+        function updateThreshold(value) {
+            currentThreshold = parseFloat(value);
+            document.getElementById('threshold-value').textContent = value;
+
+            const data = buildGraph(currentThreshold);
+            network.setData({ nodes: data.nodes, edges: data.edges });
+            allNodes = data.nodes;
+            allEdges = data.edges;
+        }
+
+        function resetView() {
+            network.fit({ animation: true });
+        }
+
+        function focusCluster(clusterId) {
+            const clusterNodeIds = allNodes
+                .filter(n => n.cluster === clusterId)
+                .map(n => n.id);
+
+            network.selectNodes(clusterNodeIds);
+            network.fit({
+                nodes: clusterNodeIds,
+                animation: true
+            });
+        }
+
+        // Initialize
+        document.getElementById('threshold').addEventListener('input', (e) => {
+            updateThreshold(e.target.value);
+        });
+
+        initGraph();
+    </script>
+</body>
+</html>
