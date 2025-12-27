@@ -22,19 +22,17 @@ That's it. Your documents are now searchable with AI.
 ## Why Fitz? 💡
 
 1. [x] **Point at a folder. Ask a question. Get an answer with sources.**
-
-
+####
 2. [x] **❗Swap RAG engines in one line, no migration needed.** Fitz is designed for people who anticipate RAG to evolve.
 3. [x] **❗Admits it doesn't know when the answer isn't there.** No hallucinations, no confident nonsense.
 4. [x] **❗Hierarchical RAG for analytical queries.** "What are the trends?" retrieves summaries, not random chunks.
-
-
+####
 5. [x] **Local execution possible.** FAISS and Ollama support, no API keys required to start.
 6. [x] **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
 7. [X] **Incrementental ingestion.** Only reprocesses changed files, even with new chunking settings.
 7. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
 8. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
-
+####
 Any questions left? Try fitz on itself:
 
 ```bash
