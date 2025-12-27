@@ -57,56 +57,66 @@ Built from scratch—no LangChain or LlamaIndex under the hood.
 
 <summary><strong>📦 Fitz vs LangChain vs LlamaIndex</strong></summary>
 
+<br>
+
 #### Fitz opts for a deliberately narrower approach.
+>
+>LangChain and LlamaIndex are powerful **LLM application frameworks** designed to help developers build complex, end-to-end AI systems. 
+>Fitz provides a **minimal, replaceable RAG engine** with strong epistemic guarantees — without locking users into a framework, ecosystem, or long-term architectural commitment.
+>
+>Fitz is not a competitor in scope.  
+>It is an infrastructure primitive.
 
-LangChain and LlamaIndex are powerful **LLM application frameworks** designed to help developers build complex, end-to-end AI systems. 
-Fitz provides a **minimal, replaceable RAG engine** with strong epistemic guarantees — without locking users into a framework, ecosystem, or long-term architectural commitment.
-
-Fitz is not a competitor in scope.  
-It is an infrastructure primitive.
+<br>
 
 #### Core philosophical differences ⚖️
+>
+>| Dimension | Fitz | LangChain | LlamaIndex |
+>|--------|------|-----------|------------|
+>| Primary role | **RAG engine** | LLM application framework | LLM data framework |
+>| User commitment | **No framework lock-in** | High | High |
+>| Engine coupling | **Swappable in one line** | Deep | Deep |
+>| Design goal | Correctness & honesty | Flexibility | Data integration |
+>| Long-term risk | Low | Migration-heavy | Migration-heavy |
 
-| Dimension | Fitz | LangChain | LlamaIndex |
-|--------|------|-----------|------------|
-| Primary role | **RAG engine** | LLM application framework | LLM data framework |
-| User commitment | **No framework lock-in** | High | High |
-| Engine coupling | **Swappable in one line** | Deep | Deep |
-| Design goal | Correctness & honesty | Flexibility | Data integration |
-| Long-term risk | Low | Migration-heavy | Migration-heavy |
-
+<br>
 
 #### Epistemic behavior (truth over fluency) 🎯
+>
+>| Aspect | Fitz | LangChain / LlamaIndex |
+>|-----|------|------------------------|
+>| “I don’t know” | **First-class behavior** | Not guaranteed |
+>| Hallucination handling | Designed-in | Usually prompt-level |
+>| Confidence signaling | Explicit | Implicit |
+>
+>Fitz treats uncertainty as a **feature**, not a failure.  
+>If the system cannot support an answer with retrieved evidence, it says so.
 
-| Aspect | Fitz | LangChain / LlamaIndex |
-|-----|------|------------------------|
-| “I don’t know” | **First-class behavior** | Not guaranteed |
-| Hallucination handling | Designed-in | Usually prompt-level |
-| Confidence signaling | Explicit | Implicit |
-
-Fitz treats uncertainty as a **feature**, not a failure.  
-If the system cannot support an answer with retrieved evidence, it says so.
+<br>
 
 #### Transparency & provenance 🔎
+>
+>| Capability | Fitz | LangChain / LlamaIndex |
+>|---------|------|------------------------|
+>| Source attribution | **Mandatory** | Optional |
+>| Retrieval trace | **Explicit & structured** | Often opaque |
+>| Debuggability | Built-in | Tool-dependent |
+>
+>Every answer in Fitz is fully auditable down to the retrieval step.
 
-| Capability | Fitz | LangChain / LlamaIndex |
-|---------|------|------------------------|
-| Source attribution | **Mandatory** | Optional |
-| Retrieval trace | **Explicit & structured** | Often opaque |
-| Debuggability | Built-in | Tool-dependent |
-
-Every answer in Fitz is fully auditable down to the retrieval step.
+<br>
 
 #### Scope & complexity 🪐
+>
+>| Aspect | Fitz | LangChain / LlamaIndex |
+>|-----|------|------------------------|
+>| Chains / agents | ❎ | ✔ |
+>| Prompt graphs | ❎ | ✔ |
+>| UI abstractions | ❎ | Often |
+>| Cognitive overhead | **Very low** | High |
+>
+>Fitz intentionally does less — so it can be trusted more.
 
-| Aspect | Fitz | LangChain / LlamaIndex |
-|-----|------|------------------------|
-| Chains / agents | ❎ | ✔ |
-| Prompt graphs | ❎ | ✔ |
-| UI abstractions | ❎ | Often |
-| Cognitive overhead | **Very low** | High |
-
-Fitz intentionally does less — so it can be trusted more.
 </details>
 
 ---
@@ -147,7 +157,7 @@ Fitz intentionally does less — so it can be trusted more.
 >- **📗 InsufficientEvidenceConstraint**: Blocks answers without evidence
 >- **📘 CausalAttributionConstraint**: Prevents hallucinated cause-effect claims
 
-
+<br>
 
 #### Swappable RAG Engines 🔄
 
@@ -184,7 +194,7 @@ Fitz intentionally does less — so it can be trusted more.
 >
 >No migration. No re-ingestion. No new API to learn.
 
-
+<br>
 
 #### Full Provenance 🗂️
 
@@ -198,7 +208,7 @@ Fitz intentionally does less — so it can be trusted more.
 >  [2] faq/payments.md [chunk 1] (score: 0.87)
 >```
 
-
+<br>
 
 #### Incremental Ingestion ⚡
 
@@ -217,7 +227,7 @@ Fitz intentionally does less — so it can be trusted more.
 >
 >Re-running ingestion on a large codebase takes seconds, not minutes. Changed your chunking config? Fitz detects that too and re-processes affected files.
 
-
+<br>
 
 #### Smart Chunking 🧠
 
@@ -231,7 +241,7 @@ Fitz intentionally does less — so it can be trusted more.
 >
 >No more retrieving half a function or a code block split mid-syntax.
 
-
+<br>
 
 #### Enrichment ✨
 
@@ -242,7 +252,7 @@ Fitz intentionally does less — so it can be trusted more.
 >
 >Your question matches enriched context, not just raw text. Fully extensible—add your own enrichment plugins.
 
-
+<br>
 
 #### Hierarchical RAG 📊
 
@@ -291,7 +301,7 @@ Fitz intentionally does less — so it can be trusted more.
 
 <summary><strong>📦 Quick Start</strong></summary>
 
-#### 
+<br>
 
 ```bash
 pip install fitz-ai
@@ -300,6 +310,8 @@ fitz quickstart ./docs "Your question here"
 ```
 
 That's it. Fitz will prompt you for anything it needs.
+
+<br>
 
 Want to go fully local with Ollama? No problem:
 
@@ -322,9 +334,11 @@ No data leaves your machine. No API costs. Same interface.
 
 <summary><strong>📦 Real-World Usage</strong></summary>
 
-#### 
+<br>
 
 Fitz is a foundation. It handles document ingestion and grounded retrieval—you build whatever sits on top: chatbots, dashboards, alerts, or automation.
+
+<br>
 
 <strong>Chatbot Backend 🤖</strong>
 
@@ -332,11 +346,15 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 >
 > *Example:* A SaaS company plugs fitz into their support bot. Tier-1 questions like "How do I reset my password?" get instant answers. Their support team focuses on edge cases while fitz deflects 60% of incoming tickets.
 
+<br>
+
 <strong>Internal Knowledge Base 📖</strong>
 
 > Point fitz at your company's wiki, policies, and runbooks. Employees ask natural language questions instead of hunting through folders or pinging colleagues on Slack.
 >
 > *Example:* A 200-person startup ingests their Notion workspace and compliance docs. New hires find answers to "How do I request PTO?" on day one—no more waiting for someone in HR to respond.
+
+<br>
 
 <strong>Continuous Intelligence & Alerting (Watchdog) 🐶</strong>
 
@@ -344,11 +362,15 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 >
 > *Example:* A security team ingests SIEM logs nightly. Every morning, a scheduled job asks "Were there failed logins from unusual locations?" If fitz finds evidence, an alert fires to the on-call channel before anyone checks email.
 
+<br>
+
 <strong>Web Knowledge Base 🌎</strong>
 
 > Scrape the web with Scrapy, BeautifulSoup, or Playwright. Save to disk, ingest with fitz. The web becomes a queryable knowledge base.
 >
 > *Example:* A football analytics hobbyist scrapes Premier League match reports. After ingesting, they ask "How did Arsenal perform against top 6 teams?" or "What tactics did Liverpool use in away games?"—insights that would take hours to compile manually.
+
+<br>
 
 <strong>Codebase Search 🐍</strong>
 
@@ -364,7 +386,7 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 
 <summary><strong>📦 Architecture</strong></summary>
 
-#### 
+<br>
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -403,7 +425,7 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 
 <summary><strong>📦 CLI Reference</strong></summary>
 
-#### 
+<br>
 
 ```bash
 fitz quickstart [PATH] [QUESTION]    # Zero-config RAG (start here)
@@ -424,7 +446,7 @@ fitz doctor                          # System diagnostics
 
 <summary><strong>📦 Beyond RAG</strong></summary>
 
-#### 
+<br>
 
 > **RAG is a method. Knowledge access is a strategy.**
 
@@ -453,7 +475,7 @@ The engine is an implementation detail. Your ingested knowledge, your queries, y
 
 <summary><strong>📦 Philosophy</strong></summary>
 
-#### 
+<br>
 
 **Principles:**
 - **Explicit over clever**: No magic. Read the config, know what happens.
