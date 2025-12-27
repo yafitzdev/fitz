@@ -35,12 +35,18 @@ Built from scratch—no LangChain or LlamaIndex under the hood.
 ## Why Fitz? 💡
 
 1. [x] **Point at a folder. Ask a question. Get an answer with sources.**
+
+
 2. [x] **❗Swap RAG engines in one line, no migration needed.** Fitz is designed for people who anticipate RAG to evolve.
-3. [x] **Admits it doesn't know when the answer isn't there.** No hallucinations, no confident nonsense.
-4. [x] **Local execution possible.** FAISS and Ollama support, no API keys required to start.
-5. [x] **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
-6. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
-7. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
+3. [x] **❗Admits it doesn't know when the answer isn't there.** No hallucinations, no confident nonsense.
+4. [x] **❗Hierarchical RAG for analytical queries.** "What are the trends?" retrieves summaries, not random chunks.
+
+
+5. [x] **Local execution possible.** FAISS and Ollama support, no API keys required to start.
+6. [x] **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
+7. [X] **Incrementental ingestion.** Only reprocesses changed files, even with new chunking settings.
+7. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
+8. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
 
 Any questions left? Try fitz on itself:
 
@@ -147,6 +153,43 @@ Fitz intentionally does less — so it can be trusted more.
 
 
 
+#### Swappable RAG Engines 🔄
+
+>Your data stays. Your queries stay. Only the engine changes.
+>
+>```
+>        ┌─────────────────────────────────────┐
+>        │           Your Query                │
+>        │   "What are the payment terms?"     │
+>        └──────────────────┬──────────────────┘
+>                           │
+>                           ▼
+>        ┌─────────────────────────────────────┐
+>        │       engine="..."                  │
+>        │  ┌─────────┐ ┌───────┐ ┌─────────┐  │
+>        │  │ classic │ │ clara │ │ graph   │  │
+>        │  │  _rag   │ │       │ │  _rag   │  │
+>        │  └────┬────┘ └───┬───┘ └────┬────┘  │
+>        │       └──────────┼──────────┘       │
+>        └──────────────────┼──────────────────┘
+>                           │
+>                           ▼
+>        ┌─────────────────────────────────────┐
+>        │       Your Ingested Knowledge       │
+>        │      (unchanged across engines)     │
+>        └─────────────────────────────────────┘
+>```
+>
+>```python
+>answer = run("What are the payment terms?", engine="classic_rag")
+>answer = run("What are the payment terms?", engine="clara")
+>answer = run("What are the payment terms?", engine="graph_rag")  # future
+>```
+>
+>No migration. No re-ingestion. No new API to learn.
+
+
+
 #### Full Provenance 🗂️
 
 >Every answer traces back to its source:
@@ -191,43 +234,6 @@ Fitz intentionally does less — so it can be trusted more.
 >| **PDF** | Section-aware: detects numbered headings (1.1, 2.3.1), roman numerals, and keywords (Abstract, Conclusion). |
 >
 >No more retrieving half a function or a code block split mid-syntax.
-
----
-
-#### Swappable RAG Engines 🔄
-
->Your data stays. Your queries stay. Only the engine changes.
->
->```
->        ┌─────────────────────────────────────┐
->        │           Your Query                │
->        │   "What are the payment terms?"     │
->        └──────────────────┬──────────────────┘
->                           │
->                           ▼
->        ┌─────────────────────────────────────┐
->        │       engine="..."                  │
->        │  ┌─────────┐ ┌───────┐ ┌─────────┐  │
->        │  │ classic │ │ clara │ │ graph   │  │
->        │  │  _rag   │ │       │ │  _rag   │  │
->        │  └────┬────┘ └───┬───┘ └────┬────┘  │
->        │       └──────────┼──────────┘       │
->        └──────────────────┼──────────────────┘
->                           │
->                           ▼
->        ┌─────────────────────────────────────┐
->        │       Your Ingested Knowledge       │
->        │      (unchanged across engines)     │
->        └─────────────────────────────────────┘
->```
->
->```python
->answer = run("What are the payment terms?", engine="classic_rag")
->answer = run("What are the payment terms?", engine="clara")
->answer = run("What are the payment terms?", engine="graph_rag")  # future
->```
->
->No migration. No re-ingestion. No new API to learn.
 
 
 
@@ -283,9 +289,11 @@ Fitz intentionally does less — so it can be trusted more.
 >No special query syntax. No retrieval config changes. Summaries match analytical queries naturally via vector similarity.
 </details>
 
+---
 
+<details>
 
-## Quick Start 🚀
+<summary><strong>📦 Quick Start</strong></summary>
 
 ```bash
 pip install fitz-ai
@@ -308,9 +316,13 @@ fitz quickstart ./docs "Your question here"
 
 No data leaves your machine. No API costs. Same interface.
 
+</details>
+
 ---
 
-## Real-World Usage
+<details>
+
+<summary><strong>📦 Real-World Usage</strong></summary>
 
 Fitz is a foundation. It handles document ingestion and grounded retrieval—you build whatever sits on top: chatbots, dashboards, alerts, or automation.
 
@@ -344,9 +356,13 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 >
 > *Example:* A team inherits a legacy Django monolith—200k lines, sparse docs. They ingest the codebase and ask "Where is user authentication handled?" or "What API endpoints modify the billing table?" New developers onboard in days instead of weeks.
 
+</details>
+
 ---
 
-## Architecture 🏛
+<details>
+
+<summary><strong>📦 Architecture</strong></summary>
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -376,9 +392,14 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 │  ConflictAware | InsufficientEvidence | CausalAttribution     │
 └───────────────────────────────────────────────────────────────┘
 ```
+
+</details>
+
 ---
 
-## CLI Reference ⌨️
+<details>
+
+<summary><strong>📦 CLI Reference</strong></summary>
 
 ```bash
 fitz quickstart [PATH] [QUESTION]    # Zero-config RAG (start here)
@@ -391,9 +412,13 @@ fitz config                          # View/edit configuration
 fitz doctor                          # System diagnostics
 ```
 
+</details>
+
 ---
 
-## Beyond RAG 🔭
+<details>
+
+<summary><strong>📦 Beyond RAG</strong></summary>
 
 > **RAG is a method. Knowledge access is a strategy.**
 
@@ -414,9 +439,13 @@ answer = run("What are the payment terms?", engine="graph_rag")
 
 The engine is an implementation detail. Your ingested knowledge, your queries, your workflow—all stay the same. When a better retrieval paradigm emerges, swap one line, not your entire codebase.
 
+</details>
+
 ---
 
-## Philosophy 🧭
+<details>
+
+<summary><strong>📦 Philosophy</strong></summary>
 
 **Principles:**
 - **Explicit over clever**: No magic. Read the config, know what happens.
@@ -424,15 +453,17 @@ The engine is an implementation detail. Your ingested knowledge, your queries, y
 - **Honest over helpful**: Better to say "I don't know" than hallucinate.
 - **Files over frameworks**: YAML plugins over class hierarchies.
 
+</details>
+
 ---
 
-## License 🪪
+## License
 
 MIT
 
 ---
 
-## Links 🔗
+## Links
 
 - [GitHub](https://github.com/yafitzdev/fitz-ai)
 - [PyPI](https://pypi.org/project/fitz-ai/)
