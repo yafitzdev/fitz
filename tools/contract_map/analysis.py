@@ -13,6 +13,7 @@ except Exception:
 
 from .common import (
     DEFAULT_LAYOUT_EXCLUDES,
+    PKG,
     REPO_ROOT,
     CodeStats,
     ConfigSurface,
@@ -82,21 +83,22 @@ def find_default_yamls(root: Path, *, excludes: set[str]) -> List[str]:
 
 
 def list_loader_modules() -> List[str]:
-    """List known config loader modules."""
+    """List known config loader modules (auto-discovered)."""
     import importlib
 
     out: List[str] = []
-    for pkg in (
-        "core.config",
-        "fitz_ai.engines.classic_rag.pipeline.config",
-    ):
-        mod = f"{pkg}.loader"
-        try:
-            importlib.import_module(mod)
-            out.append(mod)
-        except Exception:
-            continue
-    return sorted(out)
+    for pkg in PKG.config_loader_packages:
+        # Try both {pkg}.loader and {pkg} directly
+        for mod_name in (f"{pkg}.loader", pkg):
+            try:
+                mod = importlib.import_module(mod_name)
+                # Check if it has a load function
+                if any(hasattr(mod, fn) for fn in ("load_config", "load")):
+                    out.append(mod_name)
+                    break
+            except Exception:
+                continue
+    return sorted(set(out))
 
 
 def find_load_callsites(root: Path, *, excludes: set[str]) -> List[str]:
@@ -123,86 +125,46 @@ def find_load_callsites(root: Path, *, excludes: set[str]) -> List[str]:
 
 def compute_hotspots(root: Path, *, excludes: set[str]) -> List[Hotspot]:
     """Identify plugin hotspots (interfaces with many implementations)."""
+    import importlib
+
+    from tools.contract_map.discovery import scan_discovery
+
     impl: Dict[str, List[str]] = {}
     consumers: Dict[str, List[str]] = {}
 
-    # UPDATED: Remove LLM plugins from Python discovery
-    # LLM plugins (chat, embedding, rerank) are now YAML-based
-    # Vector DB plugins are also YAML-based
-    expected = [
-        # Python-based plugins only
-        ("fitz_ai.engines.classic_rag.retrieval.plugins", "RetrievalPlugin"),
-        ("fitz_ai.engines.classic_rag.pipeline.pipeline.plugins", "PipelinePlugin"),
-        ("fitz_ai.ingest.chunking.plugins", "ChunkerPlugin"),
-        ("fitz_ai.ingest.ingestion.plugins", "IngestPlugin"),
-    ]
+    # Scan for YAML-based plugins from registries
+    for reg_module in PKG.registry_modules:
+        try:
+            mod = importlib.import_module(reg_module)
 
-    # For YAML-based plugins, we'll use the registry directly
-    # Add YAML plugin implementations
-    try:
-        from fitz_ai.llm.registry import available_llm_plugins
+            # LLM-style registry
+            if hasattr(mod, "available_llm_plugins"):
+                available_fn = getattr(mod, "available_llm_plugins")
+                for ptype in ("chat", "embedding", "rerank"):
+                    iface = f"{ptype.title()}Plugin"
+                    try:
+                        impl[iface] = [f"{p} (YAML)" for p in available_fn(ptype)]
+                    except Exception:
+                        impl[iface] = []
 
-        impl["ChatPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("chat")]
-        impl["EmbeddingPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("embedding")]
-        impl["RerankPlugin"] = [f"{p} (YAML)" for p in available_llm_plugins("rerank")]
-    except Exception:
-        impl["ChatPlugin"] = []
-        impl["EmbeddingPlugin"] = []
-        impl["RerankPlugin"] = []
+            # Vector DB-style registry
+            if hasattr(mod, "available_vector_db_plugins"):
+                available_fn = getattr(mod, "available_vector_db_plugins")
+                try:
+                    impl["VectorDBPlugin"] = [f"{p} (YAML)" for p in available_fn()]
+                except Exception:
+                    impl["VectorDBPlugin"] = []
 
-    try:
-        from fitz_ai.vector_db.registry import available_vector_db_plugins
+        except Exception:
+            continue
 
-        impl["VectorDBPlugin"] = [f"{p} (YAML)" for p in available_vector_db_plugins()]
-    except Exception:
-        impl["VectorDBPlugin"] = []
-
-    # Scan Python plugins
-    for ns, iface in expected:
-        from tools.contract_map.discovery import scan_discovery
-
+    # Scan Python plugins (auto-discovered)
+    for ns, iface in PKG.python_plugin_namespaces:
         rep = scan_discovery(ns, note="hotspot scan")
         impl[iface] = rep.plugins_found
 
-    # Consumer patterns remain the same
-    patterns = {
-        "ChatPlugin": ("fitz_ai.llm.chat", 'plugin_type="chat"', "plugin_type='chat'"),
-        "EmbeddingPlugin": (
-            "fitz_ai.llm.embedding",
-            'plugin_type="embedding"',
-            "plugin_type='embedding'",
-        ),
-        "RerankPlugin": (
-            "fitz_ai.llm.rerank",
-            'plugin_type="rerank"',
-            "plugin_type='rerank'",
-        ),
-        "VectorDBPlugin": (
-            "fitz_ai.vector_db",
-            'plugin_type="vector_db"',
-            "plugin_type='vector_db'",
-        ),
-        "RetrievalPlugin": (
-            "fitz_ai.engines.classic_rag.retrieval.registry",
-            "get_retriever_plugin(",
-            "RetrieverEngine.from_name(",
-        ),
-        "PipelinePlugin": (
-            "fitz_ai.engines.classic_rag.pipeline.pipeline",
-            "get_pipeline_plugin(",
-            "available_pipeline_plugins(",
-        ),
-        "ChunkerPlugin": (
-            "fitz_ai.ingest.chunking",
-            "get_chunker_plugin(",
-            "ChunkingEngine",
-        ),
-        "IngestPlugin": (
-            "fitz_ai.ingest.ingestion",
-            "get_ingest_plugin(",
-            "IngestionEngine",
-        ),
-    }
+    # Consumer patterns (auto-discovered)
+    patterns = PKG.consumer_patterns
 
     for p in iter_python_files(root, excludes=excludes):
         rel = str(p.relative_to(root))

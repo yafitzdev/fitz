@@ -30,6 +30,7 @@ from tools.contract_map.analysis import (
 from tools.contract_map.architecture import RoleResolver
 from tools.contract_map.common import (
     DEFAULT_LAYOUT_EXCLUDES,
+    PKG,
     REPO_ROOT,
     ContractMap,
     HealthIssue,
@@ -87,24 +88,15 @@ def check_discovery_health(cm: ContractMap) -> None:
             )
         )
 
-    # Check specific namespaces that should have plugins
-    expected_namespaces = {
-        "fitz_ai.llm.chat.plugins": "chat",
-        "fitz_ai.llm.embedding.plugins": "embedding",
-        "fitz_ai.vector_db.plugins": "vector_db",
-        "fitz_ai.engines.classic_rag.retrieval.plugins": "retriever",
-    }
-
+    # Check all discovered namespaces for empty plugin lists
     for report in cm.discovery:
-        if report.namespace in expected_namespaces:
-            if not report.plugins_found:
-                plugin_type = expected_namespaces[report.namespace]
-                cm.health.append(
-                    HealthIssue(
-                        level="WARN",
-                        message=f"No {plugin_type} plugins discovered in {report.namespace}",
-                    )
+        if not report.plugins_found and not report.failures:
+            cm.health.append(
+                HealthIssue(
+                    level="WARN",
+                    message=f"No plugins discovered in {report.namespace}",
                 )
+            )
 
     # Check for import failures recorded during extraction
     if cm.import_failures:
@@ -204,8 +196,8 @@ def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMa
     cm = ContractMap(
         meta={
             "python": sys.version.split()[0],
-            "repo_root": str(REPO_ROOT),
-            "cwd": str(Path.cwd()),
+            "repo_root": REPO_ROOT.name,
+            "cwd": Path.cwd().name,
         }
     )
 
@@ -292,10 +284,15 @@ def render_architecture_section() -> str:
     lines.append("")
 
     try:
-        from fitz_ai.engines.classic_rag.config.architecture import (
-            load_architecture_mapping,
+        import importlib
+
+        arch_module = importlib.import_module(
+            f"{PKG.name}.engines.classic_rag.config.architecture"
         )
-        from fitz_ai.engines.classic_rag.contracts.roles import ROLES
+        load_architecture_mapping = getattr(arch_module, "load_architecture_mapping")
+
+        roles_module = importlib.import_module(f"{PKG.name}.engines.classic_rag.contracts.roles")
+        ROLES = getattr(roles_module, "ROLES")
 
         # Show role mappings
         lines.append("### Role Mappings")

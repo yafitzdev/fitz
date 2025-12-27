@@ -7,6 +7,7 @@ import inspect
 from typing import Any, List, Type, get_type_hints
 
 from .common import (
+    PKG,
     ContractMap,
     MethodContract,
     ModelContract,
@@ -104,18 +105,7 @@ def extract_protocol_methods(proto_cls: Type[Any]) -> List[MethodContract]:
 
 def extract_models(cm: ContractMap, *, verbose: bool) -> None:
     """Extract all models from the codebase."""
-    # Updated paths to match actual project structure
-    model_modules = [
-        # Engine models (classic_rag)
-        "fitz_ai.engines.classic_rag.config.schema",
-        "fitz_ai.engines.classic_rag.models.chunk",
-        "fitz_ai.engines.classic_rag.models.document",
-        # Ingest models
-        "fitz_ai.ingest.state.schema",
-        "fitz_ai.ingest.ingestion.base",
-    ]
-
-    for mod_name in model_modules:
+    for mod_name in PKG.model_modules:
         mod = safe_import(cm, mod_name, verbose=verbose)
         if mod is None:
             continue
@@ -147,19 +137,7 @@ def extract_models(cm: ContractMap, *, verbose: bool) -> None:
 
 def extract_protocols(cm: ContractMap, *, verbose: bool) -> None:
     """Extract all protocols from the codebase."""
-    # Updated paths to match actual project structure
-    protocol_modules = [
-        # Vector DB protocols
-        "fitz_ai.vector_db.base",
-        # Engine protocols (classic_rag)
-        "fitz_ai.engines.classic_rag.retrieval.base",
-        "fitz_ai.engines.classic_rag.pipeline.base",
-        # Ingest protocols
-        "fitz_ai.ingest.chunking.base",
-        "fitz_ai.ingest.ingestion.base",
-    ]
-
-    for mod_name in protocol_modules:
+    for mod_name in PKG.protocol_modules:
         mod = safe_import(cm, mod_name, verbose=verbose)
         if mod is None:
             continue

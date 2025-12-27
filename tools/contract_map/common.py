@@ -22,6 +22,9 @@ except Exception:
     BaseModel = object  # type: ignore[assignment]
 
 
+# PKG (AutoDiscoveredConfig) is initialized after REPO_ROOT below
+
+
 # ============================================================================
 # Repo / package discovery
 # ============================================================================
@@ -36,10 +39,15 @@ def _ensure_repo_root_on_syspath() -> Path:
 
 REPO_ROOT = _ensure_repo_root_on_syspath()
 
+# Now initialize PKG with auto-discovery
+from tools.contract_map.autodiscover import AutoDiscoveredConfig
+
+PKG = AutoDiscoveredConfig(REPO_ROOT)
+
 
 def _discover_fitz_subpackages() -> set[str]:
     """
-    Discover logical top-level packages inside fitz_ai/.
+    Discover logical top-level packages inside the main package directory.
 
     Example:
         fitz_ai/
@@ -50,7 +58,7 @@ def _discover_fitz_subpackages() -> set[str]:
 
     -> {"core", "pipeline", "ingest", "retrieval"}
     """
-    fitz_dir = REPO_ROOT / "fitz_ai"
+    fitz_dir = REPO_ROOT / PKG.name
     if not fitz_dir.is_dir():
         return set()
 
@@ -298,8 +306,8 @@ def module_name_from_path(path: Path) -> str | None:
     if parts[0] == "tools":
         return ".".join(parts)
 
-    # fitz_ai.<subpkg>.*
-    if parts[0] == "fitz_ai" and len(parts) > 1 and parts[1] in FITZ_SUBPACKAGES:
+    # <package>.<subpkg>.*
+    if parts[0] == PKG.name and len(parts) > 1 and parts[1] in FITZ_SUBPACKAGES:
         return ".".join(parts)
 
     return None
@@ -310,7 +318,8 @@ def toplevel(pkg: str | None) -> str | None:
     if not pkg:
         return None
 
-    if pkg.startswith("fitz_ai."):
+    pkg_prefix = f"{PKG.name}."
+    if pkg.startswith(pkg_prefix):
         parts = pkg.split(".")
         if len(parts) >= 2:
             return parts[1]

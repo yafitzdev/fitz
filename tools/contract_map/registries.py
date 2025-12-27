@@ -6,7 +6,7 @@ from __future__ import annotations
 import traceback
 from typing import Iterable, List
 
-from .common import ContractMap, ImportFailure, RegistryContract, safe_import
+from .common import PKG, ContractMap, ImportFailure, RegistryContract, safe_import
 
 
 def maybe_call(cm: ContractMap, module_obj: object, fn_name: str, *, verbose: bool) -> None:
@@ -121,7 +121,7 @@ def extract_llm_registry(
                         module=module_name,
                         name=f"LLM_REGISTRY[{plugin_type!r}]",
                         plugins=sorted(str(p) for p in plugins),
-                        note=f"YAML-based discovery (fitz_ai/llm/{plugin_type}/*.yaml)",
+                        note=f"YAML-based discovery (auto-discovered)",
                     )
                 )
         except Exception as exc:
@@ -177,7 +177,7 @@ def extract_vector_db_registry(
                 module=module_name,
                 name="VECTOR_DB_REGISTRY",
                 plugins=sorted(str(p) for p in plugins),
-                note="YAML-based discovery (fitz_ai/vector_db/plugins/*.yaml)",
+                note="YAML-based discovery (auto-discovered)",
             )
     except Exception as exc:
         tb = traceback.format_exc() if verbose else None
@@ -193,50 +193,55 @@ def extract_vector_db_registry(
 
 
 def extract_registries(cm: ContractMap, *, verbose: bool) -> None:
-    """Extract all registries from the codebase."""
-    # LLM registry (chat, embedding, rerank) - YAML-based
-    cm.registries.extend(extract_llm_registry(cm, "fitz_ai.llm.registry", verbose=verbose))
+    """Extract all registries from the codebase (auto-discovered)."""
+    # Process all auto-discovered registry modules
+    for reg_module in PKG.registry_modules:
+        # Try different extraction strategies based on module patterns
+        mod = safe_import(cm, reg_module, verbose=verbose)
+        if mod is None:
+            continue
 
-    # Vector DB registry (separate from LLM) - YAML-based
-    vdb = extract_vector_db_registry(cm, "fitz_ai.vector_db.registry", verbose=verbose)
-    if vdb:
-        cm.registries.append(vdb)
+        # Check for LLM-style registry (available_llm_plugins function)
+        if hasattr(mod, "available_llm_plugins"):
+            cm.registries.extend(extract_llm_registry(cm, reg_module, verbose=verbose))
+            continue
 
-    # Chunker registry - Python-based
-    cr = extract_registry_plugins(
-        cm,
-        "fitz_ai.ingest.chunking.registry",
-        dict_attr="CHUNKER_REGISTRY",
-        discover_fns=("_auto_discover",),
-        note="Lazy discovery over ingest.chunking.plugins.*",
-        verbose=verbose,
-    )
-    if cr:
-        cm.registries.append(cr)
+        # Check for Vector DB-style registry (available_vector_db_plugins function)
+        if hasattr(mod, "available_vector_db_plugins"):
+            vdb = extract_vector_db_registry(cm, reg_module, verbose=verbose)
+            if vdb:
+                cm.registries.append(vdb)
+            continue
 
-    # Ingestion registry - Python-based
-    ir = extract_registry_plugins(
-        cm,
-        "fitz_ai.ingest.ingestion.registry",
-        dict_attr="REGISTRY",
-        discover_fns=("_auto_discover",),
-        note="Lazy discovery over ingest.ingestion.plugins.*",
-        verbose=verbose,
-    )
-    if ir:
-        cm.registries.append(ir)
-
-    # Pipeline registry - Python-based
-    # Fixed: was "pipeline.pipeline.registry", now "pipeline.registry"
-    pr = extract_pipeline_registry(
-        cm,
-        "fitz_ai.engines.classic_rag.pipeline.registry",
-        list_fn="available_pipeline_plugins",
-        note="Lazy discovery over pipeline.plugins.*",
-        verbose=verbose,
-    )
-    if pr:
-        cm.registries.append(pr)
+        # Check for list-function style registry
+        for fn_name in ("available_pipeline_plugins", "available_plugins", "list_plugins"):
+            if hasattr(mod, fn_name):
+                pr = extract_pipeline_registry(
+                    cm,
+                    reg_module,
+                    list_fn=fn_name,
+                    note=f"Auto-discovered registry ({fn_name})",
+                    verbose=verbose,
+                )
+                if pr:
+                    cm.registries.append(pr)
+                break
+        else:
+            # Check for dict-style registries (REGISTRY, *_REGISTRY)
+            for attr in dir(mod):
+                if attr.endswith("_REGISTRY") or attr == "REGISTRY":
+                    obj = getattr(mod, attr, None)
+                    if isinstance(obj, dict):
+                        cr = extract_registry_plugins(
+                            cm,
+                            reg_module,
+                            dict_attr=attr,
+                            discover_fns=("_auto_discover",),
+                            note=f"Auto-discovered registry ({attr})",
+                            verbose=verbose,
+                        )
+                        if cr:
+                            cm.registries.append(cr)
 
     cm.registries.sort(key=lambda r: (r.module, r.name))
 

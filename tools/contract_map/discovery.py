@@ -16,7 +16,7 @@ import pkgutil
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple
 
-from tools.contract_map.common import REPO_ROOT, DiscoveryReport
+from tools.contract_map.common import PKG, REPO_ROOT, DiscoveryReport
 
 
 def _simple_plugin_id(cls) -> str:
@@ -33,7 +33,7 @@ def scan_yaml_plugins(plugin_dir: str, plugin_type: str) -> DiscoveryReport:
     Scan for YAML-based plugins (LLM and Vector DB).
 
     Args:
-        plugin_dir: Directory path like "fitz_ai/llm/chat" or "fitz_ai/vector_db/plugins"
+        plugin_dir: Directory path relative to repo root (e.g., PKG.llm_chat_dir)
         plugin_type: Type identifier for note
 
     Returns:
@@ -41,11 +41,11 @@ def scan_yaml_plugins(plugin_dir: str, plugin_type: str) -> DiscoveryReport:
     """
     import sys
 
-    # Find the fitz_ai package root
-    fitz_locations = [p for p in sys.path if Path(p).name in ("fitz_ai", "src", "")]
+    # Find the package root
+    pkg_locations = [p for p in sys.path if Path(p).name in (PKG.name, "src", "")]
 
     yaml_path = None
-    for loc in fitz_locations:
+    for loc in pkg_locations:
         candidate = Path(loc) / plugin_dir.replace(".", "/")
         if candidate.exists():
             yaml_path = candidate
@@ -83,36 +83,23 @@ def scan_yaml_plugins(plugin_dir: str, plugin_type: str) -> DiscoveryReport:
 # Discovery Predicates (for Python-based plugins)
 # ---------------------------------------------------------------------------
 
+def _default_plugin_predicate(cls) -> bool:
+    """Default predicate: class has plugin_name attribute."""
+    return isinstance(getattr(cls, "plugin_name", None), str)
+
+
+def _get_plugin_predicates() -> Dict[str, Tuple[Callable, Callable, bool]]:
+    """Build plugin predicates from auto-discovered namespaces."""
+    predicates = {}
+
+    for namespace, _interface in PKG.python_plugin_namespaces:
+        predicates[namespace] = (_default_plugin_predicate, _simple_plugin_id, False)
+
+    return predicates
+
+
 # Map namespace -> (predicate, plugin_id_fn, allow_reexport)
-PLUGIN_PREDICATES: Dict[str, Tuple[Callable, Callable, bool]] = {
-    # --- pipeline (under engines/classic_rag) ---
-    "fitz_ai.engines.classic_rag.pipeline.plugins": (
-        lambda cls: (
-            isinstance(getattr(cls, "plugin_name", None), str)
-            and callable(getattr(cls, "build", None))
-        ),
-        _simple_plugin_id,
-        False,
-    ),
-    # --- chunking (under ingest) ---
-    "fitz_ai.ingest.chunking.plugins": (
-        lambda cls: (
-            isinstance(getattr(cls, "plugin_name", None), str)
-            and callable(getattr(cls, "chunk_text", None))
-        ),
-        _simple_plugin_id,
-        False,
-    ),
-    # --- ingestion (under ingest) ---
-    "fitz_ai.ingest.ingestion.plugins": (
-        lambda cls: (
-            isinstance(getattr(cls, "plugin_name", None), str)
-            and callable(getattr(cls, "ingest", None))
-        ),
-        _simple_plugin_id,
-        False,
-    ),
-}
+PLUGIN_PREDICATES: Dict[str, Tuple[Callable, Callable, bool]] = _get_plugin_predicates()
 
 
 def scan_discovery(namespace: str, note: str) -> DiscoveryReport:
@@ -120,7 +107,7 @@ def scan_discovery(namespace: str, note: str) -> DiscoveryReport:
     Scan a plugin namespace for classes matching a predicate.
 
     Args:
-        namespace: Package name to scan (e.g., "fitz_ai.ingest.chunking.plugins")
+        namespace: Package name to scan (e.g., PKG.chunking_plugins_ns)
         note: Human-readable description
 
     Returns:
@@ -213,31 +200,21 @@ def scan_discovery(namespace: str, note: str) -> DiscoveryReport:
 
 
 def scan_all_discoveries() -> List[DiscoveryReport]:
-    """Scan all declared plugin namespaces."""
-    return [
-        # LLM plugins - YAML-based
-        scan_yaml_plugins("fitz_ai/llm/chat", "LLM chat"),
-        scan_yaml_plugins("fitz_ai/llm/embedding", "LLM embedding"),
-        scan_yaml_plugins("fitz_ai/llm/rerank", "LLM rerank"),
-        # Vector DB plugins - YAML-based
-        scan_yaml_plugins("fitz_ai/vector_db/plugins", "Vector DB"),
-        # Retrieval plugins - YAML-based (not Python)
-        scan_yaml_plugins("fitz_ai/engines/classic_rag/retrieval/plugins", "RAG retrieval"),
-        # Pipeline plugins - Python-based
-        scan_discovery(
-            "fitz_ai.engines.classic_rag.pipeline.plugins",
-            "RAG pipeline plugins (Python discovery)",
-        ),
-        # Ingest plugins - Python-based
-        scan_discovery(
-            "fitz_ai.ingest.chunking.plugins",
-            "Ingest chunking plugins (Python discovery)",
-        ),
-        scan_discovery(
-            "fitz_ai.ingest.ingestion.plugins",
-            "Ingest ingestion plugins (Python discovery)",
-        ),
-    ]
+    """Scan all declared plugin namespaces (auto-discovered)."""
+    reports = []
+
+    # YAML-based plugins (auto-discovered)
+    for yaml_dir, plugin_type in PKG.yaml_plugin_dirs:
+        # Skip config directories, they're not plugins
+        if plugin_type in ("config", "schemas"):
+            continue
+        reports.append(scan_yaml_plugins(yaml_dir, f"{plugin_type} plugins (YAML)"))
+
+    # Python-based plugins (auto-discovered)
+    for namespace, interface in PKG.python_plugin_namespaces:
+        reports.append(scan_discovery(namespace, f"{interface} (Python discovery)"))
+
+    return reports
 
 
 def render_discovery_section(reports: List[DiscoveryReport]) -> str:

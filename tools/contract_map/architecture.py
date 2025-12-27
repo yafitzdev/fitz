@@ -1,11 +1,24 @@
+# tools/contract_map/architecture.py
 from __future__ import annotations
 
-from fitz_ai.engines.classic_rag.config.architecture import load_architecture_mapping
-from fitz_ai.engines.classic_rag.contracts.rules import allowed_importers
+import importlib
+
+from .common import PKG
+
+
+def _get_architecture_functions():
+    """Dynamically import architecture functions based on PKG config."""
+    arch_module = importlib.import_module(f"{PKG.name}.engines.classic_rag.config.architecture")
+    rules_module = importlib.import_module(f"{PKG.name}.engines.classic_rag.contracts.rules")
+    return (
+        getattr(arch_module, "load_architecture_mapping"),
+        getattr(rules_module, "allowed_importers"),
+    )
 
 
 class RoleResolver:
     def __init__(self) -> None:
+        load_architecture_mapping, _ = _get_architecture_functions()
         self.mapping = load_architecture_mapping()
 
     def resolve_role(self, module: str) -> str:
@@ -26,4 +39,5 @@ class RoleResolver:
     def is_allowed(self, importer_role: str, imported_role: str) -> bool:
         if imported_role == "unknown" or importer_role == "unknown":
             return True
+        _, allowed_importers = _get_architecture_functions()
         return importer_role in allowed_importers(imported_role)

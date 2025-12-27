@@ -97,7 +97,7 @@ def render_layout_tree(
 def render_layout_section(*, layout_depth: int | None) -> str:
     """Render the Project Layout section of the report."""
     lines = ["## Project Layout"]
-    lines.append(f"- root: `{REPO_ROOT}`")
+    lines.append(f"- root: `{REPO_ROOT.name}`")
     lines.append(f"- excludes: `{sorted(DEFAULT_LAYOUT_EXCLUDES)}`")
     lines.append(f"- max_depth: `{layout_depth if layout_depth is not None else 'unlimited'}`")
     lines.append("")
