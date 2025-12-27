@@ -29,9 +29,9 @@ That's it. Your documents are now searchable with AI.
 ####
 5. [x] **Local execution possible.** FAISS and Ollama support, no API keys required to start.
 6. [x] **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
-7. [X] **Incrementental ingestion.** Only reprocesses changed files, even with new chunking settings.
-7. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
-8. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
+7. [X] **Incremental ingestion.** Only reprocesses changed files, even with new chunking settings.
+8. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
+9. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
 ####
 Any questions left? Try fitz on itself:
 
