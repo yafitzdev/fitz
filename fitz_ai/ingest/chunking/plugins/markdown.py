@@ -7,17 +7,24 @@ Splits markdown documents on headers while preserving:
 - List structure
 - Blockquotes
 
+Also extracts YAML frontmatter and merges it into chunk metadata.
+
 Chunker ID format: "markdown:{max_chunk_size}:{min_chunk_size}"
 Example: "markdown:1500:100"
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+import yaml
+
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -51,7 +58,9 @@ class MarkdownChunker:
     def __post_init__(self) -> None:
         """Validate parameters."""
         if self.max_chunk_size < 100:
-            raise ValueError(f"max_chunk_size must be >= 100, got {self.max_chunk_size}")
+            raise ValueError(
+                f"max_chunk_size must be >= 100, got {self.max_chunk_size}"
+            )
         if self.min_chunk_size < 1:
             raise ValueError(f"min_chunk_size must be >= 1, got {self.min_chunk_size}")
         if self.min_chunk_size >= self.max_chunk_size:
@@ -100,7 +109,9 @@ class MarkdownChunker:
             if not self._is_in_code_block(match.start(), code_ranges):
                 level = len(match.group(1))
                 header_text = match.group(2).strip()
-                header_positions.append((match.start(), match.end(), header_text, level))
+                header_positions.append(
+                    (match.start(), match.end(), header_text, level)
+                )
 
         if not header_positions:
             # No headers found, return entire text as one section
@@ -172,7 +183,9 @@ class MarkdownChunker:
                 if current_chunks:
                     chunk_text = prefix + "\n\n".join(current_chunks)
                     chunk_header = (
-                        f"{header} (Part {part_num})" if header and part_num > 1 else header
+                        f"{header} (Part {part_num})"
+                        if header and part_num > 1
+                        else header
                     )
                     chunks.append((chunk_header, chunk_text.strip()))
                     part_num += 1
@@ -188,7 +201,9 @@ class MarkdownChunker:
             elif current_size + para_size + 2 > self.max_chunk_size and current_chunks:
                 # Flush current chunk
                 chunk_text = prefix + "\n\n".join(current_chunks)
-                chunk_header = f"{header} (Part {part_num})" if header and part_num > 1 else header
+                chunk_header = (
+                    f"{header} (Part {part_num})" if header and part_num > 1 else header
+                )
                 chunks.append((chunk_header, chunk_text.strip()))
                 part_num += 1
                 current_chunks = [para]
@@ -201,7 +216,9 @@ class MarkdownChunker:
         # Flush remaining
         if current_chunks:
             chunk_text = (prefix if part_num == 1 else "") + "\n\n".join(current_chunks)
-            chunk_header = f"{header} (Part {part_num})" if header and part_num > 1 else header
+            chunk_header = (
+                f"{header} (Part {part_num})" if header and part_num > 1 else header
+            )
             chunks.append((chunk_header, chunk_text.strip()))
 
         return chunks
@@ -240,9 +257,57 @@ class MarkdownChunker:
         merged.append((current_header, current_content, current_level))
         return merged
 
+    def _extract_frontmatter(self, text: str) -> Tuple[Dict[str, Any], str]:
+        """
+        Extract YAML frontmatter from markdown text if present.
+
+        Frontmatter is a YAML block at the start of the file delimited by ---:
+            ---
+            video_id: abc123
+            tags: [tutorial, python]
+            ---
+            # Actual content starts here
+
+        Args:
+            text: Markdown text that may contain frontmatter.
+
+        Returns:
+            Tuple of (frontmatter_dict, remaining_content).
+            If no frontmatter, returns ({}, original_text).
+        """
+        if not text.startswith("---"):
+            return {}, text
+
+        # Split on --- delimiter
+        parts = text.split("---", 2)
+        if len(parts) < 3:
+            # Malformed frontmatter, return original
+            return {}, text
+
+        frontmatter_str = parts[1].strip()
+        content = parts[2].lstrip("\n")
+
+        if not frontmatter_str:
+            return {}, content
+
+        try:
+            frontmatter = yaml.safe_load(frontmatter_str)
+            if not isinstance(frontmatter, dict):
+                # Frontmatter should be a dict, not a scalar or list
+                logger.debug(
+                    f"Frontmatter is not a dict, ignoring: {type(frontmatter)}"
+                )
+                return {}, text
+            return frontmatter, content
+        except yaml.YAMLError as e:
+            logger.debug(f"Failed to parse frontmatter: {e}")
+            return {}, text
+
     def chunk_text(self, text: str, base_meta: Dict[str, Any]) -> List[Chunk]:
         """
         Chunk markdown text by headers.
+
+        Extracts YAML frontmatter and merges it into chunk metadata.
 
         Args:
             text: Markdown content to chunk.
@@ -254,7 +319,14 @@ class MarkdownChunker:
         if not text or not text.strip():
             return []
 
-        doc_id = str(base_meta.get("doc_id") or base_meta.get("source_file") or "unknown")
+        # Extract frontmatter and merge into metadata
+        frontmatter, text = self._extract_frontmatter(text)
+        if frontmatter:
+            base_meta = {**base_meta, **frontmatter}
+
+        doc_id = str(
+            base_meta.get("doc_id") or base_meta.get("source_file") or "unknown"
+        )
 
         # Split into sections
         sections = self._split_into_sections(text)

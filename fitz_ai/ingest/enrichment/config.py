@@ -66,6 +66,49 @@ class ArtifactConfig:
 
 
 @dataclass
+class HierarchyRule:
+    """
+    A single hierarchy rule for grouping and summarizing chunks.
+
+    Users configure rules to enable multi-level summarization of content.
+    Chunks matching the path patterns are grouped by a metadata key, and
+    LLM summaries are generated at group and corpus levels.
+
+    Attributes:
+        name: Unique identifier for this rule (e.g., "video_comments")
+        paths: Glob patterns to filter files (e.g., ["comments/**", "*.txt"])
+        group_by: Metadata key to group chunks by (e.g., "video_id")
+        prompt: LLM prompt for generating group-level summaries
+        corpus_prompt: Optional prompt for corpus-level summary
+    """
+
+    name: str
+    paths: list[str]
+    group_by: str
+    prompt: str
+    corpus_prompt: str | None = None
+
+
+@dataclass
+class HierarchyConfig:
+    """
+    Configuration for hierarchical enrichment.
+
+    Hierarchical enrichment generates multi-level summaries:
+    - Level 2: Original chunks (unchanged)
+    - Level 1: Group summaries (chunks grouped by metadata key)
+    - Level 0: Corpus summary (summary of all groups)
+
+    Attributes:
+        enabled: Whether hierarchy enrichment is active
+        rules: List of hierarchy rules to apply
+    """
+
+    enabled: bool = False
+    rules: list[HierarchyRule] = field(default_factory=list)
+
+
+@dataclass
 class EnrichmentConfig:
     """
     Configuration for the enrichment pipeline.
@@ -77,6 +120,7 @@ class EnrichmentConfig:
         enabled: Master switch for all enrichment
         summary: Chunk-level summary configuration
         artifacts: Project-level artifact configuration
+        hierarchy: Hierarchical summarization configuration
 
     Example in .fitz/config.yaml:
         enrichment:
@@ -87,11 +131,19 @@ class EnrichmentConfig:
             auto: true
             disabled:
               - architecture_narrative
+          hierarchy:
+            enabled: true
+            rules:
+              - name: video_comments
+                paths: ["comments/**"]
+                group_by: video_id
+                prompt: "Summarize sentiment and themes"
     """
 
     enabled: bool = False
     summary: SummaryConfig = field(default_factory=SummaryConfig)
     artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
+    hierarchy: HierarchyConfig = field(default_factory=HierarchyConfig)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EnrichmentConfig":
@@ -101,6 +153,20 @@ class EnrichmentConfig:
 
         summary_data = data.get("summary", {})
         artifacts_data = data.get("artifacts", {})
+        hierarchy_data = data.get("hierarchy", {})
+
+        # Parse hierarchy rules
+        hierarchy_rules = []
+        for rule_data in hierarchy_data.get("rules", []):
+            hierarchy_rules.append(
+                HierarchyRule(
+                    name=rule_data.get("name", "unnamed"),
+                    paths=rule_data.get("paths", []),
+                    group_by=rule_data.get("group_by", ""),
+                    prompt=rule_data.get("prompt", "Summarize this group."),
+                    corpus_prompt=rule_data.get("corpus_prompt"),
+                )
+            )
 
         return cls(
             enabled=data.get("enabled", False),
@@ -113,6 +179,10 @@ class EnrichmentConfig:
                 auto=artifacts_data.get("auto", True),
                 enabled=artifacts_data.get("enabled", []),
                 disabled=artifacts_data.get("disabled", []),
+            ),
+            hierarchy=HierarchyConfig(
+                enabled=hierarchy_data.get("enabled", False),
+                rules=hierarchy_rules,
             ),
         )
 
@@ -130,6 +200,19 @@ class EnrichmentConfig:
                 "enabled": self.artifacts.enabled,
                 "disabled": self.artifacts.disabled,
             },
+            "hierarchy": {
+                "enabled": self.hierarchy.enabled,
+                "rules": [
+                    {
+                        "name": rule.name,
+                        "paths": rule.paths,
+                        "group_by": rule.group_by,
+                        "prompt": rule.prompt,
+                        "corpus_prompt": rule.corpus_prompt,
+                    }
+                    for rule in self.hierarchy.rules
+                ],
+            },
         }
 
 
@@ -137,4 +220,6 @@ __all__ = [
     "EnrichmentConfig",
     "SummaryConfig",
     "ArtifactConfig",
+    "HierarchyConfig",
+    "HierarchyRule",
 ]

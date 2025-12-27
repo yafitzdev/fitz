@@ -88,6 +88,8 @@ from fitz_ai.ingest.enrichment.base import (
 from fitz_ai.ingest.enrichment.config import (
     ArtifactConfig,
     EnrichmentConfig,
+    HierarchyConfig,
+    HierarchyRule,
     SummaryConfig,
 )
 from fitz_ai.ingest.enrichment.context.registry import (
@@ -95,6 +97,13 @@ from fitz_ai.ingest.enrichment.context.registry import (
     get_context_plugin,
     get_context_registry,
     list_context_plugins,
+)
+
+# Hierarchy components
+from fitz_ai.ingest.enrichment.hierarchy import (
+    ChunkGrouper,
+    ChunkMatcher,
+    HierarchyEnricher,
 )
 
 # Models
@@ -118,6 +127,8 @@ __all__ = [
     "EnrichmentConfig",
     "SummaryConfig",
     "ArtifactConfig",
+    "HierarchyConfig",
+    "HierarchyRule",
     # Pipeline
     "EnrichmentPipeline",
     # Models
@@ -132,6 +143,10 @@ __all__ = [
     # Summary
     "ChunkSummarizer",
     "SummaryCache",
+    # Hierarchy
+    "HierarchyEnricher",
+    "ChunkMatcher",
+    "ChunkGrouper",
     # Artifacts
     "Artifact",
     "ArtifactType",

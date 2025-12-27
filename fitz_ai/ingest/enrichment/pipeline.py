@@ -42,6 +42,7 @@ from fitz_ai.ingest.enrichment.artifacts.registry import (
 )
 from fitz_ai.ingest.enrichment.base import ContentType
 from fitz_ai.ingest.enrichment.config import EnrichmentConfig
+from fitz_ai.ingest.enrichment.hierarchy.enricher import HierarchyEnricher
 from fitz_ai.ingest.enrichment.models import EnrichmentResult
 from fitz_ai.ingest.enrichment.summary.cache import SummaryCache
 from fitz_ai.ingest.enrichment.summary.summarizer import ChunkInfo, ChunkSummarizer
@@ -88,10 +89,12 @@ class EnrichmentPipeline:
         self._enricher_id = enricher_id or "default"
 
         self._summarizer: ChunkSummarizer | None = None
+        self._hierarchy_enricher: HierarchyEnricher | None = None
         self._artifact_registry = ArtifactRegistry.get_instance()
         self._project_analysis: ProjectAnalysis | None = None
 
         self._init_summarizer()
+        self._init_hierarchy_enricher()
 
     def _init_summarizer(self) -> None:
         """Initialize the chunk summarizer if enabled."""
@@ -107,6 +110,28 @@ class EnrichmentPipeline:
             chat_client=self._chat_client,
             cache=cache,
             enricher_id=self._enricher_id,
+        )
+
+    def _init_hierarchy_enricher(self) -> None:
+        """Initialize the hierarchy enricher if enabled."""
+        if not self.config.enabled or not self.config.hierarchy.enabled:
+            return
+
+        if self._chat_client is None:
+            logger.warning("Hierarchy enrichment enabled but no chat client provided")
+            return
+
+        if not self.config.hierarchy.rules:
+            logger.debug("Hierarchy enrichment enabled but no rules configured")
+            return
+
+        self._hierarchy_enricher = HierarchyEnricher(
+            config=self.config.hierarchy,
+            chat_client=self._chat_client,
+        )
+        logger.info(
+            f"[ENRICHMENT] Hierarchy enricher initialized with "
+            f"{len(self.config.hierarchy.rules)} rules"
         )
 
     @classmethod
@@ -149,7 +174,11 @@ class EnrichmentPipeline:
     @property
     def summaries_enabled(self) -> bool:
         """Check if chunk summaries are enabled."""
-        return self.config.enabled and self.config.summary.enabled and self._summarizer is not None
+        return (
+            self.config.enabled
+            and self.config.summary.enabled
+            and self._summarizer is not None
+        )
 
     @property
     def artifacts_enabled(self) -> bool:
@@ -199,7 +228,9 @@ class EnrichmentPipeline:
         if not self.summaries_enabled:
             return [None] * len(chunks)
 
-        chunk_infos = [ChunkInfo(content=c, file_path=f, content_hash=h) for c, f, h in chunks]
+        chunk_infos = [
+            ChunkInfo(content=c, file_path=f, content_hash=h) for c, f, h in chunks
+        ]
 
         return self._summarizer.summarize_batch(chunk_infos, batch_size=batch_size)
 
@@ -291,7 +322,9 @@ class EnrichmentPipeline:
             return []
 
         analysis = self.analyze_project()
-        plugins = [p for p in self.get_applicable_artifact_plugins() if not p.requires_llm]
+        plugins = [
+            p for p in self.get_applicable_artifact_plugins() if not p.requires_llm
+        ]
 
         artifacts: List[Artifact] = []
         for plugin in plugins:
@@ -320,8 +353,9 @@ class EnrichmentPipeline:
 
         The method:
         1. Generates summaries for chunks (if enabled) and attaches them to metadata
-        2. Generates corpus-level artifacts (if enabled)
-        3. Returns unified result
+        2. Applies hierarchical enrichment (if enabled) - generates group and corpus summaries
+        3. Generates corpus-level artifacts (if enabled)
+        4. Returns unified result
 
         Design note: Takes chunks (not raw docs) so future recursive
         enrichment can feed outputs back as inputs.
@@ -337,7 +371,9 @@ class EnrichmentPipeline:
 
         # Generate summaries and attach to chunk metadata
         if self.summaries_enabled:
-            chunk_tuples = [(c.content, c.metadata.get("file_path", ""), c.id) for c in chunks]
+            chunk_tuples = [
+                (c.content, c.metadata.get("file_path", ""), c.id) for c in chunks
+            ]
             summaries = self.summarize_chunks_batch(chunk_tuples)
 
             for chunk, summary in zip(chunks, summaries):
@@ -346,6 +382,10 @@ class EnrichmentPipeline:
 
             # Save cache after batch summarization
             self.save_cache()
+
+        # Apply hierarchical enrichment (generates group and corpus summaries)
+        if self._hierarchy_enricher:
+            chunks = self._hierarchy_enricher.enrich(chunks)
 
         # Generate artifacts
         artifacts = self.generate_artifacts() if self.artifacts_enabled else []
