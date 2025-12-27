@@ -113,7 +113,8 @@ You can—but you'll hit walls fast.
 >4. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
 >5. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
 
-<br>
+####
+
 Any questions left? Try fitz on itself:
 
 ```bash
