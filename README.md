@@ -221,18 +221,30 @@ The codebase speaks for itself.
 >**The solution ☀️**
 >
 >For documents, Fitz auto-enables hierarchy when an LLM is available. It groups by file and generates multi-level summaries:
->- **Level 2**: Original chunks (unchanged)
->- **Level 1**: Group summaries ("Video ABC: mostly questions about pricing...")
->- **Level 0**: Corpus summary ("Across all videos: 78% positive, top themes are...")
+>- **Level 0**: Original chunks (unchanged)
+>- **Level 1**: Group summaries (one per source file)
+>- **Level 2**: Corpus summary (aggregates all groups)
+>
+>**Example: YouTube comment analysis**
+>```
+>Ingested: 500 comments across 10 videos
+>
+>Level 0: "This tutorial helped me understand async/await finally!"
+>Level 1: "Tutorial Video #3: 47 comments, mostly positive. Users praise
+>         clarity of examples. Common request: more on error handling."
+>Level 2: "Across 10 videos (500 comments): 78% positive sentiment.
+>         Top themes: code clarity, pacing, example quality.
+>         Recurring requests: longer videos, more advanced topics."
+>```
 >
 >Now analytical queries retrieve summaries, while specific queries still retrieve details:
 >```
->Q: "What are the trends in my comments?"
->Hierarchical RAG: Returns corpus + group summaries (aggregated insights)
+>Q: "What are the overall trends in my comments?"
+>→ Returns Level 2 corpus summary + Level 1 video summaries
 >```
 >```
->Q: "What did people say about my hair?"
->Hierarchical RAG: Returns specific comments mentioning hair (detail chunks)
+>Q: "What did people say about my async tutorial?"
+>→ Returns Level 0 individual comments from that video
 >```
 >
 >No special query syntax. No retrieval config changes. Summaries match analytical queries naturally via vector similarity.
@@ -252,9 +264,9 @@ The codebase speaks for itself.
 >```
 >
 >Three constraint plugins run automatically:
->- **📕 ConflictAwareConstraint**: Detects contradictions across sources
->- **📗 InsufficientEvidenceConstraint**: Blocks answers without evidence
->- **📘 CausalAttributionConstraint**: Prevents hallucinated cause-effect claims
+>1. [X] **📕 ConflictAwareConstraint**: Detects contradictions across sources
+>2. [X] **📗 InsufficientEvidenceConstraint**: Blocks answers without evidence
+>3. [X] **📘 CausalAttributionConstraint**: Prevents hallucinated cause-effect claims
 
 <br>
 

@@ -52,9 +52,9 @@ class HierarchyEnricher:
     `hierarchy_level` metadata marking their position in the hierarchy.
 
     Hierarchy levels:
-    - Level 2: Original chunks (detail level)
+    - Level 0: Original chunks (detail level)
     - Level 1: Group summaries (one per unique group_by value)
-    - Level 0: Corpus summary (one per rule)
+    - Level 2: Corpus summary (one per rule)
     """
 
     def __init__(
@@ -80,22 +80,22 @@ class HierarchyEnricher:
         1. Simple mode: No rules configured, uses config.group_by and default prompts
         2. Rules mode: Custom rules for power users
 
-        Marks original chunks with hierarchy_level=2 and generates
-        level-1 group summaries and level-0 corpus summaries.
+        Marks original chunks with hierarchy_level=0 and generates
+        level-1 group summaries and level-2 corpus summaries.
 
         Args:
             chunks: Original chunks from ingestion
 
         Returns:
-            Original chunks (marked level-2) + generated summary chunks
+            Original chunks (marked level-0) + generated summary chunks
         """
         if not self._config.enabled:
             return chunks
 
-        # Mark all original chunks as level 2 (leaf level)
+        # Mark all original chunks as level 0 (leaf level)
         for chunk in chunks:
             if "hierarchy_level" not in chunk.metadata:
-                chunk.metadata["hierarchy_level"] = 2
+                chunk.metadata["hierarchy_level"] = 0
 
         all_summary_chunks: List[Chunk] = []
 
@@ -255,12 +255,12 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
         chunk_id = hashlib.sha256("hierarchy:corpus:simple".encode()).hexdigest()[:16]
 
         return Chunk(
-            id=f"hierarchy_l0:{chunk_id}",
+            id=f"hierarchy_l2:{chunk_id}",
             doc_id="hierarchy:corpus:simple",
             content=summary_content,
             chunk_index=0,
             metadata={
-                "hierarchy_level": 0,
+                "hierarchy_level": 2,
                 "hierarchy_rule": "_simple",
                 "is_hierarchy_summary": True,
                 "is_corpus_summary": True,
@@ -375,7 +375,7 @@ Write a comprehensive summary (2-4 paragraphs) that captures the key information
         rule: HierarchyRule,
         level1_chunks: List[Chunk],
     ) -> Chunk | None:
-        """Generate a level-0 corpus summary from level-1 summaries."""
+        """Generate a level-2 corpus summary from level-1 summaries."""
         if not level1_chunks:
             return None
 
@@ -411,12 +411,12 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
         chunk_id = hashlib.sha256(f"hierarchy:corpus:{rule.name}".encode()).hexdigest()[:16]
 
         return Chunk(
-            id=f"hierarchy_l0:{chunk_id}",
+            id=f"hierarchy_l2:{chunk_id}",
             doc_id=f"hierarchy:corpus:{rule.name}",
             content=summary_content,
             chunk_index=0,
             metadata={
-                "hierarchy_level": 0,
+                "hierarchy_level": 2,
                 "hierarchy_rule": rule.name,
                 "is_hierarchy_summary": True,
                 "is_corpus_summary": True,

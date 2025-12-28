@@ -98,9 +98,9 @@ class HierarchyConfig:
     Configuration for hierarchical enrichment.
 
     Hierarchical enrichment generates multi-level summaries:
-    - Level 2: Original chunks (unchanged)
+    - Level 0: Original chunks (unchanged)
     - Level 1: Group summaries (chunks grouped by metadata key)
-    - Level 0: Corpus summary (summary of all groups)
+    - Level 2: Corpus summary (summary of all groups)
 
     Zero-config mode (recommended):
         Just set enabled=True or use `fitz ingest --hierarchy`.
