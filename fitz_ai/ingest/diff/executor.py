@@ -244,9 +244,9 @@ class DiffIngestExecutor:
 
         # Phase 1: Prepare all files (parse, chunk) - NO summarization yet
         all_prepared: List[tuple] = []  # (candidate, file_data)
-        all_chunk_info: List[
-            tuple
-        ] = []  # (content, file_path, content_hash) for batch summarization
+        all_chunk_info: List[tuple] = (
+            []
+        )  # (content, file_path, content_hash) for batch summarization
 
         for i, candidate in enumerate(diff.to_ingest):
             if on_progress:
