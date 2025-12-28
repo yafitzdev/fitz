@@ -167,6 +167,7 @@ class IngestStateManager:
         parser_id: str,
         embedding_id: str,
         enricher_id: Optional[str] = None,
+        collection: str = "default",
     ) -> None:
         """
         Mark a file as active in state.
@@ -184,6 +185,7 @@ class IngestStateManager:
             parser_id: Parser ID used (e.g., "md.v1").
             embedding_id: Embedding ID used (e.g., "cohere:embed-english-v3.0").
             enricher_id: Enricher ID used (e.g., "llm:gpt-4o-mini:v1"), None if not enriched.
+            collection: Collection the file was ingested into.
         """
         root_entry = self._ensure_root(root)
 
@@ -198,6 +200,7 @@ class IngestStateManager:
             parser_id=parser_id,
             embedding_id=embedding_id,
             enricher_id=enricher_id,
+            collection=collection,
         )
         root_entry.last_scan_at = datetime.utcnow()
         self._dirty = True

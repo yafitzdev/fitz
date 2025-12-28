@@ -262,6 +262,12 @@ def command(
         "-a",
         help="Artifacts to generate: 'all', 'none', or comma-separated list (e.g. 'navigation_index,interface_catalog'). Interactive selection if not provided.",
     ),
+    hierarchy: bool = typer.Option(
+        False,
+        "--hierarchy",
+        "-H",
+        help="Enable hierarchical summaries (group + corpus level). Zero-config, uses smart defaults.",
+    ),
 ) -> None:
     """
     Ingest documents into the vector database.
@@ -277,6 +283,7 @@ def command(
         fitz ingest ./src -a navigation_index,interface_catalog  # Specific artifacts
         fitz ingest ./src -f         # Force re-ingest
         fitz ingest ./src -a all -y  # Non-interactive with all artifacts
+        fitz ingest ./docs --hierarchy  # Enable hierarchical summaries (zero-config)
     """
     from fitz_ai.ingest.chunking.router import ChunkingRouter
     from fitz_ai.ingest.diff import run_diff_ingest
@@ -318,6 +325,8 @@ def command(
     ui.info(f"Embedding: {embedding_id}")
     ui.info(f"Vector DB: {vector_db_plugin}")
     ui.info(f"Chunking: {default_chunker} (size={chunk_size}, overlap={chunk_overlap})")
+    if hierarchy:
+        ui.info("Hierarchy: enabled (group + corpus summaries)")
 
     print()
 
@@ -441,6 +450,14 @@ def command(
             # Explicitly disabled via 'none'
             enrichment_cfg["enabled"] = False
 
+        # Handle --hierarchy flag (zero-config hierarchical summaries)
+        if hierarchy:
+            enrichment_cfg["enabled"] = True
+            if "hierarchy" not in enrichment_cfg:
+                enrichment_cfg["hierarchy"] = {}
+            enrichment_cfg["hierarchy"]["enabled"] = True
+            # Uses smart defaults: group_by="source", default prompts
+
         if enrichment_cfg.get("enabled", False):
             from pathlib import Path
 
@@ -451,18 +468,32 @@ def command(
 
             enrichment_config = EnrichmentConfig.from_dict(enrichment_cfg)
 
-            # Check if any selected artifact requires LLM
+            # Check if any selected artifact requires LLM or if hierarchy is enabled
             chat_client = None
+            needs_llm = False
+
+            # Check artifacts that require LLM
             if selected_artifacts:
                 registry = get_artifact_registry()
                 needs_llm = any(
                     registry.get_plugin(name) and registry.get_plugin(name).requires_llm
                     for name in selected_artifacts
                 )
-                if needs_llm:
-                    # Get chat client from config
-                    chat_plugin = config.get("chat", {}).get("plugin_name", "cohere")
-                    chat_client = get_llm_plugin(plugin_type="chat", plugin_name=chat_plugin)
+
+            # Hierarchy always requires LLM for summarization
+            if hierarchy:
+                needs_llm = True
+
+            if needs_llm:
+                # Get chat client from config
+                chat_plugin = config.get("chat", {}).get("plugin_name", "cohere")
+                chat_kwargs = config.get("chat", {}).get("kwargs", {})
+                chat_client = get_llm_plugin(
+                    plugin_type="chat", plugin_name=chat_plugin, **chat_kwargs
+                )
+                if hierarchy:
+                    ui.info(f"Chat LLM: {chat_plugin} (for hierarchy summaries)")
+                else:
                     ui.info(f"Chat LLM: {chat_plugin} (for LLM-based artifacts)")
 
             enrichment_pipeline = EnrichmentPipeline(
@@ -664,6 +695,8 @@ def command(
         table.add_row("Marked deleted", str(summary.marked_deleted))
         if summary.artifacts_generated > 0:
             table.add_row("Artifacts", str(summary.artifacts_generated))
+        if summary.hierarchy_summaries > 0:
+            table.add_row("Hierarchy summaries", str(summary.hierarchy_summaries))
         table.add_row("Errors", str(summary.errors))
         table.add_row("Duration", f"{summary.duration_seconds:.1f}s")
 
@@ -675,6 +708,8 @@ def command(
         print(f"  Marked deleted: {summary.marked_deleted}")
         if summary.artifacts_generated > 0:
             print(f"  Artifacts: {summary.artifacts_generated}")
+        if summary.hierarchy_summaries > 0:
+            print(f"  Hierarchy summaries: {summary.hierarchy_summaries}")
         print(f"  Errors: {summary.errors}")
         print(f"  Duration: {summary.duration_seconds:.1f}s")
 

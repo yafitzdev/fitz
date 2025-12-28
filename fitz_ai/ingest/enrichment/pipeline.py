@@ -121,18 +121,22 @@ class EnrichmentPipeline:
             logger.warning("Hierarchy enrichment enabled but no chat client provided")
             return
 
-        if not self.config.hierarchy.rules:
-            logger.debug("Hierarchy enrichment enabled but no rules configured")
-            return
-
+        # Initialize enricher - works in both simple mode (no rules) and rules mode
         self._hierarchy_enricher = HierarchyEnricher(
             config=self.config.hierarchy,
             chat_client=self._chat_client,
         )
-        logger.info(
-            f"[ENRICHMENT] Hierarchy enricher initialized with "
-            f"{len(self.config.hierarchy.rules)} rules"
-        )
+
+        if self.config.hierarchy.rules:
+            logger.info(
+                f"[ENRICHMENT] Hierarchy enricher initialized with "
+                f"{len(self.config.hierarchy.rules)} rules"
+            )
+        else:
+            logger.info(
+                f"[ENRICHMENT] Hierarchy enricher initialized in simple mode "
+                f"(group_by='{self.config.hierarchy.group_by}')"
+            )
 
     @classmethod
     def from_config(

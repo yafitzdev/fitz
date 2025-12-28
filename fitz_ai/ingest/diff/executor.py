@@ -78,6 +78,7 @@ class IngestSummary:
     enriched: int = 0  # Chunks enriched with descriptions
     enrichment_cached: int = 0  # Chunks with cached descriptions
     artifacts_generated: int = 0  # Number of artifacts generated
+    hierarchy_summaries: int = 0  # Number of hierarchy summary chunks generated
     error_details: List[str] = field(default_factory=list)
     started_at: datetime = field(default_factory=datetime.utcnow)
     finished_at: Optional[datetime] = None
@@ -224,6 +225,7 @@ class DiffIngestExecutor:
             config_provider=self._router,
             parser_id_func=self._get_parser_id,
             embedding_id=self._embedding_id,
+            collection=self._collection,
         )
 
         root_path = str(Path(source).resolve())
@@ -291,6 +293,41 @@ class DiffIngestExecutor:
                 all_texts.append(text_to_embed)
                 desc_idx += 1
 
+        # Phase 1.75: Hierarchy enrichment (generates group + corpus summaries)
+        hierarchy_chunks: List = []
+        if (
+            self._enrichment_pipeline
+            and hasattr(self._enrichment_pipeline, "_hierarchy_enricher")
+            and self._enrichment_pipeline._hierarchy_enricher is not None
+        ):
+            # Collect all Chunk objects
+            all_chunks = [
+                chunk_data["chunk"]
+                for _, file_data in all_prepared
+                for chunk_data in file_data["chunk_data"]
+            ]
+
+            if all_chunks:
+                t0 = time.perf_counter()
+                enriched_chunks = self._enrichment_pipeline._hierarchy_enricher.enrich(
+                    all_chunks
+                )
+                hierarchy_time = time.perf_counter() - t0
+
+                # Extract only the new hierarchy summary chunks
+                hierarchy_chunks = [
+                    c for c in enriched_chunks if c.metadata.get("is_hierarchy_summary", False)
+                ]
+
+                if hierarchy_chunks:
+                    logger.info(
+                        f"Generated {len(hierarchy_chunks)} hierarchy summaries "
+                        f"in {hierarchy_time:.2f}s"
+                    )
+                    # Add hierarchy chunk texts for embedding
+                    for hc in hierarchy_chunks:
+                        all_texts.append(hc.content)
+
         # Phase 2: Batch embed ALL texts at once
         if all_texts:
             t0 = time.perf_counter()
@@ -328,11 +365,46 @@ class DiffIngestExecutor:
                     parser_id=candidate.parser_id,
                     embedding_id=candidate.embedding_id,
                     enricher_id=self._enricher_id,
+                    collection=self._collection,
                 )
             except Exception as e:
                 summary.errors += 1
                 summary.error_details.append(f"Upsert error: {candidate.path}: {e}")
                 logger.warning(f"Failed to upsert {candidate.path}: {e}")
+
+        # Phase 3.5: Upsert hierarchy summary chunks
+        if hierarchy_chunks:
+            try:
+                # Hierarchy vectors are at the end of all_vectors
+                hierarchy_vector_start = len(all_vectors) - len(hierarchy_chunks)
+                hierarchy_vectors = all_vectors[hierarchy_vector_start:]
+
+                hierarchy_points = []
+                for hc, vec in zip(hierarchy_chunks, hierarchy_vectors):
+                    hierarchy_points.append(
+                        {
+                            "id": hc.id,
+                            "vector": vec,
+                            "payload": {
+                                "content": hc.content,
+                                "doc_id": hc.doc_id,
+                                "chunk_index": hc.chunk_index,
+                                **hc.metadata,
+                            },
+                        }
+                    )
+
+                self._vdb_writer.upsert(
+                    self._collection, hierarchy_points, defer_persist=True
+                )
+                logger.info(
+                    f"Upserted {len(hierarchy_points)} hierarchy summary chunks"
+                )
+                summary.hierarchy_summaries = len(hierarchy_chunks)
+            except Exception as e:
+                summary.errors += 1
+                summary.error_details.append(f"Hierarchy upsert error: {e}")
+                logger.warning(f"Failed to upsert hierarchy chunks: {e}")
 
         # Flush vector DB once after all upserts
         if hasattr(self._vdb_writer, "flush"):
@@ -357,6 +429,7 @@ class DiffIngestExecutor:
                 parser_id=candidate.parser_id,
                 embedding_id=candidate.embedding_id,
                 enricher_id=self._enricher_id,
+                collection=self._collection,
             )
 
         # 5. Mark deletions

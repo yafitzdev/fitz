@@ -59,6 +59,10 @@ class FileEntry(BaseModel):
         default=None,
         description="Enricher ID used (e.g., 'llm:gpt-4o-mini:v1'), None if not enriched",
     )
+    collection: str = Field(
+        default="default",
+        description="Collection the file was ingested into",
+    )
 
     def is_active(self) -> bool:
         """Check if file is active (not deleted)."""

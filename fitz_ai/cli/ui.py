@@ -17,10 +17,24 @@ Usage:
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Optional
 
 import typer
+
+# Detect if we can use Unicode safely (not Windows legacy console)
+_CAN_USE_UNICODE = sys.platform != "win32" or sys.stdout.encoding.lower() in (
+    "utf-8",
+    "utf8",
+)
+
+# ASCII-safe alternatives for emojis
+_CHECK = "✓" if _CAN_USE_UNICODE else "[OK]"
+_CROSS = "✗" if _CAN_USE_UNICODE else "[X]"
+_WARN = "⚠" if _CAN_USE_UNICODE else "[!]"
+_INFO = "ℹ" if _CAN_USE_UNICODE else "[i]"
+_ARROW = "→" if _CAN_USE_UNICODE else "->"
 
 # =============================================================================
 # Rich Setup (optional dependency)
@@ -143,25 +157,25 @@ class UI:
     def success(self, msg: str) -> None:
         """Print a success message."""
         if RICH:
-            console.print(f"[green]✓[/green] {msg}")
+            console.print(f"[green]{_CHECK}[/green] {msg}")
         else:
-            print(f"✓ {msg}")
+            print(f"{_CHECK} {msg}")
 
     def error(self, msg: str) -> None:
         """Print an error message."""
         if RICH:
-            console.print(f"[red]✗[/red] {msg}")
+            console.print(f"[red]{_CROSS}[/red] {msg}")
         else:
-            print(f"✗ {msg}")
+            print(f"{_CROSS} {msg}")
 
     def warning(self, msg: str, detail: str = "") -> None:
         """Print a warning message."""
         if RICH:
             detail_str = f" [dim]({detail})[/dim]" if detail else ""
-            console.print(f"[yellow]⚠[/yellow] {msg}{detail_str}")
+            console.print(f"[yellow]{_WARN}[/yellow] {msg}{detail_str}")
         else:
             detail_str = f" ({detail})" if detail else ""
-            print(f"⚠ {msg}{detail_str}")
+            print(f"{_WARN} {msg}{detail_str}")
 
     def info(self, msg: str) -> None:
         """Print an info/dim message."""
@@ -172,13 +186,12 @@ class UI:
 
     def status(self, name: str, ok: bool, detail: str = "") -> None:
         """Print a status line (check/x with name and optional detail)."""
+        icon = _CHECK if ok else _CROSS
         if RICH:
-            icon = "✓" if ok else "✗"
             color = "green" if ok else "red"
             detail_str = f" [dim]({detail})[/dim]" if detail else ""
             console.print(f"  [{color}]{icon}[/{color}] {name}{detail_str}")
         else:
-            icon = "✓" if ok else "✗"
             detail_str = f" ({detail})" if detail else ""
             print(f"  {icon} {name}{detail_str}")
 

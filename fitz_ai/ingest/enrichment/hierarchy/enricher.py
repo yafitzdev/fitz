@@ -2,8 +2,12 @@
 """
 Hierarchical enrichment implementation.
 
-Orchestrates the filtering, grouping, and summarization of chunks
-according to configured hierarchy rules.
+Supports two modes:
+1. Simple mode (zero-config): Just enable hierarchy, uses smart defaults
+2. Rules mode (power-user): Configure custom rules for complex scenarios
+
+Simple mode groups chunks by source file and generates summaries
+using DEFAULT_GROUP_PROMPT and DEFAULT_CORPUS_PROMPT.
 """
 
 from __future__ import annotations
@@ -13,7 +17,12 @@ import logging
 from typing import TYPE_CHECKING, List, Protocol, runtime_checkable
 
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
-from fitz_ai.ingest.enrichment.config import HierarchyConfig, HierarchyRule
+from fitz_ai.ingest.enrichment.config import (
+    DEFAULT_CORPUS_PROMPT,
+    DEFAULT_GROUP_PROMPT,
+    HierarchyConfig,
+    HierarchyRule,
+)
 from fitz_ai.ingest.enrichment.hierarchy.grouper import ChunkGrouper
 from fitz_ai.ingest.enrichment.hierarchy.matcher import ChunkMatcher
 
@@ -68,6 +77,10 @@ class HierarchyEnricher:
         """
         Apply hierarchical enrichment to chunks.
 
+        Supports two modes:
+        1. Simple mode: No rules configured, uses config.group_by and default prompts
+        2. Rules mode: Custom rules for power users
+
         Marks original chunks with hierarchy_level=2 and generates
         level-1 group summaries and level-0 corpus summaries.
 
@@ -77,7 +90,7 @@ class HierarchyEnricher:
         Returns:
             Original chunks (marked level-2) + generated summary chunks
         """
-        if not self._config.enabled or not self._config.rules:
+        if not self._config.enabled:
             return chunks
 
         # Mark all original chunks as level 2 (leaf level)
@@ -87,17 +100,179 @@ class HierarchyEnricher:
 
         all_summary_chunks: List[Chunk] = []
 
-        for rule in self._config.rules:
-            logger.info(f"[HIERARCHY] Processing rule: {rule.name}")
-            summary_chunks = self._process_rule(rule, chunks)
+        if self._config.rules:
+            # Power-user mode: process configured rules
+            for rule in self._config.rules:
+                logger.info(f"[HIERARCHY] Processing rule: {rule.name}")
+                summary_chunks = self._process_rule(rule, chunks)
+                all_summary_chunks.extend(summary_chunks)
+
+            logger.info(
+                f"[HIERARCHY] Generated {len(all_summary_chunks)} summary chunks "
+                f"from {len(self._config.rules)} rules"
+            )
+        else:
+            # Simple mode: use defaults, no path filtering
+            logger.info(
+                f"[HIERARCHY] Simple mode: grouping by '{self._config.group_by}'"
+            )
+            summary_chunks = self._process_simple_mode(chunks)
             all_summary_chunks.extend(summary_chunks)
 
-        logger.info(
-            f"[HIERARCHY] Generated {len(all_summary_chunks)} summary chunks "
-            f"from {len(self._config.rules)} rules"
-        )
+            logger.info(
+                f"[HIERARCHY] Generated {len(all_summary_chunks)} summary chunks "
+                f"in simple mode"
+            )
 
         return chunks + all_summary_chunks
+
+    def _process_simple_mode(self, chunks: List[Chunk]) -> List[Chunk]:
+        """
+        Process chunks in simple mode (no rules, use defaults).
+
+        Groups all chunks by the configured group_by key and generates
+        summaries using default prompts.
+        """
+        if not chunks:
+            return []
+
+        # Group by configured key (default: "source")
+        grouper = ChunkGrouper(self._config.group_by)
+        groups = grouper.group(chunks)
+
+        # Get prompts (use defaults if not specified)
+        group_prompt = self._config.group_prompt or DEFAULT_GROUP_PROMPT
+        corpus_prompt = self._config.corpus_prompt or DEFAULT_CORPUS_PROMPT
+
+        # Generate level-1 summaries for each group
+        level1_chunks: List[Chunk] = []
+        for group_key, group_chunks in groups.items():
+            if group_key == "_ungrouped":
+                logger.debug("[HIERARCHY] Skipping _ungrouped in simple mode")
+                continue
+
+            summary_chunk = self._generate_simple_group_summary(
+                group_key=group_key,
+                chunks=group_chunks,
+                prompt=group_prompt,
+            )
+            level1_chunks.append(summary_chunk)
+
+        # Generate level-0 corpus summary
+        level0_chunk = self._generate_simple_corpus_summary(
+            level1_chunks=level1_chunks,
+            prompt=corpus_prompt,
+        )
+
+        result = level1_chunks
+        if level0_chunk:
+            result.append(level0_chunk)
+
+        return result
+
+    def _generate_simple_group_summary(
+        self,
+        group_key: str,
+        chunks: List[Chunk],
+        prompt: str,
+    ) -> Chunk:
+        """Generate a level-1 summary for a group in simple mode."""
+        # Build context from chunks (limit to avoid token overflow)
+        context_parts = []
+        max_chunks = 20
+        for i, chunk in enumerate(chunks[:max_chunks], 1):
+            content = chunk.content[:500]
+            if len(chunk.content) > 500:
+                content += "..."
+            context_parts.append(f"[{i}] {content}")
+
+        if len(chunks) > max_chunks:
+            context_parts.append(f"... and {len(chunks) - max_chunks} more items")
+
+        context = "\n\n".join(context_parts)
+
+        llm_prompt = f"""You are summarizing content for a knowledge base.
+
+GROUP: {group_key}
+ITEMS: {len(chunks)}
+
+{prompt}
+
+CONTENT:
+{context}
+
+Write a comprehensive summary (2-4 paragraphs) that captures the key information.
+"""
+
+        messages = [{"role": "user", "content": llm_prompt}]
+        summary_content = self._chat.chat(messages)
+
+        chunk_id = hashlib.sha256(f"hierarchy:simple:{group_key}".encode()).hexdigest()[
+            :16
+        ]
+
+        return Chunk(
+            id=f"hierarchy_l1:{chunk_id}",
+            doc_id="hierarchy:simple",
+            content=summary_content,
+            chunk_index=0,
+            metadata={
+                "hierarchy_level": 1,
+                "hierarchy_rule": "_simple",
+                "hierarchy_group": group_key,
+                self._config.group_by: group_key,
+                "source_chunk_count": len(chunks),
+                "is_hierarchy_summary": True,
+            },
+        )
+
+    def _generate_simple_corpus_summary(
+        self,
+        level1_chunks: List[Chunk],
+        prompt: str,
+    ) -> Chunk | None:
+        """Generate a level-0 corpus summary in simple mode."""
+        if not level1_chunks:
+            return None
+
+        # Build context from level-1 summaries
+        context_parts = []
+        for chunk in level1_chunks:
+            group_key = chunk.metadata.get("hierarchy_group", "unknown")
+            context_parts.append(f"## {group_key}\n{chunk.content}")
+
+        context = "\n\n".join(context_parts)
+
+        llm_prompt = f"""You are creating a corpus-level overview for a knowledge base.
+
+GROUPS: {len(level1_chunks)} summaries
+
+{prompt}
+
+GROUP SUMMARIES:
+{context}
+
+Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
+"""
+
+        messages = [{"role": "user", "content": llm_prompt}]
+        summary_content = self._chat.chat(messages)
+
+        chunk_id = hashlib.sha256("hierarchy:corpus:simple".encode()).hexdigest()[:16]
+
+        return Chunk(
+            id=f"hierarchy_l0:{chunk_id}",
+            doc_id="hierarchy:corpus:simple",
+            content=summary_content,
+            chunk_index=0,
+            metadata={
+                "hierarchy_level": 0,
+                "hierarchy_rule": "_simple",
+                "is_hierarchy_summary": True,
+                "is_corpus_summary": True,
+                "source_group_count": len(level1_chunks),
+            },
+        )
 
     def _process_rule(
         self,

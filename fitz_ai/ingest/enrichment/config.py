@@ -5,6 +5,7 @@ Configuration schema for the enrichment pipeline.
 Enrichment is an optional pipeline step that enhances chunks with:
 1. Summaries - LLM-generated descriptions for better search (universal)
 2. Artifacts - High-level project insights (type-specific plugins)
+3. Hierarchy - Multi-level summaries for analytical queries (zero-config)
 
 Config structure in .fitz/config.yaml:
     enrichment:
@@ -14,12 +15,22 @@ Config structure in .fitz/config.yaml:
       artifacts:
         auto: true
         disabled: []
+      hierarchy:
+        enabled: true  # Or use: fitz ingest --hierarchy
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+
+
+# Smart defaults for hierarchy prompts - users don't need to write these
+DEFAULT_GROUP_PROMPT = """Summarize the key information, themes, and insights from this document.
+Preserve important details, metrics, dates, and notable points."""
+
+DEFAULT_CORPUS_PROMPT = """Synthesize the main themes, patterns, and trends across all documents.
+Identify common threads, evolution over time, and key takeaways."""
 
 
 @dataclass
@@ -99,13 +110,26 @@ class HierarchyConfig:
     - Level 1: Group summaries (chunks grouped by metadata key)
     - Level 0: Corpus summary (summary of all groups)
 
+    Zero-config mode (recommended):
+        Just set enabled=True or use `fitz ingest --hierarchy`.
+        Uses smart defaults: group_by="source", default prompts.
+
+    Power-user mode:
+        Configure custom rules for complex grouping scenarios.
+
     Attributes:
         enabled: Whether hierarchy enrichment is active
-        rules: List of hierarchy rules to apply
+        group_by: Metadata key for grouping (default: "source" = per-file)
+        group_prompt: Custom prompt for group summaries (optional)
+        corpus_prompt: Custom prompt for corpus summary (optional)
+        rules: Advanced rules for power users (optional, overrides simple mode)
     """
 
     enabled: bool = False
-    rules: list[HierarchyRule] = field(default_factory=list)
+    group_by: str = "source_file"  # Default: each file is a group
+    group_prompt: str | None = None  # Uses DEFAULT_GROUP_PROMPT if None
+    corpus_prompt: str | None = None  # Uses DEFAULT_CORPUS_PROMPT if None
+    rules: list[HierarchyRule] = field(default_factory=list)  # Power user
 
 
 @dataclass
@@ -182,6 +206,9 @@ class EnrichmentConfig:
             ),
             hierarchy=HierarchyConfig(
                 enabled=hierarchy_data.get("enabled", False),
+                group_by=hierarchy_data.get("group_by", "source_file"),
+                group_prompt=hierarchy_data.get("group_prompt"),
+                corpus_prompt=hierarchy_data.get("corpus_prompt"),
                 rules=hierarchy_rules,
             ),
         )
@@ -202,6 +229,9 @@ class EnrichmentConfig:
             },
             "hierarchy": {
                 "enabled": self.hierarchy.enabled,
+                "group_by": self.hierarchy.group_by,
+                "group_prompt": self.hierarchy.group_prompt,
+                "corpus_prompt": self.hierarchy.corpus_prompt,
                 "rules": [
                     {
                         "name": rule.name,
@@ -222,4 +252,6 @@ __all__ = [
     "ArtifactConfig",
     "HierarchyConfig",
     "HierarchyRule",
+    "DEFAULT_GROUP_PROMPT",
+    "DEFAULT_CORPUS_PROMPT",
 ]
