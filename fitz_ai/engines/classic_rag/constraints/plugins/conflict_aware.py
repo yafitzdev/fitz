@@ -5,7 +5,14 @@ Conflict-Aware Constraint - Default guardrail for contradiction detection.
 This constraint detects explicitly conflicting claims in retrieved chunks.
 When conflicts exist, it prevents the system from giving a confident answer.
 
-This is the ONLY default constraint. It does not:
+Detects conflicts in:
+- Classifications (security vs operational incident)
+- Trends (improved vs declined)
+- Sentiment (positive vs negative)
+- State (successful vs failed, approved vs rejected)
+- Numeric claims (significantly different values)
+
+This constraint does NOT:
 - Resolve conflicts
 - Choose sides
 - Apply authority hierarchies
@@ -36,6 +43,7 @@ logger = get_logger(__name__)
 
 # Patterns indicating explicit classification/categorization
 CLASSIFICATION_PATTERNS: tuple[re.Pattern, ...] = (
+    # Incident/event classification
     re.compile(
         r"\b(?:is|was|are|were)\s+(?:a|an|the)?\s*(\w+(?:\s+\w+)?)\s+(?:incident|event|issue|problem)",
         re.I,
@@ -47,19 +55,71 @@ CLASSIFICATION_PATTERNS: tuple[re.Pattern, ...] = (
         r"\b(?:security|operational|infrastructure|network)\s+(?:incident|event|issue)",
         re.I,
     ),
+    # Trend indicators
+    re.compile(r"\b(improved|increased|grew|rose|gained|surged)\b", re.I),
+    re.compile(r"\b(declined|decreased|dropped|fell|lost|plummeted)\b", re.I),
+    re.compile(r"\b(stable|unchanged|flat|steady|consistent)\b", re.I),
+    # Sentiment indicators
+    re.compile(r"\b(?:was|is|were|are)\s+(positive|negative|neutral)\b", re.I),
+    re.compile(r"\b(?:response|feedback|sentiment)\s+(?:was|is)\s+(positive|negative|neutral)\b", re.I),
+    re.compile(r"\b(good|bad|excellent|poor|great|terrible)\s+(?:results?|performance|outcome)\b", re.I),
+    # State indicators (both "was successful" and standalone "failed")
+    re.compile(r"\b(?:was|is|were|are)\s+(successful|failed|completed|pending)\b", re.I),
+    re.compile(r"\b(successful(?:ly)?|failed|completed|pending)\b", re.I),
+    re.compile(r"\b(?:was|is|were|are)\s+(approved|rejected|accepted|denied)\b", re.I),
+    # Numeric claims (NPS, scores, percentages)
+    re.compile(r"\b(?:nps|score|rating)\s*(?:is|was|of|:)?\s*(\d+(?:\.\d+)?)\b", re.I),
+    re.compile(r"\b(\d+(?:\.\d+)?)\s*%\s*(?:increase|decrease|growth|decline)?\b", re.I),
 )
 
-# Mutually exclusive classification pairs (normalized to lowercase)
+# Mutually exclusive pairs (normalized to lowercase)
+# Format: (term_a, term_b) - if one chunk has term_a and another has term_b, it's a conflict
 CONFLICTING_PAIRS: tuple[tuple[str, str], ...] = (
+    # Classification conflicts
     ("security", "operational"),
     ("security incident", "operational incident"),
     ("internal", "external"),
+    # State conflicts
     ("confirmed", "unconfirmed"),
     ("approved", "rejected"),
+    ("accepted", "denied"),
     ("active", "deprecated"),
+    ("enabled", "disabled"),
     ("primary", "secondary"),
+    ("successful", "failed"),
+    ("completed", "pending"),
     ("yes", "no"),
     ("true", "false"),
+    # Trend conflicts
+    ("improved", "declined"),
+    ("improved", "decreased"),
+    ("improved", "dropped"),
+    ("improved", "fell"),
+    ("increased", "decreased"),
+    ("increased", "declined"),
+    ("increased", "dropped"),
+    ("increased", "fell"),
+    ("grew", "dropped"),
+    ("grew", "declined"),
+    ("grew", "decreased"),
+    ("rose", "fell"),
+    ("rose", "dropped"),
+    ("rose", "declined"),
+    ("gained", "lost"),
+    ("surged", "plummeted"),
+    ("stable", "improved"),
+    ("stable", "declined"),
+    ("stable", "increased"),
+    ("stable", "decreased"),
+    ("unchanged", "improved"),
+    ("unchanged", "declined"),
+    # Sentiment conflicts
+    ("positive", "negative"),
+    ("good", "bad"),
+    ("good", "poor"),
+    ("excellent", "poor"),
+    ("excellent", "terrible"),
+    ("great", "terrible"),
 )
 
 
@@ -79,24 +139,26 @@ def _extract_classifications(text: str) -> set[str]:
 
 def _find_conflicts(chunks: Sequence["Chunk"]) -> list[tuple[str, str, str, str]]:
     """
-    Find conflicting classifications across chunks.
+    Find conflicting claims across chunks.
 
-    Returns list of (chunk1_id, class1, chunk2_id, class2) tuples.
+    Detects conflicts in classifications, trends, sentiment, and state.
+
+    Returns list of (chunk1_id, claim1, chunk2_id, claim2) tuples.
     """
     conflicts: list[tuple[str, str, str, str]] = []
 
-    # Extract classifications per chunk
-    chunk_classes: list[tuple[str, set[str]]] = []
+    # Extract claims per chunk
+    chunk_claims: list[tuple[str, set[str]]] = []
     for chunk in chunks:
-        classes = _extract_classifications(chunk.content)
-        if classes:
-            chunk_classes.append((chunk.id, classes))
+        claims = _extract_classifications(chunk.content)
+        if claims:
+            chunk_claims.append((chunk.id, claims))
 
     # Compare all pairs
-    for i, (id1, classes1) in enumerate(chunk_classes):
-        for id2, classes2 in chunk_classes[i + 1 :]:
-            for term1 in classes1:
-                for term2 in classes2:
+    for i, (id1, claims1) in enumerate(chunk_claims):
+        for id2, claims2 in chunk_claims[i + 1 :]:
+            for term1 in claims1:
+                for term2 in claims2:
                     if _are_conflicting(term1, term2):
                         conflicts.append((id1, term1, id2, term2))
 
@@ -104,7 +166,7 @@ def _find_conflicts(chunks: Sequence["Chunk"]) -> list[tuple[str, str, str, str]
 
 
 def _are_conflicting(term1: str, term2: str) -> bool:
-    """Check if two classification terms are mutually exclusive."""
+    """Check if two terms are mutually exclusive."""
     t1, t2 = term1.lower(), term2.lower()
 
     # Same term is not a conflict
@@ -115,6 +177,20 @@ def _are_conflicting(term1: str, term2: str) -> bool:
     for a, b in CONFLICTING_PAIRS:
         if (a in t1 and b in t2) or (b in t1 and a in t2):
             return True
+
+    # Check numeric conflicts (same metric type, significantly different values)
+    num1 = re.search(r"(\d+(?:\.\d+)?)", t1)
+    num2 = re.search(r"(\d+(?:\.\d+)?)", t2)
+    if num1 and num2:
+        try:
+            val1, val2 = float(num1.group(1)), float(num2.group(1))
+            # Significant difference (>20% relative difference)
+            if val1 > 0 and val2 > 0:
+                ratio = max(val1, val2) / min(val1, val2)
+                if ratio > 1.2:
+                    return True
+        except ValueError:
+            pass
 
     return False
 

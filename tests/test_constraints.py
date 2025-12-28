@@ -159,6 +159,98 @@ class TestConflictAwareConstraint:
 
         assert result.allow_decisive_answer is True
 
+    def test_detects_trend_conflict_improved_vs_declined(self):
+        """Should detect conflicting trend claims."""
+        constraint = ConflictAwareConstraint()
+
+        chunks = [
+            make_chunk("1", "Customer satisfaction improved significantly this quarter."),
+            make_chunk("2", "Customer satisfaction declined compared to last year."),
+        ]
+
+        result = constraint.apply("How did customer satisfaction change?", chunks)
+
+        assert result.allow_decisive_answer is False
+        assert "improved" in result.reason.lower() or "declined" in result.reason.lower()
+
+    def test_detects_trend_conflict_increased_vs_decreased(self):
+        """Should detect increased vs decreased conflicts."""
+        constraint = ConflictAwareConstraint()
+
+        chunks = [
+            make_chunk("1", "Revenue increased by 20% this quarter."),
+            make_chunk("2", "Revenue decreased compared to projections."),
+        ]
+
+        result = constraint.apply("What happened to revenue?", chunks)
+
+        assert result.allow_decisive_answer is False
+
+    def test_detects_sentiment_conflict(self):
+        """Should detect conflicting sentiment claims."""
+        constraint = ConflictAwareConstraint()
+
+        chunks = [
+            make_chunk("1", "The overall feedback was positive."),
+            make_chunk("2", "Customer response was negative."),
+        ]
+
+        result = constraint.apply("What was the customer feedback?", chunks)
+
+        assert result.allow_decisive_answer is False
+
+    def test_detects_state_conflict_successful_vs_failed(self):
+        """Should detect conflicting state claims."""
+        constraint = ConflictAwareConstraint()
+
+        chunks = [
+            make_chunk("1", "The deployment was successful."),
+            make_chunk("2", "The deployment failed due to configuration issues."),
+        ]
+
+        result = constraint.apply("Was the deployment successful?", chunks)
+
+        assert result.allow_decisive_answer is False
+
+    def test_detects_numeric_conflict(self):
+        """Should detect significantly different numeric claims."""
+        constraint = ConflictAwareConstraint()
+
+        chunks = [
+            make_chunk("1", "The NPS score is 42."),
+            make_chunk("2", "The NPS score is 68."),
+        ]
+
+        result = constraint.apply("What is the NPS score?", chunks)
+
+        assert result.allow_decisive_answer is False
+
+    def test_no_conflict_for_similar_numbers(self):
+        """Should not flag conflict for similar numeric values."""
+        constraint = ConflictAwareConstraint()
+
+        chunks = [
+            make_chunk("1", "The score is 42."),
+            make_chunk("2", "The score is 44."),  # Within 20% difference
+        ]
+
+        result = constraint.apply("What is the score?", chunks)
+
+        assert result.allow_decisive_answer is True
+
+    def test_no_conflict_for_agreeing_trends(self):
+        """Should not flag conflict when trends agree."""
+        constraint = ConflictAwareConstraint()
+
+        chunks = [
+            make_chunk("1", "Sales improved this quarter."),
+            make_chunk("2", "Revenue also improved significantly."),
+        ]
+
+        result = constraint.apply("How did the business perform?", chunks)
+
+        assert result.allow_decisive_answer is True
+
 
 # =============================================================================
 # Tests: Constraint Runner
