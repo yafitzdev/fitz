@@ -206,6 +206,39 @@ The codebase speaks for itself.
 
 <summary><strong>📦 Features</strong></summary>
 
+<br>
+
+#### Hierarchical RAG 📊
+
+>Standard RAG struggles with analytical queries like "What are the trends?" because it retrieves random chunks instead of aggregated insights. Hierarchical RAG solves this.
+>
+>**The problem ☔️**
+>```
+>Q: "What are the trends in my comments?"
+>Standard RAG: Returns random individual comments (not useful)
+>```
+>
+>**The solution ☀️**
+>
+>For documents, Fitz auto-enables hierarchy when an LLM is available. It groups by file and generates multi-level summaries:
+>- **Level 2**: Original chunks (unchanged)
+>- **Level 1**: Group summaries ("Video ABC: mostly questions about pricing...")
+>- **Level 0**: Corpus summary ("Across all videos: 78% positive, top themes are...")
+>
+>Now analytical queries retrieve summaries, while specific queries still retrieve details:
+>```
+>Q: "What are the trends in my comments?"
+>Hierarchical RAG: Returns corpus + group summaries (aggregated insights)
+>```
+>```
+>Q: "What did people say about my hair?"
+>Hierarchical RAG: Returns specific comments mentioning hair (detail chunks)
+>```
+>
+>No special query syntax. No retrieval config changes. Summaries match analytical queries naturally via vector similarity.
+
+<br>
+
 #### Actually admits when it doesn't know 📚
 
 > When documents don't contain the answer, fitz says so:
@@ -307,58 +340,6 @@ The codebase speaks for itself.
 >
 >No more retrieving half a function or a code block split mid-syntax.
 
-<br>
-
-#### Enrichment ✨
-
->Opt-in enrichment plugins enhance your knowledge base:
->
->- **Code-derived artifacts**: Navigation indexes, interface catalogs, dependency graphs—extracted directly from your codebase via AST analysis. No LLM required.
->- **LLM-generated summaries**: Natural language descriptions for chunks, making code more discoverable via semantic search.
->
->Your question matches enriched context, not just raw text. Fully extensible—add your own enrichment plugins.
-
-<br>
-
-#### Hierarchical RAG 📊
-
->Standard RAG struggles with analytical queries like "What are the trends?" because it retrieves random chunks instead of aggregated insights. Hierarchical RAG solves this.
->
->**The problem:**
->```
->Q: "What are the trends in my comments?"
->Standard RAG: Returns random individual comments (not useful)
->```
->
->**The solution:**
->```yaml
-># .fitz/config.yaml
->enrichment:
->  hierarchy:
->    enabled: true
->    rules:
->      - name: video_comments
->        paths: ["comments/**"]
->        group_by: video_id
->        prompt: "Summarize sentiment and themes"
->```
->
->Fitz generates multi-level summaries during ingestion:
->- **Level 0**: Corpus summary ("Across all videos: 78% positive, top themes are...")
->- **Level 1**: Group summaries ("Video ABC: mostly questions about pricing...")
->- **Level 2**: Original chunks (unchanged)
->
->Now analytical queries retrieve summaries, while specific queries still retrieve details:
->
->```
->Q: "What are the trends in my comments?"
->→ Returns corpus + group summaries (aggregated insights)
->
->Q: "What did people say about my hair?"
->→ Returns specific comments mentioning hair (detail chunks)
->```
->
->No special query syntax. No retrieval config changes. Summaries match analytical queries naturally via vector similarity.
 </details>
 
 ---
