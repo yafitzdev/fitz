@@ -25,14 +25,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-# Smart defaults for hierarchy prompts - users don't need to write these
-DEFAULT_GROUP_PROMPT = """Summarize the key information, themes, and insights from this document.
-Preserve important details, metrics, dates, and notable points."""
-
-DEFAULT_CORPUS_PROMPT = """Synthesize the main themes, patterns, and trends across all documents.
-Identify common threads, evolution over time, and key takeaways."""
-
-
 @dataclass
 class SummaryConfig:
     """
@@ -252,6 +244,4 @@ __all__ = [
     "ArtifactConfig",
     "HierarchyConfig",
     "HierarchyRule",
-    "DEFAULT_GROUP_PROMPT",
-    "DEFAULT_CORPUS_PROMPT",
 ]

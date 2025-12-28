@@ -7,7 +7,7 @@ Supports two modes:
 2. Rules mode (power-user): Configure custom rules for complex scenarios
 
 Simple mode groups chunks by source file and generates summaries
-using DEFAULT_GROUP_PROMPT and DEFAULT_CORPUS_PROMPT.
+using prompts from the centralized prompt library.
 """
 
 from __future__ import annotations
@@ -18,13 +18,12 @@ from typing import TYPE_CHECKING, List, Protocol, runtime_checkable
 
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
 from fitz_ai.ingest.enrichment.config import (
-    DEFAULT_CORPUS_PROMPT,
-    DEFAULT_GROUP_PROMPT,
     HierarchyConfig,
     HierarchyRule,
 )
 from fitz_ai.ingest.enrichment.hierarchy.grouper import ChunkGrouper
 from fitz_ai.ingest.enrichment.hierarchy.matcher import ChunkMatcher
+from fitz_ai.prompts import hierarchy as hierarchy_prompts
 
 if TYPE_CHECKING:
     pass
@@ -140,9 +139,9 @@ class HierarchyEnricher:
         grouper = ChunkGrouper(self._config.group_by)
         groups = grouper.group(chunks)
 
-        # Get prompts (use defaults if not specified)
-        group_prompt = self._config.group_prompt or DEFAULT_GROUP_PROMPT
-        corpus_prompt = self._config.corpus_prompt or DEFAULT_CORPUS_PROMPT
+        # Get prompts (use prompt library defaults if not specified)
+        group_prompt = self._config.group_prompt or hierarchy_prompts.GROUP_SUMMARY_PROMPT
+        corpus_prompt = self._config.corpus_prompt or hierarchy_prompts.CORPUS_SUMMARY_PROMPT
 
         # Generate level-1 summaries for each group
         level1_chunks: List[Chunk] = []
