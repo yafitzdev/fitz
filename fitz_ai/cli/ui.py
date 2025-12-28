@@ -307,6 +307,7 @@ class UI:
         prompt: str,
         choices: list[str],
         default: str = "",
+        indent: bool = True,
     ) -> str:
         """
         Prompt for a numbered choice selection.
@@ -324,6 +325,7 @@ class UI:
             prompt: Prompt text
             choices: List of choices
             default: Default choice (will be shown first)
+            indent: Whether to indent the menu (default True)
 
         Returns:
             Selected choice string
@@ -338,28 +340,32 @@ class UI:
         # Reorder choices: default first, then the rest in original order
         ordered_choices = [default] + [c for c in choices if c != default]
 
+        # Indentation
+        p_indent = "  " if indent else ""
+        c_indent = "  " if indent else ""
+
         # Print prompt and choices
         if RICH:
-            console.print(f"  [bold]{prompt}:[/bold]")
+            console.print(f"{p_indent}[bold]{prompt}:[/bold]")
             for i, choice in enumerate(ordered_choices, 1):
                 if choice == default:
-                    console.print(f"    [cyan][{i}][/cyan] {choice} [dim](default)[/dim]")
+                    console.print(f"{p_indent}{c_indent}[cyan][{i}][/cyan] {choice} [dim](default)[/dim]")
                 else:
-                    console.print(f"    [cyan][{i}][/cyan] {choice}")
+                    console.print(f"{p_indent}{c_indent}[cyan][{i}][/cyan] {choice}")
         else:
-            print(f"  {prompt}:")
+            print(f"{p_indent}{prompt}:")
             for i, choice in enumerate(ordered_choices, 1):
                 if choice == default:
-                    print(f"    [{i}] {choice} (default)")
+                    print(f"{p_indent}{c_indent}[{i}] {choice} (default)")
                 else:
-                    print(f"    [{i}] {choice}")
+                    print(f"{p_indent}{c_indent}[{i}] {choice}")
 
         # Get user input (default is always 1)
         while True:
             if RICH:
-                response = Prompt.ask("  Choice", default="1")
+                response = Prompt.ask(f"{p_indent}Choice", default="1")
             else:
-                response = input("  Choice [1]: ").strip()
+                response = input(f"{p_indent}Choice [1]: ").strip()
                 if not response:
                     response = "1"
 
@@ -368,18 +374,18 @@ class UI:
                 if 1 <= idx <= len(ordered_choices):
                     selected = ordered_choices[idx - 1]
                     if RICH:
-                        console.print(f"  [dim]→ {selected}[/dim]")
+                        console.print(f"{p_indent}[dim]{_ARROW} {selected}[/dim]")
                     return selected
                 else:
                     if RICH:
-                        console.print(f"  [red]Please enter 1-{len(ordered_choices)}[/red]")
+                        console.print(f"{p_indent}[red]Please enter 1-{len(ordered_choices)}[/red]")
                     else:
-                        print(f"  Please enter 1-{len(ordered_choices)}")
+                        print(f"{p_indent}Please enter 1-{len(ordered_choices)}")
             except ValueError:
                 if RICH:
-                    console.print("  [red]Please enter a number[/red]")
+                    console.print(f"{p_indent}[red]Please enter a number[/red]")
                 else:
-                    print("  Please enter a number")
+                    print(f"{p_indent}Please enter a number")
 
     def prompt_multi_select(
         self,

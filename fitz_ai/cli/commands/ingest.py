@@ -355,22 +355,20 @@ def command(
         if collection is None:
             existing_collections = _get_collections(config)
 
-            if len(existing_collections) == 1:
-                # Only one collection exists - use it
-                collection = existing_collections[0]
-                ui.info(f"Collection: {collection}")
-            elif len(existing_collections) > 1:
-                # Multiple collections - let user choose or create new
+            if existing_collections:
+                # Collections exist - let user choose or create new
                 print()
-                suggested = _suggest_collection_name(source)
-                choices = existing_collections + [f"+ Create new: {suggested}"]
-                selected = ui.prompt_numbered_choice("Collection", choices, default_collection)
-                if selected.startswith("+ Create new:"):
-                    collection = suggested
+                choices = existing_collections + ["+ Create new"]
+                selected = ui.prompt_numbered_choice(
+                    "Collection", choices, default_collection, indent=False
+                )
+                if selected == "+ Create new":
+                    suggested = _suggest_collection_name(source)
+                    collection = ui.prompt_text("Collection name", suggested)
                 else:
                     collection = selected
             else:
-                # No collections exist - suggest name from source folder
+                # No collections exist - prompt for name
                 suggested = _suggest_collection_name(source)
                 collection = ui.prompt_text("Collection name", suggested)
 
@@ -393,6 +391,15 @@ def command(
                     defaults=defaults,
                 )
                 artifacts = ",".join(selected_artifacts) if selected_artifacts else "none"
+
+        # 4. Hierarchy - prompt for hierarchical summaries (requires LLM)
+        if not hierarchy:
+            has_chat_llm = bool(config.get("chat", {}).get("plugin_name"))
+            if has_chat_llm:
+                hierarchy = ui.prompt_confirm(
+                    "Enable hierarchical summaries? (synthesizes insights across documents)",
+                    default=False,
+                )
 
     print()
 
