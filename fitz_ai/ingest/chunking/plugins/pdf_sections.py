@@ -40,6 +40,7 @@ class PdfSectionChunker:
     """
 
     plugin_name: str = field(default="pdf_sections", repr=False)
+    supported_extensions: list[str] = field(default_factory=lambda: [".pdf"], repr=False)
     min_section_chars: int = 50
     max_section_chars: int = 3000
     preserve_short_sections: bool = True

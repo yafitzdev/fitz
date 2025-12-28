@@ -60,25 +60,25 @@ def _suggest_collection_name(source: str) -> str:
     return name.replace(" ", "_").replace("-", "_").lower()
 
 
-def _is_code_project(source: str) -> bool:
-    """Check if source contains code files (suggests artifacts would be useful)."""
+def _detect_content_type(source: str) -> tuple[str, str]:
+    """
+    Detect whether source is a codebase or document corpus.
+
+    Returns:
+        Tuple of (content_type, reason) where content_type is "codebase" or "documents"
+    """
     from pathlib import Path
 
-    code_extensions = {".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java"}
-    path = Path(source)
+    from fitz_ai.ingest.detection import detect_content_type
 
-    if path.is_file():
-        return path.suffix in code_extensions
+    result = detect_content_type(Path(source))
+    return result.content_type, result.reason
 
-    # Check first 100 files for code
-    count = 0
-    for f in path.rglob("*"):
-        if f.is_file() and f.suffix in code_extensions:
-            return True
-        count += 1
-        if count > 100:
-            break
-    return False
+
+def _is_code_project(source: str) -> bool:
+    """Check if source is a codebase (for backwards compatibility)."""
+    content_type, _ = _detect_content_type(source)
+    return content_type == "codebase"
 
 
 def _get_available_artifacts(has_llm: bool = False) -> List[tuple]:
@@ -183,7 +183,7 @@ def _build_chunking_router_config(config: dict):
     return ChunkingRouterConfig(
         default=default,
         by_extension=by_extension,
-        warn_on_fallback=chunking.get("warn_on_fallback", True),
+        warn_on_fallback=chunking.get("warn_on_fallback", False),
     )
 
 
@@ -299,19 +299,10 @@ def command(
     config = _load_config()
 
     embedding_plugin = config.get("embedding", {}).get("plugin_name", "cohere")
-    embedding_model = (
-        config.get("embedding", {}).get("kwargs", {}).get("model", "embed-english-v3.0")
-    )
-    embedding_id = f"{embedding_plugin}:{embedding_model}"
-
+    embedding_model = config.get("embedding", {}).get("kwargs", {}).get("model", "")
+    embedding_id = f"{embedding_plugin}:{embedding_model}" if embedding_model else embedding_plugin
     vector_db_plugin = config.get("vector_db", {}).get("plugin_name", "qdrant")
     default_collection = config.get("retrieval", {}).get("collection", "default")
-
-    # Get chunking config from fitz.yaml
-    chunking_config = config.get("chunking", {})
-    default_chunker = chunking_config.get("default", {}).get("plugin_name", "simple")
-    chunk_size = chunking_config.get("default", {}).get("kwargs", {}).get("chunk_size", 1000)
-    chunk_overlap = chunking_config.get("default", {}).get("kwargs", {}).get("chunk_overlap", 0)
 
     # =========================================================================
     # Header
@@ -320,19 +311,15 @@ def command(
     ui.header("Fitz Ingest", "Feed your documents into the vector database")
     if force:
         ui.warning("Force mode: will re-ingest all files")
-    else:
-        ui.info("Incremental mode: skipping unchanged files")
-    ui.info(f"Embedding: {embedding_id}")
-    ui.info(f"Vector DB: {vector_db_plugin}")
-    ui.info(f"Chunking: {default_chunker} (size={chunk_size}, overlap={chunk_overlap})")
-    if hierarchy:
-        ui.info("Hierarchy: enabled (group + corpus summaries)")
 
     print()
 
     # =========================================================================
     # Interactive Prompts
     # =========================================================================
+
+    # Will be set after source is determined
+    detected_content_type: str = "documents"
 
     if non_interactive:
         if source is None:
@@ -345,6 +332,33 @@ def command(
 
         ui.info(f"Source: {source}")
         ui.info(f"Collection: {collection}")
+
+        # Auto-detect content type and configure enrichment
+        content_type, detection_reason = _detect_content_type(source)
+        detected_content_type = content_type
+        has_chat_llm = bool(config.get("chat", {}).get("plugin_name"))
+
+        if content_type == "codebase":
+            ui.info(f"Detected: codebase ({detection_reason})")
+            if artifacts is None:
+                available_artifacts = _get_available_artifacts(has_llm=has_chat_llm)
+                if available_artifacts:
+                    if has_chat_llm:
+                        artifacts = ",".join(name for name, _ in available_artifacts)
+                    else:
+                        artifacts = ",".join(
+                            name
+                            for name, desc in available_artifacts
+                            if "requires LLM" not in desc
+                        )
+                    ui.info("Auto-enabled: codebase analysis")
+        else:
+            ui.info(f"Detected: document corpus ({detection_reason})")
+            if artifacts is None:
+                artifacts = "none"
+            if not hierarchy and has_chat_llm:
+                hierarchy = True
+                ui.info("Auto-enabled: hierarchical summaries")
 
     else:
         # 1. Source path
@@ -372,34 +386,45 @@ def command(
                 suggested = _suggest_collection_name(source)
                 collection = ui.prompt_text("Collection name", suggested)
 
-        # 3. Artifacts - interactive multi-select for code projects
-        if artifacts is None and _is_code_project(source):
-            # Check if user has a chat LLM configured
-            has_chat_llm = bool(config.get("chat", {}).get("plugin_name"))
-            available_artifacts = _get_available_artifacts(has_llm=has_chat_llm)
-            if available_artifacts:
-                # Default to all artifacts if LLM is available, otherwise structural only
-                if has_chat_llm:
-                    defaults = [name for name, _ in available_artifacts]
-                else:
-                    defaults = [
-                        name for name, desc in available_artifacts if "requires LLM" not in desc
-                    ]
-                selected_artifacts = ui.prompt_multi_select(
-                    "Select artifacts to generate",
-                    available_artifacts,
-                    defaults=defaults,
-                )
-                artifacts = ",".join(selected_artifacts) if selected_artifacts else "none"
+        # 3. Auto-detect content type and configure enrichment accordingly
+        content_type, detection_reason = _detect_content_type(source)
+        detected_content_type = content_type
+        has_chat_llm = bool(config.get("chat", {}).get("plugin_name"))
 
-        # 4. Hierarchy - prompt for hierarchical summaries (requires LLM)
-        if not hierarchy:
-            has_chat_llm = bool(config.get("chat", {}).get("plugin_name"))
-            if has_chat_llm:
-                hierarchy = ui.prompt_confirm(
-                    "Enable hierarchical summaries? (synthesizes insights across documents)",
-                    default=False,
-                )
+        if content_type == "codebase":
+            # CODEBASE: Auto-enable codebase analysis, skip hierarchy
+            ui.info(f"Detected: codebase ({detection_reason})")
+
+            if artifacts is None:
+                # Auto-select all applicable artifacts
+                available_artifacts = _get_available_artifacts(has_llm=has_chat_llm)
+                if available_artifacts:
+                    if has_chat_llm:
+                        artifacts = ",".join(name for name, _ in available_artifacts)
+                    else:
+                        # Only structural artifacts (no LLM required)
+                        artifacts = ",".join(
+                            name
+                            for name, desc in available_artifacts
+                            if "requires LLM" not in desc
+                        )
+                    ui.info("Auto-enabled: codebase analysis")
+
+            # Don't auto-enable hierarchy for codebases (prompts are document-focused)
+            # User can still enable with --hierarchy if desired
+
+        else:
+            # DOCUMENTS: Auto-enable hierarchy, skip codebase analysis
+            ui.info(f"Detected: document corpus ({detection_reason})")
+
+            # Skip codebase analysis for non-code
+            if artifacts is None:
+                artifacts = "none"
+
+            # Auto-enable hierarchy for documents (if LLM available)
+            if not hierarchy and has_chat_llm:
+                hierarchy = True
+                ui.info("Auto-enabled: hierarchical summaries (for trend/analytical queries)")
 
     print()
 
@@ -426,8 +451,6 @@ def command(
         # Build chunking router from config
         router_config = _build_chunking_router_config(config)
         chunking_router = ChunkingRouter.from_config(router_config)
-
-        ui.info(f"Router: {chunking_router}")
 
         # Embedder
         embedding_kwargs = config.get("embedding", {}).get("kwargs", {})
@@ -514,11 +537,12 @@ def command(
                 chat_client=chat_client,
             )
 
-            # Show which artifacts will be generated
-            plugins = enrichment_pipeline.get_applicable_artifact_plugins()
-            plugin_names = [p.name for p in plugins]
-            if plugin_names:
-                ui.info(f"Artifacts: {', '.join(plugin_names)}")
+            # Show which codebase analysis plugins will run (only for codebases)
+            if detected_content_type == "codebase":
+                plugins = enrichment_pipeline.get_applicable_artifact_plugins()
+                plugin_names = [p.name for p in plugins]
+                if plugin_names:
+                    ui.info(f"Codebase analysis: {', '.join(plugin_names)}")
 
     except Exception as e:
         ui.error(f"Failed to initialize: {e}")
@@ -735,3 +759,10 @@ def command(
 
     print()
     ui.success(f"Documents ingested into collection '{collection}'")
+
+    # Show which extensions used the default chunker (grey/dim text)
+    exts_using_default = chunking_router.get_extensions_using_default()
+    if exts_using_default:
+        default_name = chunking_router._default_chunker.plugin_name
+        ext_list = ", ".join(sorted(exts_using_default))
+        ui.info(f"Chunker '{default_name}' used for: {ext_list}")

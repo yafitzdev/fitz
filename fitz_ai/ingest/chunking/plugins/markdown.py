@@ -46,6 +46,9 @@ class MarkdownChunker:
     """
 
     plugin_name: str = field(default="markdown", repr=False)
+    supported_extensions: list[str] = field(
+        default_factory=lambda: [".md", ".markdown", ".mdx"], repr=False
+    )
     max_chunk_size: int = 1500
     min_chunk_size: int = 100
     include_header_in_chunk: bool = True

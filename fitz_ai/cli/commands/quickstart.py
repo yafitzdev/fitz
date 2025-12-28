@@ -405,7 +405,7 @@ def _run_ingestion(
                 )
                 for ext, ext_cfg in chunking_cfg.get("by_extension", {}).items()
             },
-            warn_on_fallback=chunking_cfg.get("warn_on_fallback", True),
+            warn_on_fallback=chunking_cfg.get("warn_on_fallback", False),
         )
     else:
         # Fall back to package defaults from default.yaml

@@ -203,7 +203,6 @@ chunking:
       chunk_size: {chunk_size}
       chunk_overlap: {chunk_overlap}
   by_extension: {{}}
-  warn_on_fallback: true
 """
 
     return f"""# Fitz RAG Configuration

@@ -44,6 +44,9 @@ class PythonCodeChunker:
     """
 
     plugin_name: str = field(default="python_code", repr=False)
+    supported_extensions: list[str] = field(
+        default_factory=lambda: [".py", ".pyw", ".pyi"], repr=False
+    )
     max_chunk_size: int = 2000
     include_imports: bool = True
     split_classes_by_method: bool = True

@@ -28,7 +28,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from fitz_ai.engines.classic_rag.config import ChunkingRouterConfig
 from fitz_ai.engines.classic_rag.models.chunk import Chunk
 from fitz_ai.ingest.chunking.base import ChunkerPlugin
-from fitz_ai.ingest.chunking.registry import get_chunking_plugin
+from fitz_ai.ingest.chunking.registry import (
+    get_chunker_for_extension,
+    get_chunking_plugin,
+)
 from fitz_ai.ingest.exceptions.chunking import IngestionChunkingError
 
 if TYPE_CHECKING:
@@ -42,7 +45,13 @@ class ChunkingRouter:
     Routes documents to file-type specific chunkers.
 
     The router maintains instantiated chunker plugins for each configured
-    extension, plus a default fallback chunker.
+    extension, plus auto-discovered chunkers for extensions with matching
+    plugins, plus a default fallback chunker.
+
+    Priority order:
+    1. Explicit config (by_extension in config)
+    2. Auto-discovered (plugin declares supported_extensions)
+    3. Default fallback
     """
 
     def __init__(
@@ -64,6 +73,8 @@ class ChunkingRouter:
         self._default_chunker = default_chunker
         self._warn_on_fallback = warn_on_fallback
         self._warned_extensions: set[str] = set()
+        # Cache for auto-discovered chunker instances
+        self._auto_chunkers: Dict[str, ChunkerPlugin] = {}
 
     @classmethod
     def from_config(cls, config: ChunkingRouterConfig) -> "ChunkingRouter":
@@ -131,27 +142,62 @@ class ChunkingRouter:
         """
         Get the appropriate chunker for a file extension.
 
+        Priority:
+        1. Explicit config (by_extension in config)
+        2. Auto-discovered (plugin declares supported_extensions)
+        3. Default fallback
+
         Args:
             ext: File extension (e.g., ".md", ".py", "txt").
 
         Returns:
-            ChunkerPlugin for the extension, or default if not configured.
+            ChunkerPlugin for the extension.
         """
         normalized = self._normalize_ext(ext)
-        chunker = self._chunker_map.get(normalized)
 
+        # 1. Check explicit config
+        chunker = self._chunker_map.get(normalized)
         if chunker is not None:
             return chunker
 
-        # Fallback to default with warning
-        if self._warn_on_fallback and normalized not in self._warned_extensions:
-            logger.warning(
-                f"No chunker configured for extension '{normalized}', "
-                f"using default chunker '{self._default_chunker.plugin_name}'"
-            )
+        # 2. Check auto-discovered plugins
+        if normalized in self._auto_chunkers:
+            return self._auto_chunkers[normalized]
+
+        # Try to find a plugin that supports this extension
+        plugin_name = get_chunker_for_extension(normalized)
+        if plugin_name:
+            try:
+                # Use empty kwargs - let the plugin use its own defaults
+                # (the default chunker's kwargs may not be compatible)
+                chunker = self._build_chunker(
+                    plugin_name,
+                    {},  # Empty kwargs - use plugin defaults
+                    context=f"auto-discovered for '{normalized}'",
+                )
+                self._auto_chunkers[normalized] = chunker
+                logger.debug(
+                    f"Auto-selected chunker '{plugin_name}' for extension '{normalized}'"
+                )
+                return chunker
+            except IngestionChunkingError:
+                # Failed to build, fall through to default
+                pass
+
+        # 3. Fall back to default
+        # Track extensions that use default chunker (for optional CLI summary)
+        if normalized not in self._warned_extensions:
             self._warned_extensions.add(normalized)
+            logger.debug(
+                f"Extension '{normalized}' using default chunker "
+                f"'{self._default_chunker.plugin_name}'"
+            )
 
         return self._default_chunker
+
+    def get_extensions_using_default(self) -> set[str]:
+        """Get extensions that fell back to the default chunker."""
+        return self._warned_extensions.copy()
 
     def get_chunker_id(self, ext: str) -> str:
         """Get the chunker_id for a file extension."""
