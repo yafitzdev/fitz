@@ -11,6 +11,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.2] - 2025-12-28
+
+### 🎉 Highlights
+
+**Knowledge Map** - New `fitz map` command generates an interactive HTML visualization of your knowledge base. View document clusters, explore relationships, and identify coverage gaps. [EXPERIMENTAL]
+
+**Hierarchical RAG** - New enrichment mode that generates multi-level summaries from your content. Groups related chunks and creates hierarchical context for improved retrieval.
+
+**Fast/Smart Model Tiers** - LLM plugins now support two model tiers: "smart" for user-facing queries (best quality) and "fast" for background tasks like enrichment (best speed).
+
+### 🚀 Added
+
+#### Knowledge Map Visualization (`fitz_ai/map/`)
+- `fitz map` - Generates interactive HTML knowledge graph
+- Automatic clustering of related content
+- Gap detection to identify missing coverage
+- 2D projection of embeddings for visualization
+- State caching for faster regeneration
+- `--similarity-threshold` to control edge density
+- `--rebuild` to force fresh embedding fetch
+- `--no-open` to skip browser launch
+
+#### Hierarchical Enrichment (`fitz_ai/ingest/enrichment/hierarchy/`)
+- **HierarchyEnricher**: Generates multi-level summaries from chunks
+- **ChunkGrouper**: Groups chunks by source file or custom rules
+- **ChunkMatcher**: Filters chunks by path patterns
+- Simple mode (zero-config) with smart defaults
+- Rules mode for power-users with custom configuration
+- Centralized prompts in `fitz_ai/prompts/hierarchy/`
+
+#### Content Type Detection (`fitz_ai/ingest/detection.py`)
+- Auto-detects codebase vs document corpus
+- Recognizes project markers (pyproject.toml, package.json, Cargo.toml, etc.)
+- Selects appropriate enrichment strategy automatically
+
+#### LLM Model Tiers
+- `models.smart` and `models.fast` in YAML plugin defaults
+- `tier="smart"` or `tier="fast"` parameter for client creation
+- Smart defaults: `command-a-03-2025` (Cohere), `gpt-4o` (OpenAI)
+- Fast defaults: `command-r7b-12-2024` (Cohere), `gpt-4o-mini` (OpenAI)
+
+#### Comprehensive CLI Tests
+- `test_cli_chat.py` - Chat command tests
+- `test_cli_collections.py` - Collection management tests
+- `test_cli_config.py` - Config command tests
+- `test_cli_doctor.py` - System diagnostics tests
+- `test_cli_ingest.py` - Ingestion pipeline tests
+- `test_cli_init.py` - Initialization tests
+- `test_cli_map.py` - Knowledge map tests
+- `test_cli_query.py` - Query command tests
+- `test_local_llm_*.py` - Local LLM runtime tests
+
+### 🔄 Changed
+
+- Chunker plugins reorganized: `simple.py` and `recursive.py` moved to `plugins/default/`
+- `fitz ingest` now supports `-H/--hierarchy` flag for hierarchical enrichment
+- Contract map tool refactored with improved autodiscovery
+- YAML plugin `defaults.model` replaced with `defaults.models.{smart,fast}` structure
+
+### 🐛 Fixed
+
+- Various fixes to contract map analysis
+- Improved chunking router registry handling
+
+---
+
+## [0.4.1] - 2025-12-27
+
+### 🐛 Fixed
+
+- Minor fixes and improvements
+
+---
+
 ## [0.4.0] - 2025-12-26
 
 ### 🎉 Highlights
@@ -479,7 +553,9 @@ Initial release of Fitz RAG framework.
 
 ---
 
-[Unreleased]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/yafitzdev/fitz-ai/compare/v0.3.6...v0.4.0
 [0.3.6]: https://github.com/yafitzdev/fitz-ai/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/yafitzdev/fitz-ai/compare/v0.3.4...v0.3.5
