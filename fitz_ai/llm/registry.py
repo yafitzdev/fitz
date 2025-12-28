@@ -10,6 +10,11 @@ Handles discovery and instantiation of:
 Design principle: NO SILENT FALLBACK
 - If user configures "cohere", they get cohere or an error
 - Plugins are YAML files, not Python modules
+
+Model Tiers:
+- Chat plugins support two model tiers: "smart" and "fast"
+- Use tier="smart" for user-facing responses (queries)
+- Use tier="fast" for background tasks (enrichment, summaries)
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from typing import Any, List
 
 from fitz_ai.core.registry import LLMRegistryError
 from fitz_ai.llm.loader import YAMLPluginNotFoundError, list_plugins
-from fitz_ai.llm.runtime import create_yaml_client
+from fitz_ai.llm.runtime import ModelTier, create_yaml_client
 
 VALID_LLM_TYPES = frozenset({"chat", "embedding", "rerank"})
 
@@ -42,13 +47,23 @@ def available_llm_plugins(plugin_type: str) -> List[str]:
     return sorted(list_plugins(plugin_type))
 
 
-def get_llm_plugin(*, plugin_name: str, plugin_type: str, **kwargs: Any) -> Any:
+def get_llm_plugin(
+    *,
+    plugin_name: str,
+    plugin_type: str,
+    tier: ModelTier | None = None,
+    **kwargs: Any,
+) -> Any:
     """
     Get an LLM plugin instance by name and type.
 
     Args:
         plugin_name: Name of the plugin (e.g., "cohere", "openai")
         plugin_type: Type of plugin ("chat", "embedding", "rerank")
+        tier: Model tier for chat plugins ("smart" or "fast").
+              - "smart": Best quality for user-facing responses (queries)
+              - "fast": Best speed for background tasks (enrichment)
+              Defaults to "smart" if not specified.
         **kwargs: Plugin initialization parameters
 
     Returns:
@@ -65,7 +80,7 @@ def get_llm_plugin(*, plugin_name: str, plugin_type: str, **kwargs: Any) -> Any:
         )
 
     try:
-        return create_yaml_client(plugin_type, plugin_name, **kwargs)
+        return create_yaml_client(plugin_type, plugin_name, tier=tier, **kwargs)
     except YAMLPluginNotFoundError:
         available = available_llm_plugins(plugin_type)
         raise LLMRegistryError(

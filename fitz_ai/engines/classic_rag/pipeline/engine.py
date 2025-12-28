@@ -179,11 +179,12 @@ class RAGPipeline:
         vector_client = get_vector_db_plugin(cfg.vector_db.plugin_name, **cfg.vector_db.kwargs)
         logger.info(f"{VECTOR_DB} Using vector DB plugin='{cfg.vector_db.plugin_name}'")
 
-        # Chat LLM
+        # Chat LLM - use "smart" tier for user-facing query responses
         chat_plugin = get_llm_plugin(
-            plugin_type="chat", plugin_name=cfg.chat.plugin_name, **cfg.chat.kwargs
+            plugin_type="chat", plugin_name=cfg.chat.plugin_name, tier="smart", **cfg.chat.kwargs
         )
-        logger.info(f"{PIPELINE} Using chat plugin='{cfg.chat.plugin_name}'")
+        model_name = getattr(chat_plugin, "params", {}).get("model", "unknown")
+        logger.info(f"{PIPELINE} Using chat plugin='{cfg.chat.plugin_name}' model='{model_name}' (smart tier)")
 
         # Embedding
         embedder = get_llm_plugin(

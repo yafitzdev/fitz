@@ -57,8 +57,13 @@ endpoint:
 # =============================================================================
 # DEFAULTS
 # =============================================================================
+# Models are split by tier:
+#   smart: Best quality for user-facing responses (queries)
+#   fast: Best speed for background tasks (enrichment, summaries)
 defaults:
-  model: "command-a-03-2025"
+  models:
+    smart: "command-a-03-2025"
+    fast: "command-r7b-12-2024"
   temperature: 0.2
   max_tokens: null
 

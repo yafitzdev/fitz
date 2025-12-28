@@ -48,8 +48,13 @@ endpoint:
 # =============================================================================
 # DEFAULTS
 # =============================================================================
+# Models are split by tier:
+#   smart: Best quality for user-facing responses (queries)
+#   fast: Best speed for background tasks (enrichment, summaries)
 defaults:
-  model: "claude-sonnet-4-20250514"
+  models:
+    smart: "claude-sonnet-4-20250514"
+    fast: "claude-3-5-haiku-latest"
   temperature: 0.2
   max_tokens: 4096
 

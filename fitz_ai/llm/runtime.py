@@ -4,12 +4,21 @@ Generic plugin runtime that executes YAML-defined plugins.
 
 This is the "engine" that reads YAML plugin specs and performs the actual
 HTTP calls, credential resolution, and response parsing.
+
+Model Tiers:
+    Plugins define two model tiers in their defaults:
+    - smart: Best quality for user-facing responses (queries)
+    - fast: Best speed for background tasks (enrichment, summaries)
+
+    Use tier="smart" or tier="fast" when creating clients to automatically
+    select the appropriate model.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import warnings
 from typing import Any, ClassVar, Literal, overload
 
 from fitz_ai.core.http import (
@@ -35,18 +44,114 @@ from fitz_ai.llm.transforms import get_transformer
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Model Tier Resolution
+# =============================================================================
+
+ModelTier = Literal["smart", "fast"]
+
+
+def _resolve_model_from_tier(
+    defaults: dict[str, Any],
+    tier: ModelTier | None,
+    user_kwargs: dict[str, Any],
+    plugin_name: str,
+) -> str | None:
+    """
+    Resolve the model to use based on tier and configuration.
+
+    Priority:
+    1. User explicitly passed model= kwarg → use that
+    2. Look up models.{tier} from user config or defaults
+    3. If no tier specified, default to "smart"
+
+    Args:
+        defaults: Plugin defaults from YAML spec
+        tier: Requested tier ("smart" or "fast"), defaults to "smart"
+        user_kwargs: User-provided kwargs (may contain models override)
+        plugin_name: Plugin name for warnings
+
+    Returns:
+        Model name to use, or None if no tier-based resolution needed
+    """
+    # If user explicitly provided a model, use it (no tier logic)
+    if "model" in user_kwargs:
+        return None
+
+    # Look up models: user config overrides > plugin defaults
+    user_models = user_kwargs.get("models", {})
+    default_models = defaults.get("models", {})
+
+    # Merge: user models override defaults
+    models = {**default_models, **user_models}
+
+    if not models:
+        # No models.smart/fast defined anywhere - no tier support
+        # Fall back to old-style defaults.model if it exists
+        return defaults.get("model")
+
+    smart_model = models.get("smart")
+    fast_model = models.get("fast")
+
+    # Default to "smart" tier if not specified
+    effective_tier = tier or "smart"
+
+    # Resolve based on tier
+    if effective_tier == "smart":
+        if smart_model:
+            return smart_model
+        elif fast_model:
+            if tier is not None:  # Only warn if user explicitly requested smart
+                warnings.warn(
+                    f"[{plugin_name}] No 'smart' model configured, using 'fast' model. "
+                    f"Query responses may be lower quality.",
+                    UserWarning,
+                    stacklevel=4,
+                )
+            return fast_model
+    elif effective_tier == "fast":
+        if fast_model:
+            return fast_model
+        elif smart_model:
+            warnings.warn(
+                f"[{plugin_name}] No 'fast' model configured, using 'smart' model. "
+                f"Enrichment may be slower and costlier.",
+                UserWarning,
+                stacklevel=4,
+            )
+            return smart_model
+
+    return None
+
+
 class YAMLPluginBase:
     """
     Base class for YAML-driven plugin clients.
 
     Handles: spec storage, parameter merging, env var resolution,
     API key resolution, HTTP client creation, request execution.
+
+    Model Tiers:
+        Pass tier="smart" or tier="fast" to automatically select the
+        appropriate model for the task. Providers define their own
+        fast/smart models in the YAML plugin spec.
     """
 
     plugin_type: ClassVar[str] = ""
 
-    def __init__(self, spec: PluginSpec, **kwargs: Any) -> None:
+    def __init__(
+        self, spec: PluginSpec, *, tier: ModelTier | None = None, **kwargs: Any
+    ) -> None:
         self.spec = spec
+        self.tier = tier
+
+        # Resolve model from tier (always called - defaults to "smart" if models exist)
+        tier_model = _resolve_model_from_tier(
+            spec.defaults, tier, kwargs, spec.plugin_name
+        )
+        if tier_model:
+            kwargs["model"] = tier_model
+
         self.params = {**spec.defaults, **kwargs}
 
         # Resolve required env vars
@@ -143,8 +248,10 @@ class YAMLChatClient(YAMLPluginBase):
     plugin_type: ClassVar[str] = "chat"
     spec: ChatPluginSpec
 
-    def __init__(self, spec: ChatPluginSpec, **kwargs: Any) -> None:
-        super().__init__(spec, **kwargs)
+    def __init__(
+        self, spec: ChatPluginSpec, *, tier: ModelTier | None = None, **kwargs: Any
+    ) -> None:
+        super().__init__(spec, tier=tier, **kwargs)
         self._transformer = get_transformer(spec.request.messages_transform.value)
 
     def chat(self, messages: list[dict[str, Any]]) -> str:
@@ -377,7 +484,11 @@ _CLIENT_CLASSES: dict[str, type[YAMLPluginBase]] = {
 
 @overload
 def create_yaml_client(
-    plugin_type: Literal["chat"], plugin_name: str, **kwargs: Any
+    plugin_type: Literal["chat"],
+    plugin_name: str,
+    *,
+    tier: ModelTier | None = None,
+    **kwargs: Any,
 ) -> YAMLChatClient: ...
 
 
@@ -394,16 +505,28 @@ def create_yaml_client(
 
 
 @overload
-def create_yaml_client(plugin_type: str, plugin_name: str, **kwargs: Any) -> YAMLPluginBase: ...
+def create_yaml_client(
+    plugin_type: str, plugin_name: str, *, tier: ModelTier | None = None, **kwargs: Any
+) -> YAMLPluginBase: ...
 
 
-def create_yaml_client(plugin_type: str, plugin_name: str, **kwargs: Any) -> YAMLPluginBase:
+def create_yaml_client(
+    plugin_type: str,
+    plugin_name: str,
+    *,
+    tier: ModelTier | None = None,
+    **kwargs: Any,
+) -> YAMLPluginBase:
     """
     Create a YAML plugin client.
 
     Args:
         plugin_type: "chat", "embedding", or "rerank"
         plugin_name: Plugin name (e.g., "cohere", "openai")
+        tier: Model tier for chat plugins ("smart" or "fast").
+              - "smart": Best quality for user-facing responses (queries)
+              - "fast": Best speed for background tasks (enrichment)
+              If not specified, uses the default model from the plugin spec.
         **kwargs: Plugin configuration
 
     Returns:
@@ -417,10 +540,16 @@ def create_yaml_client(plugin_type: str, plugin_name: str, **kwargs: Any) -> YAM
 
     spec = load_plugin(plugin_type, plugin_name)
     client_class = _CLIENT_CLASSES[plugin_type]
+
+    # Only pass tier for chat clients
+    if plugin_type == "chat" and tier is not None:
+        return client_class(spec, tier=tier, **kwargs)  # type: ignore[arg-type]
+
     return client_class(spec, **kwargs)  # type: ignore[arg-type]
 
 
 __all__ = [
+    "ModelTier",
     "YAMLPluginBase",
     "YAMLChatClient",
     "YAMLEmbeddingClient",

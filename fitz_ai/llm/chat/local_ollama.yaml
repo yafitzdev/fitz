@@ -51,8 +51,15 @@ endpoint:
 # =============================================================================
 # DEFAULTS
 # =============================================================================
+# Models are split by tier:
+#   smart: Best quality for user-facing responses (queries)
+#   fast: Best speed for background tasks (enrichment, summaries)
+# Note: Ollama uses the same model for both by default since available
+# models depend on local installation. Override in your config if needed.
 defaults:
-  model: "llama3.2"
+  models:
+    smart: "llama3.2"
+    fast: "llama3.2"
   temperature: 0.2
   max_tokens: null
 

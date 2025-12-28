@@ -492,16 +492,21 @@ def command(
                 needs_llm = True
 
             if needs_llm:
-                # Get chat client from config
+                # Get chat client from config - use "fast" tier for enrichment tasks
                 chat_plugin = config.get("chat", {}).get("plugin_name", "cohere")
                 chat_kwargs = config.get("chat", {}).get("kwargs", {})
+                # Include user's model overrides if present
+                chat_models = config.get("chat", {}).get("models")
+                if chat_models:
+                    chat_kwargs["models"] = chat_models
                 chat_client = get_llm_plugin(
-                    plugin_type="chat", plugin_name=chat_plugin, **chat_kwargs
+                    plugin_type="chat", plugin_name=chat_plugin, tier="fast", **chat_kwargs
                 )
+                model_name = chat_client.params.get("model", "unknown")
                 if hierarchy:
-                    ui.info(f"Chat LLM: {chat_plugin} (for hierarchy summaries)")
+                    ui.info(f"Chat LLM: {chat_plugin}:{model_name} (fast tier for summaries)")
                 else:
-                    ui.info(f"Chat LLM: {chat_plugin} (for LLM-based artifacts)")
+                    ui.info(f"Chat LLM: {chat_plugin}:{model_name} (fast tier for artifacts)")
 
             enrichment_pipeline = EnrichmentPipeline(
                 config=enrichment_config,

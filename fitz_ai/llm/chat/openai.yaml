@@ -48,8 +48,13 @@ endpoint:
 # =============================================================================
 # DEFAULTS
 # =============================================================================
+# Models are split by tier:
+#   smart: Best quality for user-facing responses (queries)
+#   fast: Best speed for background tasks (enrichment, summaries)
 defaults:
-  model: "gpt-4o-mini"
+  models:
+    smart: "gpt-4o"
+    fast: "gpt-4o-mini"
   temperature: 0.2
   max_tokens: null
 
