@@ -154,12 +154,13 @@ class PluginRegistry:
         )
 
     def _scan_package(self, package: Any) -> None:
-        """Scan a package for plugin classes."""
+        """Scan a package for plugin classes (non-recursive)."""
         package_path = getattr(package, "__path__", None)
         if not package_path:
             return
 
-        for importer, modname, ispkg in pkgutil.walk_packages(
+        # Use iter_modules instead of walk_packages to avoid recursing into subpackages
+        for importer, modname, ispkg in pkgutil.iter_modules(
             package_path, prefix=f"{package.__name__}."
         ):
             if ispkg:
@@ -216,8 +217,18 @@ INGEST_REGISTRY = PluginRegistry(
     required_method="ingest",
 )
 
+# Default chunkers (simple, recursive) - shown in fitz init
 CHUNKING_REGISTRY = PluginRegistry(
     name="chunking",
+    scan_packages=["fitz_ai.ingest.chunking.plugins.default"],
+    required_method="chunk_text",
+)
+
+# Type-specific chunkers (markdown, python_code, pdf_sections)
+# These are in the top-level plugins/ folder but NOT shown in fitz init.
+# Used via by_extension config for file-type-specific chunking.
+TYPED_CHUNKING_REGISTRY = PluginRegistry(
+    name="typed_chunking",
     scan_packages=["fitz_ai.ingest.chunking.plugins"],
     required_method="chunk_text",
 )
@@ -251,13 +262,29 @@ def available_ingest_plugins() -> List[str]:
 
 
 def get_chunking_plugin(plugin_name: str) -> Type[Any]:
-    """Get a chunking plugin by name."""
-    return CHUNKING_REGISTRY.get(plugin_name)
+    """Get a chunking plugin by name (default or typed)."""
+    # Try default registry first
+    try:
+        return CHUNKING_REGISTRY.get(plugin_name)
+    except PluginNotFoundError:
+        pass
+    # Fall back to typed registry
+    return TYPED_CHUNKING_REGISTRY.get(plugin_name)
 
 
 def available_chunking_plugins() -> List[str]:
-    """List available chunking plugins."""
+    """List available default chunking plugins (for fitz init)."""
     return CHUNKING_REGISTRY.list_available()
+
+
+def get_typed_chunking_plugin(plugin_name: str) -> Type[Any]:
+    """Get a typed chunking plugin by name."""
+    return TYPED_CHUNKING_REGISTRY.get(plugin_name)
+
+
+def available_typed_chunking_plugins() -> List[str]:
+    """List available typed chunking plugins (for by_extension config)."""
+    return TYPED_CHUNKING_REGISTRY.list_available()
 
 
 def get_retriever_plugin(plugin_name: str) -> Type[Any]:
@@ -365,6 +392,7 @@ __all__ = [
     # Pre-configured registries
     "INGEST_REGISTRY",
     "CHUNKING_REGISTRY",
+    "TYPED_CHUNKING_REGISTRY",
     "RETRIEVER_REGISTRY",
     "PIPELINE_REGISTRY",
     # Python-based plugin accessors
@@ -372,6 +400,8 @@ __all__ = [
     "available_ingest_plugins",
     "get_chunking_plugin",
     "available_chunking_plugins",
+    "get_typed_chunking_plugin",
+    "available_typed_chunking_plugins",
     "get_retriever_plugin",
     "available_retrieval_plugins",
     "get_pipeline_plugin",

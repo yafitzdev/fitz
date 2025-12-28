@@ -1,4 +1,4 @@
-# fitz_ai/ingest/chunking/plugins/simple.py
+# fitz_ai/ingest/chunking/plugins/default/simple.py
 """
 Simple fixed-size character chunker.
 

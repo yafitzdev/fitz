@@ -1,4 +1,4 @@
-# fitz_ai/ingest/chunking/plugins/recursive.py
+# fitz_ai/ingest/chunking/plugins/default/recursive.py
 """
 Recursive character text splitter.
 

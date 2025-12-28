@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from fitz_ai.cli.cli import app
@@ -115,12 +114,18 @@ class TestInitHelpers:
         assert "openai" not in result
 
     def test_get_default_model_chat(self):
-        """Test _get_default_model returns correct chat model."""
+        """Test _get_default_model returns correct chat models for smart/fast tiers."""
         from fitz_ai.cli.commands.init import _get_default_model
 
-        assert _get_default_model("chat", "cohere") == "command-a-03-2025"
-        assert _get_default_model("chat", "openai") == "gpt-4o-mini"
-        assert "llama" in _get_default_model("chat", "local_ollama")
+        # Smart tier (default)
+        assert _get_default_model("chat", "cohere", "smart") == "command-a-03-2025"
+        assert _get_default_model("chat", "openai", "smart") == "gpt-4o"
+        assert "llama" in _get_default_model("chat", "local_ollama", "smart")
+
+        # Fast tier
+        assert _get_default_model("chat", "cohere", "fast") == "command-r7b-12-2024"
+        assert _get_default_model("chat", "openai", "fast") == "gpt-4o-mini"
+        assert "llama" in _get_default_model("chat", "local_ollama", "fast")
 
     def test_get_default_model_embedding(self):
         """Test _get_default_model returns correct embedding model."""
@@ -147,13 +152,14 @@ class TestGenerateConfig:
 
         config_str = _generate_config(
             chat="cohere",
-            chat_model="command",
+            chat_model_smart="command-a-03-2025",
+            chat_model_fast="command-r7b-12-2024",
             embedding="cohere",
             embedding_model="embed-english-v3.0",
-            vector_db="local_faiss",
-            retrieval="dense",
             rerank=None,
             rerank_model="",
+            vector_db="local_faiss",
+            retrieval="dense",
             qdrant_host="localhost",
             qdrant_port=6333,
             chunker="simple",
@@ -165,6 +171,8 @@ class TestGenerateConfig:
         config = yaml.safe_load(config_str)
 
         assert config["chat"]["plugin_name"] == "cohere"
+        assert config["chat"]["kwargs"]["models"]["smart"] == "command-a-03-2025"
+        assert config["chat"]["kwargs"]["models"]["fast"] == "command-r7b-12-2024"
         assert config["embedding"]["plugin_name"] == "cohere"
         assert config["vector_db"]["plugin_name"] == "local_faiss"
         assert config["retrieval"]["plugin_name"] == "dense"
@@ -177,13 +185,14 @@ class TestGenerateConfig:
 
         config_str = _generate_config(
             chat="cohere",
-            chat_model="command",
+            chat_model_smart="command-a-03-2025",
+            chat_model_fast="command-r7b-12-2024",
             embedding="cohere",
             embedding_model="embed-english-v3.0",
-            vector_db="local_faiss",
-            retrieval="dense",
             rerank="cohere",
             rerank_model="rerank-v3.5",
+            vector_db="local_faiss",
+            retrieval="dense",
             qdrant_host="localhost",
             qdrant_port=6333,
             chunker="simple",
@@ -204,13 +213,14 @@ class TestGenerateConfig:
 
         config_str = _generate_config(
             chat="cohere",
-            chat_model="",
+            chat_model_smart="",
+            chat_model_fast="",
             embedding="cohere",
             embedding_model="",
-            vector_db="local_faiss",
-            retrieval="dense",
             rerank=None,
             rerank_model="",
+            vector_db="local_faiss",
+            retrieval="dense",
             qdrant_host="localhost",
             qdrant_port=6333,
             chunker="simple",
@@ -230,13 +240,14 @@ class TestGenerateConfig:
 
         config_str = _generate_config(
             chat="cohere",
-            chat_model="",
+            chat_model_smart="",
+            chat_model_fast="",
             embedding="cohere",
             embedding_model="",
-            vector_db="qdrant",
-            retrieval="dense",
             rerank=None,
             rerank_model="",
+            vector_db="qdrant",
+            retrieval="dense",
             qdrant_host="192.168.1.100",
             qdrant_port=6334,
             chunker="simple",
@@ -258,13 +269,14 @@ class TestGenerateConfig:
 
         config_str = _generate_config(
             chat="cohere",
-            chat_model="",
+            chat_model_smart="",
+            chat_model_fast="",
             embedding="cohere",
             embedding_model="",
-            vector_db="local_faiss",
-            retrieval="dense",
             rerank=None,
             rerank_model="",
+            vector_db="local_faiss",
+            retrieval="dense",
             qdrant_host="localhost",
             qdrant_port=6333,
             chunker="recursive",
