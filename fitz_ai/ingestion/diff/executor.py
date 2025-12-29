@@ -216,7 +216,10 @@ class DiffIngestExecutor:
             and self._enrichment_pipeline is not None
             and self._enrichment_pipeline.artifacts_enabled
         ):
-            self._ingest_artifacts(summary)
+            count, errors = self.ingest_artifacts()
+            summary.artifacts_generated = count
+            summary.errors += len(errors)
+            summary.error_details.extend(errors)
 
         # 2. Compute diff (state + config aware)
         logger.info("Computing diff...")
@@ -500,88 +503,6 @@ class DiffIngestExecutor:
 
         return {"chunk_data": chunk_data}
 
-    def _prepare_file(self, candidate: FileCandidate) -> tuple[Optional[Dict], List[str]]:
-        """
-        Prepare a file for ingestion (parse, chunk, enrich) without embedding.
-
-        DEPRECATED: Use _prepare_file_no_enrich + batch summarization instead.
-
-        Args:
-            candidate: File candidate with all metadata.
-
-        Returns:
-            Tuple of (file_data dict, texts_to_embed list).
-            Returns (None, []) if file should be skipped.
-        """
-        # 1. Parse file
-        text = self._parser.parse(candidate.path)
-        if not text or not text.strip():
-            logger.warning(f"Empty content from {candidate.path}, skipping")
-            return None, []
-
-        # 2. Get chunker for this file type and chunk
-        chunker = self._router.get_chunker(candidate.ext)
-        base_meta = {
-            "source_file": candidate.path,
-            "doc_id": Path(candidate.path).stem,
-            "content_hash": candidate.content_hash,
-            "parser_id": candidate.parser_id,
-            "chunker_id": candidate.chunker_id,
-        }
-        chunks = chunker.chunk_text(text, base_meta)
-
-        if not chunks:
-            logger.warning(f"No chunks from {candidate.path}, skipping")
-            return None, []
-
-        # 3. Prepare chunk data and collect texts for embedding
-        chunk_data = []
-        texts_to_embed = []
-        enriched_count = 0
-
-        for chunk in chunks:
-            chunk_id = compute_chunk_id(
-                content_hash=candidate.content_hash,
-                chunk_index=chunk.chunk_index,
-                parser_id=candidate.parser_id,
-                chunker_id=candidate.chunker_id,
-                embedding_id=candidate.embedding_id,
-            )
-
-            # Enrichment (if enabled)
-            description: Optional[str] = None
-            if (
-                self._enrichment_pipeline is not None
-                and self._enrichment_pipeline.summaries_enabled
-            ):
-                chunk_content_hash = _hash_text(chunk.content)
-                description = self._enrichment_pipeline.summarize_chunk(
-                    content=chunk.content,
-                    file_path=candidate.path,
-                    content_hash=chunk_content_hash,
-                )
-                if description is not None:
-                    enriched_count += 1
-
-            # Collect text to embed (description if enriched, content otherwise)
-            text_to_embed = description if description else chunk.content
-            texts_to_embed.append(text_to_embed)
-
-            chunk_data.append(
-                {
-                    "chunk_id": chunk_id,
-                    "chunk": chunk,
-                    "description": description,
-                }
-            )
-
-        file_data = {
-            "chunk_data": chunk_data,
-            "enriched_count": enriched_count,
-        }
-
-        return file_data, texts_to_embed
-
     def _upsert_file(
         self,
         candidate: FileCandidate,
@@ -594,7 +515,7 @@ class DiffIngestExecutor:
 
         Args:
             candidate: File candidate with all metadata.
-            file_data: Prepared file data from _prepare_file.
+            file_data: Prepared file data from _prepare_file_no_enrich.
             vectors: Embedding vectors for this file's chunks.
             defer_persist: If True, defer disk persistence (for batching).
         """
@@ -638,26 +559,6 @@ class DiffIngestExecutor:
             # Writer doesn't support defer_persist, fall back to normal upsert
             self._vdb_writer.upsert(self._collection, points)
         logger.debug(f"Upserted {len(points)} chunks from {candidate.path}")
-
-    def _ingest_file(self, candidate: FileCandidate) -> int:
-        """
-        Ingest a single file (legacy method for backwards compatibility).
-
-        Args:
-            candidate: File candidate with all metadata.
-
-        Returns:
-            Number of chunks that were enriched.
-        """
-        file_data, texts_to_embed = self._prepare_file(candidate)
-        if file_data is None:
-            return 0
-
-        # Embed and upsert
-        vectors = self._embedder.embed_batch(texts_to_embed)
-        self._upsert_file(candidate, file_data, vectors)
-
-        return file_data.get("enriched_count", 0)
 
     def ingest_artifacts(
         self,
@@ -730,14 +631,6 @@ class DiffIngestExecutor:
             errors.append(f"Artifact generation error: {e}")
             logger.warning(f"Failed to generate/ingest artifacts: {e}")
             return 0, errors
-
-    def _ingest_artifacts(self, summary: IngestSummary) -> None:
-        """Internal method for backward compatibility."""
-        count, errors = self.ingest_artifacts()
-        summary.artifacts_generated = count
-        summary.errors += len(errors)
-        summary.error_details.extend(errors)
-
 
 def _hash_text(text: str) -> str:
     """Compute SHA-256 hash of text."""

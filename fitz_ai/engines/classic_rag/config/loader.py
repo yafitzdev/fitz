@@ -20,7 +20,6 @@ import yaml
 
 from fitz_ai.engines.classic_rag.config.schema import ClassicRagConfig
 
-# Export for backwards compatibility
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "default.yaml"
 
 

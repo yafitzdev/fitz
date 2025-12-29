@@ -1,7 +1,6 @@
-# pipeline/pipeline/plugins/fast.py
+# fitz_ai/engines/classic_rag/pipeline/plugins/fast.py
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass
 
 from fitz_ai.engines.classic_rag.config.schema import ClassicRagConfig
@@ -14,14 +13,7 @@ logger = get_logger(__name__)
 
 
 def _clone_cfg(cfg: ClassicRagConfig) -> ClassicRagConfig:
-    if hasattr(cfg, "model_copy"):
-        return cfg.model_copy(deep=True)  # pydantic v2
-    if hasattr(cfg, "copy"):
-        try:
-            return cfg.copy(deep=True)  # pydantic v1
-        except TypeError:
-            return cfg.copy()
-    return copy.deepcopy(cfg)
+    return cfg.model_copy(deep=True)
 
 
 @dataclass

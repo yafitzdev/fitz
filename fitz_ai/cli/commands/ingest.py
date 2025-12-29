@@ -76,7 +76,7 @@ def _detect_content_type(source: str) -> tuple[str, str]:
 
 
 def _is_code_project(source: str) -> bool:
-    """Check if source is a codebase (for backwards compatibility)."""
+    """Check if source is a codebase."""
     content_type, _ = _detect_content_type(source)
     return content_type == "codebase"
 

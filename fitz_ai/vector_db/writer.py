@@ -98,7 +98,7 @@ def chunks_to_points(
 
 
 # =============================================================================
-# VectorDBWriter Class (for compatibility)
+# VectorDBWriter Class
 # =============================================================================
 
 
@@ -111,7 +111,6 @@ class VectorDBWriter:
     1. Converts chunks + vectors to points format
     2. Delegates to the underlying client
 
-    The class exists for backwards compatibility and convenience.
     For simple cases, you can use chunks_to_points() directly:
 
         points = chunks_to_points(chunks, vectors)

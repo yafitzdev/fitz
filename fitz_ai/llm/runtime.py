@@ -86,8 +86,7 @@ def _resolve_model_from_tier(
     models = {**default_models, **user_models}
 
     if not models:
-        # No models.smart/fast defined anywhere - no tier support
-        # Fall back to old-style defaults.model if it exists
+        # No tier-based models defined - use single model if available
         return defaults.get("model")
 
     smart_model = models.get("smart")
