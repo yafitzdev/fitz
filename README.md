@@ -40,6 +40,7 @@ That's it. Your documents are now searchable with AI.
 
 <br>
 
+RAG is how ChatGPT's "file search," Notion AI, and enterprise knowledge tools actually work under the hood.
 Instead of sending all your documents to an AI, RAG:
 
 1. [X] **Indexes your documents once** — Splits them into chunks, converts to vectors, stores in a database
@@ -60,8 +61,6 @@ RAG approach:
   ✅ Costs pennies per query
   ✅ Focused context = better answers
 ```
-
-RAG is how ChatGPT's "file search," Notion AI, and enterprise knowledge tools actually work under the hood.
 
 </details>
 
