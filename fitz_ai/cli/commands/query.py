@@ -64,6 +64,12 @@ def command(
         fitz query "question" -c my_collection
     """
     # =========================================================================
+    # Header
+    # =========================================================================
+
+    ui.header("Fitz Query", "Query your knowledge base")
+
+    # =========================================================================
     # Engine selection
     # =========================================================================
 
@@ -72,7 +78,6 @@ def command(
 
     if engine is None:
         # Prompt for engine selection
-        ui.header("Fitz Query")
         print()
 
         # Build choices with descriptions
@@ -89,16 +94,9 @@ def command(
         default_choice = next((c for c in choices if c.startswith(default_engine_name)), choices[0])
         selected = ui.prompt_numbered_choice("Engine", choices, default_choice)
         engine = selected.split(" - ")[0]
-        print()
     elif engine not in available_engines:
         ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(available_engines)}")
         raise typer.Exit(1)
-
-    # =========================================================================
-    # Header (with engine)
-    # =========================================================================
-
-    ui.header("Fitz Query", f"Engine: {engine}")
 
     # =========================================================================
     # Capabilities-based routing

@@ -31,6 +31,10 @@ class TestQueryCommand:
             "fitz_ai.core.paths.FitzPaths.config",
             lambda: tmp_path / "nonexistent" / "fitz.yaml",
         )
+        monkeypatch.setattr(
+            "fitz_ai.cli.utils.FitzPaths.engine_config",
+            lambda name: tmp_path / "nonexistent" / f"{name}.yaml",
+        )
 
         result = runner.invoke(app, ["query", "test question", "--engine", "classic_rag"])
 
@@ -45,7 +49,10 @@ class TestQueryHelpers:
         """Test load_classic_rag_config loads valid config."""
         import yaml
 
-        config_path = tmp_path / "fitz.yaml"
+        # Create engine-specific config file
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        config_path = config_dir / "classic_rag.yaml"
         config = {
             "chat": {"plugin_name": "cohere"},
             "embedding": {"plugin_name": "cohere"},
@@ -55,7 +62,7 @@ class TestQueryHelpers:
         config_path.write_text(yaml.dump(config))
 
         with patch(
-            "fitz_ai.cli.utils.FitzPaths.config",
+            "fitz_ai.cli.utils.FitzPaths.engine_config",
             return_value=config_path,
         ):
             from fitz_ai.cli.utils import load_classic_rag_config

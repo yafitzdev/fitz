@@ -97,8 +97,8 @@ class ClassicRagEngine:
             # Convert to standard Answer format
             provenance = [
                 Provenance(
-                    source_id=src.id,
-                    excerpt=src.excerpt,
+                    source_id=src.doc_id or src.source_id,
+                    excerpt=src.content or "",
                     metadata=src.metadata,
                 )
                 for src in rgs_answer.sources

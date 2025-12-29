@@ -20,16 +20,33 @@ def load_classic_rag_config() -> Tuple[Optional[dict], Optional[Any]]:
     """
     Load classic_rag config.
 
+    Looks for config in:
+    1. Engine-specific config: .fitz/config/classic_rag.yaml
+    2. Global config (legacy): .fitz/config.yaml
+
     Returns:
         Tuple of (raw_config_dict, typed_config) or (None, None) if config not found.
     """
     try:
         from fitz_ai.engines.classic_rag.config import load_config
 
-        config_path = FitzPaths.config()
-        raw_config = load_config_dict(config_path)
-        typed_config = load_config(config_path)
-        return raw_config, typed_config
+        # Try engine-specific config first
+        engine_config_path = FitzPaths.engine_config("classic_rag")
+        if engine_config_path.exists():
+            raw_config = load_config_dict(engine_config_path)
+            typed_config = load_config(str(engine_config_path))
+            return raw_config, typed_config
+
+        # Fall back to global config (legacy)
+        global_config_path = FitzPaths.config()
+        if global_config_path.exists():
+            raw_config = load_config_dict(global_config_path)
+            # Check if it has classic_rag settings
+            if "chat" in raw_config or "embedding" in raw_config:
+                typed_config = load_config(str(global_config_path))
+                return raw_config, typed_config
+
+        return None, None
     except ConfigNotFoundError:
         return None, None
     except Exception:

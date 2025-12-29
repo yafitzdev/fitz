@@ -358,7 +358,7 @@ class TestInitValidation:
     """Tests for init validation logic."""
 
     def test_init_fails_without_chat_plugins(self):
-        """Test init fails when no chat plugins available."""
+        """Test init fails when no chat plugins available (classic_rag)."""
         mock_system = MagicMock()
         mock_system.ollama.available = False
         mock_system.qdrant.available = False
@@ -367,6 +367,7 @@ class TestInitValidation:
 
         with (
             patch("fitz_ai.cli.commands.init.detect_system", return_value=mock_system),
+            patch("fitz_ai.cli.commands.init.get_default_engine", return_value="classic_rag"),
             patch("fitz_ai.cli.commands.init.available_llm_plugins", return_value=[]),
             patch(
                 "fitz_ai.cli.commands.init.available_vector_db_plugins",
@@ -388,7 +389,7 @@ class TestInitValidation:
         assert "chat" in result.output.lower() or "api key" in result.output.lower()
 
     def test_init_fails_without_vector_db(self):
-        """Test init fails when no vector DB available."""
+        """Test init fails when no vector DB available (classic_rag)."""
         mock_system = MagicMock()
         mock_system.ollama.available = False
         mock_system.qdrant.available = False
@@ -397,6 +398,7 @@ class TestInitValidation:
 
         with (
             patch("fitz_ai.cli.commands.init.detect_system", return_value=mock_system),
+            patch("fitz_ai.cli.commands.init.get_default_engine", return_value="classic_rag"),
             patch(
                 "fitz_ai.cli.commands.init.available_llm_plugins",
                 return_value=["cohere"],
