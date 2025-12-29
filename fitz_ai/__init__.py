@@ -93,6 +93,7 @@ from fitz_ai.runtime import (
     list_engines_with_info,
     run,
 )
+from fitz_ai.sdk import IngestStats, fitz
 
 # =============================================================================
 # RUNTIME (UNIVERSAL)
@@ -136,4 +137,7 @@ __all__ = [
     "run_classic_rag",
     "create_classic_rag_engine",
     "ClassicRagEngine",
+    # SDK
+    "fitz",
+    "IngestStats",
 ]
