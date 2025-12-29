@@ -39,7 +39,7 @@ class TestMapCommand:
 
         # Mock umap not being installed
         with (
-            patch("fitz_ai.cli.commands.map.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.core.paths.FitzPaths.config", return_value=config_path),
             patch.dict("sys.modules", {"umap": None}),
         ):
             # This should show an import error for umap
@@ -49,7 +49,7 @@ class TestMapCommand:
     def test_map_requires_config(self, tmp_path, monkeypatch):
         """Test that map requires a config file."""
         monkeypatch.setattr(
-            "fitz_ai.cli.commands.map.FitzPaths.config",
+            "fitz_ai.core.paths.FitzPaths.config",
             lambda: tmp_path / "nonexistent" / "fitz.yaml",
         )
 
@@ -76,7 +76,7 @@ class TestMapHelpers:
         config_path.write_text(yaml.dump(config))
 
         with patch(
-            "fitz_ai.cli.commands.map.FitzPaths.config",
+            "fitz_ai.core.paths.FitzPaths.config",
             return_value=config_path,
         ):
             from fitz_ai.cli.commands.map import _load_config_safe
@@ -85,46 +85,46 @@ class TestMapHelpers:
 
         assert result["vector_db"]["plugin_name"] == "local_faiss"
 
-    def test_get_vector_db(self):
-        """Test _get_vector_db returns plugin."""
+    def test_get_vector_db_client(self):
+        """Test get_vector_db_client returns plugin."""
         mock_plugin = MagicMock()
 
         with patch(
-            "fitz_ai.cli.commands.map.get_vector_db_plugin",
+            "fitz_ai.vector_db.registry.get_vector_db_plugin",
             return_value=mock_plugin,
         ):
-            from fitz_ai.cli.commands.map import _get_vector_db
+            from fitz_ai.cli.utils import get_vector_db_client
 
             config = {"vector_db": {"plugin_name": "local_faiss", "kwargs": {}}}
-            result = _get_vector_db(config)
+            result = get_vector_db_client(config)
 
         assert result == mock_plugin
 
     def test_get_collections_returns_sorted(self):
-        """Test _get_collections returns sorted list."""
+        """Test get_collections returns sorted list."""
         mock_vdb = MagicMock()
         mock_vdb.list_collections.return_value = ["zebra", "apple"]
 
         with patch(
-            "fitz_ai.cli.commands.map.get_vector_db_plugin",
+            "fitz_ai.vector_db.registry.get_vector_db_plugin",
             return_value=mock_vdb,
         ):
-            from fitz_ai.cli.commands.map import _get_collections
+            from fitz_ai.cli.utils import get_collections
 
             config = {"vector_db": {"plugin_name": "local_faiss"}}
-            result = _get_collections(config)
+            result = get_collections(config)
 
         assert result == ["apple", "zebra"]
 
     def test_get_collections_handles_error(self):
-        """Test _get_collections returns empty on error."""
+        """Test get_collections returns empty on error."""
         with patch(
-            "fitz_ai.cli.commands.map.get_vector_db_plugin",
+            "fitz_ai.vector_db.registry.get_vector_db_plugin",
             side_effect=Exception("failed"),
         ):
-            from fitz_ai.cli.commands.map import _get_collections
+            from fitz_ai.cli.utils import get_collections
 
-            result = _get_collections({})
+            result = get_collections({})
 
         assert result == []
 
@@ -209,8 +209,8 @@ class TestMapNoCollections:
         mock_vdb.list_collections.return_value = []
 
         with (
-            patch("fitz_ai.cli.commands.map.FitzPaths.config", return_value=config_path),
-            patch("fitz_ai.cli.commands.map.get_vector_db_plugin", return_value=mock_vdb),
+            patch("fitz_ai.core.paths.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.cli.commands.map.get_collections", return_value=[]),
             patch.dict("sys.modules", {"umap": MagicMock(), "sklearn.cluster": MagicMock()}),
         ):
             result = runner.invoke(app, ["map"])
@@ -252,9 +252,9 @@ class TestMapNoChunks:
         mock_vdb.scroll_with_vectors = MagicMock()
 
         with (
-            patch("fitz_ai.cli.commands.map.FitzPaths.config", return_value=config_path),
-            patch("fitz_ai.vector_db.registry.get_vector_db_plugin", return_value=mock_vdb),
-            patch("fitz_ai.cli.commands.map._get_collections", return_value=["test"]),
+            patch("fitz_ai.core.paths.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.cli.commands.map.get_vector_db_client", return_value=mock_vdb),
+            patch("fitz_ai.cli.commands.map.get_collections", return_value=["test"]),
             patch("fitz_ai.map.embeddings.fetch_all_chunk_ids", return_value=[]),
             patch.dict("sys.modules", {"umap": MagicMock(), "sklearn.cluster": MagicMock()}),
         ):

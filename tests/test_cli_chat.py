@@ -28,7 +28,7 @@ class TestChatCommand:
     def test_chat_requires_config(self, tmp_path, monkeypatch):
         """Test that chat requires a config file."""
         monkeypatch.setattr(
-            "fitz_ai.cli.commands.chat.FitzPaths.config",
+            "fitz_ai.cli.utils.FitzPaths.config",
             lambda: tmp_path / "nonexistent" / "fitz.yaml",
         )
 
@@ -42,7 +42,7 @@ class TestChatHelpers:
     """Tests for chat helper functions."""
 
     def test_load_classic_rag_config_returns_tuple(self, tmp_path):
-        """Test _load_classic_rag_config returns raw and typed config."""
+        """Test load_classic_rag_config returns raw and typed config."""
         import yaml
 
         config_path = tmp_path / "fitz.yaml"
@@ -55,40 +55,40 @@ class TestChatHelpers:
         config_path.write_text(yaml.dump(config))
 
         with patch(
-            "fitz_ai.cli.commands.chat.FitzPaths.config",
+            "fitz_ai.cli.utils.FitzPaths.config",
             return_value=config_path,
         ):
-            from fitz_ai.cli.commands.chat import _load_classic_rag_config
+            from fitz_ai.cli.utils import load_classic_rag_config
 
-            raw, typed = _load_classic_rag_config()
+            raw, typed = load_classic_rag_config()
 
         assert raw["chat"]["plugin_name"] == "cohere"
         assert typed.retrieval.collection == "test"
 
     def test_get_collections_returns_sorted_list(self):
-        """Test _get_collections returns sorted collection list."""
+        """Test get_collections returns sorted collection list."""
         mock_vdb = MagicMock()
         mock_vdb.list_collections.return_value = ["zebra", "apple", "middle"]
 
         with patch(
-            "fitz_ai.cli.commands.chat.get_vector_db_plugin",
+            "fitz_ai.vector_db.registry.get_vector_db_plugin",
             return_value=mock_vdb,
         ):
-            from fitz_ai.cli.commands.chat import _get_collections
+            from fitz_ai.cli.utils import get_collections
 
-            collections = _get_collections({"vector_db": {"plugin_name": "local_faiss"}})
+            collections = get_collections({"vector_db": {"plugin_name": "local_faiss"}})
 
         assert collections == ["apple", "middle", "zebra"]
 
     def test_get_collections_handles_error(self):
-        """Test _get_collections returns empty list on error."""
+        """Test get_collections returns empty list on error."""
         with patch(
-            "fitz_ai.cli.commands.chat.get_vector_db_plugin",
+            "fitz_ai.vector_db.registry.get_vector_db_plugin",
             side_effect=Exception("connection failed"),
         ):
-            from fitz_ai.cli.commands.chat import _get_collections
+            from fitz_ai.cli.utils import get_collections
 
-            collections = _get_collections({})
+            collections = get_collections({})
 
         assert collections == []
 
@@ -242,12 +242,12 @@ class TestChatExitCommands:
         mock_pipeline = MagicMock()
 
         with (
-            patch("fitz_ai.cli.commands.chat.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.core.paths.FitzPaths.config", return_value=config_path),
             patch(
                 "fitz_ai.engines.classic_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,
             ),
-            patch("fitz_ai.cli.commands.chat._get_collections", return_value=["test"]),
+            patch("fitz_ai.cli.commands.chat.get_collections", return_value=["test"]),
             patch("fitz_ai.cli.commands.chat.RICH", False),
         ):
             result = runner.invoke(app, ["chat", "--engine", "classic_rag"], input="exit\n")
@@ -270,12 +270,12 @@ class TestChatExitCommands:
         mock_pipeline = MagicMock()
 
         with (
-            patch("fitz_ai.cli.commands.chat.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.core.paths.FitzPaths.config", return_value=config_path),
             patch(
                 "fitz_ai.engines.classic_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,
             ),
-            patch("fitz_ai.cli.commands.chat._get_collections", return_value=["test"]),
+            patch("fitz_ai.cli.commands.chat.get_collections", return_value=["test"]),
             patch("fitz_ai.cli.commands.chat.RICH", False),
         ):
             result = runner.invoke(app, ["chat", "--engine", "classic_rag"], input="quit\n")
