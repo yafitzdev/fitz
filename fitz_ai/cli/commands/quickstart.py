@@ -155,7 +155,7 @@ def _run_document_loading_quickstart(
         ui.error(f"Failed to read documents: {e}")
         raise typer.Exit(1)
 
-    # Step 2: Load engine
+    # Step 2: Load engine (this may take a minute for local models)
     ui.step(2, 3, f"Loading {engine_name} engine...")
 
     try:

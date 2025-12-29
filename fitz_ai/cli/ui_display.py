@@ -15,28 +15,35 @@ from fitz_ai.cli.ui import RICH, Markdown, Panel, Table, console
 
 def display_answer(answer, show_sources: bool = True) -> None:
     """
-    Display an RGS answer with optional sources.
+    Display an answer with optional sources.
 
     Used by both `fitz query` and `fitz quickstart` for consistent output.
+    Supports both core Answer (.text, .provenance) and RGSAnswer (.answer, .sources).
 
     Args:
-        answer: RGSAnswer object with .answer and .sources attributes
+        answer: Answer object (core or RGS format)
         show_sources: Whether to show source documents
     """
     print()
+
+    # Support both Answer.text and RGSAnswer.answer
+    answer_text = getattr(answer, "text", None) or getattr(answer, "answer", "")
+
+    # Support both Answer.provenance and RGSAnswer.sources
+    sources = getattr(answer, "provenance", None) or getattr(answer, "sources", [])
 
     if RICH:
         # Answer panel
         console.print(
             Panel(
-                Markdown(answer.answer),
+                Markdown(answer_text),
                 title="[bold green]Answer[/bold green]",
                 border_style="green",
             )
         )
 
         # Sources table
-        if show_sources and hasattr(answer, "sources") and answer.sources:
+        if show_sources and sources:
             print()
             table = Table(title="Sources")
             table.add_column("#", style="dim", width=3)
@@ -46,9 +53,15 @@ def display_answer(answer, show_sources: bool = True) -> None:
             table.add_column("Rerank", style="green", justify="right", width=7)
             table.add_column("Excerpt", style="dim", max_width=45)
 
-            for i, source in enumerate(answer.sources[:5], 1):
-                doc_id = getattr(source, "doc_id", getattr(source, "source_file", "?"))
-                content = getattr(source, "content", getattr(source, "text", ""))
+            for i, source in enumerate(sources[:5], 1):
+                # Support multiple attribute names across different source types
+                # Core Provenance uses source_id/excerpt, chunks use doc_id/content
+                doc_id = getattr(source, "source_id", None) or getattr(
+                    source, "doc_id", getattr(source, "source_file", "?")
+                )
+                content = getattr(source, "excerpt", None) or getattr(
+                    source, "content", getattr(source, "text", "")
+                )
                 metadata = getattr(source, "metadata", {})
 
                 # Get filename only (not full path)
@@ -62,8 +75,8 @@ def display_answer(answer, show_sources: bool = True) -> None:
                 if len(display_name) > 38:
                     display_name = display_name[:35] + "..."
 
-                # Get chunk index
-                chunk_idx = metadata.get("chunk_index", "-")
+                # Get chunk index or rank
+                chunk_idx = metadata.get("chunk_index", metadata.get("rank", "-"))
                 chunk_str = str(chunk_idx) if chunk_idx != "-" else "-"
 
                 # Get scores
@@ -83,13 +96,16 @@ def display_answer(answer, show_sources: bool = True) -> None:
         # Plain text output
         print("Answer:")
         print("-" * 40)
-        print(answer.answer)
+        print(answer_text)
         print()
 
-        if show_sources and hasattr(answer, "sources") and answer.sources:
+        if show_sources and sources:
             print("Sources:")
-            for i, source in enumerate(answer.sources[:5], 1):
-                doc_id = getattr(source, "doc_id", getattr(source, "source_file", "?"))
+            for i, source in enumerate(sources[:5], 1):
+                # Support multiple attribute names across different source types
+                doc_id = getattr(source, "source_id", None) or getattr(
+                    source, "doc_id", getattr(source, "source_file", "?")
+                )
                 metadata = getattr(source, "metadata", {})
 
                 # Get filename only
@@ -97,8 +113,8 @@ def display_answer(answer, show_sources: bool = True) -> None:
                 title = metadata.get("title", "")
                 display_name = title if title else filename
 
-                # Get chunk index
-                chunk_idx = metadata.get("chunk_index", "")
+                # Get chunk index or rank
+                chunk_idx = metadata.get("chunk_index", metadata.get("rank", ""))
                 chunk_str = f" [chunk {chunk_idx}]" if chunk_idx != "" else ""
 
                 # Get scores

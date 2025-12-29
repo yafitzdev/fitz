@@ -36,12 +36,18 @@ from fitz_ai.engines.clara.config.schema import ClaraConfig
 logger = logging.getLogger(__name__)
 
 
-def _ensure_clara_model_available(model_path: str) -> Path:
+def _ensure_clara_model_available(model_path: str, quiet: bool = True) -> Path:
     """
     Ensure CLaRa model files are available locally.
 
     Downloads from HuggingFace if needed and returns path to local files.
     """
+    import os
+
+    # Suppress huggingface_hub progress bars
+    if quiet:
+        os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+
     from huggingface_hub import snapshot_download
 
     # Check if it's already a local path
@@ -149,40 +155,96 @@ class ClaraEngine:
         CLaRa uses a custom model class that must be loaded via its own
         from_pretrained method, not HuggingFace's AutoModel.
         """
+        import os
+        import warnings
+
         import torch
 
-        model_config = self._config.model
+        # Suppress all progress bars and warnings via environment variables
+        _original_env = {
+            "TQDM_DISABLE": os.environ.get("TQDM_DISABLE"),
+            "HF_HUB_DISABLE_PROGRESS_BARS": os.environ.get("HF_HUB_DISABLE_PROGRESS_BARS"),
+            "TRANSFORMERS_NO_ADVISORY_WARNINGS": os.environ.get("TRANSFORMERS_NO_ADVISORY_WARNINGS"),
+            "TOKENIZERS_PARALLELISM": os.environ.get("TOKENIZERS_PARALLELISM"),
+        }
+        os.environ["TQDM_DISABLE"] = "1"
+        os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+        os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        # Ensure model files are available
-        self._model_path = _ensure_clara_model_available(model_config.model_name_or_path)
+        # Suppress verbose output from HuggingFace/transformers/PEFT
+        _loggers_to_quiet = [
+            "transformers",
+            "transformers.modeling_utils",
+            "accelerate",
+            "peft",
+            "huggingface_hub",
+            "modeling_clara",
+            "torch",
+            "bitsandbytes",
+        ]
+        _original_levels = {}
+        for name in _loggers_to_quiet:
+            _logger = logging.getLogger(name)
+            _original_levels[name] = _logger.level
+            _logger.setLevel(logging.CRITICAL)
 
-        # Add model path to Python path for custom module loading
-        model_parent = str(self._model_path)
-        if model_parent not in sys.path:
-            sys.path.insert(0, model_parent)
+        # Redirect sys.stdout/stderr to suppress all print() output from CLaRa
+        import io
 
-        # Import CLaRa's custom model class
-        from modeling_clara import CLaRa
+        _orig_stdout = sys.stdout
+        _orig_stderr = sys.stderr
+        sys.stdout = io.StringIO()
+        sys.stderr = io.StringIO()
 
-        logger.info(f"Loading CLaRa model from: {self._model_path}")
+        try:
+            model_config = self._config.model
 
-        # Determine quantization setting
-        quantization = "no"
-        if model_config.load_in_4bit:
-            quantization = "int4"
-        elif model_config.load_in_8bit:
-            quantization = "int8"
+            # Ensure model files are available
+            self._model_path = _ensure_clara_model_available(model_config.model_name_or_path)
 
-        # Load model with Apple's from_pretrained
-        self._model = CLaRa.from_pretrained(
-            str(self._model_path),
-            quantization=quantization,
-            device_map="auto",
-        )
+            # Add model path to Python path for custom module loading
+            model_parent = str(self._model_path)
+            if model_parent not in sys.path:
+                sys.path.insert(0, model_parent)
 
-        self._model.eval()
+            # Import CLaRa's custom model class
+            from modeling_clara import CLaRa
 
-        # Log memory usage
+            # Determine quantization setting
+            quantization = "no"
+            if model_config.load_in_4bit:
+                quantization = "int4"
+            elif model_config.load_in_8bit:
+                quantization = "int8"
+
+            # Load model with Apple's from_pretrained (suppress warnings)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                self._model = CLaRa.from_pretrained(
+                    str(self._model_path),
+                    quantization=quantization,
+                    device_map="auto",
+                )
+
+            self._model.eval()
+        finally:
+            # Restore sys.stdout/stderr
+            sys.stdout = _orig_stdout
+            sys.stderr = _orig_stderr
+
+            # Restore environment variables
+            for key, val in _original_env.items():
+                if val is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = val
+
+            # Restore original log levels
+            for name, level in _original_levels.items():
+                logging.getLogger(name).setLevel(level)
+
+        # Log memory usage (after restoring stdout)
         if torch.cuda.is_available():
             mem_gb = torch.cuda.memory_allocated() / 1024**3
             logger.info(f"CLaRa model loaded. GPU memory: {mem_gb:.2f} GB")

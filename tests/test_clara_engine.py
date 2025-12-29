@@ -6,8 +6,7 @@ These tests verify the CLaRa engine implementation works correctly
 and integrates properly with the Fitz platform.
 """
 
-import sys
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -96,65 +95,29 @@ class TestClaraEngine:
     """Test CLaRa engine implementation."""
 
     @pytest.fixture
-    def mock_torch(self):
-        """Create mock torch module."""
-        mock_torch = MagicMock()
-        mock_torch.float32 = "float32"
-        mock_torch.float16 = "float16"
-        mock_torch.bfloat16 = "bfloat16"
-        mock_torch.no_grad.return_value.__enter__ = Mock()
-        mock_torch.no_grad.return_value.__exit__ = Mock()
-        mock_torch.randn.return_value = MagicMock()
-        mock_torch.stack.return_value = MagicMock()
-        mock_torch.topk.return_value = (MagicMock(), MagicMock())
-        return mock_torch
+    def mock_engine(self):
+        """Create a CLaRa engine with mocked model initialization."""
+        from fitz_ai.engines.clara.config.schema import ClaraConfig
+        from fitz_ai.engines.clara.engine import ClaraEngine
 
-    @pytest.fixture
-    def mock_transformers(self):
-        """Create mock transformers module."""
-        mock_transformers = MagicMock()
-        mock_model = MagicMock()
-        mock_model.device = "cpu"
-        mock_model.eval.return_value = None
-        mock_transformers.AutoModel.from_pretrained.return_value = mock_model
-        return mock_transformers
+        config = ClaraConfig()
 
-    @pytest.fixture
-    def mock_engine(self, mock_torch, mock_transformers):
-        """Create a CLaRa engine with mocked dependencies."""
-        # Insert mock modules into sys.modules BEFORE importing engine
-        with patch.dict(
-            sys.modules,
-            {
-                "torch": mock_torch,
-                "torch.nn": MagicMock(),
-                "torch.nn.functional": MagicMock(),
-                "transformers": mock_transformers,
-            },
-        ):
-            from fitz_ai.engines.clara.config.schema import ClaraConfig
-            from fitz_ai.engines.clara.engine import ClaraEngine
-
-            config = ClaraConfig()
+        # Mock _initialize_model to skip actual model loading
+        with patch.object(ClaraEngine, "_initialize_model"):
             engine = ClaraEngine(config)
 
-            # Store mock references for test assertions
-            engine._mock_torch = mock_torch
-            engine._mock_transformers = mock_transformers
+        # Initialize internal state that would be set by _initialize_model
+        engine._model = MagicMock()
 
-            return engine
+        return engine
 
     def test_engine_implements_protocol(self, mock_engine):
         """Test that ClaraEngine implements KnowledgeEngine protocol."""
         assert hasattr(mock_engine, "answer")
         assert callable(mock_engine.answer)
 
-    def test_add_documents(self, mock_engine, mock_torch):
+    def test_add_documents(self, mock_engine):
         """Test adding documents to knowledge base."""
-        # Mock the compression to return mock tensors
-        mock_tensor = MagicMock()
-        mock_engine._compress_documents = MagicMock(return_value=[mock_tensor for _ in range(3)])
-
         doc_ids = mock_engine.add_documents(
             [
                 "Document 1",
@@ -164,19 +127,21 @@ class TestClaraEngine:
         )
 
         assert len(doc_ids) == 3
-        assert len(mock_engine._compressed_docs) == 3
         assert len(mock_engine._doc_texts) == 3
+        assert mock_engine._doc_texts[0] == "Document 1"
+        assert mock_engine._doc_texts[1] == "Document 2"
+        assert mock_engine._doc_texts[2] == "Document 3"
 
     def test_add_documents_with_ids(self, mock_engine):
         """Test adding documents with custom IDs."""
-        mock_tensor = MagicMock()
-        mock_engine._compress_documents = MagicMock(return_value=[mock_tensor for _ in range(2)])
-
-        doc_ids = mock_engine.add_documents(["Doc 1", "Doc 2"], doc_ids=["custom_1", "custom_2"])
+        doc_ids = mock_engine.add_documents(
+            ["Doc 1", "Doc 2"], doc_ids=["custom_1", "custom_2"]
+        )
 
         assert doc_ids == ["custom_1", "custom_2"]
-        assert "custom_1" in mock_engine._compressed_docs
-        assert "custom_2" in mock_engine._compressed_docs
+        assert len(mock_engine._doc_texts) == 2
+        assert mock_engine._doc_texts[0] == "Doc 1"
+        assert mock_engine._doc_texts[1] == "Doc 2"
 
     def test_empty_query_raises_error(self):
         """Test that empty query raises ValueError during Query creation."""
@@ -186,30 +151,22 @@ class TestClaraEngine:
 
     def test_answer_no_documents_raises_error(self, mock_engine):
         """Test that query without documents raises KnowledgeError."""
-        mock_engine._compressed_docs = {}
+        # _doc_texts is an empty list by default
+        assert mock_engine._doc_texts == []
 
         with pytest.raises(KnowledgeError, match="No documents"):
             mock_engine.answer(Query(text="What is X?"))
 
     def test_answer_success(self, mock_engine):
         """Test successful answer generation."""
-        mock_tensor = MagicMock()
+        # Add documents to knowledge base
+        mock_engine._doc_texts = [
+            "Document 1 content about quantum computing...",
+            "Document 2 content about machine learning...",
+        ]
 
-        # Setup knowledge base
-        mock_engine._compressed_docs = {
-            "doc_1": mock_tensor,
-            "doc_2": mock_tensor,
-        }
-        mock_engine._doc_texts = {
-            "doc_1": "Document 1 content about quantum computing...",
-            "doc_2": "Document 2 content about machine learning...",
-        }
-
-        # Mock retrieval
-        mock_engine._retrieve = MagicMock(return_value=(["doc_1", "doc_2"], [0.9, 0.8]))
-
-        # Mock generation
-        mock_engine._generate = MagicMock(return_value=("Quantum computing uses qubits.", [0, 1]))
+        # Mock model's generate_from_text method
+        mock_engine._model.generate_from_text.return_value = ["Quantum computing uses qubits."]
 
         query = Query(text="What is quantum computing?")
         answer = mock_engine.answer(query)
@@ -218,37 +175,25 @@ class TestClaraEngine:
         assert answer.text == "Quantum computing uses qubits."
         assert len(answer.provenance) == 2
         assert answer.metadata["engine"] == "clara"
-        # Check that score is in metadata, not as direct field
-        assert "relevance_score" in answer.provenance[0].metadata
 
     def test_answer_respects_constraints(self, mock_engine):
         """Test that answer respects query constraints."""
-        mock_tensor = MagicMock()
+        # Add 10 documents
+        mock_engine._doc_texts = [f"Content {i}" for i in range(10)]
 
-        mock_engine._compressed_docs = {f"doc_{i}": mock_tensor for i in range(10)}
-        mock_engine._doc_texts = {f"doc_{i}": f"Content {i}" for i in range(10)}
-
-        mock_engine._retrieve = MagicMock(
-            return_value=(["doc_0", "doc_1", "doc_2"], [0.9, 0.8, 0.7])
-        )
-        mock_engine._generate = MagicMock(return_value=("Answer", [0, 1, 2]))
+        # Mock model's generate_from_text method
+        mock_engine._model.generate_from_text.return_value = ["Answer"]
 
         query = Query(text="Question?", constraints=Constraints(max_sources=3))
-        mock_engine.answer(query)
+        answer = mock_engine.answer(query)
 
-        # Verify retrieve was called with constrained top_k
-        mock_engine._retrieve.assert_called_once()
-        call_args = mock_engine._retrieve.call_args
-        assert call_args[1]["top_k"] == 3
+        # Verify only 3 sources in provenance (respecting constraint)
+        assert len(answer.provenance) == 3
+        assert answer.metadata["num_docs_used"] == 3
 
     def test_get_knowledge_stats(self, mock_engine):
         """Test knowledge base statistics."""
-        mock_tensor = MagicMock()
-
-        mock_engine._compressed_docs = {
-            "doc_1": mock_tensor,
-            "doc_2": mock_tensor,
-        }
+        mock_engine._doc_texts = ["Doc 1", "Doc 2"]
 
         stats = mock_engine.get_knowledge_stats()
 
@@ -258,14 +203,10 @@ class TestClaraEngine:
 
     def test_clear_knowledge_base(self, mock_engine):
         """Test clearing knowledge base."""
-        mock_tensor = MagicMock()
-
-        mock_engine._compressed_docs = {"doc_1": mock_tensor}
-        mock_engine._doc_texts = {"doc_1": "Content"}
+        mock_engine._doc_texts = ["Doc 1", "Doc 2"]
 
         mock_engine.clear_knowledge_base()
 
-        assert len(mock_engine._compressed_docs) == 0
         assert len(mock_engine._doc_texts) == 0
 
 
@@ -283,32 +224,15 @@ class TestClaraRuntime:
 
     def test_create_clara_engine(self):
         """Test create_clara_engine factory."""
-        mock_torch = MagicMock()
-        mock_torch.float32 = "float32"
-        mock_torch.float16 = "float16"
-        mock_torch.bfloat16 = "bfloat16"
+        from fitz_ai.engines.clara.engine import ClaraEngine
+        from fitz_ai.engines.clara.runtime import create_clara_engine
 
-        mock_transformers = MagicMock()
-        mock_model = MagicMock()
-        mock_model.device = "cpu"
-        mock_model.eval.return_value = None
-        mock_transformers.AutoModel.from_pretrained.return_value = mock_model
-
-        with patch.dict(
-            sys.modules,
-            {
-                "torch": mock_torch,
-                "torch.nn": MagicMock(),
-                "torch.nn.functional": MagicMock(),
-                "transformers": mock_transformers,
-            },
-        ):
-            from fitz_ai.engines.clara.runtime import create_clara_engine
-
+        # Mock _initialize_model to skip actual model loading
+        with patch.object(ClaraEngine, "_initialize_model"):
             engine = create_clara_engine()
 
-            assert engine is not None
-            mock_transformers.AutoModel.from_pretrained.assert_called_once()
+        assert engine is not None
+        assert isinstance(engine, ClaraEngine)
 
 
 class TestClaraRegistration:
@@ -324,6 +248,19 @@ class TestClaraRegistration:
         engines = registry.list()
 
         assert "clara" in engines
+
+    def test_clara_capabilities(self):
+        """Test that CLaRa has correct capabilities."""
+        import fitz_ai.engines.clara  # noqa
+        from fitz_ai.runtime import get_engine_registry
+
+        registry = get_engine_registry()
+        caps = registry.get_capabilities("clara")
+
+        assert caps.supports_collections is False
+        assert caps.requires_documents_at_query is True
+        assert caps.supports_chat is False
+        assert caps.requires_api_key is False
 
 
 class TestClaraIntegration:

@@ -565,6 +565,53 @@ class UI:
         else:
             return _PlainProgress(description, total)
 
+    def spinner(self, message: str = "Working..."):
+        """
+        Create a spinner context manager for indeterminate progress.
+
+        Usage:
+            with ui.spinner("Loading model..."):
+                load_model()
+
+        Shows a spinner while the block executes.
+        """
+        if RICH:
+            return _RichSpinner(message)
+        else:
+            return _PlainSpinner(message)
+
+
+class _RichSpinner:
+    """Rich spinner context manager."""
+
+    def __init__(self, message: str):
+        self.message = message
+        self.status = None
+
+    def __enter__(self):
+        from rich.status import Status
+
+        self.status = Status(self.message, console=console, spinner="dots")
+        self.status.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        self.status.__exit__(*args)
+
+
+class _PlainSpinner:
+    """Plain text spinner fallback."""
+
+    def __init__(self, message: str):
+        self.message = message
+
+    def __enter__(self):
+        print(f"{self.message}", end="", flush=True)
+        return self
+
+    def __exit__(self, *args):
+        print(" done")
+
 
 class _RichProgress:
     """Rich progress bar context manager."""
