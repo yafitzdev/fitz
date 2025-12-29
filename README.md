@@ -10,16 +10,22 @@
 
 **Honest RAG in 5 minutes. No infrastructure. No boilerplate.**
 
-**CLI**
 ```bash
 pip install fitz-ai
+```
+**CLI:**
 
+<br>
+
+```bash
 fitz quickstart ./docs "What is our refund policy?"
 ```
 
 <details>
 
-<summary><strong>Python SDK</strong></summary>
+<summary><strong>Python SDK:</strong></summary>
+
+<br>
 
 ```python
 import fitz_ai
@@ -34,7 +40,9 @@ answer = fitz_ai.query("What is our refund policy?")
 
 <details>
 
-<summary><strong>REST API</strong></summary>
+<summary><strong>REST API:</strong></summary>
+
+<br>
 
 ```bash
 pip install fitz-ai[api]
