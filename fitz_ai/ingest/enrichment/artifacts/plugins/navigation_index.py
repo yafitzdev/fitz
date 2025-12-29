@@ -32,6 +32,7 @@ class Generator:
     This artifact helps answer "where is X?" questions.
     """
 
+    plugin_name = plugin_name
     artifact_type = ArtifactType.NAVIGATION_INDEX
     supported_types = supported_types
 

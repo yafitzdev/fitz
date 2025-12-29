@@ -73,6 +73,7 @@ class Builder:
     Provides basic context classification based on file extension.
     """
 
+    plugin_name = plugin_name
     supported_extensions = supported_extensions
 
     def build(self, file_path: str, content: str) -> EnrichmentContext:

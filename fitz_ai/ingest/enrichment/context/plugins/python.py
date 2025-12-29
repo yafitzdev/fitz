@@ -275,6 +275,7 @@ class Builder:
     imports, exports, and reverse dependency information.
     """
 
+    plugin_name = plugin_name
     supported_extensions = supported_extensions
 
     def __init__(self, analyzer: PythonProjectAnalyzer | None = None):

@@ -32,6 +32,7 @@ class Generator:
     This artifact helps answer "what uses X?" questions.
     """
 
+    plugin_name = plugin_name
     artifact_type = ArtifactType.DEPENDENCY_SUMMARY
     supported_types = supported_types
 

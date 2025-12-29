@@ -29,6 +29,7 @@ class Generator:
     This artifact helps answer "what fields does X have?" questions.
     """
 
+    plugin_name = plugin_name
     artifact_type = ArtifactType.DATA_MODEL_REFERENCE
     supported_types = supported_types
 

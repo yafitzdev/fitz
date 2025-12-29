@@ -39,6 +39,7 @@ class Generator:
     of how the system works based on the analyzed structure.
     """
 
+    plugin_name = plugin_name
     artifact_type = ArtifactType.ARCHITECTURE_NARRATIVE
     supported_types = supported_types
 

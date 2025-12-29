@@ -31,6 +31,7 @@ class Generator:
     This artifact helps answer "how do I implement X?" questions.
     """
 
+    plugin_name = plugin_name
     artifact_type = ArtifactType.INTERFACE_CATALOG
     supported_types = supported_types
 
