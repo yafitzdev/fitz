@@ -168,7 +168,7 @@ def _run_document_loading_quickstart(
     ui.step(1, 3, f"Reading documents from {source}...")
 
     try:
-        doc_texts = _read_documents_as_text(source, verbose)
+        doc_texts, doc_ids = _read_documents_as_text(source, verbose)
         ui.success(f"Read {len(doc_texts)} documents")
     except Exception as e:
         ui.error(f"Failed to read documents: {e}")
@@ -188,10 +188,10 @@ def _run_document_loading_quickstart(
             traceback.print_exc()
         raise typer.Exit(1)
 
-    # Add documents
+    # Add documents with their IDs
     if verbose:
         ui.info(f"Adding documents to {engine_name}...")
-    engine_instance.add_documents(doc_texts)
+    engine_instance.add_documents(doc_texts, doc_ids=doc_ids)
 
     # Step 3: Query
     ui.step(3, 3, "Generating answer...")
@@ -215,8 +215,10 @@ def _run_document_loading_quickstart(
     ui.info("For multiple queries, use the Python API to keep the engine loaded.")
 
 
-def _read_documents_as_text(source: Path, verbose: bool = False) -> List[str]:
-    """Read documents from source and return as list of text strings."""
+def _read_documents_as_text(
+    source: Path, verbose: bool = False
+) -> tuple[List[str], List[str]]:
+    """Read documents from source and return as list of text strings and doc IDs."""
     from fitz_ai.ingestion.reader.engine import IngestionEngine
     from fitz_ai.ingestion.reader.registry import get_ingest_plugin
 
@@ -231,17 +233,14 @@ def _read_documents_as_text(source: Path, verbose: bool = False) -> List[str]:
     if verbose:
         ui.info(f"Found {len(raw_docs)} documents")
 
-    # Extract text from documents
+    # Extract text and IDs from documents
     doc_texts = []
+    doc_ids = []
     for doc in raw_docs:
-        if hasattr(doc, "content"):
-            doc_texts.append(doc.content)
-        elif hasattr(doc, "text"):
-            doc_texts.append(doc.text)
-        else:
-            doc_texts.append(str(doc))
+        doc_texts.append(doc.content)
+        doc_ids.append(str(doc.path))
 
-    return doc_texts
+    return doc_texts, doc_ids
 
 
 # =============================================================================

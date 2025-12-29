@@ -290,14 +290,25 @@ class GraphRAGEngine:
         response = chat_client.chat([{"role": "user", "content": prompt}])
 
         # Build provenance from entities
+        chunk_lookup = {c["id"]: c["text"] for c in self._chunks}
         provenance = []
+        seen_chunks = set()
         for entity in provenance_entities:
             for chunk_id in entity.source_chunks[:3]:  # Limit per entity
+                if chunk_id in seen_chunks:
+                    continue
+                seen_chunks.add(chunk_id)
+                chunk_text = chunk_lookup.get(chunk_id, "")
+                excerpt = chunk_text[:200] if chunk_text else ""
                 provenance.append(
                     Provenance(
                         source_id=chunk_id,
-                        relevance_score=0.0,  # Could compute from search scores
-                        metadata={"entity": entity.name, "type": entity.type},
+                        excerpt=excerpt,
+                        metadata={
+                            "entity": entity.name,
+                            "type": entity.type,
+                            "relevance_score": 0.0,
+                        },
                     )
                 )
 
