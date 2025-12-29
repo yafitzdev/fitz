@@ -11,6 +11,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.3] - 2025-12-29
+
+### 🎉 Highlights
+
+**REST API** - New `fitz serve` command launches a FastAPI server with endpoints for query, ingest, and collection management. Build integrations without touching Python.
+
+**SDK Module** - New `fitz_ai.sdk` provides a simplified high-level API for programmatic use. Import `from fitz_ai import Fitz` for quick access.
+
+**Package Rename** - `fitz_ai/ingest/` renamed to `fitz_ai/ingestion/` for clearer naming. Adds new `reader` module for document reading abstraction.
+
+### 🚀 Added
+
+#### REST API (`fitz_ai/api/`)
+- `fitz serve` - Launch FastAPI server for HTTP access
+- `POST /query` - Query the knowledge base
+- `POST /ingest` - Ingest documents
+- `GET /collections` - List collections
+- `GET /health` - Health check endpoint
+- Dependency injection via `fitz_ai/api/dependencies.py`
+- Pydantic schemas in `fitz_ai/api/models/schemas.py`
+
+#### SDK Module (`fitz_ai/sdk/`)
+- `Fitz` class as unified entry point
+- Re-exported from `fitz_ai` package root
+- Simplified API for common operations
+
+#### Reader Module (`fitz_ai/ingestion/reader/`)
+- `ReaderEngine` for document loading
+- Plugin-based reader system
+- `local_fs` plugin for local file reading
+
+### 🔄 Changed
+
+- **Package rename**: `fitz_ai/ingest/` → `fitz_ai/ingestion/`
+- **Chunk model**: Moved from `fitz_ai/engines/classic_rag/models/chunk.py` to `fitz_ai/core/chunk.py` for shared use across engines
+- **Core exports**: `Chunk` now exported from `fitz_ai.core`
+
+---
+
 ## [0.4.2] - 2025-12-28
 
 ### 🎉 Highlights
@@ -553,7 +592,8 @@ Initial release of Fitz RAG framework.
 
 ---
 
-[Unreleased]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/yafitzdev/fitz-ai/compare/v0.3.6...v0.4.0
