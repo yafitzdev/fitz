@@ -25,6 +25,13 @@ fitz_ai.ingest("./docs")
 answer = fitz_ai.query("What is our refund policy?")
 ```
 
+**REST API:**
+```bash
+pip install fitz-ai[api]
+
+fitz serve  # http://localhost:8000/docs for interactive API
+```
+
 That's it. Your documents are now searchable with AI.
 
 ![fitz-ai quickstart demo](https://raw.githubusercontent.com/yafitzdev/fitz-ai/main/docs/assets/quickstart_demo.gif)
@@ -492,8 +499,9 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 │                         fitz-ai                               │
 ├───────────────────────────────────────────────────────────────┤
 │  User Interfaces                                              │
-│  CLI: quickstart | init | ingest | query | chat | doctor      │
+│  CLI: quickstart | init | ingest | query | chat | serve       │
 │  SDK: fitz_ai.fitz() → ingest() → ask()                       │
+│  API: /query | /chat | /ingest | /collections | /health       │
 ├───────────────────────────────────────────────────────────────┤
 │  Engines                                                      │
 │  ┌───────────────┐  ┌───────────┐                             │
@@ -534,6 +542,7 @@ fitz ingest                          # Interactive ingestion
 fitz query                           # Single question with sources
 fitz chat                            # Multi-turn conversation with your knowledge base
 fitz collections                     # List and delete knowledge collections
+fitz serve                           # Start REST API server
 fitz config                          # View/edit configuration
 fitz doctor                          # System diagnostics
 ```
@@ -583,6 +592,69 @@ print(answer.mode)  # CONFIDENT, QUALIFIED, DISPUTED, or ABSTAIN
 for source in answer.provenance:
     print(f"Source: {source.source_id}")
     print(f"Excerpt: {source.excerpt}")
+```
+
+</details>
+
+---
+
+<details>
+
+<summary><strong>📦 REST API Reference</strong></summary>
+
+<br>
+
+**Start the server:**
+```bash
+pip install fitz-ai[api]
+
+fitz serve                    # localhost:8000
+fitz serve -p 3000            # custom port
+fitz serve --host 0.0.0.0     # all interfaces
+```
+
+**Interactive docs:** Visit `http://localhost:8000/docs` for Swagger UI.
+
+<br>
+
+**Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/query` | Query knowledge base |
+| POST | `/chat` | Multi-turn chat (stateless) |
+| POST | `/ingest` | Ingest documents from path |
+| GET | `/collections` | List all collections |
+| GET | `/collections/{name}` | Get collection stats |
+| DELETE | `/collections/{name}` | Delete a collection |
+| GET | `/health` | Health check |
+
+<br>
+
+**Example requests:**
+
+```bash
+# Query
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is the refund policy?", "collection": "default"}'
+
+# Ingest
+curl -X POST http://localhost:8000/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"source": "./docs", "collection": "mydata"}'
+
+# Chat (stateless - client manages history)
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What about returns?",
+    "history": [
+      {"role": "user", "content": "What is the refund policy?"},
+      {"role": "assistant", "content": "The refund policy allows..."}
+    ],
+    "collection": "default"
+  }'
 ```
 
 </details>
