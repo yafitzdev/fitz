@@ -22,6 +22,8 @@ fitz quickstart ./docs "What is our refund policy?"
 
 That's it. Your documents are now searchable with AI.
 
+<br>
+
 ![fitz-ai quickstart demo](https://raw.githubusercontent.com/yafitzdev/fitz-ai/main/docs/assets/quickstart_demo.gif)
 
 
