@@ -1,6 +1,6 @@
 # fitz_ai/engines/clara/engine.py
 """
-ClaraEngine - Knowledge engine implementation for CLaRa paradigm.
+ClaraEngine - Knowledge engine implementation for Apple's CLaRa paradigm.
 
 This engine wraps Apple's CLaRa (Continuous Latent Reasoning) model behind
 the paradigm-agnostic KnowledgeEngine interface.
@@ -10,9 +10,16 @@ CLaRa differs from Classic RAG:
 - Retrieval happens in latent space via cosine similarity
 - Retriever and generator are jointly optimized (end-to-end)
 - Single language modeling loss trains both retrieval and generation
+
+Requirements:
+    pip install torch transformers accelerate bitsandbytes peft
+    # Or: pip install fitz-ai[clara]
 """
 
 import logging
+import os
+import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fitz_ai.core import (
@@ -29,11 +36,56 @@ from fitz_ai.engines.clara.config.schema import ClaraConfig
 logger = logging.getLogger(__name__)
 
 
+def _ensure_clara_model_available(model_path: str) -> Path:
+    """
+    Ensure CLaRa model files are available locally.
+
+    Downloads from HuggingFace if needed and returns path to local files.
+    """
+    from huggingface_hub import snapshot_download
+
+    # Check if it's already a local path
+    local_path = Path(model_path)
+    if local_path.exists() and (local_path / "modeling_clara.py").exists():
+        return local_path
+
+    # Download from HuggingFace
+    # CLaRa models have subdirectories like compression-16, compression-128
+    repo_id = "apple/CLaRa-7B-Instruct"  # Default repo
+    subfolder = "compression-16"  # Default compression
+
+    # Parse model path to extract repo and subfolder
+    if "/" in model_path:
+        parts = model_path.split("/")
+        if len(parts) >= 3 and parts[0] == "apple":
+            repo_id = f"{parts[0]}/{parts[1]}"
+            if len(parts) >= 3:
+                subfolder = parts[2]
+
+    logger.info(f"Downloading CLaRa model from {repo_id}/{subfolder}...")
+
+    # Create cache directory
+    cache_dir = Path.home() / ".cache" / "fitz" / "clara"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    local_dir = cache_dir / repo_id.replace("/", "_") / subfolder
+
+    # Download model files
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    snapshot_download(
+        repo_id=repo_id,
+        allow_patterns=[f"{subfolder}/*"],
+        local_dir=str(local_dir.parent.parent),
+    )
+
+    return local_dir.parent / subfolder
+
+
 class ClaraEngine:
     """
     CLaRa (Continuous Latent Reasoning) engine implementation.
 
-    This engine implements the CLaRa paradigm:
+    This engine implements the CLaRa paradigm using Apple's official model:
     1. Compress documents into continuous memory tokens (offline)
     2. Embed query into same latent space
     3. Retrieve via cosine similarity in latent space
@@ -47,9 +99,12 @@ class ClaraEngine:
 
     Examples:
         >>> from fitz_ai.engines.clara import ClaraEngine
-        >>> from fitz_ai.engines.clara.config.schema import ClaraConfig
+        >>> from fitz_ai.engines.clara.config.schema import ClaraConfig, ClaraModelConfig
         >>>
-        >>> config = ClaraConfig()
+        >>> # Use 4-bit quantization for lower VRAM usage
+        >>> config = ClaraConfig(
+        ...     model=ClaraModelConfig(load_in_4bit=True)
+        ... )
         >>> engine = ClaraEngine(config)
         >>>
         >>> # Add documents to knowledge base
@@ -73,68 +128,73 @@ class ClaraEngine:
         """
         self._config = config
         self._model = None
-        self._compressed_docs: Dict[str, Any] = {}  # doc_id -> compressed embedding
-        self._doc_texts: Dict[str, str] = {}  # doc_id -> original text
+        self._doc_texts: List[str] = []  # Original document texts
+        self._model_path: Optional[Path] = None
 
         try:
             self._initialize_model()
+        except ImportError as e:
+            raise ConfigurationError(
+                "CLaRa requires additional dependencies. "
+                "Install with: pip install fitz-ai[clara] "
+                f"or pip install torch transformers accelerate bitsandbytes peft. Error: {e}"
+            ) from e
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize CLaRa engine: {e}") from e
 
     def _initialize_model(self) -> None:
         """
-        Load the CLaRa model from HuggingFace.
+        Load the CLaRa model from HuggingFace or local cache.
 
-        CLaRa uses AutoModel with trust_remote_code=True to load
-        the custom model architecture.
+        CLaRa uses a custom model class that must be loaded via its own
+        from_pretrained method, not HuggingFace's AutoModel.
         """
-        try:
-            import torch
-            from transformers import AutoModel
-        except ImportError as e:
-            raise ConfigurationError(
-                "CLaRa requires transformers and torch. "
-                "Install with: pip install transformers torch"
-            ) from e
+        import torch
 
         model_config = self._config.model
 
-        logger.info(f"Loading CLaRa model: {model_config.model_name_or_path}")
+        # Ensure model files are available
+        self._model_path = _ensure_clara_model_available(model_config.model_name_or_path)
 
-        # Determine torch dtype
-        dtype_map = {
-            "float32": torch.float32,
-            "float16": torch.float16,
-            "bfloat16": torch.bfloat16,
-        }
-        torch_dtype = dtype_map.get(model_config.torch_dtype, torch.bfloat16)
+        # Add model path to Python path for custom module loading
+        model_parent = str(self._model_path)
+        if model_parent not in sys.path:
+            sys.path.insert(0, model_parent)
 
-        # Load model with appropriate settings
-        load_kwargs = {
-            "trust_remote_code": model_config.trust_remote_code,
-            "torch_dtype": torch_dtype,
-        }
+        # Import CLaRa's custom model class
+        from modeling_clara import CLaRa
 
-        if model_config.load_in_8bit:
-            load_kwargs["load_in_8bit"] = True
-        elif model_config.load_in_4bit:
-            load_kwargs["load_in_4bit"] = True
+        logger.info(f"Loading CLaRa model from: {self._model_path}")
 
-        self._model = AutoModel.from_pretrained(model_config.model_name_or_path, **load_kwargs)
+        # Determine quantization setting
+        quantization = "no"
+        if model_config.load_in_4bit:
+            quantization = "int4"
+        elif model_config.load_in_8bit:
+            quantization = "int8"
 
-        # Move to device if not using quantization
-        if not (model_config.load_in_8bit or model_config.load_in_4bit):
-            self._model = self._model.to(model_config.device)
+        # Load model with Apple's from_pretrained
+        self._model = CLaRa.from_pretrained(
+            str(self._model_path),
+            quantization=quantization,
+            device_map="auto",
+        )
 
         self._model.eval()
-        logger.info(f"CLaRa model loaded on {model_config.device}")
+
+        # Log memory usage
+        if torch.cuda.is_available():
+            mem_gb = torch.cuda.memory_allocated() / 1024**3
+            logger.info(f"CLaRa model loaded. GPU memory: {mem_gb:.2f} GB")
+        else:
+            logger.info("CLaRa model loaded on CPU")
 
     def add_documents(self, documents: List[str], doc_ids: Optional[List[str]] = None) -> List[str]:
         """
         Add documents to the knowledge base.
 
-        Documents are compressed into continuous memory tokens for efficient
-        storage and retrieval.
+        Documents are stored for later compression during queries.
+        CLaRa compresses documents on-the-fly during generation.
 
         Args:
             documents: List of document texts to add
@@ -144,7 +204,7 @@ class ClaraEngine:
             List of document IDs
 
         Raises:
-            KnowledgeError: If compression fails
+            KnowledgeError: If documents cannot be added
         """
         if doc_ids is None:
             import uuid
@@ -155,96 +215,24 @@ class ClaraEngine:
             raise ValueError("doc_ids length must match documents length")
 
         try:
-            # Compress documents using CLaRa's compressor
-            compressed = self._compress_documents(documents)
-
-            for doc_id, doc_text, embedding in zip(doc_ids, documents, compressed):
-                self._compressed_docs[doc_id] = embedding
-                self._doc_texts[doc_id] = doc_text
+            # Store documents for later use
+            for doc_text in documents:
+                self._doc_texts.append(doc_text)
 
             logger.info(f"Added {len(documents)} documents to CLaRa knowledge base")
             return doc_ids
 
         except Exception as e:
-            raise KnowledgeError(f"Failed to compress documents: {e}") from e
-
-    def _compress_documents(self, documents: List[str]) -> List[Any]:
-        """
-        Compress documents into continuous memory tokens.
-
-        Uses CLaRa's semantic compressor to convert full documents
-        into a small number of continuous embeddings.
-        """
-        import torch
-
-        # Format documents for compression
-        # CLaRa expects documents in a specific format
-        formatted_docs = [[doc] for doc in documents]
-
-        with torch.no_grad():
-            # Use the model's internal compression
-            # The exact method depends on CLaRa variant:
-            # - Base: generates paraphrase
-            # - Instruct: generates text
-            # - E2E: full retrieval + generation
-
-            # For compression, we use the compressor adapter
-            if hasattr(self._model, "compress_documents"):
-                compressed = self._model.compress_documents(
-                    documents=formatted_docs,
-                    max_length=self._config.compression.doc_max_length,
-                )
-            else:
-                # Fallback: use generate_from_paraphrase for compression
-                compressed = self._get_document_embeddings(formatted_docs)
-
-        return compressed
-
-    def _get_document_embeddings(self, documents: List[List[str]]) -> List[Any]:
-        """
-        Get compressed embeddings for documents.
-
-        This uses CLaRa's internal document representation.
-        """
-        import torch
-
-        # Flatten for processing
-        flat_docs = [doc[0] if doc else "" for doc in documents]
-
-        # Get embeddings through model forward pass
-        # This captures the compressed representation
-        with torch.no_grad():
-            # Different variants have different methods
-            if hasattr(self._model, "encode_documents"):
-                embeddings = self._model.encode_documents(flat_docs)
-            else:
-                # Use tokenizer + model hidden states
-                tokenizer = self._model.tokenizer if hasattr(self._model, "tokenizer") else None
-                if tokenizer:
-                    inputs = tokenizer(
-                        flat_docs,
-                        return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                        max_length=self._config.compression.doc_max_length,
-                    ).to(self._model.device)
-
-                    outputs = self._model(**inputs, output_hidden_states=True)
-                    # Use last hidden state mean as embedding
-                    embeddings = outputs.hidden_states[-1].mean(dim=1)
-                else:
-                    raise KnowledgeError("Model doesn't have encoding capability")
-
-        return [emb.cpu() for emb in embeddings]
+            raise KnowledgeError(f"Failed to add documents: {e}") from e
 
     def answer(self, query: Query) -> Answer:
         """
         Execute a query against knowledge and return an answer.
 
         CLaRa's answer generation:
-        1. Encode query into latent space
-        2. Find top-k most similar compressed documents
-        3. Generate answer from query + compressed docs
+        1. Format documents for CLaRa's input format
+        2. Compress documents and generate answer in one pass
+        3. Return answer with provenance
 
         Args:
             query: Query object containing the question text
@@ -260,41 +248,46 @@ class ClaraEngine:
         if not query.text.strip():
             raise QueryError("Query text cannot be empty")
 
-        if not self._compressed_docs:
-            raise KnowledgeError(
-                "No documents in knowledge base. "
-                "Call add_documents() first or load a pre-compressed knowledge base."
-            )
+        if not self._doc_texts:
+            raise KnowledgeError("No documents in knowledge base. Call add_documents() first.")
 
         try:
-            # Step 1: Retrieve relevant documents
-            top_k = self._config.retrieval.top_k
+            # Determine how many docs to use
+            top_k = min(
+                self._config.retrieval.top_k,
+                len(self._doc_texts),
+            )
             if query.constraints and query.constraints.max_sources:
                 top_k = min(top_k, query.constraints.max_sources)
 
-            retrieved_doc_ids, scores = self._retrieve(query.text, top_k=top_k)
+            # Format documents for CLaRa (list of lists)
+            # CLaRa expects: [[doc1, doc2, ...]] for a single question
+            documents = [self._doc_texts[:top_k]]
+            questions = [query.text]
 
-            # Step 2: Gather retrieved document texts
-            retrieved_docs = [self._doc_texts[doc_id] for doc_id in retrieved_doc_ids]
+            # Set generation top_k
+            self._model.generation_top_k = top_k
 
-            # Step 3: Generate answer using CLaRa
-            answer_text, used_indices = self._generate(query.text, retrieved_docs)
+            # Generate answer using CLaRa's generate method
+            # Use generate_from_text for instruct variant (stage1_2)
+            gen_config = self._config.generation
+            answers = self._model.generate_from_text(
+                questions=questions,
+                documents=documents,
+                max_new_tokens=gen_config.max_new_tokens,
+            )
 
-            # Step 4: Build provenance
-            # Note: Provenance takes source_id, excerpt, and metadata (no direct score field)
+            answer_text = answers[0] if answers else ""
+
+            # Build provenance from used documents
             provenance = []
-            for i, (doc_id, score) in enumerate(zip(retrieved_doc_ids, scores)):
+            for i, doc_text in enumerate(self._doc_texts[:top_k]):
                 provenance.append(
                     Provenance(
-                        source_id=doc_id,
-                        excerpt=(
-                            self._doc_texts[doc_id][:200] + "..."
-                            if len(self._doc_texts[doc_id]) > 200
-                            else self._doc_texts[doc_id]
-                        ),
+                        source_id=f"doc_{i}",
+                        excerpt=(doc_text[:200] + "..." if len(doc_text) > 200 else doc_text),
                         metadata={
                             "rank": i + 1,
-                            "relevance_score": float(score),
                             "compression_rate": self._config.compression.compression_rate,
                         },
                     )
@@ -307,7 +300,7 @@ class ClaraEngine:
                     "engine": "clara",
                     "variant": self._config.model.variant,
                     "compression_rate": self._config.compression.compression_rate,
-                    "num_docs_retrieved": len(retrieved_doc_ids),
+                    "num_docs_used": top_k,
                 },
             )
 
@@ -318,121 +311,6 @@ class ClaraEngine:
         except Exception as e:
             raise GenerationError(f"CLaRa generation failed: {e}") from e
 
-    def _retrieve(self, query_text: str, top_k: int) -> tuple[List[str], List[float]]:
-        """
-        Retrieve top-k documents via latent space similarity.
-
-        CLaRa retrieval:
-        1. Encode query into same latent space as documents
-        2. Compute cosine similarity with all compressed docs
-        3. Return top-k most similar
-        """
-        import torch
-        import torch.nn.functional as F
-
-        with torch.no_grad():
-            # Encode query
-            query_embedding = self._encode_query(query_text)
-
-            # Compute similarities with all documents
-            doc_ids = list(self._compressed_docs.keys())
-            doc_embeddings = torch.stack([self._compressed_docs[doc_id] for doc_id in doc_ids])
-
-            # Cosine similarity
-            query_embedding = query_embedding.to(doc_embeddings.device)
-            similarities = F.cosine_similarity(query_embedding.unsqueeze(0), doc_embeddings, dim=-1)
-
-            # Get top-k
-            top_k = min(top_k, len(doc_ids))
-            scores, indices = torch.topk(similarities, top_k)
-
-            retrieved_ids = [doc_ids[i] for i in indices.tolist()]
-            retrieved_scores = scores.tolist()
-
-        return retrieved_ids, retrieved_scores
-
-    def _encode_query(self, query_text: str) -> Any:
-        """
-        Encode query into latent space.
-
-        CLaRa uses a query reasoner adapter to map queries into
-        the same continuous space as compressed documents.
-        """
-        import torch
-
-        with torch.no_grad():
-            if hasattr(self._model, "encode_query"):
-                return self._model.encode_query(query_text)
-            else:
-                # Fallback to tokenize + forward
-                tokenizer = getattr(self._model, "tokenizer", None)
-                if tokenizer:
-                    inputs = tokenizer(
-                        query_text,
-                        return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                        max_length=512,
-                    ).to(self._model.device)
-
-                    outputs = self._model(**inputs, output_hidden_states=True)
-                    return outputs.hidden_states[-1].mean(dim=1).squeeze()
-                else:
-                    raise KnowledgeError("Cannot encode query without tokenizer")
-
-    def _generate(self, query_text: str, documents: List[str]) -> tuple[str, List[int]]:
-        """
-        Generate answer from query and retrieved documents.
-
-        Uses CLaRa's unified generation approach where compressed
-        document embeddings are concatenated with query tokens.
-        """
-        import torch
-
-        gen_config = self._config.generation
-
-        with torch.no_grad():
-            # Format for CLaRa's generate method
-            questions = [query_text]
-            docs_batch = [documents]
-
-            # Use appropriate generation method based on variant
-            variant = self._config.model.variant
-
-            if variant == "e2e" and hasattr(self._model, "generate_from_questions"):
-                # E2E variant: full retrieval + generation
-                outputs, topk_indices = self._model.generate_from_questions(
-                    questions=questions,
-                    documents=docs_batch,
-                    max_new_tokens=gen_config.max_new_tokens,
-                )
-                return outputs[0], (
-                    topk_indices.tolist() if hasattr(topk_indices, "tolist") else topk_indices
-                )
-
-            elif variant == "instruct" and hasattr(self._model, "generate_from_text"):
-                # Instruct variant: instruction-following generation
-                outputs = self._model.generate_from_text(
-                    questions=questions,
-                    documents=docs_batch,
-                    max_new_tokens=gen_config.max_new_tokens,
-                )
-                return outputs[0], list(range(len(documents)))
-
-            elif hasattr(self._model, "generate_from_paraphrase"):
-                # Base variant: paraphrase-based generation
-                outputs = self._model.generate_from_paraphrase(
-                    questions=questions,
-                    documents=docs_batch,
-                    max_new_tokens=gen_config.max_new_tokens,
-                )
-                return outputs[0], list(range(len(documents)))
-
-            else:
-                raise GenerationError(
-                    f"CLaRa variant '{variant}' doesn't have expected generation method"
-                )
-
     def get_knowledge_stats(self) -> Dict[str, Any]:
         """
         Get statistics about the knowledge base.
@@ -441,16 +319,17 @@ class ClaraEngine:
             Dictionary with knowledge base statistics
         """
         return {
-            "num_documents": len(self._compressed_docs),
+            "num_documents": len(self._doc_texts),
             "compression_rate": self._config.compression.compression_rate,
             "model_variant": self._config.model.variant,
-            "cache_enabled": self._config.cache_compressed_docs,
+            "quantization": "4-bit"
+            if self._config.model.load_in_4bit
+            else ("8-bit" if self._config.model.load_in_8bit else "none"),
         }
 
     def clear_knowledge_base(self) -> None:
         """
         Clear all documents from the knowledge base.
         """
-        self._compressed_docs.clear()
         self._doc_texts.clear()
         logger.info("CLaRa knowledge base cleared")

@@ -98,16 +98,33 @@ run = run_classic_rag
 
 def _register_classic_rag_engine():
     """Register Classic RAG engine with the global registry."""
-    from fitz_ai.runtime.registry import EngineRegistry
+    from fitz_ai.engines.classic_rag.engine import ClassicRagEngine
+    from fitz_ai.runtime.registry import EngineCapabilities, EngineRegistry
 
     def classic_rag_factory(config):
-        """Factory for creating Classic RAG pipelines."""
+        """Factory for creating Classic RAG engine."""
         if config is None:
             config = load_config(None)
         elif isinstance(config, dict):
             config = ClassicRagConfig.from_dict(config)
 
-        return RAGPipeline.from_config(config)
+        # Return ClassicRagEngine which implements KnowledgeEngine protocol
+        return ClassicRagEngine(config)
+
+    def classic_rag_config_loader(config_path):
+        """Load config for classic_rag engine."""
+        return load_config(config_path)
+
+    # Define capabilities
+    capabilities = EngineCapabilities(
+        supports_collections=True,
+        requires_documents_at_query=False,
+        supports_chat=True,
+        supports_streaming=False,
+        requires_config=True,
+        requires_api_key=True,
+        api_key_env_var="COHERE_API_KEY",
+    )
 
     try:
         registry = EngineRegistry.get_global()
@@ -116,6 +133,8 @@ def _register_classic_rag_engine():
             factory=classic_rag_factory,
             description="Retrieval-augmented generation using vector search and LLM synthesis",
             config_type=ClassicRagConfig,
+            config_loader=classic_rag_config_loader,
+            capabilities=capabilities,
         )
     except ValueError:
         pass  # Already registered

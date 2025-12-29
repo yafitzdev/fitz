@@ -1,3 +1,4 @@
+# fitz_ai/runtime/registry.py
 """
 Engine Registry - Central registry for all knowledge engines.
 
@@ -6,16 +7,54 @@ knowledge engines. It enables the platform to support multiple engines
 (Classic RAG, CLaRa, custom engines) without hardcoding engine names.
 
 Philosophy:
-    - Engines register themselves via decorators
+    - Engines register themselves on import
     - Registry provides lookup by name
     - Engines are created lazily (on first use)
-    - Configuration is validated at creation time
+    - Engines declare their capabilities for CLI/API adaptation
 """
 
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Type
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Type
 
 from fitz_ai.core import ConfigurationError, KnowledgeEngine
+
+
+@dataclass
+class EngineCapabilities:
+    """
+    Capabilities declared by an engine.
+
+    These flags tell the CLI and API how to interact with the engine,
+    enabling generic command handling without engine-specific if/elif chains.
+    """
+
+    # Storage capabilities
+    supports_collections: bool = True
+    """Engine uses persistent collections (vector DB, etc.)"""
+
+    requires_documents_at_query: bool = False
+    """Engine needs documents added before querying (no persistent storage)"""
+
+    # Feature capabilities
+    supports_chat: bool = True
+    """Engine supports multi-turn conversation"""
+
+    supports_streaming: bool = False
+    """Engine supports streaming responses"""
+
+    # Requirements
+    requires_config: bool = True
+    """Engine requires a config file to be present"""
+
+    requires_api_key: bool = False
+    """Engine requires an API key (e.g., COHERE_API_KEY)"""
+
+    api_key_env_var: Optional[str] = None
+    """Environment variable name for API key"""
+
+    # CLI hints
+    cli_query_message: Optional[str] = None
+    """Custom message to show in query command (e.g., 'use quickstart instead')"""
 
 
 @dataclass
@@ -23,8 +62,8 @@ class EngineRegistration:
     """
     Metadata about a registered engine.
 
-    This stores information needed to create an engine instance,
-    including the factory function and any metadata.
+    This stores everything needed to create and interact with an engine,
+    including factory function, config loader, and capabilities.
     """
 
     name: str
@@ -33,7 +72,7 @@ class EngineRegistration:
     factory: Callable[[Any], KnowledgeEngine]
     """
     Factory function that creates an engine instance.
-    
+
     Signature: (config: Any) -> KnowledgeEngine
     The config type is engine-specific.
     """
@@ -43,6 +82,17 @@ class EngineRegistration:
 
     config_type: Optional[Type] = None
     """Expected config type (for validation). Optional."""
+
+    config_loader: Optional[Callable[[Optional[str]], Any]] = None
+    """
+    Function to load config for this engine.
+
+    Signature: (config_path: Optional[str]) -> config
+    If None, engine doesn't need config loading.
+    """
+
+    capabilities: EngineCapabilities = field(default_factory=EngineCapabilities)
+    """Engine capabilities for CLI/API adaptation."""
 
 
 class EngineRegistry:
@@ -56,21 +106,22 @@ class EngineRegistry:
     Examples:
         Register an engine:
         >>> @EngineRegistry.register_engine(
-        ...     name="classic_rag",
-        ...     description="Retrieval-augmented generation"
+        ...     name="my_engine",
+        ...     description="My custom engine",
+        ...     capabilities=EngineCapabilities(supports_collections=False),
         ... )
-        ... def create_classic_rag(config):
-        ...     return ClassicRagEngine(config)
+        ... def create_my_engine(config):
+        ...     return MyEngine(config)
 
         Get an engine:
         >>> registry = EngineRegistry.get_global()
-        >>> factory = registry.get("classic_rag")
+        >>> factory = registry.get("my_engine")
         >>> engine = factory(config)
 
-        List available engines:
-        >>> engines = registry.list()
-        >>> print(engines)
-        ['classic_rag', 'clara', 'custom']
+        Check capabilities:
+        >>> info = registry.get_info("my_engine")
+        >>> if info.capabilities.supports_collections:
+        ...     # Show collection picker
     """
 
     # Global singleton registry
@@ -82,30 +133,14 @@ class EngineRegistry:
 
     @classmethod
     def get_global(cls) -> "EngineRegistry":
-        """
-        Get the global singleton registry.
-
-        Returns:
-            The global EngineRegistry instance
-
-        Examples:
-            >>> registry = EngineRegistry.get_global()
-            >>> registry.register(...)
-        """
+        """Get the global singleton registry."""
         if cls._global_registry is None:
             cls._global_registry = cls()
         return cls._global_registry
 
     @classmethod
     def reset_global(cls) -> None:
-        """
-        Reset the global registry (useful for testing).
-
-        Examples:
-            >>> EngineRegistry.reset_global()
-            >>> registry = EngineRegistry.get_global()
-            >>> assert len(registry.list()) == 0
-        """
+        """Reset the global registry (useful for testing)."""
         cls._global_registry = None
 
     def register(
@@ -114,6 +149,8 @@ class EngineRegistry:
         factory: Callable[[Any], KnowledgeEngine],
         description: str = "",
         config_type: Optional[Type] = None,
+        config_loader: Optional[Callable[[Optional[str]], Any]] = None,
+        capabilities: Optional[EngineCapabilities] = None,
     ) -> None:
         """
         Register an engine factory.
@@ -123,26 +160,22 @@ class EngineRegistry:
             factory: Function that creates engine instances (config -> KnowledgeEngine)
             description: Human-readable description
             config_type: Expected config type (optional, for validation)
+            config_loader: Function to load config (config_path -> config)
+            capabilities: Engine capabilities for CLI/API adaptation
 
         Raises:
             ValueError: If an engine with this name is already registered
-
-        Examples:
-            >>> def create_my_engine(config):
-            ...     return MyEngine(config)
-            >>>
-            >>> registry = EngineRegistry.get_global()
-            >>> registry.register(
-            ...     name="my_engine",
-            ...     factory=create_my_engine,
-            ...     description="My custom engine"
-            ... )
         """
         if name in self._engines:
             raise ValueError(f"Engine '{name}' is already registered")
 
         registration = EngineRegistration(
-            name=name, factory=factory, description=description, config_type=config_type
+            name=name,
+            factory=factory,
+            description=description,
+            config_type=config_type,
+            config_loader=config_loader,
+            capabilities=capabilities or EngineCapabilities(),
         )
         self._engines[name] = registration
 
@@ -158,11 +191,6 @@ class EngineRegistry:
 
         Raises:
             ConfigurationError: If no engine with this name is registered
-
-        Examples:
-            >>> registry = EngineRegistry.get_global()
-            >>> factory = registry.get("classic_rag")
-            >>> engine = factory(config)
         """
         if name not in self._engines:
             available = ", ".join(self.list())
@@ -178,15 +206,10 @@ class EngineRegistry:
             name: Name of the engine
 
         Returns:
-            EngineRegistration with full metadata
+            EngineRegistration with full metadata including capabilities
 
         Raises:
             ConfigurationError: If no engine with this name is registered
-
-        Examples:
-            >>> registry = EngineRegistry.get_global()
-            >>> info = registry.get_info("classic_rag")
-            >>> print(info.description)
         """
         if name not in self._engines:
             available = ", ".join(self.list())
@@ -194,39 +217,62 @@ class EngineRegistry:
 
         return self._engines[name]
 
-    def list(self) -> list[str]:
+    def get_capabilities(self, name: str) -> EngineCapabilities:
         """
-        List all registered engine names.
+        Get capabilities for an engine.
+
+        Args:
+            name: Name of the engine
 
         Returns:
-            List of engine names
+            EngineCapabilities object
 
-        Examples:
-            >>> registry = EngineRegistry.get_global()
-            >>> engines = registry.list()
-            >>> print(f"Available engines: {', '.join(engines)}")
+        Raises:
+            ConfigurationError: If no engine with this name is registered
         """
+        return self.get_info(name).capabilities
+
+    def load_config(self, name: str, config_path: Optional[str] = None) -> Any:
+        """
+        Load configuration for an engine using its registered loader.
+
+        Args:
+            name: Name of the engine
+            config_path: Optional path to config file
+
+        Returns:
+            Loaded config object (engine-specific type)
+
+        Raises:
+            ConfigurationError: If engine not found or has no config loader
+        """
+        info = self.get_info(name)
+
+        if info.config_loader is None:
+            # No config loader - return None (engine will use defaults)
+            return None
+
+        return info.config_loader(config_path)
+
+    def list(self) -> List[str]:
+        """List all registered engine names."""
         return sorted(self._engines.keys())
 
     def list_with_descriptions(self) -> Dict[str, str]:
-        """
-        List all engines with their descriptions.
-
-        Returns:
-            Dictionary mapping engine names to descriptions
-
-        Examples:
-            >>> registry = EngineRegistry.get_global()
-            >>> for name, desc in registry.list_with_descriptions().items():
-            ...     print(f"{name}: {desc}")
-        """
+        """List all engines with their descriptions."""
         return {name: reg.description for name, reg in self._engines.items()}
+
+    def list_with_capabilities(self) -> Dict[str, EngineCapabilities]:
+        """List all engines with their capabilities."""
+        return {name: reg.capabilities for name, reg in self._engines.items()}
 
     @staticmethod
     def register_engine(
         name: str,
         description: str = "",
         config_type: Optional[Type] = None,
+        config_loader: Optional[Callable[[Optional[str]], Any]] = None,
+        capabilities: Optional[EngineCapabilities] = None,
     ) -> Callable:
         """
         Decorator for registering engine factories.
@@ -238,17 +284,23 @@ class EngineRegistry:
             name: Unique name for this engine
             description: Human-readable description
             config_type: Expected config type (optional)
+            config_loader: Function to load config
+            capabilities: Engine capabilities
 
         Returns:
             Decorator function
 
         Examples:
             >>> @EngineRegistry.register_engine(
-            ...     name="classic_rag",
-            ...     description="Retrieval-augmented generation",
+            ...     name="my_engine",
+            ...     description="My custom RAG engine",
+            ...     capabilities=EngineCapabilities(
+            ...         supports_collections=False,
+            ...         requires_documents_at_query=True,
+            ...     ),
             ... )
-            ... def create_classic_rag_engine(config):
-            ...     return ClassicRagEngine(config)
+            ... def create_my_engine(config):
+            ...     return MyEngine(config)
         """
 
         def decorator(factory: Callable[[Any], KnowledgeEngine]) -> Callable:
@@ -258,6 +310,8 @@ class EngineRegistry:
                 factory=factory,
                 description=description,
                 config_type=config_type,
+                config_loader=config_loader,
+                capabilities=capabilities,
             )
             return factory
 
@@ -266,16 +320,5 @@ class EngineRegistry:
 
 # Convenience function for global registry
 def get_engine_registry() -> EngineRegistry:
-    """
-    Get the global engine registry.
-
-    This is a convenience function equivalent to EngineRegistry.get_global().
-
-    Returns:
-        The global EngineRegistry instance
-
-    Examples:
-        >>> registry = get_engine_registry()
-        >>> engines = registry.list()
-    """
+    """Get the global engine registry."""
     return EngineRegistry.get_global()

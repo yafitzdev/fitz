@@ -111,7 +111,7 @@ __all__ = [
 
 def _register_clara_engine():
     """Register CLaRa with the engine registry."""
-    from fitz_ai.runtime import EngineRegistry
+    from fitz_ai.runtime import EngineCapabilities, EngineRegistry
 
     def _create_clara_engine_factory(config) -> ClaraEngine:
         """
@@ -121,7 +121,7 @@ def _register_clara_engine():
         by the universal run() function when engine="clara".
         """
         if config is None:
-            config = ClaraConfig()
+            config = ClaraConfig(model=ClaraModelConfig(load_in_4bit=True))
         elif isinstance(config, dict):
             # Convert dict to ClaraConfig
             config = ClaraConfig(
@@ -133,6 +133,27 @@ def _register_clara_engine():
 
         return ClaraEngine(config)
 
+    def _clara_config_loader(config_path):
+        """Load config for clara engine."""
+        if config_path:
+            return load_clara_config(config_path)
+        # Default config with 4-bit quantization for consumer GPUs
+        return ClaraConfig(model=ClaraModelConfig(load_in_4bit=True))
+
+    # Define capabilities - CLaRa is fundamentally different from classic RAG
+    capabilities = EngineCapabilities(
+        supports_collections=False,  # No persistent storage
+        requires_documents_at_query=True,  # Must add docs before query
+        supports_chat=False,  # No multi-turn yet
+        supports_streaming=False,
+        requires_config=False,  # Works with defaults
+        requires_api_key=False,  # Local GPU model
+        cli_query_message=(
+            "CLaRa requires documents to be loaded first.\n"
+            "Use 'fitz quickstart <folder> \"question\" --engine clara' for one-off queries."
+        ),
+    )
+
     # Register with global registry
     registry = EngineRegistry.get_global()
 
@@ -142,6 +163,9 @@ def _register_clara_engine():
             name="clara",
             factory=_create_clara_engine_factory,
             description="CLaRa: Continuous Latent Reasoning - Compression-native RAG with 16x-128x document compression",
+            config_type=ClaraConfig,
+            config_loader=_clara_config_loader,
+            capabilities=capabilities,
         )
 
 

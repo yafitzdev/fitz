@@ -41,8 +41,8 @@ class TestQueryCommand:
 class TestQueryHelpers:
     """Tests for query helper functions."""
 
-    def test_load_config_safe_returns_config(self, tmp_path):
-        """Test _load_config_safe loads valid config."""
+    def test_load_classic_rag_config_returns_config(self, tmp_path):
+        """Test _load_classic_rag_config loads valid config."""
         import yaml
 
         config_path = tmp_path / "fitz.yaml"
@@ -58,9 +58,9 @@ class TestQueryHelpers:
             "fitz_ai.cli.commands.query.FitzPaths.config",
             return_value=config_path,
         ):
-            from fitz_ai.cli.commands.query import _load_config_safe
+            from fitz_ai.cli.commands.query import _load_classic_rag_config
 
-            raw, typed = _load_config_safe()
+            raw, typed = _load_classic_rag_config()
 
         assert raw["chat"]["plugin_name"] == "cohere"
         assert typed.retrieval.collection == "test"
@@ -94,7 +94,7 @@ class TestQueryHelpers:
 
 
 class TestQueryExecution:
-    """Tests for query execution with mocked pipeline."""
+    """Tests for query execution with mocked engine."""
 
     def test_query_direct_mode(self, tmp_path):
         """Test query with direct question argument."""
@@ -115,23 +115,23 @@ class TestQueryExecution:
 
         mock_answer = MagicMock()
         mock_answer.text = "This is the answer"
-        mock_answer.chunks = []
+        mock_answer.provenance = []
 
-        mock_pipeline = MagicMock()
-        mock_pipeline.run.return_value = mock_answer
+        mock_engine = MagicMock()
+        mock_engine.answer.return_value = mock_answer
 
         with (
             patch("fitz_ai.cli.commands.query.FitzPaths.config", return_value=config_path),
             patch(
-                "fitz_ai.cli.commands.query.RAGPipeline.from_config",
-                return_value=mock_pipeline,
+                "fitz_ai.cli.commands.query.create_engine",
+                return_value=mock_engine,
             ),
             patch("fitz_ai.cli.commands.query._get_collections", return_value=["test"]),
         ):
             runner.invoke(app, ["query", "What is RAG?"])
 
-        # Should call pipeline with the question
-        mock_pipeline.run.assert_called_once()
+        # Should call engine.answer with the question
+        mock_engine.answer.assert_called_once()
 
 
 class TestQueryOptions:
@@ -152,20 +152,20 @@ class TestQueryOptions:
 
         mock_answer = MagicMock()
         mock_answer.text = "Answer"
-        mock_answer.chunks = []
+        mock_answer.provenance = []
 
-        mock_pipeline = MagicMock()
-        mock_pipeline.run.return_value = mock_answer
+        mock_engine = MagicMock()
+        mock_engine.answer.return_value = mock_answer
 
         with (
             patch("fitz_ai.cli.commands.query.FitzPaths.config", return_value=config_path),
             patch(
-                "fitz_ai.cli.commands.query.RAGPipeline.from_config",
-                return_value=mock_pipeline,
+                "fitz_ai.cli.commands.query.create_engine",
+                return_value=mock_engine,
             ),
             patch("fitz_ai.cli.commands.query._get_collections", return_value=["custom"]),
         ):
             runner.invoke(app, ["query", "question", "-c", "custom"])
 
-        # Pipeline should be created (we can't easily verify the collection was set)
-        assert mock_pipeline.run.called
+        # Engine should be created (we can't easily verify the collection was set)
+        assert mock_engine.answer.called

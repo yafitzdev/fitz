@@ -83,6 +83,15 @@ remote = [
     "qdrant-client>=1.7",
 ]
 
+# CLaRa compression-native engine (requires GPU)
+clara = [
+    "torch>=2.0",
+    "transformers>=4.35",
+    "accelerate>=0.24",
+    "bitsandbytes>=0.41",
+    "peft>=0.10",
+]
+
 # REST API server
 api = [
     "fastapi>=0.100.0",
@@ -107,6 +116,11 @@ all = [
     "scikit-learn>=1.0",
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.23.0",
+    "torch>=2.0",
+    "transformers>=4.35",
+    "accelerate>=0.24",
+    "bitsandbytes>=0.41",
+    "peft>=0.10",
 ]
 
 

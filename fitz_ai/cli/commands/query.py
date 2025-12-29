@@ -1,11 +1,12 @@
 # fitz_ai/cli/commands/query.py
 """
-Query command.
+Query command - Engine-agnostic query interface.
 
 Usage:
-    fitz query                     # Interactive mode
-    fitz query "What is RAG?"      # Direct query
-    fitz query -c my_collection    # Specify collection
+    fitz query                          # Interactive mode (classic_rag)
+    fitz query "What is RAG?"           # Direct query
+    fitz query -c my_collection         # Specify collection
+    fitz query --engine clara           # Use CLaRa engine
 """
 
 from __future__ import annotations
@@ -16,11 +17,11 @@ import typer
 
 from fitz_ai.cli.ui import ui
 from fitz_ai.cli.ui_display import display_answer
+from fitz_ai.core import Query
 from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
-from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
-from fitz_ai.engines.classic_rag.pipeline.engine import RAGPipeline
 from fitz_ai.logging.logger import get_logger
+from fitz_ai.runtime import create_engine, get_engine_registry, list_engines
 from fitz_ai.vector_db.registry import get_vector_db_plugin
 
 logger = get_logger(__name__)
@@ -31,19 +32,19 @@ logger = get_logger(__name__)
 # =============================================================================
 
 
-def _load_config_safe() -> tuple[dict, ClassicRagConfig]:
-    """Load config or exit with helpful message."""
+def _load_classic_rag_config():
+    """Load classic_rag config or return None."""
     try:
+        from fitz_ai.engines.classic_rag.config import load_config
+
         config_path = FitzPaths.config()
         raw_config = load_config_dict(config_path)
         typed_config = load_config(config_path)
         return raw_config, typed_config
     except ConfigNotFoundError:
-        ui.error("No config found. Run 'fitz init' first.")
-        raise typer.Exit(1)
-    except Exception as e:
-        ui.error(f"Failed to load config: {e}")
-        raise typer.Exit(1)
+        return None, None
+    except Exception:
+        return None, None
 
 
 def _get_collections(raw_config: dict) -> List[str]:
@@ -71,7 +72,13 @@ def command(
         None,
         "--collection",
         "-c",
-        help="Collection to query (uses config default if not specified).",
+        help="Collection to query (classic_rag only).",
+    ),
+    engine: str = typer.Option(
+        "classic_rag",
+        "--engine",
+        "-e",
+        help="Engine to use (classic_rag, clara).",
     ),
 ) -> None:
     """
@@ -83,25 +90,78 @@ def command(
     Or ask directly:
         fitz query "What is RAG?"
 
-    Specify a collection:
+    Specify engine:
+        fitz query "question" --engine clara
+
+    Specify a collection (classic_rag only):
         fitz query "question" -c my_collection
     """
+    # =========================================================================
+    # Validate engine
+    # =========================================================================
+
+    available_engines = list_engines()
+    if engine not in available_engines:
+        ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(available_engines)}")
+        raise typer.Exit(1)
+
     # =========================================================================
     # Header
     # =========================================================================
 
-    ui.header("Fitz Query", "Retrieve answers from your knowledge base")
+    ui.header("Fitz Query", f"Engine: {engine}")
 
     # =========================================================================
+    # Capabilities-based routing
+    # =========================================================================
+
+    registry = get_engine_registry()
+    caps = registry.get_capabilities(engine)
+
+    # Engines that need documents loaded first can't do standalone queries
+    if caps.requires_documents_at_query:
+        _show_documents_required_message(engine, caps)
+        raise typer.Exit(0)
+
+    # Engines with collection support use collection-based query
+    if caps.supports_collections:
+        _run_collection_query(question, collection, engine)
+    else:
+        # Engines without collections use generic runtime path
+        _run_generic_query(question, engine)
+
+
+def _show_documents_required_message(engine_name: str, caps) -> None:
+    """Show message for engines that require documents at query time."""
+    if caps.cli_query_message:
+        ui.warning(caps.cli_query_message)
+    else:
+        ui.warning(f"Engine '{engine_name}' requires documents to be loaded first.")
+        ui.info(f"Use 'fitz quickstart <folder> \"question\" --engine {engine_name}' for one-off queries.")
+    print()
+    ui.info("Or use the Python API:")
+    print()
+    print("  from fitz_ai.runtime import create_engine")
+    print("  from fitz_ai.core import Query")
+    print()
+    print(f"  engine = create_engine('{engine_name}')")
+    print("  engine.add_documents(['doc1...', 'doc2...'])")
+    print("  answer = engine.answer(Query(text='your question'))")
+    print()
+
+
+def _run_collection_query(
+    question: Optional[str], collection: Optional[str], engine_name: str
+) -> None:
+    """Run query using an engine with collection support."""
+
     # Load config
-    # =========================================================================
+    raw_config, typed_config = _load_classic_rag_config()
+    if typed_config is None:
+        ui.error("No config found. Run 'fitz init' first.")
+        raise typer.Exit(1)
 
-    raw_config, typed_config = _load_config_safe()
     default_collection = typed_config.retrieval.collection
-
-    # =========================================================================
-    # Interactive prompts
-    # =========================================================================
 
     # Prompt for question if not provided
     if question is None:
@@ -121,32 +181,25 @@ def command(
         elif collections:
             typed_config.retrieval.collection = collections[0]
 
-    # Get display info
+    # Display info
     display_collection = typed_config.retrieval.collection
     display_retrieval = typed_config.retrieval.plugin_name
 
-    # Chat
     chat_plugin = raw_config.get("chat", {}).get("plugin_name", "?")
     chat_model = raw_config.get("chat", {}).get("kwargs", {}).get("model", "")
     display_chat = f"{chat_plugin} ({chat_model})" if chat_model else chat_plugin
 
-    # Embedding
     embedding_plugin = raw_config.get("embedding", {}).get("plugin_name", "?")
     embedding_model = raw_config.get("embedding", {}).get("kwargs", {}).get("model", "")
     display_embedding = (
         f"{embedding_plugin} ({embedding_model})" if embedding_model else embedding_plugin
     )
 
-    # Rerank
     display_rerank = None
     if raw_config.get("rerank", {}).get("enabled"):
         rerank_plugin = raw_config.get("rerank", {}).get("plugin_name", "?")
         rerank_model = raw_config.get("rerank", {}).get("kwargs", {}).get("model", "")
         display_rerank = f"{rerank_plugin} ({rerank_model})" if rerank_model else rerank_plugin
-
-    # =========================================================================
-    # Show query info
-    # =========================================================================
 
     print()
     info_parts = [
@@ -161,13 +214,34 @@ def command(
     ui.info(" | ".join(info_parts))
     print()
 
-    # =========================================================================
-    # Execute query
-    # =========================================================================
+    # Execute query using runtime
+    try:
+        engine_instance = create_engine(engine_name, config=typed_config)
+        query = Query(text=question_text)
+        answer = engine_instance.answer(query)
+        display_answer(answer)
+    except Exception as e:
+        ui.error(f"Query failed: {e}")
+        logger.exception("Query error")
+        raise typer.Exit(1)
+
+
+def _run_generic_query(question: Optional[str], engine_name: str) -> None:
+    """Run query using generic runtime path."""
+    # Prompt for question if not provided
+    if question is None:
+        question_text = ui.prompt_text("Question")
+    else:
+        question_text = question
+
+    print()
+    ui.info(f"Using engine: {engine_name}")
+    print()
 
     try:
-        pipeline = RAGPipeline.from_config(typed_config)
-        answer = pipeline.run(question_text)
+        engine_instance = create_engine(engine_name)
+        query = Query(text=question_text)
+        answer = engine_instance.answer(query)
         display_answer(answer)
     except Exception as e:
         ui.error(f"Query failed: {e}")

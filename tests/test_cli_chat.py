@@ -41,8 +41,8 @@ class TestChatCommand:
 class TestChatHelpers:
     """Tests for chat helper functions."""
 
-    def test_load_config_safe_returns_tuple(self, tmp_path):
-        """Test _load_config_safe returns raw and typed config."""
+    def test_load_classic_rag_config_returns_tuple(self, tmp_path):
+        """Test _load_classic_rag_config returns raw and typed config."""
         import yaml
 
         config_path = tmp_path / "fitz.yaml"
@@ -58,9 +58,9 @@ class TestChatHelpers:
             "fitz_ai.cli.commands.chat.FitzPaths.config",
             return_value=config_path,
         ):
-            from fitz_ai.cli.commands.chat import _load_config_safe
+            from fitz_ai.cli.commands.chat import _load_classic_rag_config
 
-            raw, typed = _load_config_safe()
+            raw, typed = _load_classic_rag_config()
 
         assert raw["chat"]["plugin_name"] == "cohere"
         assert typed.retrieval.collection == "test"
@@ -202,14 +202,15 @@ class TestChatDisplay:
         assert "response" in captured.out
 
     def test_display_welcome(self, capsys):
-        """Test _display_welcome shows collection name."""
+        """Test _display_welcome shows collection name and engine."""
         with patch("fitz_ai.cli.commands.chat.RICH", False):
             from fitz_ai.cli.commands.chat import _display_welcome
 
-            _display_welcome("my_collection")
+            _display_welcome("my_collection", "classic_rag")
 
         captured = capsys.readouterr()
         assert "my_collection" in captured.out
+        assert "classic_rag" in captured.out
 
     def test_display_goodbye(self, capsys):
         """Test _display_goodbye shows farewell."""
@@ -243,7 +244,7 @@ class TestChatExitCommands:
         with (
             patch("fitz_ai.cli.commands.chat.FitzPaths.config", return_value=config_path),
             patch(
-                "fitz_ai.cli.commands.chat.RAGPipeline.from_config",
+                "fitz_ai.engines.classic_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,
             ),
             patch("fitz_ai.cli.commands.chat._get_collections", return_value=["test"]),
@@ -271,7 +272,7 @@ class TestChatExitCommands:
         with (
             patch("fitz_ai.cli.commands.chat.FitzPaths.config", return_value=config_path),
             patch(
-                "fitz_ai.cli.commands.chat.RAGPipeline.from_config",
+                "fitz_ai.engines.classic_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,
             ),
             patch("fitz_ai.cli.commands.chat._get_collections", return_value=["test"]),

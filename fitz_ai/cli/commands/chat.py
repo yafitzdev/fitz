@@ -5,6 +5,7 @@ Chat command - Conversational RAG interface.
 Usage:
     fitz chat                     # Interactive mode (prompts for collection)
     fitz chat -c my_collection    # Specify collection directly
+    fitz chat --engine clara      # Use different engine (not yet supported)
 """
 
 from __future__ import annotations
@@ -18,9 +19,8 @@ from fitz_ai.cli.ui_display import display_sources
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
-from fitz_ai.engines.classic_rag.config import ClassicRagConfig, load_config
-from fitz_ai.engines.classic_rag.pipeline.engine import RAGPipeline
 from fitz_ai.logging.logger import get_logger
+from fitz_ai.runtime import get_engine_registry, list_engines
 from fitz_ai.vector_db.registry import get_vector_db_plugin
 
 logger = get_logger(__name__)
@@ -31,19 +31,19 @@ logger = get_logger(__name__)
 # =============================================================================
 
 
-def _load_config_safe() -> tuple[dict, ClassicRagConfig]:
-    """Load config or exit with helpful message."""
+def _load_classic_rag_config():
+    """Load classic_rag config or return None."""
     try:
+        from fitz_ai.engines.classic_rag.config import load_config
+
         config_path = FitzPaths.config()
         raw_config = load_config_dict(config_path)
         typed_config = load_config(config_path)
         return raw_config, typed_config
     except ConfigNotFoundError:
-        ui.error("No config found. Run 'fitz init' first.")
-        raise typer.Exit(1)
-    except Exception as e:
-        ui.error(f"Failed to load config: {e}")
-        raise typer.Exit(1)
+        return None, None
+    except Exception:
+        return None, None
 
 
 def _get_collections(raw_config: dict) -> List[str]:
@@ -156,17 +156,18 @@ def _display_assistant_message(text: str) -> None:
         print(f"\n\nAssistant: {text}")
 
 
-def _display_welcome(collection: str) -> None:
+def _display_welcome(collection: str, engine: str) -> None:
     """Display welcome message."""
     if RICH:
         console.print(
-            f"\n[bold green]Chat started[/bold green] with collection: [cyan]{collection}[/cyan]"
+            f"\n[bold green]Chat started[/bold green] with collection: [cyan]{collection}[/cyan] "
+            f"(engine: [yellow]{engine}[/yellow])"
         )
         console.print(
             "[dim]Type 'exit' or 'quit' to end the conversation. Press Ctrl+C to interrupt.[/dim]\n"
         )
     else:
-        print(f"\nChat started with collection: {collection}")
+        print(f"\nChat started with collection: {collection} (engine: {engine})")
         print("Type 'exit' or 'quit' to end the conversation. Press Ctrl+C to interrupt.\n")
 
 
@@ -190,6 +191,12 @@ def command(
         "-c",
         help="Collection to chat with (will prompt if not specified).",
     ),
+    engine: str = typer.Option(
+        "classic_rag",
+        "--engine",
+        "-e",
+        help="Engine to use (currently only classic_rag supports chat).",
+    ),
 ) -> None:
     """
     Interactive chat with your knowledge base.
@@ -201,24 +208,61 @@ def command(
     Examples:
         fitz chat                     # Interactive mode
         fitz chat -c my_collection    # Specify collection
+        fitz chat --engine clara      # Use different engine (not yet supported)
     """
+    # =========================================================================
+    # Validate engine
+    # =========================================================================
+
+    available_engines = list_engines()
+    if engine not in available_engines:
+        ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(available_engines)}")
+        raise typer.Exit(1)
+
     # =========================================================================
     # Header
     # =========================================================================
 
-    ui.header("Fitz Chat", "Conversational RAG interface")
+    ui.header("Fitz Chat", f"Conversational RAG (engine: {engine})")
 
     # =========================================================================
+    # Capabilities-based routing
+    # =========================================================================
+
+    registry = get_engine_registry()
+    caps = registry.get_capabilities(engine)
+
+    # Check if engine supports chat
+    if not caps.supports_chat:
+        ui.warning(f"Engine '{engine}' does not support multi-turn chat.")
+        if caps.requires_documents_at_query:
+            ui.info(f"Use 'fitz quickstart <folder> \"question\" --engine {engine}' for one-off queries.")
+        else:
+            ui.info(f"Use 'fitz query --engine {engine}' for single queries.")
+        raise typer.Exit(0)
+
+    # Engines with collection support use collection-based chat
+    if caps.supports_collections:
+        _run_collection_chat(collection, engine)
+    else:
+        ui.warning(f"Chat for engine '{engine}' requires collections which it doesn't support.")
+        ui.info(f"Use 'fitz query --engine {engine}' for single queries.")
+        raise typer.Exit(0)
+
+
+def _run_collection_chat(collection: Optional[str], engine_name: str) -> None:
+    """Run chat using an engine with collection support."""
+    from fitz_ai.engines.classic_rag.pipeline.engine import RAGPipeline
+
     # Load config
-    # =========================================================================
+    raw_config, typed_config = _load_classic_rag_config()
+    if typed_config is None:
+        ui.error("No config found. Run 'fitz init' first.")
+        raise typer.Exit(1)
 
-    raw_config, typed_config = _load_config_safe()
     default_collection = typed_config.retrieval.collection
 
-    # =========================================================================
     # Collection selection
-    # =========================================================================
-
     if collection:
         selected_collection = collection
     else:
@@ -238,10 +282,7 @@ def command(
     # Update config with selected collection
     typed_config.retrieval.collection = selected_collection
 
-    # =========================================================================
     # Create pipeline
-    # =========================================================================
-
     try:
         pipeline = RAGPipeline.from_config(typed_config)
     except Exception as e:
@@ -249,11 +290,8 @@ def command(
         logger.exception("Pipeline initialization error")
         raise typer.Exit(1)
 
-    # =========================================================================
     # Chat loop
-    # =========================================================================
-
-    _display_welcome(selected_collection)
+    _display_welcome(selected_collection, engine_name)
 
     history: List[Dict[str, str]] = []
 
