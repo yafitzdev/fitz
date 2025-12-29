@@ -432,7 +432,7 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 
 <strong>Codebase Search 🐍</strong>
 
-> Fitz includes built-in AST-aware chunking for Python. Functions, classes, and modules become individual searchable units with docstrings and imports preserved. Ask questions in natural language; get answers pointing to specific code.
+> Fitz includes built-in AST-aware chunking for code bases. Functions, classes, and modules become individual searchable units with docstrings and imports preserved. Ask questions in natural language; get answers pointing to specific code.
 >
 > *Example:* A team inherits a legacy Django monolith—200k lines, sparse docs. They ingest the codebase and ask "Where is user authentication handled?" or "What API endpoints modify the billing table?" New developers onboard in days instead of weeks.
 
