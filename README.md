@@ -396,59 +396,59 @@ The codebase speaks for itself.
 <br>
 
 #### CLI
-
-```bash
-pip install fitz-ai
-
-fitz quickstart ./docs "Your question here"
-```
-
-That's it. Fitz will prompt you for anything it needs.
+>
+>```bash
+>pip install fitz-ai
+>
+>fitz quickstart ./docs "Your question here"
+>```
+>
+>That's it. Fitz will prompt you for anything it needs.
 
 <br>
 
 #### Python SDK
-
-```python
-import fitz_ai
-
-fitz_ai.ingest("./docs")
-answer = fitz_ai.query("Your question here")
-
-print(answer.text)
-for source in answer.provenance:
-    print(f"  - {source.source_id}: {source.excerpt[:50]}...")
-```
-
-The SDK provides:
-- Module-level functions matching CLI (`ingest`, `query`)
-- Auto-config creation (no setup required)
-- Full provenance tracking
-- Same honest RAG as the CLI
-
-For advanced use (multiple collections), use the `fitz` class directly:
-```python
-from fitz_ai import fitz
-
-physics = fitz(collection="physics")
-physics.ingest("./physics_papers")
-answer = physics.query("Explain entanglement")
-```
+>
+>```python
+>import fitz_ai
+>
+>fitz_ai.ingest("./docs")
+>answer = fitz_ai.query("Your question here")
+>
+>print(answer.text)
+>for source in answer.provenance:
+>    print(f"  - {source.source_id}: {source.excerpt[:50]}...")
+>```
+>
+>The SDK provides:
+>- Module-level functions matching CLI (`ingest`, `query`)
+>- Auto-config creation (no setup required)
+>- Full provenance tracking
+>- Same honest RAG as the CLI
+>
+>For advanced use (multiple collections), use the `fitz` class directly:
+>```python
+>from fitz_ai import fitz
+>
+>physics = fitz(collection="physics")
+>physics.ingest("./physics_papers")
+>answer = physics.query("Explain entanglement")
+>```
 
 <br>
 
 #### Fully Local (Ollama)
-
-```bash
-pip install fitz-ai[local]
-
-ollama pull llama3.2
-ollama pull nomic-embed-text
-
-fitz quickstart ./docs "Your question here"
-```
-
-No data leaves your machine. No API costs. Same interface.
+>
+>```bash
+>pip install fitz-ai[local]
+>
+>ollama pull llama3.2
+>ollama pull nomic-embed-text
+>
+>fitz quickstart ./docs "Your question here"
+>```
+>
+>No data leaves your machine. No API costs. Same interface.
 
 </details>
 
