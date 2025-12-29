@@ -83,6 +83,12 @@ remote = [
     "qdrant-client>=1.7",
 ]
 
+# REST API server
+api = [
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+]
+
 # Development tools
 dev = [
     "pytest>=7.0",
@@ -99,6 +105,8 @@ all = [
     "qdrant-client>=1.7",
     "umap-learn>=0.5.0",
     "scikit-learn>=1.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
 ]
 
 

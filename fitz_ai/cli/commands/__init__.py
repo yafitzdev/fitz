@@ -11,6 +11,7 @@ from fitz_ai.cli.commands import (
     map,
     query,
     quickstart,
+    serve,
 )
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "map",
     "query",
     "quickstart",
+    "serve",
 ]

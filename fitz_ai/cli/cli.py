@@ -10,6 +10,7 @@ Commands:
     fitz chat          Interactive conversation with your knowledge base
     fitz collections   Manage collections (list, info, delete)
     fitz map           Visualize knowledge base as interactive graph
+    fitz serve         Start the REST API server
     fitz config        View configuration
     fitz doctor        System diagnostics
 """
@@ -38,6 +39,7 @@ def _register_commands() -> None:
         map,
         query,
         quickstart,
+        serve,
     )
 
     # Quickstart first - it's the entry point for new users
@@ -54,6 +56,9 @@ def _register_commands() -> None:
 
     # Knowledge visualization
     app.command("map")(map.command)
+
+    # API server
+    app.command("serve")(serve.command)
 
     # Utility commands
     app.command("config")(config.command)
