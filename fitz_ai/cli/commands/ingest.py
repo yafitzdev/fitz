@@ -287,7 +287,7 @@ def command(
     """
     from fitz_ai.ingestion.chunking.router import ChunkingRouter
     from fitz_ai.ingestion.diff import run_diff_ingest
-    from fitz_ai.ingestion.ingestion.registry import get_ingest_plugin
+    from fitz_ai.ingestion.reader.registry import get_ingest_plugin
     from fitz_ai.ingestion.state import IngestStateManager
     from fitz_ai.llm.registry import get_llm_plugin
     from fitz_ai.vector_db.registry import get_vector_db_plugin

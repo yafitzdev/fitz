@@ -19,7 +19,7 @@ Run with:
 from pathlib import Path
 
 from fitz_ai.ingestion.chunking.plugins.default.simple import SimpleChunker
-from fitz_ai.ingestion.ingestion.registry import get_ingest_plugin
+from fitz_ai.ingestion.reader.registry import get_ingest_plugin
 from fitz_ai.ingestion.validation.documents import ValidationConfig, validate
 
 

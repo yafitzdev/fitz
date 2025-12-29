@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
-from fitz_ai.ingestion.ingestion.base import RawDocument
+from fitz_ai.ingestion.reader.base import RawDocument
 
 logger = logging.getLogger(__name__)
 

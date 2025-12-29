@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List
 
-from fitz_ai.ingestion.ingestion.base import RawDocument
+from fitz_ai.ingestion.reader.base import RawDocument
 
 
 @dataclass(frozen=True, slots=True)

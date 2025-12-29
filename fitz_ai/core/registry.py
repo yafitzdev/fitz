@@ -212,7 +212,7 @@ class PluginRegistry:
 
 INGEST_REGISTRY = PluginRegistry(
     name="ingest",
-    scan_packages=["fitz_ai.ingestion.ingestion.plugins"],
+    scan_packages=["fitz_ai.ingestion.reader.plugins"],
     required_method="ingest",
 )
 

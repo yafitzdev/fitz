@@ -89,7 +89,7 @@ def test_ingest_cli_mirror():
 
     # Parser
     t = time.perf_counter()
-    from fitz_ai.ingestion.ingestion.registry import get_ingest_plugin
+    from fitz_ai.ingestion.reader.registry import get_ingest_plugin
 
     IngestPluginCls = get_ingest_plugin("local")
     ingest_plugin = IngestPluginCls()

@@ -356,8 +356,8 @@ def _run_ingestion(
     )
     from fitz_ai.engines.classic_rag.config import load_config_dict as load_default_config_dict
     from fitz_ai.ingestion.chunking.engine import ChunkingEngine
-    from fitz_ai.ingestion.ingestion.engine import IngestionEngine
-    from fitz_ai.ingestion.ingestion.registry import get_ingest_plugin
+    from fitz_ai.ingestion.reader.engine import IngestionEngine
+    from fitz_ai.ingestion.reader.registry import get_ingest_plugin
     from fitz_ai.llm.registry import get_llm_plugin
     from fitz_ai.vector_db.registry import get_vector_db_plugin
     from fitz_ai.vector_db.writer import VectorDBWriter

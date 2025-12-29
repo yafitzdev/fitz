@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from fitz_ai.engines.classic_rag.config import IngestConfig
 from fitz_ai.ingestion.chunking.engine import ChunkingEngine
-from fitz_ai.ingestion.ingestion.engine import IngestionEngine
+from fitz_ai.ingestion.reader.engine import IngestionEngine
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.logging.tags import PIPELINE
 from fitz_ai.vector_db.writer import VectorDBWriter

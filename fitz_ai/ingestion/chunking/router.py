@@ -35,7 +35,7 @@ from fitz_ai.ingestion.chunking.registry import (
 from fitz_ai.ingestion.exceptions.chunking import IngestionChunkingError
 
 if TYPE_CHECKING:
-    from fitz_ai.ingestion.ingestion.base import RawDocument
+    from fitz_ai.ingestion.reader.base import RawDocument
 
 logger = logging.getLogger(__name__)
 

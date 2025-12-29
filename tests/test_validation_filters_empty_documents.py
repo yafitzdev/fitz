@@ -1,4 +1,4 @@
-from fitz_ai.ingestion.ingestion.base import RawDocument
+from fitz_ai.ingestion.reader.base import RawDocument
 from fitz_ai.ingestion.validation.documents import validate
 
 

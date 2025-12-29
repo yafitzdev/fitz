@@ -1,4 +1,4 @@
-from fitz_ai.ingestion.ingestion.registry import get_ingest_plugin
+from fitz_ai.ingestion.reader.registry import get_ingest_plugin
 
 
 def test_local_ingest_plugin_runs_on_directory(tmp_path):
