@@ -74,13 +74,13 @@ RAG approach:
 
 You can—but you'll hit walls fast.
 
-**Context window limits ❌** 
+**Context window limits 🚨** 
 > GPT-4 accepts ~128k tokens. That's roughly 300 pages. Your company wiki, codebase, or document archive is likely 10x-100x larger. You physically cannot paste it all.
 
 **Cost explosion 💥**
 > Even if you could fit everything, you'd pay for every token on every query. Sending 100k tokens costs ~\$1-3 per question. Ask 50 questions a day? That's $50-150 daily—for one user.
 
-**No selective retrieval 🚨**
+**No selective retrieval ❌**
 > When you paste documents, the model reads everything equally. It can't focus on what's relevant. Ask about refund policies and it's also processing your hiring guidelines, engineering specs, and meeting notes—wasting context and degrading answers.
 
 **No persistence 💢**
