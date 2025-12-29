@@ -162,7 +162,7 @@ def _run_document_loading_quickstart(
     source: Path, question: str, engine_name: str, verbose: bool
 ) -> None:
     """Run quickstart for engines that load documents directly (no persistent storage)."""
-    from fitz_ai.runtime import create_engine  # noqa: F811 - local import for lazy loading
+    from fitz_ai.runtime import create_engine
 
     # Step 1: Read documents
     ui.step(1, 3, f"Reading documents from {source}...")

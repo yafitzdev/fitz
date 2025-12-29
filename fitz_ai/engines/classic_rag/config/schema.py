@@ -420,6 +420,7 @@ class ClassicRagConfig(BaseModel):
         Create config from a dictionary.
 
         Uses Pydantic's validation to create a config instance.
+        Filters out global settings that don't belong to this engine.
 
         Args:
             data: Configuration dictionary
@@ -427,4 +428,7 @@ class ClassicRagConfig(BaseModel):
         Returns:
             Validated ClassicRagConfig instance
         """
-        return cls.model_validate(data)
+        # Global settings that are NOT part of this engine's config
+        global_settings = {"default_engine"}
+        filtered = {k: v for k, v in data.items() if k not in global_settings}
+        return cls.model_validate(filtered)

@@ -160,6 +160,7 @@ class TestGenerateConfig:
         from fitz_ai.cli.commands.init import _generate_config
 
         config_str = _generate_config(
+            default_engine="classic_rag",
             chat="cohere",
             chat_model_smart="command-a-03-2025",
             chat_model_fast="command-r7b-12-2024",
@@ -179,6 +180,7 @@ class TestGenerateConfig:
         # Should be valid YAML
         config = yaml.safe_load(config_str)
 
+        assert config["default_engine"] == "classic_rag"
         assert config["chat"]["plugin_name"] == "cohere"
         assert config["chat"]["kwargs"]["models"]["smart"] == "command-a-03-2025"
         assert config["chat"]["kwargs"]["models"]["fast"] == "command-r7b-12-2024"
@@ -193,6 +195,7 @@ class TestGenerateConfig:
         from fitz_ai.cli.commands.init import _generate_config
 
         config_str = _generate_config(
+            default_engine="classic_rag",
             chat="cohere",
             chat_model_smart="command-a-03-2025",
             chat_model_fast="command-r7b-12-2024",
@@ -221,6 +224,7 @@ class TestGenerateConfig:
         from fitz_ai.cli.commands.init import _generate_config
 
         config_str = _generate_config(
+            default_engine="classic_rag",
             chat="cohere",
             chat_model_smart="",
             chat_model_fast="",
@@ -248,6 +252,7 @@ class TestGenerateConfig:
         from fitz_ai.cli.commands.init import _generate_config
 
         config_str = _generate_config(
+            default_engine="classic_rag",
             chat="cohere",
             chat_model_smart="",
             chat_model_fast="",
@@ -277,6 +282,7 @@ class TestGenerateConfig:
         from fitz_ai.cli.commands.init import _generate_config
 
         config_str = _generate_config(
+            default_engine="classic_rag",
             chat="cohere",
             chat_model_smart="",
             chat_model_fast="",
