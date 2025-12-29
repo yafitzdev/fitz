@@ -10,14 +10,17 @@
 
 **Honest RAG in 5 minutes. No infrastructure. No boilerplate.**
 
-**CLI:**
+**CLI**
 ```bash
 pip install fitz-ai
 
 fitz quickstart ./docs "What is our refund policy?"
 ```
 
-**Python SDK:**
+<details>
+
+<summary><strong>Python SDK</strong></summary>
+
 ```python
 import fitz_ai
 
@@ -25,12 +28,23 @@ fitz_ai.ingest("./docs")
 answer = fitz_ai.query("What is our refund policy?")
 ```
 
-**REST API:**
+</details>
+
+<br>
+
+<details>
+
+<summary><strong>REST API</strong></summary>
+
 ```bash
 pip install fitz-ai[api]
 
 fitz serve  # http://localhost:8000/docs for interactive API
 ```
+
+</details>
+
+<br>
 
 That's it. Your documents are now searchable with AI.
 
@@ -566,6 +580,8 @@ answer = fitz_ai.query("What is the refund policy?")
 print(answer.text)
 ```
 
+<br>
+
 **Advanced usage (multiple collections):**
 ```python
 from fitz_ai import fitz
@@ -581,6 +597,8 @@ legal.ingest("./contracts")
 physics_answer = physics.query("Explain entanglement")
 legal_answer = legal.query("What are the payment terms?")
 ```
+
+<br>
 
 **Working with answers:**
 ```python
