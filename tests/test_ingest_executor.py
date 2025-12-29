@@ -32,7 +32,9 @@ class MockVectorDBWriter:
         self.upserted: List[tuple] = []
         self.deleted: List[tuple] = []
 
-    def upsert(self, collection: str, points: List[Dict[str, Any]]) -> None:
+    def upsert(
+        self, collection: str, points: List[Dict[str, Any]], defer_persist: bool = False
+    ) -> None:
         self.upserted.append((collection, points))
 
     def mark_deleted(self, collection: str, source_path: str) -> int:

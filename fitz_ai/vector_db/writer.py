@@ -28,7 +28,18 @@ logger = get_logger(__name__)
 class VectorDBClient(Protocol):
     """Protocol for vector database clients."""
 
-    def upsert(self, collection: str, points: List[Dict[str, Any]]) -> None: ...
+    def upsert(
+        self, collection: str, points: List[Dict[str, Any]], defer_persist: bool = False
+    ) -> None:
+        """
+        Insert or update points in collection.
+
+        Args:
+            collection: Target collection name
+            points: List of point dicts with 'id', 'vector', 'payload'
+            defer_persist: If True, defer disk writes (call flush() later for batching)
+        """
+        ...
 
 
 # =============================================================================

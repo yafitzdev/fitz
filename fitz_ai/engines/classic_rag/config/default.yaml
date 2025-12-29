@@ -1,100 +1,97 @@
 # fitz_ai/engines/classic_rag/config/default.yaml
-# Path: fitz_ai/engines/classic_rag/config/default.yaml
 #
 # Default configuration for Classic RAG engine.
 #
-# This is the package fallback used when no user config exists.
-# Users should run 'fitz init' or 'fitz quickstart' to create their own
-# config at .fitz/config.yaml
+# Classic RAG uses dense retrieval with optional reranking to find relevant
+# chunks, then synthesizes answers with citation support.
 #
 # This default uses:
-# - Cohere for chat, embedding, and rerank (requires COHERE_API_KEY)
-# - Local FAISS for vector storage (no external service needed)
+#   - Cohere for chat, embedding, and rerank (requires COHERE_API_KEY)
+#   - Local FAISS for vector storage (no external service needed)
 
-# =============================================================================
-# Default Engine (used by CLI commands when not specified)
-# =============================================================================
-default_engine: classic_rag
+classic_rag:
 
-# =============================================================================
-# Chat (LLM for answering questions)
-# =============================================================================
-chat:
-  plugin_name: cohere
-  kwargs:
-    model: command-a-03-2025
-    temperature: 0.2
+  # ===========================================================================
+  # Default Engine
+  # ===========================================================================
 
-# =============================================================================
-# Embedding (text to vectors)
-# =============================================================================
-embedding:
-  plugin_name: cohere
-  kwargs:
-    model: embed-english-v3.0
+  default_engine: classic_rag
 
-# =============================================================================
-# Vector Database (local FAISS - no external service needed)
-# =============================================================================
-vector_db:
-  plugin_name: local_faiss
-  kwargs: {}
+  # ===========================================================================
+  # Chat
+  # ===========================================================================
+  # Model tiers (smart/fast) and defaults are defined in the plugin YAML.
 
-# =============================================================================
-# Retrieval
-# =============================================================================
-retrieval:
-  plugin_name: dense
-  collection: default
-  top_k: 5
+  chat:
+    plugin_name: cohere
 
-# =============================================================================
-# Reranker (improves retrieval quality)
-# =============================================================================
-rerank:
-  enabled: true
-  plugin_name: cohere
-  kwargs:
-    model: rerank-v3.5
+  # ===========================================================================
+  # Embedding
+  # ===========================================================================
 
-# =============================================================================
-# RGS (Retrieval-Guided Synthesis)
-# =============================================================================
-rgs:
-  enable_citations: true
-  strict_grounding: true
-  max_chunks: 8
+  embedding:
+    plugin_name: cohere
 
-# =============================================================================
-# Logging
-# =============================================================================
-logging:
-  level: INFO
+  # ===========================================================================
+  # Vector Database
+  # ===========================================================================
 
-# =============================================================================
-# Ingestion (document processing pipeline)
-# =============================================================================
-ingest:
-  ingester:
-    plugin_name: local
-    kwargs: {}
+  vector_db:
+    plugin_name: local_faiss
 
-  chunking:
-    default:
-      plugin_name: recursive
-      kwargs:
-        chunk_size: 1000
-        chunk_overlap: 200
-    by_extension:
-      .py:
-        plugin_name: python_code
-        kwargs: {}
-      .md:
-        plugin_name: markdown
-        kwargs: {}
-      .pdf:
-        plugin_name: pdf_sections
-        kwargs: {}
-    warn_on_fallback: true
+  # ===========================================================================
+  # Retrieval
+  # ===========================================================================
 
-  collection: default
+  retrieval:
+    plugin_name: dense
+    collection: default
+    top_k: 5
+
+  # ===========================================================================
+  # Reranker
+  # ===========================================================================
+
+  rerank:
+    enabled: true
+    plugin_name: cohere
+
+  # ===========================================================================
+  # RGS (Retrieval-Guided Synthesis)
+  # ===========================================================================
+
+  rgs:
+    enable_citations: true
+    strict_grounding: true
+    max_chunks: 8
+
+  # ===========================================================================
+  # Logging
+  # ===========================================================================
+
+  logging:
+    level: INFO
+
+  # ===========================================================================
+  # Ingestion
+  # ===========================================================================
+  # Chunker defaults are defined in each plugin.
+  # Override here only if you want different settings.
+
+  ingest:
+    ingester:
+      plugin_name: local
+
+    chunking:
+      default:
+        plugin_name: recursive
+      by_extension:
+        .py:
+          plugin_name: python_code
+        .md:
+          plugin_name: markdown
+        .pdf:
+          plugin_name: pdf_sections
+      warn_on_fallback: true
+
+    collection: default

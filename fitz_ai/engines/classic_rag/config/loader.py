@@ -26,7 +26,13 @@ DEFAULT_CONFIG_PATH = Path(__file__).parent / "default.yaml"
 def _load_yaml(path: Path) -> dict:
     """Load YAML file and return dict."""
     with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+        data = yaml.safe_load(f) or {}
+
+    # Handle nested classic_rag: key for unified config format
+    if "classic_rag" in data and isinstance(data["classic_rag"], dict):
+        return data["classic_rag"]
+
+    return data
 
 
 def get_default_config_path() -> Path:

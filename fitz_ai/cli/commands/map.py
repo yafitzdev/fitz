@@ -14,15 +14,15 @@ from __future__ import annotations
 
 import webbrowser
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
 
 from fitz_ai.cli.ui import ui
+from fitz_ai.cli.utils import get_collections, get_vector_db_client
 from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
-from fitz_ai.vector_db.registry import get_vector_db_plugin
 
 logger = get_logger(__name__)
 
@@ -43,22 +43,6 @@ def _load_config_safe() -> dict:
     except Exception as e:
         ui.error(f"Failed to load config: {e}")
         raise typer.Exit(1)
-
-
-def _get_vector_db(config: dict):
-    """Get vector DB plugin from config."""
-    vdb_plugin = config.get("vector_db", {}).get("plugin_name", "local-faiss")
-    vdb_kwargs = config.get("vector_db", {}).get("kwargs", {})
-    return get_vector_db_plugin(vdb_plugin, **vdb_kwargs)
-
-
-def _get_collections(config: dict) -> List[str]:
-    """Get list of collections from vector DB."""
-    try:
-        vdb = _get_vector_db(config)
-        return sorted(vdb.list_collections())
-    except Exception:
-        return []
 
 
 def _get_embedding_id(config: dict) -> str:
@@ -160,7 +144,7 @@ def command(
         collection = config.get("retrieval", {}).get("collection", "default")
 
         # Check if it exists
-        collections = _get_collections(config)
+        collections = get_collections(config)
         if not collections:
             ui.error("No collections found. Run 'fitz ingest' first.")
             raise typer.Exit(1)
@@ -208,7 +192,7 @@ def command(
 
     from fitz_ai.map.embeddings import fetch_all_chunk_ids, fetch_chunk_embeddings
 
-    vdb = _get_vector_db(config)
+    vdb = get_vector_db_client(config)
 
     # Check if vector DB supports scroll_with_vectors
     if not hasattr(vdb, "scroll_with_vectors"):

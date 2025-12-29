@@ -7,7 +7,7 @@ class DummyVectorDB:
     def __init__(self):
         self.calls = []
 
-    def upsert(self, collection, points):
+    def upsert(self, collection, points, defer_persist: bool = False):
         self.calls.append((collection, points))
 
 

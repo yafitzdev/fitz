@@ -78,7 +78,9 @@ class TracingVectorDBWriter:
         self.upsert_calls = 0
         self.total_points = 0
 
-    def upsert(self, collection: str, points: List[Dict[str, Any]]) -> None:
+    def upsert(
+        self, collection: str, points: List[Dict[str, Any]], defer_persist: bool = False
+    ) -> None:
         self.upsert_calls += 1
         self.total_points += len(points)
         self._tracker.log(

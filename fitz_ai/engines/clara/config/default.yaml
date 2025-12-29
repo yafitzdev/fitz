@@ -1,75 +1,79 @@
 # fitz_ai/engines/clara/config/default.yaml
-# Default configuration file for CLaRa engine
 #
-# Place this file in your project root or specify path when creating engine.
-# All values shown are defaults - only override what you need to change.
+# Default configuration for CLaRa engine.
+#
+# CLaRa (Compression-based Language Retrieval and Answering) compresses
+# documents into memory tokens for efficient retrieval and generation.
+#
+# This default uses:
+#   - apple/CLaRa-7B-E2E model (requires GPU with ~16GB VRAM)
+#   - Local inference via HuggingFace transformers
 
 clara:
-  # Model configuration
+
+  # ===========================================================================
+  # Model
+  # ===========================================================================
+  # HuggingFace model variants:
+  #   - apple/CLaRa-7B-Base (compression only)
+  #   - apple/CLaRa-7B-Instruct (instruction-tuned)
+  #   - apple/CLaRa-7B-E2E (full retrieval + generation)
+
   model:
-    # HuggingFace model path or local path
-    # Options:
-    #   - apple/CLaRa-7B-Base (compression only)
-    #   - apple/CLaRa-7B-Instruct (instruction-tuned)
-    #   - apple/CLaRa-7B-E2E (full retrieval + generation)
     model_name_or_path: "apple/CLaRa-7B-E2E"
-    
-    # Which variant to use (base, instruct, e2e)
     variant: "e2e"
-    
-    # Device to load model on
-    device: "cuda"  # or "cpu", "mps" for Apple Silicon
-    
-    # Torch dtype for model weights
-    torch_dtype: "bfloat16"  # or "float16", "float32"
-    
-    # Trust remote code from HuggingFace (required for CLaRa)
+    device: "cuda"
+    torch_dtype: "bfloat16"
     trust_remote_code: true
-    
-    # Quantization options (for memory-constrained environments)
     load_in_8bit: false
     load_in_4bit: false
 
-  # Document compression configuration
+  # ===========================================================================
+  # Compression
+  # ===========================================================================
+  # Compression rate options: 4, 16, 32, 64, 128
+  # Higher = smaller but may lose information
+  # Note: CLaRa compresses whole documents, not chunks
+
   compression:
-    # Compression rate (higher = smaller but may lose info)
-    # Options: 4, 16, 32, 64, 128
     compression_rate: 16
-    
-    # Maximum document length before truncation
     doc_max_length: 256
-    
-    # Number of memory tokens per document (auto-calculated if null)
     num_memory_tokens: null
 
-  # Retrieval configuration
+  # ===========================================================================
+  # Retrieval
+  # ===========================================================================
+
   retrieval:
-    # Number of documents to retrieve for generation
     top_k: 5
-    
-    # Candidate pool size for reranking (E2E variant)
     candidate_pool_size: 20
-    
-    # Use differentiable top-k (for training, disable for inference)
     differentiable_topk: false
 
-  # Generation configuration
+  # ===========================================================================
+  # Generation
+  # ===========================================================================
+
   generation:
-    # Maximum tokens to generate
     max_new_tokens: 256
-    
-    # Sampling temperature (higher = more creative)
     temperature: 0.7
-    
-    # Nucleus sampling probability
     top_p: 0.9
-    
-    # Whether to use sampling vs greedy decoding
     do_sample: true
 
-  # Knowledge base settings
-  # Path to pre-compressed knowledge base (optional)
+  # ===========================================================================
+  # Knowledge Base
+  # ===========================================================================
+
   knowledge_base_path: null
-  
-  # Cache compressed document embeddings
   cache_compressed_docs: true
+
+  # ===========================================================================
+  # Ingestion
+  # ===========================================================================
+  # CLaRa compresses whole documents (not chunks).
+  # Parser converts files to text before compression.
+
+  ingest:
+    ingester:
+      plugin_name: local
+
+    collection: default

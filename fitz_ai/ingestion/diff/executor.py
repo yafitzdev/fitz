@@ -552,12 +552,7 @@ class DiffIngestExecutor:
                 }
             )
 
-        # Pass defer_persist if the writer supports it
-        try:
-            self._vdb_writer.upsert(self._collection, points, defer_persist=defer_persist)
-        except TypeError:
-            # Writer doesn't support defer_persist, fall back to normal upsert
-            self._vdb_writer.upsert(self._collection, points)
+        self._vdb_writer.upsert(self._collection, points, defer_persist=defer_persist)
         logger.debug(f"Upserted {len(points)} chunks from {candidate.path}")
 
     def ingest_artifacts(

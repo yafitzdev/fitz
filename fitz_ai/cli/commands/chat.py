@@ -16,45 +16,12 @@ import typer
 
 from fitz_ai.cli.ui import RICH, console, ui
 from fitz_ai.cli.ui_display import display_sources
+from fitz_ai.cli.utils import get_collections, load_classic_rag_config
 from fitz_ai.core.chunk import Chunk
-from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
-from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.runtime import get_default_engine, get_engine_registry, list_engines
-from fitz_ai.vector_db.registry import get_vector_db_plugin
 
 logger = get_logger(__name__)
-
-
-# =============================================================================
-# Config Loading
-# =============================================================================
-
-
-def _load_classic_rag_config():
-    """Load classic_rag config or return None."""
-    try:
-        from fitz_ai.engines.classic_rag.config import load_config
-
-        config_path = FitzPaths.config()
-        raw_config = load_config_dict(config_path)
-        typed_config = load_config(config_path)
-        return raw_config, typed_config
-    except ConfigNotFoundError:
-        return None, None
-    except Exception:
-        return None, None
-
-
-def _get_collections(raw_config: dict) -> List[str]:
-    """Get list of collections from vector DB."""
-    try:
-        vdb_plugin = raw_config.get("vector_db", {}).get("plugin_name", "qdrant")
-        vdb_kwargs = raw_config.get("vector_db", {}).get("kwargs", {})
-        vdb = get_vector_db_plugin(vdb_plugin, **vdb_kwargs)
-        return sorted(vdb.list_collections())
-    except Exception:
-        return []
 
 
 # =============================================================================
@@ -276,7 +243,7 @@ def _run_collection_chat(collection: Optional[str], engine_name: str) -> None:
     from fitz_ai.engines.classic_rag.pipeline.engine import RAGPipeline
 
     # Load config
-    raw_config, typed_config = _load_classic_rag_config()
+    raw_config, typed_config = load_classic_rag_config()
     if typed_config is None:
         ui.error("No config found. Run 'fitz init' first.")
         raise typer.Exit(1)
@@ -287,7 +254,7 @@ def _run_collection_chat(collection: Optional[str], engine_name: str) -> None:
     if collection:
         selected_collection = collection
     else:
-        collections = _get_collections(raw_config)
+        collections = get_collections(raw_config)
         if not collections:
             ui.error("No collections found. Run 'fitz ingest' first to create a collection.")
             raise typer.Exit(1)

@@ -201,8 +201,11 @@ class CustomVectorDB:
     # Required Operations
     # =========================================================================
 
-    def upsert(self, collection: str, points: List[Dict[str, Any]]) -> None:
+    def upsert(
+        self, collection: str, points: List[Dict[str, Any]], defer_persist: bool = False
+    ) -> None:
         """Insert or update points in collection."""
+        # Note: defer_persist is ignored for custom HTTP plugins (no local persistence)
         context = {
             "collection": collection,
             "points": points,

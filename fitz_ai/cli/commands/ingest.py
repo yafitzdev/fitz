@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import typer
 
 from fitz_ai.cli.ui import RICH, console, ui
+from fitz_ai.cli.utils import get_collections
 from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
@@ -34,19 +35,6 @@ def _load_config() -> dict:
     except ConfigNotFoundError:
         ui.error("No config found. Run 'fitz init' first.")
         raise typer.Exit(1)
-
-
-def _get_collections(config: dict) -> List[str]:
-    """Get list of existing collections from vector DB."""
-    from fitz_ai.vector_db.registry import get_vector_db_plugin
-
-    try:
-        vdb_plugin = config.get("vector_db", {}).get("plugin_name", "qdrant")
-        vdb_kwargs = config.get("vector_db", {}).get("kwargs", {})
-        vdb = get_vector_db_plugin(vdb_plugin, **vdb_kwargs)
-        return sorted(vdb.list_collections())
-    except Exception:
-        return []
 
 
 def _suggest_collection_name(source: str) -> str:
@@ -216,11 +204,7 @@ class VectorDBWriterAdapter:
         self, collection: str, points: List[Dict[str, Any]], defer_persist: bool = False
     ) -> None:
         """Upsert points into collection."""
-        # Try to pass defer_persist if supported
-        try:
-            self._client.upsert(collection, points, defer_persist=defer_persist)
-        except TypeError:
-            self._client.upsert(collection, points)
+        self._client.upsert(collection, points, defer_persist=defer_persist)
 
     def flush(self) -> None:
         """Flush any pending writes to disk."""
@@ -365,7 +349,7 @@ def command(
 
         # 2. Collection - smart selection
         if collection is None:
-            existing_collections = _get_collections(config)
+            existing_collections = get_collections(config)
 
             if existing_collections:
                 # Collections exist - let user choose or create new

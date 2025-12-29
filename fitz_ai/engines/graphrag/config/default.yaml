@@ -2,37 +2,35 @@
 #
 # Default configuration for GraphRAG engine.
 #
-# This is the package fallback used when no user config exists.
-# Users can override these settings in their .fitz/config.yaml
+# GraphRAG builds a knowledge graph from documents and uses graph-based
+# retrieval for answering questions about entities and relationships.
 #
-# GraphRAG uses:
-# - LLM for entity extraction and answer generation
-# - Embeddings for semantic search over entities/communities
-# - NetworkX for knowledge graph storage (local, no external service)
+# This default uses:
+#   - Cohere for LLM and embeddings (requires COHERE_API_KEY)
+#   - NetworkX for in-memory graph storage
 
 graphrag:
+
   # ===========================================================================
-  # LLM Provider (for extraction, summarization, and answers)
+  # LLM Provider
   # ===========================================================================
-  # Uses tier system: "fast" for extraction/summarization, "smart" for answers
+  # Model tiers (smart/fast) are defined in the plugin YAML.
+
   llm_provider: cohere
 
   # ===========================================================================
-  # Embedding Provider (for entity and community search)
+  # Embedding Provider
   # ===========================================================================
+
   embedding_provider: cohere
 
   # ===========================================================================
-  # Entity/Relationship Extraction
+  # Extraction
   # ===========================================================================
+
   extraction:
-    # Maximum entities to extract per chunk
     max_entities_per_chunk: 20
-
-    # Maximum relationships to extract per chunk
     max_relationships_per_chunk: 30
-
-    # Entity types to extract (empty list = extract all types)
     entity_types:
       - person
       - organization
@@ -42,57 +40,60 @@ graphrag:
       - technology
       - product
       - date
-
-    # Relationship types to extract (empty list = extract all types)
     relationship_types: []
-
-    # Whether to include entity descriptions
     include_descriptions: true
 
   # ===========================================================================
   # Community Detection
   # ===========================================================================
+  # Algorithms: "louvain" (fast) or "leiden" (requires leidenalg package)
+
   community:
-    # Algorithm: "louvain" (fast, good quality) or "leiden" (requires leidenalg)
     algorithm: louvain
-
-    # Resolution parameter (higher = more, smaller communities)
     resolution: 1.0
-
-    # Minimum community size (smaller communities are filtered out)
     min_community_size: 2
-
-    # Maximum hierarchy levels for community summaries
     max_hierarchy_levels: 2
 
   # ===========================================================================
-  # Search Configuration
+  # Search
   # ===========================================================================
+  # Modes: "local" (entity-focused), "global" (community-based), "hybrid"
+
   search:
-    # Default search mode: "local", "global", or "hybrid"
-    #   - local: Entity-focused, best for specific questions
-    #   - global: Community-based, best for thematic/broad questions
-    #   - hybrid: Combines both approaches
     default_mode: local
-
-    # Number of entities to retrieve in local search
     local_top_k: 10
-
-    # Number of communities to retrieve in global search
     global_top_k: 5
-
-    # Whether to include entity relationships in context
     include_relationships: true
-
-    # Maximum context tokens for generation
     max_context_tokens: 4000
 
   # ===========================================================================
-  # Storage Configuration
+  # Storage
   # ===========================================================================
-  storage:
-    # Storage backend: "memory" (default) or "file"
-    backend: memory
+  # Backends: "memory" (default) or "file"
 
-    # Path for file-based storage (only used if backend: file)
+  storage:
+    backend: memory
     storage_path: null
+
+  # ===========================================================================
+  # Ingestion
+  # ===========================================================================
+  # Chunker defaults are defined in each plugin.
+
+  ingest:
+    ingester:
+      plugin_name: local
+
+    chunking:
+      default:
+        plugin_name: recursive
+      by_extension:
+        .py:
+          plugin_name: python_code
+        .md:
+          plugin_name: markdown
+        .pdf:
+          plugin_name: pdf_sections
+      warn_on_fallback: true
+
+    collection: default
