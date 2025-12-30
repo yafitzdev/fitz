@@ -14,8 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import typer
 
-from fitz_ai.cli.ui import RICH, console, ui
-from fitz_ai.cli.ui_display import display_sources
+from fitz_ai.cli.ui import RICH, console, display_sources, ui
 from fitz_ai.cli.utils import get_collections, load_classic_rag_config
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.logging.logger import get_logger

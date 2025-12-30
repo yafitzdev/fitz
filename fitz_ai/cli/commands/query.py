@@ -15,8 +15,7 @@ from typing import Optional
 
 import typer
 
-from fitz_ai.cli.ui import ui
-from fitz_ai.cli.ui_display import display_answer
+from fitz_ai.cli.ui import display_answer, ui
 from fitz_ai.cli.utils import get_collections, load_classic_rag_config
 from fitz_ai.core import Query
 from fitz_ai.logging.logger import get_logger

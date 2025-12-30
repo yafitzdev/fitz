@@ -1,16 +1,15 @@
-# fitz_ai/cli/ui_display.py
+# fitz_ai/cli/ui/display.py
 """
-Shared display functions for CLI commands.
+Display functions for answers and sources.
 
-This module provides consistent output formatting across commands
-like `fitz query` and `fitz quickstart`.
+Provides consistent output formatting for query results.
 """
 
 from __future__ import annotations
 
 import os
 
-from fitz_ai.cli.ui import RICH, Markdown, Panel, Table, console
+from .console import RICH, Markdown, Panel, Table, console
 
 
 def display_answer(answer, show_sources: bool = True) -> None:
