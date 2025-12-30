@@ -4,6 +4,8 @@ Tests for GraphRAG Engine.
 
 These tests verify the GraphRAG engine implementation works correctly
 and integrates properly with the Fitz platform.
+
+Requires networkx to be installed.
 """
 
 from unittest.mock import MagicMock
@@ -11,6 +13,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from fitz_ai.core import Answer, KnowledgeError, Provenance, Query
+
+# Skip entire module if networkx not available
+pytest.importorskip("networkx", reason="networkx not installed")
 
 
 class TestGraphRAGConfig:

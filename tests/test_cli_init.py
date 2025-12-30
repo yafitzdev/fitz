@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from fitz_ai.cli.cli import app
@@ -312,6 +313,7 @@ class TestGenerateConfig:
 
     def test_copy_engine_default_config_graphrag(self):
         """Test _copy_engine_default_config returns graphrag default config."""
+        pytest.importorskip("networkx", reason="networkx not installed")
         import yaml
 
         # Ensure graphrag is registered
@@ -332,6 +334,7 @@ class TestGenerateConfig:
 
     def test_copy_engine_default_config_clara(self):
         """Test _copy_engine_default_config returns clara default config."""
+        pytest.importorskip("torch", reason="torch not installed")
         import yaml
 
         # Ensure clara is registered
