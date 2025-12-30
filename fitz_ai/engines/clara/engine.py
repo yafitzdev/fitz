@@ -644,10 +644,10 @@ class ClaraEngine:
         # Load tensors
         device = next(self._model.parameters()).device
         self._compressed_docs = torch.load(
-            storage_dir / "compressed_docs.pt", map_location=device
+            storage_dir / "compressed_docs.pt", map_location=device, weights_only=True
         )
         self._doc_embeddings = torch.load(
-            storage_dir / "doc_embeddings.pt", map_location=device
+            storage_dir / "doc_embeddings.pt", map_location=device, weights_only=True
         )
 
         logger.info(
