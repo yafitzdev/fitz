@@ -405,9 +405,7 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
         corpus_density = (
             "sparse"
             if sparse_count > len(group_assessments) / 2
-            else "moderate"
-            if sparse_count > 0
-            else "dense"
+            else "moderate" if sparse_count > 0 else "dense"
         )
 
         return Chunk(
@@ -618,9 +616,7 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
         corpus_density = (
             "sparse"
             if sparse_count > len(group_assessments) / 2
-            else "moderate"
-            if sparse_count > 0
-            else "dense"
+            else "moderate" if sparse_count > 0 else "dense"
         )
 
         return Chunk(

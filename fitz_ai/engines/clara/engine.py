@@ -534,9 +534,11 @@ class ClaraEngine:
                     "compression_rate": self._config.compression.compression_rate,
                     "num_docs_retrieved": len(retrieved_indices),
                     "retrieval_method": "cosine_similarity_latent",
-                    "quantization": "4-bit"
-                    if self._config.model.load_in_4bit
-                    else ("8-bit" if self._config.model.load_in_8bit else "none"),
+                    "quantization": (
+                        "4-bit"
+                        if self._config.model.load_in_4bit
+                        else ("8-bit" if self._config.model.load_in_8bit else "none")
+                    ),
                 },
             )
 
@@ -551,9 +553,11 @@ class ClaraEngine:
             "num_documents": len(self._doc_texts),
             "compression_rate": self._config.compression.compression_rate,
             "model_variant": self._config.model.variant,
-            "quantization": "4-bit"
-            if self._config.model.load_in_4bit
-            else ("8-bit" if self._config.model.load_in_8bit else "none"),
+            "quantization": (
+                "4-bit"
+                if self._config.model.load_in_4bit
+                else ("8-bit" if self._config.model.load_in_8bit else "none")
+            ),
         }
 
         if self._compressed_docs is not None:

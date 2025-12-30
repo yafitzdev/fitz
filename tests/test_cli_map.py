@@ -54,9 +54,7 @@ class TestMapCommand:
         )
 
         # Mock the imports to avoid dependency issues
-        with (
-            patch.dict("sys.modules", {"umap": MagicMock(), "sklearn.cluster": MagicMock()}),
-        ):
+        with (patch.dict("sys.modules", {"umap": MagicMock(), "sklearn.cluster": MagicMock()}),):
             result = runner.invoke(app, ["map"])
 
         assert result.exit_code != 0
