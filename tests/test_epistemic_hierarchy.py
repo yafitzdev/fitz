@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.ingestion.enrichment.config import HierarchyConfig
 from fitz_ai.ingestion.enrichment.hierarchy import (
@@ -54,7 +53,6 @@ class TestEpistemicAssessment:
     def test_conflicting_classifications_detected(self):
         """Test that conflicting classifications are detected via the constraint plugin."""
         from fitz_ai.core.guardrails import SemanticMatcher
-
         from tests.conftest_guardrails import create_deterministic_embedder
 
         embedder = create_deterministic_embedder()
@@ -262,7 +260,6 @@ class TestHierarchyEnricherEpistemic:
     def test_conflict_detection_uses_constraint_plugin(self):
         """Test that conflict detection uses the existing ConflictAwareConstraint logic."""
         from fitz_ai.core.guardrails import SemanticMatcher
-
         from tests.conftest_guardrails import create_deterministic_embedder
 
         config = HierarchyConfig(enabled=True, group_by="source")
@@ -374,7 +371,6 @@ class TestSingleSourceOfTruth:
     def test_uses_conflict_aware_constraint_patterns(self):
         """Verify that the same patterns detected by ConflictAwareConstraint are detected here."""
         from fitz_ai.core.guardrails import ConflictAwareConstraint, SemanticMatcher
-
         from tests.conftest_guardrails import create_deterministic_embedder
 
         # Create semantic matcher for both constraint and assessment

@@ -210,9 +210,9 @@ def test_ingest_timing_detailed(tmp_path: Path, timing_tracker: TimingTracker, t
     print(f"{'=' * 60}")
 
     # Assertions to verify batching is working
-    assert (
-        embedder.embed_calls == 0
-    ), f"embed() should not be called, but was called {embedder.embed_calls} times"
+    assert embedder.embed_calls == 0, (
+        f"embed() should not be called, but was called {embedder.embed_calls} times"
+    )
     assert embedder.embed_batch_calls >= 1, "embed_batch() should be called at least once"
 
     # If we have 17 files and batching works, we should have far fewer embed_batch calls than files

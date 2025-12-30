@@ -16,7 +16,6 @@ import pytest
 
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.core.guardrails import CausalAttributionConstraint, SemanticMatcher
-
 from tests.conftest_guardrails import create_deterministic_embedder
 
 # =============================================================================
@@ -68,9 +67,7 @@ class TestBasicBehavior:
 
     def test_disabled_always_allows(self, semantic_matcher):
         """Should allow when disabled."""
-        constraint = CausalAttributionConstraint(
-            semantic_matcher=semantic_matcher, enabled=False
-        )
+        constraint = CausalAttributionConstraint(semantic_matcher=semantic_matcher, enabled=False)
 
         chunks = [make_chunk("1", "Helios was deprecated.")]
 

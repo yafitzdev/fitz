@@ -223,7 +223,9 @@ def command(
     if not caps.supports_chat:
         ui.warning(f"Engine '{engine}' does not support multi-turn chat.")
         if caps.requires_documents_at_query:
-            ui.info(f"Use 'fitz quickstart <folder> \"question\" --engine {engine}' for one-off queries.")
+            ui.info(
+                f"Use 'fitz quickstart <folder> \"question\" --engine {engine}' for one-off queries."
+            )
         else:
             ui.info(f"Use 'fitz query --engine {engine}' for single queries.")
         raise typer.Exit(0)

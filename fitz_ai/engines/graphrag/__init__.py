@@ -74,6 +74,11 @@ from fitz_ai.engines.graphrag.config.schema import (
 )
 
 # =============================================================================
+# ENGINE
+# =============================================================================
+from fitz_ai.engines.graphrag.engine import GraphRAGEngine
+
+# =============================================================================
 # GRAPH COMPONENTS
 # =============================================================================
 from fitz_ai.engines.graphrag.graph.storage import (
@@ -82,11 +87,6 @@ from fitz_ai.engines.graphrag.graph.storage import (
     KnowledgeGraph,
     Relationship,
 )
-
-# =============================================================================
-# ENGINE
-# =============================================================================
-from fitz_ai.engines.graphrag.engine import GraphRAGEngine
 
 # =============================================================================
 # RUNTIME

@@ -211,7 +211,9 @@ class EntityRelationshipExtractor:
 
             # Get source docs and map basenames to full IDs
             source_docs = e_data.get("docs", [])
-            source_chunks = [basename_to_full_id[d] for d in source_docs if d in basename_to_full_id]
+            source_chunks = [
+                basename_to_full_id[d] for d in source_docs if d in basename_to_full_id
+            ]
 
             entity = Entity(
                 id=entity_id,
@@ -238,7 +240,9 @@ class EntityRelationshipExtractor:
 
             # Get source docs and map basenames to full IDs
             source_docs = r_data.get("docs", [])
-            source_chunks = [basename_to_full_id[d] for d in source_docs if d in basename_to_full_id]
+            source_chunks = [
+                basename_to_full_id[d] for d in source_docs if d in basename_to_full_id
+            ]
 
             rel = Relationship(
                 source_id=source_id,

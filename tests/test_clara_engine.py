@@ -157,9 +157,7 @@ class TestClaraEngine:
 
     def test_add_documents_with_ids(self, mock_engine):
         """Test adding documents with custom IDs."""
-        doc_ids = mock_engine.add_documents(
-            ["Doc 1", "Doc 2"], doc_ids=["custom_1", "custom_2"]
-        )
+        doc_ids = mock_engine.add_documents(["Doc 1", "Doc 2"], doc_ids=["custom_1", "custom_2"])
 
         assert doc_ids == ["custom_1", "custom_2"]
         assert len(mock_engine._doc_texts) == 2
@@ -181,10 +179,12 @@ class TestClaraEngine:
     def test_answer_success(self, mock_engine):
         """Test successful answer generation with latent retrieval."""
         # Add documents (this also creates compressed representations)
-        mock_engine.add_documents([
-            "Document 1 content about quantum computing...",
-            "Document 2 content about machine learning...",
-        ])
+        mock_engine.add_documents(
+            [
+                "Document 1 content about quantum computing...",
+                "Document 2 content about machine learning...",
+            ]
+        )
 
         # Mock model's generate methods
         # MagicMock auto-creates attributes, so we need to mock the compressed method too
@@ -196,9 +196,7 @@ class TestClaraEngine:
         )
 
         # Mock _retrieve_top_k to return known indices and similarities
-        mock_engine._retrieve_top_k = MagicMock(
-            return_value=([0, 1], torch.tensor([0.95, 0.85]))
-        )
+        mock_engine._retrieve_top_k = MagicMock(return_value=([0, 1], torch.tensor([0.95, 0.85])))
 
         query = Query(text="What is quantum computing?")
         answer = mock_engine.answer(query)
@@ -241,16 +239,16 @@ class TestClaraEngine:
 
         # Manually set embeddings to test retrieval logic
         # Make Doc B most similar to query
-        mock_engine._doc_embeddings = torch.tensor([
-            [0.1, 0.0, 0.0],  # Doc A
-            [0.9, 0.1, 0.0],  # Doc B - most similar to query
-            [0.2, 0.1, 0.0],  # Doc C
-        ])
+        mock_engine._doc_embeddings = torch.tensor(
+            [
+                [0.1, 0.0, 0.0],  # Doc A
+                [0.9, 0.1, 0.0],  # Doc B - most similar to query
+                [0.2, 0.1, 0.0],  # Doc C
+            ]
+        )
 
         # Mock encode_query to return embedding similar to Doc B
-        mock_engine._model.encode_query = MagicMock(
-            return_value=torch.tensor([[0.9, 0.1, 0.0]])
-        )
+        mock_engine._model.encode_query = MagicMock(return_value=torch.tensor([[0.9, 0.1, 0.0]]))
 
         indices, similarities = mock_engine._retrieve_top_k("test query", top_k=2)
 

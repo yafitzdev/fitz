@@ -21,7 +21,6 @@ from fitz_ai.core.guardrails import (
     SemanticMatcher,
     apply_constraints,
 )
-
 from tests.conftest_guardrails import create_deterministic_embedder
 
 # =============================================================================
@@ -100,7 +99,9 @@ class TestConflictAwareConstraint:
 
         chunks = [
             make_chunk("1", "Incident 17B was a security incident with unauthorized access."),
-            make_chunk("2", "Incident 17B was an operational incident with misconfigured settings."),
+            make_chunk(
+                "2", "Incident 17B was an operational incident with misconfigured settings."
+            ),
         ]
 
         result = constraint.apply("Was Incident 17B a security incident?", chunks)
@@ -117,9 +118,7 @@ class TestConflictAwareConstraint:
 
     def test_disabled_constraint_always_allows(self, semantic_matcher):
         """Should allow when constraint is disabled."""
-        constraint = ConflictAwareConstraint(
-            semantic_matcher=semantic_matcher, enabled=False
-        )
+        constraint = ConflictAwareConstraint(semantic_matcher=semantic_matcher, enabled=False)
 
         chunks = [
             make_chunk("1", "This is a security incident."),

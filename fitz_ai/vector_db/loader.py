@@ -316,9 +316,7 @@ class GenericVectorDBPlugin:
 
         return search_results
 
-    def upsert(
-        self, collection: str, points: List[Dict], defer_persist: bool = False
-    ) -> None:
+    def upsert(self, collection: str, points: List[Dict], defer_persist: bool = False) -> None:
         """Insert or update points in collection."""
         # Note: defer_persist is ignored for YAML-based plugins (no local persistence)
         if "upsert" not in self.spec.operations:

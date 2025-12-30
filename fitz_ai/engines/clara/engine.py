@@ -138,7 +138,9 @@ class ClaraEngine:
         # Document storage
         self._doc_texts: List[str] = []  # Original texts (for provenance)
         self._doc_ids: List[str] = []  # Document IDs
-        self._compressed_docs: Optional[torch.Tensor] = None  # [num_docs, num_mem_tokens, hidden_dim]
+        self._compressed_docs: Optional[torch.Tensor] = (
+            None  # [num_docs, num_mem_tokens, hidden_dim]
+        )
         self._doc_embeddings: Optional[torch.Tensor] = None  # [num_docs, hidden_dim] for retrieval
 
         try:
@@ -160,7 +162,9 @@ class ClaraEngine:
         _original_env = {
             "TQDM_DISABLE": os.environ.get("TQDM_DISABLE"),
             "HF_HUB_DISABLE_PROGRESS_BARS": os.environ.get("HF_HUB_DISABLE_PROGRESS_BARS"),
-            "TRANSFORMERS_NO_ADVISORY_WARNINGS": os.environ.get("TRANSFORMERS_NO_ADVISORY_WARNINGS"),
+            "TRANSFORMERS_NO_ADVISORY_WARNINGS": os.environ.get(
+                "TRANSFORMERS_NO_ADVISORY_WARNINGS"
+            ),
             "TOKENIZERS_PARALLELISM": os.environ.get("TOKENIZERS_PARALLELISM"),
         }
         os.environ["TQDM_DISABLE"] = "1"
@@ -170,8 +174,14 @@ class ClaraEngine:
 
         # Suppress verbose loggers
         _loggers_to_quiet = [
-            "transformers", "transformers.modeling_utils", "accelerate",
-            "peft", "huggingface_hub", "modeling_clara", "torch", "bitsandbytes",
+            "transformers",
+            "transformers.modeling_utils",
+            "accelerate",
+            "peft",
+            "huggingface_hub",
+            "modeling_clara",
+            "torch",
+            "bitsandbytes",
         ]
         _original_levels = {}
         for name in _loggers_to_quiet:
@@ -181,6 +191,7 @@ class ClaraEngine:
 
         # Redirect stdout/stderr during model load
         import io
+
         _orig_stdout, _orig_stderr = sys.stdout, sys.stderr
         sys.stdout, sys.stderr = io.StringIO(), io.StringIO()
 
@@ -238,7 +249,7 @@ class ClaraEngine:
             - retrieval_embedding: [1, hidden_dim] mean-pooled for retrieval
         """
         # Use model's compress_documents if available
-        if hasattr(self._model, 'compress_documents'):
+        if hasattr(self._model, "compress_documents"):
             result = self._model.compress_documents([text])
             # compress_documents returns (compressed_tensor, loss) tuple
             if isinstance(result, tuple):
@@ -252,7 +263,7 @@ class ClaraEngine:
         # Fallback: manual compression using model internals
         # This path is for when compress_documents isn't exposed
         # CLaRa stores tokenizer as decoder_tokenizer
-        tokenizer = getattr(self._model, 'decoder_tokenizer', None) or self._model.tokenizer
+        tokenizer = getattr(self._model, "decoder_tokenizer", None) or self._model.tokenizer
         device = next(self._model.parameters()).device
 
         # Tokenize with encoder markers
@@ -280,9 +291,7 @@ class ClaraEngine:
 
         return hidden, retrieval_emb
 
-    def add_documents(
-        self, documents: List[str], doc_ids: Optional[List[str]] = None
-    ) -> List[str]:
+    def add_documents(self, documents: List[str], doc_ids: Optional[List[str]] = None) -> List[str]:
         """
         Add and PRE-COMPRESS documents into the knowledge base.
 
@@ -301,6 +310,7 @@ class ClaraEngine:
         """
         if doc_ids is None:
             import uuid
+
             start_idx = len(self._doc_texts)
             doc_ids = [f"doc_{start_idx + i}_{uuid.uuid4().hex[:8]}" for i in range(len(documents))]
 
@@ -316,9 +326,9 @@ class ClaraEngine:
             # Compress documents in batches (no gradients needed for inference)
             with torch.no_grad():
                 for i in range(0, len(documents), batch_size):
-                    batch_docs = documents[i:i + batch_size]
+                    batch_docs = documents[i : i + batch_size]
 
-                    if hasattr(self._model, 'compress_documents'):
+                    if hasattr(self._model, "compress_documents"):
                         result = self._model.compress_documents(batch_docs)
                         # compress_documents returns (compressed_tensor, loss) tuple
                         compressed = result[0] if isinstance(result, tuple) else result
@@ -381,11 +391,11 @@ class ClaraEngine:
 
         # Encode query into same latent space
         with torch.no_grad():
-            if hasattr(self._model, 'encode_query'):
+            if hasattr(self._model, "encode_query"):
                 query_emb = self._model.encode_query(query)
             else:
                 # Fallback: use decoder hidden states for query embedding
-                tokenizer = getattr(self._model, 'decoder_tokenizer', None) or self._model.tokenizer
+                tokenizer = getattr(self._model, "decoder_tokenizer", None) or self._model.tokenizer
                 inputs = tokenizer(
                     query,
                     return_tensors="pt",
@@ -458,12 +468,14 @@ class ClaraEngine:
             gen_config = self._config.generation
 
             # Try to use pre-compressed generation (compress once, generate many)
-            if hasattr(self._model, 'generate_from_compressed_documents_and_questions'):
+            if hasattr(self._model, "generate_from_compressed_documents_and_questions"):
                 try:
                     # Set generation_top_k to match retrieved docs
                     self._model.generation_top_k = len(retrieved_indices)
 
-                    logger.info(f"Using pre-compressed generation with {len(retrieved_indices)} docs")
+                    logger.info(
+                        f"Using pre-compressed generation with {len(retrieved_indices)} docs"
+                    )
                     with torch.no_grad():
                         answers = self._model.generate_from_compressed_documents_and_questions(
                             questions=[query.text],
@@ -474,7 +486,9 @@ class ClaraEngine:
                     logger.info("Pre-compressed generation succeeded")
                 except Exception as e:
                     # Fallback to generate_from_text if compressed generation fails
-                    logger.warning(f"Compressed generation failed ({e}), falling back to generate_from_text")
+                    logger.warning(
+                        f"Compressed generation failed ({e}), falling back to generate_from_text"
+                    )
                     retrieved_texts = [self._doc_texts[i] for i in retrieved_indices]
                     with torch.no_grad():
                         answers = self._model.generate_from_text(
@@ -520,9 +534,9 @@ class ClaraEngine:
                     "compression_rate": self._config.compression.compression_rate,
                     "num_docs_retrieved": len(retrieved_indices),
                     "retrieval_method": "cosine_similarity_latent",
-                    "quantization": "4-bit" if self._config.model.load_in_4bit else (
-                        "8-bit" if self._config.model.load_in_8bit else "none"
-                    ),
+                    "quantization": "4-bit"
+                    if self._config.model.load_in_4bit
+                    else ("8-bit" if self._config.model.load_in_8bit else "none"),
                 },
             )
 
@@ -537,9 +551,9 @@ class ClaraEngine:
             "num_documents": len(self._doc_texts),
             "compression_rate": self._config.compression.compression_rate,
             "model_variant": self._config.model.variant,
-            "quantization": "4-bit" if self._config.model.load_in_4bit else (
-                "8-bit" if self._config.model.load_in_8bit else "none"
-            ),
+            "quantization": "4-bit"
+            if self._config.model.load_in_4bit
+            else ("8-bit" if self._config.model.load_in_8bit else "none"),
         }
 
         if self._compressed_docs is not None:
@@ -664,6 +678,5 @@ class ClaraEngine:
         if not clara_dir.exists():
             return []
         return [
-            p.name for p in clara_dir.iterdir()
-            if p.is_dir() and (p / "metadata.json").exists()
+            p.name for p in clara_dir.iterdir() if p.is_dir() and (p / "metadata.json").exists()
         ]

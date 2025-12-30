@@ -314,11 +314,10 @@ class TestGenerateConfig:
         """Test _copy_engine_default_config returns graphrag default config."""
         import yaml
 
-        from fitz_ai.cli.commands.init import _copy_engine_default_config
-        from fitz_ai.runtime import get_engine_registry
-
         # Ensure graphrag is registered
         import fitz_ai.engines.graphrag  # noqa: F401
+        from fitz_ai.cli.commands.init import _copy_engine_default_config
+        from fitz_ai.runtime import get_engine_registry
 
         registry = get_engine_registry()
         config_str = _copy_engine_default_config("graphrag", registry)
@@ -335,11 +334,10 @@ class TestGenerateConfig:
         """Test _copy_engine_default_config returns clara default config."""
         import yaml
 
-        from fitz_ai.cli.commands.init import _copy_engine_default_config
-        from fitz_ai.runtime import get_engine_registry
-
         # Ensure clara is registered
         import fitz_ai.engines.clara  # noqa: F401
+        from fitz_ai.cli.commands.init import _copy_engine_default_config
+        from fitz_ai.runtime import get_engine_registry
 
         registry = get_engine_registry()
         config_str = _copy_engine_default_config("clara", registry)

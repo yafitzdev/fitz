@@ -105,10 +105,23 @@ def create_deterministic_embedder(dimension: int = 384) -> Callable[[str], list[
 
         # Causal evidence markers (high priority for epistemic detection)
         causal_markers = [
-            "because", "due to", "caused by", "led to", "result of",
-            "therefore", "thus", "hence", "consequence", "consequently",
-            "owing to", "attributed", "triggered by",
-            "the reason", "the cause", "reason is", "reason was",
+            "because",
+            "due to",
+            "caused by",
+            "led to",
+            "result of",
+            "therefore",
+            "thus",
+            "hence",
+            "consequence",
+            "consequently",
+            "owing to",
+            "attributed",
+            "triggered by",
+            "the reason",
+            "the cause",
+            "reason is",
+            "reason was",
         ]
         if any(m in text_lower for m in causal_markers):
             return _add_noise(CAUSAL_EVIDENCE_CLUSTER, text)

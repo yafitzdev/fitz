@@ -182,9 +182,7 @@ class SemanticMatcher:
     _concept_cache: dict[str, list[list[float]]] = field(
         default_factory=dict, repr=False, compare=False
     )
-    _centroid_cache: dict[str, list[float]] = field(
-        default_factory=dict, repr=False, compare=False
-    )
+    _centroid_cache: dict[str, list[float]] = field(default_factory=dict, repr=False, compare=False)
 
     # -------------------------------------------------------------------------
     # Caching
@@ -256,9 +254,7 @@ class SemanticMatcher:
         Works across languages - "why did this happen", "pourquoi",
         "为什么" all detected as causal queries.
         """
-        similarity = self.max_similarity_to_concepts(
-            query, "causal_query", CAUSAL_QUERY_CONCEPTS
-        )
+        similarity = self.max_similarity_to_concepts(query, "causal_query", CAUSAL_QUERY_CONCEPTS)
         return similarity >= self.query_threshold
 
     def is_fact_query(self, query: str) -> bool:
@@ -267,9 +263,7 @@ class SemanticMatcher:
 
         Works across languages for who/what/where/when type questions.
         """
-        similarity = self.max_similarity_to_concepts(
-            query, "fact_query", FACT_QUERY_CONCEPTS
-        )
+        similarity = self.max_similarity_to_concepts(query, "fact_query", FACT_QUERY_CONCEPTS)
         return similarity >= self.query_threshold
 
     def is_resolution_query(self, query: str) -> bool:
@@ -294,9 +288,7 @@ class SemanticMatcher:
 
         Detects "because", "due to", etc. in any language.
         """
-        similarity = self.max_similarity_to_concepts(
-            text, "causal", CAUSAL_CONCEPTS
-        )
+        similarity = self.max_similarity_to_concepts(text, "causal", CAUSAL_CONCEPTS)
         return similarity >= self.causal_threshold
 
     def has_assertion(self, text: str) -> bool:
@@ -305,9 +297,7 @@ class SemanticMatcher:
 
         Detects "is", "was confirmed", etc. in any language.
         """
-        similarity = self.max_similarity_to_concepts(
-            text, "assertion", ASSERTION_CONCEPTS
-        )
+        similarity = self.max_similarity_to_concepts(text, "assertion", ASSERTION_CONCEPTS)
         return similarity >= self.assertion_threshold
 
     def count_causal_chunks(self, chunks: Sequence["ChunkLike"]) -> int:
@@ -394,9 +384,7 @@ class SemanticMatcher:
                 chunk_a = chunk_list[i]
                 chunk_b = chunk_list[j]
 
-                is_conflict, conflict_type = self.detect_conflict(
-                    chunk_a.content, chunk_b.content
-                )
+                is_conflict, conflict_type = self.detect_conflict(chunk_a.content, chunk_b.content)
 
                 if is_conflict and conflict_type:
                     conflicts.append((chunk_a.id, chunk_b.id, conflict_type))
