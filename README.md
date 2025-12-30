@@ -3,7 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/fitz-ai.svg)](https://pypi.org/project/fitz-ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.3-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.4-green.svg)](CHANGELOG.md)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/yafitzdev/fitz-ai)
 
 ---
@@ -142,9 +142,10 @@ You can—but you'll hit walls fast.
 >
 >1. [x] **Local execution possible.** FAISS and Ollama support, no API keys required to start.
 >2. [x] **Plugin-based architecture.** Swap LLMs, vector databases, rerankers, and retrieval pipelines via YAML config.
->3. [X] **Incremental ingestion.** Only reprocesses changed files, even with new chunking settings.
->4. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
->5. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
+>3. [x] **Multiple engines.** Supports ClassicRAG, GraphRAG and CLaRa out of the box—swap engines in one line.
+>4. [X] **Incremental ingestion.** Only reprocesses changed files, even with new chunking settings.
+>5. [x] **Full provenance.** Every answer traces back to the exact chunk and document.
+>6. [x] **Data privacy**: No telemetry, no cloud, no external calls except to the LLM provider you configure.
 
 ####
 
@@ -513,34 +514,34 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 <br>
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                         fitz-ai                               │
-├───────────────────────────────────────────────────────────────┤
-│  User Interfaces                                              │
-│  CLI: quickstart | init | ingest | query | chat | serve       │
-│  SDK: fitz_ai.fitz() → ingest() → ask()                       │
-│  API: /query | /chat | /ingest | /collections | /health       │
-├───────────────────────────────────────────────────────────────┤
-│  Engines                                                      │
-│  ┌───────────────┐  ┌───────────┐                             │
-│  │  Classic RAG  │  │   CLaRa   │  (pluggable)                │
-│  └───────────────┘  └───────────┘                             │
-├───────────────────────────────────────────────────────────────┤
-│  Plugin System (all YAML-defined)                             │
-│  ┌────────┐ ┌───────────┐ ┌────────┐ ┌──────────┐             │
-│  │  LLM   │ │ Embedding │ │ Rerank │ │ VectorDB │             │
-│  └────────┘ └───────────┘ └────────┘ └──────────┘             │
-│  openai, cohere, anthropic, ollama, azure...                  │
-├───────────────────────────────────────────────────────────────┤
-│  Retrieval Pipelines (YAML-composed)                          │
-│  dense.yaml | dense_rerank.yaml | custom...                   │
-├───────────────────────────────────────────────────────────────┤
-│  Enrichment (opt-in)                                          │
-│  code artifacts | LLM summaries | hierarchical RAG | custom   │
-├───────────────────────────────────────────────────────────────┤
-│  Constraints (epistemic safety)                               │
-│  ConflictAware | InsufficientEvidence | CausalAttribution     │
-└───────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         fitz-ai                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  User Interfaces                                                │
+│  CLI: quickstart | init | ingest | query | chat | serve         │
+│  SDK: fitz_ai.fitz() → ingest() → ask()                         │
+│  API: /query | /chat | /ingest | /collections | /health         │
+├─────────────────────────────────────────────────────────────────┤
+│  Engines                                                        │
+│  ┌───────────────┐  ┌───────────┐  ┌────────────┐               │
+│  │  Classic RAG  │  │   CLaRa   │  │  GraphRAG  │  (pluggable)  │
+│  └───────────────┘  └───────────┘  └────────────┘               │
+├─────────────────────────────────────────────────────────────────┤
+│  Plugin System (all YAML-defined)                               │
+│  ┌────────┐ ┌───────────┐ ┌────────┐ ┌──────────┐               │
+│  │  Chat  │ │ Embedding │ │ Rerank │ │ VectorDB │               │
+│  └────────┘ └───────────┘ └────────┘ └──────────┘               │
+│  openai, cohere, anthropic, ollama, azure...                    │
+├─────────────────────────────────────────────────────────────────┤
+│  Retrieval Pipelines (YAML-composed)                            │
+│  dense.yaml | dense_rerank.yaml | custom...                     │
+├─────────────────────────────────────────────────────────────────┤
+│  Enrichment (opt-in)                                            │
+│  code artifacts | LLM summaries | hierarchical RAG | custom     │
+├─────────────────────────────────────────────────────────────────┤
+│  Constraints (epistemic safety)                                 │
+│  ConflictAware | InsufficientEvidence | CausalAttribution       │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 </details>
@@ -696,14 +697,14 @@ Fitz is not a RAG framework. It's a knowledge platform that *currently* uses RAG
 ```python
 from fitz_ai import run
 
-# Today: Classic RAG
+# Classic RAG - fast, reliable vector search
 answer = run("What are the payment terms?", engine="classic_rag")
 
-# Also available: CLaRa (compressed RAG, 16x smaller context)
+# CLaRa - compressed RAG, 16x smaller context
 answer = run("What are the payment terms?", engine="clara")
 
-# Tomorrow: GraphRAG, HyDE, or whatever comes next
-answer = run("What are the payment terms?", engine="graph_rag")
+# GraphRAG - knowledge graph with entity extraction and community summaries
+answer = run("What are the payment terms?", engine="graphrag")
 ```
 
 The engine is an implementation detail. Your ingested knowledge, your queries, your workflow—all stay the same. When a better retrieval paradigm emerges, swap one line, not your entire codebase.
