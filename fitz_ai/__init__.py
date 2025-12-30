@@ -64,53 +64,71 @@ Examples:
 __version__ = "0.3.0"
 
 # =============================================================================
-# CORE TYPES
+# LAZY IMPORTS
 # =============================================================================
+# Heavy modules (engines, runtime) are only imported when accessed.
+# This keeps CLI startup fast.
 
-from fitz_ai.core import (  # Protocol; Types; Exceptions
-    Answer,
-    ConfigurationError,
-    Constraints,
-    EngineError,
-    GenerationError,
-    KnowledgeEngine,
-    KnowledgeError,
-    Provenance,
-    Query,
-    QueryError,
-    TimeoutError,
-    UnsupportedOperationError,
-)
-from fitz_ai.engines.classic_rag import (
-    ClassicRagEngine,
-    create_classic_rag_engine,
-    run_classic_rag,
-)
-from fitz_ai.runtime import (
-    create_engine,
-    get_engine_registry,
-    list_engines,
-    list_engines_with_info,
-    run,
-)
-from fitz_ai.sdk import IngestStats, fitz
+
+def __getattr__(name: str):
+    """Lazy import for heavy modules."""
+    # Core types (lightweight, always available)
+    if name in (
+        "Answer",
+        "ConfigurationError",
+        "Constraints",
+        "EngineError",
+        "GenerationError",
+        "KnowledgeEngine",
+        "KnowledgeError",
+        "Provenance",
+        "Query",
+        "QueryError",
+        "TimeoutError",
+        "UnsupportedOperationError",
+    ):
+        from fitz_ai import core
+
+        return getattr(core, name)
+
+    # Classic RAG engine (heavy - loads config, plugins)
+    if name in ("ClassicRagEngine", "create_classic_rag_engine", "run_classic_rag"):
+        from fitz_ai.engines import classic_rag
+
+        return getattr(classic_rag, name)
+
+    # Runtime (heavy - discovers all engines)
+    if name in ("create_engine", "get_engine_registry", "list_engines", "list_engines_with_info", "run"):
+        from fitz_ai import runtime
+
+        return getattr(runtime, name)
+
+    # SDK
+    if name in ("IngestStats", "fitz"):
+        from fitz_ai import sdk
+
+        return getattr(sdk, name)
+
+    raise AttributeError(f"module 'fitz_ai' has no attribute {name!r}")
 
 # =============================================================================
 # MODULE-LEVEL SDK (matches CLI: fitz ingest, fitz query)
 # =============================================================================
 
-_default_fitz: "fitz | None" = None
+_default_fitz = None
 
 
-def _get_default_fitz() -> fitz:
+def _get_default_fitz():
     """Get or create the default fitz instance."""
     global _default_fitz
     if _default_fitz is None:
+        from fitz_ai.sdk import fitz
+
         _default_fitz = fitz()
     return _default_fitz
 
 
-def ingest(source, collection: str = None, clear_existing: bool = False) -> IngestStats:
+def ingest(source, collection: str = None, clear_existing: bool = False):
     """
     Ingest documents into the knowledge base.
 
@@ -131,13 +149,14 @@ def ingest(source, collection: str = None, clear_existing: bool = False) -> Inge
     """
     global _default_fitz
     if collection is not None:
-        # Create new instance with specified collection
+        from fitz_ai.sdk import fitz
+
         _default_fitz = fitz(collection=collection)
     f = _get_default_fitz()
     return f.ingest(source, clear_existing=clear_existing)
 
 
-def query(question: str, top_k: int = None) -> Answer:
+def query(question: str, top_k: int = None):
     """
     Query the knowledge base.
 
