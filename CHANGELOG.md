@@ -658,7 +658,7 @@ Initial release of Fitz RAG framework.
 ---
 
 [Unreleased]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.4...HEAD
-[0.4.3]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.3...v0.4.4
+[0.4.4]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.0...v0.4.1
