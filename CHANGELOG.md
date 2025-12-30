@@ -11,6 +11,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.4] - 2025-12-30
+
+### 🎉 Highlights
+
+**GraphRAG Engine** - Full implementation of Microsoft's GraphRAG paradigm. Extract entities and relationships, build knowledge graphs, detect communities, and use local/global/hybrid search for relationship-aware retrieval.
+
+**CLaRa Engine Rework** - Major refactoring of the compressed RAG engine with improved architecture and configuration.
+
+**CLI Modernization** - Complete restructure of CLI UI into modular components for better maintainability and user experience.
+
+**Semantic Constraints** - Constraint plugins now use embedding-based semantic matching instead of regex patterns, enabling language-agnostic conflict and causality detection.
+
+### 🚀 Added
+
+#### GraphRAG Engine (`fitz_ai/engines/graphrag/`)
+- `GraphRAGEngine` - Knowledge graph-based retrieval engine
+- Entity and relationship extraction via LLM (`graph/extraction.py`)
+- Knowledge graph storage with NetworkX backend (`graph/storage.py`)
+- Community detection using Louvain algorithm (`graph/community.py`)
+- Community summarization for high-level insights
+- Local search - find specific entities and relationships (`search/local.py`)
+- Global search - query across community summaries (`search/global_search.py`)
+- Hybrid search - combine local and global approaches
+- Persistent storage via JSON serialization
+- `fitz_ai/engines/graphrag/config/schema.py` - Full configuration schema
+
+#### Semantic Matching (`fitz_ai/core/guardrails/semantic.py`)
+- `SemanticMatcher` class for embedding-based concept detection
+- Language-agnostic causal query detection
+- Semantic conflict detection across chunks
+- Configurable similarity thresholds
+- Works with any embedding provider
+
+#### CLI UI Modules (`fitz_ai/cli/ui/`)
+- `console.py` - Shared Rich console instance
+- `display.py` - Answer and result display formatting
+- `engine_selection.py` - Interactive engine selection UI
+- `output.py` - Structured output formatting
+- `progress.py` - Progress bars and status indicators
+- `prompts.py` - User input prompts and confirmations
+
+#### Other
+- `fitz_ai/cli/utils.py` - Shared CLI utilities
+- `examples/clara_demo.py` - CLaRa engine demonstration
+- `tests/test_graphrag_engine.py` - Comprehensive GraphRAG tests
+
+### 🔄 Changed
+
+- **CLaRa engine**: Major refactoring of `fitz_ai/engines/clara/engine.py` with improved architecture
+- **CLI commands**: Enhanced `chat`, `ingest`, `init`, `query`, `quickstart` with new UI modules
+- **Constraint plugins**: Refactored to use `SemanticMatcher` instead of regex patterns
+  - `CausalAttributionConstraint` - Now uses semantic causal evidence detection
+  - `ConflictAwareConstraint` - Now uses semantic conflict detection
+  - `InsufficientEvidenceConstraint` - Simplified implementation
+- **Hierarchy enricher**: Now accepts optional `SemanticMatcher` for conflict detection
+- **Config loaders**: Improved engine configuration loading
+
+### 🐛 Fixed
+
+- Contract map tool no longer shows `<unknown>` SyntaxWarnings (added filename to ast.parse)
+- Excluded `clara_model_cache` from contract map scanning
+- Qdrant tests updated for YAML-based plugin system
+
+---
+
 ## [0.4.3] - 2025-12-29
 
 ### 🎉 Highlights
@@ -592,7 +657,8 @@ Initial release of Fitz RAG framework.
 
 ---
 
-[Unreleased]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.4...HEAD
+[0.4.3]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/yafitzdev/fitz-ai/compare/v0.4.0...v0.4.1
