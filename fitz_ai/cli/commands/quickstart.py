@@ -86,25 +86,17 @@ def command(
     registry = get_engine_registry()
 
     if engine is None:
-        # Prompt for engine selection
+        # Prompt for engine selection with cards
         ui.header("Fitz Quickstart", "Zero-friction RAG")
         print()
 
-        # Build choices with descriptions
-        engine_info = registry.list_with_descriptions()
-        choices = []
-        for name in available_engines:
-            desc = engine_info.get(name, "")
-            # Truncate long descriptions
-            if len(desc) > 60:
-                desc = desc[:57] + "..."
-            choices.append(f"{name} - {desc}" if desc else name)
-
-        # Get default engine from config (prompt_numbered_choice puts default at position 1)
+        engine_descriptions = registry.list_with_descriptions()
         default_engine_name = get_default_engine()
-        default_choice = next((c for c in choices if c.startswith(default_engine_name)), choices[0])
-        selected = ui.prompt_numbered_choice("Engine", choices, default_choice)
-        engine = selected.split(" - ")[0]  # Extract engine name
+        engine = ui.prompt_engine_selection(
+            engines=available_engines,
+            descriptions=engine_descriptions,
+            default=default_engine_name,
+        )
         print()
     elif engine not in available_engines:
         ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(available_engines)}")
@@ -215,9 +207,7 @@ def _run_document_loading_quickstart(
     ui.info("For multiple queries, use the Python API to keep the engine loaded.")
 
 
-def _read_documents_as_text(
-    source: Path, verbose: bool = False
-) -> tuple[List[str], List[str]]:
+def _read_documents_as_text(source: Path, verbose: bool = False) -> tuple[List[str], List[str]]:
     """Read documents from source and return as list of text strings and doc IDs."""
     from fitz_ai.ingestion.reader.engine import IngestionEngine
     from fitz_ai.ingestion.reader.registry import get_ingest_plugin

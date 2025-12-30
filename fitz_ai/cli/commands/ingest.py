@@ -381,23 +381,17 @@ def command(
     # =========================================================================
 
     if engine is None and not non_interactive:
-        # Build engine choices with descriptions
+        # Use card-based engine selection
         registry = get_engine_registry()
         available_engines = list_engines()
-        engine_info = registry.list_with_descriptions()
-
-        choices = []
-        for name in available_engines:
-            desc = engine_info.get(name, "")
-            if len(desc) > 50:
-                desc = desc[:47] + "..."
-            choices.append(f"{name} - {desc}" if desc else name)
-
-        # Use default engine from config
+        engine_descriptions = registry.list_with_descriptions()
         default_engine_name = get_default_engine()
-        default_choice = next((c for c in choices if c.startswith(default_engine_name)), choices[0])
-        selected = ui.prompt_numbered_choice("Ingestion strategy", choices, default_choice)
-        engine = selected.split(" - ")[0]
+
+        engine = ui.prompt_engine_selection(
+            engines=available_engines,
+            descriptions=engine_descriptions,
+            default=default_engine_name,
+        )
 
     # Use default engine from config in non-interactive mode
     if engine is None:

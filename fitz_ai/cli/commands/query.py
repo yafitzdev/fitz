@@ -77,23 +77,15 @@ def command(
     registry = get_engine_registry()
 
     if engine is None:
-        # Prompt for engine selection
+        # Prompt for engine selection with cards
         print()
-
-        # Build choices with descriptions
-        engine_info = registry.list_with_descriptions()
-        choices = []
-        for name in available_engines:
-            desc = engine_info.get(name, "")
-            if len(desc) > 60:
-                desc = desc[:57] + "..."
-            choices.append(f"{name} - {desc}" if desc else name)
-
-        # Get default engine from config (prompt_numbered_choice puts default at position 1)
+        engine_descriptions = registry.list_with_descriptions()
         default_engine_name = get_default_engine()
-        default_choice = next((c for c in choices if c.startswith(default_engine_name)), choices[0])
-        selected = ui.prompt_numbered_choice("Engine", choices, default_choice)
-        engine = selected.split(" - ")[0]
+        engine = ui.prompt_engine_selection(
+            engines=available_engines,
+            descriptions=engine_descriptions,
+            default=default_engine_name,
+        )
     elif engine not in available_engines:
         ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(available_engines)}")
         raise typer.Exit(1)
@@ -127,7 +119,9 @@ def _show_documents_required_message(engine_name: str, caps) -> None:
         ui.warning(caps.cli_query_message)
     else:
         ui.warning(f"Engine '{engine_name}' requires documents to be loaded first.")
-        ui.info(f"Use 'fitz quickstart <folder> \"question\" --engine {engine_name}' for one-off queries.")
+        ui.info(
+            f"Use 'fitz quickstart <folder> \"question\" --engine {engine_name}' for one-off queries."
+        )
     print()
     ui.info("Or use the Python API:")
     print()

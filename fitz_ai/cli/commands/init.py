@@ -559,22 +559,15 @@ def command(
         default_engine = configured_default
     else:
         ui.section("Engine Setup")
-        ui.info("Select which engine to configure and set as default.")
         print()
 
-        # Build choices with descriptions
-        engine_info = registry.list_with_descriptions()
-        choices = []
-        for name in available_engines:
-            desc = engine_info.get(name, "")
-            if len(desc) > 60:
-                desc = desc[:57] + "..."
-            choices.append(f"{name} - {desc}" if desc else name)
-
-        # Get default engine from config (prompt_numbered_choice puts default at position 1)
-        default_choice = next((c for c in choices if c.startswith(configured_default)), choices[0])
-        selected = ui.prompt_numbered_choice("Engine to configure", choices, default_choice)
-        default_engine = selected.split(" - ")[0]
+        # Use card-based engine selection
+        engine_descriptions = registry.list_with_descriptions()
+        default_engine = ui.prompt_engine_selection(
+            engines=available_engines,
+            descriptions=engine_descriptions,
+            default=configured_default,
+        )
 
     # If user selected a non-collection engine, handle engine-specific config
     caps = registry.get_capabilities(default_engine)
