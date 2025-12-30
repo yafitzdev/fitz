@@ -214,7 +214,7 @@ class TestHierarchyEnricherEpistemic:
     """Tests for HierarchyEnricher with epistemic features."""
 
     def test_simple_mode_adds_epistemic_metadata(self):
-        """Test that simple mode adds epistemic metadata to summaries."""
+        """Test that simple mode adds epistemic metadata to original chunks."""
         config = HierarchyConfig(enabled=True, group_by="source")
 
         mock_chat = MagicMock()
@@ -241,14 +241,21 @@ class TestHierarchyEnricherEpistemic:
 
         result = enricher.enrich(chunks)
 
-        # Find the level-1 summary
-        level1_summaries = [c for c in result if c.metadata.get("hierarchy_level") == 1]
-        assert len(level1_summaries) == 1
+        # L1 summaries are now stored as metadata on original chunks, not as separate chunks
+        # Find original chunks (level 0)
+        level0_chunks = [c for c in result if c.metadata.get("hierarchy_level") == 0]
+        assert len(level0_chunks) == 2
 
-        summary = level1_summaries[0]
-        assert "epistemic_has_conflicts" in summary.metadata
-        assert "epistemic_evidence_density" in summary.metadata
-        assert "epistemic_agreement_ratio" in summary.metadata
+        # Each original chunk should have the L1 summary as metadata
+        for chunk in level0_chunks:
+            assert "hierarchy_summary" in chunk.metadata
+            assert "epistemic_has_conflicts" in chunk.metadata
+            assert "epistemic_evidence_density" in chunk.metadata
+            assert "epistemic_agreement_ratio" in chunk.metadata
+
+        # Should also have one L2 corpus summary chunk
+        level2_chunks = [c for c in result if c.metadata.get("hierarchy_level") == 2]
+        assert len(level2_chunks) == 1
 
     @pytest.mark.xfail(
         reason="HierarchyEnricher requires SemanticMatcher for conflict detection. "

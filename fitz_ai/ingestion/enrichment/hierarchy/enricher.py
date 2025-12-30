@@ -9,6 +9,11 @@ Supports two modes:
 Simple mode groups chunks by source file and generates summaries
 using prompts from the centralized prompt library.
 
+Storage model:
+- L0 (original chunks): Enriched with hierarchy_summary metadata containing their group's L1 summary
+- L1 (group summaries): NOT stored as separate chunks - only as metadata on L0 chunks
+- L2 (corpus summary): The ONLY separate chunk created - summarizes all L1 summaries
+
 Epistemic features:
 - Detects conflicts using core/conflicts.py (platform-wide capability)
 - Adapts prompts to acknowledge uncertainty and disagreement
@@ -131,16 +136,18 @@ class HierarchyEnricher:
     For each configured rule:
     1. Filters chunks by path patterns
     2. Groups by metadata key
-    3. Generates level-1 summaries for each group
-    4. Generates level-2 corpus summary
+    3. Generates level-1 summaries for each group (stored as metadata on original chunks)
+    4. Generates level-2 corpus summary (the only separate chunk created)
 
-    All summary chunks are returned alongside original chunks with
-    `hierarchy_level` metadata marking their position in the hierarchy.
+    Storage model:
+    - Original chunks are enriched with `hierarchy_summary` metadata containing their group's L1 summary
+    - Only the L2 corpus summary is stored as a separate retrievable chunk
+    - This prevents summaries from crowding out source documents in retrieval
 
     Hierarchy levels:
-    - Level 0: Original chunks (detail level)
-    - Level 1: Group summaries (one per unique group_by value)
-    - Level 2: Corpus summary (one per rule)
+    - Level 0: Original chunks with hierarchy_summary metadata
+    - Level 1: Group summaries (metadata only, not separate chunks)
+    - Level 2: Corpus summary (one separate chunk per rule)
     """
 
     def __init__(
@@ -166,14 +173,14 @@ class HierarchyEnricher:
         1. Simple mode: No rules configured, uses config.group_by and default prompts
         2. Rules mode: Custom rules for power users
 
-        Marks original chunks with hierarchy_level=0 and generates
-        level-1 group summaries and level-2 corpus summaries.
+        L1 summaries are stored as metadata on original chunks.
+        Only L2 corpus summary is created as a separate chunk.
 
         Args:
             chunks: Original chunks from ingestion
 
         Returns:
-            Original chunks (marked level-0) + generated summary chunks
+            Original chunks (enriched with hierarchy_summary metadata) + L2 corpus summary chunk
         """
         if not self._config.enabled:
             return chunks
@@ -183,41 +190,43 @@ class HierarchyEnricher:
             if "hierarchy_level" not in chunk.metadata:
                 chunk.metadata["hierarchy_level"] = 0
 
-        all_summary_chunks: List[Chunk] = []
+        corpus_chunks: List[Chunk] = []
 
         if self._config.rules:
             # Power-user mode: process configured rules
             for rule in self._config.rules:
                 logger.info(f"[HIERARCHY] Processing rule: {rule.name}")
-                summary_chunks = self._process_rule(rule, chunks)
-                all_summary_chunks.extend(summary_chunks)
+                corpus_chunk = self._process_rule(rule, chunks)
+                if corpus_chunk:
+                    corpus_chunks.append(corpus_chunk)
 
             logger.info(
-                f"[HIERARCHY] Generated {len(all_summary_chunks)} summary chunks "
+                f"[HIERARCHY] Generated {len(corpus_chunks)} corpus summary chunks "
                 f"from {len(self._config.rules)} rules"
             )
         else:
             # Simple mode: use defaults, no path filtering
             logger.info(f"[HIERARCHY] Simple mode: grouping by '{self._config.group_by}'")
-            summary_chunks = self._process_simple_mode(chunks)
-            all_summary_chunks.extend(summary_chunks)
+            corpus_chunk = self._process_simple_mode(chunks)
+            if corpus_chunk:
+                corpus_chunks.append(corpus_chunk)
 
             logger.info(
-                f"[HIERARCHY] Generated {len(all_summary_chunks)} summary chunks in simple mode"
+                f"[HIERARCHY] Generated {len(corpus_chunks)} corpus summary chunk in simple mode"
             )
 
-        return chunks + all_summary_chunks
+        return chunks + corpus_chunks
 
-    def _process_simple_mode(self, chunks: List[Chunk]) -> List[Chunk]:
+    def _process_simple_mode(self, chunks: List[Chunk]) -> Chunk | None:
         """
         Process chunks in simple mode (no rules, use defaults).
 
         Groups all chunks by the configured group_by key and generates
-        summaries using default prompts. Includes epistemic assessment
-        to detect conflicts and uncertainty.
+        summaries using default prompts. L1 summaries are stored as metadata
+        on the original chunks. Only returns the L2 corpus summary chunk.
         """
         if not chunks:
-            return []
+            return None
 
         # Group by configured key (default: "source")
         grouper = ChunkGrouper(self._config.group_by)
@@ -226,42 +235,52 @@ class HierarchyEnricher:
         # Get prompts (use prompt library defaults if not specified)
         group_prompt = self._config.group_prompt or hierarchy_prompts.GROUP_SUMMARY_PROMPT
 
-        # Generate level-1 summaries for each group, tracking epistemic assessments
-        level1_chunks: List[Chunk] = []
+        # Generate level-1 summaries for each group, storing as metadata on chunks
+        level1_summaries: List[str] = []
         group_assessments: List[EpistemicAssessment] = []
+        group_keys: List[str] = []
 
         for group_key, group_chunks in groups.items():
             if group_key == "_ungrouped":
                 logger.debug("[HIERARCHY] Skipping _ungrouped in simple mode")
                 continue
 
-            summary_chunk, assessment = self._generate_simple_group_summary(
+            summary_content, assessment = self._generate_simple_group_summary(
                 group_key=group_key,
                 chunks=group_chunks,
                 prompt=group_prompt,
             )
-            level1_chunks.append(summary_chunk)
+
+            # Store L1 summary as metadata on each chunk in this group
+            for chunk in group_chunks:
+                chunk.metadata["hierarchy_summary"] = summary_content
+                chunk.metadata["hierarchy_group"] = group_key
+                chunk.metadata.update(assessment.to_metadata())
+
+            level1_summaries.append(summary_content)
             group_assessments.append(assessment)
+            group_keys.append(group_key)
 
         # Generate level-2 corpus summary with epistemic context
         level2_chunk = self._generate_simple_corpus_summary(
-            level1_chunks=level1_chunks,
+            level1_summaries=level1_summaries,
+            group_keys=group_keys,
             group_assessments=group_assessments,
         )
 
-        result = level1_chunks
-        if level2_chunk:
-            result.append(level2_chunk)
-
-        return result
+        return level2_chunk
 
     def _generate_simple_group_summary(
         self,
         group_key: str,
         chunks: List[Chunk],
         prompt: str,
-    ) -> tuple[Chunk, EpistemicAssessment]:
-        """Generate a level-1 summary for a group in simple mode."""
+    ) -> tuple[str, EpistemicAssessment]:
+        """Generate a level-1 summary for a group in simple mode.
+
+        Returns:
+            Tuple of (summary_content, assessment) - summary is stored as metadata, not as a chunk.
+        """
         # Assess epistemic status before summarizing
         assessment = assess_chunk_group(chunks)
 
@@ -306,37 +325,20 @@ Write a comprehensive summary (2-4 paragraphs) that captures the key information
         messages = [{"role": "user", "content": llm_prompt}]
         summary_content = self._chat.chat(messages)
 
-        chunk_id = hashlib.sha256(f"hierarchy:simple:{group_key}".encode()).hexdigest()[:16]
-
-        # Include epistemic metadata
-        metadata = {
-            "hierarchy_level": 1,
-            "hierarchy_rule": "_simple",
-            "hierarchy_group": group_key,
-            self._config.group_by: group_key,
-            "source_chunk_count": len(chunks),
-            "is_hierarchy_summary": True,
-        }
-        metadata.update(assessment.to_metadata())
-
-        return (
-            Chunk(
-                id=f"hierarchy_l1:{chunk_id}",
-                doc_id="hierarchy:simple",
-                content=summary_content,
-                chunk_index=0,
-                metadata=metadata,
-            ),
-            assessment,
-        )
+        return (summary_content, assessment)
 
     def _generate_simple_corpus_summary(
         self,
-        level1_chunks: List[Chunk],
+        level1_summaries: List[str],
+        group_keys: List[str],
         group_assessments: List[EpistemicAssessment],
     ) -> Chunk | None:
-        """Generate a level-2 corpus summary in simple mode with epistemic awareness."""
-        if not level1_chunks:
+        """Generate a level-2 corpus summary in simple mode with epistemic awareness.
+
+        This is the ONLY separate chunk created by the hierarchy enricher.
+        L1 summaries are passed as strings (they're stored as metadata on original chunks).
+        """
+        if not level1_summaries:
             return None
 
         # Build epistemic-aware prompt based on group assessments
@@ -347,15 +349,14 @@ Write a comprehensive summary (2-4 paragraphs) that captures the key information
 
         # Build context from level-1 summaries
         context_parts = []
-        for chunk in level1_chunks:
-            group_key = chunk.metadata.get("hierarchy_group", "unknown")
-            context_parts.append(f"## {group_key}\n{chunk.content}")
+        for group_key, summary in zip(group_keys, level1_summaries):
+            context_parts.append(f"## {group_key}\n{summary}")
 
         context = "\n\n".join(context_parts)
 
         llm_prompt = f"""You are creating a corpus-level overview for a knowledge base.
 
-GROUPS: {len(level1_chunks)} summaries
+GROUPS: {len(level1_summaries)} summaries
 
 {effective_prompt}
 
@@ -400,7 +401,7 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
                 "hierarchy_rule": "_simple",
                 "is_hierarchy_summary": True,
                 "is_corpus_summary": True,
-                "source_group_count": len(level1_chunks),
+                "source_group_count": len(level1_summaries),
                 "epistemic_groups_with_conflicts": groups_with_conflicts,
                 "epistemic_conflict_topics": list(all_conflict_topics),
                 "epistemic_agreement_ratio": round(avg_agreement, 2),
@@ -412,15 +413,19 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
         self,
         rule: HierarchyRule,
         chunks: List[Chunk],
-    ) -> List[Chunk]:
-        """Process a single hierarchy rule with epistemic awareness."""
+    ) -> Chunk | None:
+        """Process a single hierarchy rule with epistemic awareness.
+
+        L1 summaries are stored as metadata on original chunks.
+        Only returns the L2 corpus summary chunk.
+        """
         # Step 1: Filter chunks by path patterns
         matcher = ChunkMatcher(rule.paths)
         filtered = matcher.filter_chunks(chunks)
 
         if not filtered:
             logger.info(f"[HIERARCHY] No chunks matched patterns for rule '{rule.name}'")
-            return []
+            return None
 
         logger.info(f"[HIERARCHY] Rule '{rule.name}': {len(filtered)}/{len(chunks)} chunks matched")
 
@@ -428,43 +433,54 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
         grouper = ChunkGrouper(rule.group_by)
         groups = grouper.group(filtered)
 
-        # Step 3: Generate level-1 summaries for each group, tracking assessments
-        level1_chunks: List[Chunk] = []
+        # Step 3: Generate level-1 summaries for each group, storing as metadata
+        level1_summaries: List[str] = []
         group_assessments: List[EpistemicAssessment] = []
+        group_keys: List[str] = []
 
         for group_key, group_chunks in groups.items():
             if group_key == "_ungrouped":
                 logger.debug(f"[HIERARCHY] Skipping _ungrouped for rule '{rule.name}'")
                 continue
 
-            summary_chunk, assessment = self._generate_group_summary(
+            summary_content, assessment = self._generate_group_summary(
                 rule=rule,
                 group_key=group_key,
                 chunks=group_chunks,
             )
-            level1_chunks.append(summary_chunk)
+
+            # Store L1 summary as metadata on each chunk in this group
+            for chunk in group_chunks:
+                chunk.metadata["hierarchy_summary"] = summary_content
+                chunk.metadata["hierarchy_group"] = group_key
+                chunk.metadata["hierarchy_rule"] = rule.name
+                chunk.metadata.update(assessment.to_metadata())
+
+            level1_summaries.append(summary_content)
             group_assessments.append(assessment)
+            group_keys.append(group_key)
 
         # Step 4: Generate level-2 corpus summary with epistemic context
         level2_chunk = self._generate_corpus_summary(
             rule=rule,
-            level1_chunks=level1_chunks,
+            level1_summaries=level1_summaries,
+            group_keys=group_keys,
             group_assessments=group_assessments,
         )
 
-        result = level1_chunks
-        if level2_chunk:
-            result.append(level2_chunk)
-
-        return result
+        return level2_chunk
 
     def _generate_group_summary(
         self,
         rule: HierarchyRule,
         group_key: str,
         chunks: List[Chunk],
-    ) -> tuple[Chunk, EpistemicAssessment]:
-        """Generate a level-1 summary for a group of chunks with epistemic awareness."""
+    ) -> tuple[str, EpistemicAssessment]:
+        """Generate a level-1 summary for a group of chunks with epistemic awareness.
+
+        Returns:
+            Tuple of (summary_content, assessment) - summary is stored as metadata, not as a chunk.
+        """
         # Assess epistemic status before summarizing
         assessment = assess_chunk_group(chunks)
 
@@ -514,38 +530,21 @@ Write a comprehensive summary (2-4 paragraphs) that captures the key information
         messages = [{"role": "user", "content": prompt}]
         summary_content = self._chat.chat(messages)
 
-        # Create summary chunk with epistemic metadata
-        chunk_id = hashlib.sha256(f"hierarchy:{rule.name}:{group_key}".encode()).hexdigest()[:16]
-
-        metadata = {
-            "hierarchy_level": 1,
-            "hierarchy_rule": rule.name,
-            "hierarchy_group": group_key,
-            rule.group_by: group_key,
-            "source_chunk_count": len(chunks),
-            "is_hierarchy_summary": True,
-        }
-        metadata.update(assessment.to_metadata())
-
-        return (
-            Chunk(
-                id=f"hierarchy_l1:{chunk_id}",
-                doc_id=f"hierarchy:{rule.name}",
-                content=summary_content,
-                chunk_index=0,
-                metadata=metadata,
-            ),
-            assessment,
-        )
+        return (summary_content, assessment)
 
     def _generate_corpus_summary(
         self,
         rule: HierarchyRule,
-        level1_chunks: List[Chunk],
+        level1_summaries: List[str],
+        group_keys: List[str],
         group_assessments: List[EpistemicAssessment],
     ) -> Chunk | None:
-        """Generate a level-2 corpus summary from level-1 summaries with epistemic awareness."""
-        if not level1_chunks:
+        """Generate a level-2 corpus summary from level-1 summaries with epistemic awareness.
+
+        This is the ONLY separate chunk created by the hierarchy enricher for this rule.
+        L1 summaries are passed as strings (they're stored as metadata on original chunks).
+        """
+        if not level1_summaries:
             return None
 
         # Build epistemic-aware prompt based on group assessments
@@ -560,16 +559,15 @@ Write a comprehensive summary (2-4 paragraphs) that captures the key information
 
         # Build context from level-1 summaries
         context_parts = []
-        for chunk in level1_chunks:
-            group_key = chunk.metadata.get("hierarchy_group", "unknown")
-            context_parts.append(f"## {group_key}\n{chunk.content}")
+        for group_key, summary in zip(group_keys, level1_summaries):
+            context_parts.append(f"## {group_key}\n{summary}")
 
         context = "\n\n".join(context_parts)
 
         prompt = f"""You are creating a corpus-level overview for a knowledge base.
 
 RULE: {rule.name}
-GROUPS: {len(level1_chunks)} summaries
+GROUPS: {len(level1_summaries)} summaries
 
 {effective_prompt}
 
@@ -614,7 +612,7 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
                 "hierarchy_rule": rule.name,
                 "is_hierarchy_summary": True,
                 "is_corpus_summary": True,
-                "source_group_count": len(level1_chunks),
+                "source_group_count": len(level1_summaries),
                 "epistemic_groups_with_conflicts": groups_with_conflicts,
                 "epistemic_conflict_topics": list(all_conflict_topics),
                 "epistemic_agreement_ratio": round(avg_agreement, 2),
