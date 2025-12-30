@@ -13,7 +13,7 @@ from .common import DEFAULT_LAYOUT_EXCLUDES, REPO_ROOT, should_exclude_path
 def get_classes_for_file(path: Path) -> list[str]:
     """Extract class names from a Python file using AST."""
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except Exception:
         return []
 

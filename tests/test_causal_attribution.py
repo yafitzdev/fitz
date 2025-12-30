@@ -96,9 +96,6 @@ class TestBasicBehavior:
 class TestCausalQueryDetection:
     """Test detection of causal queries."""
 
-    @pytest.mark.xfail(
-        reason="Mock embedder has keyword overlap limitations. Works with real embedder."
-    )
     @pytest.mark.parametrize(
         "query",
         [
@@ -169,9 +166,6 @@ class TestCausalEvidenceDetection:
 
         assert result.allow_decisive_answer is True
 
-    @pytest.mark.xfail(
-        reason="Mock embedder has keyword overlap limitations. Works with real embedder."
-    )
     def test_denies_without_causal_markers(self, semantic_matcher):
         """Should deny when no causal language is present."""
         constraint = CausalAttributionConstraint(semantic_matcher=semantic_matcher)
@@ -187,9 +181,6 @@ class TestCausalEvidenceDetection:
         assert result.allow_decisive_answer is False
         assert "causal" in result.reason.lower()
 
-    @pytest.mark.xfail(
-        reason="Mock embedder has keyword overlap limitations. Works with real embedder."
-    )
     def test_signal_is_qualified_not_abstain(self, semantic_matcher):
         """Signal should be 'qualified' not 'abstain' (we have evidence, just not causal)."""
         constraint = CausalAttributionConstraint(semantic_matcher=semantic_matcher)
@@ -223,9 +214,6 @@ class TestEdgeCases:
 
         assert result.allow_decisive_answer is True
 
-    @pytest.mark.xfail(
-        reason="Mock embedder has keyword overlap limitations. Works with real embedder."
-    )
     def test_metadata_includes_chunk_counts(self, semantic_matcher):
         """Denial should include chunk count metadata."""
         constraint = CausalAttributionConstraint(semantic_matcher=semantic_matcher)

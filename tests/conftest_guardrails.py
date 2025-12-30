@@ -47,7 +47,7 @@ def create_deterministic_embedder(dimension: int = 384) -> Callable[[str], list[
     CAUSAL_EVIDENCE_CLUSTER = _make_cluster_vector("causal_evidence", 2)
     FACT_QUERY_CLUSTER = _make_cluster_vector("fact_query", 3)
     RESOLUTION_QUERY_CLUSTER = _make_cluster_vector("resolution_query", 4)
-    ASSERTION_CLUSTER = _make_cluster_vector("assertion", 5)
+    _ASSERTION_CLUSTER = _make_cluster_vector("assertion", 5)  # Reserved for future use
     # Opposition clusters
     SUCCESS_CLUSTER = _make_cluster_vector("success", 6)
     FAILURE_CLUSTER = _make_cluster_vector("failure", 7)
@@ -59,8 +59,12 @@ def create_deterministic_embedder(dimension: int = 384) -> Callable[[str], list[
     NEGATIVE_CLUSTER = _make_cluster_vector("negative", 13)
     NEUTRAL_CLUSTER = _make_cluster_vector("neutral", 14)
 
-    def _add_noise(vec: list[float], text: str, noise_level: float = 0.02) -> list[float]:
-        """Add text-specific noise to maintain uniqueness."""
+    def _add_noise(vec: list[float], text: str, noise_level: float = 0.005) -> list[float]:
+        """Add text-specific noise to maintain uniqueness.
+
+        Noise must be small enough that vectors from the same cluster
+        have cosine similarity > 0.70 (the threshold used in tests).
+        """
         h = hashlib.md5(text.encode()).hexdigest()
         result = []
         for i, v in enumerate(vec):
@@ -102,8 +106,9 @@ def create_deterministic_embedder(dimension: int = 384) -> Callable[[str], list[
         # Causal evidence markers (high priority for epistemic detection)
         causal_markers = [
             "because", "due to", "caused by", "led to", "result of",
-            "therefore", "thus", "hence", "consequence", "owing to",
-            "attributed", "triggered by"
+            "therefore", "thus", "hence", "consequence", "consequently",
+            "owing to", "attributed", "triggered by",
+            "the reason", "the cause", "reason is", "reason was",
         ]
         if any(m in text_lower for m in causal_markers):
             return _add_noise(CAUSAL_EVIDENCE_CLUSTER, text)
@@ -138,7 +143,8 @@ def create_deterministic_embedder(dimension: int = 384) -> Callable[[str], list[
 
         # Default: neutral cluster (don't map assertions to ASSERTION_CLUSTER)
         # This prevents chunks like "Helios was deprecated" from matching causal concepts
-        return _add_noise(NEUTRAL_CLUSTER, text, noise_level=0.05)
+        # Use slightly higher noise for neutral to ensure it doesn't accidentally match other clusters
+        return _add_noise(NEUTRAL_CLUSTER, text, noise_level=0.01)
 
     return embed
 

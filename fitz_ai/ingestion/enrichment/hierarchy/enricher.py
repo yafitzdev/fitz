@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, List, Protocol, runtime_checkable
 
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.core.conflicts import find_conflicts
+from fitz_ai.core.guardrails.semantic import SemanticMatcher
 from fitz_ai.ingestion.enrichment.config import (
     HierarchyConfig,
     HierarchyRule,
@@ -85,11 +86,20 @@ class EpistemicAssessment:
         }
 
 
-def assess_chunk_group(chunks: List[Chunk]) -> EpistemicAssessment:
+def assess_chunk_group(
+    chunks: List[Chunk],
+    semantic_matcher: SemanticMatcher | None = None,
+) -> EpistemicAssessment:
     """
     Assess the epistemic status of a chunk group before summarization.
 
-    Uses core/conflicts.py for conflict detection.
+    Args:
+        chunks: List of chunks to assess
+        semantic_matcher: Optional SemanticMatcher for semantic conflict detection.
+                         If not provided, falls back to legacy find_conflicts() stub.
+
+    Returns:
+        EpistemicAssessment with conflict and density information
     """
     if not chunks:
         return EpistemicAssessment(evidence_density="sparse", chunk_count=0)
@@ -97,8 +107,11 @@ def assess_chunk_group(chunks: List[Chunk]) -> EpistemicAssessment:
     chunk_count = len(chunks)
     total_chars = sum(len(c.content) for c in chunks)
 
-    # Find conflicts using core logic
-    conflicts = find_conflicts(chunks)
+    # Find conflicts using semantic matcher if available, otherwise stub
+    if semantic_matcher is not None:
+        conflicts = semantic_matcher.find_conflicts(chunks)
+    else:
+        conflicts = find_conflicts(chunks)
 
     # Calculate agreement ratio
     if chunk_count > 1 and conflicts:
@@ -154,6 +167,7 @@ class HierarchyEnricher:
         self,
         config: HierarchyConfig,
         chat_client: ChatClient,
+        semantic_matcher: SemanticMatcher | None = None,
     ):
         """
         Initialize the hierarchy enricher.
@@ -161,9 +175,12 @@ class HierarchyEnricher:
         Args:
             config: Hierarchy configuration with rules
             chat_client: LLM client for generating summaries
+            semantic_matcher: Optional SemanticMatcher for conflict detection.
+                             If not provided, conflicts won't be detected.
         """
         self._config = config
         self._chat = chat_client
+        self._semantic_matcher = semantic_matcher
 
     def enrich(self, chunks: List[Chunk]) -> List[Chunk]:
         """
@@ -282,7 +299,7 @@ class HierarchyEnricher:
             Tuple of (summary_content, assessment) - summary is stored as metadata, not as a chunk.
         """
         # Assess epistemic status before summarizing
-        assessment = assess_chunk_group(chunks)
+        assessment = assess_chunk_group(chunks, semantic_matcher=self._semantic_matcher)
 
         if assessment.has_conflicts:
             logger.info(
@@ -482,7 +499,7 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
             Tuple of (summary_content, assessment) - summary is stored as metadata, not as a chunk.
         """
         # Assess epistemic status before summarizing
-        assessment = assess_chunk_group(chunks)
+        assessment = assess_chunk_group(chunks, semantic_matcher=self._semantic_matcher)
 
         if assessment.has_conflicts:
             logger.info(

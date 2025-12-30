@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.ingestion.enrichment.config import HierarchyConfig
@@ -52,12 +51,15 @@ class TestEpistemicAssessment:
         assert assessment.chunk_count == 1
         assert assessment.evidence_density == "sparse"
 
-    @pytest.mark.xfail(
-        reason="assess_chunk_group requires SemanticMatcher for conflict detection. "
-        "Tested with real embedder in integration tests."
-    )
     def test_conflicting_classifications_detected(self):
         """Test that conflicting classifications are detected via the constraint plugin."""
+        from fitz_ai.core.guardrails import SemanticMatcher
+
+        from tests.conftest_guardrails import create_deterministic_embedder
+
+        embedder = create_deterministic_embedder()
+        semantic_matcher = SemanticMatcher(embedder=embedder)
+
         # Use the same conflict patterns that ConflictAwareConstraint detects
         chunks = [
             Chunk(
@@ -76,7 +78,7 @@ class TestEpistemicAssessment:
             ),
         ]
 
-        assessment = assess_chunk_group(chunks)
+        assessment = assess_chunk_group(chunks, semantic_matcher=semantic_matcher)
         assert assessment.has_conflicts
         assert assessment.agreement_ratio < 1.0
 
@@ -257,18 +259,25 @@ class TestHierarchyEnricherEpistemic:
         level2_chunks = [c for c in result if c.metadata.get("hierarchy_level") == 2]
         assert len(level2_chunks) == 1
 
-    @pytest.mark.xfail(
-        reason="HierarchyEnricher requires SemanticMatcher for conflict detection. "
-        "Tested with real embedder in integration tests."
-    )
     def test_conflict_detection_uses_constraint_plugin(self):
         """Test that conflict detection uses the existing ConflictAwareConstraint logic."""
+        from fitz_ai.core.guardrails import SemanticMatcher
+
+        from tests.conftest_guardrails import create_deterministic_embedder
+
         config = HierarchyConfig(enabled=True, group_by="source")
 
         mock_chat = MagicMock()
         mock_chat.chat.return_value = "Summary acknowledging conflicts."
 
-        enricher = HierarchyEnricher(config=config, chat_client=mock_chat)
+        embedder = create_deterministic_embedder()
+        semantic_matcher = SemanticMatcher(embedder=embedder)
+
+        enricher = HierarchyEnricher(
+            config=config,
+            chat_client=mock_chat,
+            semantic_matcher=semantic_matcher,
+        )
 
         # Create chunks with conflicting classifications (what ConflictAwareConstraint detects)
         chunks = [
@@ -290,13 +299,13 @@ class TestHierarchyEnricherEpistemic:
 
         result = enricher.enrich(chunks)
 
-        # Find the level-1 summary
-        level1_summaries = [c for c in result if c.metadata.get("hierarchy_level") == 1]
-        assert len(level1_summaries) == 1
+        # L1 summaries are now stored as metadata on original chunks (level 0)
+        level0_chunks = [c for c in result if c.metadata.get("hierarchy_level") == 0]
+        assert len(level0_chunks) == 2
 
-        summary = level1_summaries[0]
-        # Should detect the security vs operational conflict
-        assert summary.metadata.get("epistemic_has_conflicts") is True
+        # All original chunks should have the same L1 summary and detect conflict
+        for chunk in level0_chunks:
+            assert chunk.metadata.get("epistemic_has_conflicts") is True
 
     def test_corpus_summary_includes_epistemic_aggregates(self):
         """Test that corpus summary has aggregated epistemic metadata."""
@@ -362,18 +371,13 @@ class TestHierarchyEnricherEpistemic:
 class TestSingleSourceOfTruth:
     """Tests verifying that epistemic detection uses the existing constraint plugins."""
 
-    @pytest.mark.xfail(
-        reason="assess_chunk_group returns empty conflicts without embedder. "
-        "ConflictAwareConstraint uses SemanticMatcher. "
-        "See test_constraints.py for semantic conflict detection tests."
-    )
     def test_uses_conflict_aware_constraint_patterns(self):
         """Verify that the same patterns detected by ConflictAwareConstraint are detected here."""
         from fitz_ai.core.guardrails import ConflictAwareConstraint, SemanticMatcher
 
         from tests.conftest_guardrails import create_deterministic_embedder
 
-        # Create semantic matcher for constraint
+        # Create semantic matcher for both constraint and assessment
         embedder = create_deterministic_embedder()
         semantic_matcher = SemanticMatcher(embedder=embedder)
 
@@ -399,11 +403,10 @@ class TestSingleSourceOfTruth:
         constraint = ConflictAwareConstraint(semantic_matcher=semantic_matcher)
         constraint_result = constraint.apply("What is the status?", chunks)
 
-        # Check via epistemic assessment (uses stub find_conflicts, returns empty)
-        assessment = assess_chunk_group(chunks)
+        # Check via epistemic assessment with semantic matcher
+        assessment = assess_chunk_group(chunks, semantic_matcher=semantic_matcher)
 
         # Both should agree on whether there are conflicts
-        # Note: assess_chunk_group doesn't have embedder access, so it won't detect conflicts
         constraint_found_conflict = not constraint_result.allow_decisive_answer
         assessment_found_conflict = assessment.has_conflicts
 
