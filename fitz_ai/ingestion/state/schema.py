@@ -5,7 +5,7 @@ State schema for incremental ingestion.
 The state file (.fitz/ingest.json) tracks:
 - Which files have been ingested
 - Content hashes for change detection
-- Config IDs (chunker_id, parser_id, embedding_id) for re-chunking detection
+- Config IDs (chunker_id, parser_id, embedding_id, vector_db_id) for re-ingestion detection
 
 When any config ID changes, the file will be re-ingested on next run.
 """
@@ -35,6 +35,7 @@ class FileEntry(BaseModel):
     - chunker_id: Detects chunking config changes
     - parser_id: Detects parser config changes
     - embedding_id: Detects embedding config changes
+    - vector_db_id: Detects vector database changes
     - enricher_id: Detects enrichment config changes (optional)
     """
 
@@ -54,6 +55,10 @@ class FileEntry(BaseModel):
     parser_id: str = Field(..., description="Parser ID used (e.g., 'md.v1')")
     embedding_id: str = Field(
         ..., description="Embedding ID used (e.g., 'cohere:embed-english-v3.0')"
+    )
+    vector_db_id: Optional[str] = Field(
+        default=None,
+        description="Vector DB plugin used (e.g., 'qdrant', 'local_faiss')",
     )
     enricher_id: Optional[str] = Field(
         default=None,

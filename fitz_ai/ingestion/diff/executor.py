@@ -120,6 +120,7 @@ class DiffIngestExecutor:
             chunking_router=router,
             collection="my_collection",
             embedding_id="cohere:embed-english-v3.0",
+            vector_db_id="qdrant",
             enrichment_router=enrichment_router,  # Optional
         )
 
@@ -136,6 +137,7 @@ class DiffIngestExecutor:
         chunking_router: ChunkingRouter,
         collection: str,
         embedding_id: str,
+        vector_db_id: Optional[str] = None,
         parser_id_func: Optional[callable] = None,
         enrichment_pipeline: Optional["EnrichmentPipeline"] = None,
     ) -> None:
@@ -150,6 +152,7 @@ class DiffIngestExecutor:
             chunking_router: Router for file-type specific chunking.
             collection: Vector DB collection name.
             embedding_id: Current embedding configuration ID.
+            vector_db_id: Vector DB plugin name (e.g., "qdrant", "local_faiss").
             parser_id_func: Function to get parser_id for extension.
                            Defaults to "{ext}.v1" format.
             enrichment_pipeline: Optional unified enrichment pipeline.
@@ -162,6 +165,7 @@ class DiffIngestExecutor:
         self._router = chunking_router
         self._collection = collection
         self._embedding_id = embedding_id
+        self._vector_db_id = vector_db_id
         self._get_parser_id = parser_id_func or self._default_parser_id
         self._enrichment_pipeline = enrichment_pipeline
         self._summary: Optional[IngestSummary] = None
@@ -228,6 +232,7 @@ class DiffIngestExecutor:
             config_provider=self._router,
             parser_id_func=self._get_parser_id,
             embedding_id=self._embedding_id,
+            vector_db_id=self._vector_db_id,
             collection=self._collection,
         )
 
@@ -366,6 +371,7 @@ class DiffIngestExecutor:
                     parser_id=candidate.parser_id,
                     embedding_id=candidate.embedding_id,
                     enricher_id=self._enricher_id,
+                    vector_db_id=self._vector_db_id,
                     collection=self._collection,
                 )
             except Exception as e:
@@ -426,6 +432,7 @@ class DiffIngestExecutor:
                 parser_id=candidate.parser_id,
                 embedding_id=candidate.embedding_id,
                 enricher_id=self._enricher_id,
+                vector_db_id=self._vector_db_id,
                 collection=self._collection,
             )
 
@@ -643,6 +650,7 @@ def run_diff_ingest(
     chunking_router: ChunkingRouter,
     collection: str,
     embedding_id: str,
+    vector_db_id: Optional[str] = None,
     parser_id_func: Optional[callable] = None,
     enrichment_pipeline: Optional["EnrichmentPipeline"] = None,
     force: bool = False,
@@ -661,6 +669,7 @@ def run_diff_ingest(
         chunking_router: Router for file-type specific chunking.
         collection: Vector DB collection name.
         embedding_id: Current embedding configuration ID.
+        vector_db_id: Vector DB plugin name (e.g., "qdrant", "local_faiss").
         parser_id_func: Function to get parser_id for extension.
         enrichment_pipeline: Optional unified enrichment pipeline.
         force: If True, ingest everything regardless of state.
@@ -678,6 +687,7 @@ def run_diff_ingest(
         chunking_router=chunking_router,
         collection=collection,
         embedding_id=embedding_id,
+        vector_db_id=vector_db_id,
         parser_id_func=parser_id_func,
         enrichment_pipeline=enrichment_pipeline,
     )

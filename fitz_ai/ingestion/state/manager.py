@@ -167,6 +167,7 @@ class IngestStateManager:
         parser_id: str,
         embedding_id: str,
         enricher_id: Optional[str] = None,
+        vector_db_id: Optional[str] = None,
         collection: str = "default",
     ) -> None:
         """
@@ -185,6 +186,7 @@ class IngestStateManager:
             parser_id: Parser ID used (e.g., "md.v1").
             embedding_id: Embedding ID used (e.g., "cohere:embed-english-v3.0").
             enricher_id: Enricher ID used (e.g., "llm:gpt-4o-mini:v1"), None if not enriched.
+            vector_db_id: Vector DB plugin used (e.g., "qdrant", "local_faiss").
             collection: Collection the file was ingested into.
         """
         root_entry = self._ensure_root(root)
@@ -199,6 +201,7 @@ class IngestStateManager:
             chunker_id=chunker_id,
             parser_id=parser_id,
             embedding_id=embedding_id,
+            vector_db_id=vector_db_id,
             enricher_id=enricher_id,
             collection=collection,
         )

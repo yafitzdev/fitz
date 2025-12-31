@@ -74,6 +74,7 @@ class FileCandidate:
     parser_id: str  # Parser ID for this file type
     chunker_id: str  # Chunker ID for this file type
     embedding_id: str  # Embedding ID
+    vector_db_id: str | None = None  # Vector DB plugin name
 
     @classmethod
     def from_scanned(
@@ -82,6 +83,7 @@ class FileCandidate:
         parser_id: str,
         chunker_id: str,
         embedding_id: str,
+        vector_db_id: str | None = None,
     ) -> "FileCandidate":
         """Create from a ScannedFile with config IDs."""
         return cls(
@@ -94,6 +96,7 @@ class FileCandidate:
             parser_id=parser_id,
             chunker_id=chunker_id,
             embedding_id=embedding_id,
+            vector_db_id=vector_db_id,
         )
 
 
@@ -130,6 +133,7 @@ class ReingestReason:
     chunker_changed: bool = False
     parser_changed: bool = False
     embedding_changed: bool = False
+    vector_db_changed: bool = False
     collection_changed: bool = False
     is_new: bool = False
 
@@ -140,6 +144,7 @@ class ReingestReason:
             or self.chunker_changed
             or self.parser_changed
             or self.embedding_changed
+            or self.vector_db_changed
             or self.collection_changed
             or self.is_new
         )
@@ -156,6 +161,8 @@ class ReingestReason:
             reasons.append("parser_changed")
         if self.embedding_changed:
             reasons.append("embedding_changed")
+        if self.vector_db_changed:
+            reasons.append("vector_db_changed")
         if self.collection_changed:
             reasons.append("collection_changed")
         return ", ".join(reasons) if reasons else "none"
@@ -168,7 +175,7 @@ class Differ:
     The diff algorithm checks for:
     1. New files (not in state)
     2. Content changes (content_hash differs)
-    3. Config changes (chunker_id, parser_id, embedding_id, or collection differs)
+    3. Config changes (chunker_id, parser_id, embedding_id, vector_db_id, or collection differs)
 
     Usage:
         differ = Differ(
@@ -176,6 +183,7 @@ class Differ:
             config_provider=chunking_router,
             parser_id_func=lambda ext: f"{ext.lstrip('.')}.v1",
             embedding_id="cohere:embed-english-v3.0",
+            vector_db_id="qdrant",
             collection="my_collection",
         )
         result = differ.compute_diff(scan_result.files)
@@ -187,6 +195,7 @@ class Differ:
         config_provider: ConfigProvider,
         parser_id_func: callable,
         embedding_id: str,
+        vector_db_id: str | None = None,
         collection: str = "default",
     ) -> None:
         """
@@ -197,12 +206,14 @@ class Differ:
             config_provider: Provider for current config IDs (e.g., ChunkingRouter).
             parser_id_func: Function to get parser_id for an extension.
             embedding_id: Current embedding configuration ID.
+            vector_db_id: Current vector DB plugin name (e.g., "qdrant", "local_faiss").
             collection: Target collection for ingestion.
         """
         self._state = state_reader
         self._config = config_provider
         self._get_parser_id = parser_id_func
         self._embedding_id = embedding_id
+        self._vector_db_id = vector_db_id
         self._collection = collection
 
     def _check_reingest_reason(
@@ -248,6 +259,12 @@ class Differ:
         if existing_embedding_id != self._embedding_id:
             reason.embedding_changed = True
 
+        # Check vector DB change (different DB = re-ingest, data is elsewhere)
+        if self._vector_db_id is not None:
+            existing_vector_db_id = getattr(existing, "vector_db_id", None)
+            if existing_vector_db_id != self._vector_db_id:
+                reason.vector_db_changed = True
+
         # Check collection change (different collection = re-ingest)
         existing_collection = getattr(existing, "collection", "default")
         if existing_collection != self._collection:
@@ -291,6 +308,7 @@ class Differ:
                 parser_id=current_parser_id,
                 chunker_id=current_chunker_id,
                 embedding_id=self._embedding_id,
+                vector_db_id=self._vector_db_id,
             )
 
             if force:
@@ -325,6 +343,7 @@ def compute_diff(
     embedding_id: str,
     force: bool = False,
     root: str | None = None,
+    vector_db_id: str | None = None,
     collection: str = "default",
 ) -> DiffResult:
     """
@@ -338,6 +357,7 @@ def compute_diff(
         embedding_id: Current embedding configuration ID.
         force: If True, ingest all files regardless of state.
         root: Root path for deletion detection.
+        vector_db_id: Current vector DB plugin name (e.g., "qdrant", "local_faiss").
         collection: Target collection for ingestion.
 
     Returns:
@@ -348,6 +368,7 @@ def compute_diff(
         config_provider=config_provider,
         parser_id_func=parser_id_func,
         embedding_id=embedding_id,
+        vector_db_id=vector_db_id,
         collection=collection,
     )
     return differ.compute_diff(scanned_files, force=force, root=root)
