@@ -44,7 +44,9 @@ def _show_config_summary(config: dict) -> None:
         # Chat
         chat = config.get("chat", {})
         chat_plugin = chat.get("plugin_name", "?")
-        chat_model = chat.get("kwargs", {}).get("model", "")
+        chat_kwargs = chat.get("kwargs", {})
+        # Support both tiered models (models.smart) and single model
+        chat_model = chat_kwargs.get("models", {}).get("smart", "") or chat_kwargs.get("model", "")
         table.add_row("Chat", chat_plugin, chat_model)
 
         # Embedding
@@ -90,7 +92,10 @@ def _show_config_summary(config: dict) -> None:
         print("-" * 40)
 
         chat = config.get("chat", {})
-        print(f"  Chat:      {chat.get('plugin_name', '?')}")
+        chat_kwargs = chat.get("kwargs", {})
+        chat_model = chat_kwargs.get("models", {}).get("smart", "") or chat_kwargs.get("model", "")
+        chat_detail = f" ({chat_model})" if chat_model else ""
+        print(f"  Chat:      {chat.get('plugin_name', '?')}{chat_detail}")
 
         emb = config.get("embedding", {})
         print(f"  Embedding: {emb.get('plugin_name', '?')}")
@@ -174,6 +179,17 @@ def _open_in_editor(config_path: Path) -> None:
 # =============================================================================
 
 
+def _get_config_path() -> Path:
+    """Get config path, checking engine-specific first, then global."""
+    # Check engine-specific config first (created by quickstart)
+    engine_config = FitzPaths.engine_config("fitz_rag")
+    if engine_config.exists():
+        return engine_config
+
+    # Fall back to global config
+    return FitzPaths.config()
+
+
 def command(
     show_path: bool = typer.Option(
         False,
@@ -216,7 +232,7 @@ def command(
     # Get config path
     # =========================================================================
 
-    config_path = FitzPaths.config()
+    config_path = _get_config_path()
 
     # =========================================================================
     # Path only mode
@@ -226,8 +242,8 @@ def command(
         if config_path.exists():
             print(str(config_path))
         else:
-            ui.error(f"Config not found: {config_path}")
-            ui.info("Run 'fitz init' to create one.")
+            ui.error("Config not found.")
+            ui.info("Run 'fitz quickstart' or 'fitz init' to create one.")
             raise typer.Exit(1)
         return
 
@@ -238,7 +254,7 @@ def command(
     if edit:
         if not config_path.exists():
             ui.error("No config file to edit.")
-            ui.info("Run 'fitz init' first.")
+            ui.info("Run 'fitz quickstart' or 'fitz init' first.")
             raise typer.Exit(1)
 
         _open_in_editor(config_path)
@@ -251,8 +267,9 @@ def command(
     if not config_path.exists():
         ui.error("No configuration found.")
         print()
-        ui.info(f"Expected: {config_path}")
-        ui.info("Run 'fitz init' to create a configuration.")
+        ui.info(f"Looked for: {FitzPaths.engine_config('fitz_rag')}")
+        ui.info(f"        or: {FitzPaths.config()}")
+        ui.info("Run 'fitz quickstart' or 'fitz init' to create a configuration.")
         raise typer.Exit(1)
 
     try:
