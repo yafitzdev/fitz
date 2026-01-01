@@ -18,7 +18,6 @@ from fitz_ai.cli.ui import RICH, console, display_sources, ui
 from fitz_ai.cli.utils import get_collections, load_fitz_rag_config
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.logging.logger import get_logger
-from fitz_ai.runtime import get_default_engine, get_engine_registry, list_engines
 
 logger = get_logger(__name__)
 
@@ -122,18 +121,17 @@ def _display_assistant_message(text: str) -> None:
         print(f"\n\nAssistant: {text}")
 
 
-def _display_welcome(collection: str, engine: str) -> None:
+def _display_welcome(collection: str) -> None:
     """Display welcome message."""
     if RICH:
         console.print(
-            f"\n[bold green]Chat started[/bold green] with collection: [cyan]{collection}[/cyan] "
-            f"(engine: [yellow]{engine}[/yellow])"
+            f"\n[bold green]Chat started[/bold green] with collection: [cyan]{collection}[/cyan]"
         )
         console.print(
             "[dim]Type 'exit' or 'quit' to end the conversation. Press Ctrl+C to interrupt.[/dim]\n"
         )
     else:
-        print(f"\nChat started with collection: {collection} (engine: {engine})")
+        print(f"\nChat started with collection: {collection}")
         print("Type 'exit' or 'quit' to end the conversation. Press Ctrl+C to interrupt.\n")
 
 
@@ -157,12 +155,6 @@ def command(
         "-c",
         help="Collection to chat with (will prompt if not specified).",
     ),
-    engine: Optional[str] = typer.Option(
-        None,
-        "--engine",
-        "-e",
-        help="Engine to use. Will prompt if not specified.",
-    ),
 ) -> None:
     """
     Interactive chat with your knowledge base.
@@ -174,73 +166,13 @@ def command(
     Examples:
         fitz chat                     # Interactive mode
         fitz chat -c my_collection    # Specify collection
-        fitz chat --engine clara      # Use different engine (not yet supported)
     """
-    # =========================================================================
-    # Engine selection
-    # =========================================================================
-
-    available_engines = list_engines()
-    registry = get_engine_registry()
-
-    if engine is None:
-        # Prompt for engine selection
-        ui.header("Fitz Chat", "Conversational RAG")
-        print()
-
-        # Build choices with descriptions
-        engine_info = registry.list_with_descriptions()
-        choices = []
-        for name in available_engines:
-            desc = engine_info.get(name, "")
-            if len(desc) > 60:
-                desc = desc[:57] + "..."
-            choices.append(f"{name} - {desc}" if desc else name)
-
-        # Get default engine from config (prompt_numbered_choice puts default at position 1)
-        default_engine_name = get_default_engine()
-        default_choice = next((c for c in choices if c.startswith(default_engine_name)), choices[0])
-        selected = ui.prompt_numbered_choice("Engine", choices, default_choice)
-        engine = selected.split(" - ")[0]
-        print()
-    elif engine not in available_engines:
-        ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(available_engines)}")
-        raise typer.Exit(1)
-
-    # =========================================================================
-    # Header (with engine)
-    # =========================================================================
-
-    ui.header("Fitz Chat", f"Conversational RAG (engine: {engine})")
-
-    # =========================================================================
-    # Capabilities-based routing
-    # =========================================================================
-
-    caps = registry.get_capabilities(engine)
-
-    # Check if engine supports chat
-    if not caps.supports_chat:
-        ui.warning(f"Engine '{engine}' does not support multi-turn chat.")
-        if caps.requires_documents_at_query:
-            ui.info(
-                f"Use 'fitz quickstart <folder> \"question\" --engine {engine}' for one-off queries."
-            )
-        else:
-            ui.info(f"Use 'fitz query --engine {engine}' for single queries.")
-        raise typer.Exit(0)
-
-    # Engines with collection support use collection-based chat
-    if caps.supports_collections:
-        _run_collection_chat(collection, engine)
-    else:
-        ui.warning(f"Chat for engine '{engine}' requires collections which it doesn't support.")
-        ui.info(f"Use 'fitz query --engine {engine}' for single queries.")
-        raise typer.Exit(0)
+    ui.header("Fitz Chat", "Conversational RAG")
+    _run_collection_chat(collection)
 
 
-def _run_collection_chat(collection: Optional[str], engine_name: str) -> None:
-    """Run chat using an engine with collection support."""
+def _run_collection_chat(collection: Optional[str]) -> None:
+    """Run chat using fitz_rag engine."""
     from fitz_ai.engines.fitz_rag.pipeline.engine import RAGPipeline
 
     # Load config
@@ -280,7 +212,7 @@ def _run_collection_chat(collection: Optional[str], engine_name: str) -> None:
         raise typer.Exit(1)
 
     # Chat loop
-    _display_welcome(selected_collection, engine_name)
+    _display_welcome(selected_collection)
 
     history: List[Dict[str, str]] = []
 
