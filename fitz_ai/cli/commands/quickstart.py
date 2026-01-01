@@ -5,13 +5,12 @@ Quickstart command - Zero-friction RAG in one command.
 Usage:
     fitz quickstart                                    # Interactive prompts
     fitz quickstart ./docs "What is the refund policy?" # Direct
-    fitz quickstart ./docs "question" --engine clara   # Use CLaRa engine
 
 This command is a thin wrapper that:
-1. Prompts for API key if not set (fitz_rag only)
+1. Prompts for API key if not set
 2. Creates config file if not exists (like silent `fitz init -y`)
-3. Ingests documents (calls existing ingest logic or CLaRa compression)
-4. Runs query (calls existing query logic)
+3. Ingests documents into FAISS
+4. Runs query
 
 No separate code path - just sugar on top of the normal flow.
 """
@@ -25,10 +24,8 @@ from typing import List, Optional
 import typer
 
 from fitz_ai.cli.ui import display_answer, ui
-from fitz_ai.core import Query
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
-from fitz_ai.runtime import get_default_engine, get_engine_registry, list_engines
 
 logger = get_logger(__name__)
 
@@ -51,13 +48,7 @@ def command(
         "quickstart",
         "--collection",
         "-c",
-        help="Collection name for vector storage (fitz_rag only)",
-    ),
-    engine: Optional[str] = typer.Option(
-        None,
-        "--engine",
-        "-e",
-        help="Engine to use. Will prompt if not specified.",
+        help="Collection name for vector storage",
     ),
     verbose: bool = typer.Option(
         False,
@@ -75,39 +66,15 @@ def command(
         fitz quickstart                                      # Interactive
         fitz quickstart ./docs "What is the refund policy?"  # Direct
         fitz quickstart ./contracts "What are the payment terms?" -v
-        fitz quickstart ./docs "question" --engine clara     # Use CLaRa
     """
-    # =========================================================================
-    # Engine selection
-    # =========================================================================
-
-    available_engines = list_engines()
-    registry = get_engine_registry()
-
-    if engine is None:
-        # Prompt for engine selection with cards
-        ui.header("Fitz Quickstart", "Zero-friction RAG")
-        print()
-
-        engine_descriptions = registry.list_with_descriptions()
-        default_engine_name = get_default_engine()
-        engine = ui.prompt_engine_selection(
-            engines=available_engines,
-            descriptions=engine_descriptions,
-            default=default_engine_name,
-        )
-        print()
-    elif engine not in available_engines:
-        ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(available_engines)}")
-        raise typer.Exit(1)
-    else:
-        ui.header("Fitz Quickstart", f"Zero-friction RAG (engine: {engine})")
+    ui.header("Fitz Quickstart", "Zero-friction RAG")
 
     # =========================================================================
     # Prompt for source if not provided
     # =========================================================================
 
     if source is None:
+        print()
         source = ui.prompt_path("Path to documents", ".")
 
     # Validate source exists
@@ -127,128 +94,26 @@ def command(
         raise typer.Exit(1)
 
     # =========================================================================
-    # Capabilities-based routing
+    # Run quickstart with fitz_rag + FAISS
     # =========================================================================
 
-    registry = get_engine_registry()
-    caps = registry.get_capabilities(engine)
-
-    # Engines with collection support use the full ingest + query workflow
-    if caps.supports_collections:
-        _run_collection_quickstart(source, question, collection, engine, caps, verbose)
-    # Engines that need documents at query time use direct document loading
-    elif caps.requires_documents_at_query:
-        _run_document_loading_quickstart(source, question, engine, verbose)
-    else:
-        ui.error(f"Quickstart not supported for engine: {engine}")
-        raise typer.Exit(1)
+    _run_quickstart(source, question, collection, verbose)
 
 
 # =============================================================================
-# Document-Loading Quickstart (for engines that need docs at query time)
+# Quickstart Implementation
 # =============================================================================
 
 
-def _run_document_loading_quickstart(
-    source: Path, question: str, engine_name: str, verbose: bool
-) -> None:
-    """Run quickstart for engines that load documents directly (no persistent storage)."""
-    from fitz_ai.runtime import create_engine
-
-    # Step 1: Read documents
-    ui.step(1, 3, f"Reading documents from {source}...")
-
-    try:
-        doc_texts, doc_ids = _read_documents_as_text(source, verbose)
-        ui.success(f"Read {len(doc_texts)} documents")
-    except Exception as e:
-        ui.error(f"Failed to read documents: {e}")
-        raise typer.Exit(1)
-
-    # Step 2: Load engine (this may take a minute for local models)
-    ui.step(2, 3, f"Loading {engine_name} engine...")
-
-    try:
-        engine_instance = create_engine(engine_name)
-        ui.success(f"{engine_name} engine loaded")
-    except Exception as e:
-        ui.error(f"Failed to load engine: {e}")
-        if verbose:
-            import traceback
-
-            traceback.print_exc()
-        raise typer.Exit(1)
-
-    # Add documents with their IDs
-    if verbose:
-        ui.info(f"Adding documents to {engine_name}...")
-    engine_instance.add_documents(doc_texts, doc_ids=doc_ids)
-
-    # Step 3: Query
-    ui.step(3, 3, "Generating answer...")
-
-    try:
-        query = Query(text=question)
-        answer = engine_instance.answer(query)
-    except Exception as e:
-        ui.error(f"Query failed: {e}")
-        if verbose:
-            import traceback
-
-            traceback.print_exc()
-        raise typer.Exit(1)
-
-    # Display answer
-    display_answer(answer, show_sources=True)
-
-    # Next steps
-    ui.info(f"{engine_name} processes documents in-memory (no persistent storage).")
-    ui.info("For multiple queries, use the Python API to keep the engine loaded.")
-
-
-def _read_documents_as_text(source: Path, verbose: bool = False) -> tuple[List[str], List[str]]:
-    """Read documents from source and return as list of text strings and doc IDs."""
-    from fitz_ai.ingestion.reader.engine import IngestionEngine
-    from fitz_ai.ingestion.reader.registry import get_ingest_plugin
-
-    IngestPluginCls = get_ingest_plugin("local")
-    ingest_plugin = IngestPluginCls()
-    ingest_engine = IngestionEngine(plugin=ingest_plugin, kwargs={})
-    raw_docs = list(ingest_engine.run(str(source)))
-
-    if not raw_docs:
-        raise ValueError(f"No documents found in {source}")
-
-    if verbose:
-        ui.info(f"Found {len(raw_docs)} documents")
-
-    # Extract text and IDs from documents
-    doc_texts = []
-    doc_ids = []
-    for doc in raw_docs:
-        doc_texts.append(doc.content)
-        doc_ids.append(str(doc.path))
-
-    return doc_texts, doc_ids
-
-
-# =============================================================================
-# Collection-Based Quickstart (for engines with persistent storage)
-# =============================================================================
-
-
-def _run_collection_quickstart(
-    source: Path, question: str, collection: str, engine_name: str, caps, verbose: bool
-) -> None:
-    """Run quickstart for engines with collection/persistent storage support."""
+def _run_quickstart(source: Path, question: str, collection: str, verbose: bool) -> None:
+    """Run quickstart with fitz_rag engine and FAISS."""
     # =========================================================================
-    # Step 1: Ensure API Key (if required by engine)
+    # Step 1: Ensure API Key
     # =========================================================================
 
-    if caps.requires_api_key:
-        api_key = _ensure_api_key(caps.api_key_env_var)
-        if not api_key:
-            raise typer.Exit(1)
+    api_key = _ensure_api_key()
+    if not api_key:
+        raise typer.Exit(1)
 
     # =========================================================================
     # Step 2: Ensure Config Exists (silent fitz init)
@@ -280,7 +145,8 @@ def _run_collection_quickstart(
             collection=collection,
             verbose=verbose,
         )
-        ui.success(f"Ingested {stats['documents']} documents ({stats['chunks']} chunks)")
+        hierarchy_info = f", {stats['hierarchy_summaries']} summaries" if stats.get('hierarchy_summaries') else ""
+        ui.success(f"Ingested {stats['documents']} documents ({stats['chunks']} chunks{hierarchy_info})")
 
     except Exception as e:
         ui.error(f"Ingestion failed: {e}")
@@ -332,38 +198,31 @@ def _run_collection_quickstart(
 # =============================================================================
 
 
-def _ensure_api_key(env_var: Optional[str] = None) -> Optional[str]:
+def _ensure_api_key() -> Optional[str]:
     """
-    Check for API key, prompt if missing.
-
-    Args:
-        env_var: Environment variable name (defaults to COHERE_API_KEY)
+    Check for Cohere API key, prompt if missing.
 
     Returns the API key or None if user declined.
     """
-    env_var = env_var or "COHERE_API_KEY"
-    api_key = os.getenv(env_var)
+    api_key = os.getenv("COHERE_API_KEY")
 
     if api_key:
         masked = f"{api_key[:8]}..." if len(api_key) > 8 else "***"
-        ui.success(f"Using API key ({env_var}): {masked}")
+        ui.success(f"Using API key (COHERE_API_KEY): {masked}")
         return api_key
 
     # No key found - prompt user
     print()
-    ui.warning(f"No API key found ({env_var})")
+    ui.warning("No API key found (COHERE_API_KEY)")
     print()
-    if env_var == "COHERE_API_KEY":
-        print("  Fitz needs an API key for embeddings and chat.")
-        print("  Get a free key at: https://dashboard.cohere.com/api-keys")
-        print()
-        print("  It takes 30 seconds and no credit card is required.")
-    else:
-        print(f"  Please set the {env_var} environment variable.")
+    print("  Fitz needs an API key for embeddings and chat.")
+    print("  Get a free key at: https://dashboard.cohere.com/api-keys")
+    print()
+    print("  It takes 30 seconds and no credit card is required.")
     print()
 
     try:
-        api_key = typer.prompt(f"Paste your API key ({env_var})")
+        api_key = typer.prompt("Paste your API key (COHERE_API_KEY)")
     except typer.Abort:
         return None
 
@@ -372,23 +231,23 @@ def _ensure_api_key(env_var: Optional[str] = None) -> Optional[str]:
         return None
 
     # Set for this session
-    os.environ[env_var] = api_key
+    os.environ["COHERE_API_KEY"] = api_key
 
     # Offer to save
     print()
     save = typer.confirm("Save to shell config for future sessions?", default=True)
 
     if save:
-        _save_api_key_to_shell(api_key, env_var)
+        _save_api_key_to_shell(api_key)
     else:
         ui.info("To set permanently, add to your shell config:")
-        ui.info(f'  export {env_var}="{api_key}"')
+        ui.info(f'  export COHERE_API_KEY="{api_key}"')
 
     print()
     return api_key
 
 
-def _save_api_key_to_shell(api_key: str, env_var: str = "COHERE_API_KEY") -> None:
+def _save_api_key_to_shell(api_key: str) -> None:
     """Save API key to user's shell config file."""
     home = Path.home()
 
@@ -400,13 +259,13 @@ def _save_api_key_to_shell(api_key: str, env_var: str = "COHERE_API_KEY") -> Non
             content = rc_file.read_text()
 
             # Check if already present
-            if env_var in content:
-                ui.info(f"{env_var} already in {rc_file.name}")
+            if "COHERE_API_KEY" in content:
+                ui.info(f"COHERE_API_KEY already in {rc_file.name}")
                 return
 
             # Append to file
             with open(rc_file, "a") as f:
-                f.write(f'\n# Added by fitz quickstart\nexport {env_var}="{api_key}"\n')
+                f.write(f'\n# Added by fitz quickstart\nexport COHERE_API_KEY="{api_key}"\n')
 
             ui.success(f"Saved to ~/{rc_file.name}")
             ui.info(f"Run `source ~/{rc_file.name}` or restart your terminal")
@@ -415,7 +274,7 @@ def _save_api_key_to_shell(api_key: str, env_var: str = "COHERE_API_KEY") -> Non
     # No rc file found - create .bashrc
     bashrc = home / ".bashrc"
     with open(bashrc, "w") as f:
-        f.write(f'# Created by fitz quickstart\nexport {env_var}="{api_key}"\n')
+        f.write(f'# Created by fitz quickstart\nexport COHERE_API_KEY="{api_key}"\n')
 
     ui.success("Created ~/.bashrc with API key")
 
@@ -497,9 +356,9 @@ def _run_ingestion(
     verbose: bool = False,
 ) -> dict:
     """
-    Run document ingestion using the existing ingest pipeline.
+    Run document ingestion with hierarchical summaries.
 
-    Returns dict with 'documents' and 'chunks' counts.
+    Returns dict with 'documents', 'chunks', and 'hierarchy_summaries' counts.
     """
     from fitz_ai.core.config import load_config_dict
     from fitz_ai.engines.fitz_rag.config import (
@@ -508,6 +367,8 @@ def _run_ingestion(
     )
     from fitz_ai.engines.fitz_rag.config import load_config_dict as load_default_config_dict
     from fitz_ai.ingestion.chunking.engine import ChunkingEngine
+    from fitz_ai.ingestion.enrichment.config import HierarchyConfig
+    from fitz_ai.ingestion.enrichment.hierarchy.enricher import HierarchyEnricher
     from fitz_ai.ingestion.reader.engine import IngestionEngine
     from fitz_ai.ingestion.reader.registry import get_ingest_plugin
     from fitz_ai.llm.registry import get_llm_plugin
@@ -521,6 +382,7 @@ def _run_ingestion(
     # Get plugin configs
     embedding_config = config.get("embedding", {})
     vector_db_config = config.get("vector_db", {})
+    chat_config = config.get("chat", {})
 
     # Step 1: Read documents
     if verbose:
@@ -583,7 +445,31 @@ def _run_ingestion(
     if verbose:
         ui.info(f"Created {len(chunks)} chunks")
 
-    # Step 3: Embed chunks
+    # Step 3: Hierarchical enrichment (group summaries + corpus summary)
+    if verbose:
+        ui.info("Generating hierarchical summaries...")
+
+    # Get chat client for summarization (use fast tier)
+    chat_client = get_llm_plugin(
+        plugin_type="chat",
+        plugin_name=chat_config.get("plugin_name", "cohere"),
+        tier="fast",
+        **chat_config.get("kwargs", {}),
+    )
+
+    # Create hierarchy enricher with simple mode defaults
+    hierarchy_config = HierarchyConfig(enabled=True, group_by="source")
+    hierarchy_enricher = HierarchyEnricher(config=hierarchy_config, chat_client=chat_client)
+
+    # Enrich chunks (adds L1 summaries as metadata, returns chunks + L2 corpus summary)
+    original_chunk_count = len(chunks)
+    chunks = hierarchy_enricher.enrich(chunks)
+    hierarchy_summaries = len(chunks) - original_chunk_count
+
+    if verbose:
+        ui.info(f"Generated {hierarchy_summaries} hierarchy summary chunks")
+
+    # Step 4: Embed chunks
     if verbose:
         ui.info("Generating embeddings...")
 
@@ -613,7 +499,8 @@ def _run_ingestion(
 
     return {
         "documents": len(raw_docs),
-        "chunks": len(chunks),
+        "chunks": original_chunk_count,
+        "hierarchy_summaries": hierarchy_summaries,
     }
 
 

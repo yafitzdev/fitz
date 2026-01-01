@@ -22,10 +22,15 @@ logger = get_logger(__name__)
 
 def _load_config() -> dict:
     """Load config or exit with helpful message."""
+    # Try engine-specific config first, then fall back to global
+    engine_config = FitzPaths.engine_config("fitz_rag")
+    if engine_config.exists():
+        return load_config_dict(engine_config)
+
     try:
         return load_config_dict(FitzPaths.config())
     except ConfigNotFoundError:
-        ui.error("No config found. Run 'fitz init' first.")
+        ui.error("No config found. Run 'fitz init' or 'fitz quickstart' first.")
         raise typer.Exit(1)
 
 

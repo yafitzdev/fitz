@@ -44,13 +44,12 @@ def quickstart(
     source: Optional[Path] = typer.Argument(None, help="Path to documents (file or directory)."),
     question: Optional[str] = typer.Argument(None, help="Question to ask about your documents."),
     collection: str = typer.Option("quickstart", "--collection", "-c", help="Collection name."),
-    engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed progress."),
 ) -> None:
     """One-command RAG: ingest docs and ask a question."""
     from fitz_ai.cli.commands import quickstart as mod
 
-    mod.command(source=source, question=question, collection=collection, engine=engine, verbose=verbose)
+    mod.command(source=source, question=question, collection=collection, verbose=verbose)
 
 
 @app.command("init")
@@ -95,12 +94,11 @@ def query(
 @app.command("chat")
 def chat(
     collection: Optional[str] = typer.Option(None, "--collection", "-c", help="Collection name."),
-    engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
 ) -> None:
     """Interactive chat with your knowledge base."""
     from fitz_ai.cli.commands import chat as mod
 
-    mod.command(collection=collection, engine=engine)
+    mod.command(collection=collection)
 
 
 @app.command("collections")
