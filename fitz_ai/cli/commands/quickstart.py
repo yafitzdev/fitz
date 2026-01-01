@@ -60,12 +60,9 @@ def command(
     """
     One-command RAG: ingest docs and ask a question.
 
-    This command sets up everything automatically on first run.
-
     Examples:
         fitz quickstart                                      # Interactive
         fitz quickstart ./docs "What is the refund policy?"  # Direct
-        fitz quickstart ./contracts "What are the payment terms?" -v
     """
     ui.header("Fitz Quickstart", "Zero-friction RAG")
 
@@ -107,31 +104,25 @@ def command(
 
 def _run_quickstart(source: Path, question: str, collection: str, verbose: bool) -> None:
     """Run quickstart with fitz_rag engine and FAISS."""
-    # =========================================================================
-    # Step 1: Ensure API Key
-    # =========================================================================
-
-    api_key = _ensure_api_key()
-    if not api_key:
-        raise typer.Exit(1)
-
-    # =========================================================================
-    # Step 2: Ensure Config Exists (silent fitz init)
-    # =========================================================================
-
     engine_config_path = FitzPaths.engine_config("fitz_rag")
 
-    if not engine_config_path.exists():
-        if verbose:
-            ui.info("Creating default configuration...")
+    # =========================================================================
+    # Step 1: Select Provider and Ensure API Key
+    # =========================================================================
 
-        _create_default_config(engine_config_path)
+    # Always prompt for provider selection
+    provider = _select_provider()
+    if provider is None:
+        raise typer.Exit(1)
 
-        if verbose:
-            ui.success(f"Config created at {engine_config_path}")
-    else:
-        if verbose:
-            ui.info(f"Using existing config: {engine_config_path}")
+    # Ensure API key for selected provider
+    if provider != "ollama":
+        api_key = _ensure_api_key(provider)
+        if not api_key:
+            raise typer.Exit(1)
+
+    # Create config for selected provider
+    _create_provider_config(engine_config_path, provider)
 
     # =========================================================================
     # Step 3: Ingest Documents
@@ -194,35 +185,101 @@ def _run_quickstart(source: Path, question: str, collection: str, verbose: bool)
 
 
 # =============================================================================
+# Provider Selection
+# =============================================================================
+
+# Provider configurations
+PROVIDERS = {
+    "cohere": {
+        "name": "Cohere",
+        "env_var": "COHERE_API_KEY",
+        "description": "Free tier available, best for RAG (has reranking)",
+        "signup_url": "https://dashboard.cohere.com/api-keys",
+    },
+    "openai": {
+        "name": "OpenAI",
+        "env_var": "OPENAI_API_KEY",
+        "description": "Most popular, requires payment",
+        "signup_url": "https://platform.openai.com/api-keys",
+    },
+    "ollama": {
+        "name": "Ollama (Local)",
+        "env_var": None,
+        "description": "Free, runs locally, no API key needed",
+        "signup_url": None,
+    },
+}
+
+
+def _select_provider() -> Optional[str]:
+    """Prompt user to select an LLM provider."""
+    print()
+
+    # Check which providers have API keys already set
+    available = []
+    for key, info in PROVIDERS.items():
+        env_var = info["env_var"]
+        has_key = env_var is None or os.getenv(env_var)
+        available.append((key, info, has_key))
+
+    # Show options
+    ui.info("Select your LLM provider:")
+    print()
+
+    for i, (key, info, has_key) in enumerate(available, 1):
+        status = " (API key found)" if has_key and info["env_var"] else ""
+        print(f"  [{i}] {info['name']}{status}")
+        print(f"      {info['description']}")
+        print()
+
+    # Get choice
+    try:
+        choice = ui.prompt_int("Choice", default=1)
+        idx = choice - 1
+        if 0 <= idx < len(available):
+            selected = available[idx][0]
+            ui.success(f"Selected: {PROVIDERS[selected]['name']}")
+            return selected
+        else:
+            ui.error("Invalid choice")
+            return None
+    except (ValueError, KeyboardInterrupt):
+        return None
+
+
+# =============================================================================
 # API Key Handling
 # =============================================================================
 
 
-def _ensure_api_key() -> Optional[str]:
+def _ensure_api_key(provider: str) -> Optional[str]:
     """
-    Check for Cohere API key, prompt if missing.
+    Check for API key for the given provider, prompt if missing.
 
     Returns the API key or None if user declined.
     """
-    api_key = os.getenv("COHERE_API_KEY")
+    info = PROVIDERS.get(provider, {})
+    env_var = info.get("env_var")
+
+    if not env_var:
+        return "local"  # Ollama doesn't need a key
+
+    api_key = os.getenv(env_var)
 
     if api_key:
         masked = f"{api_key[:8]}..." if len(api_key) > 8 else "***"
-        ui.success(f"Using API key (COHERE_API_KEY): {masked}")
+        ui.success(f"Using API key ({env_var}): {masked}")
         return api_key
 
     # No key found - prompt user
     print()
-    ui.warning("No API key found (COHERE_API_KEY)")
+    ui.warning(f"No API key found ({env_var})")
     print()
-    print("  Fitz needs an API key for embeddings and chat.")
-    print("  Get a free key at: https://dashboard.cohere.com/api-keys")
-    print()
-    print("  It takes 30 seconds and no credit card is required.")
+    print(f"  Get your API key at: {info.get('signup_url', 'provider website')}")
     print()
 
     try:
-        api_key = typer.prompt("Paste your API key (COHERE_API_KEY)")
+        api_key = typer.prompt(f"Paste your API key ({env_var})")
     except typer.Abort:
         return None
 
@@ -231,23 +288,23 @@ def _ensure_api_key() -> Optional[str]:
         return None
 
     # Set for this session
-    os.environ["COHERE_API_KEY"] = api_key
+    os.environ[env_var] = api_key
 
     # Offer to save
     print()
     save = typer.confirm("Save to shell config for future sessions?", default=True)
 
     if save:
-        _save_api_key_to_shell(api_key)
+        _save_api_key_to_shell(api_key, env_var)
     else:
         ui.info("To set permanently, add to your shell config:")
-        ui.info(f'  export COHERE_API_KEY="{api_key}"')
+        ui.info(f'  export {env_var}="{api_key}"')
 
     print()
     return api_key
 
 
-def _save_api_key_to_shell(api_key: str) -> None:
+def _save_api_key_to_shell(api_key: str, env_var: str) -> None:
     """Save API key to user's shell config file."""
     home = Path.home()
 
@@ -259,13 +316,13 @@ def _save_api_key_to_shell(api_key: str) -> None:
             content = rc_file.read_text()
 
             # Check if already present
-            if "COHERE_API_KEY" in content:
-                ui.info(f"COHERE_API_KEY already in {rc_file.name}")
+            if env_var in content:
+                ui.info(f"{env_var} already in {rc_file.name}")
                 return
 
             # Append to file
             with open(rc_file, "a") as f:
-                f.write(f'\n# Added by fitz quickstart\nexport COHERE_API_KEY="{api_key}"\n')
+                f.write(f'\n# Added by fitz quickstart\nexport {env_var}="{api_key}"\n')
 
             ui.success(f"Saved to ~/{rc_file.name}")
             ui.info(f"Run `source ~/{rc_file.name}` or restart your terminal")
@@ -274,7 +331,7 @@ def _save_api_key_to_shell(api_key: str) -> None:
     # No rc file found - create .bashrc
     bashrc = home / ".bashrc"
     with open(bashrc, "w") as f:
-        f.write(f'# Created by fitz quickstart\nexport COHERE_API_KEY="{api_key}"\n')
+        f.write(f'# Created by fitz quickstart\nexport {env_var}="{api_key}"\n')
 
     ui.success("Created ~/.bashrc with API key")
 
@@ -283,66 +340,58 @@ def _save_api_key_to_shell(api_key: str) -> None:
 # Config Generation
 # =============================================================================
 
+# Provider-specific configurations
+PROVIDER_CONFIGS = {
+    "cohere": {
+        "chat": {"plugin_name": "cohere", "kwargs": {"models": {"smart": "command-a-03-2025", "fast": "command-r7b-12-2024"}, "temperature": 0.2}},
+        "embedding": {"plugin_name": "cohere", "kwargs": {"model": "embed-english-v3.0"}},
+        "rerank": {"enabled": True, "plugin_name": "cohere", "kwargs": {"model": "rerank-v3.5"}},
+    },
+    "openai": {
+        "chat": {"plugin_name": "openai", "kwargs": {"models": {"smart": "gpt-4o", "fast": "gpt-4o-mini"}, "temperature": 0.2}},
+        "embedding": {"plugin_name": "openai", "kwargs": {"model": "text-embedding-3-small"}},
+        "rerank": {"enabled": False},  # OpenAI doesn't have reranking
+    },
+    "ollama": {
+        "chat": {"plugin_name": "local_ollama", "kwargs": {"models": {"smart": "llama3.2", "fast": "llama3.2"}}},
+        "embedding": {"plugin_name": "local_ollama", "kwargs": {"model": "nomic-embed-text"}},
+        "rerank": {"enabled": False},  # Ollama doesn't have reranking
+    },
+}
 
-def _create_default_config(config_path: Path) -> None:
+
+def _create_provider_config(config_path: Path, provider: str) -> None:
     """
-    Create a default config file for quickstart.
+    Create a config file for the selected provider.
 
-    Uses Cohere for everything (embedding, chat, rerank) and local FAISS.
-    This is the same as running `fitz init -y` with these providers available.
+    Uses the selected provider for chat/embedding and local FAISS for vectors.
     """
-    config_content = """\
-# Fitz Fitz RAG Configuration
-# Generated by: fitz quickstart
-# Edit with: fitz config --edit
+    import yaml
 
-# Chat (LLM for answering questions)
-chat:
-  plugin_name: cohere
-  kwargs:
-    model: command-a-03-2025
-    temperature: 0.2
+    provider_cfg = PROVIDER_CONFIGS.get(provider, PROVIDER_CONFIGS["cohere"])
 
-# Embedding (text to vectors)
-embedding:
-  plugin_name: cohere
-  kwargs:
-    model: embed-english-v3.0
-
-# Vector Database (local FAISS - no external service needed)
-vector_db:
-  plugin_name: local_faiss
-  kwargs: {}
-
-# Retrieval
-retrieval:
-  plugin_name: dense
-  collection: quickstart
-  top_k: 5
-
-# Reranker
-rerank:
-  enabled: true
-  plugin_name: cohere
-  kwargs:
-    model: rerank-v3.5
-
-# RGS (Retrieval-Guided Synthesis)
-rgs:
-  enable_citations: true
-  strict_grounding: true
-  max_chunks: 8
-
-# Logging
-logging:
-  level: INFO
-"""
+    config = {
+        "chat": provider_cfg["chat"],
+        "embedding": provider_cfg["embedding"],
+        "vector_db": {"plugin_name": "local_faiss", "kwargs": {}},
+        "retrieval": {"plugin_name": "dense", "collection": "quickstart", "top_k": 5},
+        "rerank": provider_cfg["rerank"],
+        "rgs": {"enable_citations": True, "strict_grounding": True, "max_chunks": 8},
+        "logging": {"level": "INFO"},
+    }
 
     # Ensure directory exists
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write config
-    config_path.write_text(config_content)
+    # Write config with header
+    header = f"""\
+# Fitz RAG Configuration
+# Generated by: fitz quickstart
+# Provider: {provider}
+# Edit with: fitz config --edit
+
+"""
+    config_path.write_text(header + yaml.dump(config, default_flow_style=False, sort_keys=False))
 
 
 # =============================================================================
@@ -431,6 +480,7 @@ def _run_ingestion(
                 plugin_name=default_chunking.get("plugin_name", "recursive"),
                 kwargs=default_chunking.get("kwargs", {}),
             ),
+            warn_on_fallback=False,
         )
     chunking_engine = ChunkingEngine.from_config(chunking_config)
 
