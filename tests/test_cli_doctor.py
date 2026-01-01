@@ -43,11 +43,11 @@ class TestDoctorCommand:
                 return_value=mock_system,
             ),
             patch(
-                "fitz_ai.cli.commands.doctor.FitzPaths.workspace",
+                "fitz_ai.cli.context.FitzPaths.workspace",
                 return_value=MagicMock(exists=lambda: False),
             ),
             patch(
-                "fitz_ai.cli.commands.doctor.FitzPaths.config",
+                "fitz_ai.cli.context.FitzPaths.config",
                 return_value=MagicMock(exists=lambda: False),
             ),
         ):
@@ -86,7 +86,7 @@ class TestDoctorChecks:
         workspace.mkdir()
 
         with patch(
-            "fitz_ai.cli.commands.doctor.FitzPaths.workspace",
+            "fitz_ai.cli.context.FitzPaths.workspace",
             return_value=workspace,
         ):
             from fitz_ai.cli.commands.doctor import _check_workspace
@@ -101,7 +101,7 @@ class TestDoctorChecks:
         workspace = tmp_path / ".fitz"
 
         with patch(
-            "fitz_ai.cli.commands.doctor.FitzPaths.workspace",
+            "fitz_ai.cli.context.FitzPaths.workspace",
             return_value=workspace,
         ):
             from fitz_ai.cli.commands.doctor import _check_workspace
@@ -119,49 +119,51 @@ class TestDoctorChecks:
         config = {"chat": {"plugin_name": "cohere"}}
         config_path.write_text(yaml.dump(config))
 
-        with patch(
-            "fitz_ai.cli.commands.doctor.FitzPaths.config",
-            return_value=config_path,
+        with (
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.FitzPaths.config", return_value=config_path),
         ):
             from fitz_ai.cli.commands.doctor import _check_config
 
-            ok, detail, loaded = _check_config()
+            ok, detail, ctx = _check_config()
 
         assert ok is True
         assert detail == "Valid"
-        assert loaded["chat"]["plugin_name"] == "cohere"
+        assert ctx.chat_plugin == "cohere"
 
     def test_check_config_missing(self, tmp_path):
         """Test _check_config with missing config."""
         config_path = tmp_path / "missing.yaml"
+        engine_path = tmp_path / "fitz_rag.yaml"
 
-        with patch(
-            "fitz_ai.cli.commands.doctor.FitzPaths.config",
-            return_value=config_path,
+        with (
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=engine_path),
+            patch("fitz_ai.cli.context.FitzPaths.config", return_value=config_path),
         ):
             from fitz_ai.cli.commands.doctor import _check_config
 
-            ok, detail, loaded = _check_config()
+            ok, detail, ctx = _check_config()
 
         assert ok is False
         assert "init" in detail.lower()
-        assert loaded is None
+        assert ctx is None
 
     def test_check_config_invalid(self, tmp_path):
         """Test _check_config with invalid YAML."""
         config_path = tmp_path / "fitz.yaml"
         config_path.write_text("invalid: yaml: content: :")
 
-        with patch(
-            "fitz_ai.cli.commands.doctor.FitzPaths.config",
-            return_value=config_path,
+        with (
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.FitzPaths.config", return_value=config_path),
         ):
             from fitz_ai.cli.commands.doctor import _check_config
 
-            ok, detail, loaded = _check_config()
+            ok, detail, ctx = _check_config()
 
+        # CLIContext.load_or_none returns None for invalid config
         assert ok is False
-        assert "invalid" in detail.lower()
+        assert ctx is None
 
 
 class TestDoctorDependencies:
@@ -200,11 +202,26 @@ class TestDoctorDependencies:
 class TestDoctorConnectionTests:
     """Tests for connection test functions."""
 
+    def _make_ctx(self, **kwargs):
+        """Create a CLIContext for testing."""
+        from fitz_ai.cli.context import CLIContext
+
+        return CLIContext(
+            raw_config={},
+            chat_plugin=kwargs.get("chat_plugin", ""),
+            embedding_plugin=kwargs.get("embedding_plugin", ""),
+            vector_db_plugin=kwargs.get("vector_db_plugin", ""),
+            vector_db_kwargs=kwargs.get("vector_db_kwargs", {}),
+            rerank_enabled=kwargs.get("rerank_enabled", False),
+            rerank_plugin=kwargs.get("rerank_plugin", ""),
+        )
+
     def test_test_embedding_not_configured(self):
         """Test _test_embedding when not configured."""
         from fitz_ai.cli.commands.doctor import _test_embedding
 
-        ok, detail = _test_embedding({})
+        ctx = self._make_ctx(embedding_plugin="")
+        ok, detail = _test_embedding(ctx)
 
         assert ok is False
         assert "not configured" in detail.lower()
@@ -220,8 +237,8 @@ class TestDoctorConnectionTests:
         ):
             from fitz_ai.cli.commands.doctor import _test_embedding
 
-            config = {"embedding": {"plugin_name": "cohere"}}
-            ok, detail = _test_embedding(config)
+            ctx = self._make_ctx(embedding_plugin="cohere")
+            ok, detail = _test_embedding(ctx)
 
         assert ok is True
         assert "dim=3" in detail
@@ -230,7 +247,8 @@ class TestDoctorConnectionTests:
         """Test _test_chat when not configured."""
         from fitz_ai.cli.commands.doctor import _test_chat
 
-        ok, detail = _test_chat({})
+        ctx = self._make_ctx(chat_plugin="")
+        ok, detail = _test_chat(ctx)
 
         assert ok is False
         assert "not configured" in detail.lower()
@@ -245,8 +263,8 @@ class TestDoctorConnectionTests:
         ):
             from fitz_ai.cli.commands.doctor import _test_chat
 
-            config = {"chat": {"plugin_name": "cohere"}}
-            ok, detail = _test_chat(config)
+            ctx = self._make_ctx(chat_plugin="cohere")
+            ok, detail = _test_chat(ctx)
 
         assert ok is True
         assert "ready" in detail.lower()
@@ -255,7 +273,8 @@ class TestDoctorConnectionTests:
         """Test _test_vector_db when not configured."""
         from fitz_ai.cli.commands.doctor import _test_vector_db
 
-        ok, detail = _test_vector_db({})
+        ctx = self._make_ctx(vector_db_plugin="")
+        ok, detail = _test_vector_db(ctx)
 
         assert ok is False
         assert "not configured" in detail.lower()
@@ -271,8 +290,8 @@ class TestDoctorConnectionTests:
         ):
             from fitz_ai.cli.commands.doctor import _test_vector_db
 
-            config = {"vector_db": {"plugin_name": "local_faiss"}}
-            ok, detail = _test_vector_db(config)
+            ctx = self._make_ctx(vector_db_plugin="local_faiss")
+            ok, detail = _test_vector_db(ctx)
 
         assert ok is True
         assert "2 collections" in detail
@@ -281,8 +300,8 @@ class TestDoctorConnectionTests:
         """Test _test_rerank when disabled."""
         from fitz_ai.cli.commands.doctor import _test_rerank
 
-        config = {"rerank": {"enabled": False}}
-        ok, detail = _test_rerank(config)
+        ctx = self._make_ctx(rerank_enabled=False)
+        ok, detail = _test_rerank(ctx)
 
         assert ok is True
         assert "disabled" in detail.lower()
@@ -297,8 +316,8 @@ class TestDoctorConnectionTests:
         ):
             from fitz_ai.cli.commands.doctor import _test_rerank
 
-            config = {"rerank": {"enabled": True, "plugin_name": "cohere"}}
-            ok, detail = _test_rerank(config)
+            ctx = self._make_ctx(rerank_enabled=True, rerank_plugin="cohere")
+            ok, detail = _test_rerank(ctx)
 
         assert ok is True
         assert "ready" in detail.lower()
@@ -324,11 +343,11 @@ class TestDoctorVerboseMode:
                 return_value=mock_system,
             ),
             patch(
-                "fitz_ai.cli.commands.doctor.FitzPaths.workspace",
+                "fitz_ai.cli.context.FitzPaths.workspace",
                 return_value=MagicMock(exists=lambda: True),
             ),
             patch(
-                "fitz_ai.cli.commands.doctor.FitzPaths.config",
+                "fitz_ai.cli.context.FitzPaths.config",
                 return_value=MagicMock(exists=lambda: False),
             ),
         ):
@@ -372,8 +391,8 @@ class TestDoctorTestMode:
                 "fitz_ai.cli.commands.doctor.detect_system_status",
                 return_value=mock_system,
             ),
-            patch("fitz_ai.cli.commands.doctor.FitzPaths.workspace", return_value=tmp_path),
-            patch("fitz_ai.cli.commands.doctor.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.cli.context.FitzPaths.workspace", return_value=tmp_path),
+            patch("fitz_ai.cli.context.FitzPaths.config", return_value=config_path),
             patch("fitz_ai.llm.registry.get_llm_plugin", return_value=mock_plugin),
             patch(
                 "fitz_ai.vector_db.registry.get_vector_db_plugin",

@@ -49,8 +49,12 @@ class TestMapCommand:
     def test_map_requires_config(self, tmp_path, monkeypatch):
         """Test that map requires a config file."""
         monkeypatch.setattr(
-            "fitz_ai.core.paths.FitzPaths.config",
+            "fitz_ai.cli.context.FitzPaths.config",
             lambda: tmp_path / "nonexistent" / "fitz.yaml",
+        )
+        monkeypatch.setattr(
+            "fitz_ai.cli.context.FitzPaths.engine_config",
+            lambda name: tmp_path / "nonexistent" / f"{name}.yaml",
         )
 
         # Mock the imports to avoid dependency issues
@@ -62,10 +66,10 @@ class TestMapCommand:
 
 
 class TestMapHelpers:
-    """Tests for map helper functions."""
+    """Tests for map helper functions using CLIContext."""
 
-    def test_load_config_safe_returns_dict(self, tmp_path):
-        """Test _load_config_safe returns config dict."""
+    def test_cli_context_loads_vector_db(self, tmp_path):
+        """Test CLIContext loads vector DB config."""
         import yaml
 
         config_path = tmp_path / "fitz.yaml"
@@ -76,14 +80,15 @@ class TestMapHelpers:
         config_path.write_text(yaml.dump(config))
 
         with patch(
-            "fitz_ai.core.paths.FitzPaths.config",
+            "fitz_ai.cli.context.FitzPaths.engine_config",
             return_value=config_path,
         ):
-            from fitz_ai.cli.commands.map import _load_config_safe
+            from fitz_ai.cli.context import CLIContext
 
-            result = _load_config_safe()
+            ctx = CLIContext.load_or_none()
 
-        assert result["vector_db"]["plugin_name"] == "local_faiss"
+        assert ctx is not None
+        assert ctx.vector_db_plugin == "local_faiss"
 
     def test_get_vector_db_client(self):
         """Test get_vector_db_client returns plugin."""
@@ -128,30 +133,35 @@ class TestMapHelpers:
 
         assert result == []
 
-    def test_get_embedding_id(self):
-        """Test _get_embedding_id builds correct ID."""
-        from fitz_ai.cli.commands.map import _get_embedding_id
+    def test_embedding_id_property(self):
+        """Test CLIContext.embedding_id builds correct ID."""
+        from fitz_ai.cli.context import CLIContext
 
-        config = {
-            "embedding": {
-                "provider": "cohere",
-                "model": "embed-english-v3.0",
-            }
-        }
+        ctx = CLIContext(
+            raw_config={},
+            embedding_plugin="cohere",
+            embedding_model="embed-english-v3.0",
+        )
 
-        result = _get_embedding_id(config)
+        result = ctx.embedding_id
 
         assert "cohere" in result
         assert "embed-english-v3.0" in result
 
-    def test_get_embedding_id_defaults(self):
-        """Test _get_embedding_id uses defaults."""
-        from fitz_ai.cli.commands.map import _get_embedding_id
+    def test_embedding_id_defaults(self):
+        """Test CLIContext.embedding_id uses defaults for empty."""
+        from fitz_ai.cli.context import CLIContext
 
-        result = _get_embedding_id({})
+        ctx = CLIContext(
+            raw_config={},
+            embedding_plugin="",
+            embedding_model="",
+        )
 
-        assert "ollama" in result
-        assert "nomic-embed-text" in result
+        result = ctx.embedding_id
+
+        assert "unknown" in result
+        assert "default" in result
 
 
 class TestMapOptions:
@@ -209,8 +219,9 @@ class TestMapNoCollections:
         mock_vdb.list_collections.return_value = []
 
         with (
-            patch("fitz_ai.core.paths.FitzPaths.config", return_value=config_path),
-            patch("fitz_ai.cli.commands.map.get_collections", return_value=[]),
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.vector_db.registry.get_vector_db_plugin", return_value=mock_vdb),
             patch.dict("sys.modules", {"umap": MagicMock(), "sklearn.cluster": MagicMock()}),
         ):
             result = runner.invoke(app, ["map"])
@@ -252,9 +263,9 @@ class TestMapNoChunks:
         mock_vdb.scroll_with_vectors = MagicMock()
 
         with (
-            patch("fitz_ai.core.paths.FitzPaths.config", return_value=config_path),
-            patch("fitz_ai.cli.commands.map.get_vector_db_client", return_value=mock_vdb),
-            patch("fitz_ai.cli.commands.map.get_collections", return_value=["test"]),
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.vector_db.registry.get_vector_db_plugin", return_value=mock_vdb),
             patch("fitz_ai.map.embeddings.fetch_all_chunk_ids", return_value=[]),
             patch.dict("sys.modules", {"umap": MagicMock(), "sklearn.cluster": MagicMock()}),
         ):

@@ -27,7 +27,7 @@ class TestCollectionsCommand:
     def test_collections_requires_config(self, tmp_path, monkeypatch):
         """Test that collections requires a config file."""
         monkeypatch.setattr(
-            "fitz_ai.cli.commands.collections.FitzPaths.config",
+            "fitz_ai.cli.context.FitzPaths.config",
             lambda: tmp_path / "nonexistent" / "fitz.yaml",
         )
 
@@ -40,8 +40,8 @@ class TestCollectionsCommand:
 class TestCollectionsHelpers:
     """Tests for collections helper functions."""
 
-    def test_load_config_returns_dict(self, tmp_path):
-        """Test _load_config returns config dict."""
+    def test_cli_context_loads_config(self, tmp_path):
+        """Test CLIContext loads config."""
         import yaml
 
         config_path = tmp_path / "fitz.yaml"
@@ -49,14 +49,15 @@ class TestCollectionsHelpers:
         config_path.write_text(yaml.dump(config))
 
         with patch(
-            "fitz_ai.cli.commands.collections.FitzPaths.config",
+            "fitz_ai.cli.context.FitzPaths.engine_config",
             return_value=config_path,
         ):
-            from fitz_ai.cli.commands.collections import _load_config
+            from fitz_ai.cli.context import CLIContext
 
-            result = _load_config()
+            ctx = CLIContext.load_or_none()
 
-        assert result["vector_db"]["plugin_name"] == "local_faiss"
+        assert ctx is not None
+        assert ctx.vector_db_plugin == "local_faiss"
 
     def test_get_vector_client(self):
         """Test _get_vector_client returns plugin."""
@@ -72,17 +73,26 @@ class TestCollectionsHelpers:
 
         assert client == mock_plugin
 
-    def test_get_available_vector_dbs(self):
+    def test_get_available_vector_dbs(self, tmp_path):
         """Test _get_available_vector_dbs returns sorted list."""
-        config = {"vector_db": {"plugin_name": "local_faiss", "kwargs": {}}}
+        import yaml
 
-        with patch(
-            "fitz_ai.vector_db.registry.available_vector_db_plugins",
-            return_value=["qdrant", "local_faiss"],
+        config_path = tmp_path / "fitz.yaml"
+        config = {"vector_db": {"plugin_name": "local_faiss", "kwargs": {}}}
+        config_path.write_text(yaml.dump(config))
+
+        with (
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
+            patch(
+                "fitz_ai.vector_db.registry.available_vector_db_plugins",
+                return_value=["qdrant", "local_faiss"],
+            ),
         ):
             from fitz_ai.cli.commands.collections import _get_available_vector_dbs
+            from fitz_ai.cli.context import CLIContext
 
-            result = _get_available_vector_dbs(config)
+            ctx = CLIContext.load()
+            result = _get_available_vector_dbs(ctx)
 
         # Configured one should be first
         assert result[0]["name"] == "local_faiss"
@@ -161,7 +171,7 @@ class TestCollectionsNoCollections:
 
         with (
             patch(
-                "fitz_ai.cli.commands.collections.FitzPaths.config",
+                "fitz_ai.cli.context.FitzPaths.config",
                 return_value=config_path,
             ),
             patch(
@@ -198,7 +208,7 @@ class TestCollectionsWithData:
 
         with (
             patch(
-                "fitz_ai.cli.commands.collections.FitzPaths.config",
+                "fitz_ai.cli.context.FitzPaths.config",
                 return_value=config_path,
             ),
             patch(
@@ -238,7 +248,7 @@ class TestCollectionsWithData:
 
         with (
             patch(
-                "fitz_ai.cli.commands.collections.FitzPaths.config",
+                "fitz_ai.cli.context.FitzPaths.config",
                 return_value=config_path,
             ),
             patch(
@@ -274,7 +284,7 @@ class TestCollectionsDelete:
 
         with (
             patch(
-                "fitz_ai.cli.commands.collections.FitzPaths.config",
+                "fitz_ai.cli.context.FitzPaths.config",
                 return_value=config_path,
             ),
             patch(

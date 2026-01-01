@@ -28,11 +28,11 @@ class TestChatCommand:
     def test_chat_requires_config(self, tmp_path, monkeypatch):
         """Test that chat requires a config file."""
         monkeypatch.setattr(
-            "fitz_ai.cli.utils.FitzPaths.config",
+            "fitz_ai.cli.context.FitzPaths.config",
             lambda: tmp_path / "nonexistent" / "fitz.yaml",
         )
         monkeypatch.setattr(
-            "fitz_ai.cli.utils.FitzPaths.engine_config",
+            "fitz_ai.cli.context.FitzPaths.engine_config",
             lambda name: tmp_path / "nonexistent" / f"{name}.yaml",
         )
 
@@ -62,7 +62,7 @@ class TestChatHelpers:
         config_path.write_text(yaml.dump(config))
 
         with patch(
-            "fitz_ai.cli.utils.FitzPaths.engine_config",
+            "fitz_ai.cli.context.FitzPaths.engine_config",
             return_value=config_path,
         ):
             from fitz_ai.cli.utils import load_fitz_rag_config
@@ -250,7 +250,7 @@ class TestChatExitCommands:
         mock_pipeline = MagicMock()
 
         with (
-            patch("fitz_ai.cli.utils.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
             patch(
                 "fitz_ai.engines.fitz_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,
@@ -280,7 +280,7 @@ class TestChatExitCommands:
         mock_pipeline = MagicMock()
 
         with (
-            patch("fitz_ai.cli.utils.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
             patch(
                 "fitz_ai.engines.fitz_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,

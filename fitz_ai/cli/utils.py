@@ -3,14 +3,14 @@
 Shared CLI utilities.
 
 Common functions used across multiple CLI commands.
+Prefer using CLIContext directly for new code.
 """
 
 from __future__ import annotations
 
 from typing import Any, List, Optional, Tuple
 
-from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
-from fitz_ai.core.paths import FitzPaths
+from fitz_ai.cli.context import CLIContext
 from fitz_ai.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -20,37 +20,16 @@ def load_fitz_rag_config() -> Tuple[Optional[dict], Optional[Any]]:
     """
     Load fitz_rag config.
 
-    Looks for config in:
-    1. Engine-specific config: .fitz/config/fitz_rag.yaml
-    2. Global config (legacy): .fitz/config.yaml
-
     Returns:
         Tuple of (raw_config_dict, typed_config) or (None, None) if config not found.
+
+    Note:
+        Prefer using CLIContext.load() or CLIContext.load_or_none() directly.
     """
-    try:
-        from fitz_ai.engines.fitz_rag.config import load_config
-
-        # Try engine-specific config first
-        engine_config_path = FitzPaths.engine_config("fitz_rag")
-        if engine_config_path.exists():
-            raw_config = load_config_dict(engine_config_path)
-            typed_config = load_config(str(engine_config_path))
-            return raw_config, typed_config
-
-        # Fall back to global config (legacy)
-        global_config_path = FitzPaths.config()
-        if global_config_path.exists():
-            raw_config = load_config_dict(global_config_path)
-            # Check if it has fitz_rag settings
-            if "chat" in raw_config or "embedding" in raw_config:
-                typed_config = load_config(str(global_config_path))
-                return raw_config, typed_config
-
+    ctx = CLIContext.load_or_none()
+    if ctx is None:
         return None, None
-    except ConfigNotFoundError:
-        return None, None
-    except Exception:
-        return None, None
+    return ctx.raw_config, ctx.typed_config
 
 
 def get_collections(config: dict) -> List[str]:
@@ -62,6 +41,9 @@ def get_collections(config: dict) -> List[str]:
 
     Returns:
         Sorted list of collection names, or empty list on error.
+
+    Note:
+        Prefer using ctx.get_collections() from CLIContext.
     """
     from fitz_ai.vector_db.registry import get_vector_db_plugin
 
@@ -83,6 +65,9 @@ def get_vector_db_client(config: dict):
 
     Returns:
         Vector DB client instance.
+
+    Note:
+        Prefer using ctx.get_vector_db_client() from CLIContext.
     """
     from fitz_ai.vector_db.registry import get_vector_db_plugin
 
@@ -92,6 +77,7 @@ def get_vector_db_client(config: dict):
 
 
 __all__ = [
+    "CLIContext",
     "load_fitz_rag_config",
     "get_collections",
     "get_vector_db_client",

@@ -15,8 +15,8 @@ from typing import Optional
 
 import typer
 
+from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import display_answer, ui
-from fitz_ai.cli.utils import get_collections, load_fitz_rag_config
 from fitz_ai.core import Query
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.runtime import create_engine, get_default_engine, get_engine_registry, list_engines
@@ -191,13 +191,13 @@ def _run_collection_query(
 ) -> None:
     """Run query using an engine with collection support."""
 
-    # Load config
-    raw_config, typed_config = load_fitz_rag_config()
-    if typed_config is None:
+    # Load config via CLIContext
+    ctx = CLIContext.load_or_none()
+    if ctx is None or ctx.typed_config is None:
         ui.error("No config found. Run 'fitz init' first.")
         raise typer.Exit(1)
 
-    default_collection = typed_config.retrieval.collection
+    typed_config = ctx.typed_config
 
     # Prompt for question if not provided
     if question is None:
@@ -209,48 +209,19 @@ def _run_collection_query(
     if collection:
         typed_config.retrieval.collection = collection
     else:
-        collections = get_collections(raw_config)
+        collections = ctx.get_collections()
         if collections and len(collections) > 1:
             print()
-            selected = ui.prompt_numbered_choice("Collection", collections, default_collection)
+            selected = ui.prompt_numbered_choice(
+                "Collection", collections, ctx.retrieval_collection
+            )
             typed_config.retrieval.collection = selected
         elif collections:
             typed_config.retrieval.collection = collections[0]
 
-    # Display info
-    display_collection = typed_config.retrieval.collection
-    display_retrieval = typed_config.retrieval.plugin_name
-
-    chat_plugin = raw_config.get("chat", {}).get("plugin_name", "?")
-    chat_model = raw_config.get("chat", {}).get("kwargs", {}).get("models", {}).get("smart", "")
-    display_chat = f"{chat_plugin} ({chat_model})" if chat_model else chat_plugin
-
-    embedding_plugin = raw_config.get("embedding", {}).get("plugin_name", "?")
-    embedding_model = raw_config.get("embedding", {}).get("kwargs", {}).get("model", "")
-    display_embedding = (
-        f"{embedding_plugin} ({embedding_model})" if embedding_model else embedding_plugin
-    )
-
-    vector_db_plugin = raw_config.get("vector_db", {}).get("plugin_name", "?")
-
-    display_rerank = None
-    if raw_config.get("rerank", {}).get("enabled"):
-        rerank_plugin = raw_config.get("rerank", {}).get("plugin_name", "?")
-        rerank_model = raw_config.get("rerank", {}).get("kwargs", {}).get("model", "")
-        display_rerank = f"{rerank_plugin} ({rerank_model})" if rerank_model else rerank_plugin
-
+    # Display info - all the ugly dict.get() chains are now just ctx properties
     print()
-    info_parts = [
-        f"Collection: {display_collection}",
-        f"VectorDB: {vector_db_plugin}",
-        f"Retrieval: {display_retrieval}",
-        f"Chat: {display_chat}",
-        f"Embedding: {display_embedding}",
-    ]
-    if display_rerank:
-        info_parts.append(f"Rerank: {display_rerank}")
-
-    ui.info(" | ".join(info_parts))
+    ui.info(ctx.info_line())
     print()
 
     # Execute query using runtime

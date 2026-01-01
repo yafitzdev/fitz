@@ -15,8 +15,8 @@ from typing import Optional
 
 import typer
 
+from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import RICH, Panel, console, ui
-from fitz_ai.core.config import load_config_dict
 from fitz_ai.core.detect import detect_system_status
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
@@ -44,18 +44,14 @@ def _check_workspace() -> tuple[bool, str]:
     return False, "Not found (run 'fitz init')"
 
 
-def _check_config() -> tuple[bool, str, Optional[dict]]:
+def _check_config() -> tuple[bool, str, Optional[CLIContext]]:
     """Check if config exists and is valid."""
-    config_path = FitzPaths.config()
+    ctx = CLIContext.load_or_none()
 
-    if not config_path.exists():
+    if ctx is None:
         return False, "Not found (run 'fitz init')", None
 
-    try:
-        config = load_config_dict(config_path)
-        return True, "Valid", config
-    except Exception as e:
-        return False, f"Invalid: {e}", None
+    return True, "Valid", ctx
 
 
 def _check_dependencies() -> list[tuple[str, bool, str]]:
@@ -110,80 +106,72 @@ def _check_optional_dependencies() -> list[tuple[str, bool, str]]:
     return results
 
 
-def _test_embedding(config: dict) -> tuple[bool, str]:
+def _test_embedding(ctx: CLIContext) -> tuple[bool, str]:
     """Test embedding plugin."""
     try:
         from fitz_ai.llm.registry import get_llm_plugin
 
-        plugin_name = config.get("embedding", {}).get("plugin_name")
-        if not plugin_name:
+        if not ctx.embedding_plugin:
             return False, "Not configured"
 
-        plugin = get_llm_plugin(plugin_type="embedding", plugin_name=plugin_name)
+        plugin = get_llm_plugin(plugin_type="embedding", plugin_name=ctx.embedding_plugin)
 
         # Try a test embedding
         vector = plugin.embed("test")
         if vector and len(vector) > 0:
-            return True, f"{plugin_name} (dim={len(vector)})"
+            return True, f"{ctx.embedding_plugin} (dim={len(vector)})"
         return False, "Empty response"
 
     except Exception as e:
         return False, str(e)[:50]
 
 
-def _test_chat(config: dict) -> tuple[bool, str]:
+def _test_chat(ctx: CLIContext) -> tuple[bool, str]:
     """Test chat plugin (without making actual call)."""
     try:
         from fitz_ai.llm.registry import get_llm_plugin
 
-        plugin_name = config.get("chat", {}).get("plugin_name")
-        if not plugin_name:
+        if not ctx.chat_plugin:
             return False, "Not configured"
 
         # Just try to instantiate
-        get_llm_plugin(plugin_type="chat", plugin_name=plugin_name)
-        return True, f"{plugin_name} ready"
+        get_llm_plugin(plugin_type="chat", plugin_name=ctx.chat_plugin)
+        return True, f"{ctx.chat_plugin} ready"
 
     except Exception as e:
         return False, str(e)[:50]
 
 
-def _test_vector_db(config: dict) -> tuple[bool, str]:
+def _test_vector_db(ctx: CLIContext) -> tuple[bool, str]:
     """Test vector DB connection."""
     try:
-        from fitz_ai.vector_db.registry import get_vector_db_plugin
-
-        plugin_name = config.get("vector_db", {}).get("plugin_name")
-        if not plugin_name:
+        if not ctx.vector_db_plugin:
             return False, "Not configured"
 
-        plugin = get_vector_db_plugin(plugin_name)
+        client = ctx.get_vector_db_client()
 
         # Try to list collections
-        collections = plugin.list_collections()
-        return True, f"{plugin_name} ({len(collections)} collections)"
+        collections = client.list_collections()
+        return True, f"{ctx.vector_db_plugin} ({len(collections)} collections)"
 
     except Exception as e:
         return False, str(e)[:50]
 
 
-def _test_rerank(config: dict) -> tuple[bool, str]:
+def _test_rerank(ctx: CLIContext) -> tuple[bool, str]:
     """Test rerank plugin."""
-    rerank_config = config.get("rerank", {})
-
-    if not rerank_config.get("enabled"):
+    if not ctx.rerank_enabled:
         return True, "Disabled (optional)"
 
     try:
         from fitz_ai.llm.registry import get_llm_plugin
 
-        plugin_name = rerank_config.get("plugin_name")
-        if not plugin_name:
+        if not ctx.rerank_plugin:
             return False, "Enabled but no plugin"
 
         # Just try to instantiate
-        get_llm_plugin(plugin_type="rerank", plugin_name=plugin_name)
-        return True, f"{plugin_name} ready"
+        get_llm_plugin(plugin_type="rerank", plugin_name=ctx.rerank_plugin)
+        return True, f"{ctx.rerank_plugin} ready"
 
     except Exception as e:
         return False, str(e)[:50]
@@ -246,11 +234,10 @@ def command(
         warnings.append("Run 'fitz init' to create workspace")
 
     # Config
-    ok, detail, config = _check_config()
+    ok, detail, ctx = _check_config()
     ui.status("Config", ok, detail)
     if not ok:
         warnings.append("Run 'fitz init' to create config")
-        config = {}
 
     # =========================================================================
     # Dependencies
@@ -317,47 +304,43 @@ def command(
     # Connection Tests (if --test)
     # =========================================================================
 
-    if test and config:
+    if test and ctx:
         ui.section("Connection Tests")
 
         # Embedding
-        ok, detail = _test_embedding(config)
+        ok, detail = _test_embedding(ctx)
         ui.status("Embedding", ok, detail)
         if not ok:
             issues.append(f"Embedding failed: {detail}")
 
         # Chat
-        ok, detail = _test_chat(config)
+        ok, detail = _test_chat(ctx)
         ui.status("Chat", ok, detail)
         if not ok:
             issues.append(f"Chat failed: {detail}")
 
         # Vector DB
-        ok, detail = _test_vector_db(config)
+        ok, detail = _test_vector_db(ctx)
         ui.status("Vector DB", ok, detail)
         if not ok:
             issues.append(f"Vector DB failed: {detail}")
 
         # Rerank
-        ok, detail = _test_rerank(config)
+        ok, detail = _test_rerank(ctx)
         ui.status("Rerank", ok, detail)
 
     # =========================================================================
     # Config Summary (verbose)
     # =========================================================================
 
-    if verbose and config:
+    if verbose and ctx:
         ui.section("Config Summary")
 
-        chat = config.get("chat", {}).get("plugin_name", "?")
-        embedding = config.get("embedding", {}).get("plugin_name", "?")
-        vector_db = config.get("vector_db", {}).get("plugin_name", "?")
-        rerank = config.get("rerank", {})
-        rerank_str = rerank.get("plugin_name", "disabled") if rerank.get("enabled") else "disabled"
+        rerank_str = ctx.rerank_plugin or "disabled" if ctx.rerank_enabled else "disabled"
 
-        ui.info(f"Chat: {chat}")
-        ui.info(f"Embedding: {embedding}")
-        ui.info(f"Vector DB: {vector_db}")
+        ui.info(f"Chat: {ctx.chat_plugin or '?'}")
+        ui.info(f"Embedding: {ctx.embedding_plugin or '?'}")
+        ui.info(f"Vector DB: {ctx.vector_db_plugin or '?'}")
         ui.info(f"Rerank: {rerank_str}")
 
     # =========================================================================

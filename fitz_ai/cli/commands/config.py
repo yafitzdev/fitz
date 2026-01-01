@@ -18,8 +18,8 @@ from pathlib import Path
 
 import typer
 
+from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import RICH, Table, console, ui
-from fitz_ai.core.config import load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
 
@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 # =============================================================================
 
 
-def _show_config_summary(config: dict) -> None:
+def _show_config_summary(ctx: CLIContext) -> None:
     """Show a summary table of config settings."""
     print()
 
@@ -42,48 +42,33 @@ def _show_config_summary(config: dict) -> None:
         table.add_column("Details", style="dim")
 
         # Chat
-        chat = config.get("chat", {})
-        chat_plugin = chat.get("plugin_name", "?")
-        chat_kwargs = chat.get("kwargs", {})
-        # Support both tiered models (models.smart) and single model
-        chat_model = chat_kwargs.get("models", {}).get("smart", "") or chat_kwargs.get("model", "")
-        table.add_row("Chat", chat_plugin, chat_model)
+        table.add_row("Chat", ctx.chat_plugin or "?", ctx.chat_model_smart)
 
         # Embedding
-        emb = config.get("embedding", {})
-        emb_plugin = emb.get("plugin_name", "?")
-        emb_model = emb.get("kwargs", {}).get("model", "")
-        table.add_row("Embedding", emb_plugin, emb_model)
+        table.add_row("Embedding", ctx.embedding_plugin or "?", ctx.embedding_model)
 
         # Vector DB
-        vdb = config.get("vector_db", {})
-        vdb_plugin = vdb.get("plugin_name", "?")
-        vdb_host = vdb.get("kwargs", {}).get("host", "")
-        vdb_port = vdb.get("kwargs", {}).get("port", "")
+        vdb_host = ctx.vector_db_kwargs.get("host", "")
+        vdb_port = ctx.vector_db_kwargs.get("port", "")
         vdb_details = f"{vdb_host}:{vdb_port}" if vdb_host else ""
-        table.add_row("Vector DB", vdb_plugin, vdb_details)
+        table.add_row("Vector DB", ctx.vector_db_plugin or "?", vdb_details)
 
         # Retriever
-        ret = config.get("retrieval", {})
-        ret_plugin = ret.get("plugin_name", "dense")
-        ret_collection = ret.get("collection", "default")
-        ret_top_k = ret.get("top_k", 5)
-        table.add_row("Retriever", ret_plugin, f"collection={ret_collection}, top_k={ret_top_k}")
+        table.add_row(
+            "Retriever",
+            ctx.retrieval_plugin,
+            f"collection={ctx.retrieval_collection}, top_k={ctx.retrieval_top_k}",
+        )
 
         # Rerank
-        rerank = config.get("rerank", {})
-        rerank_enabled = rerank.get("enabled", False)
-        if rerank_enabled:
-            rerank_plugin = rerank.get("plugin_name", "?")
-            rerank_model = rerank.get("kwargs", {}).get("model", "")
-            table.add_row("Rerank", rerank_plugin, rerank_model)
+        if ctx.rerank_enabled:
+            table.add_row("Rerank", ctx.rerank_plugin or "?", ctx.rerank_model)
         else:
             table.add_row("Rerank", "[dim]disabled[/dim]", "")
 
         # RGS
-        rgs = config.get("rgs", {})
-        citations = "on" if rgs.get("enable_citations", True) else "off"
-        grounding = "strict" if rgs.get("strict_grounding", True) else "relaxed"
+        citations = "on" if ctx.rgs_citations else "off"
+        grounding = "strict" if ctx.rgs_strict_grounding else "relaxed"
         table.add_row("RGS", f"citations={citations}", f"grounding={grounding}")
 
         console.print(table)
@@ -91,26 +76,17 @@ def _show_config_summary(config: dict) -> None:
         print("Configuration Summary:")
         print("-" * 40)
 
-        chat = config.get("chat", {})
-        chat_kwargs = chat.get("kwargs", {})
-        chat_model = chat_kwargs.get("models", {}).get("smart", "") or chat_kwargs.get("model", "")
-        chat_detail = f" ({chat_model})" if chat_model else ""
-        print(f"  Chat:      {chat.get('plugin_name', '?')}{chat_detail}")
+        chat_detail = f" ({ctx.chat_model_smart})" if ctx.chat_model_smart else ""
+        print(f"  Chat:      {ctx.chat_plugin or '?'}{chat_detail}")
 
-        emb = config.get("embedding", {})
-        print(f"  Embedding: {emb.get('plugin_name', '?')}")
+        print(f"  Embedding: {ctx.embedding_plugin or '?'}")
 
-        vdb = config.get("vector_db", {})
-        print(f"  Vector DB: {vdb.get('plugin_name', '?')}")
+        print(f"  Vector DB: {ctx.vector_db_plugin or '?'}")
 
-        ret = config.get("retrieval", {})
-        print(
-            f"  Retriever: {ret.get('plugin_name', 'dense')} (collection={ret.get('collection', 'default')})"
-        )
+        print(f"  Retriever: {ctx.retrieval_plugin} (collection={ctx.retrieval_collection})")
 
-        rerank = config.get("rerank", {})
-        if rerank.get("enabled"):
-            print(f"  Rerank:    {rerank.get('plugin_name', '?')}")
+        if ctx.rerank_enabled:
+            print(f"  Rerank:    {ctx.rerank_plugin or '?'}")
         else:
             print("  Rerank:    disabled")
 
@@ -181,12 +157,14 @@ def _open_in_editor(config_path: Path) -> None:
 
 def _get_config_path() -> Path:
     """Get config path, checking engine-specific first, then global."""
-    # Check engine-specific config first (created by quickstart)
+    ctx = CLIContext.load_or_none()
+    if ctx is not None:
+        return ctx.config_path
+
+    # Fall back to expected path for error messages
     engine_config = FitzPaths.engine_config("fitz_rag")
     if engine_config.exists():
         return engine_config
-
-    # Fall back to global config
     return FitzPaths.config()
 
 
@@ -261,10 +239,11 @@ def command(
         return
 
     # =========================================================================
-    # Load config
+    # Load config via CLIContext
     # =========================================================================
 
-    if not config_path.exists():
+    ctx = CLIContext.load_or_none()
+    if ctx is None:
         ui.error("No configuration found.")
         print()
         ui.info(f"Looked for: {FitzPaths.engine_config('fitz_rag')}")
@@ -272,25 +251,19 @@ def command(
         ui.info("Run 'fitz quickstart' or 'fitz init' to create a configuration.")
         raise typer.Exit(1)
 
-    try:
-        config = load_config_dict(config_path)
-    except Exception as e:
-        ui.error(f"Failed to load config: {e}")
-        raise typer.Exit(1)
-
     # =========================================================================
     # Header
     # =========================================================================
 
     ui.header("Fitz Config", "Check your RAG configuration")
-    ui.info(f"File: {config_path}")
+    ui.info(f"File: {ctx.config_path}")
 
     # =========================================================================
     # JSON output
     # =========================================================================
 
     if as_json:
-        _show_config_json(config)
+        _show_config_json(ctx.raw_config)
         return
 
     # =========================================================================
@@ -298,14 +271,14 @@ def command(
     # =========================================================================
 
     if raw:
-        _show_config_yaml(config_path)
+        _show_config_yaml(ctx.config_path)
         return
 
     # =========================================================================
     # Summary view (default)
     # =========================================================================
 
-    _show_config_summary(config)
+    _show_config_summary(ctx)
 
     # Show helpful hints
     ui.info("Tip: Use --raw for full YAML, --edit to modify")

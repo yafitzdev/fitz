@@ -18,39 +18,12 @@ from typing import Optional
 
 import typer
 
+from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import ui
-from fitz_ai.cli.utils import get_collections, get_vector_db_client
-from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
 from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
 
 logger = get_logger(__name__)
-
-
-# =============================================================================
-# Config Loading
-# =============================================================================
-
-
-def _load_config_safe() -> dict:
-    """Load config or exit with helpful message."""
-    try:
-        config_path = FitzPaths.config()
-        return load_config_dict(config_path)
-    except ConfigNotFoundError:
-        ui.error("No config found. Run 'fitz init' first.")
-        raise typer.Exit(1)
-    except Exception as e:
-        ui.error(f"Failed to load config: {e}")
-        raise typer.Exit(1)
-
-
-def _get_embedding_id(config: dict) -> str:
-    """Get embedding ID from config."""
-    embedding_config = config.get("embedding", {})
-    provider = embedding_config.get("provider", "ollama")
-    model = embedding_config.get("model", "nomic-embed-text")
-    return f"{provider}:{model}"
 
 
 # =============================================================================
@@ -129,22 +102,25 @@ def command(
     ui.header("Fitz Map", "Visualize your knowledge base")
 
     # =========================================================================
-    # Load config
+    # Load config via CLIContext
     # =========================================================================
 
-    config = _load_config_safe()
-    embedding_id = _get_embedding_id(config)
+    ctx = CLIContext.load_or_none()
+    if ctx is None:
+        ui.error("No config found. Run 'fitz init' first.")
+        raise typer.Exit(1)
+
+    embedding_id = ctx.embedding_id
 
     # =========================================================================
     # Determine collection
     # =========================================================================
 
     if collection is None:
-        # Try to get from config
-        collection = config.get("retrieval", {}).get("collection", "default")
+        collection = ctx.retrieval_collection
 
         # Check if it exists
-        collections = get_collections(config)
+        collections = ctx.get_collections()
         if not collections:
             ui.error("No collections found. Run 'fitz ingest' first.")
             raise typer.Exit(1)
@@ -192,7 +168,7 @@ def command(
 
     from fitz_ai.map.embeddings import fetch_all_chunk_ids, fetch_chunk_embeddings
 
-    vdb = get_vector_db_client(config)
+    vdb = ctx.get_vector_db_client()
 
     # Check if vector DB supports scroll_with_vectors
     if not hasattr(vdb, "scroll_with_vectors"):

@@ -32,7 +32,7 @@ class TestQueryCommand:
             lambda: tmp_path / "nonexistent" / "fitz.yaml",
         )
         monkeypatch.setattr(
-            "fitz_ai.cli.utils.FitzPaths.engine_config",
+            "fitz_ai.cli.context.FitzPaths.engine_config",
             lambda name: tmp_path / "nonexistent" / f"{name}.yaml",
         )
 
@@ -62,7 +62,7 @@ class TestQueryHelpers:
         config_path.write_text(yaml.dump(config))
 
         with patch(
-            "fitz_ai.cli.utils.FitzPaths.engine_config",
+            "fitz_ai.cli.context.FitzPaths.engine_config",
             return_value=config_path,
         ):
             from fitz_ai.cli.utils import load_fitz_rag_config
@@ -127,13 +127,14 @@ class TestQueryExecution:
         mock_engine = MagicMock()
         mock_engine.answer.return_value = mock_answer
 
+        mock_vdb = MagicMock()
+        mock_vdb.list_collections.return_value = ["test"]
+
         with (
-            patch("fitz_ai.cli.utils.FitzPaths.config", return_value=config_path),
-            patch(
-                "fitz_ai.cli.commands.query.create_engine",
-                return_value=mock_engine,
-            ),
-            patch("fitz_ai.cli.commands.query.get_collections", return_value=["test"]),
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.cli.commands.query.create_engine", return_value=mock_engine),
+            patch("fitz_ai.vector_db.registry.get_vector_db_plugin", return_value=mock_vdb),
         ):
             runner.invoke(app, ["query", "What is RAG?", "--engine", "fitz_rag"])
 
@@ -164,13 +165,14 @@ class TestQueryOptions:
         mock_engine = MagicMock()
         mock_engine.answer.return_value = mock_answer
 
+        mock_vdb = MagicMock()
+        mock_vdb.list_collections.return_value = ["custom"]
+
         with (
-            patch("fitz_ai.cli.utils.FitzPaths.config", return_value=config_path),
-            patch(
-                "fitz_ai.cli.commands.query.create_engine",
-                return_value=mock_engine,
-            ),
-            patch("fitz_ai.cli.commands.query.get_collections", return_value=["custom"]),
+            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.cli.commands.query.create_engine", return_value=mock_engine),
+            patch("fitz_ai.vector_db.registry.get_vector_db_plugin", return_value=mock_vdb),
         ):
             runner.invoke(app, ["query", "question", "-c", "custom", "--engine", "fitz_rag"])
 

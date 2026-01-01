@@ -12,26 +12,11 @@ from typing import Any, Dict, List
 
 import typer
 
+from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import RICH, console, ui
-from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
-from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
 
 logger = get_logger(__name__)
-
-
-def _load_config() -> dict:
-    """Load config or exit with helpful message."""
-    # Try engine-specific config first, then fall back to global
-    engine_config = FitzPaths.engine_config("fitz_rag")
-    if engine_config.exists():
-        return load_config_dict(engine_config)
-
-    try:
-        return load_config_dict(FitzPaths.config())
-    except ConfigNotFoundError:
-        ui.error("No config found. Run 'fitz init' or 'fitz quickstart' first.")
-        raise typer.Exit(1)
 
 
 def _get_vector_client(plugin_name: str, kwargs: dict = None):
@@ -45,13 +30,13 @@ def _get_vector_client(plugin_name: str, kwargs: dict = None):
         raise typer.Exit(1)
 
 
-def _get_available_vector_dbs(config: dict) -> List[Dict[str, Any]]:
+def _get_available_vector_dbs(ctx: CLIContext) -> List[Dict[str, Any]]:
     """Get list of available vector DBs from config and installed plugins."""
     from fitz_ai.vector_db.registry import available_vector_db_plugins
 
     # Get configured default
-    configured = config.get("vector_db", {}).get("plugin_name", "local_faiss")
-    configured_kwargs = config.get("vector_db", {}).get("kwargs", {})
+    configured = ctx.vector_db_plugin
+    configured_kwargs = ctx.vector_db_kwargs
 
     # Get all available plugins
     available = available_vector_db_plugins()
@@ -166,13 +151,16 @@ def command() -> None:
     """
     ui.header("Collections", "Manage vector database collections")
 
-    config = _load_config()
+    ctx = CLIContext.load_or_none()
+    if ctx is None:
+        ui.error("No config found. Run 'fitz init' or 'fitz quickstart' first.")
+        raise typer.Exit(1)
 
     # =========================================================================
     # Step 1: Select Vector DB (if multiple available)
     # =========================================================================
 
-    available_dbs = _get_available_vector_dbs(config)
+    available_dbs = _get_available_vector_dbs(ctx)
 
     if not available_dbs:
         ui.error("No vector DB plugins found.")
