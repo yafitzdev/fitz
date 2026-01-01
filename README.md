@@ -618,34 +618,34 @@ Fitz is a foundation. It handles document ingestion and grounded retrieval—you
 <br>
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         fitz-ai                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  User Interfaces                                                │
-│  CLI: quickstart | init | ingest | query | chat | serve         │
-│  SDK: fitz_ai.fitz() → ingest() → ask()                         │
-│  API: /query | /chat | /ingest | /collections | /health         │
-├─────────────────────────────────────────────────────────────────┤
-│  Engines                                                        │
-│  ┌───────────────┐  ┌───────────┐  ┌────────────┐               │
-│  │  Fitz RAG  │  │   CLaRa   │  │  GraphRAG  │  (pluggable)  │
-│  └───────────────┘  └───────────┘  └────────────┘               │
-├─────────────────────────────────────────────────────────────────┤
-│  Plugin System (all YAML-defined)                               │
-│  ┌────────┐ ┌───────────┐ ┌────────┐ ┌──────────┐               │
-│  │  Chat  │ │ Embedding │ │ Rerank │ │ VectorDB │               │
-│  └────────┘ └───────────┘ └────────┘ └──────────┘               │
-│  openai, cohere, anthropic, ollama, azure...                    │
-├─────────────────────────────────────────────────────────────────┤
-│  Retrieval Pipelines (YAML-composed)                            │
-│  dense.yaml | dense_rerank.yaml | custom...                     │
-├─────────────────────────────────────────────────────────────────┤
-│  Enrichment (opt-in)                                            │
-│  code artifacts | LLM summaries | hierarchical RAG | custom     │
-├─────────────────────────────────────────────────────────────────┤
-│  Constraints (epistemic safety)                                 │
-│  ConflictAware | InsufficientEvidence | CausalAttribution       │
-└─────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                         fitz-ai                               │
+├───────────────────────────────────────────────────────────────┤
+│  User Interfaces                                              │
+│  CLI: quickstart | init | ingest | query | chat | serve       │
+│  SDK: fitz_ai.fitz() → ingest() → ask()                       │
+│  API: /query | /chat | /ingest | /collections | /health       │
+├───────────────────────────────────────────────────────────────┤
+│  Engines                                                      │
+│  ┌───────────┐  ┌───────────┐  ┌────────────┐                 │
+│  │  FitzRAG  │  │   CLaRa   │  │  GraphRAG  │  (pluggable)    │
+│  └───────────┘  └───────────┘  └────────────┘                 │
+├───────────────────────────────────────────────────────────────┤
+│  Plugin System (all YAML-defined)                             │
+│  ┌────────┐ ┌───────────┐ ┌────────┐ ┌──────────┐             │
+│  │  Chat  │ │ Embedding │ │ Rerank │ │ VectorDB │             │
+│  └────────┘ └───────────┘ └────────┘ └──────────┘             │
+│  openai, cohere, anthropic, ollama, azure...                  │
+├───────────────────────────────────────────────────────────────┤
+│  Retrieval Pipelines (YAML-composed)                          │
+│  dense.yaml | dense_rerank.yaml | custom...                   │
+├───────────────────────────────────────────────────────────────┤
+│  Enrichment (opt-in)                                          │
+│  code artifacts | LLM summaries | hierarchical RAG | custom   │
+├───────────────────────────────────────────────────────────────┤
+│  Constraints (epistemic safety)                               │
+│  ConflictAware | InsufficientEvidence | CausalAttribution     │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 </details>
