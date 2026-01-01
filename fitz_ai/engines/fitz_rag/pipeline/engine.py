@@ -263,7 +263,8 @@ class RAGPipeline:
         # Query router (routes global queries to L2 summaries)
         query_router = QueryRouter(
             enabled=cfg.routing.enabled,
-            custom_patterns=cfg.routing.global_keywords,
+            embedder=embedder.embed,
+            threshold=cfg.routing.threshold,
         )
 
         logger.info(f"{PIPELINE} RAGPipeline successfully created")
