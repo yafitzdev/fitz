@@ -12,7 +12,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from fitz_ai.engines.fitz_rag.retrieval.steps.vector_search import VectorSearchStep
 
 import yaml
 
@@ -284,11 +287,26 @@ class RetrievalPipelineFromYaml:
     description: str
     steps: list[RetrievalStep]
 
-    def retrieve(self, query: str) -> list:
-        """Execute the retrieval pipeline."""
+    def retrieve(self, query: str, filter_override: dict[str, Any] | None = None) -> list:
+        """
+        Execute the retrieval pipeline.
+
+        Args:
+            query: Query string
+            filter_override: Optional filter to apply to vector search (for query routing)
+        """
         from fitz_ai.core.chunk import Chunk
+        from fitz_ai.engines.fitz_rag.retrieval.steps.vector_search import VectorSearchStep
 
         logger.info(f"{RETRIEVER} Running {self.plugin_name} pipeline ({len(self.steps)} steps)")
+
+        # Apply filter override to vector search step if provided
+        if filter_override:
+            for step in self.steps:
+                if isinstance(step, VectorSearchStep):
+                    step.filter_conditions = filter_override
+                    logger.debug(f"{RETRIEVER} Applied filter override to vector search")
+                    break
 
         chunks: list[Chunk] = []
 

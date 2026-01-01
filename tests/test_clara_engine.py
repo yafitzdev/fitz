@@ -349,7 +349,7 @@ class TestClaraIntegration:
         pass
 
     def test_clara_answer_format_matches_fitz_rag(self):
-        """Test that CLaRa answers have the same format as Fitz RAG."""
+        """Test that CLaRa answers have the same format as FitzRAG."""
         from fitz_ai.core import Answer
 
         # Both engines should return Answer objects

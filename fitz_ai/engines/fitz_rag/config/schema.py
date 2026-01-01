@@ -268,6 +268,40 @@ class LoggingConfig(BaseModel):
 
 
 # =============================================================================
+# Query Routing Configuration
+# =============================================================================
+
+
+class QueryRoutingConfig(BaseModel):
+    """
+    Query routing configuration for hierarchical retrieval.
+
+    When enabled, global queries (summaries, trends, overviews) are routed
+    to L2 corpus summaries instead of L0 chunks.
+
+    Uses semantic embeddings for language-agnostic query classification.
+
+    Example YAML:
+        routing:
+          enabled: true
+          threshold: 0.7
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable query routing to hierarchy levels (default: True)",
+    )
+    threshold: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Similarity threshold for global query detection (default: 0.7)",
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# =============================================================================
 # Enrichment Configuration
 # =============================================================================
 
@@ -410,6 +444,12 @@ class FitzRagConfig(BaseModel):
     enrichment: EnrichmentConfig = Field(
         default_factory=EnrichmentConfig,
         description="Enrichment configuration for improved retrieval",
+    )
+
+    # Query routing (routes global queries to L2 summaries)
+    routing: QueryRoutingConfig = Field(
+        default_factory=QueryRoutingConfig,
+        description="Query routing configuration for hierarchical retrieval",
     )
 
     model_config = ConfigDict(extra="forbid")

@@ -57,12 +57,14 @@ class MockVectorClient:
         query_vector: list[float] | None = None,
         limit: int = 10,
         with_payload: bool = True,
+        query_filter: dict | None = None,
     ) -> list[MockHit]:
         self.search_calls.append(
             {
                 "collection": collection_name,
                 "vector": query_vector,
                 "limit": limit,
+                "filter": query_filter,
             }
         )
         return self.hits[:limit]

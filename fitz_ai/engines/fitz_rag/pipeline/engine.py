@@ -35,6 +35,7 @@ from fitz_ai.engines.fitz_rag.generation.retrieval_guided.synthesis import (
 )
 from fitz_ai.engines.fitz_rag.pipeline.pipeline import ContextPipeline
 from fitz_ai.engines.fitz_rag.retrieval.registry import get_retrieval_plugin
+from fitz_ai.engines.fitz_rag.routing import QueryIntent, QueryRouter
 from fitz_ai.llm.registry import get_llm_plugin
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.logging.tags import PIPELINE, VECTOR_DB
@@ -63,11 +64,13 @@ class RAGPipeline:
         context: ContextPipeline | None = None,
         constraints: Sequence[ConstraintPlugin] | None = None,
         semantic_matcher: SemanticMatcher | None = None,
+        query_router: QueryRouter | None = None,
     ):
         self.retrieval = retrieval
         self.chat = chat
         self.rgs = rgs
         self.context = context or ContextPipeline()
+        self.query_router = query_router
 
         # Default constraints: ConflictAware + InsufficientEvidence + CausalAttribution
         # Uses semantic embedding similarity for language-agnostic detection.
@@ -86,18 +89,27 @@ class RAGPipeline:
         else:
             self.constraints = list(constraints)
 
+        routing_status = "enabled" if query_router and query_router.enabled else "disabled"
         logger.info(
             f"{PIPELINE} RAGPipeline initialized with {retrieval.plugin_name} retrieval, "
-            f"{len(self.constraints)} constraint(s)"
+            f"{len(self.constraints)} constraint(s), routing={routing_status}"
         )
 
     def run(self, query: str) -> RGSAnswer:
         """Execute the RAG pipeline for a query."""
         logger.info(f"{PIPELINE} Running pipeline for query='{query[:50]}...'")
 
+        # Step 0: Route query to appropriate retrieval target
+        filter_override = None
+        if self.query_router:
+            intent = self.query_router.classify(query)
+            if intent == QueryIntent.GLOBAL:
+                filter_override = self.query_router.get_l2_filter()
+                logger.info(f"{PIPELINE} Query routed to L2 corpus summaries (global intent)")
+
         # Step 1: Retrieve relevant chunks (using YAML-based plugin)
         try:
-            raw_chunks = self.retrieval.retrieve(query)
+            raw_chunks = self.retrieval.retrieve(query, filter_override=filter_override)
         except Exception as exc:
             logger.error(f"{PIPELINE} Retrieval failed: {exc}")
             raise PipelineError("Retrieval failed") from exc
@@ -248,6 +260,12 @@ class RAGPipeline:
         # Create semantic matcher for constraints using the embedder
         semantic_matcher = SemanticMatcher(embedder=embedder.embed)
 
+        # Query router (routes global queries to L2 summaries)
+        query_router = QueryRouter(
+            enabled=cfg.routing.enabled,
+            custom_patterns=cfg.routing.global_keywords,
+        )
+
         logger.info(f"{PIPELINE} RAGPipeline successfully created")
         return cls(
             retrieval=retrieval,
@@ -256,6 +274,7 @@ class RAGPipeline:
             context=ContextPipeline(),
             constraints=constraints,
             semantic_matcher=semantic_matcher,
+            query_router=query_router,
         )
 
     @classmethod

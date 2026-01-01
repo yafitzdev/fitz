@@ -3,11 +3,13 @@
 Vector Search Step - Initial retrieval from vector database.
 
 Embeds query and searches for top-k candidates.
+Supports optional metadata filtering for hierarchical retrieval.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.engines.fitz_rag.exceptions import EmbeddingError, VectorSearchError
@@ -32,12 +34,14 @@ class VectorSearchStep(RetrievalStep):
         embedder: Embedding service
         collection: Collection name to search
         k: Number of candidates to retrieve (default: 25)
+        filter_conditions: Optional Qdrant-style filter for metadata filtering
     """
 
     client: VectorClient
     embedder: Embedder
     collection: str
     k: int = 25  # Retrieve more than final k for downstream filtering
+    filter_conditions: dict[str, Any] = field(default_factory=dict)
 
     def execute(self, query: str, chunks: list[Chunk]) -> list[Chunk]:
         """
@@ -56,17 +60,13 @@ class VectorSearchStep(RetrievalStep):
 
         # 2. Search vector DB
         try:
-            # Try named args first (Qdrant style)
-            try:
-                hits = self.client.search(
-                    collection_name=self.collection,
-                    query_vector=query_vector,
-                    limit=self.k,
-                    with_payload=True,
-                )
-            except TypeError:
-                # Fall back to positional args
-                hits = self.client.search(self.collection, query_vector, self.k)
+            hits = self.client.search(
+                collection_name=self.collection,
+                query_vector=query_vector,
+                limit=self.k,
+                with_payload=True,
+                query_filter=self.filter_conditions if self.filter_conditions else None,
+            )
         except Exception as exc:
             raise VectorSearchError(f"Vector search failed: {exc}") from exc
 
