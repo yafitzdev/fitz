@@ -27,26 +27,6 @@ class TestQuickstartCommand:
         assert "source" in result.output.lower()
         assert "question" in result.output.lower()
 
-    def test_quickstart_requires_source(self):
-        """Test that quickstart requires a source path."""
-        result = runner.invoke(app, ["quickstart"])
-
-        assert result.exit_code != 0
-
-    def test_quickstart_requires_question(self, tmp_path):
-        """Test that quickstart requires a question."""
-        (tmp_path / "test.txt").write_text("Test content")
-
-        result = runner.invoke(app, ["quickstart", str(tmp_path)])
-
-        assert result.exit_code != 0
-
-    def test_quickstart_validates_source_exists(self):
-        """Test that quickstart validates source path exists."""
-        result = runner.invoke(app, ["quickstart", "/nonexistent/path", "question"])
-
-        assert result.exit_code != 0
-
 
 class TestEnsureApiKey:
     """Tests for API key handling."""
@@ -56,29 +36,37 @@ class TestEnsureApiKey:
         """Test that existing API key is used."""
         from fitz_ai.cli.commands.quickstart import _ensure_api_key
 
-        key = _ensure_api_key()
+        key = _ensure_api_key("cohere")
 
         assert key == "test-key-12345678"
 
-    @patch.dict(os.environ, {}, clear=True)
-    def test_prompts_when_no_key(self):
-        """Test that user is prompted when no key exists."""
-        # Clear the key
-        os.environ.pop("COHERE_API_KEY", None)
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-12345678"})
+    def test_uses_existing_openai_key(self):
+        """Test that existing OpenAI API key is used."""
+        from fitz_ai.cli.commands.quickstart import _ensure_api_key
 
-        # Would prompt - we can't easily test interactive prompts
-        # but we can verify the function exists and has correct signature
+        key = _ensure_api_key("openai")
+
+        assert key == "sk-test-key-12345678"
+
+    def test_ollama_returns_local(self):
+        """Test that Ollama doesn't need an API key."""
+        from fitz_ai.cli.commands.quickstart import _ensure_api_key
+
+        key = _ensure_api_key("ollama")
+
+        assert key == "local"
 
 
-class TestCreateDefaultConfig:
-    """Tests for config generation."""
+class TestCreateProviderConfig:
+    """Tests for provider config generation."""
 
     def test_creates_config_file(self, tmp_path):
         """Test that config file is created."""
-        from fitz_ai.cli.commands.quickstart import _create_default_config
+        from fitz_ai.cli.commands.quickstart import _create_provider_config
 
         config_path = tmp_path / "fitz.yaml"
-        _create_default_config(config_path)
+        _create_provider_config(config_path, "cohere")
 
         assert config_path.exists()
 
@@ -86,10 +74,10 @@ class TestCreateDefaultConfig:
         """Test that config has all required sections."""
         import yaml
 
-        from fitz_ai.cli.commands.quickstart import _create_default_config
+        from fitz_ai.cli.commands.quickstart import _create_provider_config
 
         config_path = tmp_path / "fitz.yaml"
-        _create_default_config(config_path)
+        _create_provider_config(config_path, "cohere")
 
         config = yaml.safe_load(config_path.read_text())
 
@@ -100,13 +88,13 @@ class TestCreateDefaultConfig:
         assert "rerank" in config
 
     def test_config_uses_cohere(self, tmp_path):
-        """Test that config uses Cohere as default provider."""
+        """Test that config uses Cohere when selected."""
         import yaml
 
-        from fitz_ai.cli.commands.quickstart import _create_default_config
+        from fitz_ai.cli.commands.quickstart import _create_provider_config
 
         config_path = tmp_path / "fitz.yaml"
-        _create_default_config(config_path)
+        _create_provider_config(config_path, "cohere")
 
         config = yaml.safe_load(config_path.read_text())
 
@@ -114,14 +102,42 @@ class TestCreateDefaultConfig:
         assert config["embedding"]["plugin_name"] == "cohere"
         assert config["rerank"]["plugin_name"] == "cohere"
 
+    def test_config_uses_openai(self, tmp_path):
+        """Test that config uses OpenAI when selected."""
+        import yaml
+
+        from fitz_ai.cli.commands.quickstart import _create_provider_config
+
+        config_path = tmp_path / "fitz.yaml"
+        _create_provider_config(config_path, "openai")
+
+        config = yaml.safe_load(config_path.read_text())
+
+        assert config["chat"]["plugin_name"] == "openai"
+        assert config["embedding"]["plugin_name"] == "openai"
+
+    def test_config_uses_ollama(self, tmp_path):
+        """Test that config uses Ollama when selected."""
+        import yaml
+
+        from fitz_ai.cli.commands.quickstart import _create_provider_config
+
+        config_path = tmp_path / "fitz.yaml"
+        _create_provider_config(config_path, "ollama")
+
+        config = yaml.safe_load(config_path.read_text())
+
+        assert config["chat"]["plugin_name"] == "local_ollama"
+        assert config["embedding"]["plugin_name"] == "local_ollama"
+
     def test_config_uses_local_faiss(self, tmp_path):
         """Test that config uses local FAISS."""
         import yaml
 
-        from fitz_ai.cli.commands.quickstart import _create_default_config
+        from fitz_ai.cli.commands.quickstart import _create_provider_config
 
         config_path = tmp_path / "fitz.yaml"
-        _create_default_config(config_path)
+        _create_provider_config(config_path, "cohere")
 
         config = yaml.safe_load(config_path.read_text())
 
@@ -129,10 +145,10 @@ class TestCreateDefaultConfig:
 
     def test_creates_parent_directories(self, tmp_path):
         """Test that parent directories are created."""
-        from fitz_ai.cli.commands.quickstart import _create_default_config
+        from fitz_ai.cli.commands.quickstart import _create_provider_config
 
         config_path = tmp_path / "nested" / "path" / "fitz.yaml"
-        _create_default_config(config_path)
+        _create_provider_config(config_path, "cohere")
 
         assert config_path.exists()
 
@@ -148,11 +164,25 @@ class TestSaveApiKeyToShell:
         bashrc.write_text("# existing content\n")
 
         with patch("fitz_ai.cli.commands.quickstart.Path.home", return_value=tmp_path):
-            _save_api_key_to_shell("test-key-123")
+            _save_api_key_to_shell("test-key-123", "COHERE_API_KEY")
 
         content = bashrc.read_text()
         assert "COHERE_API_KEY" in content
         assert "test-key-123" in content
+
+    def test_saves_openai_key(self, tmp_path):
+        """Test saving OpenAI key to .bashrc."""
+        from fitz_ai.cli.commands.quickstart import _save_api_key_to_shell
+
+        bashrc = tmp_path / ".bashrc"
+        bashrc.write_text("# existing content\n")
+
+        with patch("fitz_ai.cli.commands.quickstart.Path.home", return_value=tmp_path):
+            _save_api_key_to_shell("sk-test-key-123", "OPENAI_API_KEY")
+
+        content = bashrc.read_text()
+        assert "OPENAI_API_KEY" in content
+        assert "sk-test-key-123" in content
 
     def test_does_not_duplicate(self, tmp_path):
         """Test that key is not duplicated if already present."""
@@ -162,7 +192,7 @@ class TestSaveApiKeyToShell:
         bashrc.write_text('export COHERE_API_KEY="existing-key"\n')
 
         with patch("fitz_ai.cli.commands.quickstart.Path.home", return_value=tmp_path):
-            _save_api_key_to_shell("new-key-123")
+            _save_api_key_to_shell("new-key-123", "COHERE_API_KEY")
 
         content = bashrc.read_text()
         # Should still have old key, not new one

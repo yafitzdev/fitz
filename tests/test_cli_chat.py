@@ -36,7 +36,7 @@ class TestChatCommand:
             lambda name: tmp_path / "nonexistent" / f"{name}.yaml",
         )
 
-        result = runner.invoke(app, ["chat", "--engine", "fitz_rag"], input="exit\n")
+        result = runner.invoke(app, ["chat"], input="exit\n")
 
         assert result.exit_code != 0
         assert "init" in result.output.lower() or "config" in result.output.lower()
@@ -209,15 +209,14 @@ class TestChatDisplay:
         assert "response" in captured.out
 
     def test_display_welcome(self, capsys):
-        """Test _display_welcome shows collection name and engine."""
+        """Test _display_welcome shows collection name."""
         with patch("fitz_ai.cli.commands.chat.RICH", False):
             from fitz_ai.cli.commands.chat import _display_welcome
 
-            _display_welcome("my_collection", "fitz_rag")
+            _display_welcome("my_collection")
 
         captured = capsys.readouterr()
         assert "my_collection" in captured.out
-        assert "fitz_rag" in captured.out
 
     def test_display_goodbye(self, capsys):
         """Test _display_goodbye shows farewell."""
@@ -237,7 +236,9 @@ class TestChatExitCommands:
         """Test that chat exits when user types 'exit'."""
         import yaml
 
-        config_path = tmp_path / "fitz.yaml"
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        config_path = config_dir / "fitz_rag.yaml"
         config = {
             "chat": {"plugin_name": "cohere"},
             "embedding": {"plugin_name": "cohere"},
@@ -249,7 +250,7 @@ class TestChatExitCommands:
         mock_pipeline = MagicMock()
 
         with (
-            patch("fitz_ai.core.paths.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.cli.utils.FitzPaths.engine_config", return_value=config_path),
             patch(
                 "fitz_ai.engines.fitz_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,
@@ -257,7 +258,7 @@ class TestChatExitCommands:
             patch("fitz_ai.cli.commands.chat.get_collections", return_value=["test"]),
             patch("fitz_ai.cli.commands.chat.RICH", False),
         ):
-            result = runner.invoke(app, ["chat", "--engine", "fitz_rag"], input="exit\n")
+            result = runner.invoke(app, ["chat"], input="exit\n")
 
         assert "goodbye" in result.output.lower() or "ended" in result.output.lower()
 
@@ -265,7 +266,9 @@ class TestChatExitCommands:
         """Test that chat exits when user types 'quit'."""
         import yaml
 
-        config_path = tmp_path / "fitz.yaml"
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        config_path = config_dir / "fitz_rag.yaml"
         config = {
             "chat": {"plugin_name": "cohere"},
             "embedding": {"plugin_name": "cohere"},
@@ -277,7 +280,7 @@ class TestChatExitCommands:
         mock_pipeline = MagicMock()
 
         with (
-            patch("fitz_ai.core.paths.FitzPaths.config", return_value=config_path),
+            patch("fitz_ai.cli.utils.FitzPaths.engine_config", return_value=config_path),
             patch(
                 "fitz_ai.engines.fitz_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,
@@ -285,6 +288,6 @@ class TestChatExitCommands:
             patch("fitz_ai.cli.commands.chat.get_collections", return_value=["test"]),
             patch("fitz_ai.cli.commands.chat.RICH", False),
         ):
-            result = runner.invoke(app, ["chat", "--engine", "fitz_rag"], input="quit\n")
+            result = runner.invoke(app, ["chat"], input="quit\n")
 
         assert "goodbye" in result.output.lower() or "ended" in result.output.lower()
