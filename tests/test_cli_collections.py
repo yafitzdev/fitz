@@ -24,14 +24,10 @@ class TestCollectionsCommand:
         assert result.exit_code == 0
         assert "collection" in result.output.lower()
 
-    def test_collections_requires_config(self, tmp_path, monkeypatch):
+    def test_collections_requires_config(self):
         """Test that collections requires a config file."""
-        monkeypatch.setattr(
-            "fitz_ai.cli.context.FitzPaths.config",
-            lambda: tmp_path / "nonexistent" / "fitz.yaml",
-        )
-
-        result = runner.invoke(app, ["collections"], input="4\n")  # Exit option
+        with patch("fitz_ai.cli.context.CLIContext.load", return_value=None):
+            result = runner.invoke(app, ["collections"], input="4\n")  # Exit option
 
         assert result.exit_code != 0
         assert "init" in result.output.lower() or "config" in result.output.lower()
@@ -40,21 +36,15 @@ class TestCollectionsCommand:
 class TestCollectionsHelpers:
     """Tests for collections helper functions."""
 
-    def test_cli_context_loads_config(self, tmp_path):
+    def test_cli_context_loads_config(self):
         """Test CLIContext loads config."""
-        import yaml
+        mock_ctx = MagicMock()
+        mock_ctx.vector_db_plugin = "local_faiss"
 
-        config_path = tmp_path / "fitz.yaml"
-        config = {"vector_db": {"plugin_name": "local_faiss"}}
-        config_path.write_text(yaml.dump(config))
-
-        with patch(
-            "fitz_ai.cli.context.FitzPaths.engine_config",
-            return_value=config_path,
-        ):
+        with patch("fitz_ai.cli.context.CLIContext.load", return_value=mock_ctx):
             from fitz_ai.cli.context import CLIContext
 
-            ctx = CLIContext.load_or_none()
+            ctx = CLIContext.load()
 
         assert ctx is not None
         assert ctx.vector_db_plugin == "local_faiss"
@@ -73,26 +63,19 @@ class TestCollectionsHelpers:
 
         assert client == mock_plugin
 
-    def test_get_available_vector_dbs(self, tmp_path):
+    def test_get_available_vector_dbs(self):
         """Test _get_available_vector_dbs returns sorted list."""
-        import yaml
+        mock_ctx = MagicMock()
+        mock_ctx.vector_db_plugin = "local_faiss"
+        mock_ctx.vector_db_kwargs = {}
 
-        config_path = tmp_path / "fitz.yaml"
-        config = {"vector_db": {"plugin_name": "local_faiss", "kwargs": {}}}
-        config_path.write_text(yaml.dump(config))
-
-        with (
-            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
-            patch(
-                "fitz_ai.vector_db.registry.available_vector_db_plugins",
-                return_value=["qdrant", "local_faiss"],
-            ),
+        with patch(
+            "fitz_ai.vector_db.registry.available_vector_db_plugins",
+            return_value=["qdrant", "local_faiss"],
         ):
             from fitz_ai.cli.commands.collections import _get_available_vector_dbs
-            from fitz_ai.cli.context import CLIContext
 
-            ctx = CLIContext.load()
-            result = _get_available_vector_dbs(ctx)
+            result = _get_available_vector_dbs(mock_ctx)
 
         # Configured one should be first
         assert result[0]["name"] == "local_faiss"

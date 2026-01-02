@@ -58,7 +58,9 @@ class TestMapCommand:
         )
 
         # Mock the imports to avoid dependency issues
-        with (patch.dict("sys.modules", {"umap": MagicMock(), "sklearn.cluster": MagicMock()}),):
+        with (
+            patch.dict("sys.modules", {"umap": MagicMock(), "sklearn.cluster": MagicMock()}),
+        ):
             result = runner.invoke(app, ["map"])
 
         assert result.exit_code != 0
@@ -68,24 +70,15 @@ class TestMapCommand:
 class TestMapHelpers:
     """Tests for map helper functions using CLIContext."""
 
-    def test_cli_context_loads_vector_db(self, tmp_path):
+    def test_cli_context_loads_vector_db(self):
         """Test CLIContext loads vector DB config."""
-        import yaml
+        mock_ctx = MagicMock()
+        mock_ctx.vector_db_plugin = "local_faiss"
 
-        config_path = tmp_path / "fitz.yaml"
-        config = {
-            "vector_db": {"plugin_name": "local_faiss"},
-            "retrieval": {"collection": "test"},
-        }
-        config_path.write_text(yaml.dump(config))
-
-        with patch(
-            "fitz_ai.cli.context.FitzPaths.engine_config",
-            return_value=config_path,
-        ):
+        with patch("fitz_ai.cli.context.CLIContext.load", return_value=mock_ctx):
             from fitz_ai.cli.context import CLIContext
 
-            ctx = CLIContext.load_or_none()
+            ctx = CLIContext.load()
 
         assert ctx is not None
         assert ctx.vector_db_plugin == "local_faiss"

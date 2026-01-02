@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from fitz_ai.core.paths import FitzPaths
 from fitz_ai.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -137,18 +138,27 @@ class CLIContext:
         Returns:
             CLIContext with all values populated, or None if no config.
         """
-        from fitz_ai.cli.utils import load_fitz_rag_config
-        from fitz_ai.core.paths import FitzPaths
+        from fitz_ai.core.config import ConfigNotFoundError, load_config_dict
+        from fitz_ai.engines.fitz_rag.config import FitzRagConfig
 
-        raw_config, typed_config = load_fitz_rag_config()
-
-        if raw_config is None:
-            return None
-
-        # Determine config path
+        # Determine config path (engine-specific first, then global)
         config_path = FitzPaths.engine_config("fitz_rag")
         if not config_path.exists():
             config_path = FitzPaths.config()
+
+        # Load raw config
+        try:
+            raw_config = load_config_dict(config_path)
+        except ConfigNotFoundError:
+            return None
+        except Exception:
+            return None
+
+        # Parse into typed config
+        try:
+            typed_config = FitzRagConfig.from_dict(raw_config)
+        except Exception:
+            typed_config = None
 
         return cls._from_config(raw_config, typed_config, config_path)
 

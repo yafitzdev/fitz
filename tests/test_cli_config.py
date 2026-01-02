@@ -5,7 +5,7 @@ Tests for the config command.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
@@ -249,18 +249,23 @@ class TestShowConfigSummary:
 
     def test_show_config_summary_plain(self, capsys):
         """Test _show_config_summary plain text output."""
+        mock_ctx = MagicMock()
+        mock_ctx.chat_plugin = "cohere"
+        mock_ctx.chat_model_smart = "command-r-plus"
+        mock_ctx.embedding_plugin = "cohere"
+        mock_ctx.embedding_model = "embed-english-v3.0"
+        mock_ctx.vector_db_plugin = "local_faiss"
+        mock_ctx.retrieval_plugin = "dense"
+        mock_ctx.retrieval_collection = "test"
+        mock_ctx.retrieval_top_k = 5
+        mock_ctx.rerank_enabled = False
+        mock_ctx.rgs_citations = True
+        mock_ctx.rgs_strict_grounding = True
+
         with patch("fitz_ai.cli.commands.config.RICH", False):
             from fitz_ai.cli.commands.config import _show_config_summary
 
-            config = {
-                "chat": {"plugin_name": "cohere"},
-                "embedding": {"plugin_name": "cohere"},
-                "vector_db": {"plugin_name": "local_faiss"},
-                "retrieval": {"plugin_name": "dense", "collection": "test"},
-                "rerank": {"enabled": False},
-            }
-
-            _show_config_summary(config)
+            _show_config_summary(mock_ctx)
 
         captured = capsys.readouterr()
         assert "cohere" in captured.out.lower()

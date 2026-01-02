@@ -25,18 +25,10 @@ class TestChatCommand:
         assert "chat" in result.output.lower()
         assert "collection" in result.output.lower()
 
-    def test_chat_requires_config(self, tmp_path, monkeypatch):
+    def test_chat_requires_config(self):
         """Test that chat requires a config file."""
-        monkeypatch.setattr(
-            "fitz_ai.cli.context.FitzPaths.config",
-            lambda: tmp_path / "nonexistent" / "fitz.yaml",
-        )
-        monkeypatch.setattr(
-            "fitz_ai.cli.context.FitzPaths.engine_config",
-            lambda name: tmp_path / "nonexistent" / f"{name}.yaml",
-        )
-
-        result = runner.invoke(app, ["chat"], input="exit\n")
+        with patch("fitz_ai.cli.context.CLIContext.load", return_value=None):
+            result = runner.invoke(app, ["chat"], input="exit\n")
 
         assert result.exit_code != 0
         assert "init" in result.output.lower() or "config" in result.output.lower()
@@ -45,26 +37,20 @@ class TestChatCommand:
 class TestChatHelpers:
     """Tests for chat helper functions."""
 
-    def test_load_fitz_rag_config_returns_tuple(self, tmp_path):
+    def test_load_fitz_rag_config_returns_tuple(self):
         """Test load_fitz_rag_config returns raw and typed config."""
-        import yaml
-
-        # Create engine-specific config file
-        config_dir = tmp_path / "config"
-        config_dir.mkdir()
-        config_path = config_dir / "fitz_rag.yaml"
-        config = {
+        # Create a mock CLIContext with the config values
+        mock_ctx = MagicMock()
+        mock_ctx.raw_config = {
             "chat": {"plugin_name": "cohere"},
             "embedding": {"plugin_name": "cohere"},
             "vector_db": {"plugin_name": "local_faiss"},
             "retrieval": {"plugin_name": "dense", "collection": "test"},
         }
-        config_path.write_text(yaml.dump(config))
+        mock_ctx.typed_config = MagicMock()
+        mock_ctx.typed_config.retrieval.collection = "test"
 
-        with patch(
-            "fitz_ai.cli.context.FitzPaths.engine_config",
-            return_value=config_path,
-        ):
+        with patch("fitz_ai.cli.context.CLIContext.load", return_value=mock_ctx):
             from fitz_ai.cli.utils import load_fitz_rag_config
 
             raw, typed = load_fitz_rag_config()
@@ -232,60 +218,42 @@ class TestChatDisplay:
 class TestChatExitCommands:
     """Tests for chat exit handling."""
 
-    def test_chat_exits_on_exit_command(self, tmp_path):
+    def test_chat_exits_on_exit_command(self):
         """Test that chat exits when user types 'exit'."""
-        import yaml
-
-        config_dir = tmp_path / "config"
-        config_dir.mkdir()
-        config_path = config_dir / "fitz_rag.yaml"
-        config = {
-            "chat": {"plugin_name": "cohere"},
-            "embedding": {"plugin_name": "cohere"},
-            "vector_db": {"plugin_name": "local_faiss"},
-            "retrieval": {"plugin_name": "dense", "collection": "test"},
-        }
-        config_path.write_text(yaml.dump(config))
+        mock_ctx = MagicMock()
+        mock_ctx.typed_config = MagicMock()
+        mock_ctx.typed_config.retrieval.collection = "test"
+        mock_ctx.get_collections.return_value = ["test"]
 
         mock_pipeline = MagicMock()
 
         with (
-            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.CLIContext.load", return_value=mock_ctx),
             patch(
                 "fitz_ai.engines.fitz_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,
             ),
-            patch("fitz_ai.cli.commands.chat.get_collections", return_value=["test"]),
             patch("fitz_ai.cli.commands.chat.RICH", False),
         ):
             result = runner.invoke(app, ["chat"], input="exit\n")
 
         assert "goodbye" in result.output.lower() or "ended" in result.output.lower()
 
-    def test_chat_exits_on_quit_command(self, tmp_path):
+    def test_chat_exits_on_quit_command(self):
         """Test that chat exits when user types 'quit'."""
-        import yaml
-
-        config_dir = tmp_path / "config"
-        config_dir.mkdir()
-        config_path = config_dir / "fitz_rag.yaml"
-        config = {
-            "chat": {"plugin_name": "cohere"},
-            "embedding": {"plugin_name": "cohere"},
-            "vector_db": {"plugin_name": "local_faiss"},
-            "retrieval": {"plugin_name": "dense", "collection": "test"},
-        }
-        config_path.write_text(yaml.dump(config))
+        mock_ctx = MagicMock()
+        mock_ctx.typed_config = MagicMock()
+        mock_ctx.typed_config.retrieval.collection = "test"
+        mock_ctx.get_collections.return_value = ["test"]
 
         mock_pipeline = MagicMock()
 
         with (
-            patch("fitz_ai.cli.context.FitzPaths.engine_config", return_value=config_path),
+            patch("fitz_ai.cli.context.CLIContext.load", return_value=mock_ctx),
             patch(
                 "fitz_ai.engines.fitz_rag.pipeline.engine.RAGPipeline.from_config",
                 return_value=mock_pipeline,
             ),
-            patch("fitz_ai.cli.commands.chat.get_collections", return_value=["test"]),
             patch("fitz_ai.cli.commands.chat.RICH", False),
         ):
             result = runner.invoke(app, ["chat"], input="quit\n")

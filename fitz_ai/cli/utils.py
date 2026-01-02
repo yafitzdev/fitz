@@ -24,9 +24,9 @@ def load_fitz_rag_config() -> Tuple[Optional[dict], Optional[Any]]:
         Tuple of (raw_config_dict, typed_config) or (None, None) if config not found.
 
     Note:
-        Prefer using CLIContext.load() or CLIContext.load_or_none() directly.
+        Prefer using CLIContext.load() directly.
     """
-    ctx = CLIContext.load_or_none()
+    ctx = CLIContext.load()
     if ctx is None:
         return None, None
     return ctx.raw_config, ctx.typed_config

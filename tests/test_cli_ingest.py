@@ -25,31 +25,30 @@ class TestIngestCommand:
         assert "ingest" in result.output.lower()
         assert "source" in result.output.lower()
 
-    def test_ingest_requires_config(self, tmp_path, monkeypatch):
+    def test_ingest_requires_config(self, tmp_path):
         """Test that ingest requires a config file."""
-        # Mock load_fitz_rag_config to return None (no config)
-        with patch(
-            "fitz_ai.cli.commands.ingest.load_fitz_rag_config",
-            return_value=(None, None),
-        ):
+        # Mock CLIContext.load to return None (no config)
+        with patch("fitz_ai.cli.context.CLIContext.load", return_value=None):
             result = runner.invoke(app, ["ingest", str(tmp_path), "-y"])
 
         assert result.exit_code != 0
         assert "init" in result.output.lower() or "config" in result.output.lower()
 
-    def test_ingest_non_interactive_requires_source(self, tmp_path):
+    def test_ingest_non_interactive_requires_source(self):
         """Test that non-interactive mode requires source."""
-        config = {
+        mock_ctx = MagicMock()
+        mock_ctx.raw_config = {
             "embedding": {"plugin_name": "cohere"},
             "vector_db": {"plugin_name": "local_faiss"},
             "retrieval": {"collection": "default"},
             "chunking": {"default": {"plugin_name": "simple", "kwargs": {"chunk_size": 1000}}},
         }
+        mock_ctx.embedding_id = "cohere:embed-english-v3.0"
+        mock_ctx.embedding_plugin = "cohere"
+        mock_ctx.vector_db_plugin = "local_faiss"
+        mock_ctx.retrieval_collection = "default"
 
-        with patch(
-            "fitz_ai.cli.commands.ingest.load_fitz_rag_config",
-            return_value=(config, None),
-        ):
+        with patch("fitz_ai.cli.context.CLIContext.load", return_value=mock_ctx):
             result = runner.invoke(app, ["ingest", "-y"])
 
         assert result.exit_code != 0

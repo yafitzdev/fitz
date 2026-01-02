@@ -157,7 +157,7 @@ def _open_in_editor(config_path: Path) -> None:
 
 def _get_config_path() -> Path:
     """Get config path, checking engine-specific first, then global."""
-    ctx = CLIContext.load_or_none()
+    ctx = CLIContext.load()
     if ctx is not None:
         return ctx.config_path
 
@@ -242,7 +242,7 @@ def command(
     # Load config via CLIContext
     # =========================================================================
 
-    ctx = CLIContext.load_or_none()
+    ctx = CLIContext.load()
     if ctx is None:
         ui.error("No configuration found.")
         print()

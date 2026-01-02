@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional
 
 import typer
 
+from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import RICH, console, display_sources, ui
-from fitz_ai.cli.utils import get_collections, load_fitz_rag_config
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.logging.logger import get_logger
 
@@ -175,19 +175,19 @@ def _run_collection_chat(collection: Optional[str]) -> None:
     """Run chat using fitz_rag engine."""
     from fitz_ai.engines.fitz_rag.pipeline.engine import RAGPipeline
 
-    # Load config
-    raw_config, typed_config = load_fitz_rag_config()
-    if typed_config is None:
+    # Load config via CLIContext
+    ctx = CLIContext.load()
+    if ctx is None or ctx.typed_config is None:
         ui.error("No config found. Run 'fitz init' first.")
         raise typer.Exit(1)
 
-    default_collection = typed_config.retrieval.collection
+    typed_config = ctx.typed_config
 
     # Collection selection
     if collection:
         selected_collection = collection
     else:
-        collections = get_collections(raw_config)
+        collections = ctx.get_collections()
         if not collections:
             ui.error("No collections found. Run 'fitz ingest' first to create a collection.")
             raise typer.Exit(1)
@@ -197,7 +197,7 @@ def _run_collection_chat(collection: Optional[str]) -> None:
         else:
             print()
             selected_collection = ui.prompt_numbered_choice(
-                "Collection", collections, default_collection
+                "Collection", collections, ctx.retrieval_collection
             )
 
     # Update config with selected collection

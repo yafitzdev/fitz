@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional
 
 import typer
 
+from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import RICH, console, ui
-from fitz_ai.cli.utils import get_collections, load_fitz_rag_config
 from fitz_ai.logging.logger import get_logger
 from fitz_ai.runtime import get_default_engine
 
@@ -410,20 +410,18 @@ def command(
     from fitz_ai.vector_db.registry import get_vector_db_plugin
 
     # =========================================================================
-    # Load config (engine-specific for fitz_rag)
+    # Load config via CLIContext
     # =========================================================================
 
-    raw_config, _ = load_fitz_rag_config()
-    if raw_config is None:
+    ctx = CLIContext.load()
+    if ctx is None:
         ui.error("No config found. Run 'fitz init' first.")
         raise typer.Exit(1)
-    config = raw_config
 
-    embedding_plugin = config.get("embedding", {}).get("plugin_name", "cohere")
-    embedding_model = config.get("embedding", {}).get("kwargs", {}).get("model", "")
-    embedding_id = f"{embedding_plugin}:{embedding_model}" if embedding_model else embedding_plugin
-    vector_db_plugin = config.get("vector_db", {}).get("plugin_name", "local_faiss")
-    default_collection = config.get("retrieval", {}).get("collection", "default")
+    config = ctx.raw_config
+    embedding_id = ctx.embedding_id
+    vector_db_plugin = ctx.vector_db_plugin
+    default_collection = ctx.retrieval_collection
 
     # Show force warning if applicable
     if force:
@@ -481,7 +479,7 @@ def command(
 
         # 2. Collection - smart selection
         if collection is None:
-            existing_collections = get_collections(config)
+            existing_collections = ctx.get_collections()
 
             if existing_collections:
                 # Collections exist - let user choose or create new
@@ -617,7 +615,7 @@ def command(
         # Embedder
         embedding_kwargs = config.get("embedding", {}).get("kwargs", {})
         embedder = get_llm_plugin(
-            plugin_type="embedding", plugin_name=embedding_plugin, **embedding_kwargs
+            plugin_type="embedding", plugin_name=ctx.embedding_plugin, **embedding_kwargs
         )
 
         # Vector DB writer

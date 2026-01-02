@@ -70,13 +70,25 @@ def ingest(
     engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
     non_interactive: bool = typer.Option(False, "--yes", "-y", help="Non-interactive mode."),
     force: bool = typer.Option(False, "--force", "-f", help="Force re-ingest all files."),
-    artifacts: Optional[str] = typer.Option(None, "--artifacts", "-a", help="Artifacts to generate."),
-    hierarchy: bool = typer.Option(False, "--hierarchy", "-H", help="Enable hierarchical summaries."),
+    artifacts: Optional[str] = typer.Option(
+        None, "--artifacts", "-a", help="Artifacts to generate."
+    ),
+    hierarchy: bool = typer.Option(
+        False, "--hierarchy", "-H", help="Enable hierarchical summaries."
+    ),
 ) -> None:
     """Ingest documents into the knowledge base."""
     from fitz_ai.cli.commands import ingest as mod
 
-    mod.command(source=source, collection=collection, engine=engine, non_interactive=non_interactive, force=force, artifacts=artifacts, hierarchy=hierarchy)
+    mod.command(
+        source=source,
+        collection=collection,
+        engine=engine,
+        non_interactive=non_interactive,
+        force=force,
+        artifacts=artifacts,
+        hierarchy=hierarchy,
+    )
 
 
 @app.command("query")
@@ -115,13 +127,24 @@ def map_cmd(
     collection: Optional[str] = typer.Option(None, "--collection", "-c", help="Collection name."),
     no_open: bool = typer.Option(False, "--no-open", help="Don't open in browser."),
     rebuild: bool = typer.Option(False, "--rebuild", help="Force rebuild embeddings."),
-    similarity_threshold: float = typer.Option(0.8, "--similarity-threshold", "-t", help="Minimum similarity for edges."),
-    no_similarity_edges: bool = typer.Option(False, "--no-similarity-edges", help="Don't show similarity edges."),
+    similarity_threshold: float = typer.Option(
+        0.8, "--similarity-threshold", "-t", help="Minimum similarity for edges."
+    ),
+    no_similarity_edges: bool = typer.Option(
+        False, "--no-similarity-edges", help="Don't show similarity edges."
+    ),
 ) -> None:
     """Visualize knowledge base as interactive graph."""
     from fitz_ai.cli.commands import map as mod
 
-    mod.command(output=output, collection=collection, no_open=no_open, rebuild=rebuild, similarity_threshold=similarity_threshold, no_similarity_edges=no_similarity_edges)
+    mod.command(
+        output=output,
+        collection=collection,
+        no_open=no_open,
+        rebuild=rebuild,
+        similarity_threshold=similarity_threshold,
+        no_similarity_edges=no_similarity_edges,
+    )
 
 
 @app.command("serve")
@@ -167,6 +190,7 @@ def doctor(
 
 try:
     from fitz_ai_enterprise.cli import benchmark_app
+
     app.add_typer(benchmark_app, name="benchmark")
 except ImportError:
     pass  # Enterprise not installed

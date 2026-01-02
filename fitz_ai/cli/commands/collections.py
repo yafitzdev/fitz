@@ -151,7 +151,7 @@ def command() -> None:
     """
     ui.header("Collections", "Manage vector database collections")
 
-    ctx = CLIContext.load_or_none()
+    ctx = CLIContext.load()
     if ctx is None:
         ui.error("No config found. Run 'fitz init' or 'fitz quickstart' first.")
         raise typer.Exit(1)

@@ -136,8 +136,14 @@ def _run_quickstart(source: Path, question: str, collection: str, verbose: bool)
             collection=collection,
             verbose=verbose,
         )
-        hierarchy_info = f", {stats['hierarchy_summaries']} summaries" if stats.get('hierarchy_summaries') else ""
-        ui.success(f"Ingested {stats['documents']} documents ({stats['chunks']} chunks{hierarchy_info})")
+        hierarchy_info = (
+            f", {stats['hierarchy_summaries']} summaries"
+            if stats.get("hierarchy_summaries")
+            else ""
+        )
+        ui.success(
+            f"Ingested {stats['documents']} documents ({stats['chunks']} chunks{hierarchy_info})"
+        )
 
     except Exception as e:
         ui.error(f"Ingestion failed: {e}")
@@ -343,17 +349,29 @@ def _save_api_key_to_shell(api_key: str, env_var: str) -> None:
 # Provider-specific configurations
 PROVIDER_CONFIGS = {
     "cohere": {
-        "chat": {"plugin_name": "cohere", "kwargs": {"models": {"smart": "command-a-03-2025", "fast": "command-r7b-12-2024"}, "temperature": 0.2}},
+        "chat": {
+            "plugin_name": "cohere",
+            "kwargs": {
+                "models": {"smart": "command-a-03-2025", "fast": "command-r7b-12-2024"},
+                "temperature": 0.2,
+            },
+        },
         "embedding": {"plugin_name": "cohere", "kwargs": {"model": "embed-english-v3.0"}},
         "rerank": {"enabled": True, "plugin_name": "cohere", "kwargs": {"model": "rerank-v3.5"}},
     },
     "openai": {
-        "chat": {"plugin_name": "openai", "kwargs": {"models": {"smart": "gpt-4o", "fast": "gpt-4o-mini"}, "temperature": 0.2}},
+        "chat": {
+            "plugin_name": "openai",
+            "kwargs": {"models": {"smart": "gpt-4o", "fast": "gpt-4o-mini"}, "temperature": 0.2},
+        },
         "embedding": {"plugin_name": "openai", "kwargs": {"model": "text-embedding-3-small"}},
         "rerank": {"enabled": False},  # OpenAI doesn't have reranking
     },
     "ollama": {
-        "chat": {"plugin_name": "local_ollama", "kwargs": {"models": {"smart": "llama3.2", "fast": "llama3.2"}}},
+        "chat": {
+            "plugin_name": "local_ollama",
+            "kwargs": {"models": {"smart": "llama3.2", "fast": "llama3.2"}},
+        },
         "embedding": {"plugin_name": "local_ollama", "kwargs": {"model": "nomic-embed-text"}},
         "rerank": {"enabled": False},  # Ollama doesn't have reranking
     },
