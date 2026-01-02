@@ -19,17 +19,6 @@ from fitz_ai.logging.logger import get_logger
 logger = get_logger(__name__)
 
 
-def _get_vector_client(plugin_name: str, kwargs: dict = None):
-    """Get vector DB client by plugin name."""
-    from fitz_ai.vector_db.registry import get_vector_db_plugin
-
-    try:
-        return get_vector_db_plugin(plugin_name, **(kwargs or {}))
-    except Exception as e:
-        ui.error(f"Failed to connect to {plugin_name}: {e}")
-        raise typer.Exit(1)
-
-
 def _get_available_vector_dbs(ctx: CLIContext) -> List[Dict[str, Any]]:
     """Get list of available vector DBs from config and installed plugins."""
     from fitz_ai.vector_db.registry import available_vector_db_plugins
@@ -183,7 +172,16 @@ def command() -> None:
         selected_db = available_dbs[selected_idx]
 
     # Connect to selected DB
-    client = _get_vector_client(selected_db["name"], selected_db["kwargs"])
+    if selected_db["is_configured"]:
+        client = ctx.require_vector_db_client()
+    else:
+        from fitz_ai.vector_db.registry import get_vector_db_plugin
+
+        try:
+            client = get_vector_db_plugin(selected_db["name"], **selected_db["kwargs"])
+        except Exception as e:
+            ui.error(f"Failed to connect to '{selected_db['name']}': {e}")
+            raise typer.Exit(1)
 
     # =========================================================================
     # Step 2: List Collections

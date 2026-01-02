@@ -206,8 +206,6 @@ class CLIContext:
         Since config is merged (defaults + user), all values are guaranteed to exist.
         No .get() fallbacks needed - values come from defaults if not overridden.
         """
-        from fitz_ai.llm.loader import load_plugin
-
         # Get config sections - guaranteed to exist from defaults
         chat = config.get("chat", {})
         emb = config.get("embedding", {})
@@ -366,6 +364,22 @@ class CLIContext:
             ui.error("Invalid config. Run 'fitz init' to reconfigure.")
             raise typer.Exit(1)
         return self.typed_config
+
+    def require_vector_db_client(self):
+        """
+        Get vector DB client or exit with error if connection fails.
+
+        Use this in commands that require a working vector DB connection.
+        """
+        import typer
+
+        from fitz_ai.cli.ui import ui
+
+        try:
+            return self.get_vector_db_client()
+        except Exception as e:
+            ui.error(f"Failed to connect to vector DB '{self.vector_db_plugin}': {e}")
+            raise typer.Exit(1)
 
     def info_line(self, include_rerank: bool = True) -> str:
         """

@@ -160,12 +160,12 @@ def command(
 
     from fitz_ai.map.embeddings import fetch_all_chunk_ids, fetch_chunk_embeddings
 
-    vdb = ctx.get_vector_db_client()
+    vdb = ctx.require_vector_db_client()
 
-    # Check if vector DB supports scroll_with_vectors
+    # Check if vector DB supports scroll_with_vectors (required for map)
     if not hasattr(vdb, "scroll_with_vectors"):
         ui.error(
-            f"Vector DB {type(vdb).__name__} does not support scroll_with_vectors. "
+            f"Vector DB '{ctx.vector_db_plugin}' does not support scroll_with_vectors. "
             "Knowledge map currently only supports FAISS backend."
         )
         raise typer.Exit(1)
