@@ -204,6 +204,7 @@ def _run_collection_query(
     # Collection selection
     if collection:
         typed_config.retrieval.collection = collection
+        ctx.retrieval_collection = collection
     else:
         collections = ctx.get_collections()
         if collections and len(collections) > 1:
@@ -212,8 +213,10 @@ def _run_collection_query(
                 "Collection", collections, ctx.retrieval_collection
             )
             typed_config.retrieval.collection = selected
+            ctx.retrieval_collection = selected
         elif collections:
             typed_config.retrieval.collection = collections[0]
+            ctx.retrieval_collection = collections[0]
 
     # Display info - all the ugly dict.get() chains are now just ctx properties
     print()
