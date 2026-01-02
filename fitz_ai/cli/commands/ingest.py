@@ -367,8 +367,6 @@ def command(
         fitz ingest ./docs -e graphrag  # Use GraphRAG engine
         fitz ingest ./docs -e clara     # Use CLaRa engine
     """
-    from fitz_ai.runtime import get_engine_registry, list_engines
-
     # =========================================================================
     # Header
     # =========================================================================
@@ -380,22 +378,12 @@ def command(
     # Engine Selection (interactive)
     # =========================================================================
 
-    if engine is None and not non_interactive:
-        # Use card-based engine selection
-        registry = get_engine_registry()
-        available_engines = list_engines()
-        engine_descriptions = registry.list_with_descriptions()
-        default_engine_name = get_default_engine()
-
-        engine = ui.prompt_engine_selection(
-            engines=available_engines,
-            descriptions=engine_descriptions,
-            default=default_engine_name,
-        )
-
-    # Use default engine from config in non-interactive mode
     if engine is None:
-        engine = get_default_engine()
+        if non_interactive:
+            engine = get_default_engine()
+        else:
+            ctx = CLIContext.load()
+            engine = ctx.select_engine(engine)
 
     # Route to engine-specific ingest if not fitz_rag
     if engine != "fitz_rag":

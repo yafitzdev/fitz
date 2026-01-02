@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 
 import sys
-from typing import Optional
 
 import typer
 
@@ -67,7 +66,6 @@ def _check_dependencies() -> list[tuple[str, bool, str]]:
     results = []
     for item in packages:
         name = item[0]
-        item[1]
         pip_pkg = item[2] if len(item) > 2 else item[0]
 
         try:
@@ -94,7 +92,6 @@ def _check_optional_dependencies() -> list[tuple[str, bool, str]]:
     for item in packages:
         name = item[0]
         desc = item[1]
-        item[2] if len(item) > 2 else item[0]
 
         try:
             mod = __import__(name.replace("-", "_"))

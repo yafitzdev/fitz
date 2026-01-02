@@ -381,6 +381,87 @@ class CLIContext:
             ui.error(f"Failed to connect to vector DB '{self.vector_db_plugin}': {e}")
             raise typer.Exit(1)
 
+    def select_collection(self, collection: Optional[str] = None, *, require: bool = True) -> str:
+        """
+        Select a collection interactively or use the provided one.
+
+        This method keeps ctx.retrieval_collection and typed_config in sync.
+
+        Args:
+            collection: Pre-selected collection name (skips prompt if valid)
+            require: If True, exit with error if no collections exist
+
+        Returns:
+            Selected collection name
+        """
+        from fitz_ai.cli.ui import ui
+
+        # If collection provided, validate and use it
+        if collection:
+            self.retrieval_collection = collection
+            if self.typed_config is not None:
+                self.typed_config.retrieval.collection = collection
+            return collection
+
+        # Get available collections
+        if require:
+            collections = self.require_collections()
+        else:
+            collections = self.get_collections()
+            if not collections:
+                return self.retrieval_collection
+
+        # Auto-select if only one
+        if len(collections) == 1:
+            selected = collections[0]
+            ui.info(f"Using collection: {selected}")
+        else:
+            print()
+            selected = ui.prompt_numbered_choice(
+                "Collection", collections, self.retrieval_collection
+            )
+
+        # Keep ctx and typed_config in sync
+        self.retrieval_collection = selected
+        if self.typed_config is not None:
+            self.typed_config.retrieval.collection = selected
+
+        return selected
+
+    def select_engine(self, engine: Optional[str] = None) -> str:
+        """
+        Select an engine interactively or use the provided one.
+
+        Args:
+            engine: Pre-selected engine name (skips prompt if valid)
+
+        Returns:
+            Selected engine name
+        """
+        import typer
+
+        from fitz_ai.cli.ui import ui
+        from fitz_ai.runtime import get_default_engine, get_engine_registry, list_engines
+
+        available = list_engines()
+        registry = get_engine_registry()
+
+        if engine is None:
+            print()
+            descriptions = registry.list_with_descriptions()
+            default = get_default_engine()
+            return ui.prompt_engine_selection(
+                engines=available,
+                descriptions=descriptions,
+                default=default,
+            )
+
+        if engine not in available:
+            ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(available)}")
+            raise typer.Exit(1)
+
+        return engine
+
     def info_line(self, include_rerank: bool = True) -> str:
         """
         Get a single-line info string for display.

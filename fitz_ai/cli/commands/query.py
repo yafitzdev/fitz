@@ -19,7 +19,7 @@ from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import display_answer, ui
 from fitz_ai.core import Query
 from fitz_ai.logging.logger import get_logger
-from fitz_ai.runtime import create_engine, get_default_engine, get_engine_registry, list_engines
+from fitz_ai.runtime import create_engine, get_engine_registry
 
 logger = get_logger(__name__)
 
@@ -72,22 +72,8 @@ def command(
     # Engine selection
     # =========================================================================
 
-    available_engines = list_engines()
-    registry = get_engine_registry()
-
-    if engine is None:
-        # Prompt for engine selection with cards
-        print()
-        engine_descriptions = registry.list_with_descriptions()
-        default_engine_name = get_default_engine()
-        engine = ui.prompt_engine_selection(
-            engines=available_engines,
-            descriptions=engine_descriptions,
-            default=default_engine_name,
-        )
-    elif engine not in available_engines:
-        ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(available_engines)}")
-        raise typer.Exit(1)
+    ctx = CLIContext.load()
+    engine = ctx.select_engine(engine)
 
     # =========================================================================
     # Capabilities-based routing
@@ -201,24 +187,10 @@ def _run_collection_query(
     else:
         question_text = question
 
-    # Collection selection
-    if collection:
-        typed_config.retrieval.collection = collection
-        ctx.retrieval_collection = collection
-    else:
-        collections = ctx.get_collections()
-        if collections and len(collections) > 1:
-            print()
-            selected = ui.prompt_numbered_choice(
-                "Collection", collections, ctx.retrieval_collection
-            )
-            typed_config.retrieval.collection = selected
-            ctx.retrieval_collection = selected
-        elif collections:
-            typed_config.retrieval.collection = collections[0]
-            ctx.retrieval_collection = collections[0]
+    # Collection selection (keeps ctx and typed_config in sync)
+    ctx.select_collection(collection, require=False)
 
-    # Display info - all the ugly dict.get() chains are now just ctx properties
+    # Display info
     print()
     ui.info(ctx.info_line())
     print()

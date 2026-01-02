@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import typer
 
+from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import RICH, console, get_first_available, ui
 from fitz_ai.core.registry import (
     available_chunking_plugins,
@@ -20,7 +21,7 @@ from fitz_ai.core.registry import (
     available_vector_db_plugins,
 )
 from fitz_ai.logging.logger import get_logger
-from fitz_ai.runtime import get_default_engine, get_engine_registry, list_engines
+from fitz_ai.runtime import get_default_engine, get_engine_registry
 
 logger = get_logger(__name__)
 
@@ -549,25 +550,14 @@ def command(
     # Select Default Engine
     # =========================================================================
 
-    available_engines = list_engines()
+    ctx = CLIContext.load()
     registry = get_engine_registry()
 
-    # Get default engine from config (or fallback constant)
-    configured_default = get_default_engine()
-
     if non_interactive:
-        default_engine = configured_default
+        default_engine = get_default_engine()
     else:
         ui.section("Engine Setup")
-        print()
-
-        # Use card-based engine selection
-        engine_descriptions = registry.list_with_descriptions()
-        default_engine = ui.prompt_engine_selection(
-            engines=available_engines,
-            descriptions=engine_descriptions,
-            default=configured_default,
-        )
+        default_engine = ctx.select_engine()
 
     # If user selected a non-collection engine, handle engine-specific config
     caps = registry.get_capabilities(default_engine)

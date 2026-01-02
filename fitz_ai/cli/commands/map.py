@@ -112,22 +112,7 @@ def command(
     # Determine collection
     # =========================================================================
 
-    if collection is None:
-        collection = ctx.retrieval_collection
-
-        # Check if it exists
-        collections = ctx.require_collections()
-        if collection not in collections:
-            if len(collections) == 1:
-                collection = collections[0]
-            else:
-                collection = ui.prompt_numbered_choice(
-                    "Select collection",
-                    collections,
-                    collections[0],
-                )
-
-    ui.info(f"Collection: {collection}")
+    collection = ctx.select_collection(collection)
 
     # =========================================================================
     # Determine output path

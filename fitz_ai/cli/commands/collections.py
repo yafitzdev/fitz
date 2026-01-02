@@ -93,6 +93,22 @@ def _display_collection_info(name: str, stats: Dict[str, Any]) -> None:
         print(f"  Status: {stats.get('status', 'ready')}")
 
 
+def _load_collections_with_stats(client: Any) -> List[Dict[str, Any]]:
+    """Load collections from client and get stats for each."""
+    collections_list = client.list_collections()
+    collections = []
+    for name in collections_list:
+        try:
+            stats = client.get_collection_stats(name)
+            count = stats.get("points_count", stats.get("vectors_count", "?"))
+            status = stats.get("status", "ready")
+        except Exception:
+            count = "?"
+            status = "unknown"
+        collections.append({"name": name, "count": count, "status": status})
+    return collections
+
+
 def _display_example_chunks(client: Any, collection: str, limit: int = 3) -> None:
     """Display example chunks from a collection."""
     print()
@@ -188,31 +204,12 @@ def command() -> None:
     # =========================================================================
 
     print()
-    collections_list = client.list_collections()
+    collections = _load_collections_with_stats(client)
 
-    if not collections_list:
+    if not collections:
         ui.info("No collections found.")
         ui.info("Run 'fitz ingest' to create one.")
         return
-
-    # Get stats for each collection
-    collections = []
-    for name in collections_list:
-        try:
-            stats = client.get_collection_stats(name)
-            count = stats.get("points_count", stats.get("vectors_count", "?"))
-            status = stats.get("status", "ready")
-        except Exception:
-            count = "?"
-            status = "unknown"
-
-        collections.append(
-            {
-                "name": name,
-                "count": count,
-                "status": status,
-            }
-        )
 
     _display_collections_table(collections)
     print()
@@ -273,21 +270,10 @@ def command() -> None:
         elif action == "Back to list":
             # Refresh and show list again
             print()
-            collections_list = client.list_collections()
-            if not collections_list:
+            collections = _load_collections_with_stats(client)
+            if not collections:
                 ui.info("No collections remaining.")
                 return
-
-            collections = []
-            for name in collections_list:
-                try:
-                    stats = client.get_collection_stats(name)
-                    count = stats.get("points_count", stats.get("vectors_count", "?"))
-                    status = stats.get("status", "ready")
-                except Exception:
-                    count = "?"
-                    status = "unknown"
-                collections.append({"name": name, "count": count, "status": status})
 
             _display_collections_table(collections)
             print()

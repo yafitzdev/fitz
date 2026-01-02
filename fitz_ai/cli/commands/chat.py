@@ -179,22 +179,8 @@ def _run_collection_chat(collection: Optional[str]) -> None:
     ctx = CLIContext.load()
     typed_config = ctx.require_typed_config()
 
-    # Collection selection
-    if collection:
-        selected_collection = collection
-    else:
-        collections = ctx.require_collections()
-        if len(collections) == 1:
-            selected_collection = collections[0]
-            ui.info(f"Using collection: {selected_collection}")
-        else:
-            print()
-            selected_collection = ui.prompt_numbered_choice(
-                "Collection", collections, ctx.retrieval_collection
-            )
-
-    # Update config with selected collection
-    typed_config.retrieval.collection = selected_collection
+    # Collection selection (keeps ctx and typed_config in sync)
+    selected_collection = ctx.select_collection(collection)
 
     # Create pipeline
     try:
