@@ -297,19 +297,19 @@ def render_json(cli_map: CLIMap) -> str:
 
 def render_live_output(minimal: bool = False) -> str:
     """
-    Run actual CLI commands against test data and capture real output.
+    Run systematic interactive CLI tests following a 12-step test plan.
 
-    Creates temp test data, runs commands, captures output, cleans up.
-    Queries run in parallel for speed (~2x faster).
+    Tests all interactive CLI workflows without using CLI flags.
+    Focus on testing fitz-ai features: epistemic honesty, citations,
+    hierarchical RAG, multi-source synthesis, and grounding.
 
     Args:
-        minimal: If True, skip code corpus entirely (quickstart + docs only)
+        minimal: If True, skip code corpus (steps 10-12)
     """
     import os
     import shutil
     import subprocess
     import tempfile
-    from concurrent.futures import ThreadPoolExecutor
 
     lines = []
 
@@ -326,7 +326,7 @@ def render_live_output(minimal: bool = False) -> str:
         """Run fitz command and capture output.
 
         Args:
-            *args: Command arguments
+            *args: Command arguments (positional only, no flags allowed in test plan)
             timeout: Timeout in seconds
             stdin_input: Input to send to stdin (simulates user typing + Enter)
         """
@@ -350,47 +350,119 @@ def render_live_output(minimal: bool = False) -> str:
         except Exception as e:
             return f"ERROR: {e}"
 
-    def section(title: str, output: str) -> None:
-        """Add a section to the output."""
+    def section(step: str, title: str, output: str) -> None:
+        """Add a numbered section to the output."""
         lines.append("=" * 72)
+        lines.append(f"  STEP {step}: {title}")
+        lines.append("=" * 72)
+        lines.append(output)
+        lines.append("")
+
+    def subsection(title: str, output: str) -> None:
+        """Add a subsection to the output."""
+        lines.append("-" * 72)
         lines.append(f"  {title}")
-        lines.append("=" * 72)
+        lines.append("-" * 72)
         lines.append(output)
         lines.append("")
 
     # Create temp directory with test documents
     temp_dir = tempfile.mkdtemp(prefix="fitz_cli_map_")
-    test_collection = "cli_map_test"
+    docs_collection = "cli_map_docs"
+    code_collection = "cli_map_code"
 
     try:
-        # Create test documents
-        docs_dir = Path(temp_dir) / "docs"
-        docs_dir.mkdir()
-
         # =====================================================================
         # Header
         # =====================================================================
         lines.append("=" * 72)
-        lines.append("  CLI MAP - Live Output Demo")
+        lines.append("  FITZ CLI MAP - Systematic Interactive Test")
         lines.append("=" * 72)
+        lines.append("")
+        lines.append("This test validates all interactive CLI workflows.")
+        lines.append("No CLI flags are used - only interactive prompts.")
+        lines.append("")
+        lines.append("Test Plan:")
+        lines.append("  1) fitz engine - select fitz_rag")
+        lines.append("  2) fitz init - set cohere, faiss as defaults")
+        lines.append("  3) fitz doctor, fitz config")
+        lines.append("  4) fitz quickstart - test one query")
+        lines.append("  5) fitz query - query quickstart collection")
+        lines.append("  6) fitz collections - delete quickstart")
+        lines.append("  7) fitz ingest - ingest docs (1 .md, 1 .txt, 1 .pdf)")
+        lines.append("  8) fitz chat - 5 questions testing features")
+        lines.append("  9) fitz collections - delete docs collection")
+        lines.append("  10) fitz ingest - ingest contract_map codebase")
+        lines.append("  11) fitz query - 3 questions for codebase")
+        lines.append("  12) fitz collections - delete code collection")
         lines.append("")
 
         # =====================================================================
-        # Engine Management
+        # STEP 1: fitz engine - select fitz_rag
         # =====================================================================
+        # Interactive: Enter confirms current default (fitz_rag)
         section(
-            "fitz engine --list",
-            run_cmd("engine", "--list"),
+            "1",
+            "fitz engine - select fitz_rag",
+            run_cmd("engine", stdin_input="\n"),
         )
 
-        # Create test documents (.md, .txt) - needed for all runs
+        # =====================================================================
+        # STEP 2: fitz init - set cohere, faiss as defaults
+        # =====================================================================
+        # Interactive init wizard flow for fitz_rag:
+        # 1. Engine selection: Enter (confirm fitz_rag)
+        # 2. Chat plugin: Enter (cohere default)
+        # 3. Smart model: Enter (accept default)
+        # 4. Fast model: Enter (accept default)
+        # 5. Embedding plugin: Enter (cohere default)
+        # 6. Embedding model: Enter (accept default)
+        # 7. Rerank plugin: Enter (cohere default)
+        # 8. Rerank model: Enter (accept default)
+        # 9. Vector DB: Enter (local_faiss is default)
+        # 10. Retrieval: (may be skipped if only one option)
+        # 11. Chunker: Enter (default)
+        # 12. Chunk size: Enter (default)
+        # 13. Chunk overlap: Enter (default)
+        # 14. Confirm overwrite: y
+        # Note: Using fewer \n's since Retrieval prompt may be skipped
+        init_stdin = "\n\n\n\n\n\n\n\n\n\n\n\ny\n"
+        section(
+            "2",
+            "fitz init - set cohere, faiss defaults",
+            run_cmd("init", stdin_input=init_stdin, timeout=60),
+        )
+
+        # =====================================================================
+        # STEP 3: fitz doctor, fitz config
+        # =====================================================================
+        doctor_output = run_cmd("doctor", timeout=30)
+        config_output = run_cmd("config", timeout=10)
+
+        section("3a", "fitz doctor", doctor_output)
+        subsection("fitz config", config_output)
+
+        # =====================================================================
+        # Create test documents for quickstart
+        # =====================================================================
+        docs_dir = Path(temp_dir) / "docs"
+        docs_dir.mkdir()
+
+        # Create diverse test documents
         (docs_dir / "about.md").write_text(
-            "# About Fitz\n\n"
+            "# About Fitz AI\n\n"
             "Fitz is a local-first RAG framework for building knowledge engines.\n\n"
-            "## Features\n"
-            "- Zero-config quickstart\n"
-            "- Epistemic honesty (says 'I don't know')\n"
-            "- Full provenance tracking\n",
+            "## Core Features\n"
+            "- **Zero-config quickstart**: Get started with one command\n"
+            "- **Epistemic honesty**: Says 'I don't know' when evidence is insufficient\n"
+            "- **Full provenance tracking**: Every answer includes citations\n"
+            "- **Hierarchical RAG**: Multi-level summaries for better context\n\n"
+            "## Architecture\n"
+            "Fitz uses a modular plugin architecture:\n"
+            "- Chat plugins (Cohere, OpenAI, Ollama)\n"
+            "- Embedding plugins (Cohere, OpenAI)\n"
+            "- Vector DB plugins (FAISS, Qdrant)\n"
+            "- Reranking plugins (Cohere)\n",
             encoding="utf-8",
         )
 
@@ -401,224 +473,235 @@ def render_live_output(minimal: bool = False) -> str:
             "  pip install fitz-ai\n\n"
             "Requirements:\n"
             "- Python 3.10 or higher\n"
-            "- 8GB RAM recommended\n",
+            "- 8GB RAM recommended\n"
+            "- API key for your chosen provider (Cohere, OpenAI, etc.)\n\n"
+            "Quick Start:\n"
+            "  fitz quickstart ./docs 'What is this about?'\n\n"
+            "This will ingest your documents and answer your question in one command.\n",
             encoding="utf-8",
         )
 
-        (docs_dir / "changelog.md").write_text(
-            "# Changelog\n\n"
-            "## v0.4.0 (2024-01-15)\n"
-            "- Added hierarchical summaries\n"
-            "- Improved citation accuracy\n\n"
-            "## v0.3.0 (2024-01-01)\n"
-            "- Initial public release\n",
-            encoding="utf-8",
-        )
-
-        # Create a simple PDF-like content (as .txt since we can't create real PDFs easily)
-        # Note: Real PDF testing would need a PDF file
-        (docs_dir / "license.txt").write_text(
-            "MIT License\n\n"
-            "Copyright (c) 2024 Fitz AI\n\n"
-            "Permission is hereby granted, free of charge, to any person obtaining a copy\n"
-            "of this software and associated documentation files.\n",
+        # Create a simple text file that could represent PDF content
+        # (Real PDF testing would require a PDF library)
+        (docs_dir / "changelog.txt").write_text(
+            "Changelog\n"
+            "=========\n\n"
+            "Version 0.4.0 (2024-01-15)\n"
+            "--------------------------\n"
+            "- Added hierarchical summaries (L0/L1/L2 levels)\n"
+            "- Improved citation accuracy to 95%+\n"
+            "- New epistemic constraints for honesty\n\n"
+            "Version 0.3.0 (2024-01-01)\n"
+            "--------------------------\n"
+            "- Initial public release\n"
+            "- Support for Cohere, OpenAI providers\n"
+            "- FAISS and Qdrant vector databases\n",
             encoding="utf-8",
         )
 
         # =====================================================================
-        # RUN 0: Quickstart (Zero-Config)
+        # STEP 4: fitz quickstart - test one query
         # =====================================================================
-        lines.append("=" * 72)
-        lines.append("  RUN 0: Quickstart (Zero-Config)")
-        lines.append(f"  Test data: {docs_dir}")
-        lines.append("  One command to ingest + query!")
-        lines.append("=" * 72)
-        lines.append("")
-
-        # fitz quickstart - the simplest entry point
+        # quickstart takes positional args: SOURCE QUESTION
+        # Interactive: may prompt for collection name → use default with Enter
         section(
-            f'fitz quickstart {docs_dir} "What is Fitz?"',
-            run_cmd("quickstart", str(docs_dir), "What is Fitz?", stdin_input="\n", timeout=180),
+            "4",
+            f"fitz quickstart {docs_dir} 'What is Fitz?'",
+            run_cmd(
+                "quickstart",
+                str(docs_dir),
+                "What is Fitz?",
+                stdin_input="\n",
+                timeout=180,
+            ),
         )
 
-        # Clean up quickstart collection
+        # =====================================================================
+        # STEP 5: fitz query - query quickstart collection
+        # =====================================================================
+        # Interactive query on quickstart collection
+        # Flow: question first, then collection selection (Enter for default)
         from fitz_ai.cli.context import CLIContext
 
         ctx = CLIContext.load()
         client = ctx.get_vector_db_client()
-        qs_collections = sorted(client.list_collections())
-        if "quickstart" in qs_collections:
-            qs_index = qs_collections.index("quickstart") + 1
+        collections = client.list_collections()
+
+        if "quickstart" in collections:
+            # Interactive: enter question first, then Enter for default collection
+            # (quickstart should be default after just being created)
             section(
-                "fitz collections  [interactive: delete quickstart]",
+                "5",
+                "fitz query - query quickstart collection",
+                run_cmd(
+                    "query",
+                    stdin_input="How do I install Fitz?\n\n",
+                    timeout=120,
+                ),
+            )
+
+        # =====================================================================
+        # STEP 6: fitz collections - delete quickstart
+        # =====================================================================
+        ctx = CLIContext.load()
+        client = ctx.get_vector_db_client()
+        collections = sorted(client.list_collections())
+
+        if "quickstart" in collections:
+            qs_index = collections.index("quickstart") + 1
+            # Interactive: Enter for vector_db, select collection, Delete (2), confirm (y), Exit (4)
+            section(
+                "6",
+                "fitz collections - delete quickstart",
                 run_cmd("collections", stdin_input=f"\n{qs_index}\n2\ny\n4\n"),
             )
 
         # =====================================================================
-        # RUN 1: Full Interactive Flow (Document Corpus)
+        # STEP 7: fitz ingest - ingest docs freshly
         # =====================================================================
-        lines.append("=" * 72)
-        lines.append("  RUN 1: Full Interactive Flow (Document Corpus)")
-        lines.append(f"  Test data: {docs_dir}")
-        lines.append(f"  Collection: {test_collection}")
-        lines.append("=" * 72)
-        lines.append("")
-
-        # 1-2. fitz doctor & config (run in parallel - no dependencies)
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            doctor_future = executor.submit(run_cmd, "doctor")
-            config_future = executor.submit(run_cmd, "config")
-            doctor_output = doctor_future.result()
-            config_output = config_future.result()
-
-        section("fitz doctor", doctor_output)
-        section("fitz config", config_output)
-
-        # 3. fitz ingest documents
-        # Reload client to get fresh state from disk (subprocess may have modified it)
         ctx = CLIContext.load()
         client = ctx.get_vector_db_client()
         existing_collections = client.list_collections()
-        # If no collections, menu is skipped → just send collection name
-        # If collections exist, menu shows → send "0" to select "Create new", then name
-        # Note: Engine selection no longer prompts (uses default), so no leading \n needed
+
+        # Interactive: collection menu (0 for new if exists) + name
         if existing_collections:
-            ingest_stdin = f"0\n{test_collection}\n"
+            ingest_stdin = f"0\n{docs_collection}\n"
         else:
-            ingest_stdin = f"{test_collection}\n"
+            ingest_stdin = f"{docs_collection}\n"
 
         section(
-            f"fitz ingest {docs_dir}  [interactive: create '{test_collection}']",
-            run_cmd("ingest", str(docs_dir), stdin_input=ingest_stdin),
+            "7",
+            f"fitz ingest {docs_dir} - create {docs_collection}",
+            run_cmd("ingest", str(docs_dir), stdin_input=ingest_stdin, timeout=180),
         )
 
-        # 4. fitz collections (show list and exit)
-        # Menu: [1] vector_db selection → Enter, [1] collection, [2] Exit → send "2"
-        section(
-            "fitz collections  [interactive: Enter, 2 to exit]",
-            run_cmd("collections", stdin_input="\n2\n"),
-        )
+        # =====================================================================
+        # STEP 8: fitz chat - 5 questions testing features
+        # =====================================================================
+        # Test features:
+        # 1. Basic retrieval + citations
+        # 2. Epistemic honesty (ask something not in docs)
+        # 3. Multi-source synthesis
+        # 4. Specific fact retrieval
+        # 5. Summary/overview question
 
-        # 5. fitz query - document questions (run in parallel!)
-        # Note: Engine selection no longer prompts, so no stdin needed
-        doc_queries = [
-            ("What is Fitz?", f'fitz query "What is Fitz?" -c {test_collection}'),
-            ("How do I install Fitz?", f'fitz query "How do I install Fitz?" -c {test_collection}'),
-            (
-                "What changed in version 0.4?",
-                f'fitz query "What changed in version 0.4?" -c {test_collection}',
-            ),
-        ]
-
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [
-                (
-                    q[1],
-                    executor.submit(run_cmd, "query", q[0], "-c", test_collection, timeout=120),
-                )
-                for q in doc_queries
-            ]
-            for title, future in futures:
-                section(f"{title}  [parallel]", future.result())
-
-        # 6. fitz collections - delete collection (interactive)
-        # Reload client to get fresh state from disk
         ctx = CLIContext.load()
         client = ctx.get_vector_db_client()
         collections = sorted(client.list_collections())
-        coll_index = collections.index(test_collection) + 1 if test_collection in collections else 1
 
-        section(
-            f"fitz collections  [interactive: delete {test_collection}]",
-            run_cmd("collections", stdin_input=f"\n{coll_index}\n2\ny\n4\n"),
-        )
+        if docs_collection in collections:
+            coll_index = collections.index(docs_collection) + 1
+
+            # Chat questions designed to test fitz-ai features
+            chat_questions = [
+                "What are the core features of Fitz?",  # Basic retrieval
+                "What is the weather in Tokyo?",  # Epistemic honesty (not in docs)
+                "Summarize the installation process and requirements",  # Multi-source
+                "What version added hierarchical summaries?",  # Specific fact
+                "Give me an overview of what changed in recent versions",  # Summary
+            ]
+
+            # Build stdin: select collection, then questions, then exit
+            chat_stdin = f"{coll_index}\n"
+            for q in chat_questions:
+                chat_stdin += f"{q}\n"
+            chat_stdin += "exit\n"
+
+            section(
+                "8",
+                "fitz chat - 5 questions testing features",
+                run_cmd("chat", stdin_input=chat_stdin, timeout=300),
+            )
 
         # =====================================================================
-        # RUN 2: Code corpus (.py files - contract_map)
+        # STEP 9: fitz collections - delete docs collection
+        # =====================================================================
+        ctx = CLIContext.load()
+        client = ctx.get_vector_db_client()
+        collections = sorted(client.list_collections())
+
+        if docs_collection in collections:
+            coll_index = collections.index(docs_collection) + 1
+            section(
+                "9",
+                f"fitz collections - delete {docs_collection}",
+                run_cmd("collections", stdin_input=f"\n{coll_index}\n2\ny\n4\n"),
+            )
+
+        # =====================================================================
+        # STEPS 10-12: Code corpus (contract_map)
         # =====================================================================
         if not minimal:
-            code_collection = "cli_map_code_test"
             contract_map_dir = Path(__file__).parent.parent / "contract_map"
 
+            lines.append("")
             lines.append("=" * 72)
-            lines.append("  RUN 2: Code Corpus (.py files)")
-            lines.append(f"  Source: {contract_map_dir}")
-            lines.append(f"  Collection: {code_collection}")
+            lines.append("  CODE CORPUS TEST (contract_map)")
             lines.append("=" * 72)
             lines.append("")
 
-            # 6. fitz ingest code
-            # Reload client to get fresh state from disk (subprocess may have modified it)
+            # STEP 10: fitz ingest - ingest contract_map codebase
             ctx = CLIContext.load()
             client = ctx.get_vector_db_client()
             existing_collections = client.list_collections()
-            # Note: Engine selection no longer prompts (uses default), so no leading \n needed
+
             if existing_collections:
                 ingest_stdin = f"0\n{code_collection}\n"
             else:
                 ingest_stdin = f"{code_collection}\n"
 
             section(
-                f"fitz ingest {contract_map_dir}  [interactive: create '{code_collection}']",
-                run_cmd("ingest", str(contract_map_dir), stdin_input=ingest_stdin),
+                "10",
+                f"fitz ingest {contract_map_dir} - create {code_collection}",
+                run_cmd(
+                    "ingest", str(contract_map_dir), stdin_input=ingest_stdin, timeout=180
+                ),
             )
 
-            # 7. fitz query - code questions (run in parallel!)
-            # Note: Engine selection no longer prompts, so no stdin needed
-            code_queries = [
-                (
-                    "What does the contract_map tool do?",
-                    f'fitz query "What does the contract_map tool do?" -c {code_collection}',
-                ),
-                (
-                    "How are architecture violations detected?",
-                    f'fitz query "How are architecture violations detected?" -c {code_collection}',
-                ),
-                (
-                    "What functions are in the imports module?",
-                    f'fitz query "What functions are in the imports module?" -c {code_collection}',
-                ),
-            ]
-
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                futures = [
-                    (
-                        q[1],
-                        executor.submit(
-                            run_cmd,
-                            "query",
-                            q[0],
-                            "-c",
-                            code_collection,
-                            timeout=120,
-                        ),
-                    )
-                    for q in code_queries
-                ]
-                for title, future in futures:
-                    section(f"{title}  [parallel]", future.result())
-
-            # 8. fitz collections - delete code collection (interactive)
-            # Reload client to get fresh state from disk
+            # STEP 11: fitz query - 3 questions for codebase
             ctx = CLIContext.load()
             client = ctx.get_vector_db_client()
             collections = sorted(client.list_collections())
-            code_coll_index = (
-                collections.index(code_collection) + 1 if code_collection in collections else 1
-            )
 
-            section(
-                f"fitz collections  [interactive: delete {code_collection}]",
-                run_cmd("collections", stdin_input=f"\n{code_coll_index}\n2\ny\n4\n"),
-            )
+            if code_collection in collections:
+                code_index = collections.index(code_collection) + 1
 
-        # Mark that we cleaned up via CLI
-        test_collection = None  # Don't try to delete again in finally block
+                code_questions = [
+                    ("What does the contract_map tool do?", "Purpose query"),
+                    ("How are import violations detected?", "Implementation detail"),
+                    ("What modules are in the codebase?", "Structure query"),
+                ]
+
+                # Query flow: question first, then collection selection
+                for question, desc in code_questions:
+                    subsection(
+                        f"fitz query: {desc}",
+                        run_cmd(
+                            "query",
+                            stdin_input=f"{question}\n{code_index}\n",
+                            timeout=120,
+                        ),
+                    )
+
+            # STEP 12: fitz collections - delete code collection
+            ctx = CLIContext.load()
+            client = ctx.get_vector_db_client()
+            collections = sorted(client.list_collections())
+
+            if code_collection in collections:
+                code_index = collections.index(code_collection) + 1
+                section(
+                    "12",
+                    f"fitz collections - delete {code_collection}",
+                    run_cmd("collections", stdin_input=f"\n{code_index}\n2\ny\n4\n"),
+                )
 
     finally:
-        # Cleanup: delete temp files only (collections deleted via CLI above)
+        # =====================================================================
+        # Cleanup
+        # =====================================================================
         lines.append("=" * 72)
-        lines.append("  Final Cleanup")
+        lines.append("  CLEANUP")
         lines.append("=" * 72)
 
         # Delete temp directory
@@ -629,6 +712,9 @@ def render_live_output(minimal: bool = False) -> str:
             lines.append(f"Could not delete temp dir: {e}")
 
         lines.append("")
+        lines.append("=" * 72)
+        lines.append("  TEST COMPLETE")
+        lines.append("=" * 72)
 
     return "\n".join(lines)
 
