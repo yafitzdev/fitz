@@ -13,6 +13,7 @@ Commands:
     fitz serve         Start the REST API server
     fitz config        View configuration
     fitz doctor        System diagnostics
+    fitz engine        View or set the default engine for all commands
 
 NOTE: Commands use lazy loading - heavy imports only happen when a command is invoked.
 """
@@ -181,6 +182,17 @@ def doctor(
     from fitz_ai.cli.commands import doctor as mod
 
     mod.command(verbose=verbose, test=test)
+
+
+@app.command("engine")
+def engine(
+    name: Optional[str] = typer.Argument(None, help="Engine name to set as default."),
+    list_available: bool = typer.Option(False, "--list", "-l", help="List available engines."),
+) -> None:
+    """View or set the default engine for all commands."""
+    from fitz_ai.cli.commands import engine as mod
+
+    mod.command(name=name, list_available=list_available)
 
 
 # =============================================================================

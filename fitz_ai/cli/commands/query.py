@@ -2,8 +2,10 @@
 """
 Query command - Engine-agnostic query interface.
 
+Uses the default engine (set via 'fitz engine'). Override with --engine.
+
 Usage:
-    fitz query                          # Interactive mode (fitz_rag)
+    fitz query                          # Interactive mode
     fitz query "What is RAG?"           # Direct query
     fitz query -c my_collection         # Specify collection
     fitz query --engine clara           # Use CLaRa engine
@@ -19,7 +21,7 @@ from fitz_ai.cli.context import CLIContext
 from fitz_ai.cli.ui import display_answer, ui
 from fitz_ai.core import Query
 from fitz_ai.logging.logger import get_logger
-from fitz_ai.runtime import create_engine, get_engine_registry
+from fitz_ai.runtime import create_engine, get_default_engine, get_engine_registry
 
 logger = get_logger(__name__)
 
@@ -44,23 +46,19 @@ def command(
         None,
         "--engine",
         "-e",
-        help="Engine to use. Will prompt if not specified.",
+        help="Engine to use. Uses default from 'fitz engine' if not specified.",
     ),
 ) -> None:
     """
     Query your knowledge base.
 
-    Run without arguments for interactive mode:
-        fitz query
+    Uses the default engine (set via 'fitz engine'). Override with --engine.
 
-    Or ask directly:
-        fitz query "What is RAG?"
-
-    Specify engine:
-        fitz query "question" --engine clara
-
-    Specify a collection (fitz_rag only):
-        fitz query "question" -c my_collection
+    Examples:
+        fitz query                         # Interactive mode
+        fitz query "What is RAG?"          # Direct query
+        fitz query "question" -e clara     # Use CLaRa engine
+        fitz query "question" -c my_coll   # Specify collection (fitz_rag)
     """
     # =========================================================================
     # Header
@@ -69,17 +67,23 @@ def command(
     ui.header("Fitz Query", "Query your knowledge base")
 
     # =========================================================================
-    # Engine selection
+    # Engine selection (use default if not specified)
     # =========================================================================
 
-    ctx = CLIContext.load()
-    engine = ctx.select_engine(engine)
+    registry = get_engine_registry()
+
+    if engine is None:
+        engine = get_default_engine()
+    elif engine not in registry.list():
+        ui.error(f"Unknown engine: '{engine}'. Available: {', '.join(registry.list())}")
+        raise typer.Exit(1)
+
+    ui.info(f"Engine: {engine}")
 
     # =========================================================================
     # Capabilities-based routing
     # =========================================================================
 
-    registry = get_engine_registry()
     caps = registry.get_capabilities(engine)
 
     # Engines that need documents loaded first can't do standalone queries

@@ -54,6 +54,13 @@ class OutputMixin:
         else:
             print(f"[{num}/{total}] {msg}")
 
+    def step_done(self, num: int, total: int, msg: str) -> None:
+        """Print a step indicator with inline checkmark (for quick completed steps)."""
+        if RICH:
+            console.print(f"[bold blue][{num}/{total}][/bold blue] {msg} [green]{CHECK}[/green]")
+        else:
+            print(f"[{num}/{total}] {msg} {CHECK}")
+
     def success(self, msg: str) -> None:
         """Print a success message."""
         if RICH:

@@ -322,7 +322,7 @@ def command(
         None,
         "--engine",
         "-e",
-        help="Engine to use (fitz_rag, graphrag, clara). Defaults to fitz_rag.",
+        help="Engine to use. Uses default from 'fitz engine' if not specified.",
     ),
     non_interactive: bool = typer.Option(
         False,
@@ -352,12 +352,11 @@ def command(
     """
     Ingest documents into the vector database.
 
-    Interactive mode guides you through source, collection, and artifacts.
+    Uses the default engine (set via 'fitz engine'). Override with --engine.
     Incremental by default - only processes new/changed files.
 
     Examples:
-        fitz ingest                  # Interactive mode (prompts for engine)
-        fitz ingest ./src            # Specify source, interactive engine/artifacts
+        fitz ingest ./src            # Uses default engine
         fitz ingest ./src -a all     # All applicable artifacts
         fitz ingest ./src -a none    # No artifacts
         fitz ingest ./src -a navigation_index,interface_catalog  # Specific artifacts
@@ -371,19 +370,16 @@ def command(
     # Header
     # =========================================================================
 
-    ui.header("Fitz Ingest", "Feed your documents into the knowledge base")
-    print()
+    ui.header("Fitz Ingest")
 
     # =========================================================================
-    # Engine Selection (interactive)
+    # Engine Selection (use default if not specified)
     # =========================================================================
 
     if engine is None:
-        if non_interactive:
-            engine = get_default_engine()
-        else:
-            ctx = CLIContext.load()
-            engine = ctx.select_engine(engine)
+        engine = get_default_engine()
+
+    ui.info(f"Engine: {engine}")
 
     # Route to engine-specific ingest if not fitz_rag
     if engine != "fitz_rag":
@@ -416,8 +412,8 @@ def command(
     # Interactive Prompts (fitz_rag)
     # =========================================================================
 
-    # Will be set after source is determined
-    detected_content_type: str = "documents"
+    # Track enabled features for consolidated output
+    enabled_features: List[str] = []
 
     if non_interactive:
         if source is None:
@@ -428,16 +424,12 @@ def command(
         if collection is None:
             collection = default_collection
 
-        ui.info(f"Source: {source}")
-        ui.info(f"Collection: {collection}")
-
         # Auto-detect content type and configure enrichment
-        content_type, detection_reason = _detect_content_type(source)
-        detected_content_type = content_type
+        content_type, _ = _detect_content_type(source)
         has_chat_llm = bool(config.get("chat", {}).get("plugin_name"))
 
         if content_type == "codebase":
-            ui.info(f"Detected: codebase ({detection_reason})")
+            enabled_features.append("codebase")
             if artifacts is None:
                 available_artifacts = _get_available_artifacts(has_llm=has_chat_llm)
                 if available_artifacts:
@@ -447,14 +439,14 @@ def command(
                         artifacts = ",".join(
                             name for name, desc in available_artifacts if "requires LLM" not in desc
                         )
-                    ui.info("Auto-enabled: codebase analysis")
+                    enabled_features.append("codebase analysis")
         else:
-            ui.info(f"Detected: document corpus ({detection_reason})")
+            enabled_features.append("docs corpus")
             if artifacts is None:
                 artifacts = "none"
             if not hierarchy and has_chat_llm:
                 hierarchy = True
-                ui.info("Auto-enabled: hierarchical summaries")
+                enabled_features.append("hierarchical summaries")
 
     else:
         # 1. Source path
@@ -533,13 +525,12 @@ def command(
                 collection = ui.prompt_text("Collection name", suggested)
 
         # 3. Auto-detect content type and configure enrichment accordingly
-        content_type, detection_reason = _detect_content_type(source)
-        detected_content_type = content_type
+        content_type, _ = _detect_content_type(source)
         has_chat_llm = bool(config.get("chat", {}).get("plugin_name"))
 
         if content_type == "codebase":
             # CODEBASE: Auto-enable codebase analysis, skip hierarchy
-            ui.info(f"Detected: codebase ({detection_reason})")
+            enabled_features.append("codebase")
 
             if artifacts is None:
                 # Auto-select all applicable artifacts
@@ -552,14 +543,14 @@ def command(
                         artifacts = ",".join(
                             name for name, desc in available_artifacts if "requires LLM" not in desc
                         )
-                    ui.info("Auto-enabled: codebase analysis")
+                    enabled_features.append("codebase analysis")
 
             # Don't auto-enable hierarchy for codebases (prompts are document-focused)
             # User can still enable with --hierarchy if desired
 
         else:
             # DOCUMENTS: Auto-enable hierarchy, skip codebase analysis
-            ui.info(f"Detected: document corpus ({detection_reason})")
+            enabled_features.append("docs corpus")
 
             # Skip codebase analysis for non-code
             if artifacts is None:
@@ -568,8 +559,13 @@ def command(
             # Auto-enable hierarchy for documents (if LLM available)
             if not hierarchy and has_chat_llm:
                 hierarchy = True
-                ui.info("Auto-enabled: hierarchical summaries (for trend/analytical queries)")
+                enabled_features.append("hierarchical summaries")
 
+    # Print consolidated collection info
+    if enabled_features:
+        ui.info(f"Collection: {collection} ({', '.join(enabled_features)})")
+    else:
+        ui.info(f"Collection: {collection}")
     print()
 
     # =========================================================================
@@ -579,8 +575,6 @@ def command(
     # Determine total steps based on whether artifacts are enabled
     has_artifacts = artifacts != "none" and (artifacts is not None or _is_code_project(source))
     total_steps = 4 if has_artifacts else 3
-
-    ui.step(1, total_steps, "Initializing...")
 
     try:
         # State manager
@@ -672,11 +666,6 @@ def command(
                     tier="fast",
                     **chat_kwargs,
                 )
-                model_name = chat_client.params.get("model", "unknown")
-                if hierarchy:
-                    ui.info(f"Chat LLM: {chat_plugin}:{model_name} (fast tier for summaries)")
-                else:
-                    ui.info(f"Chat LLM: {chat_plugin}:{model_name} (fast tier for artifacts)")
 
             enrichment_pipeline = EnrichmentPipeline(
                 config=enrichment_config,
@@ -684,22 +673,11 @@ def command(
                 chat_client=chat_client,
             )
 
-            # Show which codebase analysis plugins will run (only for codebases)
-            if detected_content_type == "codebase":
-                plugins = enrichment_pipeline.get_applicable_artifact_plugins()
-                plugin_names = [p.name for p in plugins]
-                if plugin_names:
-                    ui.info(f"Codebase analysis: {', '.join(plugin_names)}")
-
-        # Show chunking configuration
-        default_chunker = chunking_router.default_chunker.plugin_name
-        ui.info(f"Chunking: auto-select by extension, default: {default_chunker}")
-
     except Exception as e:
         ui.error(f"Failed to initialize: {e}")
         raise typer.Exit(1)
 
-    ui.success("Initialized")
+    ui.step_done(1, total_steps, "Initializing...")
 
     # =========================================================================
     # Generate artifacts (if enabled)
@@ -775,61 +753,71 @@ def command(
     # =========================================================================
 
     current_step += 1
-    ui.step(current_step, total_steps, "Ingesting files...")
+    ingest_step = current_step  # Save for progress bar label
+    progress_shown = False  # Track if progress bar was displayed
 
     try:
         # Set up progress tracking
         if RICH:
-            from pathlib import Path as PathLib
-
             from rich.progress import (
                 BarColumn,
                 Progress,
-                SpinnerColumn,
                 TaskProgressColumn,
                 TextColumn,
             )
 
+            # Progress bar with step prefix: [2/3] Ingesting -------- 100%
             progress = Progress(
-                SpinnerColumn(),
+                TextColumn(f"[bold blue][{ingest_step}/{total_steps}][/bold blue]"),
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(),
                 TaskProgressColumn(),
-                TextColumn("[dim]{task.fields[file]}[/dim]"),
                 console=console,
             )
 
             task_id = None
+            progress_ctx = None
 
             def on_progress(current: int, total: int, file_path: str):
-                nonlocal task_id
+                nonlocal task_id, progress_shown, progress_ctx
                 if task_id is None:
-                    task_id = progress.add_task("Ingesting", total=total, file="")
-                file_name = PathLib(file_path).name if file_path != "Done" else ""
-                progress.update(task_id, completed=current, file=file_name)
+                    # Start progress bar on first callback
+                    progress_ctx = progress.__enter__()
+                    task_id = progress.add_task("Ingesting", total=total)
+                    progress_shown = True
+                progress.update(task_id, completed=current)
 
-            with progress:
-                summary = run_diff_ingest(
-                    source=source,
-                    state_manager=state_manager,
-                    vector_db_writer=writer,
-                    embedder=embedder,
-                    parser=parser,
-                    chunking_router=chunking_router,
-                    collection=collection,
-                    embedding_id=embedding_id,
-                    vector_db_id=vector_db_plugin,
-                    enrichment_pipeline=enrichment_pipeline,
-                    force=force,
-                    on_progress=on_progress,
-                    skip_artifacts=has_artifacts,  # Skip if we already did them
-                )
+            summary = run_diff_ingest(
+                source=source,
+                state_manager=state_manager,
+                vector_db_writer=writer,
+                embedder=embedder,
+                parser=parser,
+                chunking_router=chunking_router,
+                collection=collection,
+                embedding_id=embedding_id,
+                vector_db_id=vector_db_plugin,
+                enrichment_pipeline=enrichment_pipeline,
+                force=force,
+                on_progress=on_progress,
+                skip_artifacts=has_artifacts,  # Skip if we already did them
+            )
+
+            # Clean up progress bar if it was started
+            if progress_ctx is not None:
+                progress.__exit__(None, None, None)
+
+            # If no progress was shown (all files skipped), show inline step
+            if not progress_shown:
+                ui.step_done(ingest_step, total_steps, "Ingesting (all up-to-date)")
         else:
             # Simple text progress for non-Rich mode
+            print(f"[{ingest_step}/{total_steps}] Ingesting...")
             last_pct = -1
 
             def on_progress(current: int, total: int, file_path: str):
-                nonlocal last_pct
+                nonlocal last_pct, progress_shown
+                progress_shown = True
                 if total == 0:
                     return
                 pct = int(current * 100 / total)
@@ -868,8 +856,22 @@ def command(
     # =========================================================================
 
     current_step += 1
-    ui.step(current_step, total_steps, "Complete!")
-    print()
+    ui.step(current_step, total_steps, "Summary")
+
+    # Build stats list - only include non-zero values (except Ingested which is always shown)
+    stats: List[tuple[str, str]] = []
+    stats.append(("Ingested", str(summary.ingested)))
+    if summary.skipped > 0:
+        stats.append(("Skipped", str(summary.skipped)))
+    if summary.marked_deleted > 0:
+        stats.append(("Marked deleted", str(summary.marked_deleted)))
+    if summary.artifacts_generated > 0:
+        stats.append(("Artifacts", str(summary.artifacts_generated)))
+    if summary.hierarchy_summaries > 0:
+        stats.append(("Summaries", str(summary.hierarchy_summaries)))
+    if summary.errors > 0:
+        stats.append(("Errors", str(summary.errors)))
+    stats.append(("Duration", f"{summary.duration_seconds:.1f}s"))
 
     if RICH:
         from rich.table import Table
@@ -877,30 +879,12 @@ def command(
         table = Table(show_header=False, box=None, padding=(0, 2))
         table.add_column("Metric", style="bold")
         table.add_column("Value", style="cyan")
-
-        table.add_row("Scanned", str(summary.scanned))
-        table.add_row("Ingested", str(summary.ingested))
-        table.add_row("Skipped", str(summary.skipped))
-        table.add_row("Marked deleted", str(summary.marked_deleted))
-        if summary.artifacts_generated > 0:
-            table.add_row("Artifacts", str(summary.artifacts_generated))
-        if summary.hierarchy_summaries > 0:
-            table.add_row("Hierarchy summaries", str(summary.hierarchy_summaries))
-        table.add_row("Errors", str(summary.errors))
-        table.add_row("Duration", f"{summary.duration_seconds:.1f}s")
-
+        for label, value in stats:
+            table.add_row(f"  {label}", value)
         console.print(table)
     else:
-        print(f"  Scanned: {summary.scanned}")
-        print(f"  Ingested: {summary.ingested}")
-        print(f"  Skipped: {summary.skipped}")
-        print(f"  Marked deleted: {summary.marked_deleted}")
-        if summary.artifacts_generated > 0:
-            print(f"  Artifacts: {summary.artifacts_generated}")
-        if summary.hierarchy_summaries > 0:
-            print(f"  Hierarchy summaries: {summary.hierarchy_summaries}")
-        print(f"  Errors: {summary.errors}")
-        print(f"  Duration: {summary.duration_seconds:.1f}s")
+        for label, value in stats:
+            print(f"      {label}: {value}")
 
     if summary.errors > 0:
         print()
@@ -911,4 +895,4 @@ def command(
             ui.info(f"  ... and {len(summary.error_details) - 5} more")
 
     print()
-    ui.success(f"Documents ingested into collection '{collection}'")
+    ui.success(f"Collection '{collection}' ready")
