@@ -590,8 +590,6 @@ def render_live_output(minimal: bool = False) -> str:
         collections = sorted(client.list_collections())
 
         if docs_collection in collections:
-            coll_index = collections.index(docs_collection) + 1
-
             # Chat questions designed to test fitz-ai features
             chat_questions = [
                 "What are the core features of Fitz?",  # Basic retrieval
@@ -601,8 +599,8 @@ def render_live_output(minimal: bool = False) -> str:
                 "Give me an overview of what changed in recent versions",  # Summary
             ]
 
-            # Build stdin: select collection, then questions, then exit
-            chat_stdin = f"{coll_index}\n"
+            # Build stdin: select collection (Enter for default), then questions, then exit
+            chat_stdin = "\n"  # Accept default collection
             for q in chat_questions:
                 chat_stdin += f"{q}\n"
             chat_stdin += "exit\n"
