@@ -123,6 +123,55 @@ def _show_documents_required_message(engine_name: str, caps) -> None:
     print()
 
 
+def _warn_if_collection_missing(collection: str, typed_config) -> None:
+    """
+    Check if collection exists and warn with helpful suggestions if not.
+
+    This prevents the confusing "I don't know" answer when the user simply
+    hasn't ingested any documents yet, or is using the wrong collection name.
+    """
+    from fitz_ai.vector_db.registry import get_vector_db_plugin
+
+    try:
+        # Get vector DB client from config
+        vdb_config = typed_config.vector_db
+        client = get_vector_db_plugin(vdb_config.plugin_name, **vdb_config.kwargs)
+
+        # Get available collections
+        collections = client.list_collections()
+
+        if not collections:
+            print()
+            ui.warning("No collections found in vector database.")
+            ui.info("Run 'fitz ingest ./docs' first to ingest documents.")
+            raise typer.Exit(0)
+
+        if collection not in collections:
+            print()
+            ui.warning(f"Collection '{collection}' not found.")
+            ui.info(f"Available collections: {', '.join(collections)}")
+            ui.info("Use -c <collection> to specify another, or run 'fitz ingest' to create it.")
+            raise typer.Exit(0)
+
+        # Check if collection is empty
+        try:
+            count = client.count(collection)
+            if count == 0:
+                print()
+                ui.warning(f"Collection '{collection}' is empty (0 documents).")
+                ui.info("Run 'fitz ingest ./docs' to add documents.")
+                raise typer.Exit(0)
+        except Exception:
+            # count() may not be supported by all backends, skip check
+            pass
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        # Connection errors are handled elsewhere - log and continue
+        logger.debug(f"Could not check collection: {e}")
+
+
 def _run_persistent_ingest_query(
     question: Optional[str], collection: Optional[str], engine_name: str
 ) -> None:
@@ -193,6 +242,9 @@ def _run_collection_query(
 
     # Collection selection (keeps ctx and typed_config in sync)
     ctx.select_collection(collection, require=False)
+
+    # Check if collection exists and warn if empty/missing
+    _warn_if_collection_missing(ctx.retrieval_collection, typed_config)
 
     # Display info
     print()

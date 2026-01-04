@@ -525,7 +525,12 @@ The codebase speaks for itself.
 >fitz quickstart ./docs "Your question here"
 >```
 >
->That's it. Fitz will prompt you for anything it needs.
+>Fitz auto-detects your LLM provider:
+>1. **Ollama running?** → Uses it automatically (fully local)
+>2. **`COHERE_API_KEY` or `OPENAI_API_KEY` set?** → Uses it automatically
+>3. **First time?** → Guides you through free Cohere signup (2 minutes)
+>
+>After first run, it's completely zero-friction.
 
 <br>
 
@@ -570,7 +575,7 @@ The codebase speaks for itself.
 >fitz quickstart ./docs "Your question here"
 >```
 >
->No data leaves your machine. No API costs. Same interface.
+>Fitz auto-detects Ollama when running. No API keys needed—no data leaves your machine.
 
 </details>
 
