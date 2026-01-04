@@ -3,10 +3,15 @@
 
 from __future__ import annotations
 
+import pytest
+
+# Skip all tests in this module if sklearn is not installed
+# Must be before any imports that use sklearn
+pytest.importorskip("sklearn", reason="sklearn required for semantic grouping tests")
+
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 from fitz_ai.core.chunk import Chunk
 from fitz_ai.ingestion.enrichment import EnrichmentConfig, EnrichmentPipeline
