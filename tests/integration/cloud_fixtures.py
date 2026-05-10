@@ -237,7 +237,6 @@ def cloud_pipeline(
         source=str(FIXTURES_DIR),
         state_manager=state_manager,
         vector_db_writer=writer,
-        embedder=embedder,
         parser_router=parser_router,
         chunking_router=chunking_router,
         collection=collection,

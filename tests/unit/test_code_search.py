@@ -56,7 +56,7 @@ class TestCodeSearchStrategy:
             {**_make_symbol("s2", "transform", "mod.transform"), "score": 0.9},
         ]
 
-        strategy = CodeSearchStrategy(mock_symbol_store, mock_embedder, config)
+        strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("process data", limit=5)
 
         assert len(results) == 2
@@ -68,7 +68,7 @@ class TestCodeSearchStrategy:
         ]
         mock_embedder.embed.side_effect = Exception("API error")
 
-        strategy = CodeSearchStrategy(mock_symbol_store, mock_embedder, config)
+        strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("func", limit=5)
 
         assert len(results) == 1
@@ -79,7 +79,7 @@ class TestCodeSearchStrategy:
         mock_symbol_store.search_by_name.return_value = [sym]
         mock_symbol_store.search_by_vector.return_value = [{**sym, "score": 0.8}]
 
-        strategy = CodeSearchStrategy(mock_symbol_store, mock_embedder, config)
+        strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("func", limit=5)
 
         # Same symbol from both searches should be merged, not duplicated
@@ -90,7 +90,7 @@ class TestCodeSearchStrategy:
         mock_symbol_store.search_by_name.return_value = syms
         mock_symbol_store.search_by_vector.return_value = []
 
-        strategy = CodeSearchStrategy(mock_symbol_store, mock_embedder, config)
+        strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("func", limit=3)
 
         assert len(results) == 3
@@ -101,7 +101,7 @@ class TestCodeSearchStrategy:
         ]
         mock_symbol_store.search_by_vector.return_value = []
 
-        strategy = CodeSearchStrategy(mock_symbol_store, mock_embedder, config)
+        strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("my_func", limit=5)
 
         addr = results[0]

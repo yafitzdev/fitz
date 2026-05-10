@@ -117,7 +117,6 @@ def mock_embedder():
 def semantic_matcher(mock_embedder) -> SemanticMatcher:
     """Fixture providing a SemanticMatcher with mock embedder."""
     return SemanticMatcher(
-        embedder=mock_embedder,
         # Thresholds tuned for mock embedder clusters
         causal_threshold=0.70,
         assertion_threshold=0.70,

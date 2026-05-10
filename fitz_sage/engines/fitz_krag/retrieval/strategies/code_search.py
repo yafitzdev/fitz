@@ -1,9 +1,11 @@
 # fitz_sage/engines/fitz_krag/retrieval/strategies/code_search.py
 """
-Hybrid keyword + semantic search on the symbol index.
+Symbol-index search: keyword + BM25 + keyword-enrichment boosts.
 
-Merges keyword matches (symbol name ILIKE) with semantic matches
-(summary_vector cosine similarity) using configurable weights.
+fitz-sage uses no dense embeddings on symbols. Code retrieval relies
+on tree-sitter-extracted symbol names (qualified-name keyword match)
+plus full-text BM25 over symbol summaries; precision comes from the
+``LLMReranker`` downstream.
 """
 
 from __future__ import annotations
@@ -16,23 +18,19 @@ from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.ingestion.symbol_store import SymbolStore
-    from fitz_sage.llm.providers.base import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
 
 class CodeSearchStrategy:
-    """Hybrid keyword + BM25 + semantic search on symbol_index."""
+    """Keyword + BM25 search on the symbol index."""
 
     def __init__(
         self,
         symbol_store: "SymbolStore",
-        embedder: "EmbeddingProvider | None",
         config: "FitzKragConfig",
     ):
         self._symbol_store = symbol_store
-        # ``None`` is the chat-only mode: skip semantic search entirely.
-        self._embedder = embedder
         self._config = config
         self._raw_store: Any = None  # Set by engine for freshness boosting
 
@@ -42,21 +40,19 @@ class CodeSearchStrategy:
         limit: int,
         detection: Any = None,
         *,
-        query_vector: list[float] | None = None,
-        hyde_vectors: list[list[float]] | None = None,
+        query_vector: list[float] | None = None,  # accepted for caller compat; ignored
+        hyde_vectors: list[list[float]] | None = None,  # ignored
     ) -> list[Address]:
         """
         Retrieve code symbol addresses matching the query.
 
         1. Keyword search: query words against symbol names
         2. BM25 full-text search (when content_tsv exists)
-        3. Semantic search: embed query, search summary_vector
-        4. HyDE search: embed hypothetical docs, search (when enabled)
-        5. Hybrid merge with configurable weights
+        3. Merge with configurable keyword-vs-BM25 weights
+        4. Keyword-enrichment + freshness boosts
 
-        Args:
-            query_vector: Pre-computed query embedding (skips internal embed call).
-            hyde_vectors: Pre-computed HyDE hypothesis embeddings (skips HyDE generate + embed).
+        ``query_vector`` and ``hyde_vectors`` are accepted for backward
+        compatibility with the router signature but are no longer used.
         """
         fetch_limit = limit * 2
 
@@ -70,89 +66,35 @@ class CodeSearchStrategy:
         except Exception as e:
             logger.debug(f"BM25 search not available: {e}")
 
-        # 3. Semantic search — skipped entirely in chat-only mode.
-        semantic_results: list[dict[str, Any]] = []
-        if self._embedder is not None:
-            try:
-                if query_vector is None:
-                    query_vector = self._embedder.embed(query, task_type="query")
-                semantic_results = self._symbol_store.search_by_vector(
-                    query_vector, limit=fetch_limit
-                )
-            except Exception as e:
-                logger.warning(f"Semantic search failed, using keyword only: {e}")
-                semantic_results = []
+        # 3. Merge keyword + BM25
+        merged = self._merge_results(keyword_results, bm25_results)
 
-        # 4. HyDE search (uses pre-computed vectors from router)
-        if hyde_vectors:
-            hyde_results = self._run_hyde(query, fetch_limit, hyde_vectors=hyde_vectors)
-            semantic_results = self._merge_hyde(semantic_results, hyde_results)
-
-        # 5. Hybrid merge
-        merged = self._merge_results(keyword_results, semantic_results, bm25_results)
-
-        # 6. Keyword enrichment boost (from stored keywords, domain-scaled)
+        # 4. Keyword enrichment boost (from stored keywords, domain-scaled)
         merged = self._apply_keyword_enrichment_boost(query, merged, detection)
 
-        # 7. Freshness boost (when detection signals boost_recency)
+        # 5. Freshness boost (when detection signals boost_recency)
         if detection and getattr(detection, "boost_recency", False) and self._raw_store:
             merged = self._apply_recency_boost(merged)
 
-        # 8. Convert to Address objects
+        # 6. Convert to Address objects
         return [self._to_address(r) for r in merged[:limit]]
-
-    def _run_hyde(
-        self,
-        query: str,
-        limit: int,
-        *,
-        hyde_vectors: list[list[float]],
-    ) -> list[dict[str, Any]]:
-        """Search with pre-computed HyDE vectors from the router."""
-        try:
-            all_results: list[dict[str, Any]] = []
-            for vec in hyde_vectors:
-                results = self._symbol_store.search_by_vector(vec, limit=limit)
-                all_results.extend(results)
-            return all_results
-        except Exception as e:
-            logger.warning(f"HyDE search failed: {e}")
-            return []
-
-    def _merge_hyde(
-        self,
-        semantic_results: list[dict[str, Any]],
-        hyde_results: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Merge HyDE results into semantic results with lower weight."""
-        # Discount HyDE scores by 0.5
-        for r in hyde_results:
-            r["score"] = r.get("score", 0.0) * 0.5
-        combined = list(semantic_results)
-        seen_ids = {r["id"] for r in combined}
-        for r in hyde_results:
-            if r["id"] not in seen_ids:
-                combined.append(r)
-                seen_ids.add(r["id"])
-        return combined
 
     def _merge_results(
         self,
         keyword_results: list[dict[str, Any]],
-        semantic_results: list[dict[str, Any]],
         bm25_results: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
-        """Merge keyword, BM25, and semantic results with weighted scoring."""
+        """Merge keyword + BM25 results with weighted scoring."""
         scores: dict[str, float] = {}
         by_id: dict[str, dict[str, Any]] = {}
         kw = self._config.keyword_weight
-        sw = self._config.semantic_weight
         bw = self._config.code_bm25_weight
 
-        # Normalize weights when BM25 results present
+        # Normalize across the two legs (we no longer have a semantic leg).
         if bm25_results:
-            total = kw + sw + bw
-            kw, sw, bw = kw / total, sw / total, bw / total
+            total = kw + bw
+            if total > 0:
+                kw, bw = kw / total, bw / total
 
         # Score keyword results by rank position
         for rank, r in enumerate(keyword_results):
@@ -168,13 +110,6 @@ class CodeSearchStrategy:
                 bm25_score = r.get("bm25_score", 1.0 / (rank + 1))
                 scores[sid] = scores.get(sid, 0) + bw * bm25_score
                 by_id[sid] = r
-
-        # Score semantic results by their cosine score
-        for rank, r in enumerate(semantic_results):
-            sid = r["id"]
-            cosine_score = r.get("score", 1.0 / (rank + 1))
-            scores[sid] = scores.get(sid, 0) + sw * cosine_score
-            by_id[sid] = r
 
         # Sort by combined score
         sorted_ids = sorted(scores, key=lambda x: scores[x], reverse=True)

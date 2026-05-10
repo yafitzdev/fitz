@@ -129,7 +129,6 @@ class TestPipelineVocabularyIntegration:
         pipeline = KragIngestPipeline(
             config=config,
             chat=chat,
-            embedder=embedder,
             connection_manager=cm,
             collection="test_col",
             vocabulary_store=vocab_store,
@@ -181,7 +180,6 @@ class TestPipelineVocabularyIntegration:
         pipeline = KragIngestPipeline(
             config=config,
             chat=chat,
-            embedder=embedder,
             connection_manager=cm,
             collection="test_col",
             vocabulary_store=None,
@@ -223,7 +221,6 @@ class TestPipelineVocabularyIntegration:
         pipeline = KragIngestPipeline(
             config=config,
             chat=chat,
-            embedder=embedder,
             connection_manager=cm,
             collection="test_col",
             vocabulary_store=vocab_store,

@@ -364,7 +364,6 @@ class KragE2ERunner:
         pipeline = KragIngestPipeline(
             config=engine._config,
             chat=engine._chat,
-            embedder=engine._embedder,
             connection_manager=engine._connection_manager,
             collection=engine._config.collection,
             table_store=engine._table_store,

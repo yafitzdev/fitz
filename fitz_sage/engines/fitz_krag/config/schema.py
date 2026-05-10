@@ -9,8 +9,6 @@ to code symbol / document section), then reads content on demand.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import Field
 
 from fitz_sage.core.config import BasePluginConfig, PluginKwargs
@@ -20,15 +18,13 @@ class FitzKragConfig(BasePluginConfig):
     """
     Fitz KRAG configuration.
 
-    Minimal local config (default — assumes a llama-server is running
-    on localhost:8080 with chat and embedding models):
+    Minimal local config (default — assumes one llama-server with
+    a chat model on localhost:8080):
     ```yaml
     chat_fast: endpoint/qwen2.5-7b-instruct
     chat_balanced: endpoint/qwen2.5-7b-instruct
     chat_smart: endpoint/qwen2.5-7b-instruct
-    embedding: endpoint/nomic-embed-text-v1.5
     chat_base_url: http://localhost:8080/v1
-    embedding_base_url: http://localhost:8081/v1
     collection: my_project
     ```
 
@@ -37,10 +33,15 @@ class FitzKragConfig(BasePluginConfig):
     chat_smart: openai/gpt-4o
     chat_balanced: openai/gpt-4o-mini
     chat_fast: openai/gpt-4o-mini
-    embedding: openai/text-embedding-3-small
     collection: my_project
     # OPENAI_API_KEY in env
     ```
+
+    Note: fitz-sage uses no embedding model. Retrieval is BM25 + KRAG
+    typed-unit routing (code symbols, sections, tables) + LLM rerank.
+    The ``retrieval intelligence stack`` does the semantic work that
+    dense retrieval traditionally provides — without the failure mode
+    of surface-similar-but-wrong dense candidates.
     """
 
     # ==========================================================================
@@ -62,31 +63,6 @@ class FitzKragConfig(BasePluginConfig):
         description="Chat model for complex generation (provider/model)",
     )
 
-    embedding: str = Field(
-        default="endpoint/nomic-embed-text-v1.5",
-        description=(
-            "Embedding model (provider/model). Ignored when "
-            "retrieval_mode == 'chat_only'."
-        ),
-    )
-
-    retrieval_mode: Literal["hybrid", "chat_only"] = Field(
-        default="hybrid",
-        description=(
-            "Retrieval architecture:\n"
-            "  - 'hybrid'    (default): BM25 + dense embeddings + KRAG "
-            "                routing + LLM rerank.\n"
-            "  - 'chat_only': BM25 + KRAG routing + LLM rerank only — "
-            "                no embeddings used at query time. Pairs "
-            "                with the LLMReranker so a wide BM25 set "
-            "                gets precise top-k via the chat model.\n"
-            "                This is the philosophy-aligned mode for "
-            "                the honest-RAG thesis: lower recall on "
-            "                fuzzy prose, but the governance cascade "
-            "                handles those correctly via ABSTAIN."
-        ),
-    )
-
     # Per-role base URLs — used by the ``endpoint`` and ``enterprise``
     # provider names. Ignored for ``openai`` (which has a built-in
     # default URL) and ``azure_openai`` (which always requires its
@@ -96,15 +72,6 @@ class FitzKragConfig(BasePluginConfig):
         description=(
             "HTTP endpoint for chat — used by the ``endpoint`` provider. "
             "Default is a local llama-server on port 8080."
-        ),
-    )
-
-    embedding_base_url: str | None = Field(
-        default="http://localhost:8081/v1",
-        description=(
-            "HTTP endpoint for embeddings — used by the ``endpoint`` "
-            "provider. Default is a local llama-server on port 8081 "
-            "(separate from chat to avoid model swapping)."
         ),
     )
 
@@ -123,11 +90,6 @@ class FitzKragConfig(BasePluginConfig):
         description="Env var name for chat-endpoint API key (None = no auth).",
     )
 
-    embedding_api_key_env: str | None = Field(
-        default=None,
-        description="Env var name for embedding-endpoint API key (None = no auth).",
-    )
-
     vision_api_key_env: str | None = Field(
         default=None,
         description="Env var name for vision-endpoint API key (None = no auth).",
@@ -135,7 +97,12 @@ class FitzKragConfig(BasePluginConfig):
 
     vector_db: str = Field(
         default="pgvector",
-        description="Vector DB plugin (pgvector only)",
+        description=(
+            "Vector DB plugin (pgvector only). Note: fitz-sage no longer "
+            "uses dense vectors at query time; this field is kept for "
+            "schema infrastructure (PostgreSQL + extensions) and is "
+            "scheduled for removal once the storage layer is simplified."
+        ),
     )
 
     rerank: str | None = Field(
@@ -251,11 +218,6 @@ class FitzKragConfig(BasePluginConfig):
         description="Weight for semantic search in hybrid merge",
     )
 
-    fallback_to_chunks: bool = Field(
-        default=True,
-        description="Fall back to chunk-based search when code search returns few results",
-    )
-
     section_bm25_weight: float = Field(
         default=0.6,
         ge=0.0,
@@ -367,11 +329,6 @@ class FitzKragConfig(BasePluginConfig):
     enable_query_rewriting: bool = Field(
         default=True,
         description="Enable LLM-based query rewriting for retrieval optimization",
-    )
-
-    enable_hyde: bool = Field(
-        default=True,
-        description="Enable HyDE (Hypothetical Document Embeddings) for improved recall",
     )
 
     enable_multi_query: bool = Field(

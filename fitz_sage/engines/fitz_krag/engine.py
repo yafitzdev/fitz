@@ -32,11 +32,10 @@ logger = get_logger(__name__)
 # Fitz Cloud optimizer version for cache key computation
 CLOUD_OPTIMIZER_VERSION = "1.0"
 
-# Sentinel embedding dimension used by chat-only retrieval mode.
-# Vector columns are created at this dim but never populated. Sized
-# to match a common embedding default so a collection later upgraded
-# to hybrid mode lines up out of the box.
-_CHAT_ONLY_VECTOR_DIM = 1024
+# Vector dimension used purely for legacy schema compatibility. fitz-sage
+# does not write embeddings; the columns stay NULL. Scheduled for removal
+# along with the rest of the dense-retrieval scaffolding.
+_LEGACY_VECTOR_DIM = 1024
 
 
 def _report_timings(
@@ -193,73 +192,36 @@ class FitzKragEngine:
         import time as _t
         from concurrent.futures import ThreadPoolExecutor
 
-        from fitz_sage.llm.client import get_chat, get_embedder
+        from fitz_sage.llm.client import get_chat
         from fitz_sage.storage.postgres import PostgresConnectionManager
 
         _t0 = _t.perf_counter()
 
         # LLM providers and PostgreSQL are independent — init in parallel.
         # PostgreSQL startup (pgserver) can take 1-2s; LLM provider init
-        # creates HTTP clients. Overlapping saves the slower of the two.
-
+        # creates one HTTP client. Overlapping saves the slower of the two.
         chat_config = _build_provider_config(
             self._config.chat_base_url,
             self._config.chat_api_key_env,
             spec=self._config.chat_smart,
         )
 
-        # In chat-only retrieval mode the embedder is not constructed
-        # at all — saves an HTTP client + model load + dimensions probe
-        # and means a single llama-server with one chat model is enough.
-        is_chat_only = self._config.retrieval_mode == "chat_only"
-
-        print("  Starting database and connecting to LLM providers...", end="", flush=True)
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        print("  Starting database and connecting to LLM provider...", end="", flush=True)
+        with ThreadPoolExecutor(max_workers=2) as pool:
             chat_future = pool.submit(
                 get_chat,
                 self._config.chat_smart,
                 "smart",
                 chat_config,
             )
-            if is_chat_only:
-                embed_future = None
-            else:
-                embedding_config = _build_provider_config(
-                    self._config.embedding_base_url,
-                    self._config.embedding_api_key_env,
-                    spec=self._config.embedding,
-                )
-                embed_future = pool.submit(
-                    get_embedder,
-                    self._config.embedding,
-                    embedding_config,
-                )
             pg_future = pool.submit(PostgresConnectionManager.get_instance)
 
             self._chat = chat_future.result()
-            self._embedder = embed_future.result() if embed_future is not None else None
             self._connection_manager = pg_future.result()
         print(" done.", flush=True)
 
         _t1 = _t.perf_counter()
         logger.debug(f"[init] providers+pg: {(_t1-_t0)*1000:.0f}ms")
-
-        # Cold-start warmup: resolve embedding dimensions in background
-        # so it overlaps with store creation below. Skipped in chat-only
-        # mode (no embedder).
-        dim_result: dict[str, int | None] = {"value": None}
-        dim_error: list[Exception] = []
-
-        def _resolve_dimensions():
-            if self._embedder is None:
-                return
-            try:
-                dim_result["value"] = self._embedder.dimensions
-            except Exception as e:
-                dim_error.append(e)
-
-        dim_thread = threading.Thread(target=_resolve_dimensions, daemon=True)
-        dim_thread.start()
 
         # Ingestion stores (created while embed.dimensions resolves)
         from fitz_sage.engines.fitz_krag.ingestion.import_graph_store import ImportGraphStore
@@ -297,9 +259,9 @@ class FitzKragEngine:
             TableSearchStrategy,
         )
 
-        code_strategy = CodeSearchStrategy(self._symbol_store, self._embedder, self._config)
-        section_strategy = SectionSearchStrategy(self._section_store, self._embedder, self._config)
-        table_strategy = TableSearchStrategy(self._table_store, self._embedder, self._config)
+        code_strategy = CodeSearchStrategy(self._symbol_store, self._config)
+        section_strategy = SectionSearchStrategy(self._section_store, self._config)
+        table_strategy = TableSearchStrategy(self._table_store, self._config)
         self._retrieval_router = RetrievalRouter(
             code_strategy=code_strategy,
             chunk_strategy=None,
@@ -307,8 +269,6 @@ class FitzKragEngine:
             section_strategy=section_strategy,
             table_strategy=table_strategy,
             chat_factory=None,  # Set after chat_factory is created
-            embedder=self._embedder,
-            hyde_generator=None,  # Set after HyDE generator is created
         )
         self._reader = ContentReader(
             self._raw_store,
@@ -390,7 +350,6 @@ class FitzKragEngine:
             self._constraints = create_default_constraints(
                 chat=self._chat_factory("fast"),
                 chat_balanced=self._chat_factory("balanced"),
-                embedder=self._embedder,
             )
             # LLM judge disabled — requires a model capable of nuanced semantic
             # reasoning about query-evidence specificity. 7B models (command-r7b,
@@ -438,16 +397,6 @@ class FitzKragEngine:
             detection_modules=list(DEFAULT_MODULES),
         )
 
-        # HyDE generator (passed to strategies). HyDE generates
-        # hypothetical-answer text and embeds it for retrieval — it's
-        # meaningless without an embedder, so chat-only mode disables
-        # it regardless of enable_hyde.
-        self._hyde_generator: Any = None
-        if self._config.enable_hyde and not is_chat_only:
-            from fitz_sage.retrieval.hyde.generator import HydeGenerator
-
-            self._hyde_generator = HydeGenerator(chat_factory=self._chat_factory)
-
         # Reranker.
         #
         # Two paths:
@@ -493,11 +442,9 @@ class FitzKragEngine:
             self._retrieval_router._code_strategy = llm_strategy
             code_strategy = llm_strategy  # so HyDE/raw_store wiring below reaches it
 
-        # Wire chat_factory + HyDE into router and strategies
+        # Wire chat_factory into router for multi-query expansion
         if self._config.enable_multi_query:
             self._retrieval_router._chat_factory = self._chat_factory
-        if self._hyde_generator:
-            self._retrieval_router._hyde_generator = self._hyde_generator
         # Wire raw_store for freshness boosting
         code_strategy._raw_store = self._raw_store
         section_strategy._raw_store = self._raw_store
@@ -544,19 +491,13 @@ class FitzKragEngine:
         _t4 = _t.perf_counter()
         logger.debug(f"[init] components: {(_t4-_t3)*1000:.0f}ms")
 
-        # Now collect embed.dimensions — should be done after ~2s of overlapped work
-        dim_thread.join()
-        if dim_error:
-            raise dim_error[0]
-        embedding_dim = dim_result["value"]
-        if embedding_dim is None:
-            # Chat-only mode: no embedder, but the schema still has
-            # vector columns (idle) so queries against existing
-            # hybrid-mode collections keep working. We pick a small
-            # sentinel dim that pgvector accepts; the vector columns
-            # stay NULL in chat-only ingest.
-            embedding_dim = _CHAT_ONLY_VECTOR_DIM
-        ensure_schema(self._connection_manager, self._config.collection, embedding_dim)
+        # Schema setup. Vector columns are kept (idle) for compatibility
+        # with collections previously ingested with embeddings; the
+        # chat-only architecture never writes to them. Schema/storage
+        # cleanup is scheduled for a follow-up refactor.
+        ensure_schema(
+            self._connection_manager, self._config.collection, _LEGACY_VECTOR_DIM
+        )
 
         _t5 = _t.perf_counter()
         logger.debug(
@@ -797,7 +738,7 @@ class FitzKragEngine:
                 except Exception as e:
                     logger.warning("Query rewriting failed, using original", error=str(e))
 
-            # Step 2: Analysis + Detection on rewritten query, + Embedding in parallel
+            # Step 2: Analysis + Detection on rewritten query
             classify_query = retrieval_query
             fast_analysis = self._fast_analyze(classify_query)
             need_llm_analysis = fast_analysis is None
@@ -815,10 +756,9 @@ class FitzKragEngine:
                     detection_limit_to = flagged
 
             if need_llm_analysis or need_detection:
-                # Batch analysis + detection in one LLM call, embed in parallel
-                with ThreadPoolExecutor(max_workers=2) as pool:
-                    batch_future = pool.submit(
-                        self._query_batcher.batch_classify,
+                # Batch analysis + detection in one LLM call.
+                try:
+                    batch_result = self._query_batcher.batch_classify(
                         classify_query,
                         include_analysis=need_llm_analysis,
                         include_detection=need_detection,
@@ -826,58 +766,31 @@ class FitzKragEngine:
                         include_rewriting=False,
                         include_extended=True,
                     )
-                    if self._embedder is not None:
-                        embed_future = pool.submit(self._embedder.embed_batch, [sanitized])
-                    else:
-                        embed_future = None
-
-                    try:
-                        batch_result = batch_future.result()
-                        analysis = batch_result.analysis if batch_result.analysis else fast_analysis
-                        detection = (
-                            self._build_detection_summary(
-                                batch_result.detection_results, classify_query
-                            )
-                            if need_detection and batch_result.detection_results is not None
-                            else None
+                    analysis = batch_result.analysis if batch_result.analysis else fast_analysis
+                    detection = (
+                        self._build_detection_summary(
+                            batch_result.detection_results, classify_query
                         )
-                    except Exception as e:
-                        logger.warning(f"Batched query intelligence failed: {e}")
-                        analysis = fast_analysis or QueryAnalysis(
-                            primary_type=QueryType.GENERAL,
-                            confidence=0.3,
-                            refined_query=sanitized,
-                        )
-                        detection = None
-                        batch_result = None
+                        if need_detection and batch_result.detection_results is not None
+                        else None
+                    )
+                except Exception as e:
+                    logger.warning(f"Batched query intelligence failed: {e}")
+                    analysis = fast_analysis or QueryAnalysis(
+                        primary_type=QueryType.GENERAL,
+                        confidence=0.3,
+                        refined_query=sanitized,
+                    )
+                    detection = None
+                    batch_result = None
 
-                    try:
-                        if embed_future is not None:
-                            precomputed_vectors = embed_future.result()
-                            precomputed_query_vector = dict(
-                                zip([sanitized], precomputed_vectors)
-                            )
-                        else:
-                            precomputed_query_vector = None
-                    except Exception:
-                        precomputed_query_vector = None
+                precomputed_query_vector = None
             else:
                 # No LLM needed: fast_analyze succeeded, no detection needed
                 analysis = fast_analysis
                 detection = None
                 batch_result = None
-                if self._embedder is not None:
-                    try:
-                        precomputed_vectors = self._embedder.embed_batch(
-                            [sanitized], task_type="query"
-                        )
-                        precomputed_query_vector = dict(
-                            zip([sanitized], precomputed_vectors)
-                        )
-                    except Exception:
-                        precomputed_query_vector = None
-                else:
-                    precomputed_query_vector = None
+                precomputed_query_vector = None
             timings.append(("Analysis + Detection", time.perf_counter() - t0))
 
             # Build retrieval profile — single object with all gates and signals
@@ -1192,53 +1105,24 @@ class FitzKragEngine:
         return gap
 
     def _check_cloud_cache(self, query_text: str, addresses: list) -> Answer | None:
-        """Check cloud cache for a previously cached answer."""
-        from fitz_sage.cloud.cache_key import compute_retrieval_fingerprint
+        """Check cloud cache for a previously cached answer.
 
-        try:
-            query_embedding = self._embedder.embed(query_text, task_type="query")
-            fingerprint = compute_retrieval_fingerprint([a.source_id for a in addresses])
-            versions = self._build_cache_versions()
-
-            result = self._cloud_client.lookup_cache(
-                query_text=query_text,
-                query_embedding=query_embedding,
-                retrieval_fingerprint=fingerprint,
-                versions=versions,
-            )
-
-            if result.hit:
-                logger.info("Cloud cache hit for KRAG query")
-                self._cached_query_embedding = query_embedding
-                return result.answer
-
-            self._cached_query_embedding = query_embedding
-            return None
-        except Exception as e:
-            logger.warning(f"Cloud cache lookup failed: {e}")
-            return None
+        The cloud cache historically used query embeddings as the
+        semantic-similarity key. With the move to a single-protocol,
+        embedding-free architecture this lookup is currently disabled
+        — it returns None (cache miss) so the engine falls through to
+        normal generation. Re-enabling it requires a text-hash-based
+        cache key (planned).
+        """
+        return None
 
     def _store_cloud_cache(self, query_text: str, addresses: list, answer: Answer) -> None:
-        """Store an answer in the cloud cache."""
-        from fitz_sage.cloud.cache_key import compute_retrieval_fingerprint
+        """Store an answer in the cloud cache.
 
-        try:
-            query_embedding = getattr(self, "_cached_query_embedding", None)
-            if query_embedding is None:
-                query_embedding = self._embedder.embed(query_text, task_type="query")
-
-            fingerprint = compute_retrieval_fingerprint([a.source_id for a in addresses])
-            versions = self._build_cache_versions()
-
-            self._cloud_client.store_cache(
-                query_text=query_text,
-                query_embedding=query_embedding,
-                retrieval_fingerprint=fingerprint,
-                versions=versions,
-                answer=answer,
-            )
-        except Exception as e:
-            logger.warning(f"Cloud cache store failed: {e}")
+        Disabled along with ``_check_cloud_cache`` until the cache key
+        is re-keyed without embeddings.
+        """
+        return None
 
     def _build_cache_versions(self) -> Any:
         """Build CacheVersions for cloud cache operations."""
@@ -1343,7 +1227,6 @@ class FitzKragEngine:
                 source_dir=source_dir,
                 config=self._config,
                 chat=self._chat,
-                embedder=self._embedder,
                 connection_manager=self._connection_manager,
                 collection=col,
                 stores={
@@ -1486,23 +1369,6 @@ class FitzKragEngine:
                             for sym in result.symbols
                         ]
                         self._symbol_store.upsert_batch(symbol_dicts)
-
-                        # Embed signatures immediately for vector search.
-                        # Skipped in chat_only mode (no embedder).
-                        if self._embedder is not None:
-                            try:
-                                texts = [
-                                    f"{s['kind']} {s['qualified_name']} {s.get('signature') or ''}"
-                                    for s in symbol_dicts
-                                ]
-                                vectors = self._embedder.embed_batch(
-                                    texts, task_type="document"
-                                )
-                                self._symbol_store.update_vectors_by_file(
-                                    entry.file_id, vectors
-                                )
-                            except Exception:
-                                pass  # Vector search will degrade but BM25 still works
 
                     if result.imports:
                         self._import_store.upsert_batch(

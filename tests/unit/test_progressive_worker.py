@@ -55,7 +55,6 @@ def _build_worker(
         source_dir=Path("/fake"),
         config=MagicMock(),
         chat=MagicMock(),
-        embedder=MagicMock(),
         connection_manager=MagicMock(),
         collection="test",
         stores={

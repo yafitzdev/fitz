@@ -61,7 +61,6 @@ def _make_pipeline(
     pipeline = KragIngestPipeline(
         config=config,
         chat=chat,
-        embedder=embedder,
         connection_manager=cm,
         collection="test_col",
     )

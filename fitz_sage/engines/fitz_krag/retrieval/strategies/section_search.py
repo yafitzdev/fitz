@@ -1,9 +1,10 @@
 # fitz_sage/engines/fitz_krag/retrieval/strategies/section_search.py
 """
-Section search strategy — BM25 + semantic hybrid for technical documents.
+Section search strategy — BM25 + keyword enrichment for technical documents.
 
-BM25 is weighted higher than semantic (0.6 vs 0.4) because technical
-documents are keyword-heavy and full-text search excels at exact term matching.
+fitz-sage uses no dense embeddings. Section retrieval is PostgreSQL
+full-text-search (``ts_rank``) with keyword-enrichment and freshness
+boosts; precision comes from the ``LLMReranker`` downstream.
 """
 
 from __future__ import annotations
@@ -16,23 +17,19 @@ from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.ingestion.section_store import SectionStore
-    from fitz_sage.llm.providers.base import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
 
 class SectionSearchStrategy:
-    """BM25-first retrieval with semantic fallback for technical documents."""
+    """BM25 retrieval with keyword + freshness boosts for technical documents."""
 
     def __init__(
         self,
         section_store: "SectionStore",
-        embedder: "EmbeddingProvider | None",
         config: "FitzKragConfig",
     ):
         self._section_store = section_store
-        # ``None`` is the chat-only mode: skip semantic search entirely.
-        self._embedder = embedder
         self._config = config
         self._raw_store: Any = None  # Set by engine for freshness boosting
 
@@ -42,136 +39,54 @@ class SectionSearchStrategy:
         limit: int,
         detection: Any = None,
         *,
-        query_vector: list[float] | None = None,
-        hyde_vectors: list[list[float]] | None = None,
+        query_vector: list[float] | None = None,  # accepted for caller compat; ignored
+        hyde_vectors: list[list[float]] | None = None,  # ignored
         inject_corpus_summaries: bool = False,
     ) -> list[Address]:
         """
         Retrieve section addresses matching the query.
 
         1. BM25 full-text search (PostgreSQL ts_rank)
-        2. Semantic search on section summaries
-        3. HyDE search (when enabled)
-        4. Hybrid merge — BM25 weighted higher
+        2. Keyword-enrichment boost (domain-scaled)
+        3. Optional freshness boost
+        4. Parent-title breadcrumb enrichment
 
-        Args:
-            query_vector: Pre-computed query embedding (skips internal embed call).
-            hyde_vectors: Pre-computed HyDE hypothesis embeddings (skips HyDE generate + embed).
-            inject_corpus_summaries: When True, skip normal search and return L2 corpus
-                summary chunks only. Used by the router for thematic query enrichment.
+        ``query_vector`` and ``hyde_vectors`` are accepted for backward
+        compatibility with the router signature but are no longer used —
+        fitz-sage has no dense retrieval path.
         """
         if inject_corpus_summaries:
             return [self._to_address(s) for s in self._section_store.get_corpus_summaries()]
         fetch_limit = limit * 2
 
-        # 1. BM25 search
+        # 1. BM25 search — the canonical retrieval signal.
         bm25_results = self._section_store.search_bm25(query, limit=fetch_limit)
 
-        # 2. Semantic search — skipped entirely in chat-only mode.
-        semantic_results: list[dict[str, Any]] = []
-        if self._embedder is not None:
-            try:
-                if query_vector is None:
-                    query_vector = self._embedder.embed(query, task_type="query")
-                semantic_results = self._section_store.search_by_vector(
-                    query_vector, limit=fetch_limit
-                )
-            except Exception as e:
-                logger.warning(f"Semantic section search failed, using BM25 only: {e}")
-                semantic_results = []
+        # 2. Score BM25 hits via Reciprocal Rank Fusion for stable scaling.
+        merged = self._score_results(bm25_results)
 
-        # 3. HyDE search (uses pre-computed vectors from router)
-        if hyde_vectors:
-            hyde_results = self._run_hyde(query, fetch_limit, hyde_vectors=hyde_vectors)
-            semantic_results = self._merge_hyde(semantic_results, hyde_results)
-
-        # 4. Hybrid merge
-        bm25_weight = self._config.section_bm25_weight
-        semantic_weight = self._config.section_semantic_weight
-        merged = self._merge_results(bm25_results, semantic_results, bm25_weight, semantic_weight)
-
-        # 5. Keyword enrichment boost (from stored keywords, domain-scaled)
+        # 3. Keyword enrichment boost (from stored keywords, domain-scaled)
         merged = self._apply_keyword_enrichment_boost(query, merged, detection)
 
-        # 6. Freshness boost (when detection signals boost_recency)
+        # 4. Freshness boost (when detection signals boost_recency)
         if detection and getattr(detection, "boost_recency", False) and self._raw_store:
             merged = self._apply_recency_boost(merged)
 
-        # 7. Enrich with parent titles for breadcrumb location
+        # 5. Enrich with parent titles for breadcrumb location
         top_results = merged[:limit]
         self._enrich_with_parent_titles(top_results)
 
-        # 8. Convert to Address objects
+        # 6. Convert to Address objects
         return [self._to_address(r) for r in top_results]
 
-    def _run_hyde(
-        self,
-        query: str,
-        limit: int,
-        *,
-        hyde_vectors: list[list[float]],
-    ) -> list[dict[str, Any]]:
-        """Search with pre-computed HyDE vectors from the router."""
-        try:
-            all_results: list[dict[str, Any]] = []
-            for vec in hyde_vectors:
-                results = self._section_store.search_by_vector(vec, limit=limit)
-                all_results.extend(results)
-            return all_results
-        except Exception as e:
-            logger.warning(f"HyDE section search failed: {e}")
-            return []
-
-    def _merge_hyde(
-        self,
-        semantic_results: list[dict[str, Any]],
-        hyde_results: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Merge HyDE results into semantic results with lower weight."""
-        for r in hyde_results:
-            r["score"] = r.get("score", 0.0) * 0.5
-        combined = list(semantic_results)
-        seen_ids = {r["id"] for r in combined}
-        for r in hyde_results:
-            if r["id"] not in seen_ids:
-                combined.append(r)
-                seen_ids.add(r["id"])
-        return combined
-
-    def _merge_results(
-        self,
-        bm25_results: list[dict[str, Any]],
-        semantic_results: list[dict[str, Any]],
-        bm25_weight: float,
-        semantic_weight: float,
-    ) -> list[dict[str, Any]]:
-        """Merge BM25 and semantic results using Reciprocal Rank Fusion (RRF).
-
-        Both legs use RRF with k=60 so they are on the same scale before
-        weighting. This avoids the asymmetry of mixing raw cosine scores with
-        rank-reciprocal BM25 scores.
-        """
+    @staticmethod
+    def _score_results(bm25_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """RRF-score BM25 results so combined_score is on a consistent scale."""
         _RRF_K = 60
-        scores: dict[str, float] = {}
-        by_id: dict[str, dict[str, Any]] = {}
-
-        for rank, r in enumerate(bm25_results):
-            sid = r["id"]
-            rrf_score = 1.0 / (_RRF_K + rank)
-            scores[sid] = scores.get(sid, 0) + bm25_weight * rrf_score
-            by_id[sid] = r
-
-        for rank, r in enumerate(semantic_results):
-            sid = r["id"]
-            rrf_score = 1.0 / (_RRF_K + rank)
-            scores[sid] = scores.get(sid, 0) + semantic_weight * rrf_score
-            by_id[sid] = r
-
-        sorted_ids = sorted(scores, key=lambda x: scores[x], reverse=True)
         result = []
-        for sid in sorted_ids:
-            entry = by_id[sid].copy()
-            entry["combined_score"] = scores[sid]
+        for rank, r in enumerate(bm25_results):
+            entry = r.copy()
+            entry["combined_score"] = 1.0 / (_RRF_K + rank)
             result.append(entry)
         return result
 

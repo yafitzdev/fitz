@@ -65,10 +65,10 @@ class TestQueryHelpers:
         # Create flat config file
         config_path = tmp_path / "config.yaml"
         config = {
-            "chat_fast": "ollama/qwen3.5:0.6b",
-            "chat_balanced": "ollama/qwen2.5:7b",
-            "chat_smart": "cohere/command-a-03-2025",
-            "embedding": "cohere/embed-v4.0",
+            "chat_fast": "endpoint/qwen2.5-7b-instruct",
+            "chat_balanced": "endpoint/qwen2.5-7b-instruct",
+            "chat_smart": "openai/gpt-4o",
+            "chat_base_url": None,
             "vector_db": "pgvector",
             "collection": "test",
         }
@@ -80,7 +80,7 @@ class TestQueryHelpers:
         ):
             ctx = CLIContext.load(engine="fitz_krag")
 
-        assert ctx.raw_config["chat_smart"] == "cohere/command-a-03-2025"
+        assert ctx.raw_config["chat_smart"] == "openai/gpt-4o"
         assert ctx.typed_config.collection == "test"
 
     def test_get_collections_returns_list(self):

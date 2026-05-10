@@ -136,7 +136,6 @@ def test_with_real_embedder(tmp_path: Path, test_files):
     executor = DiffIngestExecutor(
         state_manager=state_manager,
         vector_db_writer=writer,
-        embedder=embedder,
         parser_router=parser_router,
         chunking_router=router,
         collection="test_collection",

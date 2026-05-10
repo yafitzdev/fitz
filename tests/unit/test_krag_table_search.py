@@ -33,7 +33,7 @@ def _make_strategy(
     config.table_keyword_weight = table_keyword_weight
     config.table_semantic_weight = table_semantic_weight
 
-    return TableSearchStrategy(table_store, embedder, config)
+    return TableSearchStrategy(table_store, config)
 
 
 def _make_table_record(
@@ -160,7 +160,7 @@ class TestTableSearchStrategy:
         config.table_keyword_weight = 0.4
         config.table_semantic_weight = 0.6
 
-        strategy = TableSearchStrategy(table_store, embedder, config)
+        strategy = TableSearchStrategy(table_store, config)
         addresses = strategy.retrieve("data", limit=5)
 
         assert len(addresses) == 1

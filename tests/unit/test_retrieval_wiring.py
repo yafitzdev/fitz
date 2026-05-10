@@ -246,7 +246,7 @@ def _make_section_strategy(
     store = section_store or MagicMock()
     emb = embedder or MagicMock()
     cfg = config or _make_config()
-    strategy = SectionSearchStrategy(store, emb, cfg)
+    strategy = SectionSearchStrategy(store, cfg)
     strategy._raw_store = raw_store
     return strategy
 
@@ -298,7 +298,7 @@ def _make_code_strategy(
     store = symbol_store or MagicMock()
     emb = embedder or MagicMock()
     cfg = config or _make_config()
-    strategy = CodeSearchStrategy(store, emb, cfg)
+    strategy = CodeSearchStrategy(store, cfg)
     strategy._raw_store = raw_store
     return strategy
 
@@ -403,7 +403,6 @@ class TestSectionFreshnessBoostWithRecency:
 
         strategy = _make_section_strategy(
             section_store=section_store,
-            embedder=embedder,
             raw_store=raw_store,
         )
 
@@ -450,7 +449,6 @@ class TestFreshnessNoBoostWithoutFlag:
 
         strategy = _make_section_strategy(
             section_store=section_store,
-            embedder=embedder,
             raw_store=raw_store,
         )
 
@@ -483,7 +481,6 @@ class TestFreshnessNoBoostWithoutRawStore:
 
         strategy = _make_section_strategy(
             section_store=section_store,
-            embedder=embedder,
             raw_store=None,  # Explicitly None
         )
 

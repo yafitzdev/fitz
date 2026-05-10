@@ -47,7 +47,6 @@ class BackgroundIngestWorker:
         source_dir: Path,
         config: "FitzKragConfig",
         chat: "ChatProvider",
-        embedder: "EmbeddingProvider | None",
         connection_manager: "PostgresConnectionManager",
         collection: str,
         stores: dict[str, Any],
@@ -60,7 +59,6 @@ class BackgroundIngestWorker:
         self._source_dir = source_dir
         self._config = config
         self._chat = chat
-        self._embedder = embedder
         self._cm = connection_manager
         self._collection = collection
         self._raw_store = stores["raw"]
@@ -444,30 +442,8 @@ class BackgroundIngestWorker:
             self._table_store.update_summary(record["id"], summary)
 
     def _embed_table(self, entry: "ManifestEntry") -> None:
-        """Compute and store embeddings for table summaries."""
-        records = self._table_store.get_by_file(entry.file_id)
-        if not records:
-            return
-
-        if self._embedder is None:
-            # chat-only retrieval mode: skip vector generation entirely.
-            return
-
-        texts = []
-        record_ids = []
-        for record in records:
-            text = record.get("summary") or (
-                f"Table {record['name']} with columns: {', '.join(record['columns'][:20])}"
-            )
-            texts.append(text)
-            record_ids.append(record["id"])
-
-        try:
-            vectors = self._embedder.embed_batch(texts, task_type="document")
-            for record_id, vector in zip(record_ids, vectors):
-                self._table_store.update_vector(record_id, vector)
-        except Exception as e:
-            logger.warning(f"Table embedding failed for {entry.rel_path}: {e}")
+        """No-op: fitz-sage uses no dense embeddings."""
+        return
 
     def _process_parsed_files(self) -> None:
         """PARSED → SUMMARIZED: Generate LLM summaries."""
@@ -658,77 +634,22 @@ class BackgroundIngestWorker:
 
         self._manifest.save()
 
+    # The four ``_embed_*`` methods below are no-ops kept for caller
+    # compatibility. fitz-sage uses no dense embeddings; vector columns
+    # in the schema stay NULL. These will be deleted entirely when the
+    # progressive pipeline's state machine drops the EMBEDDED state.
+
     def _embed_file_symbols(self, entry: "ManifestEntry") -> None:
-        """Compute and store embeddings for symbols in a file."""
-        if self._embedder is None:
-            # chat-only retrieval mode: vector columns stay NULL.
-            return
-
-        summaries = self._symbol_store.get_summaries_by_file(entry.file_id)
-        if not summaries:
-            return
-
-        texts = [s.get("summary") or f"{s.get('kind', '')} {s.get('name', '')}" for s in summaries]
-        try:
-            vectors = self._embedder.embed_batch(texts, task_type="document")
-            self._symbol_store.update_vectors_by_file(entry.file_id, vectors)
-        except Exception as e:
-            logger.warning(f"Embedding failed for {entry.rel_path}: {e}")
+        return
 
     def _embed_symbols_from_signatures(self, file_id: str, symbol_dicts: list[dict]) -> None:
-        """Embed symbol signatures immediately during Phase 1 (no LLM needed).
-
-        Uses kind + qualified_name + signature to produce a vector that
-        enables vector search before LLM summaries are generated.
-        """
-        if self._embedder is None:
-            return
-        if not symbol_dicts:
-            return
-        texts = [
-            f"{s['kind']} {s['qualified_name']} {s.get('signature') or ''}" for s in symbol_dicts
-        ]
-        try:
-            vectors = self._embedder.embed_batch(texts, task_type="document")
-            self._symbol_store.update_vectors_by_file(file_id, vectors)
-            logger.debug(f"Embedded {len(vectors)} symbols from signatures for file {file_id[:8]}")
-        except Exception as e:
-            logger.debug(f"Signature embedding skipped for {file_id[:8]}: {e}")
+        return
 
     def _embed_sections_from_content(self, file_id: str, section_dicts: list[dict]) -> None:
-        """Embed section content immediately during Phase 1 (no LLM needed).
-
-        Uses title + first 2000 chars of content to produce a vector that
-        enables vector search before LLM summaries are generated. Phase 3
-        will upgrade these with summary-based embeddings when available.
-        """
-        if self._embedder is None:
-            return
-        if not section_dicts:
-            return
-        texts = [f"{s['title']}. {(s.get('content') or '')[:2000]}" for s in section_dicts]
-        try:
-            vectors = self._embedder.embed_batch(texts, task_type="document")
-            self._section_store.update_vectors_by_file(file_id, vectors)
-            logger.debug(f"Embedded {len(vectors)} sections from content for file {file_id[:8]}")
-        except Exception as e:
-            logger.debug(f"Content embedding skipped for {file_id[:8]}: {e}")
+        return
 
     def _embed_file_sections(self, entry: "ManifestEntry") -> None:
-        """Compute and store embeddings for sections in a file."""
-        if self._embedder is None:
-            return
-
-        sections = self._section_store.get_by_file(entry.file_id)
-        if not sections:
-            return
-
-        texts = [s.get("summary") or s.get("title", "(untitled)") for s in sections]
-        try:
-            vectors = self._embedder.embed_batch(texts, task_type="document")
-            self._section_store.update_vectors_by_file(entry.file_id, vectors)
-        except Exception as e:
-            logger.warning(f"Section embedding failed for {entry.rel_path}: {e}")
+        return
 
     # ------------------------------------------------------------------
     # Enrichment (between summarize and embed)

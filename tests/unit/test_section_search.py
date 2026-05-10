@@ -35,7 +35,7 @@ def mock_config():
 
 @pytest.fixture
 def strategy(mock_section_store, mock_embedder, mock_config):
-    return SectionSearchStrategy(mock_section_store, mock_embedder, mock_config)
+    return SectionSearchStrategy(mock_section_store, mock_config)
 
 
 def _make_section_result(

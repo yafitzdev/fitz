@@ -14,9 +14,7 @@ class TestFitzKragConfig:
         assert config.chat_fast == "endpoint/qwen2.5-7b-instruct"
         assert config.chat_balanced == "endpoint/qwen2.5-7b-instruct"
         assert config.chat_smart == "endpoint/qwen2.5-7b-instruct"
-        assert config.embedding == "endpoint/nomic-embed-text-v1.5"
         assert config.chat_base_url == "http://localhost:8080/v1"
-        assert config.embedding_base_url == "http://localhost:8081/v1"
 
     def test_defaults(self):
         config = FitzKragConfig(collection="test")
@@ -25,8 +23,6 @@ class TestFitzKragConfig:
         assert config.top_addresses == 50
         assert config.top_read == 50
         assert config.keyword_weight == 0.4
-        assert config.semantic_weight == 0.6
-        assert config.fallback_to_chunks is True
         assert config.enable_citations is True
         assert config.strict_grounding is True
         assert config.max_context_tokens == 48000
@@ -38,12 +34,9 @@ class TestFitzKragConfig:
             chat_smart="openai/gpt-4o",
             chat_fast="openai/gpt-4o-mini",
             chat_balanced="openai/gpt-4o-mini",
-            embedding="openai/text-embedding-3-small",
             chat_base_url=None,
-            embedding_base_url=None,
             top_addresses=20,
             keyword_weight=0.3,
-            semantic_weight=0.7,
         )
         assert config.chat_smart == "openai/gpt-4o"
         assert config.chat_fast == "openai/gpt-4o-mini"
@@ -94,10 +87,11 @@ class TestDefaultYaml:
         assert raw["fitz_krag"]["chat_fast"] == "endpoint/qwen2.5-7b-instruct"
         assert raw["fitz_krag"]["chat_balanced"] == "endpoint/qwen2.5-7b-instruct"
         assert raw["fitz_krag"]["chat_smart"] == "endpoint/qwen2.5-7b-instruct"
-        assert raw["fitz_krag"]["embedding"] == "endpoint/nomic-embed-text-v1.5"
         assert raw["fitz_krag"]["chat_base_url"] == "http://localhost:8080/v1"
-        assert raw["fitz_krag"]["embedding_base_url"] == "http://localhost:8081/v1"
         assert raw["fitz_krag"]["collection"] == "default"
+        # Embedding fields are gone — fitz-sage no longer uses dense vectors.
+        assert "embedding" not in raw["fitz_krag"]
+        assert "embedding_base_url" not in raw["fitz_krag"]
 
     def test_default_yaml_creates_valid_config(self):
         path = get_default_config_path()

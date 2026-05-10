@@ -200,7 +200,6 @@ def test_ingest_timing_detailed(tmp_path: Path, timing_tracker: TimingTracker, t
     executor = DiffIngestExecutor(
         state_manager=state_manager,
         vector_db_writer=writer,
-        embedder=embedder,
         parser_router=parser_router,
         chunking_router=router,
         collection="test_collection",
@@ -282,7 +281,6 @@ def test_ingest_with_real_embedder_mock(tmp_path: Path, timing_tracker: TimingTr
     executor = DiffIngestExecutor(
         state_manager=state_manager,
         vector_db_writer=writer,
-        embedder=embedder,
         parser_router=parser_router,
         chunking_router=router,
         collection="test_collection",

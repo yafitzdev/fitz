@@ -347,7 +347,6 @@ class TestRunDiffIngest:
             source=tmp_path,
             state_manager=state_manager,
             vector_db_writer=MockVectorDBWriter(),
-            embedder=MockEmbedder(),
             parser_router=MockParserRouter(),
             chunking_router=router,
             collection="test",

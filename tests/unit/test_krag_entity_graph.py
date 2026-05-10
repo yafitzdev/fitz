@@ -173,7 +173,6 @@ class TestPipelineEntityGraphIntegration:
         pipeline = KragIngestPipeline(
             config=config,
             chat=chat,
-            embedder=embedder,
             connection_manager=cm,
             collection="test_col",
             entity_graph_store=entity_store,
@@ -251,7 +250,6 @@ class TestPipelineEntityGraphIntegration:
         pipeline = KragIngestPipeline(
             config=config,
             chat=chat,
-            embedder=embedder,
             connection_manager=cm,
             collection="test_col",
             entity_graph_store=entity_store,

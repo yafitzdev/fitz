@@ -312,9 +312,7 @@ class FitzBEIRRetriever:
         )
 
         section_store = SectionStore(self._engine._connection_manager, self._beir_collection)
-        strategy = SectionSearchStrategy(
-            section_store, self._engine._embedder, self._engine._config
-        )
+        strategy = SectionSearchStrategy(section_store, self._engine._config)
 
         results: dict[str, dict[str, float]] = {}
 
