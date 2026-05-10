@@ -47,7 +47,7 @@ class BackgroundIngestWorker:
         source_dir: Path,
         config: "FitzKragConfig",
         chat: "ChatProvider",
-        embedder: "EmbeddingProvider",
+        embedder: "EmbeddingProvider | None",
         connection_manager: "PostgresConnectionManager",
         collection: str,
         stores: dict[str, Any],
@@ -449,6 +449,10 @@ class BackgroundIngestWorker:
         if not records:
             return
 
+        if self._embedder is None:
+            # chat-only retrieval mode: skip vector generation entirely.
+            return
+
         texts = []
         record_ids = []
         for record in records:
@@ -656,6 +660,10 @@ class BackgroundIngestWorker:
 
     def _embed_file_symbols(self, entry: "ManifestEntry") -> None:
         """Compute and store embeddings for symbols in a file."""
+        if self._embedder is None:
+            # chat-only retrieval mode: vector columns stay NULL.
+            return
+
         summaries = self._symbol_store.get_summaries_by_file(entry.file_id)
         if not summaries:
             return
@@ -673,6 +681,8 @@ class BackgroundIngestWorker:
         Uses kind + qualified_name + signature to produce a vector that
         enables vector search before LLM summaries are generated.
         """
+        if self._embedder is None:
+            return
         if not symbol_dicts:
             return
         texts = [
@@ -692,6 +702,8 @@ class BackgroundIngestWorker:
         enables vector search before LLM summaries are generated. Phase 3
         will upgrade these with summary-based embeddings when available.
         """
+        if self._embedder is None:
+            return
         if not section_dicts:
             return
         texts = [f"{s['title']}. {(s.get('content') or '')[:2000]}" for s in section_dicts]
@@ -704,6 +716,9 @@ class BackgroundIngestWorker:
 
     def _embed_file_sections(self, entry: "ManifestEntry") -> None:
         """Compute and store embeddings for sections in a file."""
+        if self._embedder is None:
+            return
+
         sections = self._section_store.get_by_file(entry.file_id)
         if not sections:
             return

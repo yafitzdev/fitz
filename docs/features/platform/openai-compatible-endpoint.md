@@ -148,16 +148,49 @@ embedder = get_embedder(
 vector = embedder.embed("Hello world")
 ```
 
+## Chat-only retrieval mode
+
+```yaml
+fitz_krag:
+  chat_smart: endpoint/qwen2.5-7b-instruct
+  chat_base_url: http://localhost:8080/v1
+  retrieval_mode: chat_only      # <- skips embeddings end-to-end
+  rerank: llm                    # default; LLMReranker turns wide BM25 -> precise top-k
+  collection: default
+```
+
+When ``retrieval_mode: chat_only`` is set:
+
+- The engine never constructs an embedder (no second URL, no second
+  model, no dimensions probe).
+- Retrieval strategies (code / section / table) skip semantic search
+  and run BM25 + keyword + freshness/keyword-enrichment boosts only.
+- HyDE is force-disabled (it's pointless without an embedder).
+- The ``ChunkFallback`` strategy short-circuits to ``[]``.
+- Ingestion (both the synchronous ``KragIngestPipeline`` and the
+  ``BackgroundIngestWorker``) skips ``embed_batch`` calls; vector
+  columns stay NULL.
+- Schema creation uses a sentinel embedding dim (1024) so vector
+  columns exist (idle) and a collection later upgraded to hybrid
+  mode lines up out of the box.
+
+**Why this matters.** The honest-RAG thesis is that *lower recall
+plus correct abstention* beats *higher recall plus occasional
+hallucination*. Embedding-based retrieval has a known failure mode
+of surface-similar-but-wrong candidates that the governance cascade
+then has to clean up. BM25 + LLM-rerank produces fewer such
+candidates. Cases that fall off the recall curve in chat_only mode
+are exactly the queries where ABSTAIN is the right answer — which
+is what the governance v6 cascade does correctly. The architecture
+is now lined up with the philosophy.
+
 ## What's not here yet
 
-- **Chat-only retrieval mode.** Default retrieval still uses the
-  embedding provider. The forthcoming change makes BM25 + KRAG
-  routing + LLM-rerank the default, demoting embeddings to an
-  optional accelerator. When that lands, the
-  ``embedding_base_url`` / ``embedding_api_key_env`` fields become
-  optional in practice.
-- **CLI ``--endpoint`` flag.** The engine YAML is plumbed but
-  ``fitz query --endpoint http://... --model ...`` does not yet
-  exist.
-- **README rewrite.** The top-level README still describes the older
-  Ollama-or-cloud setup story.
+- **fitz-gov A/B run.** The empirical validation. Run the existing
+  fitz-gov benchmark suite with ``retrieval_mode: chat_only`` and
+  compare false-trustworthy / abstain rates to the hybrid baseline.
+  The hypothesis is that false-trustworthy stays at or below 5.7%
+  while abstain rate rises — proof the philosophy carries.
+- **README rewrite.** Done as of the matching commit, but the
+  ``chat_only`` mode is not yet the default. Switching the default
+  is the post-fitz-gov-validation step.

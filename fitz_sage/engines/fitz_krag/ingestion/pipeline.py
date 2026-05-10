@@ -69,7 +69,7 @@ class KragIngestPipeline:
         self,
         config: "FitzKragConfig",
         chat: "ChatProvider",
-        embedder: "EmbeddingProvider",
+        embedder: "EmbeddingProvider | None",
         connection_manager: "PostgresConnectionManager",
         collection: str,
         table_store: "TableStore | None" = None,
@@ -79,6 +79,8 @@ class KragIngestPipeline:
     ):
         self._config = config
         self._chat = chat
+        # ``None`` is the chat-only mode: no embedding generation
+        # during ingest. Vector columns stay NULL.
         self._embedder = embedder
         self._cm = connection_manager
         self._collection = collection
@@ -138,8 +140,16 @@ class KragIngestPipeline:
         # Document strategy
         self._doc_strategy = TechnicalDocIngestStrategy()
 
-        # Ensure schema
-        ensure_schema(connection_manager, collection, embedder.dimensions)
+        # Ensure schema. In chat-only mode there's no embedder, so we
+        # use the same sentinel dim the engine uses; vector columns are
+        # created (idle) and stay NULL on insert.
+        if embedder is not None:
+            embedding_dim = embedder.dimensions
+        else:
+            from fitz_sage.engines.fitz_krag.engine import _CHAT_ONLY_VECTOR_DIM
+
+            embedding_dim = _CHAT_ONLY_VECTOR_DIM
+        ensure_schema(connection_manager, collection, embedding_dim)
 
     def ingest(
         self,
@@ -809,8 +819,14 @@ class KragIngestPipeline:
         return "\n\n".join(parts)
 
     def _embed_summaries(self, summaries: list[str]) -> list[list[float]]:
-        """Embed summary strings using the configured embedder."""
+        """Embed summary strings using the configured embedder.
+
+        Returns an empty list in chat-only mode (no embedder); callers
+        must handle missing vectors (the schema permits NULL).
+        """
         if not summaries:
+            return []
+        if self._embedder is None:
             return []
         try:
             return self._embedder.embed_batch(summaries, task_type="document")

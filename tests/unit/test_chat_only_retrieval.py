@@ -201,6 +201,90 @@ class TestEngineChatOnlyInit:
             # And we never asked for an embedder.
             assert get_embedder_calls == []
 
+    def test_chat_only_pipeline_does_not_call_embed_batch(self) -> None:
+        """KragIngestPipeline._embed_summaries returns [] when embedder is None.
+
+        The downstream code already handles short vector lists via
+        ``vectors[i] if i < len(vectors) else None``, so all rows get
+        a NULL summary_vector — pgvector accepts NULL.
+        """
+        from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
+
+        # Patch the heavy stores so we don't need a real Postgres.
+        from unittest.mock import patch
+
+        with patch(
+            "fitz_sage.engines.fitz_krag.ingestion.pipeline.RawFileStore"
+        ), patch(
+            "fitz_sage.engines.fitz_krag.ingestion.pipeline.SymbolStore"
+        ), patch(
+            "fitz_sage.engines.fitz_krag.ingestion.pipeline.ImportGraphStore"
+        ), patch(
+            "fitz_sage.engines.fitz_krag.ingestion.pipeline.SectionStore"
+        ), patch(
+            "fitz_sage.engines.fitz_krag.ingestion.pipeline.TableStore"
+        ), patch(
+            "fitz_sage.engines.fitz_krag.ingestion.pipeline.ensure_schema"
+        ):
+            cfg = FitzKragConfig(collection="test", retrieval_mode="chat_only")
+            pipeline = KragIngestPipeline(
+                config=cfg,
+                chat=MagicMock(),
+                embedder=None,
+                connection_manager=MagicMock(),
+                collection="test",
+            )
+
+            # _embed_summaries must short-circuit to [] without calling
+            # any embedder API (since there is no embedder).
+            result = pipeline._embed_summaries(["s1", "s2", "s3"])
+            assert result == []
+
+    def test_chat_only_worker_skips_embed_methods(self) -> None:
+        """BackgroundIngestWorker embed-* methods short-circuit on embedder=None."""
+        from fitz_sage.engines.fitz_krag.progressive.worker import (
+            BackgroundIngestWorker,
+        )
+
+        manifest = MagicMock()
+        manifest._path = MagicMock()
+        manifest._path.parent = MagicMock()
+
+        cfg = FitzKragConfig(collection="test", retrieval_mode="chat_only")
+
+        symbol_store = MagicMock()
+        section_store = MagicMock()
+
+        worker = BackgroundIngestWorker(
+            manifest=manifest,
+            source_dir=MagicMock(),
+            config=cfg,
+            chat=MagicMock(),
+            embedder=None,
+            connection_manager=MagicMock(),
+            collection="test",
+            stores={
+                "raw": MagicMock(),
+                "symbol": symbol_store,
+                "import": MagicMock(),
+                "section": section_store,
+                "table": MagicMock(),
+            },
+        )
+
+        # Each embed-* method should bail early without touching stores.
+        worker._embed_file_symbols(MagicMock(file_id="f1", rel_path="x.py"))
+        symbol_store.get_summaries_by_file.assert_not_called()
+
+        worker._embed_symbols_from_signatures("f1", [{"qualified_name": "x"}])
+        symbol_store.update_vectors_by_file.assert_not_called()
+
+        worker._embed_sections_from_content("f1", [{"title": "t", "content": "c"}])
+        section_store.update_vectors_by_file.assert_not_called()
+
+        worker._embed_file_sections(MagicMock(file_id="f1", rel_path="x.md"))
+        section_store.get_by_file.assert_not_called()
+
     def test_hybrid_mode_constructs_embedder(self, monkeypatch) -> None:
         """The default 'hybrid' mode still builds an embedder (regression check)."""
         from unittest.mock import patch
