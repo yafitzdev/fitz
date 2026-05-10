@@ -2,10 +2,11 @@
 """
 OpenAI-compatible HTTP provider wrappers.
 
-This module implements the chat / embedding / vision providers for any
-server that speaks the OpenAI HTTP protocol — OpenAI, Azure OpenAI,
-llama.cpp's ``llama-server``, vLLM, LM Studio, Together, Fireworks,
-Groq, OpenRouter, etc.
+This module implements the chat / vision providers for any server that
+speaks the OpenAI HTTP protocol — OpenAI, Azure OpenAI, llama.cpp's
+``llama-server``, vLLM, LM Studio, Together, Fireworks, Groq,
+OpenRouter, etc. fitz-sage uses no embeddings, so there is no
+embedding provider here.
 
 The classes are the *single* implementation behind the ``endpoint``,
 ``openai``, and ``azure_openai`` provider names. There is no legacy
@@ -41,7 +42,6 @@ OPENAI_CHAT_MODELS: dict[ModelTier, str] = {
     "fast": "gpt-4o-mini",
 }
 
-OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 OPENAI_VISION_MODEL = "gpt-4o"
 
 
@@ -126,83 +126,6 @@ class OpenAICompatChat:
                 content = chunk.choices[0].delta.content
                 if content:
                     yield content
-
-
-class OpenAICompatEmbedding:
-    """
-    Embedding provider for any OpenAI-compatible HTTP server.
-
-    Args:
-        auth: Authentication provider.
-        model: Model name (required for ``endpoint``; defaults to
-            OpenAI's text-embedding-3-small for the ``openai`` preset).
-        dimensions: Output dimensions (for models that support it).
-        base_url: HTTP endpoint.
-    """
-
-    def __init__(
-        self,
-        auth: AuthProvider,
-        model: str | None = None,
-        dimensions: int | None = None,
-        base_url: str | None = None,
-    ) -> None:
-        import httpx
-        import openai
-
-        request_kwargs = auth.get_request_kwargs()
-
-        http_client = httpx.Client(
-            auth=DynamicHttpxAuth(auth),
-            verify=request_kwargs.get("verify", True),
-            cert=request_kwargs.get("cert"),
-            timeout=httpx.Timeout(600.0, connect=5.0),
-        )
-
-        client_kwargs: dict[str, Any] = {
-            "api_key": "unused",
-            "http_client": http_client,
-        }
-        if base_url:
-            client_kwargs["base_url"] = base_url
-
-        self._client = openai.OpenAI(**client_kwargs)
-        self._model = model or OPENAI_EMBEDDING_MODEL
-        self._dimensions = dimensions
-
-    def embed(self, text: str, *, task_type: str | None = None) -> list[float]:
-        """Embed a single text."""
-        result = self.embed_batch([text])
-        return result[0]
-
-    def embed_batch(self, texts: list[str], *, task_type: str | None = None) -> list[list[float]]:
-        """Embed multiple texts."""
-        if not texts:
-            return []
-
-        kwargs: dict[str, Any] = {
-            "model": self._model,
-            "input": texts,
-        }
-        if self._dimensions:
-            kwargs["dimensions"] = self._dimensions
-
-        response = self._client.embeddings.create(**kwargs)
-
-        # Sort by index to ensure order matches input
-        sorted_data = sorted(response.data, key=lambda x: x.index)
-        return [list(item.embedding) for item in sorted_data]
-
-    @property
-    def dimensions(self) -> int:
-        """Return embedding dimensions."""
-        if self._dimensions is None:
-            try:
-                result = self.embed("test")
-                self._dimensions = len(result)
-            except Exception:
-                return 1536
-        return self._dimensions or 1536
 
 
 class OpenAICompatVision:
@@ -290,9 +213,7 @@ class OpenAICompatVision:
 
 __all__ = [
     "OpenAICompatChat",
-    "OpenAICompatEmbedding",
     "OpenAICompatVision",
     "OPENAI_CHAT_MODELS",
-    "OPENAI_EMBEDDING_MODEL",
     "OPENAI_VISION_MODEL",
 ]

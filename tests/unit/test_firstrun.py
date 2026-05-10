@@ -5,46 +5,20 @@ Unit tests for first-run auto-configuration.
 The new behavior probes common ports for an OpenAI-compatible server
 (/v1/models), then falls back to OpenAI cloud if OPENAI_API_KEY is
 set. There is no Ollama-specific path — Ollama users speak /v1/
-just like everyone else.
+just like everyone else. fitz-sage uses no embeddings, so the
+generated config only writes a chat model.
 """
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from fitz_sage.core.firstrun import (
     DetectedEndpoint,
     EndpointModel,
-    _classify,
     detect_endpoint,
     run_firstrun_setup,
 )
-
-
-class TestClassify:
-    """Model-name classification splits chat vs embedding."""
-
-    @pytest.mark.parametrize(
-        "model_id,expected",
-        [
-            ("nomic-embed-text", True),
-            ("BAAI/bge-large-en-v1.5", True),
-            ("mxbai-embed-large", True),
-            ("intfloat/e5-large", True),
-            ("alibaba-NLP/gte-large-en", True),
-            ("dunzhang/stella_en_1.5B_v5", True),
-            ("qwen2.5-7b-instruct", False),
-            ("meta-llama-3.1-70b", False),
-            ("gpt-4o", False),
-            ("claude-sonnet-4", False),
-        ],
-    )
-    def test_pattern_classification(self, model_id: str, expected: bool) -> None:
-        result = _classify(model_id)
-        assert result.id == model_id
-        assert result.is_embedding is expected
 
 
 class TestDetectEndpoint:
@@ -79,10 +53,9 @@ class TestDetectEndpoint:
         assert endpoint.base_url.endswith("/v1")
         assert len(endpoint.chat_models) == 1
         assert endpoint.chat_models[0].id == "qwen2.5-7b-instruct"
-        assert endpoint.embedding_models == []
 
-    def test_finds_chat_and_embedding(self) -> None:
-        """A server with both kinds splits them by name."""
+    def test_listing_with_multiple_models(self) -> None:
+        """All listed models become chat candidates (no embedding split)."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -95,8 +68,9 @@ class TestDetectEndpoint:
             endpoint = detect_endpoint()
 
         assert endpoint is not None
-        assert [m.id for m in endpoint.chat_models] == ["qwen2.5-7b-instruct"]
-        assert [m.id for m in endpoint.embedding_models] == ["nomic-embed-text-v1.5"]
+        ids = [m.id for m in endpoint.chat_models]
+        assert "qwen2.5-7b-instruct" in ids
+        assert "nomic-embed-text-v1.5" in ids
 
     def test_handles_models_field_alternative(self) -> None:
         """Servers that put models under 'models' (not 'data') still work."""
@@ -109,8 +83,9 @@ class TestDetectEndpoint:
             endpoint = detect_endpoint()
 
         assert endpoint is not None
-        assert [m.id for m in endpoint.chat_models] == ["llama3"]
-        assert [m.id for m in endpoint.embedding_models] == ["bge-base"]
+        ids = [m.id for m in endpoint.chat_models]
+        assert "llama3" in ids
+        assert "bge-base" in ids
 
 
 class TestRunFirstrunSetup:
@@ -121,7 +96,6 @@ class TestRunFirstrunSetup:
         endpoint = DetectedEndpoint(
             base_url="http://localhost:8080/v1",
             chat_models=[EndpointModel(id="qwen2.5-7b-instruct")],
-            embedding_models=[EndpointModel(id="nomic-embed-text", is_embedding=True)],
         )
         with patch(
             "fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint
@@ -134,7 +108,6 @@ class TestRunFirstrunSetup:
         assert ok is True
         config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
         assert "endpoint/qwen2.5-7b-instruct" in config
-        assert "endpoint/nomic-embed-text" in config
         assert "chat_base_url: http://localhost:8080/v1" in config
 
     def test_openai_key_fallback(self, tmp_path, monkeypatch) -> None:
@@ -151,7 +124,6 @@ class TestRunFirstrunSetup:
         assert ok is True
         config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
         assert "openai/gpt-4o" in config
-        assert "openai/text-embedding-3-small" in config
 
     def test_no_provider_aborts(self, tmp_path, monkeypatch) -> None:
         """No endpoint, no key -> setup fails with instructions."""
@@ -168,11 +140,10 @@ class TestRunFirstrunSetup:
         assert not (tmp_path / "config.yaml").exists()
 
     def test_endpoint_with_no_chat_models_aborts(self, tmp_path) -> None:
-        """A reachable server with no chat models is a configuration error."""
+        """A reachable server with no models is a configuration error."""
         endpoint = DetectedEndpoint(
             base_url="http://localhost:8080/v1",
             chat_models=[],
-            embedding_models=[EndpointModel(id="bge-base", is_embedding=True)],
         )
         with patch(
             "fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint

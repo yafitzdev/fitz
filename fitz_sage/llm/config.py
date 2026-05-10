@@ -3,8 +3,8 @@
 Configuration parser for LLM providers.
 
 There is exactly one chat-protocol implementation in fitz-sage:
-``OpenAICompatChat`` / ``OpenAICompatEmbedding`` / ``OpenAICompatVision``,
-which speaks the OpenAI HTTP protocol against any compliant server
+``OpenAICompatChat`` / ``OpenAICompatVision``, which speaks the
+OpenAI HTTP protocol against any compliant server
 (OpenAI, Azure, llama.cpp's ``llama-server``, vLLM, LM Studio, Together,
 Fireworks, Groq, OpenRouter, …).
 
@@ -35,7 +35,6 @@ from typing import Any, Literal
 from fitz_sage.llm.auth import ApiKeyAuth, AuthProvider, CompositeAuth, M2MAuth, NoAuth
 from fitz_sage.llm.providers.base import (
     ChatProvider,
-    EmbeddingProvider,
     ModelTier,
     RerankProvider,
     VisionProvider,
@@ -437,80 +436,6 @@ def create_chat_provider(
     )
 
 
-def create_embedding_provider(
-    spec: str,
-    config: dict[str, Any] | None = None,
-) -> EmbeddingProvider:
-    """
-    Create an embedding provider from a spec string.
-
-    Args:
-        spec: ``provider`` or ``provider/model``.
-        config: Optional config dict (auth, base_url, dimensions, etc.).
-    """
-    provider, _ = parse_provider_string(spec)
-    _check_removed(provider)
-
-    config = config or {}
-
-    if provider == "enterprise":
-        from fitz_sage.llm.providers.enterprise import EnterpriseEmbedding
-
-        auth = resolve_auth(provider, config)
-        kwargs = _get_provider_kwargs(config)
-        _, model = parse_provider_string(spec)
-        if model:
-            kwargs["model"] = model
-        if "dimensions" in config:
-            kwargs["dimensions"] = config["dimensions"]
-
-        base_url = kwargs.pop("base_url", None)
-        model_name = kwargs.pop("model", None)
-        if not base_url:
-            raise ValueError(
-                "enterprise provider requires 'base_url' in config.\n"
-                "Example:\n"
-                "  embedding: enterprise/text-embedding-3-small\n"
-                "  base_url: https://corp.gateway/openai/v1"
-            )
-        if not model_name:
-            raise ValueError(
-                "enterprise provider requires a model in the spec.\n"
-                "Example:\n"
-                "  embedding: enterprise/text-embedding-3-small"
-            )
-        return EnterpriseEmbedding(auth, base_url=base_url, model=model_name, **kwargs)  # type: ignore[arg-type]
-
-    if provider == "endpoint":
-        from fitz_sage.llm.providers.openai_compat import OpenAICompatEmbedding
-
-        auth, kwargs = _resolve_endpoint_kwargs(
-            spec, config, require_model=True, role="embedding"
-        )
-        base_url = kwargs.pop("base_url")
-        model_name = kwargs.pop("model")
-        if "dimensions" in config:
-            kwargs["dimensions"] = config["dimensions"]
-        return OpenAICompatEmbedding(auth, model=model_name, base_url=base_url, **kwargs)
-
-    if provider in ("openai", "azure_openai"):
-        from fitz_sage.llm.providers.openai_compat import OpenAICompatEmbedding
-
-        auth, kwargs = _resolve_openai_preset_kwargs(
-            spec, config, azure=(provider == "azure_openai")
-        )
-        if "dimensions" in config:
-            kwargs["dimensions"] = config["dimensions"]
-        # tier is not meaningful for embeddings
-        kwargs.pop("models", None)
-        return OpenAICompatEmbedding(auth, **kwargs)
-
-    raise ValueError(
-        f"Unknown embedding provider: {provider}. "
-        f"Supported: 'endpoint', 'openai', 'azure_openai', 'enterprise'."
-    )
-
-
 def create_rerank_provider(
     spec: str | None,
     config: dict[str, Any] | None = None,
@@ -591,7 +516,6 @@ __all__ = [
     "parse_provider_string",
     "resolve_auth",
     "create_chat_provider",
-    "create_embedding_provider",
     "create_rerank_provider",
     "create_vision_provider",
     "ENV_VAR_MAP",

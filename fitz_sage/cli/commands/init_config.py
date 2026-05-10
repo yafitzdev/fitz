@@ -46,13 +46,6 @@ chat_balanced: {_spec(chat_model_balanced)}
 chat_smart: {_spec(chat_model_smart)}"""
 
 
-def _build_embedding_spec(embedding: str, embedding_model: str) -> str:
-    """Build embedding spec line."""
-    if embedding_model:
-        return f"embedding: {embedding}/{embedding_model}"
-    return f"embedding: {embedding}"
-
-
 def _build_rerank_line(rerank: str | None, rerank_model: str) -> str:
     """Build rerank line."""
     if rerank:
@@ -77,8 +70,6 @@ def generate_fitz_krag_config(
     chat_model_smart: str,
     chat_model_fast: str,
     chat_model_balanced: str = "",
-    embedding: str,
-    embedding_model: str,
     rerank: str | None,
     rerank_model: str,
     vector_db: str,
@@ -91,7 +82,6 @@ def generate_fitz_krag_config(
     Produces flat YAML with provider/model specs for each tier.
     """
     chat_specs = _build_chat_specs(chat, chat_model_smart, chat_model_fast, chat_model_balanced)
-    embedding_spec = _build_embedding_spec(embedding, embedding_model)
     rerank_line = _build_rerank_line(rerank, rerank_model)
     vision_line = _build_vision_line(vision, vision_model)
     vdb_kwargs_section = _build_vdb_kwargs_section(vector_db)
@@ -107,12 +97,6 @@ def generate_fitz_krag_config(
 # ===========================================================================
 
 {chat_specs}
-
-# ===========================================================================
-# Embedding model
-# ===========================================================================
-
-{embedding_spec}
 
 # ===========================================================================
 # Vector database

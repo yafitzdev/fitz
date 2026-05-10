@@ -29,7 +29,7 @@ from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.progressive.manifest import FileManifest, ManifestEntry
-    from fitz_sage.llm.providers.base import ChatProvider, EmbeddingProvider
+    from fitz_sage.llm.providers.base import ChatProvider
     from fitz_sage.storage.postgres import PostgresConnectionManager
 
 logger = logging.getLogger(__name__)

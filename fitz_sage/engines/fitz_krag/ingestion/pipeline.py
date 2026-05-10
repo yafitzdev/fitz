@@ -36,7 +36,7 @@ from fitz_sage.engines.fitz_krag.ingestion.table_store import TableStore
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-    from fitz_sage.llm.providers.base import ChatProvider, EmbeddingProvider
+    from fitz_sage.llm.providers.base import ChatProvider
     from fitz_sage.storage.postgres import PostgresConnectionManager
     from fitz_sage.tabular.store.postgres import PostgresTableStore
 

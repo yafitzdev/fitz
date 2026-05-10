@@ -11,6 +11,8 @@ Provider names are configuration presets:
 - ``azure_openai/<deployment>`` — preset for tenant-specific Azure
   (requires ``base_url``).
 - ``enterprise/<model>`` — separate path with OAuth2 + API key.
+
+fitz-sage uses no embeddings, so there is no ``get_embedder``.
 """
 
 from __future__ import annotations
@@ -19,13 +21,11 @@ from typing import Any
 
 from fitz_sage.llm.config import (
     create_chat_provider,
-    create_embedding_provider,
     create_rerank_provider,
     create_vision_provider,
 )
 from fitz_sage.llm.providers.base import (
     ChatProvider,
-    EmbeddingProvider,
     ModelTier,
     RerankProvider,
     VisionProvider,
@@ -56,27 +56,6 @@ def get_chat(
         >>> response = chat.chat([{"role": "user", "content": "Hello"}])
     """
     return create_chat_provider(spec, config, tier)
-
-
-def get_embedder(
-    spec: str,
-    config: dict[str, Any] | None = None,
-) -> EmbeddingProvider:
-    """
-    Get an embedding provider.
-
-    Args:
-        spec: Provider spec — ``endpoint/<model>``, ``openai``,
-            ``openai/<model>``, ``azure_openai/<deployment>``, or
-            ``enterprise/<model>``.
-        config: Optional config — ``base_url``, ``auth``, ``dimensions``.
-
-    Examples:
-        >>> embedder = get_embedder("endpoint/nomic-embed-text",
-        ...                         config={"base_url": "http://localhost:8081/v1"})
-        >>> vector = embedder.embed("Hello world")
-    """
-    return create_embedding_provider(spec, config)
 
 
 def get_reranker(
@@ -116,7 +95,6 @@ def get_vision(
 
 __all__ = [
     "get_chat",
-    "get_embedder",
     "get_reranker",
     "get_vision",
 ]

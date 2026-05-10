@@ -47,9 +47,6 @@ def _show_config_summary(ctx: CLIContext) -> None:
         # Chat
         table.add_row("Chat", ctx.chat_plugin or "?", ctx.chat_model_smart)
 
-        # Embedding
-        table.add_row("Embedding", ctx.embedding_plugin or "?", ctx.embedding_model)
-
         # Vector DB
         vdb_host = getattr(ctx.vector_db_kwargs, "host", None) or ""
         vdb_port = getattr(ctx.vector_db_kwargs, "port", None) or ""
@@ -81,8 +78,6 @@ def _show_config_summary(ctx: CLIContext) -> None:
 
         chat_detail = f" ({ctx.chat_model_smart})" if ctx.chat_model_smart else ""
         print(f"  Chat:      {ctx.chat_plugin or '?'}{chat_detail}")
-
-        print(f"  Embedding: {ctx.embedding_plugin or '?'}")
 
         print(f"  Vector DB: {ctx.vector_db_plugin or '?'}")
 
@@ -326,23 +321,6 @@ def _run_doctor(test: bool = False) -> None:
     # Connection Tests
     if test:
         ui.section("Connection Tests")
-
-        # Embedding
-        try:
-            if ctx.embedding_plugin:
-                embedder = ctx.get_embedder()
-                vector = embedder.embed("test")
-                if vector and len(vector) > 0:
-                    ui.status("Embedding", True, f"{ctx.embedding_plugin} (dim={len(vector)})")
-                else:
-                    ui.status("Embedding", False, "Empty response")
-                    issues.append("Embedding returned empty")
-            else:
-                ui.status("Embedding", False, "Not configured")
-                issues.append("Embedding not configured")
-        except Exception as e:
-            ui.status("Embedding", False, str(e)[:50])
-            issues.append(f"Embedding failed: {str(e)[:50]}")
 
         # Chat
         try:

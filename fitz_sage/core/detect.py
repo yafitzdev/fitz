@@ -88,15 +88,6 @@ class SystemStatus:
         return "http://localhost:8080/v1"
 
     @property
-    def best_embedding_spec(self) -> str:
-        """Recommend an embedding spec given what's available."""
-        if self.llm_endpoint.available:
-            return "endpoint/nomic-embed-text-v1.5"
-        if self.api_keys.get("openai", ApiKeyStatus(name="OpenAI", available=False)).available:
-            return "openai/text-embedding-3-small"
-        return "endpoint/nomic-embed-text-v1.5"
-
-    @property
     def best_vector_db(self) -> str:
         """pgvector is the only option."""
         return "pgvector"

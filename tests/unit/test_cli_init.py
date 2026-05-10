@@ -33,8 +33,6 @@ class TestGenerateConfig:
             chat="cohere",
             chat_model_smart="command-a-03-2025",
             chat_model_fast="command-r7b-12-2024",
-            embedding="cohere",
-            embedding_model="embed-english-v3.0",
             rerank=None,
             rerank_model="",
             vector_db="pgvector",
@@ -45,7 +43,6 @@ class TestGenerateConfig:
         # Flat format: tier-specific chat specs with provider/model
         assert "chat_fast" in config
         assert "chat_smart" in config
-        assert config["embedding"] == "cohere/embed-english-v3.0"
         assert config["vector_db"] == "pgvector"
 
     def test_generate_fitz_krag_config_with_rerank(self):
@@ -58,8 +55,6 @@ class TestGenerateConfig:
             chat="cohere",
             chat_model_smart="command-a-03-2025",
             chat_model_fast="command-r7b-12-2024",
-            embedding="cohere",
-            embedding_model="embed-english-v3.0",
             rerank="cohere",
             rerank_model="rerank-v3.5",
             vector_db="pgvector",
@@ -80,8 +75,6 @@ class TestGenerateConfig:
             chat="cohere",
             chat_model_smart="",
             chat_model_fast="",
-            embedding="cohere",
-            embedding_model="",
             rerank=None,
             rerank_model="",
             vector_db="pgvector",

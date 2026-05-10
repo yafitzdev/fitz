@@ -58,44 +58,6 @@ class StreamingChatProvider(Protocol):
 
 
 @runtime_checkable
-class EmbeddingProvider(Protocol):
-    """Protocol for embedding providers."""
-
-    def embed(self, text: str, *, task_type: str | None = None) -> list[float]:
-        """
-        Embed a single text.
-
-        Args:
-            text: Text to embed.
-            task_type: "query" for retrieval queries, "document" for ingestion.
-                       None uses provider default.
-
-        Returns:
-            Embedding vector.
-        """
-        ...
-
-    def embed_batch(self, texts: list[str], *, task_type: str | None = None) -> list[list[float]]:
-        """
-        Embed multiple texts.
-
-        Args:
-            texts: List of texts to embed.
-            task_type: "query" for retrieval queries, "document" for ingestion.
-                       None uses provider default.
-
-        Returns:
-            List of embedding vectors (same order as input).
-        """
-        ...
-
-    @property
-    def dimensions(self) -> int:
-        """Return the embedding dimensions."""
-        ...
-
-
-@runtime_checkable
 class RerankProvider(Protocol):
     """Protocol for reranking providers."""
 
@@ -142,7 +104,6 @@ __all__ = [
     "RerankResult",
     "ChatProvider",
     "StreamingChatProvider",
-    "EmbeddingProvider",
     "RerankProvider",
     "VisionProvider",
 ]

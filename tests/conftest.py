@@ -133,20 +133,6 @@ def load_test_config() -> dict:
         return yaml.safe_load(f)
 
 
-def get_test_embedder():
-    """Get embedder configured for tests (from first tier)."""
-    from fitz_sage.llm import get_embedder
-
-    config = load_test_config()
-    # Get embedding config from first tier
-    first_tier = config["tiers"][0]
-    emb_spec = first_tier["embedding"]
-    emb_model = first_tier.get("embedding_model", "")
-    if emb_model and "/" not in emb_spec:
-        emb_spec = f"{emb_spec}/{emb_model}"
-    return get_embedder(emb_spec)
-
-
 def get_test_chat(tier: str = "smart"):
     """
     Get chat client configured for tests (local Ollama).
@@ -164,12 +150,6 @@ def get_test_chat(tier: str = "smart"):
     if chat_models.get(tier) and "/" not in chat_spec:
         chat_spec = f"{chat_spec}/{chat_models[tier]}"
     return get_chat(chat_spec, tier=tier)
-
-
-@pytest.fixture
-def test_embedder():
-    """Fixture providing the test embedder (local Ollama)."""
-    return get_test_embedder()
 
 
 @pytest.fixture

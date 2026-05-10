@@ -9,23 +9,22 @@ Detection order:
 
 1. **Local OpenAI-compatible HTTP server** — probes ports 8080, 8000,
    1234, 11434 for ``GET /v1/models``. The first responsive server
-   wins; we read its ``/models`` listing to choose a chat model and
-   (optionally) an embedding model. Recommended setup is llama.cpp's
-   ``llama-server`` on port 8080.
+   wins; we read its ``/models`` listing to choose a chat model.
+   Recommended setup is llama.cpp's ``llama-server`` on port 8080.
 2. **OpenAI cloud** — falls back to ``openai/gpt-4o-mini`` if
    ``OPENAI_API_KEY`` is set.
 3. **No provider** — prints actionable setup instructions and aborts.
 
 There is no Ollama-specific code path; Ollama users run it in
 ``/v1/`` mode and it's just another OpenAI-compatible server on
-port 11434.
+port 11434. fitz-sage uses no embeddings — chat is the only model
+written to the generated config.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,12 +32,6 @@ from fitz_sage.core.paths import FitzPaths
 
 logger = logging.getLogger(__name__)
 
-# Heuristics for distinguishing embedding models from chat models when
-# scanning a server's ``/v1/models`` listing.
-_EMBEDDING_PATTERNS = re.compile(
-    r"embed|nomic|bge[\-_]|mxbai-embed|e5-|gte-|stella[\-_]",
-    re.IGNORECASE,
-)
 
 # Common ports for OpenAI-compatible servers, ordered by preference:
 # 8080 = llama-server, 8000 = vLLM/LM Studio, 1234 = LM Studio (older),
@@ -52,7 +45,6 @@ class EndpointModel:
     """A model exposed by an OpenAI-compatible /v1/models listing."""
 
     id: str
-    is_embedding: bool = False
 
 
 @dataclass
@@ -61,20 +53,11 @@ class DetectedEndpoint:
 
     base_url: str
     chat_models: list[EndpointModel] = field(default_factory=list)
-    embedding_models: list[EndpointModel] = field(default_factory=list)
 
 
 def needs_firstrun() -> bool:
     """Check if first-run setup is needed (no config exists)."""
     return not FitzPaths.config().exists()
-
-
-def _classify(model_id: str) -> EndpointModel:
-    """Classify a model id as chat vs embedding by name pattern."""
-    return EndpointModel(
-        id=model_id,
-        is_embedding=bool(_EMBEDDING_PATTERNS.search(model_id)),
-    )
 
 
 def detect_endpoint() -> DetectedEndpoint | None:
@@ -108,19 +91,11 @@ def detect_endpoint() -> DetectedEndpoint | None:
                 continue
 
             raw_models = data.get("data") or data.get("models") or []
-            classified: list[EndpointModel] = []
+            endpoint = DetectedEndpoint(base_url=base_url)
             for raw in raw_models:
                 model_id = raw.get("id") or raw.get("name")
-                if not model_id:
-                    continue
-                classified.append(_classify(str(model_id)))
-
-            endpoint = DetectedEndpoint(base_url=base_url)
-            for m in classified:
-                if m.is_embedding:
-                    endpoint.embedding_models.append(m)
-                else:
-                    endpoint.chat_models.append(m)
+                if model_id:
+                    endpoint.chat_models.append(EndpointModel(id=str(model_id)))
             return endpoint
 
     return None
@@ -130,12 +105,9 @@ def write_config(
     chat_fast: str,
     chat_balanced: str,
     chat_smart: str,
-    embedding: str,
     *,
     chat_base_url: str | None = None,
-    embedding_base_url: str | None = None,
     chat_api_key_env: str | None = None,
-    embedding_api_key_env: str | None = None,
 ) -> Path:
     """Write ``.fitz/config.yaml`` from the resolved provider configuration."""
     config_path = FitzPaths.config()
@@ -150,17 +122,12 @@ def write_config(
         f"chat_balanced: {chat_balanced}",
         f"chat_smart: {chat_smart}",
         "",
-        "# Embedding model",
-        f"embedding: {embedding}",
-        "",
-        "# HTTP endpoints (used by the 'endpoint' provider)",
+        "# HTTP endpoint (used by the 'endpoint' provider)",
         f"chat_base_url: {chat_base_url if chat_base_url else 'null'}",
-        f"embedding_base_url: {embedding_base_url if embedding_base_url else 'null'}",
         "vision_base_url: null",
         "",
-        "# Optional API key environment variables",
+        "# Optional API key environment variable",
         f"chat_api_key_env: {chat_api_key_env if chat_api_key_env else 'null'}",
-        f"embedding_api_key_env: {embedding_api_key_env if embedding_api_key_env else 'null'}",
         "vision_api_key_env: null",
         "",
         "# Optional",
@@ -177,19 +144,12 @@ def write_config(
 def _pick_chat_model(endpoint: DetectedEndpoint) -> str | None:
     """Choose a single chat model id from the listing.
 
-    Heuristic: prefer the first non-embedding model. The user can
-    rename later via the YAML.
+    Heuristic: take the first model. The user can rename later via
+    the YAML.
     """
     if not endpoint.chat_models:
         return None
     return endpoint.chat_models[0].id
-
-
-def _pick_embedding_model(endpoint: DetectedEndpoint) -> str | None:
-    """Choose an embedding model id, or None if the server doesn't expose one."""
-    if not endpoint.embedding_models:
-        return None
-    return endpoint.embedding_models[0].id
 
 
 def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
@@ -200,42 +160,20 @@ def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
     if chat_model is None:
         print(
             f"\n  Detected an OpenAI-compatible server at {endpoint.base_url} but "
-            f"it lists no chat models. Load a chat model and run fitz again.\n"
+            f"it lists no models. Load a chat model and run fitz again.\n"
         )
         return False
-
-    embedding_model = _pick_embedding_model(endpoint)
-    if embedding_model is None:
-        # Many local servers run a single chat model on one process.
-        # We default the embedding spec to a placeholder pointing at
-        # the same URL — the user is expected to either start a second
-        # server or (once chat-only retrieval lands) leave embedding
-        # disabled.
-        embedding_spec = "endpoint/nomic-embed-text-v1.5"
-        embedding_url = "http://localhost:8081/v1"
-        print(
-            f"\n  Found chat model '{chat_model}' at {endpoint.base_url}; "
-            f"no embedding model on the same server.\n"
-            f"  Defaulting embedding to a separate llama-server on port 8081 "
-            f"(start one or edit chat_only mode in config).\n"
-        )
-    else:
-        embedding_spec = f"endpoint/{embedding_model}"
-        embedding_url = endpoint.base_url
 
     chat_spec = f"endpoint/{chat_model}"
     write_config(
         chat_fast=chat_spec,
         chat_balanced=chat_spec,
         chat_smart=chat_spec,
-        embedding=embedding_spec,
         chat_base_url=endpoint.base_url,
-        embedding_base_url=embedding_url,
     )
 
     print(f"\n  Auto-configured from {endpoint.base_url}:")
-    print(f"    chat:      {chat_model}")
-    print(f"    embedding: {embedding_model or '(separate server, edit if needed)'}")
+    print(f"    chat: {chat_model}")
     print(f"\n  Config: {config_path}\n")
     return True
 
@@ -248,14 +186,11 @@ def _configure_from_openai_key() -> bool:
         chat_fast="openai/gpt-4o-mini",
         chat_balanced="openai/gpt-4o-mini",
         chat_smart="openai/gpt-4o",
-        embedding="openai/text-embedding-3-small",
         chat_base_url=None,
-        embedding_base_url=None,
     )
     print("\n  Configured from OPENAI_API_KEY:")
     print("    chat (smart):    gpt-4o")
     print("    chat (fast/bal): gpt-4o-mini")
-    print("    embedding:       text-embedding-3-small")
     print(f"\n  Config: {config_path}\n")
     return True
 
@@ -267,9 +202,7 @@ def _print_setup_instructions() -> None:
     print("    1. Install llama.cpp (https://github.com/ggerganov/llama.cpp)")
     print("    2. Download a chat model (.gguf) and start the server:")
     print("       llama-server -m chat-model.gguf --port 8080")
-    print("    3. Optionally start an embedding server on port 8081:")
-    print("       llama-server -m embed-model.gguf --port 8081 --embeddings")
-    print("    4. Re-run `fitz query ...`\n")
+    print("    3. Re-run `fitz query ...`\n")
     print("  Option 2 — OpenAI cloud:")
     print("    export OPENAI_API_KEY=sk-...")
     print("    Re-run `fitz query ...`\n")

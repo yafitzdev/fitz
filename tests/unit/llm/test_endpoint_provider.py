@@ -21,7 +21,6 @@ import pytest
 from fitz_sage.llm.auth import ApiKeyAuth, NoAuth
 from fitz_sage.llm.config import (
     create_chat_provider,
-    create_embedding_provider,
     create_vision_provider,
     resolve_auth,
 )
@@ -123,49 +122,6 @@ class TestEndpointChatProvider:
                     config=config,
                 )
                 assert provider._model == "meta-llama-3.1-70b"
-
-
-@pytest.mark.skipif(not HAS_OPENAI, reason="openai SDK not installed")
-class TestEndpointEmbeddingProvider:
-    """Test create_embedding_provider for the endpoint provider."""
-
-    def test_basic_embedding_creation(self) -> None:
-        """Endpoint embedding with base_url + model creates an OpenAIEmbedding."""
-        with patch("openai.OpenAI") as mock_openai:
-            provider = create_embedding_provider(
-                "endpoint/nomic-embed-text",
-                config={"base_url": "http://localhost:8081/v1"},
-            )
-            assert provider._model == "nomic-embed-text"
-            call_kwargs = mock_openai.call_args[1]
-            assert call_kwargs["base_url"] == "http://localhost:8081/v1"
-
-    def test_missing_base_url_raises(self) -> None:
-        """No base_url is a configuration error."""
-        with patch("openai.OpenAI"):
-            with pytest.raises(ValueError, match="endpoint provider requires 'base_url'"):
-                create_embedding_provider("endpoint/nomic-embed-text")
-
-    def test_missing_model_raises(self) -> None:
-        """No model in spec is a configuration error."""
-        with patch("openai.OpenAI"):
-            with pytest.raises(ValueError, match="endpoint provider requires a model"):
-                create_embedding_provider(
-                    "endpoint",
-                    config={"base_url": "http://localhost:8081/v1"},
-                )
-
-    def test_dimensions_passthrough(self) -> None:
-        """Custom dimensions are forwarded to the underlying provider."""
-        with patch("openai.OpenAI"):
-            provider = create_embedding_provider(
-                "endpoint/embed-model",
-                config={
-                    "base_url": "http://localhost:8081/v1",
-                    "dimensions": 512,
-                },
-            )
-            assert provider._dimensions == 512
 
 
 @pytest.mark.skipif(not HAS_OPENAI, reason="openai SDK not installed")

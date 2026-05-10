@@ -27,7 +27,6 @@ from .init_models import get_default_model
 # Ollama first because it's local, private, and free.
 _PLUGIN_PREFERENCE: dict[str, list[str]] = {
     "chat": ["ollama", "cohere", "openai", "anthropic"],
-    "embedding": ["ollama", "cohere", "openai"],
     "rerank": ["ollama", "cohere"],
     "vision": ["ollama", "cohere", "openai", "anthropic"],
     "vector_db": ["pgvector"],
@@ -43,25 +42,20 @@ def _order_by_preference(available: list[str], plugin_type: str) -> list[str]:
 
 
 def _select_plugins(system, non_interactive: bool) -> dict:
-    """Run shared plugin selection (chat, embedding, rerank, vision, vector_db).
+    """Run shared plugin selection (chat, rerank, vision, vector_db).
 
     Returns:
         Dict with keys: chat, chat_model_smart, chat_model_fast, chat_model_balanced,
-        embedding, embedding_model, rerank, rerank_model, vector_db,
-        vision, vision_model.
+        rerank, rerank_model, vector_db, vision, vision_model.
     """
     # Discover plugins
     all_chat = available_llm_plugins("chat")
-    all_embedding = available_llm_plugins("embedding")
     all_rerank = available_llm_plugins("rerank")
     all_vision = available_llm_plugins("vision")
     all_vector_db = available_vector_db_plugins()
 
     # Filter to available, then order by preference (first = default)
     avail_chat = _order_by_preference(filter_available_plugins(all_chat, "chat", system), "chat")
-    avail_embedding = _order_by_preference(
-        filter_available_plugins(all_embedding, "embedding", system), "embedding"
-    )
     avail_rerank = _order_by_preference(
         filter_available_plugins(all_rerank, "rerank", system), "rerank"
     )
@@ -78,11 +72,6 @@ def _select_plugins(system, non_interactive: bool) -> dict:
         ui.info("Set an API key (COHERE_API_KEY, OPENAI_API_KEY) or start Ollama.")
         raise typer.Exit(1)
 
-    if not avail_embedding:
-        ui.error("No embedding plugins available!")
-        ui.info("Set an API key (COHERE_API_KEY, OPENAI_API_KEY) or start Ollama.")
-        raise typer.Exit(1)
-
     if not avail_vector_db:
         ui.error("No vector database available!")
         ui.info("Ensure pgvector packages are installed: pip install psycopg pgvector pgserver")
@@ -93,8 +82,6 @@ def _select_plugins(system, non_interactive: bool) -> dict:
         chat_model_smart = get_default_model("chat", chat_choice, "smart")
         chat_model_fast = get_default_model("chat", chat_choice, "fast")
         chat_model_balanced = get_default_model("chat", chat_choice, "balanced")
-        embedding_choice = avail_embedding[0]
-        embedding_model = get_default_model("embedding", embedding_choice)
         rerank_choice = None
         rerank_model = ""
         vector_db_choice = avail_vector_db[0]
@@ -108,12 +95,6 @@ def _select_plugins(system, non_interactive: bool) -> dict:
         chat_model_smart = get_default_model("chat", chat_choice, "smart")
         chat_model_fast = get_default_model("chat", chat_choice, "fast")
         chat_model_balanced = get_default_model("chat", chat_choice, "balanced")
-
-        print()
-        embedding_choice = ui.prompt_numbered_choice(
-            "Embedding plugin", avail_embedding, avail_embedding[0]
-        )
-        embedding_model = get_default_model("embedding", embedding_choice)
 
         rerank_choice = None
         rerank_model = ""
@@ -149,8 +130,6 @@ def _select_plugins(system, non_interactive: bool) -> dict:
         "chat_model_smart": chat_model_smart,
         "chat_model_fast": chat_model_fast,
         "chat_model_balanced": chat_model_balanced,
-        "embedding": embedding_choice,
-        "embedding_model": embedding_model,
         "rerank": rerank_choice,
         "rerank_model": rerank_model,
         "vector_db": vector_db_choice,
@@ -172,8 +151,6 @@ def _run_fitz_krag_wizard(system, non_interactive: bool) -> str:
         chat_model_smart=plugins["chat_model_smart"],
         chat_model_fast=plugins["chat_model_fast"],
         chat_model_balanced=plugins["chat_model_balanced"],
-        embedding=plugins["embedding"],
-        embedding_model=plugins["embedding_model"],
         rerank=plugins["rerank"],
         rerank_model=plugins["rerank_model"],
         vector_db=plugins["vector_db"],

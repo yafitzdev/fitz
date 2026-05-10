@@ -436,14 +436,6 @@ class FitzService:
             logger.warning(f"Chat plugin '{ctx.chat_plugin}' validation failed: {e}")
             issues.append(f"Chat plugin '{ctx.chat_plugin}' not available: {e}")
 
-        try:
-            from fitz_sage.llm import get_embedder
-
-            get_embedder(ctx.embedding_plugin)
-        except Exception as e:
-            logger.warning(f"Embedding plugin '{ctx.embedding_plugin}' validation failed: {e}")
-            issues.append(f"Embedding plugin '{ctx.embedding_plugin}' not available: {e}")
-
         # Check vector DB
         try:
             from fitz_sage.vector_db.registry import get_vector_db_plugin
@@ -475,8 +467,6 @@ class FitzService:
                 "chat": ctx.chat_plugin,
                 "chat_model_smart": ctx.chat_model_smart,
                 "chat_model_fast": ctx.chat_model_fast,
-                "embedding": ctx.embedding_plugin,
-                "embedding_model": ctx.embedding_model,
                 "rerank": ctx.rerank_plugin,
                 "vector_db": ctx.vector_db_plugin,
                 "retrieval_plugin": ctx.retrieval_plugin,
@@ -531,17 +521,6 @@ class FitzService:
             logger.warning(f"Chat provider health check failed: {e}")
             components["chat"] = False
             issues.append(f"Chat provider: {e}")
-
-        # Check embedder
-        try:
-            from fitz_sage.llm import get_embedder
-
-            get_embedder()
-            components["embedding"] = True
-        except Exception as e:
-            logger.warning(f"Embedding provider health check failed: {e}")
-            components["embedding"] = False
-            issues.append(f"Embedding provider: {e}")
 
         return HealthCheckResult(
             healthy=all(components.values()),

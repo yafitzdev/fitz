@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 import pytest
 
-from fitz_sage.llm.client import get_chat, get_embedder, get_reranker, get_vision
-from fitz_sage.llm.providers import ChatProvider, EmbeddingProvider, VisionProvider
+from fitz_sage.llm.client import get_chat, get_reranker, get_vision
+from fitz_sage.llm.providers import ChatProvider, VisionProvider
 
 HAS_OPENAI = importlib.util.find_spec("openai") is not None
 
@@ -52,10 +52,6 @@ class TestUnknownProvider:
         with pytest.raises(ValueError, match="Unknown chat provider"):
             get_chat("unknown_provider")
 
-    def test_unknown_embedding_provider_raises(self) -> None:
-        with pytest.raises(ValueError, match="Unknown embedding provider"):
-            get_embedder("unknown_provider")
-
     def test_unknown_vision_provider_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown vision provider"):
             get_vision("unknown_provider")
@@ -68,11 +64,6 @@ class TestRemovedProviderErrors:
     def test_get_chat_raises(self, removed: str) -> None:
         with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
             get_chat(removed)
-
-    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
-    def test_get_embedder_raises(self, removed: str) -> None:
-        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
-            get_embedder(removed)
 
     @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
     def test_get_reranker_raises(self, removed: str) -> None:
@@ -95,12 +86,6 @@ class TestOpenAIPreset:
                 chat = get_chat("openai")
                 assert isinstance(chat, ChatProvider)
 
-    def test_openai_embedder(self) -> None:
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-            with patch("openai.OpenAI"):
-                embedder = get_embedder("openai")
-                assert isinstance(embedder, EmbeddingProvider)
-
     def test_openai_vision(self) -> None:
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
             with patch("openai.OpenAI"):
@@ -121,15 +106,6 @@ class TestEndpointProvider:
                 config={"base_url": "http://localhost:8080/v1"},
             )
             assert isinstance(chat, ChatProvider)
-
-    def test_endpoint_embedder_local(self) -> None:
-        """Local embedding server with no auth."""
-        with patch("openai.OpenAI"):
-            embedder = get_embedder(
-                "endpoint/nomic-embed-text",
-                config={"base_url": "http://localhost:8081/v1"},
-            )
-            assert isinstance(embedder, EmbeddingProvider)
 
     def test_endpoint_vision_local(self) -> None:
         """Local vision-capable server with no auth."""

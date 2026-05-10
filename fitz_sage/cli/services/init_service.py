@@ -101,13 +101,11 @@ class InitService:
 
     def get_default_model(self, plugin_type: str, plugin_name: str, tier: str = "smart") -> str:
         """Get default model for a provider."""
-        from fitz_sage.llm import get_chat, get_embedder, get_reranker
+        from fitz_sage.llm import get_chat, get_reranker
 
         try:
             if plugin_type == "chat":
                 instance = get_chat(plugin_name, tier=tier)  # type: ignore[arg-type]
-            elif plugin_type == "embedding":
-                instance = get_embedder(plugin_name)
             elif plugin_type == "rerank":
                 instance = get_reranker(plugin_name)
                 if instance is None:

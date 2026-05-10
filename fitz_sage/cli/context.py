@@ -70,10 +70,6 @@ class CLIContext:
     chat_model_smart: str = ""
     chat_model_fast: str = ""
 
-    # Embedding
-    embedding_plugin: str = ""
-    embedding_model: str = ""
-
     # Vector DB
     vector_db_plugin: str = ""
     vector_db_kwargs: dict = field(default_factory=dict)
@@ -119,13 +115,6 @@ class CLIContext:
         return self.chat_plugin or "?"
 
     @property
-    def embedding_display(self) -> str:
-        """Embedding info for display: 'plugin (model)' or just 'plugin'."""
-        if self.embedding_model:
-            return f"{self.embedding_plugin} ({self.embedding_model})"
-        return self.embedding_plugin or "?"
-
-    @property
     def rerank_display(self) -> Optional[str]:
         """Rerank info for display, or None if disabled."""
         if not self.rerank_enabled:
@@ -154,13 +143,6 @@ class CLIContext:
     def retrieval_display(self) -> str:
         """Retrieval info for display."""
         return f"{self.retrieval_plugin} (collection={self.retrieval_collection}, top_k={self.retrieval_top_k})"
-
-    @property
-    def embedding_id(self) -> str:
-        """Unique embedding ID for caching (e.g., 'cohere:embed-english-v3.0')."""
-        plugin = self.embedding_plugin or "unknown"
-        model = self.embedding_model or "default"
-        return f"{plugin}:{model}"
 
     # -------------------------------------------------------------------------
     # Factory Methods
@@ -236,11 +218,6 @@ class CLIContext:
         chat_balanced_spec = config.get("chat_balanced", "")
         chat_plugin_name = cls._parse_plugin_string(chat_smart_spec)
 
-        emb_spec = config.get("embedding", "")
-        emb_plugin_name = cls._parse_plugin_string(emb_spec)
-        # Extract model from "provider/model" spec
-        emb_model = emb_spec.split("/", 1)[1] if "/" in emb_spec else ""
-
         vdb_plugin_name = config.get("vector_db", "pgvector")
 
         rerank_spec = config.get("rerank")
@@ -271,9 +248,6 @@ class CLIContext:
             chat_plugin=chat_plugin_name,
             chat_model_smart=chat_model_smart,
             chat_model_fast=chat_model_fast,
-            # Embedding
-            embedding_plugin=emb_plugin_name,
-            embedding_model=emb_model,
             # Vector DB
             vector_db_plugin=vdb_plugin_name,
             vector_db_kwargs=vector_db_kwargs,
@@ -337,14 +311,6 @@ class CLIContext:
             kwargs = self.vector_db_kwargs if isinstance(self.vector_db_kwargs, dict) else {}
         return get_vector_db_plugin(self.vector_db_plugin, **kwargs)
 
-    def get_embedder(self):
-        """Get initialized embedder instance using configured plugin."""
-        from fitz_sage.llm import get_embedder
-
-        # Use full embedding spec (provider/model) from config
-        emb_spec = self.raw_config.get("embedding", self.embedding_plugin)
-        return get_embedder(emb_spec)
-
     def get_chat_factory(self):
         """Get chat factory for per-task tier selection."""
         from fitz_sage.llm import get_chat_factory
@@ -363,18 +329,6 @@ class CLIContext:
         from fitz_sage.llm import get_reranker
 
         return get_reranker(self.rerank_plugin)
-
-    def require_embedder(self):
-        """Get embedder or exit with error."""
-        import typer
-
-        from fitz_sage.cli.ui import ui
-
-        try:
-            return self.get_embedder()
-        except Exception as e:
-            ui.error(f"Failed to initialize embedder: {e}")
-            raise typer.Exit(1)
 
     def require_chat_factory(self):
         """Get chat factory or exit with error."""
@@ -567,7 +521,6 @@ class CLIContext:
             f"VectorDB: {self.vector_db_plugin}",
             f"Retrieval: {self.retrieval_plugin}",
             f"Chat: {self.chat_display}",
-            f"Embedding: {self.embedding_display}",
         ]
         if include_rerank and self.rerank_display:
             parts.append(f"Rerank: {self.rerank_display}")

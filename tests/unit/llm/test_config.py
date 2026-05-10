@@ -15,7 +15,6 @@ import pytest
 from fitz_sage.llm.auth import ApiKeyAuth, M2MAuth, NoAuth
 from fitz_sage.llm.config import (
     create_chat_provider,
-    create_embedding_provider,
     create_rerank_provider,
     create_vision_provider,
     parse_provider_string,
@@ -127,11 +126,6 @@ class TestUnknownProvider:
         with pytest.raises(ValueError, match="Unknown chat provider: unknown"):
             create_chat_provider("unknown")
 
-    def test_unknown_embedding_provider_raises(self) -> None:
-        """Unknown provider raises ValueError with supported list."""
-        with pytest.raises(ValueError, match="Unknown embedding provider: unknown"):
-            create_embedding_provider("unknown")
-
     def test_unknown_rerank_provider_raises(self) -> None:
         """Unknown rerank provider raises with the supported list."""
         with pytest.raises(ValueError, match="Unknown rerank provider"):
@@ -162,12 +156,6 @@ class TestRemovedProviders:
         """create_chat_provider surfaces the migration message."""
         with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
             create_chat_provider(removed)
-
-    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
-    def test_create_embedding_raises(self, removed: str) -> None:
-        """create_embedding_provider surfaces the migration message."""
-        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
-            create_embedding_provider(removed)
 
     @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
     def test_create_rerank_raises(self, removed: str) -> None:
@@ -224,20 +212,6 @@ class TestOpenAIPreset:
                 create_chat_provider("openai", config={"base_url": "https://api.proxy.com/v1"})
                 call_kwargs = mock_openai.call_args[1]
                 assert call_kwargs["base_url"] == "https://api.proxy.com/v1"
-
-    def test_embedding_provider(self) -> None:
-        """`openai` preset for embeddings uses default text-embedding-3-small."""
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-            with patch("openai.OpenAI"):
-                provider = create_embedding_provider("openai")
-                assert provider._model == "text-embedding-3-small"
-
-    def test_embedding_with_dimensions(self) -> None:
-        """Custom dimensions are forwarded."""
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-            with patch("openai.OpenAI"):
-                provider = create_embedding_provider("openai", config={"dimensions": 256})
-                assert provider._dimensions == 256
 
     def test_vision_provider(self) -> None:
         """`openai/<model>` produces an OpenAICompatVision."""
