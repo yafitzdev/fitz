@@ -1,24 +1,29 @@
 # tests/e2e_krag/test_vlm_parsing.py
 """
-KRAG E2E tests for VLM-powered figure parsing via Ollama.
+KRAG E2E tests for VLM-powered figure parsing via the ``endpoint``
+LLM provider.
 
-Tests that DoclingVisionParser + OllamaVision correctly extract figure
-descriptions from PDFs, and that KRAG retrieval can answer questions
-about chart/figure data.
+Tests that DoclingVisionParser + OpenAICompatVision correctly extract
+figure descriptions from PDFs, and that KRAG retrieval can answer
+questions about chart/figure data.
 
-Requires:
-- Ollama running locally (http://localhost:11434)
-- llava:7b model pulled (ollama pull llava:7b)
+Requires an OpenAI-compatible HTTP server with a vision model. Any of:
 
-Run with: pytest tests/e2e_krag/test_vlm_parsing.py -v -m e2e_krag_parser
+- ``llama-server`` (llama.cpp) with a vision-capable GGUF on port 8080.
+- LM Studio / vLLM with a vision model on port 8080.
+- Ollama (``/v1/`` mode) on port 11434 with a vision model pulled.
+
+The probe target is auto-detected on common ports (8080, 8000, 1234,
+11434). Override via the env vars below if needed.
 
 Skip behavior:
-- Skips entire module if Ollama is not reachable
-- Skips entire module if llava:7b model is not available
+- Skips the module if no OpenAI-compatible vision endpoint is reachable.
+- Skips if the configured model is not present on the server.
 """
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from pathlib import Path
@@ -28,52 +33,57 @@ import pytest
 
 from tests.e2e_krag.scenarios import Feature, TestScenario
 
-# Mark all tests in this module
 pytestmark = [pytest.mark.e2e_krag_parser, pytest.mark.llm]
 
-# Fixtures directory with figure_test.pdf
 FIXTURES_PARSER_DIR = Path(__file__).parent / "fixtures_parser"
 
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_VISION_MODEL = "llava:7b"
+# Override-able for CI / non-default setups.
+VISION_BASE_URL = os.getenv("FITZ_E2E_VISION_BASE_URL", "")
+VISION_MODEL = os.getenv("FITZ_E2E_VISION_MODEL", "llava")
+
+# Common local OpenAI-compatible ports.
+_PROBE_PORTS = (8080, 8000, 1234, 11434)
 
 
-def _ollama_available() -> bool:
-    """Check if Ollama server is reachable."""
-    try:
-        resp = httpx.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5.0)
-        return resp.status_code == 200
-    except Exception:
-        return False
+def _probe_vision_endpoint() -> str | None:
+    """Find a reachable OpenAI-compatible server with the configured model."""
+    if VISION_BASE_URL:
+        try:
+            resp = httpx.get(f"{VISION_BASE_URL}/models", timeout=2.0)
+            if resp.status_code == 200:
+                return VISION_BASE_URL
+        except Exception:
+            return None
+        return None
+
+    for port in _PROBE_PORTS:
+        for host in ("localhost", "127.0.0.1"):
+            base_url = f"http://{host}:{port}/v1"
+            try:
+                resp = httpx.get(f"{base_url}/models", timeout=1.0)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                models = data.get("data") or data.get("models") or []
+                ids = [str(m.get("id") or m.get("name") or "") for m in models]
+                if any(VISION_MODEL in mid for mid in ids):
+                    return base_url
+            except Exception:
+                continue
+    return None
 
 
-def _model_available(model: str) -> bool:
-    """Check if a specific model is pulled in Ollama."""
-    try:
-        resp = httpx.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5.0)
-        if resp.status_code != 200:
-            return False
-        data = resp.json()
-        model_names = [m.get("name", "") for m in data.get("models", [])]
-        # Match with or without tag suffix
-        return any(
-            model in name or name.startswith(model.split(":")[0] + ":") for name in model_names
-        )
-    except Exception:
-        return False
+_RESOLVED_VISION_BASE_URL = _probe_vision_endpoint()
 
-
-# Skip entire module if Ollama or model not available
 pytestmark.append(
     pytest.mark.skipif(
-        not _ollama_available(),
-        reason="Ollama not reachable at localhost:11434",
-    )
-)
-pytestmark.append(
-    pytest.mark.skipif(
-        _ollama_available() and not _model_available(OLLAMA_VISION_MODEL),
-        reason=f"Ollama model {OLLAMA_VISION_MODEL} not available (run: ollama pull {OLLAMA_VISION_MODEL})",
+        _RESOLVED_VISION_BASE_URL is None,
+        reason=(
+            "No OpenAI-compatible vision endpoint reachable. "
+            "Start a server with a vision model (e.g. "
+            "`llama-server -m llava-7b.gguf --port 8080`) or set "
+            "FITZ_E2E_VISION_BASE_URL / FITZ_E2E_VISION_MODEL."
+        ),
     )
 )
 
@@ -113,10 +123,12 @@ VLM_SCENARIOS: list[TestScenario] = [
 @pytest.fixture(scope="module")
 def vlm_krag_engine(set_workspace):
     """
-    Module-scoped KRAG engine configured with OllamaVision for VLM parsing.
+    Module-scoped KRAG engine configured with the ``endpoint`` vision
+    provider for VLM parsing.
 
-    Creates a unique collection, ingests fixtures_parser/ with docling_vision
-    parser and Ollama vision provider, then yields the engine for querying.
+    Creates a unique collection, ingests ``fixtures_parser/`` with
+    ``docling_vision`` parser pointed at whichever OpenAI-compatible
+    server we detected, then yields the engine for querying.
     """
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
@@ -153,8 +165,9 @@ def vlm_krag_engine(set_workspace):
         "embedding": embedding_spec,
         "vector_db": tier_config["vector_db"]["plugin_name"],
         "collection": collection,
-        # VLM config
-        "vision": f"ollama/{OLLAMA_VISION_MODEL}",
+        # VLM config — endpoint provider points at the detected URL.
+        "vision": f"endpoint/{VISION_MODEL}",
+        "vision_base_url": _RESOLVED_VISION_BASE_URL,
         "parser": "docling_vision",
         # Relax for testing
         "enable_guardrails": False,

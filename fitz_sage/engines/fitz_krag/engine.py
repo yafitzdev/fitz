@@ -46,6 +46,44 @@ def _report_timings(
     progress(f"Pipeline: {total:.1f}s total — {parts}")
 
 
+def _build_provider_config(
+    base_url: str | None,
+    api_key_env: str | None,
+    *,
+    spec: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Build a config dict for ``get_chat`` / ``get_embedder`` / ``get_vision``.
+
+    Only includes ``base_url`` and ``auth.api_key_env`` when the provider
+    spec actually consumes them. The ``openai`` preset has its own
+    default URL — overriding it from the engine schema's local-default
+    base_url would silently route cloud calls to localhost. So for
+    non-endpoint specs we omit base_url unless the user explicitly
+    overrides it.
+    """
+    if spec is None:
+        # Caller doesn't know the spec — be permissive (used by callers
+        # that already know the spec is endpoint-family).
+        consumes_base_url = base_url is not None
+    else:
+        provider = spec.split("/", 1)[0].strip()
+        # endpoint always uses base_url; enterprise requires it; the
+        # openai/azure_openai presets accept it as a proxy override
+        # but we only forward it when the user explicitly opted in
+        # (i.e. set the field non-default), which we can't distinguish
+        # from defaults here — so for openai/azure_openai we omit it.
+        consumes_base_url = provider in ("endpoint", "enterprise")
+
+    cfg: dict[str, Any] = {}
+    if consumes_base_url and base_url is not None:
+        cfg["base_url"] = base_url
+    if api_key_env is not None:
+        cfg["auth"] = {"api_key_env": api_key_env}
+
+    return cfg or None
+
+
 class FitzKragEngine:
     """
     Fitz KRAG engine implementation.
@@ -158,19 +196,29 @@ class FitzKragEngine:
         # PostgreSQL startup (pgserver) can take 1-2s; LLM provider init
         # creates HTTP clients. Overlapping saves the slower of the two.
 
+        chat_config = _build_provider_config(
+            self._config.chat_base_url,
+            self._config.chat_api_key_env,
+            spec=self._config.chat_smart,
+        )
+        embedding_config = _build_provider_config(
+            self._config.embedding_base_url,
+            self._config.embedding_api_key_env,
+            spec=self._config.embedding,
+        )
+
         print("  Starting database and connecting to LLM providers...", end="", flush=True)
         with ThreadPoolExecutor(max_workers=3) as pool:
             chat_future = pool.submit(
                 get_chat,
-                (
-                    self._config.chat_balanced
-                    if self._config.chat_balanced.startswith("ollama")
-                    else self._config.chat_smart
-                ),
+                self._config.chat_smart,
+                "smart",
+                chat_config,
             )
             embed_future = pool.submit(
                 get_embedder,
                 self._config.embedding,
+                embedding_config,
             )
             pg_future = pool.submit(PostgresConnectionManager.get_instance)
 
@@ -265,26 +313,23 @@ class FitzKragEngine:
         # Chat factory (shared by detection, rewriter, HyDE, multi-hop, enrichment)
         from fitz_sage.llm.factory import get_chat_factory
 
-        is_local = self._config.chat_balanced.startswith("ollama")
-        if is_local:
-            # Local (ollama): single model for all tiers to avoid VRAM
-            # model swapping. Users control which model via chat_balanced.
-            self._chat_factory = get_chat_factory(
-                {
-                    "fast": self._config.chat_balanced,
-                    "balanced": self._config.chat_balanced,
-                    "smart": self._config.chat_balanced,
-                }
-            )
-        else:
-            # Cloud (API keys): use all three configured tiers.
-            self._chat_factory = get_chat_factory(
-                {
-                    "fast": self._config.chat_fast,
-                    "balanced": self._config.chat_balanced,
-                    "smart": self._config.chat_smart,
-                }
-            )
+        # The factory uses whatever specs the user configured per tier.
+        # If a user wants a single model across tiers (typical for local
+        # llama-server with one model loaded), they set the same spec
+        # for chat_fast / chat_balanced / chat_smart — no special-casing
+        # at this layer.
+        #
+        # The factory currently accepts a single config dict for all
+        # tiers, so per-tier base URLs aren't supported. In practice all
+        # three tiers share the same chat_base_url, so this is fine.
+        self._chat_factory = get_chat_factory(
+            {
+                "fast": self._config.chat_fast,
+                "balanced": self._config.chat_balanced,
+                "smart": self._config.chat_smart,
+            },
+            chat_config,
+        )
 
         def _warmup_chat():
             print("  Loading LLM models (first run may take a moment)...", end="", flush=True)

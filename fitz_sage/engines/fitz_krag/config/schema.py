@@ -18,13 +18,26 @@ class FitzKragConfig(BasePluginConfig):
     """
     Fitz KRAG configuration.
 
-    Minimal config:
+    Minimal local config (default — assumes a llama-server is running
+    on localhost:8080 with chat and embedding models):
     ```yaml
-    chat_fast: ollama/qwen3.5:0.6b
-    chat_balanced: ollama/qwen2.5:7b
-    chat_smart: ollama/qwen2.5:14b
-    embedding: ollama/nomic-embed-text
+    chat_fast: endpoint/qwen2.5-7b-instruct
+    chat_balanced: endpoint/qwen2.5-7b-instruct
+    chat_smart: endpoint/qwen2.5-7b-instruct
+    embedding: endpoint/nomic-embed-text-v1.5
+    chat_base_url: http://localhost:8080/v1
+    embedding_base_url: http://localhost:8081/v1
     collection: my_project
+    ```
+
+    Cloud config (OpenAI):
+    ```yaml
+    chat_smart: openai/gpt-4o
+    chat_balanced: openai/gpt-4o-mini
+    chat_fast: openai/gpt-4o-mini
+    embedding: openai/text-embedding-3-small
+    collection: my_project
+    # OPENAI_API_KEY in env
     ```
     """
 
@@ -33,23 +46,69 @@ class FitzKragConfig(BasePluginConfig):
     # ==========================================================================
 
     chat_fast: str = Field(
-        default="ollama/qwen3.5:0.6b",
+        default="endpoint/qwen2.5-7b-instruct",
         description="Chat model for detection, guardrails (provider/model)",
     )
 
     chat_balanced: str = Field(
-        default="ollama/qwen2.5:7b",
+        default="endpoint/qwen2.5-7b-instruct",
         description="Chat model for general queries (provider/model)",
     )
 
     chat_smart: str = Field(
-        default="ollama/qwen2.5:14b",
+        default="endpoint/qwen2.5-7b-instruct",
         description="Chat model for complex generation (provider/model)",
     )
 
     embedding: str = Field(
-        default="ollama/nomic-embed-text",
+        default="endpoint/nomic-embed-text-v1.5",
         description="Embedding model (provider/model)",
+    )
+
+    # Per-role base URLs — used by the ``endpoint`` and ``enterprise``
+    # provider names. Ignored for ``openai`` (which has a built-in
+    # default URL) and ``azure_openai`` (which always requires its
+    # own base_url at the spec level).
+    chat_base_url: str | None = Field(
+        default="http://localhost:8080/v1",
+        description=(
+            "HTTP endpoint for chat — used by the ``endpoint`` provider. "
+            "Default is a local llama-server on port 8080."
+        ),
+    )
+
+    embedding_base_url: str | None = Field(
+        default="http://localhost:8081/v1",
+        description=(
+            "HTTP endpoint for embeddings — used by the ``endpoint`` "
+            "provider. Default is a local llama-server on port 8081 "
+            "(separate from chat to avoid model swapping)."
+        ),
+    )
+
+    vision_base_url: str | None = Field(
+        default=None,
+        description=(
+            "HTTP endpoint for vision — used by the ``endpoint`` provider. "
+            "If None, falls back to chat_base_url."
+        ),
+    )
+
+    # Optional API key environment variable name when the endpoint
+    # requires authentication (e.g. Together, Groq, Fireworks).
+    chat_api_key_env: str | None = Field(
+        default=None,
+        description="Env var name for chat-endpoint API key (None = no auth).",
+    )
+
+    embedding_api_key_env: str | None = Field(
+        default=None,
+        description="Env var name for embedding-endpoint API key (None = no auth).",
+    )
+
+    vision_api_key_env: str | None = Field(
+        default=None,
+        description="Env var name for vision-endpoint API key (None = no auth).",
     )
 
     vector_db: str = Field(
@@ -59,7 +118,11 @@ class FitzKragConfig(BasePluginConfig):
 
     rerank: str | None = Field(
         default=None,
-        description="Reranker plugin. None = disabled.",
+        description=(
+            "Reranker plugin. None = disabled. There is currently no "
+            "first-class rerank backend; rerank is moving to an "
+            "LLM-rerank step using the chat model."
+        ),
     )
 
     vision: str | None = Field(
@@ -69,7 +132,11 @@ class FitzKragConfig(BasePluginConfig):
 
     parser: str = Field(
         default="docling",
-        description="Document parser: 'docling', 'docling_vision', or 'glm_ocr' (hybrid pypdfium2 + GLM-OCR via ollama)",
+        description=(
+            "Document parser: 'docling', 'docling_vision' (uses vision "
+            "provider for figure description), or 'glm_ocr' (hybrid "
+            "pypdfium2 + GLM-OCR via the configured vision endpoint)."
+        ),
     )
 
     # ==========================================================================

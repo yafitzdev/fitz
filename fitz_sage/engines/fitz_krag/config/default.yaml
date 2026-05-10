@@ -7,13 +7,25 @@
 
 fitz_krag:
 
-  # Chat models by tier (provider/model)
-  chat_fast: ollama/qwen3.5:0.6b
-  chat_balanced: ollama/qwen2.5:7b
-  chat_smart: ollama/qwen2.5:14b
+  # Chat models by tier — single chat protocol (OpenAI-compatible HTTP).
+  # Provider name 'endpoint' = bring your own URL (set via *_base_url
+  # below). 'openai' / 'azure_openai' / 'enterprise' are presets.
+  chat_fast: endpoint/qwen2.5-7b-instruct
+  chat_balanced: endpoint/qwen2.5-7b-instruct
+  chat_smart: endpoint/qwen2.5-7b-instruct
 
-  # Embedding
-  embedding: ollama/nomic-embed-text
+  # Embedding model
+  embedding: endpoint/nomic-embed-text-v1.5
+
+  # HTTP endpoints — defaults assume a local llama-server on port 8080
+  # for chat and on port 8081 for embeddings. Cloud users override
+  # chat_smart to e.g. 'openai/gpt-4o' and unset chat_base_url.
+  chat_base_url: http://localhost:8080/v1
+  embedding_base_url: http://localhost:8081/v1
+  vision_base_url: null
+  chat_api_key_env: null
+  embedding_api_key_env: null
+  vision_api_key_env: null
 
   # Vector DB
   vector_db: pgvector

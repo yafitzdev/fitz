@@ -3,6 +3,7 @@
 Authentication providers for LLM clients.
 
 Supports:
+- No authentication (NoAuth) — for local llama-server, vLLM without auth, etc.
 - API key authentication (simple, env var based)
 - M2M OAuth2 client credentials (enterprise, auto-refresh)
 - Dynamic httpx.Auth wrapper for SDK integration (DynamicHttpxAuth)
@@ -20,6 +21,7 @@ from fitz_sage.llm.auth.certificates import (
 from fitz_sage.llm.auth.composite import CompositeAuth
 from fitz_sage.llm.auth.httpx_auth import DynamicHttpxAuth
 from fitz_sage.llm.auth.m2m import M2MAuth
+from fitz_sage.llm.auth.noauth import NoAuth
 from fitz_sage.llm.auth.token_provider import TokenProviderAdapter
 
 __all__ = [
@@ -28,6 +30,7 @@ __all__ = [
     "CertificateError",
     "CompositeAuth",
     "M2MAuth",
+    "NoAuth",
     "DynamicHttpxAuth",
     "TokenProviderAdapter",
     "validate_certificate_file",

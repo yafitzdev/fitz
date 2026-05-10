@@ -300,10 +300,14 @@ def _run_doctor(test: bool = False) -> None:
 
     system = detect_system_status()
 
-    if system.ollama.available:
-        ui.status("Ollama", True, system.ollama.details)
+    if system.llm_endpoint.available:
+        ui.status(
+            "OpenAI-compatible endpoint",
+            True,
+            f"{system.llm_endpoint.base_url} — {system.llm_endpoint.details}",
+        )
     else:
-        ui.warning("Ollama", system.ollama.details)
+        ui.warning("OpenAI-compatible endpoint", system.llm_endpoint.details)
 
     if system.pgvector.available:
         ui.status("pgvector", True, "installed")

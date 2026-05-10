@@ -2,8 +2,15 @@
 """
 LLM provider implementations.
 
-Each provider wraps an official SDK or HTTP client for a specific LLM service.
-All providers are optional - install the SDK you need.
+There is one chat-protocol implementation: ``OpenAICompatChat`` /
+``OpenAICompatEmbedding`` / ``OpenAICompatVision`` — an OpenAI HTTP
+client that talks to OpenAI itself, Azure OpenAI, llama.cpp,
+vLLM, LM Studio, Together, Fireworks, Groq, OpenRouter, and any
+other server speaking the protocol.
+
+The ``enterprise`` path is kept separately because its OAuth2 +
+API-key composite auth and certificate handling do not fit cleanly
+into the simple ``endpoint`` config surface.
 """
 
 from fitz_sage.llm.providers.base import (
@@ -28,49 +35,18 @@ __all__ = [
     "RerankResult",
 ]
 
-# Optional: Cohere (requires cohere package)
+# OpenAI-compatible HTTP provider (the only chat path).
 try:
-    from fitz_sage.llm.providers.cohere import (  # noqa: F401
-        CohereChat,
-        CohereEmbedding,
-        CohereRerank,
+    from fitz_sage.llm.providers.openai_compat import (  # noqa: F401
+        OpenAICompatChat,
+        OpenAICompatEmbedding,
+        OpenAICompatVision,
     )
 
-    __all__.extend(["CohereChat", "CohereEmbedding", "CohereRerank"])
-except ImportError:
-    pass
-
-# Optional: Ollama (requires ollama package)
-try:
-    from fitz_sage.llm.providers.ollama import (  # noqa: F401
-        OllamaChat,
-        OllamaEmbedding,
-        OllamaVision,
+    __all__.extend(
+        ["OpenAICompatChat", "OpenAICompatEmbedding", "OpenAICompatVision"]
     )
-
-    __all__.extend(["OllamaChat", "OllamaEmbedding", "OllamaVision"])
 except ImportError:
-    pass
-
-# Optional: OpenAI (requires openai package)
-try:
-    from fitz_sage.llm.providers.openai import (  # noqa: F401
-        OpenAIChat,
-        OpenAIEmbedding,
-        OpenAIVision,
-    )
-
-    __all__.extend(["OpenAIChat", "OpenAIEmbedding", "OpenAIVision"])
-except ImportError:
-    pass
-
-# Optional: Anthropic (requires anthropic package)
-try:
-    from fitz_sage.llm.providers.anthropic import (  # noqa: F401
-        AnthropicChat,
-        AnthropicVision,
-    )
-
-    __all__.extend(["AnthropicChat", "AnthropicVision"])
-except ImportError:
+    # openai SDK not installed — provider class import is optional so
+    # static tooling on a fresh checkout still works.
     pass

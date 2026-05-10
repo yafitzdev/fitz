@@ -8,7 +8,7 @@ Direct provider wrappers with pluggable authentication.
 from __future__ import annotations
 
 # Auth providers
-from fitz_sage.llm.auth import ApiKeyAuth, AuthProvider, M2MAuth
+from fitz_sage.llm.auth import ApiKeyAuth, AuthProvider, M2MAuth, NoAuth
 
 # Public API
 from fitz_sage.llm.client import get_chat, get_embedder, get_reranker, get_vision
@@ -43,4 +43,5 @@ __all__ = [
     "AuthProvider",
     "ApiKeyAuth",
     "M2MAuth",
+    "NoAuth",
 ]

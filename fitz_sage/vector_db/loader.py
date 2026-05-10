@@ -712,27 +712,12 @@ def _get_auto_detected_kwargs(spec: VectorDBSpec, kwargs: Dict[str, Any]) -> Dic
     if "host" in result and "port" in result:
         return result
 
-    try:
-        from fitz_sage.core import detect
-
-        # Map service name to detection function
-        detection_functions = {
-            "ollama": detect.get_ollama_connection,
-        }
-
-        detect_func = detection_functions.get(auto_detect_service)
-        if detect_func:
-            detected_host, detected_port = detect_func()
-
-            if "host" not in result:
-                result["host"] = detected_host
-            if "port" not in result:
-                result["port"] = detected_port
-
-    except (ImportError, AttributeError):
-        # Detection not available, fall back to YAML defaults
-        pass
-
+    # Auto-detect is currently a no-op: the only legacy entry was for
+    # Ollama, which has been removed in favor of the ``endpoint`` LLM
+    # provider. Vector DB plugins fall back to their YAML defaults.
+    # If a future plugin needs network auto-detect, register a
+    # ``ServiceStatus``-returning function here.
+    _ = auto_detect_service  # kept for forward compatibility
     return result
 
 

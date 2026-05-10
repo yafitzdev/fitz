@@ -2,7 +2,15 @@
 """
 Public API for LLM providers.
 
-Simple entry points for getting chat, embedding, rerank, and vision providers.
+The single chat-protocol implementation behind these factories is
+``OpenAICompatChat`` (see ``fitz_sage.llm.providers.openai_compat``).
+Provider names are configuration presets:
+
+- ``endpoint/<model>`` — bring your own OpenAI-compatible URL.
+- ``openai`` / ``openai/<model>`` — preset for the public OpenAI API.
+- ``azure_openai/<deployment>`` — preset for tenant-specific Azure
+  (requires ``base_url``).
+- ``enterprise/<model>`` — separate path with OAuth2 + API key.
 """
 
 from __future__ import annotations
@@ -33,16 +41,17 @@ def get_chat(
     Get a chat provider.
 
     Args:
-        spec: Provider spec like "cohere" or "cohere/command-a-03-2025"
-        tier: Model tier (smart, balanced, fast)
-        config: Optional config with auth/base_url settings
-
-    Returns:
-        ChatProvider instance
+        spec: Provider spec — ``endpoint/<model>``, ``openai``,
+            ``openai/<model>``, ``azure_openai/<deployment>``,
+            or ``enterprise/<model>``.
+        tier: Model tier (smart, balanced, fast). Used as a default-
+            model hint for the ``openai`` preset; ignored when an
+            explicit model is supplied.
+        config: Optional config — ``base_url``, ``auth`` block, etc.
 
     Examples:
-        >>> chat = get_chat("cohere")
-        >>> chat = get_chat("cohere", tier="fast")
+        >>> chat = get_chat("endpoint/qwen2.5-7b",
+        ...                 config={"base_url": "http://localhost:8080/v1"})
         >>> chat = get_chat("openai/gpt-4o")
         >>> response = chat.chat([{"role": "user", "content": "Hello"}])
     """
@@ -57,16 +66,15 @@ def get_embedder(
     Get an embedding provider.
 
     Args:
-        spec: Provider spec like "cohere" or "cohere/embed-multilingual-v3.0"
-        config: Optional config with auth/dimensions settings
-
-    Returns:
-        EmbeddingProvider instance
+        spec: Provider spec — ``endpoint/<model>``, ``openai``,
+            ``openai/<model>``, ``azure_openai/<deployment>``, or
+            ``enterprise/<model>``.
+        config: Optional config — ``base_url``, ``auth``, ``dimensions``.
 
     Examples:
-        >>> embedder = get_embedder("cohere")
+        >>> embedder = get_embedder("endpoint/nomic-embed-text",
+        ...                         config={"base_url": "http://localhost:8081/v1"})
         >>> vector = embedder.embed("Hello world")
-        >>> vectors = embedder.embed_batch(["Hello", "World"])
     """
     return create_embedding_provider(spec, config)
 
@@ -78,17 +86,10 @@ def get_reranker(
     """
     Get a rerank provider.
 
-    Args:
-        spec: Provider spec like "cohere" or None to disable
-        config: Optional config with auth settings
-
-    Returns:
-        RerankProvider instance, or None if spec is None
-
-    Examples:
-        >>> reranker = get_reranker("cohere")
-        >>> if reranker:
-        ...     results = reranker.rerank("query", ["doc1", "doc2"])
+    There is no first-class rerank backend in fitz-sage right now —
+    rerank is moving to an LLM-rerank step using the chat model.
+    Pass ``None`` to disable; any other spec raises with an
+    actionable migration message.
     """
     return create_rerank_provider(spec, config)
 
@@ -100,15 +101,13 @@ def get_vision(
     """
     Get a vision provider.
 
-    Args:
-        spec: Provider spec like "openai/gpt-4o" or None to disable
-        config: Optional config with auth settings
-
-    Returns:
-        VisionProvider instance, or None if spec is None
+    Vision uses an OpenAI-compatible chat-completions endpoint with
+    image content parts; any vision-capable model behind an
+    ``endpoint`` URL works.
 
     Examples:
-        >>> vision = get_vision("openai/gpt-4o")
+        >>> vision = get_vision("endpoint/qwen2-vl-7b",
+        ...                     config={"base_url": "http://localhost:8080/v1"})
         >>> if vision:
         ...     description = vision.describe_image(base64_data)
     """

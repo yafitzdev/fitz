@@ -312,12 +312,12 @@ def command(
 
     # Show detection results
     ui.status(
-        "Ollama",
-        system.ollama.available,
+        "OpenAI-compatible endpoint",
+        system.llm_endpoint.available,
         (
-            f"{system.ollama.host}:{system.ollama.port}"
-            if system.ollama.available
-            else system.ollama.details
+            f"{system.llm_endpoint.base_url} — {system.llm_endpoint.details}"
+            if system.llm_endpoint.available
+            else system.llm_endpoint.details
         ),
     )
     ui.status("pgvector", system.pgvector.available, system.pgvector.details)

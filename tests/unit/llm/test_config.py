@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from fitz_sage.llm.auth import ApiKeyAuth, M2MAuth
+from fitz_sage.llm.auth import ApiKeyAuth, M2MAuth, NoAuth
 from fitz_sage.llm.config import (
     create_chat_provider,
     create_embedding_provider,
@@ -23,10 +23,7 @@ from fitz_sage.llm.config import (
 )
 
 # Check for optional SDKs
-HAS_COHERE = importlib.util.find_spec("cohere") is not None
 HAS_OPENAI = importlib.util.find_spec("openai") is not None
-HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
-HAS_OLLAMA = importlib.util.find_spec("ollama") is not None
 
 
 class TestParseProviderString:
@@ -66,31 +63,24 @@ class TestParseProviderString:
 class TestResolveAuth:
     """Test auth resolution."""
 
-    def test_cohere_api_key(self) -> None:
-        """Cohere uses COHERE_API_KEY with bearer format."""
-        auth = resolve_auth("cohere")
-        assert isinstance(auth, ApiKeyAuth)
-        assert auth.env_var == "COHERE_API_KEY"
-        assert auth.header_format == "bearer"
-
     def test_openai_api_key(self) -> None:
-        """OpenAI uses OPENAI_API_KEY with bearer format."""
+        """OpenAI preset uses OPENAI_API_KEY with bearer format."""
         auth = resolve_auth("openai")
         assert isinstance(auth, ApiKeyAuth)
         assert auth.env_var == "OPENAI_API_KEY"
         assert auth.header_format == "bearer"
 
-    def test_anthropic_api_key(self) -> None:
-        """Anthropic uses ANTHROPIC_API_KEY with x-api-key format."""
-        auth = resolve_auth("anthropic")
+    def test_azure_openai_api_key(self) -> None:
+        """Azure OpenAI preset uses AZURE_OPENAI_API_KEY with bearer format."""
+        auth = resolve_auth("azure_openai")
         assert isinstance(auth, ApiKeyAuth)
-        assert auth.env_var == "ANTHROPIC_API_KEY"
-        assert auth.header_format == "x-api-key"
+        assert auth.env_var == "AZURE_OPENAI_API_KEY"
+        assert auth.header_format == "bearer"
 
-    def test_ollama_no_auth(self) -> None:
-        """Ollama doesn't need auth."""
-        auth = resolve_auth("ollama")
-        assert auth is None
+    def test_endpoint_no_auth_default(self) -> None:
+        """Endpoint defaults to NoAuth (for local servers)."""
+        auth = resolve_auth("endpoint")
+        assert isinstance(auth, NoAuth)
 
     def test_m2m_auth(self, temp_certificate) -> None:
         """M2M auth is created from config."""
@@ -133,24 +123,63 @@ class TestUnknownProvider:
     """Test unknown provider handling."""
 
     def test_unknown_chat_provider_raises(self) -> None:
-        """Unknown provider raises ValueError."""
+        """Unknown provider raises ValueError with supported list."""
         with pytest.raises(ValueError, match="Unknown chat provider: unknown"):
             create_chat_provider("unknown")
 
     def test_unknown_embedding_provider_raises(self) -> None:
-        """Unknown provider raises ValueError."""
+        """Unknown provider raises ValueError with supported list."""
         with pytest.raises(ValueError, match="Unknown embedding provider: unknown"):
             create_embedding_provider("unknown")
 
     def test_unknown_rerank_provider_raises(self) -> None:
-        """Unknown rerank provider raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown rerank provider: openai"):
-            create_rerank_provider("openai")
+        """Rerank provider always raises since rerank is moving to LLM-rerank."""
+        with pytest.raises(ValueError, match="no rerank provider"):
+            create_rerank_provider("anything")
 
     def test_unknown_vision_provider_raises(self) -> None:
         """Unknown vision provider raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown vision provider: cohere"):
-            create_vision_provider("cohere")
+        with pytest.raises(ValueError, match="Unknown vision provider: weird"):
+            create_vision_provider("weird")
+
+
+class TestRemovedProviders:
+    """Removed providers raise actionable migration errors."""
+
+    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
+    def test_resolve_auth_raises(self, removed: str) -> None:
+        """resolve_auth surfaces the migration message."""
+        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
+            resolve_auth(removed)
+
+    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
+    def test_create_chat_raises(self, removed: str) -> None:
+        """create_chat_provider surfaces the migration message."""
+        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
+            create_chat_provider(removed)
+
+    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
+    def test_create_embedding_raises(self, removed: str) -> None:
+        """create_embedding_provider surfaces the migration message."""
+        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
+            create_embedding_provider(removed)
+
+    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
+    def test_create_rerank_raises(self, removed: str) -> None:
+        """create_rerank_provider surfaces the migration message."""
+        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
+            create_rerank_provider(removed)
+
+    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
+    def test_create_vision_raises(self, removed: str) -> None:
+        """create_vision_provider surfaces the migration message."""
+        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
+            create_vision_provider(removed)
+
+    def test_message_recommends_endpoint(self) -> None:
+        """Migration message points users at the 'endpoint' provider."""
+        with pytest.raises(ValueError, match="'endpoint' provider"):
+            resolve_auth("ollama")
 
 
 class TestNoneHandling:
@@ -170,90 +199,21 @@ class TestNoneHandling:
 # Provider-specific tests - only run if SDK is installed
 
 
-@pytest.mark.skipif(not HAS_COHERE, reason="cohere not installed")
-class TestCohereProviders:
-    """Test Cohere provider creation when SDK is available."""
+@pytest.mark.skipif(not HAS_OPENAI, reason="openai SDK not installed")
+class TestOpenAIPreset:
+    """Test the 'openai' provider name as a preset over OpenAICompat."""
 
-    def test_chat_provider(self) -> None:
-        """Create Cohere chat provider."""
-        with patch.dict("os.environ", {"COHERE_API_KEY": "test-key"}):
-            with patch("cohere.ClientV2"):
-                provider = create_chat_provider("cohere")
-                assert provider._model == "command-a-03-2025"
-
-    def test_chat_with_model(self) -> None:
-        """Create Cohere chat provider with specific model."""
-        with patch.dict("os.environ", {"COHERE_API_KEY": "test-key"}):
-            with patch("cohere.ClientV2"):
-                provider = create_chat_provider("cohere/command-r-plus")
-                assert provider._model == "command-r-plus"
-
-    def test_chat_fast_tier(self) -> None:
-        """Create Cohere chat provider with fast tier."""
-        with patch.dict("os.environ", {"COHERE_API_KEY": "test-key"}):
-            with patch("cohere.ClientV2"):
-                provider = create_chat_provider("cohere", tier="fast")
-                assert provider._model == "command-r7b-12-2024"
-
-    def test_embedding_provider(self) -> None:
-        """Create Cohere embedding provider."""
-        with patch.dict("os.environ", {"COHERE_API_KEY": "test-key"}):
-            with patch("cohere.ClientV2"):
-                provider = create_embedding_provider("cohere")
-                assert provider._model == "embed-multilingual-v3.0"
-
-    def test_embedding_with_dimensions(self) -> None:
-        """Create Cohere embedding provider with custom dimensions."""
-        with patch.dict("os.environ", {"COHERE_API_KEY": "test-key"}):
-            with patch("cohere.ClientV2"):
-                provider = create_embedding_provider("cohere", config={"dimensions": 512})
-                assert provider._dimensions == 512
-
-    def test_rerank_provider(self) -> None:
-        """Create Cohere rerank provider."""
-        with patch.dict("os.environ", {"COHERE_API_KEY": "test-key"}):
-            with patch("cohere.ClientV2"):
-                provider = create_rerank_provider("cohere")
-                assert provider is not None
-                assert provider._model == "rerank-multilingual-v3.0"
-
-
-@pytest.mark.skipif(not HAS_OLLAMA, reason="ollama not installed")
-class TestOllamaProviders:
-    """Test Ollama provider creation when SDK is available."""
-
-    def test_chat_provider(self) -> None:
-        """Ollama provider doesn't require auth."""
-        with patch("httpx.Client"):
-            provider = create_chat_provider("ollama")
-            assert provider._model == "qwen2.5:14b"
-
-    def test_chat_with_model(self) -> None:
-        """Ollama provider with specific model."""
-        with patch("httpx.Client"):
-            provider = create_chat_provider("ollama/mistral:7b")
-            assert provider._model == "mistral:7b"
-
-    def test_embedding_provider(self) -> None:
-        """Create Ollama embedding provider."""
-        with patch("httpx.Client"):
-            provider = create_embedding_provider("ollama")
-            assert provider._model == "nomic-embed-text"
-
-
-@pytest.mark.skipif(not HAS_OPENAI, reason="openai not installed")
-class TestOpenAIProviders:
-    """Test OpenAI provider creation when SDK is available."""
-
-    def test_chat_provider(self) -> None:
-        """Create OpenAI chat provider."""
+    def test_chat_provider_uses_default_base_url(self) -> None:
+        """`openai` preset routes to OpenAICompatChat with the public OpenAI URL."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-            with patch("openai.OpenAI"):
+            with patch("openai.OpenAI") as mock_openai:
                 provider = create_chat_provider("openai")
                 assert provider._model == "gpt-4o"
+                call_kwargs = mock_openai.call_args[1]
+                assert call_kwargs["base_url"] == "https://api.openai.com/v1"
 
-    def test_chat_with_base_url(self) -> None:
-        """Create OpenAI chat provider with custom base URL."""
+    def test_chat_with_base_url_override(self) -> None:
+        """User-supplied base_url overrides the OpenAI default."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
             with patch("openai.OpenAI") as mock_openai:
                 create_chat_provider("openai", config={"base_url": "https://api.proxy.com/v1"})
@@ -261,21 +221,21 @@ class TestOpenAIProviders:
                 assert call_kwargs["base_url"] == "https://api.proxy.com/v1"
 
     def test_embedding_provider(self) -> None:
-        """Create OpenAI embedding provider."""
+        """`openai` preset for embeddings uses default text-embedding-3-small."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
             with patch("openai.OpenAI"):
                 provider = create_embedding_provider("openai")
                 assert provider._model == "text-embedding-3-small"
 
     def test_embedding_with_dimensions(self) -> None:
-        """Create OpenAI embedding provider with dimensions."""
+        """Custom dimensions are forwarded."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
             with patch("openai.OpenAI"):
                 provider = create_embedding_provider("openai", config={"dimensions": 256})
                 assert provider._dimensions == 256
 
     def test_vision_provider(self) -> None:
-        """Create OpenAI vision provider."""
+        """`openai/<model>` produces an OpenAICompatVision."""
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
             with patch("openai.OpenAI"):
                 provider = create_vision_provider("openai/gpt-4o")
@@ -283,28 +243,29 @@ class TestOpenAIProviders:
                 assert provider._model == "gpt-4o"
 
 
-@pytest.mark.skipif(not HAS_ANTHROPIC, reason="anthropic not installed")
-class TestAnthropicProviders:
-    """Test Anthropic provider creation when SDK is available."""
+@pytest.mark.skipif(not HAS_OPENAI, reason="openai SDK not installed")
+class TestAzureOpenAIPreset:
+    """Test the 'azure_openai' provider name as a preset."""
 
-    def test_chat_provider(self) -> None:
-        """Create Anthropic chat provider."""
-        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
-            with patch("anthropic.Anthropic"):
-                provider = create_chat_provider("anthropic")
-                assert provider._model == "claude-sonnet-4-20250514"
+    def test_chat_requires_base_url(self) -> None:
+        """Azure base URLs are tenant-specific; missing one is an error."""
+        with patch.dict("os.environ", {"AZURE_OPENAI_API_KEY": "test-key"}):
+            with patch("openai.OpenAI"):
+                with pytest.raises(ValueError, match="azure_openai requires 'base_url'"):
+                    create_chat_provider("azure_openai/my-deployment")
 
-    def test_chat_with_model(self) -> None:
-        """Create Anthropic chat provider with specific model."""
-        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
-            with patch("anthropic.Anthropic"):
-                provider = create_chat_provider("anthropic/claude-opus-4-20250514")
-                assert provider._model == "claude-opus-4-20250514"
-
-    def test_vision_provider(self) -> None:
-        """Create Anthropic vision provider."""
-        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
-            with patch("anthropic.Anthropic"):
-                provider = create_vision_provider("anthropic/claude-sonnet-4")
-                assert provider is not None
-                assert provider._model == "claude-sonnet-4"
+    def test_chat_with_base_url(self) -> None:
+        """Azure chat with explicit base URL works."""
+        with patch.dict("os.environ", {"AZURE_OPENAI_API_KEY": "test-key"}):
+            with patch("openai.OpenAI") as mock_openai:
+                provider = create_chat_provider(
+                    "azure_openai/my-deployment",
+                    config={
+                        "base_url": "https://my-tenant.openai.azure.com/openai/deployments/my-deployment"
+                    },
+                )
+                assert provider._model == "my-deployment"
+                assert (
+                    mock_openai.call_args[1]["base_url"]
+                    == "https://my-tenant.openai.azure.com/openai/deployments/my-deployment"
+                )

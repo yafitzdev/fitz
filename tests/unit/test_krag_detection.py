@@ -209,13 +209,15 @@ class TestEngineDetectionInit:
         config = _make_config(enable_detection=True, enable_guardrails=False)
         engine = FitzKragEngine(config)
 
-        # Local ollama: all tiers map to balanced (single model, no VRAM swaps)
+        # All tiers use the user-configured spec; no provider-specific
+        # collapsing in the engine (legacy is_local Ollama check is gone).
         mock_get_chat_factory.assert_called_once_with(
             {
-                "fast": config.chat_balanced,
+                "fast": config.chat_fast,
                 "balanced": config.chat_balanced,
-                "smart": config.chat_balanced,
-            }
+                "smart": config.chat_smart,
+            },
+            {"base_url": config.chat_base_url},
         )
         mock_orchestrator_cls.assert_called_once_with(chat_factory=mock_factory)
         assert engine._detection_orchestrator is mock_orchestrator_cls.return_value

@@ -11,10 +11,12 @@ class TestFitzKragConfig:
     def test_minimal_config(self):
         config = FitzKragConfig(collection="test")
         assert config.collection == "test"
-        assert config.chat_fast == "ollama/qwen3.5:0.6b"
-        assert config.chat_balanced == "ollama/qwen2.5:7b"
-        assert config.chat_smart == "ollama/qwen2.5:14b"
-        assert config.embedding == "ollama/nomic-embed-text"
+        assert config.chat_fast == "endpoint/qwen2.5-7b-instruct"
+        assert config.chat_balanced == "endpoint/qwen2.5-7b-instruct"
+        assert config.chat_smart == "endpoint/qwen2.5-7b-instruct"
+        assert config.embedding == "endpoint/nomic-embed-text-v1.5"
+        assert config.chat_base_url == "http://localhost:8080/v1"
+        assert config.embedding_base_url == "http://localhost:8081/v1"
 
     def test_defaults(self):
         config = FitzKragConfig(collection="test")
@@ -30,18 +32,21 @@ class TestFitzKragConfig:
         assert config.max_context_tokens == 48000
 
     def test_custom_values(self):
+        """Cloud config: openai preset with API key in env."""
         config = FitzKragConfig(
             collection="my_project",
-            chat_smart="anthropic/claude-sonnet-4",
-            chat_fast="anthropic/claude-haiku",
-            chat_balanced="anthropic/claude-sonnet-4",
+            chat_smart="openai/gpt-4o",
+            chat_fast="openai/gpt-4o-mini",
+            chat_balanced="openai/gpt-4o-mini",
             embedding="openai/text-embedding-3-small",
+            chat_base_url=None,
+            embedding_base_url=None,
             top_addresses=20,
             keyword_weight=0.3,
             semantic_weight=0.7,
         )
-        assert config.chat_smart == "anthropic/claude-sonnet-4"
-        assert config.chat_fast == "anthropic/claude-haiku"
+        assert config.chat_smart == "openai/gpt-4o"
+        assert config.chat_fast == "openai/gpt-4o-mini"
         assert config.top_addresses == 20
         assert config.keyword_weight == 0.3
 
@@ -86,10 +91,12 @@ class TestDefaultYaml:
         with path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         assert "fitz_krag" in raw
-        assert raw["fitz_krag"]["chat_fast"] == "ollama/qwen3.5:0.6b"
-        assert raw["fitz_krag"]["chat_balanced"] == "ollama/qwen2.5:7b"
-        assert raw["fitz_krag"]["chat_smart"] == "ollama/qwen2.5:14b"
-        assert raw["fitz_krag"]["embedding"] == "ollama/nomic-embed-text"
+        assert raw["fitz_krag"]["chat_fast"] == "endpoint/qwen2.5-7b-instruct"
+        assert raw["fitz_krag"]["chat_balanced"] == "endpoint/qwen2.5-7b-instruct"
+        assert raw["fitz_krag"]["chat_smart"] == "endpoint/qwen2.5-7b-instruct"
+        assert raw["fitz_krag"]["embedding"] == "endpoint/nomic-embed-text-v1.5"
+        assert raw["fitz_krag"]["chat_base_url"] == "http://localhost:8080/v1"
+        assert raw["fitz_krag"]["embedding_base_url"] == "http://localhost:8081/v1"
         assert raw["fitz_krag"]["collection"] == "default"
 
     def test_default_yaml_creates_valid_config(self):

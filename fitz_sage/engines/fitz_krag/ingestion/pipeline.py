@@ -535,9 +535,23 @@ class KragIngestPipeline:
         try:
             from fitz_sage.llm.client import get_vision
 
-            vision_client = get_vision(
-                self._config.vision,
+            # Vision falls back to chat_base_url when vision_base_url is unset.
+            vision_base_url = (
+                self._config.vision_base_url or self._config.chat_base_url
             )
+            vision_config: dict[str, Any] | None = None
+            if self._config.vision and self._config.vision.startswith("endpoint/"):
+                vision_config = {}
+                if vision_base_url:
+                    vision_config["base_url"] = vision_base_url
+                if self._config.vision_api_key_env:
+                    vision_config["auth"] = {
+                        "api_key_env": self._config.vision_api_key_env
+                    }
+                if not vision_config:
+                    vision_config = None
+
+            vision_client = get_vision(self._config.vision, vision_config)
             if vision_client:
                 for parser in router._parsers.values():
                     if hasattr(parser, "vision_client"):

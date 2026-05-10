@@ -2,7 +2,29 @@
 """
 Configuration parser for LLM providers.
 
-Parses provider/model strings and instantiates correct provider + auth combinations.
+There is exactly one chat-protocol implementation in fitz-sage:
+``OpenAICompatChat`` / ``OpenAICompatEmbedding`` / ``OpenAICompatVision``,
+which speaks the OpenAI HTTP protocol against any compliant server
+(OpenAI, Azure, llama.cpp's ``llama-server``, vLLM, LM Studio, Together,
+Fireworks, Groq, OpenRouter, …).
+
+Provider names are *configuration presets* on top of that single
+implementation, not separate code paths:
+
+    endpoint  — bring your own URL + model. Default (and only) auth is
+                NoAuth; opt-in to ApiKeyAuth via ``auth.api_key_env``.
+    openai    — preset for ``https://api.openai.com/v1`` + OPENAI_API_KEY,
+                with default models from OPENAI_CHAT_MODELS.
+    azure_openai
+              — preset for Azure: requires ``base_url`` (Azure URL is
+                tenant-specific) + AZURE_OPENAI_API_KEY.
+    enterprise
+              — separate path for OAuth2 + API-key composite auth
+                (kept for the day-job/automotive deployment flow).
+
+The legacy ``ollama``, ``cohere``, ``anthropic`` provider names have
+been removed. Migration paths are documented in the actionable error
+messages raised when those names are passed.
 """
 
 from __future__ import annotations
@@ -10,7 +32,7 @@ from __future__ import annotations
 import os
 from typing import Any, Literal
 
-from fitz_sage.llm.auth import ApiKeyAuth, AuthProvider, CompositeAuth, M2MAuth
+from fitz_sage.llm.auth import ApiKeyAuth, AuthProvider, CompositeAuth, M2MAuth, NoAuth
 from fitz_sage.llm.providers.base import (
     ChatProvider,
     EmbeddingProvider,
@@ -19,42 +41,68 @@ from fitz_sage.llm.providers.base import (
     VisionProvider,
 )
 
-# Provider name → environment variable mapping
+# Default OpenAI public API endpoint, used by the ``openai`` preset.
+_OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
+
+# Provider name → environment variable mapping (None means no auth).
 ENV_VAR_MAP: dict[str, str | None] = {
-    "cohere": "COHERE_API_KEY",
     "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
     "azure_openai": "AZURE_OPENAI_API_KEY",
-    "ollama": None,  # No auth required
-    "enterprise": None,  # Auth configured explicitly via auth block
+    "enterprise": None,  # auth configured explicitly via auth block
+    "endpoint": None,  # NoAuth by default; opt-in via auth.api_key_env
 }
 
-# Provider name → default header format
+# Provider name → header format for ApiKeyAuth.
 HEADER_FORMAT_MAP: dict[str, str] = {
-    "cohere": "bearer",
     "openai": "bearer",
-    "anthropic": "x-api-key",
     "azure_openai": "bearer",
+}
+
+# Removed providers and their actionable migration messages.
+_REMOVED_PROVIDERS: dict[str, str] = {
+    "ollama": (
+        "The 'ollama' provider has been removed. "
+        "Use the 'endpoint' provider with Ollama's OpenAI-compatible URL:\n\n"
+        "  chat_smart: endpoint/qwen2.5:14b\n"
+        "  base_url: http://localhost:11434/v1\n\n"
+        "For better local performance, prefer llama.cpp's llama-server:\n"
+        "  llama-server -m model.gguf --port 8080\n"
+        "  chat_smart: endpoint/<model-name>\n"
+        "  base_url: http://localhost:8080/v1"
+    ),
+    "cohere": (
+        "The 'cohere' provider has been removed. "
+        "If you need Cohere's chat models, use the 'endpoint' provider with "
+        "Cohere's OpenAI-compatible API or via OpenRouter:\n\n"
+        "  chat_smart: endpoint/command-a-03-2025\n"
+        "  base_url: https://api.cohere.com/compatibility/v1\n"
+        "  auth:\n"
+        "    api_key_env: COHERE_API_KEY\n\n"
+        "Cohere /rerank is no longer wired in fitz-sage; rerank is moving to "
+        "an LLM-rerank step using the chat model."
+    ),
+    "anthropic": (
+        "The 'anthropic' provider has been removed. "
+        "Use the 'endpoint' provider via OpenRouter or Anthropic's "
+        "OpenAI-compatible compatibility layer:\n\n"
+        "  chat_smart: endpoint/anthropic/claude-sonnet-4\n"
+        "  base_url: https://openrouter.ai/api/v1\n"
+        "  auth:\n"
+        "    api_key_env: OPENROUTER_API_KEY"
+    ),
 }
 
 
 def parse_provider_string(spec: str) -> tuple[str, str | None]:
     """
-    Parse a provider/model string into provider name and model.
+    Parse a provider/model spec string.
 
     Args:
-        spec: Provider spec like "cohere" or "cohere/command-a-03-2025"
+        spec: Either ``provider`` or ``provider/model``. Models may
+            contain forward slashes (only the first ``/`` splits).
 
     Returns:
-        Tuple of (provider_name, model_name or None)
-
-    Examples:
-        >>> parse_provider_string("cohere")
-        ('cohere', None)
-        >>> parse_provider_string("cohere/command-a-03-2025")
-        ('cohere', 'command-a-03-2025')
-        >>> parse_provider_string("openai/gpt-4o")
-        ('openai', 'gpt-4o')
+        ``(provider_name, model_name_or_None)``
     """
     if "/" in spec:
         provider, model = spec.split("/", 1)
@@ -85,7 +133,6 @@ def _validate_enterprise_config(auth_config: dict[str, Any]) -> None:
             f"    client_key_password: ${{KEY_PASSWORD}}"
         )
 
-    # Validate API key env var exists at startup (fail fast)
     api_key_env = auth_config["llm_api_key_env"]
     if not os.environ.get(api_key_env):
         raise ValueError(
@@ -94,57 +141,64 @@ def _validate_enterprise_config(auth_config: dict[str, Any]) -> None:
         )
 
 
+def _check_removed(provider: str) -> None:
+    """Raise an actionable migration error if ``provider`` was removed."""
+    if provider in _REMOVED_PROVIDERS:
+        raise ValueError(_REMOVED_PROVIDERS[provider])
+
+
 def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthProvider | None:
     """
     Resolve authentication for a provider.
 
     Args:
-        provider: Provider name (cohere, openai, etc.)
-        config: Optional config dict with auth settings
+        provider: Provider name. Must be one of ``ENV_VAR_MAP`` (or
+            ``enterprise``); legacy names raise migration errors.
+        config: Optional config dict. May contain an ``auth`` block.
 
     Returns:
-        AuthProvider instance, or None for providers that don't need auth (ollama)
+        An ``AuthProvider`` instance, or ``None`` if the provider doesn't
+        need auth (no current providers return None).
 
-    Config format for simple API key:
-        {} or None - uses default env var for provider
+    Auth block formats:
 
-    Config format for M2M OAuth2:
-        {
-            "auth": {
-                "type": "m2m",
-                "token_url": "https://auth.corp.com/oauth/token",
-                "client_id": "${CLIENT_ID}",
-                "client_secret": "${CLIENT_SECRET}",
-                "scope": "optional-scope"  # optional
-            },
-            "cert_path": "/etc/ssl/corp-ca.crt"  # optional
-        }
+    - **Endpoint with API key** (e.g. Together, Groq, Fireworks)::
 
-    Config format for enterprise auth (M2M + API key):
-        {
-            "auth": {
-                "type": "enterprise",
-                "token_url": "https://auth.corp.com/oauth/token",
-                "client_id": "${CLIENT_ID}",
-                "client_secret": "${CLIENT_SECRET}",
-                "scope": "optional-scope",  # optional
-                "llm_api_key_env": "BMW_LLM_API_KEY",
-                "llm_api_key_header": "X-Api-Key",  # optional, default X-Api-Key
-                "client_cert_path": "/path/to/client.crt",  # optional, for mTLS
-                "client_key_path": "/path/to/client.key",  # optional, for mTLS
-                "client_key_password": "${KEY_PASSWORD}"  # optional, for encrypted key
-            },
-            "cert_path": "/etc/ssl/corp-ca.crt"  # optional, for CA verification
-        }
+          auth:
+            api_key_env: TOGETHER_API_KEY
+            header_format: bearer    # optional; default
+
+    - **M2M OAuth2** (token auto-refreshes)::
+
+          auth:
+            type: m2m
+            token_url: https://auth.corp.com/oauth/token
+            client_id: ${CLIENT_ID}
+            client_secret: ${CLIENT_SECRET}
+            scope: optional-scope
+
+    - **Enterprise** (M2M + downstream API key)::
+
+          auth:
+            type: enterprise
+            token_url: ...
+            client_id: ${CLIENT_ID}
+            client_secret: ${CLIENT_SECRET}
+            llm_api_key_env: BMW_LLM_API_KEY
+            llm_api_key_header: X-Api-Key   # optional; default
+            client_cert_path: ...           # optional, mTLS
+            client_key_path: ...            # optional, mTLS
+            client_key_password: ${KEY_PASSWORD}  # optional, mTLS
     """
+    _check_removed(provider)
+
     config = config or {}
     auth_config = config.get("auth", {})
 
-    # Check for enterprise auth (M2M + API key)
+    # Enterprise composite auth (M2M + API key)
     if auth_config.get("type") == "enterprise":
         _validate_enterprise_config(auth_config)
 
-        # Create M2MAuth for bearer token (Authorization header)
         m2m = M2MAuth(
             token_url=auth_config["token_url"],
             client_id=auth_config["client_id"],
@@ -156,17 +210,16 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
             client_key_password=auth_config.get("client_key_password"),
         )
 
-        # Create ApiKeyAuth for LLM API key (X-Api-Key header by default)
         api_key_env = auth_config["llm_api_key_env"]
         header_name = auth_config.get("llm_api_key_header", "X-Api-Key")
-        header_format: Literal["bearer", "x-api-key", "basic"] = (
+        enterprise_header_format: Literal["bearer", "x-api-key", "basic"] = (
             "x-api-key" if header_name.lower() == "x-api-key" else "bearer"
         )
-        api_key = ApiKeyAuth(api_key_env, header_format=header_format)
+        api_key = ApiKeyAuth(api_key_env, header_format=enterprise_header_format)
 
         return CompositeAuth(m2m, api_key)
 
-    # Check for M2M auth
+    # M2M auth on its own
     if auth_config.get("type") == "m2m":
         return M2MAuth(
             token_url=auth_config["token_url"],
@@ -176,23 +229,42 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
             scope=auth_config.get("scope"),
         )
 
-    # Enterprise provider requires explicit auth config
+    # Enterprise provider name without an explicit auth block
     if provider == "enterprise":
         raise ValueError(
-            "Enterprise provider requires an 'auth' block in config.\n"
+            "The 'enterprise' provider requires an 'auth' block in config.\n"
             "Example:\n"
             "  chat_smart: enterprise/gpt-4o\n"
-            "  # with auth configured in provider config"
+            "  base_url: https://corp.gateway/openai/v1\n"
+            "  auth:\n"
+            "    type: enterprise\n"
+            "    token_url: ...\n"
+            "    client_id: ...\n"
+            "    client_secret: ...\n"
+            "    llm_api_key_env: ..."
         )
 
-    # Default: API key auth
-    env_var = ENV_VAR_MAP.get(provider)
-    if env_var is None:
-        # Provider doesn't need auth (e.g., ollama)
-        return None
+    # Endpoint: NoAuth by default, opt-in to ApiKeyAuth.
+    if provider == "endpoint":
+        if auth_config.get("api_key_env"):
+            endpoint_header_format: Literal["bearer", "x-api-key", "basic"] = auth_config.get(
+                "header_format", "bearer"
+            )
+            return ApiKeyAuth(auth_config["api_key_env"], header_format=endpoint_header_format)
+        return NoAuth()
 
-    header_format = HEADER_FORMAT_MAP.get(provider, "bearer")
-    return ApiKeyAuth(env_var, header_format=header_format)  # type: ignore[arg-type]
+    # Named cloud presets: ApiKeyAuth from a known env var.
+    env_var = ENV_VAR_MAP.get(provider)
+    if env_var is not None:
+        header_format: Literal["bearer", "x-api-key", "basic"] = HEADER_FORMAT_MAP.get(
+            provider, "bearer"
+        )  # type: ignore[assignment]
+        return ApiKeyAuth(env_var, header_format=header_format)
+
+    raise ValueError(
+        f"Unknown provider: {provider}. "
+        f"Supported: 'endpoint', 'openai', 'azure_openai', 'enterprise'."
+    )
 
 
 def _get_provider_kwargs(config: dict[str, Any] | None) -> dict[str, Any]:
@@ -202,23 +274,94 @@ def _get_provider_kwargs(config: dict[str, Any] | None) -> dict[str, Any]:
 
     kwargs: dict[str, Any] = {}
 
-    # Pass through base_url if specified
     if "base_url" in config:
         kwargs["base_url"] = config["base_url"]
 
-    # Pass through models dict for tier-based model selection (Ollama, etc.)
+    # Per-tier model override table
     if "models" in config:
         kwargs["models"] = config["models"]
 
-    # Pass through model for single model override (embeddings, etc.)
     if "model" in config:
         kwargs["model"] = config["model"]
 
-    # Pass through context window override (e.g. num_ctx for Ollama)
     if "num_ctx" in config:
         kwargs["num_ctx"] = config["num_ctx"]
 
     return kwargs
+
+
+def _resolve_endpoint_kwargs(
+    spec: str,
+    config: dict[str, Any] | None,
+    *,
+    require_model: bool,
+    role: str,
+) -> tuple[AuthProvider, dict[str, Any]]:
+    """
+    Common kwarg/auth resolution for the ``endpoint`` preset.
+
+    Returns ``(auth, kwargs)`` where ``kwargs`` always contains
+    ``base_url`` and (if ``require_model``) ``model``.
+
+    Raises ``ValueError`` with actionable messages if required fields
+    are missing.
+    """
+    _, model = parse_provider_string(spec)
+    auth = resolve_auth("endpoint", config)
+    assert auth is not None  # endpoint always returns NoAuth or ApiKeyAuth
+    kwargs = _get_provider_kwargs(config)
+    if model:
+        kwargs["model"] = model
+
+    base_url = kwargs.get("base_url")
+    if not base_url:
+        raise ValueError(
+            f"endpoint provider requires 'base_url' in config.\n"
+            f"Example:\n"
+            f"  {role}: endpoint/<model>\n"
+            f"  base_url: http://localhost:8080/v1"
+        )
+    if require_model and not kwargs.get("model"):
+        raise ValueError(
+            f"endpoint provider requires a model in the spec.\n"
+            f"Example:\n"
+            f"  {role}: endpoint/<model>"
+        )
+    return auth, kwargs
+
+
+def _resolve_openai_preset_kwargs(
+    spec: str,
+    config: dict[str, Any] | None,
+    *,
+    azure: bool,
+) -> tuple[AuthProvider, dict[str, Any]]:
+    """
+    Resolve auth + kwargs for the ``openai`` / ``azure_openai`` preset.
+
+    For ``openai``, base_url defaults to OpenAI's public API. For
+    ``azure_openai``, the user must supply a base_url (it is
+    tenant-specific).
+    """
+    provider, model = parse_provider_string(spec)
+    auth = resolve_auth(provider, config)
+    assert auth is not None  # presets always require an API key
+    kwargs = _get_provider_kwargs(config)
+
+    if model:
+        kwargs["model"] = model
+
+    if not kwargs.get("base_url"):
+        if azure:
+            raise ValueError(
+                "azure_openai requires 'base_url' (Azure endpoints are "
+                "tenant-specific).\nExample:\n"
+                "  chat_smart: azure_openai/gpt-4o\n"
+                "  base_url: https://my-tenant.openai.azure.com/openai/deployments/my-deployment"
+            )
+        kwargs["base_url"] = _OPENAI_DEFAULT_BASE_URL
+
+    return auth, kwargs
 
 
 def create_chat_provider(
@@ -230,67 +373,68 @@ def create_chat_provider(
     Create a chat provider from a spec string.
 
     Args:
-        spec: Provider spec like "cohere" or "cohere/command-a-03-2025"
-        config: Optional config dict with auth/base_url settings
-        tier: Model tier (smart, balanced, fast)
+        spec: ``provider`` or ``provider/model`` (e.g. ``endpoint/qwen2.5-7b``,
+            ``openai/gpt-4o``, ``azure_openai/my-deployment``).
+        config: Optional config dict (auth, base_url, etc.).
+        tier: Tier hint when no model is supplied.
 
     Returns:
-        ChatProvider instance
-
-    Examples:
-        >>> chat = create_chat_provider("cohere")
-        >>> chat = create_chat_provider("cohere/command-a-03-2025")
-        >>> chat = create_chat_provider("openai/gpt-4o", {"base_url": "https://proxy.example.com"})
+        A ChatProvider instance — always an OpenAICompatChat (or
+        EnterpriseChat for the enterprise path).
     """
-    provider, model = parse_provider_string(spec)
-    auth = resolve_auth(provider, config)
-    kwargs = _get_provider_kwargs(config)
-
-    if model:
-        kwargs["model"] = model
+    provider, _ = parse_provider_string(spec)
+    _check_removed(provider)
 
     if provider == "enterprise":
         from fitz_sage.llm.providers.enterprise import EnterpriseChat
 
-        # Enterprise requires base_url and model
+        auth = resolve_auth(provider, config)
+        kwargs = _get_provider_kwargs(config)
+        _, model = parse_provider_string(spec)
+        if model:
+            kwargs["model"] = model
+
         base_url = kwargs.pop("base_url", None)
-        model = kwargs.pop("model", None)
+        model_name = kwargs.pop("model", None)
         if not base_url:
             raise ValueError(
-                "Enterprise provider requires 'base_url' in config.\n"
+                "enterprise provider requires 'base_url' in config.\n"
                 "Example:\n"
-                "  chat_smart: enterprise/gpt-4o"
+                "  chat_smart: enterprise/gpt-4o\n"
+                "  base_url: https://corp.gateway/openai/v1"
             )
-        if not model:
+        if not model_name:
             raise ValueError(
-                "Enterprise provider requires 'model' in config.\n"
+                "enterprise provider requires a model in the spec.\n"
                 "Example:\n"
                 "  chat_smart: enterprise/gpt-4o"
             )
-        return EnterpriseChat(auth, base_url=base_url, model=model, **kwargs)  # type: ignore[arg-type]
+        return EnterpriseChat(auth, base_url=base_url, model=model_name, **kwargs)  # type: ignore[arg-type]
 
-    elif provider == "cohere":
-        from fitz_sage.llm.providers.cohere import CohereChat
+    if provider == "endpoint":
+        from fitz_sage.llm.providers.openai_compat import OpenAICompatChat
 
-        return CohereChat(auth, tier=tier, **kwargs)  # type: ignore[arg-type]
+        auth, kwargs = _resolve_endpoint_kwargs(
+            spec, config, require_model=True, role="chat_smart"
+        )
+        base_url = kwargs.pop("base_url")
+        model_name = kwargs.pop("model")
+        return OpenAICompatChat(
+            auth, model=model_name, base_url=base_url, tier=tier, **kwargs
+        )
 
-    elif provider == "openai" or provider == "azure_openai":
-        from fitz_sage.llm.providers.openai import OpenAIChat
+    if provider in ("openai", "azure_openai"):
+        from fitz_sage.llm.providers.openai_compat import OpenAICompatChat
 
-        return OpenAIChat(auth, tier=tier, **kwargs)  # type: ignore[arg-type]
+        auth, kwargs = _resolve_openai_preset_kwargs(
+            spec, config, azure=(provider == "azure_openai")
+        )
+        return OpenAICompatChat(auth, tier=tier, **kwargs)
 
-    elif provider == "anthropic":
-        from fitz_sage.llm.providers.anthropic import AnthropicChat
-
-        return AnthropicChat(auth, tier=tier, **kwargs)  # type: ignore[arg-type]
-
-    elif provider == "ollama":
-        from fitz_sage.llm.providers.ollama import OllamaChat
-
-        return OllamaChat(tier=tier, **kwargs)
-
-    else:
-        raise ValueError(f"Unknown chat provider: {provider}")
+    raise ValueError(
+        f"Unknown chat provider: {provider}. "
+        f"Supported: 'endpoint', 'openai', 'azure_openai', 'enterprise'."
+    )
 
 
 def create_embedding_provider(
@@ -301,65 +445,70 @@ def create_embedding_provider(
     Create an embedding provider from a spec string.
 
     Args:
-        spec: Provider spec like "cohere" or "cohere/embed-multilingual-v3.0"
-        config: Optional config dict with auth/base_url/dimensions settings
-
-    Returns:
-        EmbeddingProvider instance
+        spec: ``provider`` or ``provider/model``.
+        config: Optional config dict (auth, base_url, dimensions, etc.).
     """
-    provider, model = parse_provider_string(spec)
-    auth = resolve_auth(provider, config)
-    kwargs = _get_provider_kwargs(config)
+    provider, _ = parse_provider_string(spec)
+    _check_removed(provider)
 
-    if model:
-        kwargs["model"] = model
-
-    # Pass through dimensions if specified
     config = config or {}
-    if "dimensions" in config:
-        kwargs["dimensions"] = config["dimensions"]
 
     if provider == "enterprise":
         from fitz_sage.llm.providers.enterprise import EnterpriseEmbedding
 
-        # Enterprise requires base_url and model
+        auth = resolve_auth(provider, config)
+        kwargs = _get_provider_kwargs(config)
+        _, model = parse_provider_string(spec)
+        if model:
+            kwargs["model"] = model
+        if "dimensions" in config:
+            kwargs["dimensions"] = config["dimensions"]
+
         base_url = kwargs.pop("base_url", None)
-        model = kwargs.pop("model", None)
+        model_name = kwargs.pop("model", None)
         if not base_url:
             raise ValueError(
-                "Enterprise provider requires 'base_url' in config.\n"
+                "enterprise provider requires 'base_url' in config.\n"
                 "Example:\n"
-                "  embedding: enterprise/text-embedding-3-small"
+                "  embedding: enterprise/text-embedding-3-small\n"
+                "  base_url: https://corp.gateway/openai/v1"
             )
-        if not model:
+        if not model_name:
             raise ValueError(
-                "Enterprise provider requires 'model' in config.\n"
+                "enterprise provider requires a model in the spec.\n"
                 "Example:\n"
                 "  embedding: enterprise/text-embedding-3-small"
             )
-        return EnterpriseEmbedding(auth, base_url=base_url, model=model, **kwargs)  # type: ignore[arg-type]
+        return EnterpriseEmbedding(auth, base_url=base_url, model=model_name, **kwargs)  # type: ignore[arg-type]
 
-    elif provider == "cohere":
-        from fitz_sage.llm.providers.cohere import CohereEmbedding
+    if provider == "endpoint":
+        from fitz_sage.llm.providers.openai_compat import OpenAICompatEmbedding
 
-        # Cohere uses input_type parameter
-        if "input_type" in config:
-            kwargs["input_type"] = config["input_type"]
+        auth, kwargs = _resolve_endpoint_kwargs(
+            spec, config, require_model=True, role="embedding"
+        )
+        base_url = kwargs.pop("base_url")
+        model_name = kwargs.pop("model")
+        if "dimensions" in config:
+            kwargs["dimensions"] = config["dimensions"]
+        return OpenAICompatEmbedding(auth, model=model_name, base_url=base_url, **kwargs)
 
-        return CohereEmbedding(auth, **kwargs)  # type: ignore[arg-type]
+    if provider in ("openai", "azure_openai"):
+        from fitz_sage.llm.providers.openai_compat import OpenAICompatEmbedding
 
-    elif provider == "openai" or provider == "azure_openai":
-        from fitz_sage.llm.providers.openai import OpenAIEmbedding
+        auth, kwargs = _resolve_openai_preset_kwargs(
+            spec, config, azure=(provider == "azure_openai")
+        )
+        if "dimensions" in config:
+            kwargs["dimensions"] = config["dimensions"]
+        # tier is not meaningful for embeddings
+        kwargs.pop("models", None)
+        return OpenAICompatEmbedding(auth, **kwargs)
 
-        return OpenAIEmbedding(auth, **kwargs)  # type: ignore[arg-type]
-
-    elif provider == "ollama":
-        from fitz_sage.llm.providers.ollama import OllamaEmbedding
-
-        return OllamaEmbedding(**kwargs)
-
-    else:
-        raise ValueError(f"Unknown embedding provider: {provider}")
+    raise ValueError(
+        f"Unknown embedding provider: {provider}. "
+        f"Supported: 'endpoint', 'openai', 'azure_openai', 'enterprise'."
+    )
 
 
 def create_rerank_provider(
@@ -369,35 +518,23 @@ def create_rerank_provider(
     """
     Create a rerank provider from a spec string.
 
-    Args:
-        spec: Provider spec like "cohere" or "cohere/rerank-v3.5", or None
-        config: Optional config dict with auth settings
-
-    Returns:
-        RerankProvider instance, or None if spec is None
+    There is currently no first-class rerank backend — Cohere's /rerank
+    endpoint was removed alongside the cohere chat provider. The
+    forward direction is LLM-rerank using the chat model. Until that
+    lands, this function only honours ``None``.
     """
     if spec is None:
         return None
 
-    provider, model = parse_provider_string(spec)
-    auth = resolve_auth(provider, config)
-    kwargs = _get_provider_kwargs(config)
+    provider, _ = parse_provider_string(spec)
+    _check_removed(provider)
 
-    if model:
-        kwargs["model"] = model
-
-    if provider == "cohere":
-        from fitz_sage.llm.providers.cohere import CohereRerank
-
-        return CohereRerank(auth, **kwargs)  # type: ignore[arg-type]
-
-    elif provider == "ollama":
-        from fitz_sage.llm.providers.ollama import OllamaRerank
-
-        return OllamaRerank(**kwargs)
-
-    else:
-        raise ValueError(f"Unknown rerank provider: {provider}. Supported: 'cohere', 'ollama'.")
+    raise ValueError(
+        f"Unknown rerank provider: {provider}. "
+        f"There is currently no rerank provider in fitz-sage. "
+        f"Set rerank to None — rerank is moving to an LLM-rerank step "
+        f"using the chat model."
+    )
 
 
 def create_vision_provider(
@@ -407,42 +544,39 @@ def create_vision_provider(
     """
     Create a vision provider from a spec string.
 
-    Args:
-        spec: Provider spec like "openai/gpt-4o" or "anthropic/claude-sonnet-4", or None
-        config: Optional config dict with auth/base_url settings
-
-    Returns:
-        VisionProvider instance, or None if spec is None
+    Vision uses the same OpenAI-compatible chat-completions endpoint
+    with image content parts; any vision-capable model behind an
+    ``endpoint`` URL works.
     """
     if spec is None:
         return None
 
-    provider, model = parse_provider_string(spec)
-    auth = resolve_auth(provider, config)
-    kwargs = _get_provider_kwargs(config)
+    provider, _ = parse_provider_string(spec)
+    _check_removed(provider)
 
-    if model:
-        kwargs["model"] = model
+    if provider == "endpoint":
+        from fitz_sage.llm.providers.openai_compat import OpenAICompatVision
 
-    if provider == "openai" or provider == "azure_openai":
-        from fitz_sage.llm.providers.openai import OpenAIVision
-
-        return OpenAIVision(auth, **kwargs)  # type: ignore[arg-type]
-
-    elif provider == "anthropic":
-        from fitz_sage.llm.providers.anthropic import AnthropicVision
-
-        return AnthropicVision(auth, **kwargs)  # type: ignore[arg-type]
-
-    elif provider == "ollama":
-        from fitz_sage.llm.providers.ollama import OllamaVision
-
-        return OllamaVision(**kwargs)
-
-    else:
-        raise ValueError(
-            f"Unknown vision provider: {provider}. Supported: 'openai', 'anthropic', 'ollama'"
+        auth, kwargs = _resolve_endpoint_kwargs(
+            spec, config, require_model=True, role="vision"
         )
+        base_url = kwargs.pop("base_url")
+        model_name = kwargs.pop("model")
+        return OpenAICompatVision(auth, model=model_name, base_url=base_url, **kwargs)
+
+    if provider in ("openai", "azure_openai"):
+        from fitz_sage.llm.providers.openai_compat import OpenAICompatVision
+
+        auth, kwargs = _resolve_openai_preset_kwargs(
+            spec, config, azure=(provider == "azure_openai")
+        )
+        kwargs.pop("models", None)
+        return OpenAICompatVision(auth, **kwargs)
+
+    raise ValueError(
+        f"Unknown vision provider: {provider}. "
+        f"Supported: 'endpoint', 'openai', 'azure_openai'."
+    )
 
 
 __all__ = [
@@ -453,4 +587,5 @@ __all__ = [
     "create_rerank_provider",
     "create_vision_provider",
     "ENV_VAR_MAP",
+    "HEADER_FORMAT_MAP",
 ]

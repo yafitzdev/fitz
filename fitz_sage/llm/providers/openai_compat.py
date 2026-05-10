@@ -1,11 +1,25 @@
-# fitz_sage/llm/providers/openai.py
+# fitz_sage/llm/providers/openai_compat.py
 """
-OpenAI provider wrappers using the official SDK.
+OpenAI-compatible HTTP provider wrappers.
 
-Also supports Azure OpenAI via base_url configuration.
+This module implements the chat / embedding / vision providers for any
+server that speaks the OpenAI HTTP protocol — OpenAI, Azure OpenAI,
+llama.cpp's ``llama-server``, vLLM, LM Studio, Together, Fireworks,
+Groq, OpenRouter, etc.
 
-Uses DynamicHttpxAuth for per-request token refresh, solving the frozen
-token bug where M2M tokens captured at __init__ never refresh.
+The classes are the *single* implementation behind the ``endpoint``,
+``openai``, and ``azure_openai`` provider names. There is no legacy
+"OpenAI-only" client — OpenAI itself is just one URL preset.
+
+Authentication is delegated to the AuthProvider abstraction (see
+``fitz_sage.llm.auth``):
+
+- ``NoAuth`` for unauthenticated local servers (default for ``endpoint``).
+- ``ApiKeyAuth`` for any server requiring a key (OpenAI, Together, …).
+- ``M2MAuth`` / ``CompositeAuth`` for enterprise OAuth2 + API key.
+
+Uses ``DynamicHttpxAuth`` for per-request token refresh, so M2M tokens
+captured at construction time can rotate without restart.
 """
 
 from __future__ import annotations
@@ -19,27 +33,32 @@ from fitz_sage.llm.providers.base import ModelTier
 
 logger = logging.getLogger(__name__)
 
-# Default models by tier
-CHAT_MODELS: dict[ModelTier, str] = {
+# Default OpenAI cloud models, used when the ``openai`` preset is selected
+# without an explicit model. ``endpoint`` users always specify their model.
+OPENAI_CHAT_MODELS: dict[ModelTier, str] = {
     "smart": "gpt-4o",
     "balanced": "gpt-4o-mini",
     "fast": "gpt-4o-mini",
 }
 
-EMBEDDING_MODEL = "text-embedding-3-small"
-VISION_MODEL = "gpt-4o"
+OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+OPENAI_VISION_MODEL = "gpt-4o"
 
 
-class OpenAIChat:
+class OpenAICompatChat:
     """
-    OpenAI chat provider using the official SDK.
+    Chat provider for any OpenAI-compatible HTTP server.
 
     Args:
-        auth: Authentication provider.
-        model: Model name override.
-        tier: Model tier (smart, balanced, fast).
-        base_url: Custom base URL (for Azure or proxies).
-        **kwargs: Additional default kwargs for chat calls.
+        auth: Authentication provider (NoAuth, ApiKeyAuth, M2MAuth, etc.).
+        model: Model name. Required for ``endpoint``; defaults from
+            tier table when used as the ``openai`` preset.
+        tier: Model tier hint used for default-model selection
+            when ``model`` is None.
+        base_url: HTTP endpoint, e.g. ``http://localhost:8080/v1`` or
+            ``https://api.openai.com/v1``.
+        models: Optional override of the tier→model table.
+        **kwargs: Passed through to ``chat.completions.create`` as defaults.
     """
 
     def __init__(
@@ -64,16 +83,17 @@ class OpenAIChat:
         )
 
         client_kwargs: dict[str, Any] = {
-            "api_key": "unused",  # SDK requires non-empty, http_client auth overrides
+            # The SDK requires a non-empty api_key string; real auth is
+            # supplied by DynamicHttpxAuth on the http_client.
+            "api_key": "unused",
             "http_client": http_client,
         }
         if base_url:
             client_kwargs["base_url"] = base_url
 
         self._client = openai.OpenAI(**client_kwargs)
-        # Use provided models dict, falling back to defaults
-        tier_models = models or CHAT_MODELS
-        self._model = model or tier_models.get(tier) or CHAT_MODELS[tier]
+        tier_models = models or OPENAI_CHAT_MODELS
+        self._model = model or tier_models.get(tier) or OPENAI_CHAT_MODELS[tier]
         self._defaults = kwargs
 
     def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> str:
@@ -108,15 +128,16 @@ class OpenAIChat:
                     yield content
 
 
-class OpenAIEmbedding:
+class OpenAICompatEmbedding:
     """
-    OpenAI embedding provider using the official SDK.
+    Embedding provider for any OpenAI-compatible HTTP server.
 
     Args:
         auth: Authentication provider.
-        model: Model name override.
+        model: Model name (required for ``endpoint``; defaults to
+            OpenAI's text-embedding-3-small for the ``openai`` preset).
         dimensions: Output dimensions (for models that support it).
-        base_url: Custom base URL.
+        base_url: HTTP endpoint.
     """
 
     def __init__(
@@ -139,14 +160,14 @@ class OpenAIEmbedding:
         )
 
         client_kwargs: dict[str, Any] = {
-            "api_key": "unused",  # SDK requires non-empty, http_client auth overrides
+            "api_key": "unused",
             "http_client": http_client,
         }
         if base_url:
             client_kwargs["base_url"] = base_url
 
         self._client = openai.OpenAI(**client_kwargs)
-        self._model = model or EMBEDDING_MODEL
+        self._model = model or OPENAI_EMBEDDING_MODEL
         self._dimensions = dimensions
 
     def embed(self, text: str, *, task_type: str | None = None) -> list[float]:
@@ -184,15 +205,16 @@ class OpenAIEmbedding:
         return self._dimensions or 1536
 
 
-class OpenAIVision:
+class OpenAICompatVision:
     """
-    OpenAI vision provider using the official SDK.
+    Vision provider for any OpenAI-compatible HTTP server with a
+    chat-completions endpoint that accepts image content parts.
 
     Args:
         auth: Authentication provider.
-        model: Model name override.
-        base_url: Custom base URL.
-        **kwargs: Additional default kwargs.
+        model: Vision-capable model name.
+        base_url: HTTP endpoint.
+        **kwargs: Default kwargs passed to chat.completions.create.
     """
 
     def __init__(
@@ -215,18 +237,18 @@ class OpenAIVision:
         )
 
         client_kwargs: dict[str, Any] = {
-            "api_key": "unused",  # SDK requires non-empty, http_client auth overrides
+            "api_key": "unused",
             "http_client": http_client,
         }
         if base_url:
             client_kwargs["base_url"] = base_url
 
         self._client = openai.OpenAI(**client_kwargs)
-        self._model = model or VISION_MODEL
+        self._model = model or OPENAI_VISION_MODEL
         self._defaults = kwargs
 
     def describe_image(self, image_base64: str, prompt: str | None = None) -> str:
-        """Describe an image using the vision model."""
+        """Describe an image using a vision-capable chat model."""
         actual_prompt = prompt or (
             "Describe this figure/chart/diagram in detail. Include any data values, "
             "labels, axes, trends, and key insights visible in the image."
@@ -267,10 +289,10 @@ class OpenAIVision:
 
 
 __all__ = [
-    "OpenAIChat",
-    "OpenAIEmbedding",
-    "OpenAIVision",
-    "CHAT_MODELS",
-    "EMBEDDING_MODEL",
-    "VISION_MODEL",
+    "OpenAICompatChat",
+    "OpenAICompatEmbedding",
+    "OpenAICompatVision",
+    "OPENAI_CHAT_MODELS",
+    "OPENAI_EMBEDDING_MODEL",
+    "OPENAI_VISION_MODEL",
 ]
