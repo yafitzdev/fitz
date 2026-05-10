@@ -47,7 +47,6 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine = FitzKragEngine.__new__(FitzKragEngine)
     engine._config = config
     engine._chat = MagicMock(name="chat")
-    engine._embedder = MagicMock(name="embedder")
     engine._connection_manager = MagicMock(name="connection_manager")
     engine._raw_store = MagicMock(name="raw_store")
     engine._symbol_store = MagicMock(name="symbol_store")
@@ -77,7 +76,6 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine._bg_worker = None
     engine._manifest = None
     engine._source_dir = None
-    engine._hyde_generator = None
     # Configure batcher to return sensible defaults so batched dispatch works
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
     from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
@@ -124,7 +122,6 @@ class TestEngineInit:
         names = {
             # llm
             "get_chat": "fitz_sage.llm.client.get_chat",
-            "get_embedder": "fitz_sage.llm.client.get_embedder",
             # storage
             "PostgresConnectionManager": ("fitz_sage.storage.postgres.PostgresConnectionManager"),
             # stores
@@ -177,8 +174,6 @@ class TestEngineInit:
         for key, p in patchers.items():
             mocks[key] = p.start()
 
-        # get_embedder returns a mock with a `.dimensions` attribute
-        mocks["get_embedder"].return_value.dimensions = 1024
         # PostgresConnectionManager.get_instance() returns a mock
         mocks["PostgresConnectionManager"].get_instance.return_value = MagicMock(name="pg_instance")
 

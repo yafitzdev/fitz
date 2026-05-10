@@ -42,7 +42,6 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine = FitzKragEngine.__new__(FitzKragEngine)
     engine._config = config
     engine._chat = MagicMock(name="chat")
-    engine._embedder = MagicMock(name="embedder")
     engine._connection_manager = MagicMock(name="connection_manager")
     engine._raw_store = MagicMock(name="raw_store")
     engine._symbol_store = MagicMock(name="symbol_store")
@@ -72,7 +71,6 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine._bg_worker = None
     engine._manifest = None
     engine._source_dir = None
-    engine._hyde_generator = None
 
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
     from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
@@ -143,7 +141,6 @@ def _make_profile(
         comparison_queries=comparison_queries or [],
         comparison_entities=comparison_entities or [],
         temporal_references=temporal_references or [],
-        fallback_to_chunks=False,
     )
 
 
@@ -164,7 +161,6 @@ class TestEngineDetectionInit:
     @patch("fitz_sage.retrieval.detection.registry.DetectionOrchestrator")
     @patch("fitz_sage.llm.factory.get_chat_factory")
     @patch("fitz_sage.llm.client.get_chat")
-    @patch("fitz_sage.llm.client.get_embedder")
     @patch("fitz_sage.storage.postgres.PostgresConnectionManager")
     @patch("fitz_sage.engines.fitz_krag.ingestion.raw_file_store.RawFileStore")
     @patch("fitz_sage.engines.fitz_krag.ingestion.symbol_store.SymbolStore")
@@ -195,13 +191,11 @@ class TestEngineDetectionInit:
         _sym_store,
         _raw_store,
         mock_pg,
-        mock_get_embedder,
         mock_get_chat,
         mock_get_chat_factory,
         mock_orchestrator_cls,
     ):
         """Engine with enable_detection=True creates a DetectionOrchestrator."""
-        mock_get_embedder.return_value.dimensions = 1024
         mock_pg.get_instance.return_value = MagicMock(name="pg_instance")
         mock_factory = MagicMock(name="chat_factory")
         mock_get_chat_factory.return_value = mock_factory
@@ -248,7 +242,6 @@ class TestRouterDetection:
 
         return RetrievalRouter(
             code_strategy=code_strategy,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strategy,
         )
@@ -279,7 +272,6 @@ class TestRouterDetection:
         config = _make_config(top_addresses=10)
         router = RetrievalRouter(
             code_strategy=code_strategy,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strategy,
         )
@@ -308,7 +300,6 @@ class TestRouterDetection:
         config = _make_config(top_addresses=10)
         router = RetrievalRouter(
             code_strategy=code_strategy,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strategy,
         )
@@ -337,7 +328,6 @@ class TestRouterDetection:
         config = _make_config(top_addresses=10)
         router = RetrievalRouter(
             code_strategy=code_strategy,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strategy,
         )
@@ -364,7 +354,6 @@ class TestRouterDetection:
         config = _make_config(top_addresses=5)
         router = RetrievalRouter(
             code_strategy=code_strategy,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strategy,
         )
@@ -487,7 +476,6 @@ class TestTemporalTagging:
         config = _make_config(top_addresses=top_addresses)
         return RetrievalRouter(
             code_strategy=code_strategy,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strategy,
         )
@@ -526,7 +514,6 @@ class TestTemporalTagging:
         config = _make_config(top_addresses=10)
         router = RetrievalRouter(
             code_strategy=code_strategy,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strategy,
         )
@@ -571,7 +558,6 @@ class TestDeduplicateTemporalMerge:
         """When same address appears with different temporal tags, tags are merged."""
         router = RetrievalRouter(
             code_strategy=MagicMock(),
-            chunk_strategy=None,
             config=_make_config(top_addresses=10),
         )
 
@@ -603,7 +589,6 @@ class TestDeduplicateTemporalMerge:
         """Deduplication without temporal refs works as before."""
         router = RetrievalRouter(
             code_strategy=MagicMock(),
-            chunk_strategy=None,
             config=_make_config(top_addresses=10),
         )
 

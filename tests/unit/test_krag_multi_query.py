@@ -24,14 +24,12 @@ def _make_config(
     top_addresses: int = 10,
     enable_multi_query: bool = True,
     multi_query_min_length: int = 300,
-    fallback_to_chunks: bool = False,
 ) -> MagicMock:
     """Create a mock FitzKragConfig with multi-query-relevant fields."""
     cfg = MagicMock()
     cfg.top_addresses = top_addresses
     cfg.enable_multi_query = enable_multi_query
     cfg.multi_query_min_length = multi_query_min_length
-    cfg.fallback_to_chunks = fallback_to_chunks
     return cfg
 
 
@@ -88,7 +86,6 @@ class TestMultiQueryExpansion:
 
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             chat_factory=chat_factory,
         )
@@ -122,7 +119,6 @@ class TestMultiQueryExpansion:
 
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             chat_factory=chat_factory,
         )
@@ -152,7 +148,6 @@ class TestMultiQueryExpansion:
 
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             chat_factory=chat_factory,
         )
@@ -174,7 +169,6 @@ class TestMultiQueryExpansion:
 
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             chat_factory=None,
         )
@@ -201,7 +195,6 @@ class TestMultiQueryExpansion:
 
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             chat_factory=chat_factory,
         )
@@ -236,7 +229,6 @@ class TestMultiQueryExpansion:
 
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             chat_factory=chat_factory,
         )

@@ -413,7 +413,7 @@ class TestLlmCodeSearchStrategy:
 
         assert len(addresses) <= 1
 
-    def test_forwards_hyde_and_raw_store(self):
+    def test_forwards_raw_store(self):
         strategy = LlmCodeSearchStrategy(
             _make_symbol_store(),
             _make_import_store(),
@@ -421,13 +421,11 @@ class TestLlmCodeSearchStrategy:
             _make_config(),
             _make_fallback(),
         )
-        strategy._hyde_generator = "hyde_gen"
         strategy._raw_store = "raw_store"
 
-        assert strategy._hyde_generator == "hyde_gen"
         assert strategy._raw_store == "raw_store"
 
-    def test_fallback_receives_all_kwargs(self):
+    def test_fallback_receives_detection(self):
         chat = MagicMock()
         chat.chat.side_effect = RuntimeError("fail")
         chat_factory = MagicMock(return_value=chat)
@@ -441,15 +439,11 @@ class TestLlmCodeSearchStrategy:
             fallback,
         )
 
-        qv = [0.1, 0.2, 0.3]
-        hv = [[0.4, 0.5, 0.6]]
         detection = MagicMock()
 
-        strategy.retrieve("query", limit=5, detection=detection, query_vector=qv, hyde_vectors=hv)
+        strategy.retrieve("query", limit=5, detection=detection)
 
-        fallback.retrieve.assert_called_once_with(
-            "query", 5, detection=detection, query_vector=qv, hyde_vectors=hv
-        )
+        fallback.retrieve.assert_called_once_with("query", 5, detection=detection)
 
     def test_parses_combined_json_response(self):
         """New format: LLM returns {search_terms, files}."""

@@ -350,11 +350,7 @@ class TestFitzBEIRRetriever:
     """Tests for FitzBEIRRetriever."""
 
     def _make_mock_engine(self):
-        engine = MagicMock()
-        engine._embedder.embed.return_value = [0.1, 0.2, 0.3]
-        engine._embedder.embed_batch.return_value = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-        engine._embedder.dimensions = 3
-        return engine
+        return MagicMock()
 
     def _make_address(self, source_id: str, score: float):
         from fitz_sage.engines.fitz_krag.types import Address, AddressKind
@@ -434,10 +430,12 @@ class TestFitzBEIRRetriever:
     def test_search_returns_empty_on_retrieval_error(self):
         """search() returns empty dict for a query if retrieval raises."""
         engine = self._make_mock_engine()
-        engine._embedder.embed.side_effect = RuntimeError("embed failed")
         retriever = FitzBEIRRetriever(engine, "beir_test_col")
 
-        with patch("fitz_sage.engines.fitz_krag.ingestion.section_store.SectionStore"):
+        with patch(
+            "fitz_sage.engines.fitz_krag.retrieval.strategies.section_search.SectionSearchStrategy.retrieve",
+            side_effect=RuntimeError("retrieval failed"),
+        ):
             results = retriever.search(corpus={}, queries={"q1": "query"}, top_k=10)
 
         assert results["q1"] == {}

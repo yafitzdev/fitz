@@ -321,8 +321,7 @@ class FitzBEIRRetriever:
                 results[query_id] = {}
                 continue
             try:
-                # hyde_vectors=[] tells the strategy to skip HyDE generation
-                addresses = strategy.retrieve(query_text, top_k, hyde_vectors=[])
+                addresses = strategy.retrieve(query_text, top_k)
 
                 # Address.source_id == raw_file_id == BEIR doc_id (set in index_corpus)
                 query_results: dict[str, float] = {}

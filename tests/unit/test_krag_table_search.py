@@ -17,21 +17,13 @@ from fitz_sage.engines.fitz_krag.types import AddressKind
 
 def _make_strategy(
     keyword_results: list[dict] | None = None,
-    semantic_results: list[dict] | None = None,
-    embed_vector: list[float] | None = None,
     table_keyword_weight: float = 0.4,
-    table_semantic_weight: float = 0.6,
 ) -> TableSearchStrategy:
     table_store = MagicMock(name="table_store")
     table_store.search_by_name.return_value = keyword_results or []
-    table_store.search_by_vector.return_value = semantic_results or []
-
-    embedder = MagicMock(name="embedder")
-    embedder.embed.return_value = embed_vector or [0.1, 0.2, 0.3]
 
     config = MagicMock(name="config")
     config.table_keyword_weight = table_keyword_weight
-    config.table_semantic_weight = table_semantic_weight
 
     return TableSearchStrategy(table_store, config)
 
@@ -44,9 +36,8 @@ def _make_table_record(
     columns: list[str] | None = None,
     row_count: int = 100,
     summary: str = "Sales records",
-    score: float | None = None,
 ) -> dict:
-    d = {
+    return {
         "id": record_id,
         "raw_file_id": raw_file_id,
         "table_id": table_id,
@@ -56,9 +47,6 @@ def _make_table_record(
         "summary": summary,
         "metadata": {},
     }
-    if score is not None:
-        d["score"] = score
-    return d
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +92,7 @@ class TestTableSearchStrategy:
 
     def test_retrieve_empty(self):
         """Returns empty list when no tables match."""
-        strategy = _make_strategy(keyword_results=[], semantic_results=[])
+        strategy = _make_strategy(keyword_results=[])
 
         addresses = strategy.retrieve("nonexistent", limit=5)
 
@@ -121,21 +109,3 @@ class TestTableSearchStrategy:
         addresses = strategy.retrieve("table", limit=3)
 
         assert len(addresses) == 3
-
-    def test_retrieve_semantic_failure_falls_back(self):
-        """When semantic search fails, keyword results still returned."""
-        record = _make_table_record(name="Data")
-        table_store = MagicMock()
-        table_store.search_by_name.return_value = [record]
-        table_store.search_by_vector.return_value = []
-        embedder = MagicMock()
-        embedder.embed.side_effect = RuntimeError("embedding failed")
-        config = MagicMock()
-        config.table_keyword_weight = 0.4
-        config.table_semantic_weight = 0.6
-
-        strategy = TableSearchStrategy(table_store, config)
-        addresses = strategy.retrieve("data", limit=5)
-
-        assert len(addresses) == 1
-        assert addresses[0].location == "Data"

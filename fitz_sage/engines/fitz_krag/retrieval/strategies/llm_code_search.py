@@ -237,22 +237,13 @@ class LlmCodeSearchStrategy:
         query: str,
         limit: int,
         detection: Any = None,
-        *,
-        query_vector: list[float] | None = None,
-        hyde_vectors: list[list[float]] | None = None,
     ) -> list[Address]:
         """Retrieve code addresses via LLM structural search, with fallback."""
         try:
             return self._llm_retrieve(query, limit)
         except Exception as e:
             logger.info(f"LLM code search failed, falling back to hybrid: {e}")
-            return self._fallback.retrieve(
-                query,
-                limit,
-                detection=detection,
-                query_vector=query_vector,
-                hyde_vectors=hyde_vectors,
-            )
+            return self._fallback.retrieve(query, limit, detection=detection)
 
     def _llm_retrieve(self, query: str, limit: int) -> list[Address]:
         """Core LLM-based retrieval path."""

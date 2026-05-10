@@ -1,15 +1,15 @@
 # fitz_sage/engines/fitz_krag/retrieval/router.py
 """
-Retrieval router — dispatches queries to available strategies and merges results.
-
-All gating decisions (HyDE, multi-query, agentic, corpus summaries, chunk
-fallback) are pre-computed in RetrievalProfile.  The router reads booleans
-and lists from the profile — no analysis/detection/config introspection here.
+Retrieval router — dispatches queries to BM25/keyword strategies and merges
+results. fitz-sage has no dense embeddings: there is no HyDE leg, no chunk
+fallback, no per-query embedding pre-computation. The router reads gates
+and query expansions from the RetrievalProfile.
 """
 
 from __future__ import annotations
 
 import logging
+import time as _time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -17,9 +17,6 @@ from fitz_sage.engines.fitz_krag.types import Address
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-    from fitz_sage.engines.fitz_krag.retrieval.strategies.chunk_fallback import (
-        ChunkFallbackStrategy,
-    )
     from fitz_sage.engines.fitz_krag.retrieval.strategies.code_search import (
         CodeSearchStrategy,
     )
@@ -42,24 +39,18 @@ class RetrievalRouter:
     def __init__(
         self,
         code_strategy: "CodeSearchStrategy | LlmCodeSearchStrategy",
-        chunk_strategy: "ChunkFallbackStrategy | None",
         config: "FitzKragConfig",
         section_strategy: "SectionSearchStrategy | None" = None,
         table_strategy: "TableSearchStrategy | None" = None,
         chat_factory: Any = None,
         agentic_strategy: Any = None,
-        embedder: Any = None,
-        hyde_generator: Any = None,
     ):
         self._code_strategy = code_strategy
-        self._chunk_strategy = chunk_strategy
         self._section_strategy = section_strategy
         self._table_strategy = table_strategy
         self._config = config
         self._chat_factory = chat_factory
         self._agentic_strategy = agentic_strategy
-        self._embedder = embedder
-        self._hyde_generator = hyde_generator
         self._keyword_matcher: Any = None  # Set by engine for vocabulary filtering
 
     def retrieve(
@@ -68,7 +59,6 @@ class RetrievalRouter:
         profile: Any = None,
         rewrite_result: "Any | None" = None,
         progress: Callable[[str], None] | None = None,
-        precomputed_query_vectors: dict[str, list[float]] | None = None,
     ) -> list[Address]:
         """
         Retrieve addresses using strategy weights from retrieval profile.
@@ -76,9 +66,6 @@ class RetrievalRouter:
         When profile is provided, strategies with near-zero weight are skipped
         and results are ranked using CrossStrategyRanker. Without profile,
         all strategies run equally (backward compatible).
-
-        Profile contains pre-computed gates and query expansions that replace
-        the old analysis/detection/config reads.
         """
         from fitz_sage.engines.fitz_krag.retrieval.ranker import CrossStrategyRanker
 
@@ -117,56 +104,14 @@ class RetrievalRouter:
             for eq in expanded:
                 tagged_queries.append((eq, None))
 
-        # Pre-compute embeddings and HyDE vectors once for all queries
-        import time as _time
-
-        unique_queries = list(dict.fromkeys(q for q, _ in tagged_queries))
-        query_vectors: dict[str, list[float]] = {}
-        # Use pre-computed vectors from engine (overlapped with analysis+detection)
-        if precomputed_query_vectors:
-            query_vectors.update(precomputed_query_vectors)
-        # Embed any queries not already pre-computed (expansions, variations)
-        missing = [q for q in unique_queries if q not in query_vectors]
-        if missing and self._embedder:
-            try:
-                _t0 = _time.perf_counter()
-                vectors = self._embedder.embed_batch(missing, task_type="query")
-                query_vectors.update(dict(zip(missing, vectors)))
-                _embed_ms = (_time.perf_counter() - _t0) * 1000
-            except Exception as e:
-                _embed_ms = 0
-                logger.warning(f"Batch embedding failed, strategies will embed individually: {e}")
-        else:
-            _embed_ms = 0
-
-        run_hyde = profile.run_hyde if profile else True
         run_agentic = profile.run_agentic if profile else True
+        unique_queries = list(dict.fromkeys(q for q, _ in tagged_queries))
         logger.debug(
-            f"Retrieval gates: hyde={run_hyde}, agentic={run_agentic}, "
+            f"Retrieval gates: agentic={run_agentic}, "
             f"type={profile.analysis_type if profile else 'none'}, "
             f"conf={profile.analysis_confidence if profile else 0:.2f}, "
-            f"queries={len(unique_queries)}, embed={_embed_ms:.0f}ms"
+            f"queries={len(unique_queries)}"
         )
-
-        hyde_vectors_map: dict[str, list[list[float]]] = {}
-        if self._hyde_generator and self._embedder and run_hyde:
-            all_hypotheses: list[str] = []
-            hyp_ranges: list[tuple[str, int, int]] = []  # (query_text, start_idx, count)
-            for q_text in unique_queries:
-                try:
-                    hyps = self._hyde_generator.generate(q_text)
-                    hyp_ranges.append((q_text, len(all_hypotheses), len(hyps)))
-                    all_hypotheses.extend(hyps)
-                except Exception:
-                    hyp_ranges.append((q_text, 0, 0))
-            if all_hypotheses:
-                try:
-                    hyp_vecs = self._embedder.embed_batch(all_hypotheses, task_type="document")
-                    for q_text, start, count in hyp_ranges:
-                        if count > 0:
-                            hyde_vectors_map[q_text] = hyp_vecs[start : start + count]
-                except Exception as e:
-                    logger.warning(f"Batch HyDE embedding failed: {e}")
 
         # Submit all strategy calls concurrently
         _t_strategies = _time.perf_counter()
@@ -175,27 +120,18 @@ class RetrievalRouter:
         futures: list[tuple[Future, str | None]] = []  # (future, temporal_tag)
         try:
             for q, temporal_tag in tagged_queries:
-                qv = query_vectors.get(q)
-                # Empty list signals "HyDE intentionally skipped" to strategies
-                # (vs None = "not pre-computed, generate your own")
-                hv = hyde_vectors_map.get(q) if run_hyde else []
-
                 if not weights or weights.get("code", 1.0) > 0.05:
-                    fut = pool.submit(
-                        self._run_strategy, self._code_strategy, q, limit, profile, qv, hv
-                    )
+                    fut = pool.submit(self._run_strategy, self._code_strategy, q, limit, profile)
                     futures.append((fut, temporal_tag))
 
                 if self._section_strategy and (not weights or weights.get("section", 1.0) > 0.05):
                     fut = pool.submit(
-                        self._run_strategy, self._section_strategy, q, limit, profile, qv, hv
+                        self._run_strategy, self._section_strategy, q, limit, profile
                     )
                     futures.append((fut, temporal_tag))
 
                 if self._table_strategy and (not weights or weights.get("table", 1.0) > 0.05):
-                    fut = pool.submit(
-                        self._run_strategy_table, self._table_strategy, q, limit, profile, qv
-                    )
+                    fut = pool.submit(self._run_strategy, self._table_strategy, q, limit, profile)
                     futures.append((fut, temporal_tag))
 
             # Submit agentic search in the same pool
@@ -239,21 +175,6 @@ class RetrievalRouter:
             except Exception as e:
                 logger.debug(f"Corpus summary injection skipped: {e}")
 
-        # Chunk fallback when other results are insufficient
-        fallback = profile.fallback_to_chunks if profile else False
-        if (
-            self._chunk_strategy
-            and fallback
-            and (not weights or weights.get("chunk", 1.0) > 0.05)
-            and len(all_addresses) < self._config.top_addresses // 2
-        ):
-            try:
-                chunk_limit = self._config.top_addresses - len(all_addresses)
-                chunk_addresses = self._chunk_strategy.retrieve(query, chunk_limit)
-                all_addresses.extend(chunk_addresses)
-            except Exception as e:
-                logger.warning(f"Chunk fallback failed: {e}")
-
         # Deduplicate
         deduped = self._deduplicate(all_addresses)
 
@@ -280,40 +201,12 @@ class RetrievalRouter:
         query: str,
         limit: int,
         profile: Any,
-        query_vector: list[float] | None,
-        hyde_vectors: list[list[float]] | None,
     ) -> list[Address]:
-        """Run a single strategy with pre-computed vectors."""
+        """Run a single strategy."""
         try:
-            return strategy.retrieve(
-                query,
-                limit,
-                detection=profile,
-                query_vector=query_vector,
-                hyde_vectors=hyde_vectors,
-            )
+            return strategy.retrieve(query, limit, detection=profile)
         except Exception as e:
             logger.warning(f"{type(strategy).__name__} failed for '{query[:50]}': {e}")
-            return []
-
-    def _run_strategy_table(
-        self,
-        strategy: Any,
-        query: str,
-        limit: int,
-        profile: Any,
-        query_vector: list[float] | None,
-    ) -> list[Address]:
-        """Run table strategy with pre-computed query vector (no HyDE)."""
-        try:
-            return strategy.retrieve(
-                query,
-                limit,
-                detection=profile,
-                query_vector=query_vector,
-            )
-        except Exception as e:
-            logger.warning(f"TableSearchStrategy failed for '{query[:50]}': {e}")
             return []
 
     def _run_agentic(

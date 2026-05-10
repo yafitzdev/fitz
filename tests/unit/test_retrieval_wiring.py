@@ -30,13 +30,10 @@ def _make_config(**overrides) -> MagicMock:
     cfg.top_addresses = overrides.get("top_addresses", 10)
     cfg.enable_multi_query = overrides.get("enable_multi_query", False)
     cfg.multi_query_min_length = overrides.get("multi_query_min_length", 300)
-    cfg.fallback_to_chunks = overrides.get("fallback_to_chunks", False)
     cfg.min_relevance_score = overrides.get("min_relevance_score", 0)
     cfg.keyword_weight = overrides.get("keyword_weight", 0.4)
-    cfg.semantic_weight = overrides.get("semantic_weight", 0.6)
     cfg.code_bm25_weight = overrides.get("code_bm25_weight", 0.3)
     cfg.section_bm25_weight = overrides.get("section_bm25_weight", 0.6)
-    cfg.section_semantic_weight = overrides.get("section_semantic_weight", 0.4)
     return cfg
 
 
@@ -54,7 +51,6 @@ def _make_router(
 
     router = RetrievalRouter(
         code_strategy=code,
-        chunk_strategy=None,
         config=config,
         section_strategy=section_strategy,
         table_strategy=table_strategy,
@@ -240,11 +236,10 @@ class TestRouterPassesDetectionToStrategies:
 
 
 def _make_section_strategy(
-    section_store=None, embedder=None, config=None, raw_store=None
+    section_store=None, config=None, raw_store=None
 ) -> SectionSearchStrategy:
     """Build a SectionSearchStrategy with mocked dependencies."""
     store = section_store or MagicMock()
-    emb = embedder or MagicMock()
     cfg = config or _make_config()
     strategy = SectionSearchStrategy(store, cfg)
     strategy._raw_store = raw_store
@@ -275,7 +270,7 @@ class TestSectionKeywordBoostIncreasesScore:
         embedder = MagicMock()
         embedder.embed.return_value = [0.1] * 768
 
-        strategy = _make_section_strategy(section_store=section_store, embedder=embedder)
+        strategy = _make_section_strategy(section_store=section_store)
         results = strategy.retrieve("setup guide test", limit=5)
 
         # Score should include the 0.1 keyword boost on top of BM25 contribution
@@ -292,11 +287,10 @@ class TestSectionKeywordBoostIncreasesScore:
 
 
 def _make_code_strategy(
-    symbol_store=None, embedder=None, config=None, raw_store=None
+    symbol_store=None, config=None, raw_store=None
 ) -> CodeSearchStrategy:
     """Build a CodeSearchStrategy with mocked dependencies."""
     store = symbol_store or MagicMock()
-    emb = embedder or MagicMock()
     cfg = config or _make_config()
     strategy = CodeSearchStrategy(store, cfg)
     strategy._raw_store = raw_store
@@ -331,7 +325,7 @@ class TestCodeKeywordBoostIncreasesScore:
         embedder = MagicMock()
         embedder.embed.return_value = [0.1] * 768
 
-        strategy = _make_code_strategy(symbol_store=symbol_store, embedder=embedder)
+        strategy = _make_code_strategy(symbol_store=symbol_store)
         results = strategy.retrieve("parse config file", limit=5)
 
         assert len(results) == 1
@@ -360,7 +354,7 @@ class TestKeywordBoostSkipsShortTerms:
         embedder = MagicMock()
         embedder.embed.return_value = [0.1] * 768
 
-        strategy = _make_section_strategy(section_store=section_store, embedder=embedder)
+        strategy = _make_section_strategy(section_store=section_store)
         # All words are shorter than 3 chars
         results = strategy.retrieve("is a do", limit=5)
 

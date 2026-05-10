@@ -24,14 +24,10 @@ from fitz_sage.retrieval.vocabulary.models import Keyword
 # ---------------------------------------------------------------------------
 
 
-def _make_router_config(
-    top_addresses: int = 10,
-    fallback_to_chunks: bool = False,
-) -> MagicMock:
+def _make_router_config(top_addresses: int = 10) -> MagicMock:
     """Create a mock FitzKragConfig for the router."""
     cfg = MagicMock()
     cfg.top_addresses = top_addresses
-    cfg.fallback_to_chunks = fallback_to_chunks
     cfg.enable_multi_query = False
     return cfg
 
@@ -79,7 +75,6 @@ def _make_router(
     config = _make_router_config(top_addresses=top_addresses)
     router = RetrievalRouter(
         code_strategy=code_strat,
-        chunk_strategy=None,
         config=config,
     )
     if keyword_matcher:

@@ -39,8 +39,6 @@ class SectionSearchStrategy:
         limit: int,
         detection: Any = None,
         *,
-        query_vector: list[float] | None = None,  # accepted for caller compat; ignored
-        hyde_vectors: list[list[float]] | None = None,  # ignored
         inject_corpus_summaries: bool = False,
     ) -> list[Address]:
         """
@@ -50,10 +48,6 @@ class SectionSearchStrategy:
         2. Keyword-enrichment boost (domain-scaled)
         3. Optional freshness boost
         4. Parent-title breadcrumb enrichment
-
-        ``query_vector`` and ``hyde_vectors`` are accepted for backward
-        compatibility with the router signature but are no longer used —
-        fitz-sage has no dense retrieval path.
         """
         if inject_corpus_summaries:
             return [self._to_address(s) for s in self._section_store.get_corpus_summaries()]

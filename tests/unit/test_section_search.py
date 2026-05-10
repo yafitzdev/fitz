@@ -1,5 +1,5 @@
 # tests/unit/test_section_search.py
-"""Tests for SectionSearchStrategy — BM25 + semantic hybrid retrieval."""
+"""Tests for SectionSearchStrategy — BM25 retrieval over the section index."""
 
 from __future__ import annotations
 
@@ -19,22 +19,14 @@ def mock_section_store():
 
 
 @pytest.fixture
-def mock_embedder():
-    embedder = MagicMock()
-    embedder.embed.return_value = [0.1, 0.2, 0.3]
-    return embedder
-
-
-@pytest.fixture
 def mock_config():
     config = MagicMock()
     config.section_bm25_weight = 0.6
-    config.section_semantic_weight = 0.4
     return config
 
 
 @pytest.fixture
-def strategy(mock_section_store, mock_embedder, mock_config):
+def strategy(mock_section_store, mock_config):
     return SectionSearchStrategy(mock_section_store, mock_config)
 
 
@@ -51,7 +43,6 @@ def _make_section_result(
     position=0,
     metadata=None,
     bm25_score=None,
-    score=None,
 ):
     d = {
         "id": id_,
@@ -68,23 +59,20 @@ def _make_section_result(
     }
     if bm25_score is not None:
         d["bm25_score"] = bm25_score
-    if score is not None:
-        d["score"] = score
     return d
 
 
 class TestRetrieve:
-    def test_returns_addresses_with_section_kind(self, strategy, mock_section_store, mock_embedder):
+    def test_returns_addresses_with_section_kind(self, strategy, mock_section_store):
         mock_section_store.search_bm25.return_value = [
             _make_section_result(bm25_score=0.9),
         ]
-        mock_section_store.search_by_vector.return_value = []
 
         results = strategy.retrieve("introduction", limit=5)
         assert len(results) == 1
         assert results[0].kind == AddressKind.SECTION
 
-    def test_address_contains_section_metadata(self, strategy, mock_section_store, mock_embedder):
+    def test_address_contains_section_metadata(self, strategy, mock_section_store):
         mock_section_store.search_bm25.return_value = [
             _make_section_result(
                 id_="sec1",
@@ -96,7 +84,6 @@ class TestRetrieve:
                 bm25_score=0.8,
             ),
         ]
-        mock_section_store.search_by_vector.return_value = []
         # Parent lookup returns the parent section with its title
         mock_section_store.get.return_value = _make_section_result(
             id_="parent1", title="Parent Section"
@@ -112,21 +99,10 @@ class TestRetrieve:
         assert addr.metadata["page_end"] == 8
         assert addr.metadata["parent_section_id"] == "parent1"
 
-    def test_semantic_fallback_on_embed_failure(self, strategy, mock_section_store, mock_embedder):
-        mock_section_store.search_bm25.return_value = [
-            _make_section_result(bm25_score=0.7),
-        ]
-        mock_embedder.embed.side_effect = RuntimeError("Embed failed")
-
-        results = strategy.retrieve("query", limit=5)
-        # Should still return BM25 results
-        assert len(results) == 1
-
-    def test_respects_limit(self, strategy, mock_section_store, mock_embedder):
+    def test_respects_limit(self, strategy, mock_section_store):
         mock_section_store.search_bm25.return_value = [
             _make_section_result(id_=f"sec{i}", bm25_score=0.9 - i * 0.1) for i in range(10)
         ]
-        mock_section_store.search_by_vector.return_value = []
 
         results = strategy.retrieve("query", limit=3)
         assert len(results) == 3

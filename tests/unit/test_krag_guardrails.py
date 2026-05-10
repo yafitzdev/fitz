@@ -43,7 +43,6 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine = FitzKragEngine.__new__(FitzKragEngine)
     engine._config = config
     engine._chat = MagicMock(name="chat")
-    engine._embedder = MagicMock(name="embedder")
     engine._connection_manager = MagicMock(name="connection_manager")
     engine._raw_store = MagicMock(name="raw_store")
     engine._symbol_store = MagicMock(name="symbol_store")
@@ -73,7 +72,6 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine._bg_worker = None
     engine._manifest = None
     engine._source_dir = None
-    engine._hyde_generator = None
     engine._query_batcher = MagicMock(name="query_batcher")
     return engine
 

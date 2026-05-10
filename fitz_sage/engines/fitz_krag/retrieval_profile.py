@@ -44,11 +44,9 @@ class RetrievalProfile:
     comparison_entities: list[str] = field(default_factory=list)
 
     # Feature gates
-    run_hyde: bool = True
     run_multi_query: bool = False
     run_agentic: bool = True
     inject_corpus_summaries: bool = False
-    fallback_to_chunks: bool = True
 
     # Temporal metadata (for tagging query variations with references)
     temporal_references: list[str] = field(default_factory=list)
@@ -120,7 +118,6 @@ def build_retrieval_profile(
     comparison_entities: list[str] = []
     boost_recency = False
     boost_authority = False
-    has_complex_intent = False
 
     temporal_references: list[str] = []
 
@@ -131,11 +128,6 @@ def build_retrieval_profile(
         comparison_entities = list(getattr(detection, "comparison_entities", []) or [])
         boost_recency = bool(getattr(detection, "boost_recency", False))
         boost_authority = bool(getattr(detection, "boost_authority", False))
-        has_complex_intent = bool(
-            getattr(detection, "has_comparison_intent", False)
-            or getattr(detection, "has_temporal_intent", False)
-            or getattr(detection, "has_aggregation_intent", False)
-        )
 
         # Extract temporal references for tagging query variations
         temporal = getattr(detection, "temporal", None)
@@ -170,9 +162,6 @@ def build_retrieval_profile(
     elif answer_type in ("comparative", "exploratory"):
         top_read = int(top_read * 1.2)
 
-    # HyDE removed: no embedder, no hypothesis-document leg.
-    run_hyde = False
-
     # --- Multi-query gate (from router._should_run_multi_query) ---
     run_multi_query = (
         config.enable_multi_query
@@ -195,9 +184,6 @@ def build_retrieval_profile(
     if analysis and primary_type not in ("code", "data") and confidence < 0.6:
         inject_corpus_summaries = True
 
-    # ChunkFallbackStrategy deleted; gate kept on the profile for caller compat.
-    fallback_to_chunks = False
-
     # --- Entity expansion limit (from engine._is_thematic) ---
     is_thematic = analysis is not None and primary_type not in ("code", "data") and confidence < 0.6
     entity_expansion_limit = 12 if is_thematic else 3
@@ -213,11 +199,9 @@ def build_retrieval_profile(
         comparison_queries=comparison_queries,
         comparison_entities=comparison_entities,
         temporal_references=temporal_references,
-        run_hyde=run_hyde,
         run_multi_query=run_multi_query,
         run_agentic=run_agentic,
         inject_corpus_summaries=inject_corpus_summaries,
-        fallback_to_chunks=fallback_to_chunks,
         boost_recency=boost_recency,
         boost_authority=boost_authority,
         entity_expansion_limit=entity_expansion_limit,

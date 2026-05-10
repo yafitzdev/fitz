@@ -31,7 +31,6 @@ import logging
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 logging.basicConfig(
@@ -250,8 +249,8 @@ def run_retrieval(engine, query_text: str, top_k: int = 15):
     """Run the retrieval pipeline in isolation and return ReadResults.
 
     Executes:
-      1. Analysis + Detection + Rewriting + Embedding (parallel)
-      2. Retrieval router (section search: vector + BM25 + RRF)
+      1. Analysis + Detection + Rewriting
+      2. Retrieval router (BM25 + keyword strategies)
       3. Reranking
       4. Content reading
 
@@ -262,18 +261,12 @@ def run_retrieval(engine, query_text: str, top_k: int = 15):
     saved_agentic = getattr(engine._retrieval_router, "_agentic_strategy", None)
     engine._retrieval_router._agentic_strategy = None
 
-    # Disable HyDE — it times out consistently on local ollama (120s per attempt,
-    # multiple retries) adding 200-500s per query with no benefit when vectors work.
-    saved_hyde = engine._retrieval_router._hyde_generator
-    engine._retrieval_router._hyde_generator = None
-
     sanitized = re.sub(r"<[^>]+>", "", query_text).strip()[:500]
 
     # 1. Rewrite-first pipeline (mirrors engine.answer dispatch)
     retrieval_query = sanitized
     rewrite_result = None
 
-    # Step 1: Rewrite
     if engine._query_rewriter:
         try:
             rewrite_result = engine._query_rewriter.rewrite(sanitized)
@@ -282,7 +275,6 @@ def run_retrieval(engine, query_text: str, top_k: int = 15):
         except Exception:
             pass
 
-    # Step 2: Batch(analysis + detection) on rewritten query + embed
     classify_query = retrieval_query
     fast_analysis = engine._fast_analyze(classify_query)
     need_llm_analysis = fast_analysis is None
@@ -299,42 +291,26 @@ def run_retrieval(engine, query_text: str, top_k: int = 15):
             detection_limit_to = flagged
 
     if need_llm_analysis or need_detection:
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            batch_future = pool.submit(
-                engine._query_batcher.batch_classify,
+        try:
+            batch_result = engine._query_batcher.batch_classify(
                 classify_query,
                 include_analysis=need_llm_analysis,
                 include_detection=need_detection,
                 detection_limit_to=detection_limit_to,
                 include_rewriting=False,
             )
-            embed_future = pool.submit(engine._embedder.embed_batch, [sanitized])
-
-            try:
-                batch_result = batch_future.result()
-                analysis = batch_result.analysis if batch_result.analysis else fast_analysis
-                detection = (
-                    engine._build_detection_summary(batch_result.detection_results, classify_query)
-                    if need_detection and batch_result.detection_results is not None
-                    else None
-                )
-            except Exception:
-                analysis = fast_analysis
-                detection = None
-
-            try:
-                vectors = embed_future.result()
-                precomputed = dict(zip([sanitized], vectors))
-            except Exception:
-                precomputed = None
+            analysis = batch_result.analysis if batch_result.analysis else fast_analysis
+            detection = (
+                engine._build_detection_summary(batch_result.detection_results, classify_query)
+                if need_detection and batch_result.detection_results is not None
+                else None
+            )
+        except Exception:
+            analysis = fast_analysis
+            detection = None
     else:
         analysis = fast_analysis
         detection = None
-        try:
-            vectors = engine._embedder.embed_batch([sanitized], task_type="query")
-            precomputed = dict(zip([sanitized], vectors))
-        except Exception:
-            precomputed = None
 
     # 2. Build retrieval profile and retrieve addresses
     from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
@@ -349,12 +325,10 @@ def run_retrieval(engine, query_text: str, top_k: int = 15):
             retrieval_query,
             profile,
             rewrite_result=rewrite_result,
-            precomputed_query_vectors=precomputed,
         )
 
     if not addresses:
         engine._retrieval_router._agentic_strategy = saved_agentic
-        engine._retrieval_router._hyde_generator = saved_hyde
         return []
 
     # 3. Rerank
@@ -363,7 +337,6 @@ def run_retrieval(engine, query_text: str, top_k: int = 15):
 
     # 4. Read content — restore disabled components
     engine._retrieval_router._agentic_strategy = saved_agentic
-    engine._retrieval_router._hyde_generator = saved_hyde
     if engine._hop_controller:
         return read_results or []
     return engine._reader.read(addresses, min(len(addresses), top_k))

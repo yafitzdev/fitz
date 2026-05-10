@@ -39,9 +39,6 @@ class CodeSearchStrategy:
         query: str,
         limit: int,
         detection: Any = None,
-        *,
-        query_vector: list[float] | None = None,  # accepted for caller compat; ignored
-        hyde_vectors: list[list[float]] | None = None,  # ignored
     ) -> list[Address]:
         """
         Retrieve code symbol addresses matching the query.
@@ -50,9 +47,6 @@ class CodeSearchStrategy:
         2. BM25 full-text search (when content_tsv exists)
         3. Merge with configurable keyword-vs-BM25 weights
         4. Keyword-enrichment + freshness boosts
-
-        ``query_vector`` and ``hyde_vectors`` are accepted for backward
-        compatibility with the router signature but are no longer used.
         """
         fetch_limit = limit * 2
 

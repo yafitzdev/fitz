@@ -38,8 +38,6 @@ class TableSearchStrategy:
         query: str,
         limit: int,
         detection: Any = None,
-        *,
-        query_vector: list[float] | None = None,  # accepted for caller compat; ignored
     ) -> list[Address]:
         """Retrieve table addresses matching the query by name/column keyword match."""
         fetch_limit = limit * 2

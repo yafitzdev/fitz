@@ -23,14 +23,10 @@ from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 # ---------------------------------------------------------------------------
 
 
-def _make_config(
-    top_addresses: int = 10,
-    fallback_to_chunks: bool = True,
-) -> MagicMock:
+def _make_config(top_addresses: int = 10) -> MagicMock:
     """Create a mock FitzKragConfig with the fields the router reads."""
     cfg = MagicMock()
     cfg.top_addresses = top_addresses
-    cfg.fallback_to_chunks = fallback_to_chunks
     return cfg
 
 
@@ -54,14 +50,12 @@ def _addr(
 def _code_profile(
     entities: tuple[str, ...] = (),
     top_k: int = 10,
-    fallback_to_chunks: bool = True,
 ) -> RetrievalProfile:
     """RetrievalProfile with CODE-like weights."""
     return RetrievalProfile(
         strategy_weights={"code": 0.8, "section": 0.1, "table": 0.05, "chunk": 0.05},
         entities=entities,
         top_k=top_k,
-        fallback_to_chunks=fallback_to_chunks,
         analysis_type="code",
         analysis_confidence=0.9,
     )
@@ -73,14 +67,12 @@ def _custom_weight_profile(
     chunk: float,
     entities: tuple[str, ...] = (),
     top_k: int = 10,
-    fallback_to_chunks: bool = True,
 ) -> RetrievalProfile:
     """Build a RetrievalProfile with custom strategy weights."""
     return RetrievalProfile(
         strategy_weights={"code": code, "section": section, "chunk": chunk},
         entities=entities,
         top_k=top_k,
-        fallback_to_chunks=fallback_to_chunks,
         analysis_type="general",
         analysis_confidence=0.8,
     )
@@ -102,19 +94,16 @@ class TestRetrievalRouter:
         code_addrs = [_addr(score=0.9), _addr(score=0.7, location="mod.bar")]
         code_strat.retrieve.return_value = code_addrs
 
-        config = _make_config(top_addresses=10, fallback_to_chunks=False)
+        config = _make_config(top_addresses=10)
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             section_strategy=None,
         )
 
         result = router.retrieve("find func")
 
-        code_strat.retrieve.assert_called_once_with(
-            "find func", 10, detection=None, query_vector=None, hyde_vectors=None
-        )
+        code_strat.retrieve.assert_called_once_with("find func", 10, detection=None)
         assert len(result) == 2
         # Without profile, sorted by score descending
         assert result[0].score >= result[1].score
@@ -131,11 +120,10 @@ class TestRetrievalRouter:
         section_strat.retrieve.return_value = [
             _addr(AddressKind.SECTION, score=0.7, location="README#setup"),
         ]
-        config = _make_config(fallback_to_chunks=False)
+        config = _make_config()
 
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strat,
         )
@@ -159,10 +147,9 @@ class TestRetrievalRouter:
             _addr(AddressKind.SECTION, score=0.6, location="doc#s"),
         ]
 
-        config = _make_config(fallback_to_chunks=False)
+        config = _make_config()
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strat,
         )
@@ -175,47 +162,6 @@ class TestRetrievalRouter:
         code_strat.retrieve.assert_called_once()
         section_strat.retrieve.assert_not_called()
         assert len(result) >= 1
-
-    # -- test_retrieve_chunk_fallback_when_insufficient -------------------
-
-    # -- test_retrieve_no_chunk_fallback_when_sufficient ------------------
-
-    def test_retrieve_no_chunk_fallback_when_sufficient(self):
-        """Enough results from code -> chunk NOT called."""
-        code_strat = MagicMock()
-        # 6 results with limit 10 -> 6 >= 5 -> no fallback
-        code_strat.retrieve.return_value = [_addr(score=0.9, location=f"f{i}") for i in range(6)]
-        chunk_strat = MagicMock()
-
-        config = _make_config(top_addresses=10, fallback_to_chunks=True)
-        router = RetrievalRouter(
-            code_strategy=code_strat,
-            chunk_strategy=chunk_strat,
-            config=config,
-        )
-
-        router.retrieve("search")
-
-        chunk_strat.retrieve.assert_not_called()
-
-    # -- test_retrieve_no_chunk_fallback_disabled -------------------------
-
-    def test_retrieve_no_chunk_fallback_disabled(self):
-        """fallback_to_chunks=False -> chunk NOT called even if few results."""
-        code_strat = MagicMock()
-        code_strat.retrieve.return_value = [_addr(score=0.9, location="a.f")]
-        chunk_strat = MagicMock()
-
-        config = _make_config(top_addresses=10, fallback_to_chunks=False)
-        router = RetrievalRouter(
-            code_strategy=code_strat,
-            chunk_strategy=chunk_strat,
-            config=config,
-        )
-
-        router.retrieve("search")
-
-        chunk_strat.retrieve.assert_not_called()
 
     # -- test_retrieve_deduplicates ---------------------------------------
 
@@ -240,10 +186,9 @@ class TestRetrievalRouter:
             ),
         ]
 
-        config = _make_config(fallback_to_chunks=False)
+        config = _make_config()
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
             section_strategy=section_strat,
         )
@@ -263,10 +208,9 @@ class TestRetrievalRouter:
         sym_lo = _addr(AddressKind.SYMBOL, score=0.9, location="hi_sym")
         code_strat.retrieve.return_value = [sym_hi, sym_lo]
 
-        config = _make_config(fallback_to_chunks=False)
+        config = _make_config()
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
         )
 
@@ -289,10 +233,9 @@ class TestRetrievalRouter:
             _addr(score=0.6, location="mid"),
         ]
 
-        config = _make_config(fallback_to_chunks=False)
+        config = _make_config()
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
         )
 
@@ -309,10 +252,9 @@ class TestRetrievalRouter:
             _addr(score=1.0 - i * 0.05, location=f"f{i}") for i in range(15)
         ]
 
-        config = _make_config(top_addresses=5, fallback_to_chunks=False)
+        config = _make_config(top_addresses=5)
         router = RetrievalRouter(
             code_strategy=code_strat,
-            chunk_strategy=None,
             config=config,
         )
 

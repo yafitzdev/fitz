@@ -28,48 +28,32 @@ class TestHarnessOverhead:
         self.runner = krag_e2e_runner
 
     def test_retrieval_without_llm(self):
-        """Pure retrieval (vector + BM25 + RRF) should complete in < 5s.
+        """Pure retrieval (BM25 + keyword) should complete in < 5s.
 
-        Disables all LLM-backed features (HyDE, multi-query, agentic) and
-        pre-embeds the query to measure only the retrieval harness.
+        Disables LLM-backed features (multi-query, agentic) on the router
+        to measure only the retrieval harness.
         """
+        from dataclasses import replace
+
         from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
 
         engine = self.runner.engine
         router = engine._retrieval_router
-        profile = build_retrieval_profile(None, None, engine._config)
-        # Disable LLM features on the profile
-        profile.run_hyde = False
-        profile.run_multi_query = False
-        profile.run_agentic = False
+        base_profile = build_retrieval_profile(None, None, engine._config)
+        profile = replace(base_profile, run_multi_query=False, run_agentic=False)
 
-        # Disable LLM features on the router
-        saved_hyde = router._hyde_generator
         saved_agentic = getattr(router, "_agentic_strategy", None)
         saved_chat = getattr(router, "_chat_factory", None)
-        router._hyde_generator = None
         router._agentic_strategy = None
         router._chat_factory = None
-
-        # Pre-embed the query outside the measurement
-        try:
-            qvec = engine._embedder.embed("TechCorp electric vehicles", task_type="query")
-            precomputed = {"TechCorp electric vehicles": qvec}
-        except Exception:
-            precomputed = None
 
         try:
             times = []
             for _ in range(5):
                 start = time.perf_counter()
-                router.retrieve(
-                    "TechCorp electric vehicles",
-                    profile,
-                    precomputed_query_vectors=precomputed,
-                )
+                router.retrieve("TechCorp electric vehicles", profile)
                 times.append((time.perf_counter() - start) * 1000)
         finally:
-            router._hyde_generator = saved_hyde
             router._agentic_strategy = saved_agentic
             router._chat_factory = saved_chat
 

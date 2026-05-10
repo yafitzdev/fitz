@@ -264,7 +264,6 @@ class FitzKragEngine:
         table_strategy = TableSearchStrategy(self._table_store, self._config)
         self._retrieval_router = RetrievalRouter(
             code_strategy=code_strategy,
-            chunk_strategy=None,
             config=self._config,
             section_strategy=section_strategy,
             table_strategy=table_strategy,
@@ -706,19 +705,11 @@ class FitzKragEngine:
             timings: list[tuple[str, float]] = []
             pipeline_start = time.perf_counter()
 
-            # 1. Rewrite-first pipeline with parallel embed:
+            # 1. Rewrite-first pipeline:
             #    Step 1: Rewrite query (if configured)
-            #    Step 2: Batch(Analysis + Detection) on rewritten query + Embed (parallel)
-            #
-            # Rewriting runs first so analysis and detection classify the
-            # cleaned-up query. Embed runs in parallel with classify since
-            # nomic-embed-text (595MB) + chat_balanced (3.4GB) both fit in
-            # VRAM — no model swap on ollama. Single chat tier eliminates
-            # the old fast/balanced/smart swap problem.
+            #    Step 2: Batch(Analysis + Detection) on rewritten query
             _progress("Analyzing query...")
             t0 = time.perf_counter()
-            from concurrent.futures import ThreadPoolExecutor
-
             from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
 
             retrieval_query = sanitized
@@ -783,14 +774,11 @@ class FitzKragEngine:
                     )
                     detection = None
                     batch_result = None
-
-                precomputed_query_vector = None
             else:
                 # No LLM needed: fast_analyze succeeded, no detection needed
                 analysis = fast_analysis
                 detection = None
                 batch_result = None
-                precomputed_query_vector = None
             timings.append(("Analysis + Detection", time.perf_counter() - t0))
 
             # Build retrieval profile — single object with all gates and signals
@@ -821,7 +809,6 @@ class FitzKragEngine:
                     profile,
                     rewrite_result=rewrite_result,
                     progress=progress,
-                    precomputed_query_vectors=precomputed_query_vector,
                 )
             timings.append(("Retrieval", time.perf_counter() - t0))
 
