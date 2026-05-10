@@ -1,0 +1,177 @@
+# tests/unit/test_cli_endpoint_flags.py
+"""
+Unit tests for `fitz query --endpoint / --model / --api-key-env` flags.
+
+These flags let users point the CLI at any OpenAI-compatible HTTP
+server without editing engine YAML — the canonical UX for the
+single-protocol architecture.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from fitz_sage.cli.commands.query import _apply_chat_overrides
+
+
+@pytest.fixture(autouse=True)
+def _skip_firstrun():
+    with patch("fitz_sage.core.firstrun.needs_firstrun", return_value=False):
+        yield
+
+
+class TestApplyChatOverrides:
+    """The override helper builds a config-with-overrides per the flags."""
+
+    def test_no_flags_returns_none(self) -> None:
+        """No flags = no override = engine loads its own config."""
+        result = _apply_chat_overrides("fitz_krag", None, None, None)
+        assert result is None
+
+    def test_unknown_engine_warns_and_returns_none(self) -> None:
+        """Unsupported engines fall through with a warning."""
+        with patch("fitz_sage.cli.commands.query.ui") as mock_ui:
+            result = _apply_chat_overrides(
+                "some_other_engine",
+                "http://localhost:8080/v1",
+                "qwen2.5-7b",
+                None,
+            )
+        assert result is None
+        mock_ui.warning.assert_called_once()
+
+    def test_endpoint_with_model(self) -> None:
+        """--endpoint + --model rewrite chat_* tiers + chat_base_url."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_config.chat_smart = "endpoint/qwen2.5-7b-instruct"
+        mock_config.model_copy.return_value = MagicMock()
+        mock_registry.load_config.return_value = mock_config
+
+        with patch(
+            "fitz_sage.runtime.registry.get_engine_registry",
+            return_value=mock_registry,
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                "http://localhost:8080/v1",
+                "qwen2.5-7b",
+                None,
+            )
+
+        mock_config.model_copy.assert_called_once_with(
+            update={
+                "chat_base_url": "http://localhost:8080/v1",
+                "chat_fast": "endpoint/qwen2.5-7b",
+                "chat_balanced": "endpoint/qwen2.5-7b",
+                "chat_smart": "endpoint/qwen2.5-7b",
+            }
+        )
+
+    def test_endpoint_without_model_reuses_existing_model(self) -> None:
+        """--endpoint alone keeps the existing model name, swaps the URL."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_config.chat_smart = "endpoint/qwen2.5-14b-instruct"
+        mock_config.model_copy.return_value = MagicMock()
+        mock_registry.load_config.return_value = mock_config
+
+        with patch(
+            "fitz_sage.runtime.registry.get_engine_registry",
+            return_value=mock_registry,
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                "http://localhost:8080/v1",
+                None,
+                None,
+            )
+
+        update = mock_config.model_copy.call_args.kwargs["update"]
+        assert update["chat_base_url"] == "http://localhost:8080/v1"
+        assert update["chat_smart"] == "endpoint/qwen2.5-14b-instruct"
+
+    def test_endpoint_without_model_existing_no_slash(self) -> None:
+        """If existing chat_smart has no slash, use it as the bare model name."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_config.chat_smart = "qwen2.5-14b-instruct"
+        mock_config.model_copy.return_value = MagicMock()
+        mock_registry.load_config.return_value = mock_config
+
+        with patch(
+            "fitz_sage.runtime.registry.get_engine_registry",
+            return_value=mock_registry,
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                "http://localhost:8080/v1",
+                None,
+                None,
+            )
+
+        update = mock_config.model_copy.call_args.kwargs["update"]
+        assert update["chat_smart"] == "endpoint/qwen2.5-14b-instruct"
+
+    def test_api_key_env_only(self) -> None:
+        """--api-key-env without --endpoint still applies."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_config.chat_smart = "endpoint/qwen2.5-7b"
+        mock_config.model_copy.return_value = MagicMock()
+        mock_registry.load_config.return_value = mock_config
+
+        with patch(
+            "fitz_sage.runtime.registry.get_engine_registry",
+            return_value=mock_registry,
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                None,
+                None,
+                "TOGETHER_API_KEY",
+            )
+
+        update = mock_config.model_copy.call_args.kwargs["update"]
+        assert update == {"chat_api_key_env": "TOGETHER_API_KEY"}
+
+    def test_all_three_flags(self) -> None:
+        """All three flags compose cleanly (cloud-style endpoint with auth)."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_config.chat_smart = "endpoint/qwen2.5-7b"
+        mock_config.model_copy.return_value = MagicMock()
+        mock_registry.load_config.return_value = mock_config
+
+        with patch(
+            "fitz_sage.runtime.registry.get_engine_registry",
+            return_value=mock_registry,
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                "https://api.together.xyz/v1",
+                "meta-llama-3.1-70b",
+                "TOGETHER_API_KEY",
+            )
+
+        update = mock_config.model_copy.call_args.kwargs["update"]
+        assert update["chat_base_url"] == "https://api.together.xyz/v1"
+        assert update["chat_smart"] == "endpoint/meta-llama-3.1-70b"
+        assert update["chat_api_key_env"] == "TOGETHER_API_KEY"
+
+
+class TestQueryCommandFlagPlumbing:
+    """End-to-end flag plumbing through the CLI runner."""
+
+    def test_flags_appear_in_help(self) -> None:
+        from typer.testing import CliRunner
+
+        from fitz_sage.cli.cli import app
+
+        result = CliRunner().invoke(app, ["query", "--help"])
+        assert result.exit_code == 0
+        assert "--endpoint" in result.output
+        assert "--model" in result.output
+        assert "--api-key-env" in result.output

@@ -60,6 +60,73 @@ def _get_root_cause(exc: Exception) -> str:
     return str(exc)
 
 
+def _apply_chat_overrides(
+    engine_name: str,
+    endpoint: Optional[str],
+    model: Optional[str],
+    api_key_env: Optional[str],
+):
+    """
+    Build a config object with CLI chat overrides applied.
+
+    Returns ``None`` when no overrides are set (the engine then loads
+    its own config via the registry). Returns an engine-specific
+    config when ``--endpoint`` / ``--model`` / ``--api-key-env`` are
+    supplied so the engine binds chat to the user's endpoint without
+    needing a YAML edit.
+
+    Currently supports the ``fitz_krag`` engine; other engines fall
+    through to the unmodified default config and the flags are a
+    no-op (with a UI warning).
+    """
+    if endpoint is None and model is None and api_key_env is None:
+        return None
+
+    if engine_name != "fitz_krag":
+        ui.warning(
+            f"--endpoint / --model / --api-key-env are not supported "
+            f"for engine '{engine_name}'. Ignoring."
+        )
+        return None
+
+    from fitz_sage.runtime.registry import get_engine_registry
+
+    registry = get_engine_registry()
+    base_config = registry.load_config("fitz_krag", None)
+
+    # base_config is a FitzKragConfig (pydantic). Build a mutated copy.
+    overrides: Dict[str, Any] = {}
+
+    if endpoint is not None:
+        overrides["chat_base_url"] = endpoint
+
+    if model is not None:
+        # Apply spec to all three tiers — typical for a single
+        # llama-server with one loaded model.
+        spec = f"endpoint/{model}"
+        overrides["chat_fast"] = spec
+        overrides["chat_balanced"] = spec
+        overrides["chat_smart"] = spec
+    elif endpoint is not None:
+        # User gave --endpoint but no --model. Reuse the configured
+        # chat_smart model name, but route it via the new endpoint.
+        # If the existing spec isn't endpoint/<model>, switch it.
+        existing = base_config.chat_smart
+        if "/" in existing:
+            _, model_name = existing.split("/", 1)
+        else:
+            model_name = existing
+        spec = f"endpoint/{model_name}"
+        overrides["chat_fast"] = spec
+        overrides["chat_balanced"] = spec
+        overrides["chat_smart"] = spec
+
+    if api_key_env is not None:
+        overrides["chat_api_key_env"] = api_key_env
+
+    return base_config.model_copy(update=overrides)
+
+
 # =============================================================================
 # Main Command
 # =============================================================================
@@ -71,6 +138,9 @@ def command(
     collection: Optional[str] = None,
     engine: Optional[str] = None,
     chat: bool = False,
+    endpoint: Optional[str] = None,
+    model: Optional[str] = None,
+    api_key_env: Optional[str] = None,
 ) -> None:
     """Query your knowledge base."""
     # =========================================================================
@@ -79,7 +149,9 @@ def command(
 
     from fitz_sage.core.firstrun import needs_firstrun, run_firstrun_setup
 
-    if needs_firstrun():
+    # Skip first-run if user supplied --endpoint — they're explicitly
+    # configuring at the CLI, no detection needed.
+    if needs_firstrun() and endpoint is None:
         if not run_firstrun_setup():
             raise typer.Exit(1)
 
@@ -111,15 +183,25 @@ def command(
         ui.error(f"Path does not exist: {source}")
         raise typer.Exit(1)
 
+    # Build CLI override config (None if no flags set).
+    override_config = _apply_chat_overrides(engine, endpoint, model, api_key_env)
+
     # Engines with persistent ingest support
     if caps.supports_persistent_ingest:
-        _run_persistent_ingest_query(question, source, collection, engine, chat=chat)
+        _run_persistent_ingest_query(
+            question,
+            source,
+            collection,
+            engine,
+            chat=chat,
+            override_config=override_config,
+        )
     # Engines with collection support use FitzService
     elif caps.supports_collections:
-        _run_collection_query(question, collection, engine)
+        _run_collection_query(question, collection, engine, override_config=override_config)
     else:
         # Engines without collections use generic runtime path
-        _run_generic_query(question, engine)
+        _run_generic_query(question, engine, override_config=override_config)
 
 
 def _show_documents_required_message(engine_name: str, caps) -> None:
@@ -180,6 +262,7 @@ def _run_persistent_ingest_query(
     engine_name: str,
     *,
     chat: bool = False,
+    override_config: Any = None,
 ) -> None:
     """Run query using an engine with persistent ingest support."""
 
@@ -221,7 +304,7 @@ def _run_persistent_ingest_query(
 
         wall_start = time.perf_counter()
 
-        engine_instance = create_engine(engine_name)
+        engine_instance = create_engine(engine_name, config=override_config)
         t_engine = time.perf_counter() - wall_start
 
         # Point at source if provided
@@ -260,9 +343,19 @@ def _run_persistent_ingest_query(
 
 
 def _run_collection_query(
-    question: Optional[str], collection: Optional[str], engine_name: str
+    question: Optional[str],
+    collection: Optional[str],
+    engine_name: str,
+    *,
+    override_config: Any = None,
 ) -> None:
     """Run query using FitzService for fitz_krag engine."""
+    if override_config is not None:
+        ui.warning(
+            "--endpoint / --model overrides are not yet plumbed through "
+            "FitzService; ignoring. Use --source to use overrides via "
+            "the persistent-ingest path."
+        )
     service = FitzService()
 
     # Collection selection
@@ -298,7 +391,12 @@ def _run_collection_query(
         raise typer.Exit(1)
 
 
-def _run_generic_query(question: Optional[str], engine_name: str) -> None:
+def _run_generic_query(
+    question: Optional[str],
+    engine_name: str,
+    *,
+    override_config: Any = None,
+) -> None:
     """Run query using generic runtime path."""
     # Prompt for question if not provided
     if question is None:
@@ -311,7 +409,7 @@ def _run_generic_query(question: Optional[str], engine_name: str) -> None:
     print()
 
     try:
-        engine_instance = create_engine(engine_name)
+        engine_instance = create_engine(engine_name, config=override_config)
         from fitz_sage.core import Query
 
         query = Query(text=question_text)

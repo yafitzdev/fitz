@@ -54,11 +54,48 @@ def query(
     collection: Optional[str] = typer.Option(None, "--collection", "-c", help="Collection name."),
     engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
     chat: bool = typer.Option(False, "--chat", help="Interactive chat mode."),
+    endpoint: Optional[str] = typer.Option(
+        None,
+        "--endpoint",
+        help=(
+            "OpenAI-compatible chat endpoint URL "
+            "(e.g. http://localhost:8080/v1, https://api.openai.com/v1). "
+            "Overrides chat_base_url; pairs with --model."
+        ),
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help=(
+            "Chat model name to send to --endpoint. "
+            "If --endpoint is set without --model, the engine's "
+            "configured chat_smart model is used."
+        ),
+    ),
+    api_key_env: Optional[str] = typer.Option(
+        None,
+        "--api-key-env",
+        help=(
+            "Environment variable name holding an API key for --endpoint "
+            "(e.g. OPENAI_API_KEY, TOGETHER_API_KEY). Omit for "
+            "unauthenticated local servers."
+        ),
+    ),
 ) -> None:
     """Query the knowledge base. Use --source to register docs, --chat for interactive mode."""
     from fitz_sage.cli.commands import query as mod
 
-    mod.command(question=question, source=source, collection=collection, engine=engine, chat=chat)
+    mod.command(
+        question=question,
+        source=source,
+        collection=collection,
+        engine=engine,
+        chat=chat,
+        endpoint=endpoint,
+        model=model,
+        api_key_env=api_key_env,
+    )
 
 
 @app.command("collections")

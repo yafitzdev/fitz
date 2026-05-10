@@ -2,22 +2,30 @@
 """
 First-run experience for fitz-sage.
 
-Handles auto-detection of LLM providers and interactive setup when no
-config exists. Called by CLI before engine creation on first run.
+Auto-detects an OpenAI-compatible LLM endpoint and writes
+``.fitz/config.yaml`` so the CLI can answer queries on first invocation.
 
-Flow:
-    1. Check if .fitz/config.yaml exists → if yes, skip
-    2. Detect Ollama → list models → classify into tiers
-    3. If models missing → prompt user to pull them
-    4. Fallback: API keys → helpful error
-    5. Write config and continue
+Detection order:
+
+1. **Local OpenAI-compatible HTTP server** — probes ports 8080, 8000,
+   1234, 11434 for ``GET /v1/models``. The first responsive server
+   wins; we read its ``/models`` listing to choose a chat model and
+   (optionally) an embedding model. Recommended setup is llama.cpp's
+   ``llama-server`` on port 8080.
+2. **OpenAI cloud** — falls back to ``openai/gpt-4o-mini`` if
+   ``OPENAI_API_KEY`` is set.
+3. **No provider** — prints actionable setup instructions and aborts.
+
+There is no Ollama-specific code path; Ollama users run it in
+``/v1/`` mode and it's just another OpenAI-compatible server on
+port 11434.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import re
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,38 +33,35 @@ from fitz_sage.core.paths import FitzPaths
 
 logger = logging.getLogger(__name__)
 
-# Embedding model families (name patterns that indicate embedding models)
-_EMBEDDING_PATTERNS = re.compile(r"embed|nomic|bge|mxbai-embed|e5-", re.IGNORECASE)
+# Heuristics for distinguishing embedding models from chat models when
+# scanning a server's ``/v1/models`` listing.
+_EMBEDDING_PATTERNS = re.compile(
+    r"embed|nomic|bge[\-_]|mxbai-embed|e5-|gte-|stella[\-_]",
+    re.IGNORECASE,
+)
 
-# Recommended lightweight models for first-run
-RECOMMENDED_CHAT = "qwen3.5:0.6b"
-RECOMMENDED_EMBEDDING = "nomic-embed-text"
+# Common ports for OpenAI-compatible servers, ordered by preference:
+# 8080 = llama-server, 8000 = vLLM/LM Studio, 1234 = LM Studio (older),
+# 11434 = Ollama in /v1/ mode.
+_PROBE_PORTS: tuple[int, ...] = (8080, 8000, 1234, 11434)
+_PROBE_TIMEOUT_SECONDS = 0.5
 
 
 @dataclass
-class OllamaModel:
-    """A model available in Ollama."""
+class EndpointModel:
+    """A model exposed by an OpenAI-compatible /v1/models listing."""
 
-    name: str
-    size_bytes: int = 0
-    parameter_size: str = ""
-    family: str = ""
+    id: str
     is_embedding: bool = False
 
 
 @dataclass
-class DetectedModels:
-    """Result of Ollama model detection."""
+class DetectedEndpoint:
+    """A reachable OpenAI-compatible HTTP server."""
 
-    chat_models: list[OllamaModel] = field(default_factory=list)
-    embedding_models: list[OllamaModel] = field(default_factory=list)
-
-
-def _ollama_binary_exists() -> bool:
-    """Check if the ollama binary is on PATH (installed but maybe not running)."""
-    import shutil
-
-    return shutil.which("ollama") is not None
+    base_url: str
+    chat_models: list[EndpointModel] = field(default_factory=list)
+    embedding_models: list[EndpointModel] = field(default_factory=list)
 
 
 def needs_firstrun() -> bool:
@@ -64,100 +69,61 @@ def needs_firstrun() -> bool:
     return not FitzPaths.config().exists()
 
 
-def list_ollama_models() -> list[OllamaModel] | None:
-    """
-    List all models available in Ollama via /api/tags.
+def _classify(model_id: str) -> EndpointModel:
+    """Classify a model id as chat vs embedding by name pattern."""
+    return EndpointModel(
+        id=model_id,
+        is_embedding=bool(_EMBEDDING_PATTERNS.search(model_id)),
+    )
 
-    Returns None if Ollama is not running.
+
+def detect_endpoint() -> DetectedEndpoint | None:
+    """
+    Probe common local ports for an OpenAI-compatible server.
+
+    Returns the first reachable endpoint with its ``/v1/models``
+    listing, or ``None`` if nothing responds.
     """
     try:
         import httpx
-
-        from fitz_sage.core.constants import (
-            OLLAMA_API_TAGS_PATH,
-            OLLAMA_DEFAULT_PORT,
-            OLLAMA_HEALTH_TIMEOUT,
-        )
     except ImportError:
         return None
 
-    for host in ["localhost", "127.0.0.1"]:
-        try:
-            response = httpx.get(
-                f"http://{host}:{OLLAMA_DEFAULT_PORT}{OLLAMA_API_TAGS_PATH}",
-                timeout=OLLAMA_HEALTH_TIMEOUT,
-            )
+    for port in _PROBE_PORTS:
+        for host in ("localhost", "127.0.0.1"):
+            base_url = f"http://{host}:{port}/v1"
+            try:
+                response = httpx.get(
+                    f"{base_url}/models", timeout=_PROBE_TIMEOUT_SECONDS
+                )
+            except Exception:
+                continue
+
             if response.status_code != 200:
                 continue
 
-            data = response.json()
-            models = []
-            for m in data.get("models", []):
-                name = m.get("name", "")
-                details = m.get("details", {})
-                models.append(
-                    OllamaModel(
-                        name=name,
-                        size_bytes=m.get("size", 0),
-                        parameter_size=details.get("parameter_size", ""),
-                        family=details.get("family", ""),
-                        is_embedding=bool(_EMBEDDING_PATTERNS.search(name)),
-                    )
-                )
-            return models
-        except Exception:
-            continue
+            try:
+                data = response.json()
+            except Exception:
+                continue
+
+            raw_models = data.get("data") or data.get("models") or []
+            classified: list[EndpointModel] = []
+            for raw in raw_models:
+                model_id = raw.get("id") or raw.get("name")
+                if not model_id:
+                    continue
+                classified.append(_classify(str(model_id)))
+
+            endpoint = DetectedEndpoint(base_url=base_url)
+            for m in classified:
+                if m.is_embedding:
+                    endpoint.embedding_models.append(m)
+                else:
+                    endpoint.chat_models.append(m)
+            return endpoint
 
     return None
-
-
-def classify_models(models: list[OllamaModel]) -> DetectedModels:
-    """Classify Ollama models into chat and embedding categories."""
-    result = DetectedModels()
-    for m in models:
-        if m.is_embedding:
-            result.embedding_models.append(m)
-        else:
-            result.chat_models.append(m)
-    return result
-
-
-def _parse_param_size(size_str: str) -> float:
-    """Parse parameter size string like '3B', '14B', '0.6B' to float."""
-    match = re.search(r"([\d.]+)\s*[bB]", size_str)
-    if match:
-        return float(match.group(1))
-    return 0.0
-
-
-def assign_tiers(chat_models: list[OllamaModel]) -> dict[str, str]:
-    """
-    Assign chat models to fast/balanced/smart tiers by parameter size.
-
-    If only one model, use it for all tiers.
-    """
-    if not chat_models:
-        return {}
-
-    # Sort by parameter size
-    sorted_models = sorted(chat_models, key=lambda m: _parse_param_size(m.parameter_size))
-
-    if len(sorted_models) == 1:
-        name = sorted_models[0].name
-        return {"fast": name, "balanced": name, "smart": name}
-
-    if len(sorted_models) == 2:
-        return {
-            "fast": sorted_models[0].name,
-            "balanced": sorted_models[1].name,
-            "smart": sorted_models[1].name,
-        }
-
-    return {
-        "fast": sorted_models[0].name,
-        "balanced": sorted_models[len(sorted_models) // 2].name,
-        "smart": sorted_models[-1].name,
-    }
 
 
 def write_config(
@@ -165,181 +131,169 @@ def write_config(
     chat_balanced: str,
     chat_smart: str,
     embedding: str,
-    rerank: str | None = None,
+    *,
+    chat_base_url: str | None = None,
+    embedding_base_url: str | None = None,
+    chat_api_key_env: str | None = None,
+    embedding_api_key_env: str | None = None,
 ) -> Path:
-    """Write the .fitz/config.yaml file."""
+    """Write ``.fitz/config.yaml`` from the resolved provider configuration."""
     config_path = FitzPaths.config()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    rerank_line = f"rerank: {rerank}" if rerank else "# rerank: cohere/rerank-v3.5"
-    content = f"""\
-# Fitz Configuration
-# Docs: https://github.com/yafitzdev/fitz-sage/blob/main/docs/CONFIG.md
-
-# Chat models by tier (provider/model)
-chat_fast: {chat_fast}
-chat_balanced: {chat_balanced}
-chat_smart: {chat_smart}
-
-# Embedding model
-embedding: {embedding}
-
-# Optional (uncomment to enable)
-{rerank_line}
-# vision: ollama/llava
-
-collection: default
-"""
-    config_path.write_text(content, encoding="utf-8")
+    lines: list[str] = [
+        "# Fitz Configuration",
+        "# Docs: https://github.com/yafitzdev/fitz-sage/blob/main/docs/CONFIG.md",
+        "",
+        "# Chat models by tier (provider/model)",
+        f"chat_fast: {chat_fast}",
+        f"chat_balanced: {chat_balanced}",
+        f"chat_smart: {chat_smart}",
+        "",
+        "# Embedding model",
+        f"embedding: {embedding}",
+        "",
+        "# HTTP endpoints (used by the 'endpoint' provider)",
+        f"chat_base_url: {chat_base_url if chat_base_url else 'null'}",
+        f"embedding_base_url: {embedding_base_url if embedding_base_url else 'null'}",
+        "vision_base_url: null",
+        "",
+        "# Optional API key environment variables",
+        f"chat_api_key_env: {chat_api_key_env if chat_api_key_env else 'null'}",
+        f"embedding_api_key_env: {embedding_api_key_env if embedding_api_key_env else 'null'}",
+        "vision_api_key_env: null",
+        "",
+        "# Optional",
+        "rerank: null",
+        "vision: null",
+        "",
+        "collection: default",
+        "",
+    ]
+    config_path.write_text("\n".join(lines), encoding="utf-8")
     return config_path
 
 
-def pull_ollama_model(model: str) -> bool:
-    """Pull an Ollama model. Returns True on success."""
-    try:
-        result = subprocess.run(
-            ["ollama", "pull", model],
-            capture_output=False,
-            timeout=600,
+def _pick_chat_model(endpoint: DetectedEndpoint) -> str | None:
+    """Choose a single chat model id from the listing.
+
+    Heuristic: prefer the first non-embedding model. The user can
+    rename later via the YAML.
+    """
+    if not endpoint.chat_models:
+        return None
+    return endpoint.chat_models[0].id
+
+
+def _pick_embedding_model(endpoint: DetectedEndpoint) -> str | None:
+    """Choose an embedding model id, or None if the server doesn't expose one."""
+    if not endpoint.embedding_models:
+        return None
+    return endpoint.embedding_models[0].id
+
+
+def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
+    """Write a config bound to a detected local OpenAI-compatible server."""
+    config_path = FitzPaths.config()
+
+    chat_model = _pick_chat_model(endpoint)
+    if chat_model is None:
+        print(
+            f"\n  Detected an OpenAI-compatible server at {endpoint.base_url} but "
+            f"it lists no chat models. Load a chat model and run fitz again.\n"
         )
-        return result.returncode == 0
-    except Exception as e:
-        logger.warning(f"Failed to pull {model}: {e}")
         return False
+
+    embedding_model = _pick_embedding_model(endpoint)
+    if embedding_model is None:
+        # Many local servers run a single chat model on one process.
+        # We default the embedding spec to a placeholder pointing at
+        # the same URL — the user is expected to either start a second
+        # server or (once chat-only retrieval lands) leave embedding
+        # disabled.
+        embedding_spec = "endpoint/nomic-embed-text-v1.5"
+        embedding_url = "http://localhost:8081/v1"
+        print(
+            f"\n  Found chat model '{chat_model}' at {endpoint.base_url}; "
+            f"no embedding model on the same server.\n"
+            f"  Defaulting embedding to a separate llama-server on port 8081 "
+            f"(start one or edit chat_only mode in config).\n"
+        )
+    else:
+        embedding_spec = f"endpoint/{embedding_model}"
+        embedding_url = endpoint.base_url
+
+    chat_spec = f"endpoint/{chat_model}"
+    write_config(
+        chat_fast=chat_spec,
+        chat_balanced=chat_spec,
+        chat_smart=chat_spec,
+        embedding=embedding_spec,
+        chat_base_url=endpoint.base_url,
+        embedding_base_url=embedding_url,
+    )
+
+    print(f"\n  Auto-configured from {endpoint.base_url}:")
+    print(f"    chat:      {chat_model}")
+    print(f"    embedding: {embedding_model or '(separate server, edit if needed)'}")
+    print(f"\n  Config: {config_path}\n")
+    return True
+
+
+def _configure_from_openai_key() -> bool:
+    """Write a config bound to OpenAI's public API."""
+    config_path = FitzPaths.config()
+
+    write_config(
+        chat_fast="openai/gpt-4o-mini",
+        chat_balanced="openai/gpt-4o-mini",
+        chat_smart="openai/gpt-4o",
+        embedding="openai/text-embedding-3-small",
+        chat_base_url=None,
+        embedding_base_url=None,
+    )
+    print("\n  Configured from OPENAI_API_KEY:")
+    print("    chat (smart):    gpt-4o")
+    print("    chat (fast/bal): gpt-4o-mini")
+    print("    embedding:       text-embedding-3-small")
+    print(f"\n  Config: {config_path}\n")
+    return True
+
+
+def _print_setup_instructions() -> None:
+    """Print actionable setup instructions when no provider is reachable."""
+    print("\n  No LLM provider found. Pick one of these:\n")
+    print("  Option 1 — local llama.cpp (recommended):")
+    print("    1. Install llama.cpp (https://github.com/ggerganov/llama.cpp)")
+    print("    2. Download a chat model (.gguf) and start the server:")
+    print("       llama-server -m chat-model.gguf --port 8080")
+    print("    3. Optionally start an embedding server on port 8081:")
+    print("       llama-server -m embed-model.gguf --port 8081 --embeddings")
+    print("    4. Re-run `fitz query ...`\n")
+    print("  Option 2 — OpenAI cloud:")
+    print("    export OPENAI_API_KEY=sk-...")
+    print("    Re-run `fitz query ...`\n")
+    print("  Option 3 — any OpenAI-compatible cloud (Together, Groq, …):")
+    print("    fitz query \"...\" --endpoint https://api.together.xyz/v1 \\")
+    print("        --model meta-llama-3.1-70b --api-key-env TOGETHER_API_KEY\n")
 
 
 def run_firstrun_setup() -> bool:
     """
-    Interactive first-run setup. Returns True if config was written.
+    Interactive first-run setup.
 
-    Detects available providers and models, prompts user if needed,
-    writes .fitz/config.yaml.
+    Returns ``True`` if a config was written successfully, ``False``
+    otherwise (the caller exits with a non-zero code in that case).
     """
-    config_path = FitzPaths.config()
+    # 1. Probe for a local OpenAI-compatible server.
+    endpoint = detect_endpoint()
+    if endpoint is not None:
+        return _configure_from_endpoint(endpoint)
 
-    # ── Try Ollama ──────────────────────────────────────────────
-    models = list_ollama_models()
+    # 2. Fall back to OpenAI cloud if a key is set.
+    if os.getenv("OPENAI_API_KEY"):
+        return _configure_from_openai_key()
 
-    if models is not None:
-        detected = classify_models(models)
-        tiers = assign_tiers(detected.chat_models)
-        has_embedding = len(detected.embedding_models) > 0
-
-        if tiers and has_embedding:
-            # Everything available — auto-configure
-            embedding_name = detected.embedding_models[0].name
-            write_config(
-                chat_fast=f"ollama/{tiers['fast']}",
-                chat_balanced=f"ollama/{tiers['balanced']}",
-                chat_smart=f"ollama/{tiers['smart']}",
-                embedding=f"ollama/{embedding_name}",
-            )
-            print("\n  Auto-configured from Ollama models:")
-            print(f"    fast:      {tiers['fast']}")
-            print(f"    balanced:  {tiers['balanced']}")
-            print(f"    smart:     {tiers['smart']}")
-            print(f"    embedding: {embedding_name}")
-            print(f"\n  Config: {config_path}")
-            print("  Edit this file to change models.\n")
-            return True
-
-        # Missing models — prompt to pull
-        missing = []
-        if not tiers:
-            missing.append(("chat", RECOMMENDED_CHAT))
-        if not has_embedding:
-            missing.append(("embedding", RECOMMENDED_EMBEDDING))
-
-        print("\n  Ollama is running but missing required models.\n")
-
-        if not tiers and detected.chat_models:
-            pass  # Shouldn't happen, but just in case
-        elif not tiers:
-            print("  Chat model needed. Example:")
-            print(f"    ollama pull {RECOMMENDED_CHAT}\n")
-        if not has_embedding:
-            print("  Embedding model needed. Example:")
-            print(f"    ollama pull {RECOMMENDED_EMBEDDING}\n")
-
-        # Offer to pull
-        missing_names = [m[1] for m in missing]
-        total_desc = " + ".join(missing_names)
-        try:
-            answer = input(f"  Pull {total_desc}? [Y/n]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            answer = "n"
-
-        if answer in ("", "y", "yes"):
-            for _kind, model_name in missing:
-                print(f"  Pulling {model_name}...")
-                if not pull_ollama_model(model_name):
-                    print(f"  Failed to pull {model_name}.")
-                    print(f"  Run manually: ollama pull {model_name}")
-                    print(f"\n  Config: {config_path}\n")
-                    return False
-
-            # Re-detect after pulling
-            models = list_ollama_models()
-            if models:
-                detected = classify_models(models)
-                tiers = assign_tiers(detected.chat_models)
-                if tiers and detected.embedding_models:
-                    embedding_name = detected.embedding_models[0].name
-                    write_config(
-                        chat_fast=f"ollama/{tiers['fast']}",
-                        chat_balanced=f"ollama/{tiers['balanced']}",
-                        chat_smart=f"ollama/{tiers['smart']}",
-                        embedding=f"ollama/{embedding_name}",
-                    )
-                    print(f"\n  Configured. Config: {config_path}\n")
-                    return True
-
-            print("  Could not configure after pulling. Edit config manually.")
-            print(f"  Config: {config_path}\n")
-            return False
-        else:
-            print("\n  Pull the models manually, then run fitz again:")
-            for _kind, model_name in missing:
-                print(f"    ollama pull {model_name}")
-            print(f"\n  Config: {config_path}\n")
-            return False
-
-    # ── Ollama installed but not running? ──────────────────────
-    if models is None and _ollama_binary_exists():
-        print("\n  Ollama is installed but not running.")
-        print("  Start it with: ollama serve")
-        print("\n  Then run fitz again.\n")
-        return False
-
-    # ── Try API keys ────────────────────────────────────────────
-    import os
-
-    for provider, env_var in [
-        ("cohere", "COHERE_API_KEY"),
-        ("openai", "OPENAI_API_KEY"),
-    ]:
-        if os.getenv(env_var):
-            write_config(
-                chat_fast=provider,
-                chat_balanced=provider,
-                chat_smart=provider,
-                embedding=provider,
-                rerank="cohere/rerank-v3.5" if provider == "cohere" else None,
-            )
-            print(f"\n  Configured with {provider} ({env_var} detected).")
-            print(f"  Config: {config_path}\n")
-            return True
-
-    # ── Nothing available ───────────────────────────────────────
-    print("\n  No LLM provider found. Set up one of these:\n")
-    print("  Option 1 — Ollama (local, free):")
-    print("    Install from https://ollama.ai")
-    print(f"    ollama pull {RECOMMENDED_CHAT}")
-    print(f"    ollama pull {RECOMMENDED_EMBEDDING}\n")
-    print("  Option 2 — Cohere (cloud, free tier):")
-    print("    export COHERE_API_KEY=your-key-here\n")
-    print("  Option 3 — OpenAI:")
-    print("    export OPENAI_API_KEY=your-key-here\n")
-    print("  Then run fitz again.\n")
-    print(f"  Config: {config_path}\n")
+    # 3. Nothing reachable — print actionable instructions.
+    _print_setup_instructions()
     return False
