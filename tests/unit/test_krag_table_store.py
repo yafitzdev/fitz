@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from fitz_sage.engines.fitz_krag.ingestion.table_store import TABLE, TableStore, _vector_to_pg
+from fitz_sage.engines.fitz_krag.ingestion.table_store import TABLE, TableStore
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -27,7 +27,6 @@ def _make_table_record(
     summary: str = "Sales records with revenue data",
     raw_file_id: str = "file1",
     record_id: str = "rec-001",
-    vector: list[float] | None = None,
 ) -> dict:
     return {
         "id": record_id,
@@ -37,7 +36,6 @@ def _make_table_record(
         "columns": columns or ["product", "revenue", "date"],
         "row_count": row_count,
         "summary": summary,
-        "summary_vector": vector,
         "metadata": {},
     }
 
@@ -67,16 +65,6 @@ class TestUpsertBatch:
         store, cm = _make_store()
         store.upsert_batch([])
         cm.connection.assert_not_called()
-
-    def test_upsert_batch_with_vector(self):
-        store, cm = _make_store()
-        conn = cm.connection.return_value.__enter__.return_value
-        records = [_make_table_record(vector=[0.1, 0.2, 0.3])]
-
-        store.upsert_batch(records)
-
-        args = conn.execute.call_args[0]
-        assert args[1][7] == "[0.1,0.2,0.3]"  # summary_vector
 
     def test_upsert_batch_multiple(self):
         store, cm = _make_store()
@@ -128,36 +116,6 @@ class TestSearchByName:
 
         results = store.search_by_name("nonexistent")
 
-        assert results == []
-
-
-# ---------------------------------------------------------------------------
-# TestSearchByVector
-# ---------------------------------------------------------------------------
-
-
-class TestSearchByVector:
-    def test_search_by_vector(self):
-        store, cm = _make_store()
-        conn = cm.connection.return_value.__enter__.return_value
-        conn.execute.return_value.fetchall.return_value = [
-            ("rec-001", "file1", "tbl_abc", "Sales", ["col1"], 50, "Summary", "{}", 0.95),
-        ]
-
-        results = store.search_by_vector([0.1, 0.2, 0.3], limit=5)
-
-        assert len(results) == 1
-        assert results[0]["score"] == 0.95
-        assert results[0]["name"] == "Sales"
-
-    def test_search_by_vector_empty_vector(self):
-        store, cm = _make_store()
-        results = store.search_by_vector([], limit=5)
-        assert results == []
-
-    def test_search_by_vector_none_vector(self):
-        store, cm = _make_store()
-        results = store.search_by_vector(None, limit=5)
         assert results == []
 
 
@@ -237,15 +195,3 @@ class TestDeleteByFile:
         conn.commit.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# TestVectorToPg
-# ---------------------------------------------------------------------------
-
-
-class TestVectorToPg:
-    def test_converts_list(self):
-        assert _vector_to_pg([0.1, 0.2, 0.3]) == "[0.1,0.2,0.3]"
-
-    def test_returns_none_for_empty(self):
-        assert _vector_to_pg([]) is None
-        assert _vector_to_pg(None) is None

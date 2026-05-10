@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from fitz_sage.core.config import BasePluginConfig, PluginKwargs
+from fitz_sage.core.config import BasePluginConfig
 
 
 class FitzKragConfig(BasePluginConfig):
@@ -93,16 +93,6 @@ class FitzKragConfig(BasePluginConfig):
     vision_api_key_env: str | None = Field(
         default=None,
         description="Env var name for vision-endpoint API key (None = no auth).",
-    )
-
-    vector_db: str = Field(
-        default="pgvector",
-        description=(
-            "Vector DB plugin (pgvector only). Note: fitz-sage no longer "
-            "uses dense vectors at query time; this field is kept for "
-            "schema infrastructure (PostgreSQL + extensions) and is "
-            "scheduled for removal once the storage layer is simplified."
-        ),
     )
 
     rerank: str | None = Field(
@@ -366,15 +356,6 @@ class FitzKragConfig(BasePluginConfig):
     enable_hierarchy: bool = Field(
         default=True,
         description="Enable L1/L2 hierarchical summaries during ingestion",
-    )
-
-    # ==========================================================================
-    # Plugin kwargs
-    # ==========================================================================
-
-    vector_db_kwargs: PluginKwargs = Field(
-        default_factory=PluginKwargs,
-        description="pgvector config: mode, connection_string, hnsw_m, etc.",
     )
 
     # ==========================================================================

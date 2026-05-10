@@ -69,7 +69,6 @@ class TestQueryHelpers:
             "chat_balanced": "endpoint/qwen2.5-7b-instruct",
             "chat_smart": "openai/gpt-4o",
             "chat_base_url": None,
-            "vector_db": "pgvector",
             "collection": "test",
         }
         config_path.write_text(yaml.dump(config))

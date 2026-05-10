@@ -134,11 +134,6 @@ class FitzPaths:
         return _plugins.user_llm_plugins(plugin_type)
 
     @classmethod
-    def user_vector_db_plugins(cls) -> Path:
-        """User vector DB plugins: ~/.fitz/plugins/vector_db/"""
-        return _plugins.user_vector_db_plugins()
-
-    @classmethod
     def user_chunking_plugins(cls) -> Path:
         """User chunking plugins: ~/.fitz/plugins/chunking/"""
         return _plugins.user_chunking_plugins()

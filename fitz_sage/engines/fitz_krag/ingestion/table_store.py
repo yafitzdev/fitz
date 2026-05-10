@@ -32,10 +32,10 @@ class TableStore:
         sql = f"""
             INSERT INTO {TABLE}
                 ("id", "raw_file_id", "table_id", "name", "columns", "row_count",
-                 "summary", "summary_vector", "metadata")
+                 "summary", "metadata")
             VALUES
                 (%s, %s, %s, %s, %s, %s,
-                 %s, %s::vector, %s::jsonb)
+                 %s, %s::jsonb)
             ON CONFLICT ("id") DO UPDATE SET
                 "raw_file_id" = EXCLUDED."raw_file_id",
                 "table_id" = EXCLUDED."table_id",
@@ -43,12 +43,10 @@ class TableStore:
                 "columns" = EXCLUDED."columns",
                 "row_count" = EXCLUDED."row_count",
                 "summary" = EXCLUDED."summary",
-                "summary_vector" = EXCLUDED."summary_vector",
                 "metadata" = EXCLUDED."metadata"
         """
         with self._cm.connection(self._collection) as conn:
             for tbl in tables:
-                vector_str = _vector_to_pg(tbl.get("summary_vector"))
                 conn.execute(
                     sql,
                     (
@@ -59,7 +57,6 @@ class TableStore:
                         tbl["columns"],
                         tbl["row_count"],
                         tbl.get("summary"),
-                        vector_str,
                         json.dumps(tbl.get("metadata", {})),
                     ),
                 )
@@ -107,30 +104,6 @@ class TableStore:
             rows = conn.execute(sql, tuple(params)).fetchall()
         return [_row_to_dict(row) for row in rows]
 
-    def search_by_vector(self, vector: list[float], limit: int = 10) -> list[dict[str, Any]]:
-        """Cosine similarity search on summary_vector."""
-        vector_str = _vector_to_pg(vector)
-        if not vector_str:
-            return []
-
-        sql = f"""
-            SELECT "id", "raw_file_id", "table_id", "name", "columns", "row_count",
-                   "summary", "metadata",
-                   1 - ("summary_vector" <=> %s::vector) AS "score"
-            FROM {TABLE}
-            WHERE "summary_vector" IS NOT NULL
-            ORDER BY "summary_vector" <=> %s::vector
-            LIMIT %s
-        """
-        with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, (vector_str, vector_str, limit)).fetchall()
-        results = []
-        for row in rows:
-            d = _row_to_dict(row[:8])
-            d["score"] = float(row[8]) if row[8] is not None else 0.0
-            results.append(d)
-        return results
-
     def get(self, table_index_id: str) -> dict[str, Any] | None:
         """Get a single table record by ID."""
         sql = f"""
@@ -163,27 +136,12 @@ class TableStore:
             conn.execute(sql, (summary, table_index_id))
             conn.commit()
 
-    def update_vector(self, table_index_id: str, vector: list[float]) -> None:
-        """Update summary_vector for a single table record."""
-        vector_str = _vector_to_pg(vector)
-        sql = f'UPDATE {TABLE} SET "summary_vector" = %s::vector WHERE "id" = %s'
-        with self._cm.connection(self._collection) as conn:
-            conn.execute(sql, (vector_str, table_index_id))
-            conn.commit()
-
     def delete_by_file(self, raw_file_id: str) -> None:
         """Delete table metadata when source file is removed."""
         sql = f'DELETE FROM {TABLE} WHERE "raw_file_id" = %s'
         with self._cm.connection(self._collection) as conn:
             conn.execute(sql, (raw_file_id,))
             conn.commit()
-
-
-def _vector_to_pg(vector: list[float] | None) -> str | None:
-    """Convert a float list to pgvector string format."""
-    if not vector:
-        return None
-    return "[" + ",".join(str(v) for v in vector) + "]"
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:

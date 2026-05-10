@@ -35,7 +35,6 @@ class TestGenerateConfig:
             chat_model_fast="command-r7b-12-2024",
             rerank=None,
             rerank_model="",
-            vector_db="pgvector",
         )
 
         config = yaml.safe_load(config_str)
@@ -43,7 +42,6 @@ class TestGenerateConfig:
         # Flat format: tier-specific chat specs with provider/model
         assert "chat_fast" in config
         assert "chat_smart" in config
-        assert config["vector_db"] == "pgvector"
 
     def test_generate_fitz_krag_config_with_rerank(self):
         """Test generate_fitz_krag_config includes rerank when provided."""
@@ -57,7 +55,6 @@ class TestGenerateConfig:
             chat_model_fast="command-r7b-12-2024",
             rerank="cohere",
             rerank_model="rerank-v3.5",
-            vector_db="pgvector",
         )
 
         config = yaml.safe_load(config_str)
@@ -77,7 +74,6 @@ class TestGenerateConfig:
             chat_model_fast="",
             rerank=None,
             rerank_model="",
-            vector_db="pgvector",
         )
 
         config = yaml.safe_load(config_str)

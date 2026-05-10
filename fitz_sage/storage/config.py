@@ -43,21 +43,6 @@ class StorageConfig(DatabaseConfig):
 
     # Note: connection_string and pool settings inherited from DatabaseConfig
 
-    # HNSW index settings
-    hnsw_m: int = Field(
-        default=16,
-        ge=4,
-        le=64,
-        description="HNSW max connections per layer (higher = better recall, more memory)",
-    )
-
-    hnsw_ef_construction: int = Field(
-        default=64,
-        ge=16,
-        le=512,
-        description="HNSW construction ef (higher = better recall, slower builds)",
-    )
-
     def validate_mode(self) -> None:
         """Validate configuration based on mode."""
         if self.mode == StorageMode.EXTERNAL and not self.connection_string:

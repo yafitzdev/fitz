@@ -32,11 +32,11 @@ class SymbolStore:
         sql = f"""
             INSERT INTO {TABLE}
                 ("id", "name", "qualified_name", "kind", "raw_file_id",
-                 "start_line", "end_line", "signature", "summary", "summary_vector",
+                 "start_line", "end_line", "signature", "summary",
                  "imports", "references", "keywords", "entities", "metadata")
             VALUES
                 (%s, %s, %s, %s, %s,
-                 %s, %s, %s, %s, %s::vector,
+                 %s, %s, %s, %s,
                  %s, %s, %s, %s::jsonb, %s::jsonb)
             ON CONFLICT ("id") DO UPDATE SET
                 "name" = EXCLUDED."name",
@@ -46,7 +46,6 @@ class SymbolStore:
                 "end_line" = EXCLUDED."end_line",
                 "signature" = EXCLUDED."signature",
                 "summary" = EXCLUDED."summary",
-                "summary_vector" = EXCLUDED."summary_vector",
                 "imports" = EXCLUDED."imports",
                 "references" = EXCLUDED."references",
                 "keywords" = EXCLUDED."keywords",
@@ -55,7 +54,6 @@ class SymbolStore:
         """
         with self._cm.connection(self._collection) as conn:
             for sym in symbols:
-                vector_str = _vector_to_pg(sym.get("summary_vector"))
                 conn.execute(
                     sql,
                     (
@@ -68,7 +66,6 @@ class SymbolStore:
                         sym["end_line"],
                         sym.get("signature"),
                         sym.get("summary"),
-                        vector_str,
                         sym.get("imports", []),
                         sym.get("references", []),
                         sym.get("keywords", []),
@@ -111,30 +108,6 @@ class SymbolStore:
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql, (pattern, pattern, limit)).fetchall()
         return [_row_to_dict(row) for row in rows]
-
-    def search_by_vector(self, vector: list[float], limit: int = 20) -> list[dict[str, Any]]:
-        """Semantic search using cosine distance on summary_vector."""
-        vector_str = _vector_to_pg(vector)
-        if not vector_str:
-            return []
-
-        sql = f"""
-            SELECT "id", "name", "qualified_name", "kind", "raw_file_id",
-                   "start_line", "end_line", "signature", "summary", "metadata",
-                   1 - ("summary_vector" <=> %s::vector) AS "score"
-            FROM {TABLE}
-            WHERE "summary_vector" IS NOT NULL
-            ORDER BY "summary_vector" <=> %s::vector
-            LIMIT %s
-        """
-        with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, (vector_str, vector_str, limit)).fetchall()
-        results = []
-        for row in rows:
-            d = _row_to_dict(row[:10])
-            d["score"] = float(row[10]) if row[10] is not None else 0.0
-            results.append(d)
-        return results
 
     def delete_by_file(self, raw_file_id: str) -> None:
         """Delete all symbols for a raw file."""
@@ -282,30 +255,6 @@ class SymbolStore:
                     ),
                 )
             conn.commit()
-
-    def update_vectors_by_file(self, raw_file_id: str, vectors: list[list[float]]) -> None:
-        """Update summary_vector for all symbols in a file, in start_line order."""
-        ids_sql = f"""
-            SELECT "id" FROM {TABLE}
-            WHERE "raw_file_id" = %s
-            ORDER BY "start_line"
-        """
-        update_sql = f'UPDATE {TABLE} SET "summary_vector" = %s::vector WHERE "id" = %s'
-        with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(ids_sql, (raw_file_id,)).fetchall()
-            for i, row in enumerate(rows):
-                if i < len(vectors):
-                    vector_str = _vector_to_pg(vectors[i])
-                    conn.execute(update_sql, (vector_str, row[0]))
-            conn.commit()
-
-
-def _vector_to_pg(vector: list[float] | None) -> str | None:
-    """Convert a float list to pgvector string format."""
-    if not vector:
-        return None
-    return "[" + ",".join(str(v) for v in vector) + "]"
-
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:
     """Convert a query row to dict."""

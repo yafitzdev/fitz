@@ -36,15 +36,8 @@ def test_registry_error_message_is_helpful():
     assert "Available" in error_msg
 
 
-def test_vector_db_and_chunking_registries_follow_pattern():
-    """Plugin registries should follow the same error pattern."""
-    from fitz_sage.vector_db.registry import get_vector_db_plugin
-
-    # Vector DB raises ValueError (from loader)
-    with pytest.raises(ValueError):
-        get_vector_db_plugin("__fake__")
-
-    # Chunking raises PluginNotFoundError
+def test_chunking_registry_raises_for_unknown_plugin():
+    """Chunking registry raises PluginNotFoundError for unknown plugins."""
     with pytest.raises(PluginNotFoundError):
         get_chunking_plugin("__fake__")
 

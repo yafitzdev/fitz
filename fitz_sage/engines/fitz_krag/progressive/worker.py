@@ -109,7 +109,7 @@ class BackgroundIngestWorker:
         siblings: list[str] = []
         entries = self._manifest.entries()
         for rp, entry in entries.items():
-            if entry.state == FileState.EMBEDDED:
+            if entry.state == FileState.SUMMARIZED:
                 continue
             parent = str(Path(rp).parent)
             if parent in dirs and rp not in rel_paths:
@@ -128,9 +128,6 @@ class BackgroundIngestWorker:
 
             # Phase 2.5: Enrich SUMMARIZED files with keywords + entities (LLM)
             self._enrich_summarized_files()
-
-            # Phase 3: SUMMARIZED → EMBEDDED (embedding API, concurrent)
-            self._process_summarized_files()
 
             logger.info("Background indexing complete")
         except Exception as e:
@@ -250,7 +247,6 @@ class BackgroundIngestWorker:
                                     "end_line": sym.end_line,
                                     "signature": sym.signature,
                                     "summary": None,
-                                    "summary_vector": None,
                                     "imports": sym.imports,
                                     "references": sym.references,
                                     "keywords": [],
@@ -259,9 +255,6 @@ class BackgroundIngestWorker:
                                 }
                             )
                         self._symbol_store.upsert_batch(symbol_dicts)
-
-                        # Embed symbol signatures immediately (no LLM needed)
-                        self._embed_symbols_from_signatures(entry.file_id, symbol_dicts)
 
                     if result.imports:
                         import_edges = [
@@ -313,7 +306,6 @@ class BackgroundIngestWorker:
                         "page_end": sec.page_end,
                         "content": sec.content,
                         "summary": None,
-                        "summary_vector": None,
                         "parent_section_id": None,
                         "position": sec.position,
                         "keywords": [],
@@ -322,11 +314,6 @@ class BackgroundIngestWorker:
                     }
                 )
             self._section_store.upsert_batch(section_dicts)
-
-            # Embed content immediately so vector search works before LLM
-            # summaries are generated. Phase 3 will upgrade these with
-            # summary-based embeddings if summaries become available.
-            self._embed_sections_from_content(entry.file_id, section_dicts)
 
         except Exception as e:
             logger.debug(f"Doc section extraction failed for {entry.rel_path}: {e}")
@@ -390,7 +377,6 @@ class BackgroundIngestWorker:
                     "columns": parsed.columns,
                     "row_count": parsed.row_count,
                     "summary": None,
-                    "summary_vector": None,
                     "metadata": {"source_file": entry.rel_path, "sample_rows": samples},
                 }
             ]
@@ -440,10 +426,6 @@ class BackgroundIngestWorker:
                 summary = f"Table {record['name']} with columns: {cols}"
 
             self._table_store.update_summary(record["id"], summary)
-
-    def _embed_table(self, entry: "ManifestEntry") -> None:
-        """No-op: fitz-sage uses no dense embeddings."""
-        return
 
     def _process_parsed_files(self) -> None:
         """PARSED → SUMMARIZED: Generate LLM summaries."""
@@ -611,48 +593,8 @@ class BackgroundIngestWorker:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         return (lines + ["(no summary)"] * expected_count)[:expected_count]
 
-    def _process_summarized_files(self) -> None:
-        """SUMMARIZED → EMBEDDED: Compute embeddings and update vector fields."""
-        for entry in self._get_ordered_files(FileState.SUMMARIZED):
-            if self._stop_event.is_set():
-                return
-
-            try:
-                ext = entry.file_type
-
-                if ext in _CODE_EXTENSIONS:
-                    self._embed_file_symbols(entry)
-                elif ext in _TABLE_EXTENSIONS:
-                    self._embed_table(entry)
-                else:
-                    self._embed_file_sections(entry)
-
-                self._manifest.update_state(entry.rel_path, FileState.EMBEDDED)
-
-            except Exception as e:
-                logger.warning(f"Background embed failed for {entry.rel_path}: {e}")
-
-        self._manifest.save()
-
-    # The four ``_embed_*`` methods below are no-ops kept for caller
-    # compatibility. fitz-sage uses no dense embeddings; vector columns
-    # in the schema stay NULL. These will be deleted entirely when the
-    # progressive pipeline's state machine drops the EMBEDDED state.
-
-    def _embed_file_symbols(self, entry: "ManifestEntry") -> None:
-        return
-
-    def _embed_symbols_from_signatures(self, file_id: str, symbol_dicts: list[dict]) -> None:
-        return
-
-    def _embed_sections_from_content(self, file_id: str, section_dicts: list[dict]) -> None:
-        return
-
-    def _embed_file_sections(self, entry: "ManifestEntry") -> None:
-        return
-
     # ------------------------------------------------------------------
-    # Enrichment (between summarize and embed)
+    # Enrichment (after summarize)
     # ------------------------------------------------------------------
 
     def _enrich_summarized_files(self) -> None:

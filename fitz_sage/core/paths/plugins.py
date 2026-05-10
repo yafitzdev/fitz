@@ -36,15 +36,6 @@ def user_llm_plugins(plugin_type: str) -> Path:
     return user_plugins() / "llm" / plugin_type
 
 
-def user_vector_db_plugins() -> Path:
-    """
-    User vector DB plugins directory.
-
-    Location: ~/.fitz/plugins/vector_db/
-    """
-    return user_plugins() / "vector_db"
-
-
 def user_chunking_plugins() -> Path:
     """
     User chunking plugins directory.
@@ -67,9 +58,7 @@ def ensure_user_plugins() -> Path:
     """Create user plugins directory structure if it doesn't exist."""
     base = user_plugins()
     (base / "llm" / "chat").mkdir(parents=True, exist_ok=True)
-    (base / "llm" / "embedding").mkdir(parents=True, exist_ok=True)
     (base / "llm" / "rerank").mkdir(parents=True, exist_ok=True)
-    (base / "vector_db").mkdir(parents=True, exist_ok=True)
     (base / "chunking").mkdir(parents=True, exist_ok=True)
     (base / "constraint").mkdir(parents=True, exist_ok=True)
     return base

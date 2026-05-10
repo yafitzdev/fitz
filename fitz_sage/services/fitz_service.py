@@ -225,167 +225,61 @@ class FitzService:
 
     def list_collections(self) -> list[CollectionInfo]:
         """
-        List all collections.
+        List all collections by enumerating fitz-sage's PostgreSQL databases.
 
-        Returns:
-            List of CollectionInfo with names and stats
+        Each fitz-sage collection is its own database under
+        ``PostgresConnectionManager``. We list ``pg_database`` and report
+        the krag_section_index row count per collection.
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        from fitz_sage.vector_db.registry import get_vector_db_plugin
-
-        vdb = get_vector_db_plugin()
-
-        if not hasattr(vdb, "list_collections"):
-            return []
-
-        names = vdb.list_collections()
-        if not names:
-            return []
-
-        # Check if vector DB supports batch stats (most efficient)
-        if hasattr(vdb, "batch_get_collection_stats"):
-            try:
-                # Best case: single query for all stats
-                all_stats = vdb.batch_get_collection_stats(names)
-                result = []
-                for name in names:
-                    stats = all_stats.get(name, {})
-                    result.append(
-                        CollectionInfo(
-                            name=name,
-                            chunk_count=stats.get("chunk_count", 0),
-                            vector_dimensions=stats.get("vector_size"),
-                            metadata=stats,
-                        )
-                    )
-                return result
-            except Exception as e:
-                logger.warning("Batch stats failed, falling back to parallel fetch", error=str(e))
-                # Fall through to parallel fetching
-
-        # Fallback: Use parallel fetching to avoid N+1 performance issue
-        # For 100 collections: sequential = ~10s, parallel = ~0.5s
-        def fetch_collection_info(name: str) -> CollectionInfo:
-            """Fetch info for a single collection."""
-            info = CollectionInfo(name=name, chunk_count=0)
-
-            if hasattr(vdb, "count"):
-                try:
-                    info.chunk_count = vdb.count(name)
-                except Exception as e:
-                    logger.warning("Failed to get chunk count", collection=name, error=str(e))
-                    # Continue with default count of 0
-
-            if hasattr(vdb, "get_collection_stats"):
-                try:
-                    stats = vdb.get_collection_stats(name)
-                    info.vector_dimensions = stats.get("vector_size")
-                    info.metadata = stats
-                except Exception as e:
-                    logger.warning("Failed to get collection stats", collection=name, error=str(e))
-                    # Continue with default stats
-
-            return info
-
-        # Fetch all collection info in parallel
-        # Limit workers to avoid overwhelming the database
-        max_workers = min(10, len(names))
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks
-            future_to_name = {executor.submit(fetch_collection_info, name): name for name in names}
-
-            # Collect results maintaining order
-            result = []
-            for future in as_completed(future_to_name):
-                try:
-                    info = future.result()
-                    result.append(info)
-                except Exception as e:
-                    name = future_to_name[future]
-                    logger.error(f"Failed to get info for collection '{name}': {e}")
-                    # Add minimal info on failure
-                    result.append(CollectionInfo(name=name, chunk_count=0))
-
-        # Sort by name for consistent ordering
+        cm = self._connection_manager()
+        names = _list_collection_databases(cm)
+        result: list[CollectionInfo] = []
+        for name in names:
+            result.append(CollectionInfo(name=name, chunk_count=_collection_chunk_count(cm, name)))
         result.sort(key=lambda x: x.name)
-
         return result
 
     def get_collection(self, name: str) -> CollectionInfo:
-        """
-        Get detailed information about a collection.
-
-        Args:
-            name: Collection name
-
-        Returns:
-            CollectionInfo with full stats
-
-        Raises:
-            CollectionNotFoundError: If collection doesn't exist
-        """
-        if not self._collection_exists(name):
+        """Get info about a collection. Raises CollectionNotFoundError if missing."""
+        cm = self._connection_manager()
+        if name not in _list_collection_databases(cm):
             raise CollectionNotFoundError(name)
-
-        from fitz_sage.vector_db.registry import get_vector_db_plugin
-
-        vdb = get_vector_db_plugin()
-
-        info = CollectionInfo(name=name, chunk_count=0)
-
-        if hasattr(vdb, "count"):
-            info.chunk_count = vdb.count(name)
-
-        if hasattr(vdb, "get_collection_stats"):
-            stats = vdb.get_collection_stats(name)
-            info.vector_dimensions = stats.get("vector_size")
-            info.metadata = stats
-
-        return info
+        return CollectionInfo(name=name, chunk_count=_collection_chunk_count(cm, name))
 
     def delete_collection(self, name: str) -> bool:
+        """Drop the collection's PostgreSQL database. Returns True on success.
+
+        Uses the connection manager's base URI to issue ``DROP DATABASE``
+        in autocommit mode against the ``postgres`` admin database.
         """
-        Delete a collection.
+        import psycopg
 
-        Args:
-            name: Collection to delete
-
-        Returns:
-            True if deleted, False if didn't exist
-        """
-        from fitz_sage.vector_db.registry import get_vector_db_plugin
-
-        vdb = get_vector_db_plugin()
-
-        if not hasattr(vdb, "delete_collection"):
-            raise FitzServiceError("Vector DB does not support deleting collections")
-
-        if not self._collection_exists(name):
+        cm = self._connection_manager()
+        if name not in _list_collection_databases(cm):
             return False
 
-        vdb.delete_collection(name)
+        base_uri = getattr(cm, "_base_uri", None)
+        if not base_uri:
+            cm.start()
+            base_uri = getattr(cm, "_base_uri", None)
+        if not base_uri:
+            raise FitzServiceError("PostgresConnectionManager has no base URI")
+
+        from urllib.parse import urlparse, urlunparse
+
+        admin_uri = urlunparse(urlparse(base_uri)._replace(path="/postgres"))
+        with psycopg.connect(admin_uri, autocommit=True) as conn:
+            conn.execute(f'DROP DATABASE IF EXISTS "{name}"')
         logger.info("Deleted collection", collection=name)
         return True
 
-    def _collection_exists(self, name: str) -> bool:
-        """Check if a collection exists."""
-        from fitz_sage.vector_db.registry import get_vector_db_plugin
+    @staticmethod
+    def _connection_manager() -> Any:
+        from fitz_sage.storage.postgres import PostgresConnectionManager
 
-        vdb = get_vector_db_plugin()
-
-        if hasattr(vdb, "list_collections"):
-            return name in vdb.list_collections()
-
-        # Fallback: try to count
-        if hasattr(vdb, "count"):
-            try:
-                vdb.count(name)
-                return True
-            except Exception as e:
-                logger.debug(f"Collection '{name}' does not exist (count check failed): {e}")
-                return False
+        cm = PostgresConnectionManager.get_instance()
+        cm.start()
+        return cm
 
         return True  # Assume exists if we can't check
 
@@ -436,15 +330,6 @@ class FitzService:
             logger.warning(f"Chat plugin '{ctx.chat_plugin}' validation failed: {e}")
             issues.append(f"Chat plugin '{ctx.chat_plugin}' not available: {e}")
 
-        # Check vector DB
-        try:
-            from fitz_sage.vector_db.registry import get_vector_db_plugin
-
-            get_vector_db_plugin(ctx.vector_db_plugin)
-        except Exception as e:
-            logger.warning(f"Vector DB '{ctx.vector_db_plugin}' validation failed: {e}")
-            issues.append(f"Vector DB '{ctx.vector_db_plugin}' not available: {e}")
-
         return ConfigValidationResult(
             valid=len(issues) == 0,
             issues=issues,
@@ -468,7 +353,6 @@ class FitzService:
                 "chat_model_smart": ctx.chat_model_smart,
                 "chat_model_fast": ctx.chat_model_fast,
                 "rerank": ctx.rerank_plugin,
-                "vector_db": ctx.vector_db_plugin,
                 "retrieval_plugin": ctx.retrieval_plugin,
                 "collection": ctx.retrieval_collection,
                 "chunk_size": ctx.chunk_size,
@@ -487,27 +371,21 @@ class FitzService:
         Check system health.
 
         Tests connectivity to:
-        - Vector database
-        - LLM providers (if configured)
-
-        Returns:
-            HealthCheckResult with component status
+        - PostgreSQL connection manager
+        - LLM chat provider (if configured)
         """
         components = {}
         issues = []
 
-        # Check vector DB
+        # Check Postgres connection manager
         try:
-            from fitz_sage.vector_db.registry import get_vector_db_plugin
-
-            vdb = get_vector_db_plugin()
-            if hasattr(vdb, "list_collections"):
-                vdb.list_collections()
-            components["vector_db"] = True
+            cm = self._connection_manager()
+            _list_collection_databases(cm)
+            components["postgres"] = True
         except Exception as e:
-            logger.warning(f"Vector DB health check failed: {e}")
-            components["vector_db"] = False
-            issues.append(f"Vector DB: {e}")
+            logger.warning(f"Postgres health check failed: {e}")
+            components["postgres"] = False
+            issues.append(f"Postgres: {e}")
 
         # Check chat provider
         try:
@@ -527,6 +405,55 @@ class FitzService:
             components=components,
             issues=issues,
         )
+
+
+# =============================================================================
+# Helpers — collection enumeration via PostgresConnectionManager
+# =============================================================================
+
+
+def _list_collection_databases(cm: Any) -> list[str]:
+    """Enumerate fitz-sage collection databases (pg_database minus system DBs)."""
+    import psycopg
+    from urllib.parse import urlparse, urlunparse
+
+    base_uri = getattr(cm, "_base_uri", None)
+    if not base_uri:
+        cm.start()
+        base_uri = getattr(cm, "_base_uri", None)
+    if not base_uri:
+        return []
+    admin_uri = urlunparse(urlparse(base_uri)._replace(path="/postgres"))
+    try:
+        with psycopg.connect(admin_uri, autocommit=True) as conn:
+            rows = conn.execute(
+                "SELECT datname FROM pg_database WHERE datistemplate = false"
+            ).fetchall()
+    except Exception as e:
+        logger.warning(f"Failed to list collection databases: {e}")
+        return []
+    system = {"postgres", "template0", "template1"}
+    return [row[0] for row in rows if row[0] not in system]
+
+
+def _collection_chunk_count(cm: Any, name: str) -> int:
+    """Return krag_section_index row count for a collection (0 if table absent)."""
+    try:
+        with cm.connection(name) as conn:
+            exists = conn.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_name = 'krag_section_index'
+                )
+                """
+            ).fetchone()[0]
+            if not exists:
+                return 0
+            return int(conn.execute("SELECT COUNT(*) FROM krag_section_index").fetchone()[0])
+    except Exception as e:
+        logger.debug(f"Chunk count failed for '{name}': {e}")
+        return 0
 
 
 # =============================================================================

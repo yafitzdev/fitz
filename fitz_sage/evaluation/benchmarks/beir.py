@@ -193,22 +193,16 @@ class FitzBEIRRetriever:
         """
         Index BEIR corpus documents into the dedicated BEIR collection.
 
-        Embeds each document (title + text) and stores it as a section with
-        its vector in the BEIR collection. The BEIR doc_id is stored in
-        section metadata for retrieval mapping.
-
-        Args:
-            corpus: BEIR corpus {doc_id: {"title": ..., "text": ...}}
-            batch_size: Number of documents to embed per batch
+        Stores each document (title + text) as a raw file + section so the
+        BM25 + KRAG retrieval path can search it. The BEIR doc_id is the
+        raw_file_id; it flows through to Address.source_id at search time.
         """
         from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
         from fitz_sage.engines.fitz_krag.ingestion.schema import ensure_schema
         from fitz_sage.engines.fitz_krag.ingestion.section_store import SectionStore
 
-        embedder = self._engine._embedder
         conn_manager = self._engine._connection_manager
-
-        ensure_schema(conn_manager, self._beir_collection, embedder.dimensions)
+        ensure_schema(conn_manager, self._beir_collection)
 
         raw_store = RawFileStore(conn_manager, self._beir_collection)
         section_store = SectionStore(conn_manager, self._beir_collection)
@@ -224,31 +218,9 @@ class FitzBEIRRetriever:
                 title = doc.get("title", "")
                 text = doc.get("text", "")
                 combined = f"{title}\n\n{text}".strip() if title else text
-                # Ensure non-empty text — embed APIs reject empty strings.
-                # Truncate to 8000 chars (~2000 tokens) to stay within model context limits.
                 safe = (combined if combined.strip() else title or doc_id)[:8000]
                 texts.append(safe)
 
-            try:
-                vectors = embedder.embed_batch(texts)
-            except Exception:
-                # Batch failed — fall back to per-document embedding, skipping any that error
-                vectors = []
-                good_ids: list[str] = []
-                good_texts: list[str] = []
-                for doc_id, text in zip(batch_ids, texts):
-                    try:
-                        vectors.append(embedder.embed(text))
-                        good_ids.append(doc_id)
-                        good_texts.append(text)
-                    except Exception as embed_err:
-                        logger.warning(f"Skipping doc {doc_id}: embed failed ({embed_err})")
-                batch_ids = good_ids
-                texts = good_texts
-                if not vectors:
-                    continue
-
-            # Insert raw files first — SectionStore has FK on raw_file_id
             for doc_id, text in zip(batch_ids, texts):
                 raw_store.upsert(
                     file_id=doc_id,
@@ -261,7 +233,7 @@ class FitzBEIRRetriever:
                 )
 
             sections = []
-            for j, (doc_id, text, vector) in enumerate(zip(batch_ids, texts, vectors)):
+            for j, (doc_id, text) in enumerate(zip(batch_ids, texts)):
                 sections.append(
                     {
                         "id": f"sec_{doc_id}",
@@ -272,7 +244,6 @@ class FitzBEIRRetriever:
                         "page_end": None,
                         "content": text,
                         "summary": text[:2000],
-                        "summary_vector": vector,
                         "parent_section_id": None,
                         "position": i + j,
                         "keywords": [],

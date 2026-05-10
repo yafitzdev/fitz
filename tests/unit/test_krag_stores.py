@@ -85,7 +85,6 @@ class TestSymbolStore:
                 "end_line": 5,
                 "signature": "def func()",
                 "summary": "A function",
-                "summary_vector": [0.1, 0.2, 0.3],
                 "imports": [],
                 "references": [],
                 "metadata": {},
@@ -110,16 +109,6 @@ class TestSymbolStore:
         results = store.search_by_name("func")
         assert len(results) == 1
         assert results[0]["name"] == "func"
-
-    def test_search_by_vector(self, mock_cm):
-        cm, conn = mock_cm
-        conn.execute.return_value.fetchall.return_value = [
-            ("s1", "func", "mod.func", "function", "f1", 1, 5, "def func()", "A function", {}, 0.95)
-        ]
-        store = SymbolStore(cm, "test_col")
-        results = store.search_by_vector([0.1, 0.2, 0.3])
-        assert len(results) == 1
-        assert results[0]["score"] == 0.95
 
     def test_delete_by_file(self, mock_cm):
         cm, conn = mock_cm

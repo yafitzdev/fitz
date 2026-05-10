@@ -57,11 +57,6 @@ class LLMRegistryError(PluginNotFoundError):
     pass
 
 
-class VectorDBRegistryError(PluginNotFoundError):
-    """Error from Vector DB registry."""
-
-    pass
-
 
 # =============================================================================
 # PluginRegistry Class
@@ -382,42 +377,6 @@ def available_constraint_plugins() -> List[str]:
 
 
 # =============================================================================
-# Re-exports from Vector DB Registry
-# =============================================================================
-# These are lazy imports to avoid circular dependencies at module load time.
-
-
-def get_vector_db_plugin(plugin_name: str, **kwargs: Any) -> Any:
-    """
-    Get a vector DB plugin instance.
-
-    Args:
-        plugin_name: Name of the plugin (e.g., 'pgvector')
-        **kwargs: Plugin configuration (mode, connection_string, etc.)
-
-    Returns:
-        Vector DB plugin instance
-    """
-    from fitz_sage.vector_db.registry import get_vector_db_plugin as _get_vector_db_plugin
-
-    return _get_vector_db_plugin(plugin_name, **kwargs)
-
-
-def available_vector_db_plugins() -> List[str]:
-    """
-    List available vector DB plugins.
-
-    Returns:
-        Sorted list of plugin names
-    """
-    from fitz_sage.vector_db.registry import (
-        available_vector_db_plugins as _available_vector_db_plugins,
-    )
-
-    return _available_vector_db_plugins()
-
-
-# =============================================================================
 # LLM Plugin Discovery
 # =============================================================================
 
@@ -457,7 +416,6 @@ __all__ = [
     "PluginRegistryError",
     "PluginNotFoundError",
     "DuplicatePluginError",
-    "VectorDBRegistryError",
     # Registry class
     "PluginRegistry",
     # Pre-configured registries
@@ -477,9 +435,6 @@ __all__ = [
     "available_pipeline_plugins",
     "get_constraint_plugin",
     "available_constraint_plugins",
-    # Vector DB plugin accessors (re-exported)
-    "get_vector_db_plugin",
-    "available_vector_db_plugins",
     # LLM plugin accessors
     "available_llm_plugins",
 ]

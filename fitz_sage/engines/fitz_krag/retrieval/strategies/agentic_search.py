@@ -65,7 +65,7 @@ class AgenticSearchStrategy:
         """
         from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
 
-        unindexed = self._manifest.files_not_in_state(FileState.EMBEDDED)
+        unindexed = self._manifest.files_not_in_state(FileState.SUMMARIZED)
         if not unindexed:
             return []
 

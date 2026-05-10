@@ -1,5 +1,5 @@
 # fitz_sage/engines/fitz_krag/ingestion/section_store.py
-"""CRUD operations for krag_section_index table with BM25 + vector search."""
+"""CRUD operations for krag_section_index table with BM25 search."""
 
 from __future__ import annotations
 
@@ -32,11 +32,11 @@ class SectionStore:
         sql = f"""
             INSERT INTO {TABLE}
                 ("id", "raw_file_id", "title", "level", "page_start", "page_end",
-                 "content", "summary", "summary_vector", "parent_section_id",
+                 "content", "summary", "parent_section_id",
                  "position", "keywords", "entities", "metadata")
             VALUES
                 (%s, %s, %s, %s, %s, %s,
-                 %s, %s, %s::vector, %s,
+                 %s, %s, %s,
                  %s, %s, %s::jsonb, %s::jsonb)
             ON CONFLICT ("id") DO UPDATE SET
                 "title" = EXCLUDED."title",
@@ -45,7 +45,6 @@ class SectionStore:
                 "page_end" = EXCLUDED."page_end",
                 "content" = EXCLUDED."content",
                 "summary" = EXCLUDED."summary",
-                "summary_vector" = EXCLUDED."summary_vector",
                 "parent_section_id" = EXCLUDED."parent_section_id",
                 "position" = EXCLUDED."position",
                 "keywords" = EXCLUDED."keywords",
@@ -54,7 +53,6 @@ class SectionStore:
         """
         with self._cm.connection(self._collection) as conn:
             for sec in sections:
-                vector_str = _vector_to_pg(sec.get("summary_vector"))
                 conn.execute(
                     sql,
                     (
@@ -66,7 +64,6 @@ class SectionStore:
                         sec.get("page_end"),
                         sec["content"],
                         sec.get("summary"),
-                        vector_str,
                         sec.get("parent_section_id"),
                         sec["position"],
                         sec.get("keywords", []),
@@ -110,36 +107,6 @@ class SectionStore:
         for row in rows:
             d = _row_to_dict(row[:11])
             d["bm25_score"] = float(row[11]) if row[11] is not None else 0.0
-            results.append(d)
-        return results
-
-    def search_by_vector(self, vector: list[float], limit: int = 20) -> list[dict[str, Any]]:
-        """Semantic search using cosine distance on summary_vector.
-
-        Sets hnsw.ef_search=200 for the duration of the query to improve ANN
-        recall on large corpora. The default of 40 misses relevant neighbours;
-        200 recovers near-exact recall with acceptable latency overhead.
-        """
-        vector_str = _vector_to_pg(vector)
-        if not vector_str:
-            return []
-
-        sql = f"""
-            SELECT "id", "raw_file_id", "title", "level", "page_start", "page_end",
-                   "content", "summary", "parent_section_id", "position", "metadata",
-                   1 - ("summary_vector" <=> %s::vector) AS "score"
-            FROM {TABLE}
-            WHERE "summary_vector" IS NOT NULL
-            ORDER BY "summary_vector" <=> %s::vector
-            LIMIT %s
-        """
-        with self._cm.connection(self._collection) as conn:
-            conn.execute("SET LOCAL hnsw.ef_search = 200")
-            rows = conn.execute(sql, (vector_str, vector_str, limit)).fetchall()
-        results = []
-        for row in rows:
-            d = _row_to_dict(row[:11])
-            d["score"] = float(row[11]) if row[11] is not None else 0.0
             results.append(d)
         return results
 
@@ -253,22 +220,6 @@ class SectionStore:
                 )
             conn.commit()
 
-    def update_vectors_by_file(self, raw_file_id: str, vectors: list[list[float]]) -> None:
-        """Update summary_vector for all sections in a file, in position order."""
-        ids_sql = f"""
-            SELECT "id" FROM {TABLE}
-            WHERE "raw_file_id" = %s
-            ORDER BY "position"
-        """
-        update_sql = f'UPDATE {TABLE} SET "summary_vector" = %s::vector WHERE "id" = %s'
-        with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(ids_sql, (raw_file_id,)).fetchall()
-            for i, row in enumerate(rows):
-                if i < len(vectors):
-                    vector_str = _vector_to_pg(vectors[i])
-                    conn.execute(update_sql, (vector_str, row[0]))
-            conn.commit()
-
     def get_corpus_summaries(self) -> list[dict[str, Any]]:
         """Fetch all L2 corpus-level summary chunks for this collection."""
         sql = f"""
@@ -287,13 +238,6 @@ class SectionStore:
         with self._cm.connection(self._collection) as conn:
             conn.execute(sql, (raw_file_id,))
             conn.commit()
-
-
-def _vector_to_pg(vector: list[float] | None) -> str | None:
-    """Convert a float list to pgvector string format."""
-    if not vector:
-        return None
-    return "[" + ",".join(str(v) for v in vector) + "]"
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:

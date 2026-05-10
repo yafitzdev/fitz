@@ -247,7 +247,7 @@ class TestBoostFiles:
         queried = _make_entry("src/main.py", state=FileState.PARSED, priority=4)
         sibling = _make_entry("src/utils.py", state=FileState.PARSED, priority=4)
         unrelated = _make_entry("docs/readme.md", state=FileState.PARSED, priority=4)
-        already_done = _make_entry("src/done.py", state=FileState.EMBEDDED, priority=4)
+        already_done = _make_entry("src/done.py", state=FileState.SUMMARIZED, priority=4)
 
         manifest = MagicMock()
         manifest._path = Path("/fake/manifest.json")

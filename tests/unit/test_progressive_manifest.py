@@ -94,31 +94,30 @@ class TestFileManifest:
         manifest.add(_make_entry("a.py", state=FileState.REGISTERED))
         manifest.add(_make_entry("b.py", state=FileState.PARSED))
         manifest.add(_make_entry("c.py", state=FileState.REGISTERED))
-        manifest.add(_make_entry("d.py", state=FileState.EMBEDDED))
+        manifest.add(_make_entry("d.py", state=FileState.SUMMARIZED))
 
         registered = manifest.files_in_state(FileState.REGISTERED)
         parsed = manifest.files_in_state(FileState.PARSED)
-        embedded = manifest.files_in_state(FileState.EMBEDDED)
         summarized = manifest.files_in_state(FileState.SUMMARIZED)
 
         assert len(registered) == 2
         assert {e.rel_path for e in registered} == {"a.py", "c.py"}
         assert len(parsed) == 1
         assert parsed[0].rel_path == "b.py"
-        assert len(embedded) == 1
-        assert len(summarized) == 0
+        assert len(summarized) == 1
+        assert summarized[0].rel_path == "d.py"
 
     def test_files_not_in_state(self, tmp_path: Path) -> None:
         """Inverse filter: entries NOT at a given state."""
         manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("a.py", state=FileState.EMBEDDED))
-        manifest.add(_make_entry("b.py", state=FileState.EMBEDDED))
+        manifest.add(_make_entry("a.py", state=FileState.SUMMARIZED))
+        manifest.add(_make_entry("b.py", state=FileState.SUMMARIZED))
         manifest.add(_make_entry("c.py", state=FileState.PARSED))
 
-        not_embedded = manifest.files_not_in_state(FileState.EMBEDDED)
+        not_summarized = manifest.files_not_in_state(FileState.SUMMARIZED)
 
-        assert len(not_embedded) == 1
-        assert not_embedded[0].rel_path == "c.py"
+        assert len(not_summarized) == 1
+        assert not_summarized[0].rel_path == "c.py"
 
     def test_bump_priority_sets_p1(self, tmp_path: Path) -> None:
         """Queried files become priority 1 with a last_queried_at timestamp."""
@@ -176,7 +175,7 @@ class TestFileManifest:
                 file_id="r2",
                 file_type=".md",
                 size_bytes=1100,
-                state=FileState.EMBEDDED,
+                state=FileState.SUMMARIZED,
                 headings=[heading],
             )
         )
@@ -199,7 +198,7 @@ class TestFileManifest:
 
         md_entry = m2.get("docs/guide.md")
         assert md_entry is not None
-        assert md_entry.state == FileState.EMBEDDED
+        assert md_entry.state == FileState.SUMMARIZED
         assert len(md_entry.headings) == 1
         assert md_entry.headings[0].title == "Overview"
         assert md_entry.headings[0].level == 1

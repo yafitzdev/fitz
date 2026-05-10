@@ -67,12 +67,6 @@ class TestFitzKragConfig:
         assert not hasattr(config, "rerank_kwargs")
         assert not hasattr(config, "vision_kwargs")
 
-    def test_vector_db_kwargs_kept(self):
-        """vector_db_kwargs still exists."""
-        config = FitzKragConfig(collection="test")
-        assert hasattr(config, "vector_db_kwargs")
-
-
 class TestDefaultYaml:
     def test_default_config_path_exists(self):
         path = get_default_config_path()

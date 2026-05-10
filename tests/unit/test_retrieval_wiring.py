@@ -262,7 +262,6 @@ class TestSectionKeywordBoostIncreasesScore:
             }
         ]
         # Semantic returns empty
-        section_store.search_by_vector.return_value = []
         # Keyword enrichment returns a hit for s1
         section_store.search_by_keywords.return_value = [{"id": "s1"}]
 
@@ -316,7 +315,6 @@ class TestCodeKeywordBoostIncreasesScore:
         # BM25 returns empty
         symbol_store.search_bm25.return_value = []
         # Semantic returns empty
-        symbol_store.search_by_vector.return_value = []
         # Keyword enrichment returns a hit
         symbol_store.search_by_keywords.return_value = [{"id": "sym1"}]
 
@@ -347,7 +345,6 @@ class TestKeywordBoostSkipsShortTerms:
                 "bm25_score": 0.5,
             }
         ]
-        section_store.search_by_vector.return_value = []
 
         embedder = MagicMock()
         embedder.embed.return_value = [0.1] * 768
@@ -378,7 +375,6 @@ class TestSectionFreshnessBoostWithRecency:
             }
             for i in range(4)
         ]
-        section_store.search_by_vector.return_value = []
         section_store.search_by_keywords.return_value = []
 
         embedder = MagicMock()
@@ -427,7 +423,6 @@ class TestFreshnessNoBoostWithoutFlag:
                 "bm25_score": 0.5,
             }
         ]
-        section_store.search_by_vector.return_value = []
         section_store.search_by_keywords.return_value = []
 
         embedder = MagicMock()
@@ -461,7 +456,6 @@ class TestFreshnessNoBoostWithoutRawStore:
                 "bm25_score": 0.5,
             }
         ]
-        section_store.search_by_vector.return_value = []
         section_store.search_by_keywords.return_value = []
 
         embedder = MagicMock()

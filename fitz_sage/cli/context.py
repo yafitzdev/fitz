@@ -70,10 +70,6 @@ class CLIContext:
     chat_model_smart: str = ""
     chat_model_fast: str = ""
 
-    # Vector DB
-    vector_db_plugin: str = ""
-    vector_db_kwargs: dict = field(default_factory=dict)
-
     # Retrieval
     retrieval_plugin: str = ""
     retrieval_collection: str = ""
@@ -122,22 +118,6 @@ class CLIContext:
         if self.rerank_model:
             return f"{self.rerank_plugin} ({self.rerank_model})"
         return self.rerank_plugin or "?"
-
-    @property
-    def vector_db_display(self) -> str:
-        """Vector DB info for display."""
-        # Handle both dict and PluginKwargs object
-        kwargs = self.vector_db_kwargs
-        if isinstance(kwargs, dict):
-            host = kwargs.get("host", "")
-            port = kwargs.get("port", "")
-        else:
-            host = getattr(kwargs, "host", None) or ""
-            port = getattr(kwargs, "port", None) or ""
-
-        if host:
-            return f"{self.vector_db_plugin} ({host}:{port})"
-        return self.vector_db_plugin or "?"
 
     @property
     def retrieval_display(self) -> str:
@@ -218,8 +198,6 @@ class CLIContext:
         chat_balanced_spec = config.get("chat_balanced", "")
         chat_plugin_name = cls._parse_plugin_string(chat_smart_spec)
 
-        vdb_plugin_name = config.get("vector_db", "pgvector")
-
         rerank_spec = config.get("rerank")
         rerank_plugin_name = cls._parse_plugin_string(rerank_spec)
         rerank_model = rerank_spec.split("/", 1)[1] if rerank_spec and "/" in rerank_spec else ""
@@ -227,8 +205,6 @@ class CLIContext:
         # Extract model names from tier specs
         chat_model_smart = chat_smart_spec.split("/", 1)[1] if "/" in chat_smart_spec else ""
         chat_model_fast = chat_fast_spec.split("/", 1)[1] if "/" in chat_fast_spec else ""
-
-        vector_db_kwargs = cls._to_dict(config.get("vector_db_kwargs", {}))
 
         # Build tier specs dict for factory
         chat_tier_specs = {
@@ -248,9 +224,6 @@ class CLIContext:
             chat_plugin=chat_plugin_name,
             chat_model_smart=chat_model_smart,
             chat_model_fast=chat_model_fast,
-            # Vector DB
-            vector_db_plugin=vdb_plugin_name,
-            vector_db_kwargs=vector_db_kwargs,
             # Retrieval
             retrieval_plugin=config.get("retrieval_plugin", "dense"),
             retrieval_collection=config.get("collection", "default"),
@@ -298,18 +271,6 @@ class CLIContext:
     # -------------------------------------------------------------------------
     # Component Accessors
     # -------------------------------------------------------------------------
-
-    def get_vector_db_client(self):
-        """Get vector DB client instance."""
-        from fitz_sage.vector_db.registry import get_vector_db_plugin
-
-        # Convert PluginKwargs to dict, excluding None values
-        # Handle both PluginKwargs model and plain dict (for mocks/backwards compat)
-        if hasattr(self.vector_db_kwargs, "model_dump"):
-            kwargs = {k: v for k, v in self.vector_db_kwargs.model_dump().items() if v is not None}
-        else:
-            kwargs = self.vector_db_kwargs if isinstance(self.vector_db_kwargs, dict) else {}
-        return get_vector_db_plugin(self.vector_db_plugin, **kwargs)
 
     def get_chat_factory(self):
         """Get chat factory for per-task tier selection."""
@@ -370,30 +331,6 @@ class CLIContext:
     # Helper Methods
     # -------------------------------------------------------------------------
 
-    def get_collections(self) -> list[str]:
-        """Get list of collections from vector DB."""
-        try:
-            client = self.get_vector_db_client()
-            return sorted(client.list_collections())
-        except Exception:
-            return []
-
-    def require_collections(self) -> list[str]:
-        """
-        Get collections or exit with error if none exist.
-
-        Use this in commands that require at least one collection to exist.
-        """
-        import typer
-
-        from fitz_sage.cli.ui import ui
-
-        collections = self.get_collections()
-        if not collections:
-            ui.error("No collections found. Run 'fitz query \"question\" --source ./docs' first.")
-            raise typer.Exit(1)
-        return collections
-
     def require_typed_config(self):
         """
         Get typed config or exit with error if invalid.
@@ -408,22 +345,6 @@ class CLIContext:
             ui.error("Invalid config. Edit .fitz/config.yaml to fix.")
             raise typer.Exit(1)
         return self.typed_config
-
-    def require_vector_db_client(self):
-        """
-        Get vector DB client or exit with error if connection fails.
-
-        Use this in commands that require a working vector DB connection.
-        """
-        import typer
-
-        from fitz_sage.cli.ui import ui
-
-        try:
-            return self.get_vector_db_client()
-        except Exception as e:
-            ui.error(f"Failed to connect to vector DB '{self.vector_db_plugin}': {e}")
-            raise typer.Exit(1)
 
     def select_collection(self, collection: Optional[str] = None, *, require: bool = True) -> str:
         """
@@ -518,7 +439,6 @@ class CLIContext:
         """
         parts = [
             f"Collection: {self.retrieval_collection}",
-            f"VectorDB: {self.vector_db_plugin}",
             f"Retrieval: {self.retrieval_plugin}",
             f"Chat: {self.chat_display}",
         ]

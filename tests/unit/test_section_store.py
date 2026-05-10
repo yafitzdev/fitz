@@ -97,7 +97,6 @@ class TestUpsertBatch:
                 "page_end": 2,
                 "content": "Content here.",
                 "summary": "A summary.",
-                "summary_vector": [0.1, 0.2, 0.3],
                 "parent_section_id": None,
                 "position": 0,
                 "metadata": {},
@@ -120,27 +119,6 @@ class TestSearchBm25:
         assert len(results) == 1
         assert results[0]["title"] == "Introduction"
         assert results[0]["bm25_score"] == 0.85
-
-
-class TestSearchByVector:
-    def test_empty_vector_returns_empty(self, store):
-        results = store.search_by_vector([], limit=10)
-        assert results == []
-
-    def test_none_vector_returns_empty(self, store):
-        results = store.search_by_vector(None, limit=10)
-        assert results == []
-
-    def test_returns_results_with_cosine_score(self, store, mock_cm):
-        row = _make_row() + (0.92,)  # cosine score appended
-        conn = MagicMock()
-        conn.execute.return_value.fetchall.return_value = [row]
-        mock_cm.connection.return_value.__enter__ = MagicMock(return_value=conn)
-        mock_cm.connection.return_value.__exit__ = MagicMock(return_value=False)
-
-        results = store.search_by_vector([0.1, 0.2, 0.3], limit=10)
-        assert len(results) == 1
-        assert results[0]["score"] == 0.92
 
 
 class TestGet:

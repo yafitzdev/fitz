@@ -61,10 +61,9 @@ dependencies = [
     "jinja2>=3.1",
     # Cryptography for Fitz Cloud encryption (AES-256-GCM)
     "cryptography>=41.0",
-    # PostgreSQL + pgvector for unified storage (vectors + tables)
+    # PostgreSQL for tabular storage + BM25 (no vectors)
     "psycopg[binary]>=3.1",
     "psycopg-pool>=3.1",
-    "pgvector>=0.2.0",
     "fitz-pgserver>=0.1.5",  # Fork of pgserver with Windows crash recovery fix
     # Lightweight document parsing (PDF, DOCX, PPTX — no ML)
     "pypdfium2>=4.0",

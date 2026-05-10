@@ -136,11 +136,7 @@ class KragIngestPipeline:
         # Document strategy
         self._doc_strategy = TechnicalDocIngestStrategy()
 
-        # Schema setup. fitz-sage uses no dense embeddings; the legacy
-        # vector columns are created idle and stay NULL.
-        from fitz_sage.engines.fitz_krag.engine import _LEGACY_VECTOR_DIM
-
-        ensure_schema(connection_manager, collection, _LEGACY_VECTOR_DIM)
+        ensure_schema(connection_manager, collection)
 
     def ingest(
         self,
@@ -158,7 +154,7 @@ class KragIngestPipeline:
 
         Returns:
             Stats dict: files_scanned, files_new, files_changed, files_deleted,
-                        symbols_extracted, symbols_embedded
+                        symbols_extracted, sections_extracted
         """
         source = Path(source)
         stats = {
@@ -167,9 +163,7 @@ class KragIngestPipeline:
             "files_changed": 0,
             "files_deleted": 0,
             "symbols_extracted": 0,
-            "symbols_embedded": 0,
             "sections_extracted": 0,
-            "sections_embedded": 0,
             "collection": self._collection,
         }
 
@@ -242,12 +236,10 @@ class KragIngestPipeline:
         stats["symbols_extracted"] = len(all_symbols)
         stats["sections_extracted"] = len(all_sections)
 
-        # 4a. Batch summarize + embed symbols
+        # 4a. Batch summarize symbols
         if all_symbols:
             summaries = self._summarize_symbols(all_symbols)
-            vectors = self._embed_summaries(summaries)
 
-            # Store symbols with summaries and vectors
             symbol_dicts = []
             for i, sym in enumerate(all_symbols):
                 symbol_dicts.append(
@@ -261,7 +253,6 @@ class KragIngestPipeline:
                         "end_line": sym.end_line,
                         "signature": sym.signature,
                         "summary": summaries[i] if i < len(summaries) else None,
-                        "summary_vector": vectors[i] if i < len(vectors) else None,
                         "imports": sym.imports,
                         "references": sym.references,
                         "keywords": [],
@@ -275,7 +266,6 @@ class KragIngestPipeline:
                 self._enricher.enrich_symbols(symbol_dicts)
 
             self._symbol_store.upsert_batch(symbol_dicts)
-            stats["symbols_embedded"] = len(vectors)
 
             # Save keywords to VocabularyStore
             if self._vocabulary_store:
@@ -289,10 +279,9 @@ class KragIngestPipeline:
         if all_import_edges:
             self._import_store.upsert_batch(all_import_edges)
 
-        # 4b. Batch summarize + embed sections
+        # 4b. Batch summarize sections
         if all_sections:
             section_summaries = self._summarize_sections(all_sections)
-            section_vectors = self._embed_summaries(section_summaries)
 
             section_dicts = []
             for i, sec in enumerate(all_sections):
@@ -306,9 +295,6 @@ class KragIngestPipeline:
                         "page_end": sec.page_end,
                         "content": sec.content,
                         "summary": (section_summaries[i] if i < len(section_summaries) else None),
-                        "summary_vector": (
-                            section_vectors[i] if i < len(section_vectors) else None
-                        ),
                         "parent_section_id": sec.parent_id,
                         "position": sec.position,
                         "keywords": [],
@@ -323,7 +309,6 @@ class KragIngestPipeline:
                 self._enricher.enrich_sections(section_dicts)
 
             self._section_store.upsert_batch(section_dicts)
-            stats["sections_embedded"] = len(section_vectors)
 
             # Save section keywords to VocabularyStore
             if self._vocabulary_store:
@@ -340,14 +325,12 @@ class KragIngestPipeline:
             if all_sections:
                 self._generate_hierarchy_sections(section_dicts, all_section_file_ids)
 
-        # 4c. Batch summarize + embed tables
+        # 4c. Batch summarize tables
         if all_table_metas:
             table_summaries = self._summarize_tables(all_table_metas)
-            table_vectors = self._embed_summaries(table_summaries)
 
             for i, meta in enumerate(all_table_metas):
                 meta["summary"] = table_summaries[i] if i < len(table_summaries) else None
-                meta["summary_vector"] = table_vectors[i] if i < len(table_vectors) else None
             self._table_store.upsert_batch(all_table_metas)
             stats["tables_ingested"] = len(all_table_metas)
 
@@ -808,11 +791,6 @@ class KragIngestPipeline:
                 f"{sample_str}"
             )
         return "\n\n".join(parts)
-
-    @staticmethod
-    def _embed_summaries(summaries: list[str]) -> list[list[float]]:
-        """fitz-sage uses no dense embeddings; this returns []."""
-        return []
 
     # ------------------------------------------------------------------
     # Vocabulary integration

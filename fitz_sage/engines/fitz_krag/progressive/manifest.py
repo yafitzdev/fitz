@@ -24,9 +24,8 @@ class FileState(str, Enum):
     """Progressive indexing state for a file."""
 
     REGISTERED = "registered"  # In manifest only, no DB data
-    PARSED = "parsed"  # Raw content + symbols/sections stored (no embeddings)
-    SUMMARIZED = "summarized"  # LLM summaries exist, BM25 works
-    EMBEDDED = "embedded"  # Vectors computed, full KRAG search works
+    PARSED = "parsed"  # Raw content + symbols/sections stored
+    SUMMARIZED = "summarized"  # LLM summaries exist, BM25 works (terminal state)
 
 
 @dataclass

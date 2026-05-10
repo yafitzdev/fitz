@@ -7,19 +7,16 @@ All column identifiers are double-quoted to avoid reserved-word collisions
 
 Tables:
 - krag_raw_files: stores original file content (keyed by content hash)
-- krag_symbol_index: code symbol registry with embeddings
+- krag_symbol_index: code symbol registry (BM25 over signatures + summaries)
 - krag_import_graph: file-level dependency links
-- krag_section_index: document section registry with BM25 + embeddings
-- krag_table_index: table metadata registry with schema summaries + embeddings
+- krag_section_index: document section registry (BM25 over title + content)
+- krag_table_index: table metadata registry
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING
-
-from fitz_sage.core.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from fitz_sage.storage.postgres import PostgresConnectionManager
@@ -50,7 +47,7 @@ def _raw_files_ddl() -> str:
     """
 
 
-def _symbol_index_ddl(embedding_dim: int) -> str:
+def _symbol_index_ddl() -> str:
     return f"""
     CREATE TABLE IF NOT EXISTS {TABLE_PREFIX}symbol_index (
         "id" TEXT PRIMARY KEY,
@@ -62,7 +59,6 @@ def _symbol_index_ddl(embedding_dim: int) -> str:
         "end_line" INTEGER NOT NULL,
         "signature" TEXT,
         "summary" TEXT,
-        "summary_vector" vector({embedding_dim}),
         "imports" TEXT[],
         "references" TEXT[],
         "keywords" TEXT[] DEFAULT '{{}}',
@@ -89,15 +85,6 @@ def _symbol_index_ddl(embedding_dim: int) -> str:
     """
 
 
-def _symbol_hnsw_index_ddl() -> str:
-    return f"""
-    CREATE INDEX IF NOT EXISTS idx_{TABLE_PREFIX}symbol_vector
-        ON {TABLE_PREFIX}symbol_index
-        USING hnsw ("summary_vector" vector_cosine_ops)
-        WITH (m = 16, ef_construction = 64);
-    """
-
-
 def _import_graph_ddl() -> str:
     return f"""
     CREATE TABLE IF NOT EXISTS {TABLE_PREFIX}import_graph (
@@ -113,7 +100,7 @@ def _import_graph_ddl() -> str:
     """
 
 
-def _section_index_ddl(embedding_dim: int) -> str:
+def _section_index_ddl() -> str:
     return f"""
     CREATE TABLE IF NOT EXISTS {TABLE_PREFIX}section_index (
         "id" TEXT PRIMARY KEY,
@@ -127,7 +114,6 @@ def _section_index_ddl(embedding_dim: int) -> str:
             to_tsvector('english', "title" || ' ' || "content")
         ) STORED,
         "summary" TEXT,
-        "summary_vector" vector({embedding_dim}),
         "parent_section_id" TEXT,
         "position" INTEGER NOT NULL,
         "keywords" TEXT[] DEFAULT '{{}}',
@@ -146,16 +132,7 @@ def _section_index_ddl(embedding_dim: int) -> str:
     """
 
 
-def _section_hnsw_index_ddl() -> str:
-    return f"""
-    CREATE INDEX IF NOT EXISTS idx_{TABLE_PREFIX}section_vector
-        ON {TABLE_PREFIX}section_index
-        USING hnsw ("summary_vector" vector_cosine_ops)
-        WITH (m = 16, ef_construction = 64);
-    """
-
-
-def _table_index_ddl(embedding_dim: int) -> str:
+def _table_index_ddl() -> str:
     return f"""
     CREATE TABLE IF NOT EXISTS {TABLE_PREFIX}table_index (
         "id" TEXT PRIMARY KEY,
@@ -165,7 +142,6 @@ def _table_index_ddl(embedding_dim: int) -> str:
         "columns" TEXT[] NOT NULL,
         "row_count" INTEGER NOT NULL,
         "summary" TEXT,
-        "summary_vector" vector({embedding_dim}),
         "metadata" JSONB NOT NULL DEFAULT '{{}}'::jsonb,
         "created_at" TIMESTAMPTZ DEFAULT NOW()
     );
@@ -178,86 +154,21 @@ def _table_index_ddl(embedding_dim: int) -> str:
     """
 
 
-def _table_hnsw_index_ddl() -> str:
-    return f"""
-    CREATE INDEX IF NOT EXISTS idx_{TABLE_PREFIX}table_vector
-        ON {TABLE_PREFIX}table_index
-        USING hnsw ("summary_vector" vector_cosine_ops)
-        WITH (m = 16, ef_construction = 64);
-    """
-
-
-def _validate_vector_dimensions(
-    connection_manager: "PostgresConnectionManager",
-    collection: str,
-    embedding_dim: int,
-) -> None:
-    """
-    Validate that existing vector columns match the expected embedding dimension.
-
-    CREATE TABLE IF NOT EXISTS silently ignores dimension changes when the table
-    already exists. This check catches mismatches early with a clear error message.
-    """
-    with connection_manager.connection(collection) as conn:
-        table_exists = conn.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.tables
-                WHERE table_name = 'krag_section_index'
-            )
-            """
-        ).fetchone()[0]
-
-        if not table_exists:
-            return
-
-        result = conn.execute(
-            """
-            SELECT format_type(atttypid, atttypmod)
-            FROM pg_attribute
-            WHERE attrelid = 'krag_section_index'::regclass
-            AND attname = 'summary_vector'
-            """
-        ).fetchone()
-
-        if result:
-            match = re.search(r"vector\((\d+)\)", result[0])
-            existing_dim = int(match.group(1)) if match else None
-            if existing_dim != embedding_dim:
-                raise ConfigurationError(
-                    f"Embedding dimension mismatch: existing schema has {existing_dim}d vectors "
-                    f"but current embedder reports {embedding_dim}d. If you changed embedding "
-                    "models, delete the collection and re-register to rebuild."
-                )
-
-
 def ensure_schema(
     connection_manager: "PostgresConnectionManager",
     collection: str,
-    embedding_dim: int,
 ) -> None:
     """
     Create KRAG tables if they don't exist.
 
     Called on engine init / first ingest. Safe to call multiple times.
     """
-    _validate_vector_dimensions(connection_manager, collection, embedding_dim)
-
     with connection_manager.connection(collection) as conn:
         conn.execute(_raw_files_ddl())
-        conn.execute(_symbol_index_ddl(embedding_dim))
+        conn.execute(_symbol_index_ddl())
         conn.execute(_import_graph_ddl())
-        conn.execute(_section_index_ddl(embedding_dim))
-        conn.execute(_table_index_ddl(embedding_dim))
+        conn.execute(_section_index_ddl())
+        conn.execute(_table_index_ddl())
         conn.commit()
 
-    # HNSW index creation can be slow; run separately
-    for index_fn in [_symbol_hnsw_index_ddl, _section_hnsw_index_ddl, _table_hnsw_index_ddl]:
-        try:
-            with connection_manager.connection(collection) as conn:
-                conn.execute(index_fn())
-                conn.commit()
-        except Exception as e:
-            logger.debug(f"HNSW index creation note: {e}")
-
-    logger.info(f"KRAG schema ensured for collection '{collection}' (dim={embedding_dim})")
+    logger.info(f"KRAG schema ensured for collection '{collection}'")

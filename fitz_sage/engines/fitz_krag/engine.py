@@ -32,11 +32,6 @@ logger = get_logger(__name__)
 # Fitz Cloud optimizer version for cache key computation
 CLOUD_OPTIMIZER_VERSION = "1.0"
 
-# Vector dimension used purely for legacy schema compatibility. fitz-sage
-# does not write embeddings; the columns stay NULL. Scheduled for removal
-# along with the rest of the dense-retrieval scaffolding.
-_LEGACY_VECTOR_DIM = 1024
-
 
 def _report_timings(
     progress: Callable[[str], None],
@@ -490,17 +485,11 @@ class FitzKragEngine:
         _t4 = _t.perf_counter()
         logger.debug(f"[init] components: {(_t4-_t3)*1000:.0f}ms")
 
-        # Schema setup. Vector columns are kept (idle) for compatibility
-        # with collections previously ingested with embeddings; the
-        # chat-only architecture never writes to them. Schema/storage
-        # cleanup is scheduled for a follow-up refactor.
-        ensure_schema(
-            self._connection_manager, self._config.collection, _LEGACY_VECTOR_DIM
-        )
+        ensure_schema(self._connection_manager, self._config.collection)
 
         _t5 = _t.perf_counter()
         logger.debug(
-            f"[init] embed.dimensions+schema: {(_t5-_t4)*1000:.0f}ms, "
+            f"[init] schema: {(_t5-_t4)*1000:.0f}ms, "
             f"total: {(_t5-_t0)*1000:.0f}ms"
         )
 
@@ -1346,7 +1335,6 @@ class FitzKragEngine:
                                 "end_line": sym.end_line,
                                 "signature": sym.signature,
                                 "summary": None,
-                                "summary_vector": None,
                                 "imports": sym.imports,
                                 "references": sym.references,
                                 "keywords": [],

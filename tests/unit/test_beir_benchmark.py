@@ -458,7 +458,6 @@ class TestFitzBEIRRetriever:
         with patch(
             "fitz_sage.engines.fitz_krag.ingestion.section_store.SectionStore"
         ) as MockSectionStore:
-            MockSectionStore.return_value.search_by_vector.side_effect = search_side_effect
 
             results = retriever.search(
                 corpus={},
@@ -490,7 +489,6 @@ class TestFitzBEIRRetriever:
         with patch(
             "fitz_sage.engines.fitz_krag.ingestion.section_store.SectionStore"
         ) as MockSectionStore:
-            MockSectionStore.return_value.search_by_vector.return_value = []
             retriever.search(corpus={}, queries={"q1": "query"}, top_k=5)
 
         MockSectionStore.assert_called_once_with(

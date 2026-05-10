@@ -9,10 +9,7 @@ import typer
 
 from fitz_sage.cli.context import CLIContext
 from fitz_sage.cli.ui import RICH, console, ui
-from fitz_sage.core.registry import (
-    available_llm_plugins,
-    available_vector_db_plugins,
-)
+from fitz_sage.core.registry import available_llm_plugins
 from fitz_sage.runtime import get_default_engine, get_engine_registry
 
 from .init_config import (
@@ -29,7 +26,6 @@ _PLUGIN_PREFERENCE: dict[str, list[str]] = {
     "chat": ["ollama", "cohere", "openai", "anthropic"],
     "rerank": ["ollama", "cohere"],
     "vision": ["ollama", "cohere", "openai", "anthropic"],
-    "vector_db": ["pgvector"],
 }
 
 
@@ -42,19 +38,11 @@ def _order_by_preference(available: list[str], plugin_type: str) -> list[str]:
 
 
 def _select_plugins(system, non_interactive: bool) -> dict:
-    """Run shared plugin selection (chat, rerank, vision, vector_db).
-
-    Returns:
-        Dict with keys: chat, chat_model_smart, chat_model_fast, chat_model_balanced,
-        rerank, rerank_model, vector_db, vision, vision_model.
-    """
-    # Discover plugins
+    """Run shared plugin selection (chat, rerank, vision)."""
     all_chat = available_llm_plugins("chat")
     all_rerank = available_llm_plugins("rerank")
     all_vision = available_llm_plugins("vision")
-    all_vector_db = available_vector_db_plugins()
 
-    # Filter to available, then order by preference (first = default)
     avail_chat = _order_by_preference(filter_available_plugins(all_chat, "chat", system), "chat")
     avail_rerank = _order_by_preference(
         filter_available_plugins(all_rerank, "rerank", system), "rerank"
@@ -62,19 +50,10 @@ def _select_plugins(system, non_interactive: bool) -> dict:
     avail_vision = _order_by_preference(
         filter_available_plugins(all_vision, "vision", system), "vision"
     )
-    avail_vector_db = _order_by_preference(
-        filter_available_plugins(all_vector_db, "vector_db", system), "vector_db"
-    )
 
-    # Validate minimum requirements
     if not avail_chat:
         ui.error("No chat plugins available!")
         ui.info("Set an API key (COHERE_API_KEY, OPENAI_API_KEY) or start Ollama.")
-        raise typer.Exit(1)
-
-    if not avail_vector_db:
-        ui.error("No vector database available!")
-        ui.info("Ensure pgvector packages are installed: pip install psycopg pgvector pgserver")
         raise typer.Exit(1)
 
     if non_interactive:
@@ -84,11 +63,9 @@ def _select_plugins(system, non_interactive: bool) -> dict:
         chat_model_balanced = get_default_model("chat", chat_choice, "balanced")
         rerank_choice = None
         rerank_model = ""
-        vector_db_choice = avail_vector_db[0]
         vision_choice = avail_vision[0] if avail_vision else None
         vision_model = get_default_model("vision", vision_choice) if vision_choice else ""
     else:
-        # Interactive selection (first item in each list is the default)
         ui.section("Configuration")
 
         chat_choice = ui.prompt_numbered_choice("Chat plugin", avail_chat, avail_chat[0])
@@ -123,8 +100,6 @@ def _select_plugins(system, non_interactive: bool) -> dict:
             print()
             ui.info("Vision: not available (no vision plugins detected)")
 
-        vector_db_choice = avail_vector_db[0]
-
     return {
         "chat": chat_choice,
         "chat_model_smart": chat_model_smart,
@@ -132,7 +107,6 @@ def _select_plugins(system, non_interactive: bool) -> dict:
         "chat_model_balanced": chat_model_balanced,
         "rerank": rerank_choice,
         "rerank_model": rerank_model,
-        "vector_db": vector_db_choice,
         "vision": vision_choice,
         "vision_model": vision_model,
     }
@@ -153,7 +127,6 @@ def _run_fitz_krag_wizard(system, non_interactive: bool) -> str:
         chat_model_balanced=plugins["chat_model_balanced"],
         rerank=plugins["rerank"],
         rerank_model=plugins["rerank_model"],
-        vector_db=plugins["vector_db"],
         vision=plugins["vision"],
         vision_model=plugins["vision_model"],
     )

@@ -24,10 +24,6 @@ fitz_krag:
   chat_api_key_env: null
   vision_api_key_env: null
 
-  # Vector DB plugin — kept for legacy schema compatibility (vector
-  # columns stay NULL in this architecture). Scheduled for removal.
-  vector_db: pgvector
-
   # Reranker. 'llm' = score candidates with the configured chat factory
   # (fast tier). null = disabled.
   rerank: llm
@@ -57,9 +53,5 @@ fitz_krag:
   # Generation
   enable_citations: true
   strict_grounding: true
-
-  # Vector DB kwargs (PostgreSQL connection mode)
-  vector_db_kwargs:
-    mode: local
 
   log_level: INFO

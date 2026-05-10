@@ -47,12 +47,6 @@ def _show_config_summary(ctx: CLIContext) -> None:
         # Chat
         table.add_row("Chat", ctx.chat_plugin or "?", ctx.chat_model_smart)
 
-        # Vector DB
-        vdb_host = getattr(ctx.vector_db_kwargs, "host", None) or ""
-        vdb_port = getattr(ctx.vector_db_kwargs, "port", None) or ""
-        vdb_details = f"{vdb_host}:{vdb_port}" if vdb_host else ""
-        table.add_row("Vector DB", ctx.vector_db_plugin or "?", vdb_details)
-
         # Retriever
         table.add_row(
             "Retriever",
@@ -78,8 +72,6 @@ def _show_config_summary(ctx: CLIContext) -> None:
 
         chat_detail = f" ({ctx.chat_model_smart})" if ctx.chat_model_smart else ""
         print(f"  Chat:      {ctx.chat_plugin or '?'}{chat_detail}")
-
-        print(f"  Vector DB: {ctx.vector_db_plugin or '?'}")
 
         print(f"  Retriever: {ctx.retrieval_plugin} (collection={ctx.retrieval_collection})")
 
@@ -333,21 +325,6 @@ def _run_doctor(test: bool = False) -> None:
         except Exception as e:
             ui.status("Chat", False, str(e)[:50])
             issues.append(f"Chat failed: {str(e)[:50]}")
-
-        # Vector DB
-        try:
-            if ctx.vector_db_plugin:
-                client = ctx.get_vector_db_client()
-                collections = client.list_collections()
-                ui.status(
-                    "Vector DB", True, f"{ctx.vector_db_plugin} ({len(collections)} collections)"
-                )
-            else:
-                ui.status("Vector DB", False, "Not configured")
-                issues.append("Vector DB not configured")
-        except Exception as e:
-            ui.status("Vector DB", False, str(e)[:50])
-            issues.append(f"Vector DB failed: {str(e)[:50]}")
 
     # Summary
     print()
