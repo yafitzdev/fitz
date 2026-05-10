@@ -59,7 +59,7 @@ dependencies = [
     "typing-extensions>=4.7",
     "typer>=0.9",
     "jinja2>=3.1",
-    # Cryptography for Fitz Cloud encryption (AES-256-GCM)
+    # X.509 cert parsing for enterprise mTLS auth (fitz_sage/llm/auth/certificates.py)
     "cryptography>=41.0",
     # PostgreSQL for tabular storage + BM25 (no vectors)
     "psycopg[binary]>=3.1",
@@ -69,9 +69,6 @@ dependencies = [
     "pypdfium2>=4.0",
     "python-docx>=1.0",
     "python-pptx>=0.6",
-    # Resilience for M2M auth (retry, circuit breaker)
-    "tenacity>=8.0.0",
-    "circuitbreaker>=2.1.3",
 ]
 
 [project.optional-dependencies]
@@ -86,10 +83,6 @@ local = ["ollama>=0.1.0"]
 
 # REST API server
 api = ["fastapi>=0.100.0", "uvicorn[standard]>=0.23.0"]
-
-# Framework integrations
-langchain = ["langchain-core>=0.2.0"]
-llamaindex = ["llama-index-core>=0.10.0"]
 
 # KRAG additional language support (tree-sitter extractors)
 krag-typescript = ["tree-sitter>=0.22", "tree-sitter-typescript>=0.22"]

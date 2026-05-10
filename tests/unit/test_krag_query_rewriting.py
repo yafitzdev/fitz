@@ -51,7 +51,6 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine._synthesizer = MagicMock(name="synthesizer")
     engine._constraints = []
     engine._governor = None
-    engine._cloud_client = None
     engine._detection_orchestrator = None
     engine._query_rewriter = None
     engine._address_reranker = None

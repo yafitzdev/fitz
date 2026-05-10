@@ -29,9 +29,6 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Fitz Cloud optimizer version for cache key computation
-CLOUD_OPTIMIZER_VERSION = "1.0"
-
 
 def _report_timings(
     progress: Callable[[str], None],
@@ -91,13 +88,11 @@ class FitzKragEngine:
     Flow:
     1. Analyze query intent (+ optional detection)
     2. Retrieve addresses (pointers to code symbols / document sections)
-    3. (Optional) Check cloud cache — early return on hit
-    4. Read content for top-ranked addresses
-    5. Expand with context (imports, class context, same-file refs)
-    6. Run epistemic guardrails — determine AnswerMode
-    7. Assemble LLM context
-    8. Generate grounded answer with file:line provenance
-    9. (Optional) Store in cloud cache
+    3. Read content for top-ranked addresses
+    4. Expand with context (imports, class context, same-file refs)
+    5. Run epistemic guardrails — determine AnswerMode
+    6. Assemble LLM context
+    7. Generate grounded answer with file:line provenance
     """
 
     def __init__(self, config: FitzKragConfig):
@@ -350,16 +345,6 @@ class FitzKragEngine:
             # qwen2.5:7b) are too small and degrade accuracy. Enable by passing
             # chat=self._chat_factory("smart") when a capable model is available.
             self._governor = GovernanceDecider()
-
-        # Cloud cache
-        self._cloud_client: Any = None
-        if self._config.cloud.get("enabled", False):
-            from fitz_sage.cloud.client import CloudClient
-            from fitz_sage.cloud.config import CloudConfig
-
-            cloud_config = CloudConfig(**self._config.cloud)
-            cloud_config.validate_config()
-            self._cloud_client = CloudClient(cloud_config, cloud_config.org_id or "")
 
         # Table query handler
         from fitz_sage.engines.fitz_krag.retrieval.table_handler import TableQueryHandler
@@ -822,12 +807,6 @@ class FitzKragEngine:
                 addresses = self._address_reranker.rerank(retrieval_query, addresses)
                 timings.append(("Rerank", time.perf_counter() - t0))
 
-            # 2.6. Check cloud cache (early return on hit)
-            if self._cloud_client:
-                cached = self._check_cloud_cache(query.text, addresses)
-                if cached:
-                    return cached
-
             # 3. Read content for top addresses (skip if multi-hop already read)
             if use_multi_hop:
                 pass  # read_results already populated by hop controller
@@ -935,11 +914,7 @@ class FitzKragEngine:
             # Report timing breakdown
             _report_timings(_progress, timings, pipeline_start)
 
-            # 7.5. Store in cloud cache
-            if self._cloud_client:
-                self._store_cloud_cache(query.text, addresses, answer)
-
-            # 7.6. Boost queried files for background worker priority
+            # 7.5. Boost queried files for background worker priority
             if self._bg_worker:
                 queried_paths = [
                     a.metadata.get("disk_path") for a in addresses if a.metadata.get("disk_path")
@@ -1079,39 +1054,6 @@ class FitzKragEngine:
             logger.debug("Gap analysis failed", error=str(e))
 
         return gap
-
-    def _check_cloud_cache(self, query_text: str, addresses: list) -> Answer | None:
-        """Check cloud cache for a previously cached answer.
-
-        The cloud cache historically used query embeddings as the
-        semantic-similarity key. With the move to a single-protocol,
-        embedding-free architecture this lookup is currently disabled
-        — it returns None (cache miss) so the engine falls through to
-        normal generation. Re-enabling it requires a text-hash-based
-        cache key (planned).
-        """
-        return None
-
-    def _store_cloud_cache(self, query_text: str, addresses: list, answer: Answer) -> None:
-        """Store an answer in the cloud cache.
-
-        Disabled along with ``_check_cloud_cache`` until the cache key
-        is re-keyed without embeddings.
-        """
-        return None
-
-    def _build_cache_versions(self) -> Any:
-        """Build CacheVersions for cloud cache operations."""
-        import fitz_sage
-        from fitz_sage.cloud.cache_key import CacheVersions
-
-        return CacheVersions(
-            optimizer=CLOUD_OPTIMIZER_VERSION,
-            engine=fitz_sage.__version__,
-            collection=self._config.collection,
-            llm_model=self._config.chat_smart,
-            prompt_template="default",
-        )
 
     def point(
         self,

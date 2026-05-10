@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### 🗑 Removed
+
+- **Fitz Cloud feature** — deleted entirely. Removed `fitz_sage/cloud/`
+  (the cloud cache client, config, crypto, and cache-key modules) and
+  `fitz_sage/integrations/` (the `FitzOptimizer` plus the LangChain
+  `FitzRAGChain` and LlamaIndex `FitzQueryEngine` adapters that wrapped
+  it). `FitzKragConfig.cloud` field is gone; `FitzKragEngine` no longer
+  has `_cloud_client`, `_check_cloud_cache`, `_store_cloud_cache`, or
+  `_build_cache_versions`. Dropped `cryptography`, `langchain-core`,
+  and `llama-index-core` from the dependency set. The cloud cache
+  hooks in `answer()` returned `None` already after the embedding
+  removal; the surface is now gone too.
+
+---
+
 ## [0.11.0] - 2026-03-21
 
 ### 🎉 Highlights

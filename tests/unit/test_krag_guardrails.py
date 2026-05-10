@@ -60,7 +60,6 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine._pg_table_store = MagicMock(name="pg_table_store")
     engine._constraints = []
     engine._governor = None
-    engine._cloud_client = None
     engine._detection_orchestrator = None
     engine._query_rewriter = None
     engine._address_reranker = None
