@@ -208,28 +208,7 @@ class FitzKragConfig(BasePluginConfig):
         default=0.4,
         ge=0.0,
         le=1.0,
-        description="Weight for keyword search in hybrid merge",
-    )
-
-    semantic_weight: float = Field(
-        default=0.6,
-        ge=0.0,
-        le=1.0,
-        description="Weight for semantic search in hybrid merge",
-    )
-
-    section_bm25_weight: float = Field(
-        default=0.6,
-        ge=0.0,
-        le=1.0,
-        description="Weight for BM25 search in section hybrid merge",
-    )
-
-    section_semantic_weight: float = Field(
-        default=0.4,
-        ge=0.0,
-        le=1.0,
-        description="Weight for semantic search in section hybrid merge",
+        description="Weight for keyword (name) leg in code keyword+BM25 merge",
     )
 
     include_section_context: bool = Field(
@@ -244,20 +223,6 @@ class FitzKragConfig(BasePluginConfig):
     table_extensions: list[str] = Field(
         default=[".csv", ".tsv"],
         description="File extensions to ingest as tables",
-    )
-
-    table_keyword_weight: float = Field(
-        default=0.4,
-        ge=0.0,
-        le=1.0,
-        description="Weight for keyword search in table hybrid merge",
-    )
-
-    table_semantic_weight: float = Field(
-        default=0.6,
-        ge=0.0,
-        le=1.0,
-        description="Weight for semantic search in table hybrid merge",
     )
 
     max_table_results: int = Field(

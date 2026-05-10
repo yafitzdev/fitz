@@ -45,13 +45,10 @@ fitz_krag:
   max_expansion_depth: 1
   include_class_context: true
 
-  # Retrieval weights — used by the BM25 + keyword merge in CodeSearch.
+  # Retrieval weights — used by the keyword+BM25 merge in CodeSearch.
   top_addresses: 50
   top_read: 50
   keyword_weight: 0.4
-  semantic_weight: 0.6  # legacy field; ignored
-  section_bm25_weight: 0.6
-  section_semantic_weight: 0.4  # legacy field; ignored
 
   # Context assembly
   max_context_tokens: 48000

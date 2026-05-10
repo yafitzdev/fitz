@@ -33,7 +33,6 @@ def _make_config(**overrides) -> MagicMock:
     cfg.min_relevance_score = overrides.get("min_relevance_score", 0)
     cfg.keyword_weight = overrides.get("keyword_weight", 0.4)
     cfg.code_bm25_weight = overrides.get("code_bm25_weight", 0.3)
-    cfg.section_bm25_weight = overrides.get("section_bm25_weight", 0.6)
     return cfg
 
 
@@ -275,10 +274,9 @@ class TestSectionKeywordBoostIncreasesScore:
 
         # Score should include the 0.1 keyword boost on top of BM25 contribution
         assert len(results) == 1
-        # RRF with k=60: BM25 only at rank 0 → 1/(60+0) = 1/60
-        # section_bm25_weight * (1/60) = 0.6/60 = 0.01
-        # With keyword boost: 0.01 + 0.1 = 0.11
-        assert results[0].score == pytest.approx(0.6 / 60 + 0.1, abs=0.01)
+        # RRF with k=60: BM25 only at rank 0 → 1/(60+0) = 1/60 ≈ 0.0167
+        # With keyword boost: 1/60 + 0.1 ≈ 0.1167
+        assert results[0].score == pytest.approx(1 / 60 + 0.1, abs=0.01)
 
 
 # ===========================================================================

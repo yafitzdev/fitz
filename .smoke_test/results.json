@@ -1,0 +1,63 @@
+{
+  "collection": "smoke_7a95ce",
+  "init_s": 2.45,
+  "ingest_s": 0.05,
+  "files": 9,
+  "queries": [
+    {
+      "q": "What is the price and range of the Model X100?",
+      "label": "factual / single doc",
+      "expected_mode": "trustworthy",
+      "actual_mode": "trustworthy",
+      "mode_match": true,
+      "substring_hits": 2,
+      "substring_total": 2,
+      "time_s": 84.96,
+      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks for the \"price and range of the Model X100\".\n2.  **Scan Context for Keywords:** Look for \"Model X100\", \"Price\", \"Range\" in the provided documents.\n3.  **Evaluate Source [S1] (products.md):**\n   - Under `## Model X100`:\n     - `### Specifications`\n     - `- Price: $45,000`\n     - `- Range: 300 miles per charge`\n4.  **Evaluate Source [S2] (spec/vehicle_specifications.md):**\n   - Under `## Model X100 Official Specificat"
+    },
+    {
+      "q": "Who is the CEO of TechCorp Industries and what is their background?",
+      "label": "factual / entity",
+      "expected_mode": "trustworthy",
+      "actual_mode": "trustworthy",
+      "mode_match": true,
+      "substring_hits": 2,
+      "substring_total": 2,
+      "time_s": 70.46,
+      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks: \"Who is the CEO of TechCorp Industries and what is their background?\"\n2.  **Scan Context for Keywords:** Look for \"CEO\", \"TechCorp Industries\", \"background\".\n3.  **Locate Relevant Information in Context:**\n   - [S1] `people.md` contains a section on \"Sarah Chen\":\n     - \"Sarah Chen is the CEO of TechCorp Industries.\"\n     - \"She joined the company in 2019 after spending 8 years at AutoMotors where she served as VP o"
+    },
+    {
+      "q": "How many employees does TechCorp have?",
+      "label": "conflict / two-source contradiction",
+      "expected_mode": "disputed",
+      "actual_mode": "trustworthy",
+      "mode_match": false,
+      "substring_hits": 2,
+      "substring_total": 2,
+      "time_s": 44.55,
+      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks \"How many employees does TechCorp have?\"\n2.  **Scan Context for Keywords:** Look for \"TechCorp\", \"employees\", \"employee count\", \"headcount\".\n3.  **Extract Relevant Information from Sources:**\n   - [S1] `people.md`: Under \"TechCorp Industries\" -> Key facts: \"Employees: 5,200\"\n   - [S3] `conflicts.md`: Contains conflicting reports for Q1 2024:\n     - Finance Team Report: \"Employee count: 5,200 people\"\n     - HR Team Re"
+    },
+    {
+      "q": "What is the Authentication Service's preferred token rotation interval?",
+      "label": "abstain / not in corpus",
+      "expected_mode": "abstain",
+      "actual_mode": "trustworthy",
+      "mode_match": false,
+      "substring_hits": 0,
+      "substring_total": 0,
+      "time_s": 77.89,
+      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks: \"What is the Authentication Service's preferred token rotation interval?\"\n\n2.  **Scan Context for Keywords:** Look for terms like \"token rotation\", \"interval\", \"refresh\", \"duration\", \"expires\", \"session_duration\".\n   - [S6] shows `UserAuth` class with `__init__(self, secret_key: str, session_duration_hours: int = 24)`\n   - [S7] explains `session_duration_hours: How long sessions remain valid`\n   - [S4]/[S5] show `Se"
+    },
+    {
+      "q": "What was the population of Mars in 2023?",
+      "label": "abstain / off-topic",
+      "expected_mode": "abstain",
+      "actual_mode": "abstain",
+      "mode_match": true,
+      "substring_hits": 0,
+      "substring_total": 0,
+      "time_s": 32.6,
+      "answer_preview": "I don't have enough information to answer this question.\n\nTo answer this question, consider adding:\n  - Documents or code files covering this topic\n  - Use fitz_sage.query('your question', source='./path') to query a directory"
+    }
+  ]
+}

@@ -17,13 +17,11 @@ from fitz_sage.engines.fitz_krag.types import AddressKind
 
 def _make_strategy(
     keyword_results: list[dict] | None = None,
-    table_keyword_weight: float = 0.4,
 ) -> TableSearchStrategy:
     table_store = MagicMock(name="table_store")
     table_store.search_by_name.return_value = keyword_results or []
 
     config = MagicMock(name="config")
-    config.table_keyword_weight = table_keyword_weight
 
     return TableSearchStrategy(table_store, config)
 

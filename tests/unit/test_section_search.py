@@ -20,9 +20,7 @@ def mock_section_store():
 
 @pytest.fixture
 def mock_config():
-    config = MagicMock()
-    config.section_bm25_weight = 0.6
-    return config
+    return MagicMock()
 
 
 @pytest.fixture

@@ -149,9 +149,6 @@ include_class_context: true
 top_addresses: 10
 top_read: 5
 keyword_weight: 0.4
-semantic_weight: 0.6
-section_bm25_weight: 0.6
-section_semantic_weight: 0.4
 
 # ===========================================================================
 # Context Assembly
