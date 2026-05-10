@@ -64,15 +64,30 @@ A: "I don't have enough information
 ### Where to start 🚀
 
 > [!IMPORTANT]
-> Requires [Ollama](https://ollama.ai) or a Cohere/OpenAI API key. `fitz-sage` auto-detects your setup on first run.
+> Requires **any OpenAI-compatible LLM endpoint** — local ([llama.cpp](https://github.com/ggerganov/llama.cpp)'s `llama-server`, [vLLM](https://github.com/vllm-project/vllm), LM Studio, Ollama in `/v1/` mode) or cloud (OpenAI, Together, Groq, Fireworks, OpenRouter, …). `fitz-sage` auto-detects a local server on the standard ports (8080 / 8000 / 1234 / 11434) on first run, or falls back to `OPENAI_API_KEY`.
 
 ```bash
 pip install fitz-sage
 
+# Local (recommended): start llama-server with any GGUF chat model
+llama-server -m qwen2.5-7b-instruct.gguf --port 8080 &
+
+# Then point fitz-sage at it — same syntax for cloud:
 fitz query "What is our refund policy?" --source ./docs
 ```
 
 That's it. Your documents are now searchable with AI.
+
+> [!TIP]
+> **Single config knob.** No more "find a provider that has both chat *and* embeddings", no more swapping models mid-query. One URL, one model spec, done — local or cloud:
+>
+> ```bash
+> # Override config at the CLI for any OpenAI-compatible URL:
+> fitz query "..." --endpoint http://localhost:8080/v1 --model qwen2.5-7b
+> fitz query "..." --endpoint https://api.together.xyz/v1 \
+>                  --model meta-llama-3.1-70b \
+>                  --api-key-env TOGETHER_API_KEY
+> ```
 
 
 ![fitz-sage quickstart demo](https://raw.githubusercontent.com/yafitzdev/fitz-sage/main/docs/assets/quickstart_demo.gif)
@@ -93,7 +108,7 @@ Honesty is enforced by an [ML governance classifier](docs/features/governance/go
 
 It runs in production today and powers [fitz-forge](https://github.com/yafitzdev/fitz-forge).
 
-~55k lines of Python. 2,000+ tests. 99% coverage.
+A single chat-protocol implementation (OpenAI HTTP). 2,000+ tests. 99% coverage.
 
 Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](https://github.com/yafitzdev)).
 
@@ -209,8 +224,8 @@ SQL, and epistemic honesty out of the box — without configuration.
 > stores tables natively in PostgreSQL alongside your vectors—same database, no sync issues. Auto-detects schema and runs 
 > real SQL. Ask "What's the average price by region?" and get an actual computed answer, not fragmented rows.
 
-**Fully local execution possible 🏠**
-> Embedded PostgreSQL + Ollama/LM Studio. No API keys required to start.
+**Fully local execution possible 🏠** → [OpenAI-Compatible Endpoint](docs/features/platform/openai-compatible-endpoint.md)
+> Embedded PostgreSQL + any local OpenAI-compatible server (llama.cpp, vLLM, LM Studio, Ollama). One protocol, one URL, no API keys required to start.
 
 ####
 
@@ -372,12 +387,19 @@ classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yaf
 >fitz query "Your question here" --source ./docs
 >```
 >
->`fitz-sage` auto-detects your LLM provider:
->1. **Ollama running?** → Uses it automatically (fully local)
->2. **`COHERE_API_KEY` or `OPENAI_API_KEY` set?** → Uses it automatically
->3. **First time?** → Guides you through free Cohere signup (2 minutes)
+>`fitz-sage` auto-detects your LLM provider on first run:
+>1. **Local OpenAI-compatible server running?** → Uses it automatically (probes ports 8080 / 8000 / 1234 / 11434 for `/v1/models`)
+>2. **`OPENAI_API_KEY` set?** → Uses it automatically
+>3. **Neither?** → Prints actionable setup instructions (start `llama-server`, set `OPENAI_API_KEY`, or use `--endpoint`)
 >
->After first run, it's completely zero-friction.
+>For one-off queries against any OpenAI-compatible URL, skip the config:
+>
+>```bash
+>fitz query "..." --endpoint http://localhost:8080/v1 --model qwen2.5-7b
+>fitz query "..." --endpoint https://api.together.xyz/v1 \
+>                 --model meta-llama-3.1-70b \
+>                 --api-key-env TOGETHER_API_KEY
+>```
 
 <br>
 
@@ -409,18 +431,23 @@ classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yaf
 
 <br>
 
-#### Fully Local (Ollama)
+#### Fully Local (llama.cpp recommended)
 >
 >```bash
->pip install fitz-sage[local]
+>pip install fitz-sage
 >
->ollama pull llama3.2
->ollama pull nomic-embed-text
+># Chat server on port 8080 — fitz-sage's default chat endpoint
+>llama-server -m qwen2.5-7b-instruct-q4_k_m.gguf --port 8080 -c 8192
+>
+># Embedding server on port 8081 — fitz-sage's default embedding endpoint
+>llama-server -m nomic-embed-text-v1.5.Q4_K_M.gguf --port 8081 --embeddings
 >
 >fitz query "Your question here" --source ./docs
 >```
 >
->`fitz-sage` auto-detects Ollama when running. No API keys needed—no data leaves your machine.
+>Both models stay hot in their own processes — no model thrashing, no SDK juggling, no second API key. Auto-detection picks them up from the standard ports. No data leaves your machine.
+>
+>Other compatible servers: [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.ai) (in `/v1/` mode), [TabbyAPI](https://github.com/theroyallab/tabbyAPI). Anything that speaks the OpenAI HTTP protocol works.
 
 </details>
 
@@ -517,11 +544,11 @@ classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yaf
 │  │  FitzKRAG  │  │  Custom... │  (extensible registry)        │
 │  └────────────┘  └────────────┘                               │
 ├───────────────────────────────────────────────────────────────┤
-│  LLM Providers (Python-based)                                  │
-│  ┌────────┐ ┌───────────┐ ┌────────┐                          │
-│  │  Chat  │ │ Embedding │ │ Rerank │                          │
-│  └────────┘ └───────────┘ └────────┘                          │
-│  openai, cohere, anthropic, ollama, lmstudio, azure...        │
+│  LLM Providers (single OpenAI-compatible HTTP protocol)       │
+│  ┌────────┐ ┌───────────┐ ┌──────────────┐                    │
+│  │  Chat  │ │ Embedding │ │ LLM Reranker │                    │
+│  └────────┘ └───────────┘ └──────────────┘                    │
+│  endpoint/<URL> | openai | azure_openai | enterprise          │
 ├───────────────────────────────────────────────────────────────┤
 │  Storage (PostgreSQL + pgvector)                              │
 │  vectors | metadata | tables | keywords | full-text search    │
@@ -667,35 +694,46 @@ curl -X POST http://localhost:8000/query \
 > Document parsing requires docling, which is optional to keep the base install lightweight. Install it with: 
 > `pip install fitz-sage[docs]`
 
-**"Cannot connect to Ollama" error**
-> Ollama needs to be running as a background service. Start it with: `ollama serve`
+**"Connection refused at localhost:8080" error**
+> No OpenAI-compatible server is running. Start one — for example with llama.cpp:
+> `llama-server -m model.gguf --port 8080 -c 8192`. Or override the URL at the CLI:
+> `fitz query "..." --endpoint https://api.openai.com/v1 --api-key-env OPENAI_API_KEY`.
 
 **"Model not found" error**
-> The configured model isn't pulled in Ollama. Pull it with: `ollama pull <model-name>`. Check your config at 
-> `.fitz/config.yaml` to see which models are configured.
+> The model name in your config doesn't match what your server has loaded. Check `/v1/models` on your server:
+> `curl http://localhost:8080/v1/models`. Then update `chat_smart` in `.fitz/config.yaml` to match.
 
 **First query is slow**
-> First run initializes the database and loads LLM models into memory. Subsequent queries are much faster. For Ollama, 
-> larger models take longer to load — use a smaller model like `qwen3.5:0.6b` for faster startup.
+> First run initializes the database and warms up the LLM. Subsequent queries are much faster. Local models load
+> on first use — use a smaller GGUF (e.g. Qwen2.5-1.5B) for faster cold start, or run llama-server in advance.
 
-**How do I change my LLM models?**
-> Edit `.fitz/config.yaml`. The config uses `provider/model` format:
+**How do I change my LLM endpoint or model?**
+> Edit `.fitz/config.yaml`:
 > ```yaml
-> chat_fast: ollama/qwen3.5:0.6b
-> chat_smart: ollama/llama3.2
-> embedding: ollama/nomic-embed-text
+> chat_smart: endpoint/qwen2.5-7b-instruct
+> chat_base_url: http://localhost:8080/v1
+> embedding: endpoint/nomic-embed-text-v1.5
+> embedding_base_url: http://localhost:8081/v1
 > ```
-
-**How do I use a cloud provider instead of Ollama?**
-> Set your API key and update the config:
+> Or override at the CLI without editing YAML:
 > ```bash
-> export COHERE_API_KEY=your-key-here
+> fitz query "..." --endpoint http://localhost:8080/v1 --model qwen2.5-7b
 > ```
+
+**How do I use a cloud provider?**
+> Either use the `openai` preset (built-in OpenAI URL):
 > ```yaml
-> chat_fast: cohere
-> chat_smart: cohere
-> embedding: cohere
+> chat_smart: openai/gpt-4o
+> embedding: openai/text-embedding-3-small
+> # OPENAI_API_KEY in env
 > ```
+> Or any OpenAI-compatible cloud via the `endpoint` provider:
+> ```yaml
+> chat_smart: endpoint/meta-llama-3.1-70b
+> chat_base_url: https://api.together.xyz/v1
+> chat_api_key_env: TOGETHER_API_KEY
+> ```
+> See [docs/features/platform/openai-compatible-endpoint.md](docs/features/platform/openai-compatible-endpoint.md) for a migration table from the older Ollama / Cohere / Anthropic provider names.
 
 **How do I reset everything?**
 > Delete the `.fitz/` directory in your project root. Next run will re-detect and re-configure.
