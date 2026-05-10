@@ -50,3 +50,9 @@ except ImportError:
     # openai SDK not installed — provider class import is optional so
     # static tooling on a fresh checkout still works.
     pass
+
+# LLM-based reranker — the canonical rerank backend after the
+# cohere/rerank deletion. Pure Python, no extra deps.
+from fitz_sage.llm.providers.llm_reranker import LLMReranker  # noqa: E402
+
+__all__.append("LLMReranker")

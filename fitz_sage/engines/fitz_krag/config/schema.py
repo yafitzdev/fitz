@@ -117,11 +117,11 @@ class FitzKragConfig(BasePluginConfig):
     )
 
     rerank: str | None = Field(
-        default=None,
+        default="llm",
         description=(
-            "Reranker plugin. None = disabled. There is currently no "
-            "first-class rerank backend; rerank is moving to an "
-            "LLM-rerank step using the chat model."
+            "Reranker backend. 'llm' (default) uses the engine's chat "
+            "factory at the 'fast' tier to score candidates. None "
+            "disables reranking entirely."
         ),
     )
 

@@ -518,10 +518,13 @@ def create_rerank_provider(
     """
     Create a rerank provider from a spec string.
 
-    There is currently no first-class rerank backend — Cohere's /rerank
-    endpoint was removed alongside the cohere chat provider. The
-    forward direction is LLM-rerank using the chat model. Until that
-    lands, this function only honours ``None``.
+    The only first-class rerank backend is ``llm`` — an
+    ``LLMReranker`` that scores candidates with a chat model. Because
+    it requires a chat factory, the engine layer constructs it
+    directly (see ``FitzKragEngine``) and only routes through this
+    function for non-``llm`` specs (which currently raise).
+
+    Pass ``None`` to disable reranking entirely.
     """
     if spec is None:
         return None
@@ -529,11 +532,16 @@ def create_rerank_provider(
     provider, _ = parse_provider_string(spec)
     _check_removed(provider)
 
+    if provider == "llm":
+        raise ValueError(
+            "The 'llm' rerank provider must be constructed at the engine "
+            "layer because it needs a chat factory. fitz_krag does this "
+            "automatically when config.rerank is 'llm'."
+        )
+
     raise ValueError(
         f"Unknown rerank provider: {provider}. "
-        f"There is currently no rerank provider in fitz-sage. "
-        f"Set rerank to None — rerank is moving to an LLM-rerank step "
-        f"using the chat model."
+        f"Supported: 'llm' (constructed by the engine) or None to disable."
     )
 
 

@@ -133,9 +133,14 @@ class TestUnknownProvider:
             create_embedding_provider("unknown")
 
     def test_unknown_rerank_provider_raises(self) -> None:
-        """Rerank provider always raises since rerank is moving to LLM-rerank."""
-        with pytest.raises(ValueError, match="no rerank provider"):
+        """Unknown rerank provider raises with the supported list."""
+        with pytest.raises(ValueError, match="Unknown rerank provider"):
             create_rerank_provider("anything")
+
+    def test_llm_rerank_must_be_built_by_engine(self) -> None:
+        """The 'llm' rerank backend needs a chat factory (engine builds it)."""
+        with pytest.raises(ValueError, match="must be constructed at the engine layer"):
+            create_rerank_provider("llm")
 
     def test_unknown_vision_provider_raises(self) -> None:
         """Unknown vision provider raises ValueError."""

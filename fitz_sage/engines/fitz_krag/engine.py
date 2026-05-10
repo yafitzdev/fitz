@@ -428,12 +428,26 @@ class FitzKragEngine:
 
             self._hyde_generator = HydeGenerator(chat_factory=self._chat_factory)
 
-        # Reranker (activated by config.rerank provider presence)
+        # Reranker.
+        #
+        # Two paths:
+        #   - "llm" -> LLMReranker built locally with our chat factory.
+        #     This is the canonical post-cohere/rerank backend; it
+        #     uses the fast tier so reranking is cheap.
+        #   - any other spec -> get_reranker() (currently raises;
+        #     reserved for future external rerank backends).
         self._address_reranker: Any = None
         if self._config.rerank:
-            from fitz_sage.llm.client import get_reranker
+            reranker: Any = None
+            if self._config.rerank == "llm":
+                from fitz_sage.llm.providers.llm_reranker import LLMReranker
 
-            reranker = get_reranker(self._config.rerank)
+                reranker = LLMReranker(chat_factory=self._chat_factory, tier="fast")
+            else:
+                from fitz_sage.llm.client import get_reranker
+
+                reranker = get_reranker(self._config.rerank)
+
             if reranker:
                 from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressReranker
 

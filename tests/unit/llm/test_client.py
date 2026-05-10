@@ -27,10 +27,15 @@ class TestGetReranker:
     def test_none_returns_none(self) -> None:
         assert get_reranker(None) is None
 
-    def test_any_spec_raises(self) -> None:
-        """Rerank is moving to LLM-rerank — no first-class backend exists."""
-        with pytest.raises(ValueError, match="no rerank provider"):
+    def test_unknown_spec_raises(self) -> None:
+        """Unknown rerank spec raises with the supported list."""
+        with pytest.raises(ValueError, match="Unknown rerank provider"):
             get_reranker("anything")
+
+    def test_llm_rerank_engine_construction_required(self) -> None:
+        """The 'llm' rerank backend must be built by the engine layer."""
+        with pytest.raises(ValueError, match="must be constructed at the engine layer"):
+            get_reranker("llm")
 
 
 class TestGetVision:

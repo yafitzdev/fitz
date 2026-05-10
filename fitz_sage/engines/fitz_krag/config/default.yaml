@@ -30,8 +30,11 @@ fitz_krag:
   # Vector DB
   vector_db: pgvector
 
+  # Reranker. 'llm' = score candidates with the configured chat
+  # factory (fast tier). null = disabled.
+  rerank: llm
+
   # Optional (null = disabled)
-  rerank: null
   vision: null
   parser: docling
 
