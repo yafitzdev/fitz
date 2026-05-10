@@ -27,10 +27,11 @@ class TableSearchStrategy:
     def __init__(
         self,
         table_store: "TableStore",
-        embedder: "EmbeddingProvider",
+        embedder: "EmbeddingProvider | None",
         config: "FitzKragConfig",
     ):
         self._table_store = table_store
+        # ``None`` is the chat-only mode: skip semantic search entirely.
         self._embedder = embedder
         self._config = config
 
@@ -57,14 +58,18 @@ class TableSearchStrategy:
         # 1. Keyword search
         keyword_results = self._table_store.search_by_name(query, limit=fetch_limit)
 
-        # 2. Semantic search
-        try:
-            if query_vector is None:
-                query_vector = self._embedder.embed(query, task_type="query")
-            semantic_results = self._table_store.search_by_vector(query_vector, limit=fetch_limit)
-        except Exception as e:
-            logger.warning(f"Semantic table search failed, using keyword only: {e}")
-            semantic_results = []
+        # 2. Semantic search — skipped entirely in chat-only mode.
+        semantic_results: list[dict[str, Any]] = []
+        if self._embedder is not None:
+            try:
+                if query_vector is None:
+                    query_vector = self._embedder.embed(query, task_type="query")
+                semantic_results = self._table_store.search_by_vector(
+                    query_vector, limit=fetch_limit
+                )
+            except Exception as e:
+                logger.warning(f"Semantic table search failed, using keyword only: {e}")
+                semantic_results = []
 
         # 3. Hybrid merge
         keyword_weight = self._config.table_keyword_weight

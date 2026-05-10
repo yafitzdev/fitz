@@ -27,10 +27,11 @@ class SectionSearchStrategy:
     def __init__(
         self,
         section_store: "SectionStore",
-        embedder: "EmbeddingProvider",
+        embedder: "EmbeddingProvider | None",
         config: "FitzKragConfig",
     ):
         self._section_store = section_store
+        # ``None`` is the chat-only mode: skip semantic search entirely.
         self._embedder = embedder
         self._config = config
         self._raw_store: Any = None  # Set by engine for freshness boosting
@@ -66,14 +67,18 @@ class SectionSearchStrategy:
         # 1. BM25 search
         bm25_results = self._section_store.search_bm25(query, limit=fetch_limit)
 
-        # 2. Semantic search
-        try:
-            if query_vector is None:
-                query_vector = self._embedder.embed(query, task_type="query")
-            semantic_results = self._section_store.search_by_vector(query_vector, limit=fetch_limit)
-        except Exception as e:
-            logger.warning(f"Semantic section search failed, using BM25 only: {e}")
-            semantic_results = []
+        # 2. Semantic search — skipped entirely in chat-only mode.
+        semantic_results: list[dict[str, Any]] = []
+        if self._embedder is not None:
+            try:
+                if query_vector is None:
+                    query_vector = self._embedder.embed(query, task_type="query")
+                semantic_results = self._section_store.search_by_vector(
+                    query_vector, limit=fetch_limit
+                )
+            except Exception as e:
+                logger.warning(f"Semantic section search failed, using BM25 only: {e}")
+                semantic_results = []
 
         # 3. HyDE search (uses pre-computed vectors from router)
         if hyde_vectors:

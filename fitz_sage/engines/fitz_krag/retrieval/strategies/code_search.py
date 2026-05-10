@@ -27,10 +27,11 @@ class CodeSearchStrategy:
     def __init__(
         self,
         symbol_store: "SymbolStore",
-        embedder: "EmbeddingProvider",
+        embedder: "EmbeddingProvider | None",
         config: "FitzKragConfig",
     ):
         self._symbol_store = symbol_store
+        # ``None`` is the chat-only mode: skip semantic search entirely.
         self._embedder = embedder
         self._config = config
         self._raw_store: Any = None  # Set by engine for freshness boosting
@@ -69,14 +70,18 @@ class CodeSearchStrategy:
         except Exception as e:
             logger.debug(f"BM25 search not available: {e}")
 
-        # 3. Semantic search
-        try:
-            if query_vector is None:
-                query_vector = self._embedder.embed(query, task_type="query")
-            semantic_results = self._symbol_store.search_by_vector(query_vector, limit=fetch_limit)
-        except Exception as e:
-            logger.warning(f"Semantic search failed, using keyword only: {e}")
-            semantic_results = []
+        # 3. Semantic search — skipped entirely in chat-only mode.
+        semantic_results: list[dict[str, Any]] = []
+        if self._embedder is not None:
+            try:
+                if query_vector is None:
+                    query_vector = self._embedder.embed(query, task_type="query")
+                semantic_results = self._symbol_store.search_by_vector(
+                    query_vector, limit=fetch_limit
+                )
+            except Exception as e:
+                logger.warning(f"Semantic search failed, using keyword only: {e}")
+                semantic_results = []
 
         # 4. HyDE search (uses pre-computed vectors from router)
         if hyde_vectors:

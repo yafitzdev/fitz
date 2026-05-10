@@ -9,6 +9,8 @@ to code symbol / document section), then reads content on demand.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from fitz_sage.core.config import BasePluginConfig, PluginKwargs
@@ -62,7 +64,27 @@ class FitzKragConfig(BasePluginConfig):
 
     embedding: str = Field(
         default="endpoint/nomic-embed-text-v1.5",
-        description="Embedding model (provider/model)",
+        description=(
+            "Embedding model (provider/model). Ignored when "
+            "retrieval_mode == 'chat_only'."
+        ),
+    )
+
+    retrieval_mode: Literal["hybrid", "chat_only"] = Field(
+        default="hybrid",
+        description=(
+            "Retrieval architecture:\n"
+            "  - 'hybrid'    (default): BM25 + dense embeddings + KRAG "
+            "                routing + LLM rerank.\n"
+            "  - 'chat_only': BM25 + KRAG routing + LLM rerank only — "
+            "                no embeddings used at query time. Pairs "
+            "                with the LLMReranker so a wide BM25 set "
+            "                gets precise top-k via the chat model.\n"
+            "                This is the philosophy-aligned mode for "
+            "                the honest-RAG thesis: lower recall on "
+            "                fuzzy prose, but the governance cascade "
+            "                handles those correctly via ABSTAIN."
+        ),
     )
 
     # Per-role base URLs — used by the ``endpoint`` and ``enterprise``

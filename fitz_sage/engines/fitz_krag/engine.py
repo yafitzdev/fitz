@@ -32,6 +32,12 @@ logger = get_logger(__name__)
 # Fitz Cloud optimizer version for cache key computation
 CLOUD_OPTIMIZER_VERSION = "1.0"
 
+# Sentinel embedding dimension used by chat-only retrieval mode.
+# Vector columns are created at this dim but never populated. Sized
+# to match a common embedding default so a collection later upgraded
+# to hybrid mode lines up out of the box.
+_CHAT_ONLY_VECTOR_DIM = 1024
+
 
 def _report_timings(
     progress: Callable[[str], None],
@@ -201,11 +207,11 @@ class FitzKragEngine:
             self._config.chat_api_key_env,
             spec=self._config.chat_smart,
         )
-        embedding_config = _build_provider_config(
-            self._config.embedding_base_url,
-            self._config.embedding_api_key_env,
-            spec=self._config.embedding,
-        )
+
+        # In chat-only retrieval mode the embedder is not constructed
+        # at all — saves an HTTP client + model load + dimensions probe
+        # and means a single llama-server with one chat model is enough.
+        is_chat_only = self._config.retrieval_mode == "chat_only"
 
         print("  Starting database and connecting to LLM providers...", end="", flush=True)
         with ThreadPoolExecutor(max_workers=3) as pool:
@@ -215,15 +221,23 @@ class FitzKragEngine:
                 "smart",
                 chat_config,
             )
-            embed_future = pool.submit(
-                get_embedder,
-                self._config.embedding,
-                embedding_config,
-            )
+            if is_chat_only:
+                embed_future = None
+            else:
+                embedding_config = _build_provider_config(
+                    self._config.embedding_base_url,
+                    self._config.embedding_api_key_env,
+                    spec=self._config.embedding,
+                )
+                embed_future = pool.submit(
+                    get_embedder,
+                    self._config.embedding,
+                    embedding_config,
+                )
             pg_future = pool.submit(PostgresConnectionManager.get_instance)
 
             self._chat = chat_future.result()
-            self._embedder = embed_future.result()
+            self._embedder = embed_future.result() if embed_future is not None else None
             self._connection_manager = pg_future.result()
         print(" done.", flush=True)
 
@@ -231,11 +245,14 @@ class FitzKragEngine:
         logger.debug(f"[init] providers+pg: {(_t1-_t0)*1000:.0f}ms")
 
         # Cold-start warmup: resolve embedding dimensions in background
-        # so it overlaps with store creation below.
+        # so it overlaps with store creation below. Skipped in chat-only
+        # mode (no embedder).
         dim_result: dict[str, int | None] = {"value": None}
         dim_error: list[Exception] = []
 
         def _resolve_dimensions():
+            if self._embedder is None:
+                return
             try:
                 dim_result["value"] = self._embedder.dimensions
             except Exception as e:
@@ -421,9 +438,12 @@ class FitzKragEngine:
             detection_modules=list(DEFAULT_MODULES),
         )
 
-        # HyDE generator (passed to strategies)
+        # HyDE generator (passed to strategies). HyDE generates
+        # hypothetical-answer text and embeds it for retrieval — it's
+        # meaningless without an embedder, so chat-only mode disables
+        # it regardless of enable_hyde.
         self._hyde_generator: Any = None
-        if self._config.enable_hyde:
+        if self._config.enable_hyde and not is_chat_only:
             from fitz_sage.retrieval.hyde.generator import HydeGenerator
 
             self._hyde_generator = HydeGenerator(chat_factory=self._chat_factory)
@@ -529,6 +549,13 @@ class FitzKragEngine:
         if dim_error:
             raise dim_error[0]
         embedding_dim = dim_result["value"]
+        if embedding_dim is None:
+            # Chat-only mode: no embedder, but the schema still has
+            # vector columns (idle) so queries against existing
+            # hybrid-mode collections keep working. We pick a small
+            # sentinel dim that pgvector accepts; the vector columns
+            # stay NULL in chat-only ingest.
+            embedding_dim = _CHAT_ONLY_VECTOR_DIM
         ensure_schema(self._connection_manager, self._config.collection, embedding_dim)
 
         _t5 = _t.perf_counter()

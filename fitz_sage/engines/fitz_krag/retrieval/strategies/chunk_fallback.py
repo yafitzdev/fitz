@@ -26,15 +26,24 @@ class ChunkFallbackStrategy:
     def __init__(
         self,
         vector_db: Any,
-        embedder: "EmbeddingProvider",
+        embedder: "EmbeddingProvider | None",
         config: "FitzKragConfig",
     ):
         self._vector_db = vector_db
+        # ``None`` is the chat-only mode. ChunkFallback is purely a
+        # dense-vector strategy, so it short-circuits to no results
+        # rather than running BM25-only over chunks (the structured
+        # KRAG strategies already cover that surface).
         self._embedder = embedder
         self._config = config
 
     def retrieve(self, query: str, limit: int) -> list[Address]:
         """Search chunks via vector DB and wrap as CHUNK addresses."""
+        if self._embedder is None:
+            # Chat-only mode disables this strategy. The engine should
+            # also avoid registering ChunkFallback in chat-only mode,
+            # but we guard here too in case it gets called directly.
+            return []
         try:
             query_vector = self._embedder.embed(query, task_type="query")
             results = self._vector_db.search(
