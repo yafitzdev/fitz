@@ -180,9 +180,73 @@ follow-ups — they document the demolition decisions:
 
 ## Follow-up tasks (priority order)
 
-The next session should work top-down through this list. Each task
-is self-contained — you don't need to ask the user before starting
-any of them. The decisions are made; this is execution.
+**Execution order (confirmed 2026-05-11):** Task 4 → Task 10 →
+Task 6 → Task 7 → Task 8 → Task 9. Task 3.5 is **skipped** — Task 10
+(postgres → sqlite) subsumes it entirely, so cleaning up the
+pgvector surface beforehand is throwaway work.
+
+Each task is self-contained — you don't need to ask the user before
+starting any of them. The decisions are made; this is execution.
+
+---
+
+### Task 3.5 — Finish pgvector demolition ⏭ SKIPPED (subsumed by Task 10)
+
+Surfaced 2026-05-11 verifying Task 3 was clean. The pip dep is gone
+and `vector_db/` is deleted, but production code still references
+pgvector — and `storage/postgres.py:559-564` still runs
+`CREATE EXTENSION vector` on init, which is a real runtime bug.
+
+**Skipped by decision (2026-05-11):** Task 10 (postgres → sqlite)
+will delete `storage/postgres.py` entirely, along with the
+postgres-detection scaffolding in `core/detect.py`, the CLI status
+flows, and the vocabulary/entity_graph/sparse stores. Cleaning up
+the pgvector surface beforehand is throwaway work.
+
+The edit list below is preserved as a checklist of "things that must
+end up deleted, one way or another" — Task 10 should verify nothing
+on this list slips through.
+
+#### Edits
+
+- `fitz_sage/storage/postgres.py` — remove the `CREATE EXTENSION
+  vector` block (~559-564) and the "pgvector extension initialization"
+  comments at lines 9, 226.
+- `fitz_sage/core/detect.py` — delete `detect_pgvector()` (197-213),
+  the `pgvector: ServiceStatus` field on `SystemEnvironment` (62), the
+  `_vector_db_kind()` method (92-93) returning `"pgvector"`, and the
+  `pgvector=detect_pgvector()` wiring in the factory (270).
+- `fitz_sage/cli/services/init_service.py` — drop `pgvector: Any` (19),
+  the `pgvector=system.pgvector` arg (47), the
+  `if "pgvector" in plugin_lower:` branch (81-83), and the docstring
+  mention (67).
+- `fitz_sage/cli/commands/config.py:299-302` — drop the pgvector UI
+  status block.
+- `fitz_sage/cli/commands/init_wizard.py:207,273` — drop the pgvector
+  detection mention and the UI status line.
+- `fitz_sage/cli/context.py:438` — drop the "VectorDB: pgvector"
+  example from the docstring.
+- `fitz_sage/plugin_gen/library_context.py:42` — drop the
+  `"pgvector": "pgvector"` mapping.
+- `fitz_sage/retrieval/sparse/index.py:8,34,76` — rewrite comments
+  ("pgvector chunks table" → "krag indexes").
+- `fitz_sage/storage/__init__.py:6` — fix docstring ("PostgreSQL +
+  pgvector" → "PostgreSQL with tsvector GIN").
+
+**Leave alone:** `fitz_sage/code/__init__.py:3` and
+`fitz_sage/code/retriever.py:38` — those comments correctly describe
+what the standalone `code` extra *avoids*.
+
+#### Verification
+
+```bash
+python -m pytest tests/unit -q --ignore=tests/unit/integrations
+python .smoke_test/smoke_test.py
+```
+
+Smoke must still init Postgres cleanly without the extension —
+`tsvector` is built into Postgres core; only the `vector` type
+needed pgvector.
 
 ---
 
@@ -237,6 +301,10 @@ only emits chat config. Skip this task.
 ---
 
 ### Task 6 — Documentation refresh
+
+**Blocked on Task 10 (sqlite migration).** Don't start this until
+Task 10 lands — the docs need to reflect the final SQLite-FTS5
+architecture, not the current Postgres-tsvector one.
 
 The code stopped matching the docs three commits ago. Time to fix.
 
@@ -329,6 +397,96 @@ CHANGELOG.md still has hundreds of lines referencing the deleted
 embeddings, etc. Don't rewrite history (those entries are correct
 records of past versions), but consider adding a top-of-file pointer
 to the demolition commits so readers can orient.
+
+---
+
+### Task 10 — Replace PostgreSQL with SQLite
+
+Decision made 2026-05-11. Postgres is heavy for a local-first RAG
+library — server install, admin DB for `DROP DATABASE`, service-mode
+config. SQLite + FTS5 covers the same retrieval semantics (full-text
+search with native `bm25()` ranking) with zero install, file-based
+storage, stdlib-only runtime. Strict simplification — same retrieval
+architecture, smaller surface.
+
+**Architectural Rule #3 needs updating** when this lands:
+"PostgreSQL is the only storage" → "SQLite is the only storage."
+Also update the TL;DR and Files/paths section of this HANDOFF.
+
+#### Decisions to confirm before starting
+
+1. **One DB file per collection** (analogous to current
+   one-postgres-DB per collection — `delete_collection` becomes
+   `os.unlink`). Recommend yes.
+2. **FTS5 external-content** tables, so the original columns
+   (`content`, `title`, `name`, `qualified_name`, `summary`) stay
+   queryable for the parent-context joins
+   `SectionSearchStrategy._score_results` does. Recommend yes.
+3. **SQLite JSON1** (bundled in standard CPython `sqlite3`) for
+   `json_extract`, replacing JSONB columns. Recommend yes.
+
+#### Mapping
+
+| Current (Postgres) | Target (SQLite) |
+|---|---|
+| `psycopg` + `PostgresConnectionManager` | stdlib `sqlite3` + new `SqliteConnectionManager` |
+| `to_tsvector` GIN + `ts_rank_cd` | FTS5 virtual table + `MATCH` + `bm25()` |
+| `CREATE DATABASE` (admin DB) + `DROP DATABASE` | one `<collection>.db` file; `unlink()` to delete |
+| `JSONB` columns | `TEXT` + `json_extract` (JSON1) |
+| `GENERATED ALWAYS AS (to_tsvector(...))` | FTS5 triggers, or external-content table |
+| `pgserver` / postgres service | nothing — the file is the database |
+
+#### Files to rewrite (high-level)
+
+- `fitz_sage/storage/postgres.py` → `sqlite.py`. New
+  `SqliteConnectionManager`, create/drop helpers, schema init.
+- `fitz_sage/storage/__init__.py` — re-export the SQLite manager.
+- `fitz_sage/engines/fitz_krag/ingestion/schema.py` — DDL for FTS5
+  external-content tables over section/symbol/table indexes.
+- `fitz_sage/engines/fitz_krag/ingestion/{section,symbol,table}_store.py`
+  — `search_bm25` becomes `MATCH ... ORDER BY bm25(...)`; upserts
+  become `INSERT ... ON CONFLICT DO UPDATE`.
+- `fitz_sage/engines/fitz_krag/retrieval/strategies/section_search.py`
+  — port the `_score_results` parent-context join. RRF logic
+  unchanged.
+- `fitz_sage/engines/fitz_krag/engine.py`, `runtime.py`,
+  `services/fitz_service.py` — swap connection manager; rewrite
+  `list_collections` to scan the data dir for `*.db`,
+  `delete_collection` to `os.unlink`.
+- `fitz_sage/retrieval/vocabulary/store.py`,
+  `fitz_sage/retrieval/entity_graph/store.py`,
+  `fitz_sage/retrieval/sparse/index.py` — port.
+- `fitz_sage/tabular/store/postgres.py` → `sqlite.py`.
+- `fitz_sage/core/detect.py` — drop postgres detection entirely.
+  SQLite is stdlib; nothing to probe.
+- `fitz_sage/cli/{context,services/init_service,commands/init_wizard,commands/config}.py`
+  — drop postgres UI/detection. Replace postgres connection knobs
+  with a single `storage_path` field.
+- `tests/unit/test_postgres_connection.py`,
+  `test_postgres_recovery.py`, `test_postgres_table_store.py` —
+  rename and rewrite.
+- `tests/conftest.py`, `tests/unit/conftest.py` — drop postgres
+  fixtures, add sqlite tempdir fixtures.
+- `pyproject.toml` — drop `psycopg`, `pgserver`. Rename or remove the
+  `postgres:` pytest marker (line 185).
+
+#### Verification
+
+```bash
+python -m pytest tests/unit
+python .smoke_test/smoke_test.py
+```
+
+Same baseline expected (5/5 answered, 6/6 substrings, 3/5 mode-match) —
+retrieval semantics preserved.
+
+#### Cleanup after migration lands
+
+- Update Architectural Rule #3 and the TL;DR in HANDOFF.
+- Update the Files/paths-to-know section in HANDOFF.
+- Add a CHANGELOG entry for the storage swap.
+- **Task 6 docs refresh must wait until this lands** — don't write
+  docs for an architecture about to change.
 
 ---
 
@@ -435,8 +593,10 @@ removed, 300 lines added** across the four commits.
 ## Final thing — don't waste a context window second-guessing
 
 The architecture is committed. The user evaluated and chose. Next
-session: execute Task 4 (cloud delete), then Task 6 (docs), then
-Task 7 (enrichment) if the user OKs, then Task 8 (integration test
-cleanup). Run the verification commands after each. Commit each task
-as its own commit with a clear message. Don't ask "are you sure
-about no embeddings?" — they're sure.
+session: execute Task 4 (cloud delete), then Task 10 (postgres →
+sqlite — the big one), then Task 6 (docs, over the post-migration
+architecture), then Task 7 (enrichment, if the user OKs), then
+Task 8 (integration test cleanup). Run the verification commands
+after each. Commit each task as its own commit with a clear message.
+Don't ask "are you sure about no embeddings?" — they're sure.
+Don't ask "are you sure about sqlite?" — they are, as of 2026-05-11.
