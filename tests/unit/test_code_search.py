@@ -48,13 +48,14 @@ def _make_symbol(sid, name, qualified, kind="function"):
 
 
 class TestCodeSearchStrategy:
-    def test_retrieve_combines_keyword_and_semantic(self, mock_symbol_store, mock_embedder, config):
+    def test_retrieve_combines_keyword_and_bm25(self, mock_symbol_store, config):
         mock_symbol_store.search_by_name.return_value = [
             _make_symbol("s1", "process", "mod.process"),
         ]
-        mock_symbol_store.search_by_vector.return_value = [
-            {**_make_symbol("s2", "transform", "mod.transform"), "score": 0.9},
+        mock_symbol_store.search_bm25.return_value = [
+            {**_make_symbol("s2", "transform", "mod.transform"), "bm25_score": 0.9},
         ]
+        mock_symbol_store.search_by_keywords.return_value = []
 
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("process data", limit=5)

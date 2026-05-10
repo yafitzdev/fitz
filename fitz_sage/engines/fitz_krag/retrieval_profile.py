@@ -170,17 +170,8 @@ def build_retrieval_profile(
     elif answer_type in ("comparative", "exploratory"):
         top_read = int(top_read * 1.2)
 
-    # --- HyDE gate (from router._should_run_hyde) ---
-    run_hyde = config.enable_hyde
-    if run_hyde and analysis:
-        if has_complex_intent:
-            run_hyde = True  # Complex intent — always run HyDE
-        elif primary_type == "code" and confidence >= 0.7:
-            run_hyde = False
-        elif primary_type == "data":
-            run_hyde = False
-        elif confidence >= 0.9:
-            run_hyde = False
+    # HyDE removed: no embedder, no hypothesis-document leg.
+    run_hyde = False
 
     # --- Multi-query gate (from router._should_run_multi_query) ---
     run_multi_query = (
@@ -204,8 +195,8 @@ def build_retrieval_profile(
     if analysis and primary_type not in ("code", "data") and confidence < 0.6:
         inject_corpus_summaries = True
 
-    # --- Chunk fallback ---
-    fallback_to_chunks = config.fallback_to_chunks and strategy_weights.get("chunk", 1.0) > 0.05
+    # ChunkFallbackStrategy deleted; gate kept on the profile for caller compat.
+    fallback_to_chunks = False
 
     # --- Entity expansion limit (from engine._is_thematic) ---
     is_thematic = analysis is not None and primary_type not in ("code", "data") and confidence < 0.6

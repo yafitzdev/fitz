@@ -413,15 +413,11 @@ class TestSectionFreshnessBoostWithRecency:
         # f0 gets +0.1, f1 gets +0.05, f2 and f3 get nothing
         scores = {r.source_id: r.score for r in results}
         # RRF with k=60: BM25 only at ranks 0,1,2,3 → 1/(60+rank)
-        # base scores: f0=0.6*(1/60), f1=0.6*(1/61), f2=0.6*(1/62), f3=0.6*(1/63)
         assert scores["f0"] > scores["f2"]
         assert scores["f0"] > scores["f3"]
-        # f0 should have base 0.6*(1/60) + 0.1 boost = 0.11
-        assert scores["f0"] == pytest.approx(0.6 / 60 + 0.1, abs=0.01)
-        # f1 should have base 0.6*(1/61) + 0.05 boost ≈ 0.0598
-        assert scores["f1"] == pytest.approx(0.6 / 61 + 0.05, abs=0.01)
-        # f2 should have base only = 0.6*(1/62) ≈ 0.00968
-        assert scores["f2"] == pytest.approx(0.6 / 62, abs=0.001)
+        assert scores["f0"] == pytest.approx(1 / 60 + 0.1, abs=0.01)
+        assert scores["f1"] == pytest.approx(1 / 61 + 0.05, abs=0.01)
+        assert scores["f2"] == pytest.approx(1 / 62, abs=0.001)
 
 
 class TestFreshnessNoBoostWithoutFlag:

@@ -27,7 +27,6 @@ def test_default_config_loads_and_validates_base_schema():
     assert cfg.chat_fast
     assert cfg.chat_balanced
     assert cfg.chat_smart
-    assert cfg.embedding
     assert cfg.vector_db
 
     # Collection is required

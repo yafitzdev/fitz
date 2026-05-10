@@ -240,7 +240,7 @@ class RetrievalRouter:
                 logger.debug(f"Corpus summary injection skipped: {e}")
 
         # Chunk fallback when other results are insufficient
-        fallback = profile.fallback_to_chunks if profile else self._config.fallback_to_chunks
+        fallback = profile.fallback_to_chunks if profile else False
         if (
             self._chunk_strategy
             and fallback

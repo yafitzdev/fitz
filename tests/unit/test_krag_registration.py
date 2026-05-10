@@ -41,10 +41,13 @@ class TestKragRegistration:
         assert path.exists()
 
     def test_config_loader_loads_defaults(self):
+        from unittest.mock import patch
+
         from fitz_sage.config.loader import load_engine_config
         from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 
-        config = load_engine_config("fitz_krag")
+        with patch("fitz_sage.config.loader._load_user_config", return_value=None):
+            config = load_engine_config("fitz_krag")
         assert isinstance(config, FitzKragConfig)
         assert config.collection  # has a collection value
         assert config.chat_smart  # has a chat provider

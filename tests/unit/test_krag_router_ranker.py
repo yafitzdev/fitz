@@ -178,31 +178,6 @@ class TestRetrievalRouter:
 
     # -- test_retrieve_chunk_fallback_when_insufficient -------------------
 
-    def test_retrieve_chunk_fallback_when_insufficient(self):
-        """Chunk fallback triggers when results < limit // 2."""
-        code_strat = MagicMock()
-        # Only 2 results, limit is 10 -> 2 < 5 -> fallback triggers
-        code_strat.retrieve.return_value = [
-            _addr(score=0.9, location="a.f1"),
-            _addr(score=0.8, location="a.f2"),
-        ]
-        chunk_strat = MagicMock()
-        chunk_strat.retrieve.return_value = [
-            _addr(AddressKind.CHUNK, score=0.5, location="chunk1"),
-        ]
-
-        config = _make_config(top_addresses=10, fallback_to_chunks=True)
-        router = RetrievalRouter(
-            code_strategy=code_strat,
-            chunk_strategy=chunk_strat,
-            config=config,
-        )
-
-        result = router.retrieve("search")
-
-        chunk_strat.retrieve.assert_called_once_with("search", 8)
-        assert len(result) == 3
-
     # -- test_retrieve_no_chunk_fallback_when_sufficient ------------------
 
     def test_retrieve_no_chunk_fallback_when_sufficient(self):

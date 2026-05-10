@@ -18,13 +18,10 @@ def test_load_config_from_defaults():
     assert hasattr(config, "chat_fast")
     assert hasattr(config, "chat_balanced")
     assert hasattr(config, "chat_smart")
-    assert hasattr(config, "embedding")
-    assert hasattr(config, "vector_db")
     assert hasattr(config, "collection")
 
     # Verify string plugin specs
     assert isinstance(config.chat_smart, str)
-    assert isinstance(config.embedding, str)
 
     # Verify None for disabled features
     assert config.vision is None or isinstance(config.vision, str)
@@ -69,7 +66,6 @@ def test_config_none_for_disabled():
 
     config = FitzKragConfig(
         chat_smart="cohere",
-        embedding="cohere",
         collection="test",
         rerank=None,  # Explicitly disabled
         vision=None,  # Explicitly disabled

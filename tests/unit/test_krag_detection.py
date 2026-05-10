@@ -244,10 +244,7 @@ class TestRouterDetection:
         section_strategy = MagicMock(name="section_strategy")
         section_strategy.retrieve.return_value = section_results or []
 
-        config = _make_config(
-            top_addresses=top_addresses,
-            fallback_to_chunks=False,
-        )
+        config = _make_config(top_addresses=top_addresses)
 
         return RetrievalRouter(
             code_strategy=code_strategy,
@@ -279,7 +276,7 @@ class TestRouterDetection:
         section_strategy = MagicMock(name="section_strategy")
         section_strategy.retrieve.return_value = []
 
-        config = _make_config(top_addresses=10, fallback_to_chunks=False)
+        config = _make_config(top_addresses=10)
         router = RetrievalRouter(
             code_strategy=code_strategy,
             chunk_strategy=None,
@@ -308,7 +305,7 @@ class TestRouterDetection:
         section_strategy = MagicMock(name="section_strategy")
         section_strategy.retrieve.return_value = []
 
-        config = _make_config(top_addresses=10, fallback_to_chunks=False)
+        config = _make_config(top_addresses=10)
         router = RetrievalRouter(
             code_strategy=code_strategy,
             chunk_strategy=None,
@@ -337,7 +334,7 @@ class TestRouterDetection:
         section_strategy = MagicMock(name="section_strategy")
         section_strategy.retrieve.return_value = []
 
-        config = _make_config(top_addresses=10, fallback_to_chunks=False)
+        config = _make_config(top_addresses=10)
         router = RetrievalRouter(
             code_strategy=code_strategy,
             chunk_strategy=None,
@@ -364,7 +361,7 @@ class TestRouterDetection:
         section_strategy = MagicMock(name="section_strategy")
         section_strategy.retrieve.return_value = []
 
-        config = _make_config(top_addresses=5, fallback_to_chunks=False)
+        config = _make_config(top_addresses=5)
         router = RetrievalRouter(
             code_strategy=code_strategy,
             chunk_strategy=None,
@@ -487,7 +484,7 @@ class TestTemporalTagging:
         code_strategy.retrieve.return_value = code_results or []
         section_strategy = MagicMock(name="section_strategy")
         section_strategy.retrieve.return_value = []
-        config = _make_config(top_addresses=top_addresses, fallback_to_chunks=False)
+        config = _make_config(top_addresses=top_addresses)
         return RetrievalRouter(
             code_strategy=code_strategy,
             chunk_strategy=None,
@@ -526,7 +523,7 @@ class TestTemporalTagging:
         ]
         section_strategy = MagicMock(name="section_strategy")
         section_strategy.retrieve.return_value = []
-        config = _make_config(top_addresses=10, fallback_to_chunks=False)
+        config = _make_config(top_addresses=10)
         router = RetrievalRouter(
             code_strategy=code_strategy,
             chunk_strategy=None,

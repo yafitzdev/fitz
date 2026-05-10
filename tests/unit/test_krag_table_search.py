@@ -78,17 +78,6 @@ class TestTableSearchStrategy:
         assert addresses[0].kind == AddressKind.TABLE
         assert addresses[0].location == "Revenue Report"
 
-    def test_retrieve_semantic_match(self):
-        """Finds table by semantic search on schema summary."""
-        record = _make_table_record(name="Employee Data", score=0.92)
-        strategy = _make_strategy(semantic_results=[record])
-
-        addresses = strategy.retrieve("who are the employees", limit=5)
-
-        assert len(addresses) == 1
-        assert addresses[0].kind == AddressKind.TABLE
-        assert addresses[0].location == "Employee Data"
-
     def test_retrieve_returns_table_address(self):
         """Returns AddressKind.TABLE with correct metadata."""
         record = _make_table_record(
@@ -120,21 +109,6 @@ class TestTableSearchStrategy:
         addresses = strategy.retrieve("nonexistent", limit=5)
 
         assert addresses == []
-
-    def test_retrieve_hybrid_merge(self):
-        """Both keyword and semantic results are merged and deduplicated."""
-        record = _make_table_record(record_id="rec-1", name="Sales", score=0.8)
-        strategy = _make_strategy(
-            keyword_results=[record],
-            semantic_results=[record],
-        )
-
-        addresses = strategy.retrieve("sales", limit=5)
-
-        # Same record found by both strategies, deduplicated
-        assert len(addresses) == 1
-        # Score should be higher than from either alone
-        assert addresses[0].score > 0.4  # keyword_weight * 1.0 = 0.4
 
     def test_retrieve_respects_limit(self):
         """Only returns up to limit addresses."""

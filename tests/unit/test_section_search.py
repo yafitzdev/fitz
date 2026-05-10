@@ -132,47 +132,6 @@ class TestRetrieve:
         assert len(results) == 3
 
 
-class TestHybridMerge:
-    def test_bm25_weighted_higher(self, strategy, mock_section_store, mock_embedder):
-        # Same section appears in both BM25 and semantic
-        mock_section_store.search_bm25.return_value = [
-            _make_section_result(id_="sec1", bm25_score=1.0),
-        ]
-        mock_section_store.search_by_vector.return_value = [
-            _make_section_result(id_="sec1", score=1.0),
-        ]
-
-        results = strategy.retrieve("query", limit=5)
-        assert len(results) == 1
-        # RRF with k=60: both legs at rank 0 → 1/(60+0) = 1/60
-        # Combined: bm25_weight * (1/60) + semantic_weight * (1/60)
-        #         = (0.6 + 0.4) * (1/60) = 1/60 ≈ 0.01667
-        assert results[0].score == pytest.approx(1 / 60, abs=1e-4)
-
-    def test_disjoint_results_merged(self, strategy, mock_section_store, mock_embedder):
-        mock_section_store.search_bm25.return_value = [
-            _make_section_result(id_="sec1", raw_file_id="f1", bm25_score=0.8),
-        ]
-        mock_section_store.search_by_vector.return_value = [
-            _make_section_result(id_="sec2", raw_file_id="f2", score=0.9),
-        ]
-
-        results = strategy.retrieve("query", limit=5)
-        assert len(results) == 2
-
-    def test_bm25_only_when_no_semantic(self, strategy, mock_section_store, mock_embedder):
-        mock_section_store.search_bm25.return_value = [
-            _make_section_result(id_="sec1", bm25_score=0.5),
-        ]
-        mock_section_store.search_by_vector.return_value = []
-
-        results = strategy.retrieve("query", limit=5)
-        assert len(results) == 1
-        # RRF with k=60: BM25 only at rank 0 → 1/(60+0) = 1/60
-        # Score = bm25_weight * (1/60) = 0.6 * (1/60) = 0.6/60 = 0.01
-        assert results[0].score == pytest.approx(0.6 / 60, abs=1e-4)
-
-
 class TestToAddress:
     def test_summary_from_section_summary(self, strategy):
         section = _make_section_result(summary="Good summary.")

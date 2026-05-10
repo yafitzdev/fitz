@@ -194,7 +194,6 @@ class TestEngineInit:
 
         # Core clients called
         _patches["get_chat"].assert_called_once()
-        _patches["get_embedder"].assert_called_once()
         _patches["PostgresConnectionManager"].get_instance.assert_called()
 
         # Schema ensured
