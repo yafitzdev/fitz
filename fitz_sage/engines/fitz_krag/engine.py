@@ -826,7 +826,10 @@ class FitzKragEngine:
                         include_rewriting=False,
                         include_extended=True,
                     )
-                    embed_future = pool.submit(self._embedder.embed_batch, [sanitized])
+                    if self._embedder is not None:
+                        embed_future = pool.submit(self._embedder.embed_batch, [sanitized])
+                    else:
+                        embed_future = None
 
                     try:
                         batch_result = batch_future.result()
@@ -849,8 +852,13 @@ class FitzKragEngine:
                         batch_result = None
 
                     try:
-                        precomputed_vectors = embed_future.result()
-                        precomputed_query_vector = dict(zip([sanitized], precomputed_vectors))
+                        if embed_future is not None:
+                            precomputed_vectors = embed_future.result()
+                            precomputed_query_vector = dict(
+                                zip([sanitized], precomputed_vectors)
+                            )
+                        else:
+                            precomputed_query_vector = None
                     except Exception:
                         precomputed_query_vector = None
             else:
@@ -858,10 +866,17 @@ class FitzKragEngine:
                 analysis = fast_analysis
                 detection = None
                 batch_result = None
-                try:
-                    precomputed_vectors = self._embedder.embed_batch([sanitized], task_type="query")
-                    precomputed_query_vector = dict(zip([sanitized], precomputed_vectors))
-                except Exception:
+                if self._embedder is not None:
+                    try:
+                        precomputed_vectors = self._embedder.embed_batch(
+                            [sanitized], task_type="query"
+                        )
+                        precomputed_query_vector = dict(
+                            zip([sanitized], precomputed_vectors)
+                        )
+                    except Exception:
+                        precomputed_query_vector = None
+                else:
                     precomputed_query_vector = None
             timings.append(("Analysis + Detection", time.perf_counter() - t0))
 
@@ -1472,16 +1487,22 @@ class FitzKragEngine:
                         ]
                         self._symbol_store.upsert_batch(symbol_dicts)
 
-                        # Embed signatures immediately for vector search
-                        try:
-                            texts = [
-                                f"{s['kind']} {s['qualified_name']} {s.get('signature') or ''}"
-                                for s in symbol_dicts
-                            ]
-                            vectors = self._embedder.embed_batch(texts, task_type="document")
-                            self._symbol_store.update_vectors_by_file(entry.file_id, vectors)
-                        except Exception:
-                            pass  # Vector search will degrade but BM25 still works
+                        # Embed signatures immediately for vector search.
+                        # Skipped in chat_only mode (no embedder).
+                        if self._embedder is not None:
+                            try:
+                                texts = [
+                                    f"{s['kind']} {s['qualified_name']} {s.get('signature') or ''}"
+                                    for s in symbol_dicts
+                                ]
+                                vectors = self._embedder.embed_batch(
+                                    texts, task_type="document"
+                                )
+                                self._symbol_store.update_vectors_by_file(
+                                    entry.file_id, vectors
+                                )
+                            except Exception:
+                                pass  # Vector search will degrade but BM25 still works
 
                     if result.imports:
                         self._import_store.upsert_batch(
