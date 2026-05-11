@@ -14,7 +14,7 @@ Multi-table join support:
 - Query executed against PostgreSQL database
 
 Table storage:
-- All tables stored as native PostgreSQL tables via PostgresTableStore
+- All tables stored as native PostgreSQL tables via SqliteTableStore
 - Direct SQL execution without data loading
 - Efficient handling of large tables
 """
@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 from fitz_sage.core.chunk import Chunk
 from fitz_sage.llm.factory import ChatFactory, ModelTier
 
-from .store.postgres import PostgresTableStore
+from .store.sqlite import SqliteTableStore
 
 if TYPE_CHECKING:
     pass
@@ -44,7 +44,7 @@ class TableQueryStep:
     Retrieval step that handles table schema chunks.
 
     For each schema chunk retrieved:
-    1. Gets table metadata from PostgresTableStore
+    1. Gets table metadata from SqliteTableStore
     2. LLM selects relevant columns (column pruning)
     3. LLM generates PostgreSQL query
     4. Query executed directly against PostgreSQL
@@ -55,12 +55,12 @@ class TableQueryStep:
     Args:
         chat_factory: Chat factory for per-task tier selection.
         max_results: Maximum number of SQL result rows to include (default: 100).
-        table_store: PostgresTableStore for executing queries.
+        table_store: SqliteTableStore for executing queries.
     """
 
     chat_factory: ChatFactory  # Chat factory for LLM calls
     max_results: int = 100
-    table_store: "PostgresTableStore | None" = field(default=None)
+    table_store: "SqliteTableStore | None" = field(default=None)
 
     # Tier for table query tasks (developer decision - balanced for SQL generation)
     TIER_COLUMN_SELECT: ModelTier = "fast"
@@ -80,7 +80,7 @@ Rules:
 - For numeric comparisons (highest, lowest, average), include the numeric column
 - When in doubt, include more columns rather than fewer"""
 
-    SQL_PROMPT = """Generate a PostgreSQL query to answer this question.
+    SQL_PROMPT = """Generate a SQLite query to answer this question.
 
 Table name: {table_name}
 Columns: {columns}
@@ -92,12 +92,12 @@ Rules:
 1. Use only the columns listed above
 2. Use the exact table name: {table_name}
 3. Use LIMIT {max_results} unless aggregating
-4. For text search use ILIKE with % wildcards (PostgreSQL is case-insensitive with ILIKE)
+4. For text search use LIKE with % wildcards (SQLite LIKE is case-insensitive for ASCII)
 5. Column names need double quotes if they contain special characters
 6. For "highest/maximum" use ORDER BY column DESC LIMIT 1
 7. For "lowest/minimum" use ORDER BY column ASC LIMIT 1
 8. For "who/which" questions, include identifying columns (name, id) in SELECT
-9. All columns are TEXT type. For numeric operations (MAX, MIN, AVG, SUM, ORDER BY numbers), use CAST(column AS NUMERIC) or column::NUMERIC
+9. All columns are TEXT type. For numeric operations (MAX, MIN, AVG, SUM, ORDER BY numbers), use CAST(column AS REAL) or CAST(column AS INTEGER)
 
 Return ONLY the SQL query, no explanation."""
 
@@ -110,7 +110,7 @@ Question: {question}
 
 Answer ONLY "yes" or "no"."""
 
-    MULTI_TABLE_SQL_PROMPT = """Generate a PostgreSQL query to answer this question using these tables.
+    MULTI_TABLE_SQL_PROMPT = """Generate a SQLite query to answer this question using these tables.
 
 Tables:
 {table_schemas}
@@ -122,8 +122,8 @@ Rules:
 2. If tables need to be joined, infer join columns from matching column names
 3. Use LIMIT {max_results} unless aggregating
 4. Column names need double quotes if they contain special characters
-5. Use ILIKE for case-insensitive text search
-6. All columns are TEXT type - cast to NUMERIC for numeric operations
+5. Use LIKE for case-insensitive text search (SQLite LIKE is case-insensitive for ASCII)
+6. All columns are TEXT type - CAST to REAL or INTEGER for numeric operations
 
 Return ONLY the SQL query, no explanation."""
 

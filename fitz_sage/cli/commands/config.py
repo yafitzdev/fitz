@@ -296,11 +296,6 @@ def _run_doctor(test: bool = False) -> None:
     else:
         ui.warning("OpenAI-compatible endpoint", system.llm_endpoint.details)
 
-    if system.pgvector.available:
-        ui.status("pgvector", True, "installed")
-    else:
-        ui.warning("pgvector", system.pgvector.details)
-
     # API Keys
     ui.section("API Keys")
 

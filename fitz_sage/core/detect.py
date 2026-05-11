@@ -8,7 +8,6 @@ Auto-discovers:
   ``endpoint`` provider's primary use case — llama.cpp's
   ``llama-server``, vLLM, LM Studio, or Ollama in ``/v1/`` mode).
 - The ``OPENAI_API_KEY`` environment variable (the ``openai`` preset).
-- pgvector / psycopg installation (the only vector DB backend).
 
 Used by:
 
@@ -59,7 +58,6 @@ class SystemStatus:
     """Complete system status."""
 
     llm_endpoint: ServiceStatus
-    pgvector: ServiceStatus
     api_keys: dict[str, ApiKeyStatus]
 
     @property
@@ -86,11 +84,6 @@ class SystemStatus:
         if self.llm_endpoint.available and self.llm_endpoint.base_url:
             return self.llm_endpoint.base_url
         return "http://localhost:8080/v1"
-
-    @property
-    def best_vector_db(self) -> str:
-        """pgvector is the only option."""
-        return "pgvector"
 
     @property
     def best_rerank(self) -> Optional[str]:
@@ -194,25 +187,6 @@ def detect_llm_endpoint() -> ServiceStatus:
     )
 
 
-def detect_pgvector() -> ServiceStatus:
-    """Check if pgvector / psycopg are installed."""
-    try:
-        import pgvector  # noqa: F401
-        import psycopg  # noqa: F401
-
-        return ServiceStatus(
-            name="pgvector",
-            available=True,
-            details="Installed (PostgreSQL vector DB)",
-        )
-    except ImportError:
-        return ServiceStatus(
-            name="pgvector",
-            available=False,
-            details="Not installed (pip install psycopg pgvector pgserver)",
-        )
-
-
 # =============================================================================
 # API key detection
 # =============================================================================
@@ -267,7 +241,6 @@ def detect_system_status() -> SystemStatus:
     """Get a snapshot of detectable system services."""
     return SystemStatus(
         llm_endpoint=detect_llm_endpoint(),
-        pgvector=detect_pgvector(),
         api_keys={
             "openai": detect_api_key("openai"),
         },

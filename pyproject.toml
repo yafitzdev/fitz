@@ -61,10 +61,8 @@ dependencies = [
     "jinja2>=3.1",
     # X.509 cert parsing for enterprise mTLS auth (fitz_sage/llm/auth/certificates.py)
     "cryptography>=41.0",
-    # PostgreSQL for tabular storage + BM25 (no vectors)
-    "psycopg[binary]>=3.1",
-    "psycopg-pool>=3.1",
-    "fitz-pgserver>=0.1.5",  # Fork of pgserver with Windows crash recovery fix
+    # SQLite is bundled with Python's stdlib (sqlite3 module) — no server,
+    # no driver dep. Each collection is a single .db file with FTS5.
     # Lightweight document parsing (PDF, DOCX, PPTX — no ML)
     "pypdfium2>=4.0",
     "python-docx>=1.0",
@@ -75,7 +73,7 @@ dependencies = [
 # Advanced document parsing (PDF layout analysis, table detection, figures)
 docs = ["docling>=2.0"]
 
-# Standalone code retrieval (no PostgreSQL, no pgvector, no docling)
+# Standalone code retrieval (no SQLite-based stores, no docling)
 code = []
 
 # Local LLM (Ollama Python client)
@@ -175,7 +173,7 @@ markers = [
     "e2e_krag: marks tests as KRAG end-to-end tests requiring real LLM and ingestion",
     "e2e_krag_parser: marks tests as KRAG parser e2e tests (PDF/DOCX parsing)",
     "e2e_krag_formats: marks tests as KRAG format e2e tests (PPTX/XLSX/SQL/Go/Java/TS)",
-    "postgres: marks tests as postgres-specific (pgvector, table store)",
+    "sqlite: marks tests as sqlite-specific (connection manager, table store)",
     "llm: marks tests requiring real LLM API calls",
     "embeddings: marks tests requiring real embedding API calls",
     # Category markers
@@ -190,7 +188,7 @@ markers = [
 # Full mutation testing - run overnight locally or in weekly CI
 paths_to_mutate = "fitz_sage/core/"
 # Run unit + integration tests for thorough coverage
-runner = "python -m pytest tests/unit/ tests/integration/ -x -q --tb=no --ignore=tests/unit/test_postgres_recovery.py"
+runner = "python -m pytest tests/unit/ tests/integration/ -x -q --tb=no"
 # Test execution timeout (generous for full suite)
 test_time_multiplier = 3.0
 test_time_base = 10.0

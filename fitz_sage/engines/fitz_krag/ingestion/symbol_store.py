@@ -5,52 +5,61 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.ingestion.schema import TABLE_PREFIX
 
 if TYPE_CHECKING:
-    from fitz_sage.storage.postgres import PostgresConnectionManager
+    from fitz_sage.storage.sqlite import SqliteConnectionManager
 
 logger = logging.getLogger(__name__)
 
 TABLE = f"{TABLE_PREFIX}symbol_index"
+FTS = f"{TABLE_PREFIX}symbol_fts"
+
+
+def _build_fts_query(query: str) -> str | None:
+    """OR-join alphanumeric words into FTS5 query syntax."""
+    words = [w for w in re.findall(r"\w+", query) if w]
+    if not words:
+        return None
+    return " OR ".join(words)
 
 
 class SymbolStore:
     """CRUD for the symbol index."""
 
-    def __init__(self, connection_manager: "PostgresConnectionManager", collection: str):
+    def __init__(self, connection_manager: "SqliteConnectionManager", collection: str):
         self._cm = connection_manager
         self._collection = collection
 
     def upsert_batch(self, symbols: list[dict[str, Any]]) -> None:
-        """Insert or update a batch of symbols."""
         if not symbols:
             return
 
         sql = f"""
             INSERT INTO {TABLE}
-                ("id", "name", "qualified_name", "kind", "raw_file_id",
-                 "start_line", "end_line", "signature", "summary",
-                 "imports", "references", "keywords", "entities", "metadata")
+                (id, name, qualified_name, kind, raw_file_id,
+                 start_line, end_line, signature, summary,
+                 imports, "references", keywords, entities, metadata)
             VALUES
-                (%s, %s, %s, %s, %s,
-                 %s, %s, %s, %s,
-                 %s, %s, %s, %s::jsonb, %s::jsonb)
-            ON CONFLICT ("id") DO UPDATE SET
-                "name" = EXCLUDED."name",
-                "qualified_name" = EXCLUDED."qualified_name",
-                "kind" = EXCLUDED."kind",
-                "start_line" = EXCLUDED."start_line",
-                "end_line" = EXCLUDED."end_line",
-                "signature" = EXCLUDED."signature",
-                "summary" = EXCLUDED."summary",
-                "imports" = EXCLUDED."imports",
-                "references" = EXCLUDED."references",
-                "keywords" = EXCLUDED."keywords",
-                "entities" = EXCLUDED."entities",
-                "metadata" = EXCLUDED."metadata"
+                (?, ?, ?, ?, ?,
+                 ?, ?, ?, ?,
+                 ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                qualified_name = excluded.qualified_name,
+                kind = excluded.kind,
+                start_line = excluded.start_line,
+                end_line = excluded.end_line,
+                signature = excluded.signature,
+                summary = excluded.summary,
+                imports = excluded.imports,
+                "references" = excluded."references",
+                keywords = excluded.keywords,
+                entities = excluded.entities,
+                metadata = excluded.metadata
         """
         with self._cm.connection(self._collection) as conn:
             for sym in symbols:
@@ -66,9 +75,9 @@ class SymbolStore:
                         sym["end_line"],
                         sym.get("signature"),
                         sym.get("summary"),
-                        sym.get("imports", []),
-                        sym.get("references", []),
-                        sym.get("keywords", []),
+                        json.dumps(sym.get("imports", [])),
+                        json.dumps(sym.get("references", [])),
+                        json.dumps(sym.get("keywords", [])),
                         json.dumps(sym.get("entities", [])),
                         json.dumps(sym.get("metadata", {})),
                     ),
@@ -76,52 +85,56 @@ class SymbolStore:
             conn.commit()
 
     def search_bm25(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
-        """Full-text search on symbol name + summary using tsvector."""
+        """FTS5 BM25 search over symbol name + qualified_name + summary."""
+        fts_query = _build_fts_query(query)
+        if fts_query is None:
+            return []
+
         sql = f"""
-            SELECT "id", "name", "qualified_name", "kind", "raw_file_id",
-                   "start_line", "end_line", "signature", "summary", "metadata",
-                   ts_rank_cd("content_tsv", plainto_tsquery('english', %s)) AS "rank"
-            FROM {TABLE}
-            WHERE "content_tsv" @@ plainto_tsquery('english', %s)
-            ORDER BY "rank" DESC
-            LIMIT %s
+            SELECT s.id, s.name, s.qualified_name, s.kind, s.raw_file_id,
+                   s.start_line, s.end_line, s.signature, s.summary, s.metadata,
+                   bm25({FTS}) AS rank
+            FROM {FTS}
+            JOIN {TABLE} s ON s.rowid = {FTS}.rowid
+            WHERE {FTS} MATCH ?
+            ORDER BY rank
+            LIMIT ?
         """
         with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, (query, query, limit)).fetchall()
+            rows = conn.execute(sql, (fts_query, limit)).fetchall()
         results = []
         for row in rows:
             d = _row_to_dict(row[:10])
-            d["bm25_score"] = float(row[10]) if row[10] is not None else 0.0
+            d["bm25_score"] = -float(row[10]) if row[10] is not None else 0.0
             results.append(d)
         return results
 
     def search_by_name(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
-        """Keyword search against symbol name and qualified_name using ILIKE."""
+        """Substring search against symbol name and qualified_name (case-insensitive)."""
         pattern = f"%{query}%"
         sql = f"""
-            SELECT "id", "name", "qualified_name", "kind", "raw_file_id",
-                   "start_line", "end_line", "signature", "summary", "metadata"
+            SELECT id, name, qualified_name, kind, raw_file_id,
+                   start_line, end_line, signature, summary, metadata
             FROM {TABLE}
-            WHERE "name" ILIKE %s OR "qualified_name" ILIKE %s
-            LIMIT %s
+            WHERE name LIKE ? COLLATE NOCASE
+               OR qualified_name LIKE ? COLLATE NOCASE
+            LIMIT ?
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql, (pattern, pattern, limit)).fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def delete_by_file(self, raw_file_id: str) -> None:
-        """Delete all symbols for a raw file."""
-        sql = f'DELETE FROM {TABLE} WHERE "raw_file_id" = %s'
+        sql = f"DELETE FROM {TABLE} WHERE raw_file_id = ?"
         with self._cm.connection(self._collection) as conn:
             conn.execute(sql, (raw_file_id,))
             conn.commit()
 
     def get(self, symbol_id: str) -> dict[str, Any] | None:
-        """Get a symbol by ID."""
         sql = f"""
-            SELECT "id", "name", "qualified_name", "kind", "raw_file_id",
-                   "start_line", "end_line", "signature", "summary", "metadata"
-            FROM {TABLE} WHERE "id" = %s
+            SELECT id, name, qualified_name, kind, raw_file_id,
+                   start_line, end_line, signature, summary, metadata
+            FROM {TABLE} WHERE id = ?
         """
         with self._cm.connection(self._collection) as conn:
             row = conn.execute(sql, (symbol_id,)).fetchone()
@@ -130,62 +143,52 @@ class SymbolStore:
         return _row_to_dict(row)
 
     def get_by_file(self, raw_file_id: str) -> list[dict[str, Any]]:
-        """Get all symbols for a raw file, ordered by start_line.
-
-        Includes the ``references`` column (index 10) as a separate field
-        so that callers can see AST-extracted references without breaking
-        existing ``_row_to_dict`` consumers.
-        """
+        """All symbols for a file. ``references`` returned as a Python list."""
         sql = f"""
-            SELECT "id", "name", "qualified_name", "kind", "raw_file_id",
-                   "start_line", "end_line", "signature", "summary", "metadata",
+            SELECT id, name, qualified_name, kind, raw_file_id,
+                   start_line, end_line, signature, summary, metadata,
                    "references"
             FROM {TABLE}
-            WHERE "raw_file_id" = %s
-            ORDER BY "start_line"
+            WHERE raw_file_id = ?
+            ORDER BY start_line
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql, (raw_file_id,)).fetchall()
         results = []
         for row in rows:
             d = _row_to_dict(row[:10])
-            d["references"] = list(row[10]) if row[10] else []
+            d["references"] = _decode_json_list(row[10])
             results.append(d)
         return results
 
     def search_by_keywords(self, terms: list[str], limit: int = 20) -> list[dict[str, Any]]:
-        """Find symbols with matching enriched keywords (array overlap)."""
         if not terms:
             return []
+        placeholders = ",".join(["?"] * len(terms))
         sql = f"""
-            SELECT "id", "name", "qualified_name", "kind", "raw_file_id",
-                   "start_line", "end_line", "signature", "summary", "metadata"
+            SELECT id, name, qualified_name, kind, raw_file_id,
+                   start_line, end_line, signature, summary, metadata
             FROM {TABLE}
-            WHERE "keywords" && %s
-            LIMIT %s
+            WHERE EXISTS (
+                SELECT 1 FROM json_each({TABLE}.keywords) k
+                WHERE k.value IN ({placeholders})
+            )
+            LIMIT ?
         """
+        params = (*terms, limit)
         with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, (terms, limit)).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def get_structural_manifest(self) -> list[dict]:
-        """Get a compact structural manifest of all symbols grouped by file.
-
-        Returns a list of per-file dicts:
-        {
-            "raw_file_id": str,
-            "path": str,
-            "symbols": [{"name", "qualified_name", "kind", "signature",
-                         "start_line", "end_line", "imports"}]
-        }
-        """
+        """Compact structural manifest of all symbols grouped by file."""
         sql = f"""
-            SELECT s."raw_file_id", r."path",
-                   s."name", s."qualified_name", s."kind", s."signature",
-                   s."start_line", s."end_line", s."imports"
+            SELECT s.raw_file_id, r.path,
+                   s.name, s.qualified_name, s.kind, s.signature,
+                   s.start_line, s.end_line, s.imports
             FROM {TABLE} s
-            JOIN {TABLE_PREFIX}raw_files r ON s."raw_file_id" = r."id"
-            ORDER BY r."path", s."start_line"
+            JOIN {TABLE_PREFIX}raw_files r ON s.raw_file_id = r.id
+            ORDER BY r.path, s.start_line
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql).fetchall()
@@ -203,31 +206,29 @@ class SymbolStore:
                     "signature": row[5],
                     "start_line": row[6],
                     "end_line": row[7],
-                    "imports": list(row[8]) if row[8] else [],
+                    "imports": _decode_json_list(row[8]),
                 }
             )
         return list(files.values())
 
     def get_summaries_by_file(self, raw_file_id: str) -> list[dict[str, Any]]:
-        """Get symbol IDs, names, kinds, and summaries for a file."""
         sql = f"""
-            SELECT "id", "name", "kind", "summary"
+            SELECT id, name, kind, summary
             FROM {TABLE}
-            WHERE "raw_file_id" = %s
-            ORDER BY "start_line"
+            WHERE raw_file_id = ?
+            ORDER BY start_line
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql, (raw_file_id,)).fetchall()
         return [{"id": row[0], "name": row[1], "kind": row[2], "summary": row[3]} for row in rows]
 
     def update_summaries_by_file(self, raw_file_id: str, summaries: list[str]) -> None:
-        """Update summaries for all symbols in a file, in start_line order."""
         ids_sql = f"""
-            SELECT "id" FROM {TABLE}
-            WHERE "raw_file_id" = %s
-            ORDER BY "start_line"
+            SELECT id FROM {TABLE}
+            WHERE raw_file_id = ?
+            ORDER BY start_line
         """
-        update_sql = f'UPDATE {TABLE} SET "summary" = %s WHERE "id" = %s'
+        update_sql = f"UPDATE {TABLE} SET summary = ? WHERE id = ?"
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(ids_sql, (raw_file_id,)).fetchall()
             for i, row in enumerate(rows):
@@ -238,17 +239,13 @@ class SymbolStore:
     def update_enrichment_by_file(
         self, raw_file_id: str, enriched_dicts: list[dict[str, Any]]
     ) -> None:
-        """Update keywords, entities, and metadata for symbols in a file."""
-        sql = (
-            f'UPDATE {TABLE} SET "keywords" = %s, "entities" = %s::jsonb,'
-            f' "metadata" = %s::jsonb WHERE "id" = %s'
-        )
+        sql = f"UPDATE {TABLE} SET keywords = ?, entities = ?, metadata = ? WHERE id = ?"
         with self._cm.connection(self._collection) as conn:
             for item in enriched_dicts:
                 conn.execute(
                     sql,
                     (
-                        item.get("keywords", []),
+                        json.dumps(item.get("keywords", [])),
                         json.dumps(item.get("entities", [])),
                         json.dumps(item.get("metadata", {})),
                         item["id"],
@@ -256,11 +253,26 @@ class SymbolStore:
                 )
             conn.commit()
 
+
+def _decode_json_list(value: Any) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return list(value)
+    try:
+        decoded = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return decoded if isinstance(decoded, list) else []
+
+
 def _row_to_dict(row: tuple) -> dict[str, Any]:
-    """Convert a query row to dict."""
     meta = row[9]
     if isinstance(meta, str):
-        meta = json.loads(meta)
+        try:
+            meta = json.loads(meta)
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
     elif meta is None:
         meta = {}
     return {

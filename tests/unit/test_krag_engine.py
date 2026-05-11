@@ -122,7 +122,7 @@ class TestEngineInit:
             # llm
             "get_chat": "fitz_sage.llm.client.get_chat",
             # storage
-            "PostgresConnectionManager": ("fitz_sage.storage.postgres.PostgresConnectionManager"),
+            "SqliteConnectionManager": ("fitz_sage.storage.sqlite.SqliteConnectionManager"),
             # stores
             "RawFileStore": (
                 "fitz_sage.engines.fitz_krag.ingestion" ".raw_file_store.RawFileStore"
@@ -173,8 +173,8 @@ class TestEngineInit:
         for key, p in patchers.items():
             mocks[key] = p.start()
 
-        # PostgresConnectionManager.get_instance() returns a mock
-        mocks["PostgresConnectionManager"].get_instance.return_value = MagicMock(name="pg_instance")
+        # SqliteConnectionManager.get_instance() returns a mock
+        mocks["SqliteConnectionManager"].get_instance.return_value = MagicMock(name="pg_instance")
 
         yield mocks
 
@@ -188,7 +188,7 @@ class TestEngineInit:
 
         # Core clients called
         _patches["get_chat"].assert_called_once()
-        _patches["PostgresConnectionManager"].get_instance.assert_called()
+        _patches["SqliteConnectionManager"].get_instance.assert_called()
 
         # Schema ensured
         _patches["ensure_schema"].assert_called_once()

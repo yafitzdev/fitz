@@ -435,7 +435,7 @@ class CLIContext:
         """
         Get a single-line info string for display.
 
-        Example: "Collection: default | VectorDB: pgvector | Chat: cohere (command-r-plus)"
+        Example: "Collection: default | Retrieval: fitz_krag | Chat: openai (gpt-4o)"
         """
         parts = [
             f"Collection: {self.retrieval_collection}",

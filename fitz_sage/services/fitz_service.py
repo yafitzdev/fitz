@@ -224,15 +224,14 @@ class FitzService:
     # =========================================================================
 
     def list_collections(self) -> list[CollectionInfo]:
-        """
-        List all collections by enumerating fitz-sage's PostgreSQL databases.
+        """List collections by scanning the SQLite storage directory.
 
-        Each fitz-sage collection is its own database under
-        ``PostgresConnectionManager``. We list ``pg_database`` and report
-        the krag_section_index row count per collection.
+        Each fitz-sage collection is its own ``.db`` file under the
+        storage directory; the row count comes from the file's
+        ``krag_section_index`` table when present.
         """
         cm = self._connection_manager()
-        names = _list_collection_databases(cm)
+        names = cm.list_collections()
         result: list[CollectionInfo] = []
         for name in names:
             result.append(CollectionInfo(name=name, chunk_count=_collection_chunk_count(cm, name)))
@@ -242,46 +241,25 @@ class FitzService:
     def get_collection(self, name: str) -> CollectionInfo:
         """Get info about a collection. Raises CollectionNotFoundError if missing."""
         cm = self._connection_manager()
-        if name not in _list_collection_databases(cm):
+        if name not in cm.list_collections():
             raise CollectionNotFoundError(name)
         return CollectionInfo(name=name, chunk_count=_collection_chunk_count(cm, name))
 
     def delete_collection(self, name: str) -> bool:
-        """Drop the collection's PostgreSQL database. Returns True on success.
-
-        Uses the connection manager's base URI to issue ``DROP DATABASE``
-        in autocommit mode against the ``postgres`` admin database.
-        """
-        import psycopg
-
+        """Delete the collection's SQLite database file. Returns True on success."""
         cm = self._connection_manager()
-        if name not in _list_collection_databases(cm):
-            return False
-
-        base_uri = getattr(cm, "_base_uri", None)
-        if not base_uri:
-            cm.start()
-            base_uri = getattr(cm, "_base_uri", None)
-        if not base_uri:
-            raise FitzServiceError("PostgresConnectionManager has no base URI")
-
-        from urllib.parse import urlparse, urlunparse
-
-        admin_uri = urlunparse(urlparse(base_uri)._replace(path="/postgres"))
-        with psycopg.connect(admin_uri, autocommit=True) as conn:
-            conn.execute(f'DROP DATABASE IF EXISTS "{name}"')
-        logger.info("Deleted collection", collection=name)
-        return True
+        deleted = cm.delete_collection(name)
+        if deleted:
+            logger.info("Deleted collection", collection=name)
+        return deleted
 
     @staticmethod
     def _connection_manager() -> Any:
-        from fitz_sage.storage.postgres import PostgresConnectionManager
+        from fitz_sage.storage.sqlite import SqliteConnectionManager
 
-        cm = PostgresConnectionManager.get_instance()
+        cm = SqliteConnectionManager.get_instance()
         cm.start()
         return cm
-
-        return True  # Assume exists if we can't check
 
     # =========================================================================
     # Configuration Operations
@@ -371,21 +349,21 @@ class FitzService:
         Check system health.
 
         Tests connectivity to:
-        - PostgreSQL connection manager
+        - SQLite storage directory
         - LLM chat provider (if configured)
         """
         components = {}
         issues = []
 
-        # Check Postgres connection manager
+        # Check SQLite storage layer
         try:
             cm = self._connection_manager()
-            _list_collection_databases(cm)
-            components["postgres"] = True
+            cm.list_collections()
+            components["sqlite"] = True
         except Exception as e:
-            logger.warning(f"Postgres health check failed: {e}")
-            components["postgres"] = False
-            issues.append(f"Postgres: {e}")
+            logger.warning(f"SQLite health check failed: {e}")
+            components["sqlite"] = False
+            issues.append(f"SQLite: {e}")
 
         # Check chat provider
         try:
@@ -408,32 +386,8 @@ class FitzService:
 
 
 # =============================================================================
-# Helpers — collection enumeration via PostgresConnectionManager
+# Helpers — collection enumeration
 # =============================================================================
-
-
-def _list_collection_databases(cm: Any) -> list[str]:
-    """Enumerate fitz-sage collection databases (pg_database minus system DBs)."""
-    import psycopg
-    from urllib.parse import urlparse, urlunparse
-
-    base_uri = getattr(cm, "_base_uri", None)
-    if not base_uri:
-        cm.start()
-        base_uri = getattr(cm, "_base_uri", None)
-    if not base_uri:
-        return []
-    admin_uri = urlunparse(urlparse(base_uri)._replace(path="/postgres"))
-    try:
-        with psycopg.connect(admin_uri, autocommit=True) as conn:
-            rows = conn.execute(
-                "SELECT datname FROM pg_database WHERE datistemplate = false"
-            ).fetchall()
-    except Exception as e:
-        logger.warning(f"Failed to list collection databases: {e}")
-        return []
-    system = {"postgres", "template0", "template1"}
-    return [row[0] for row in rows if row[0] not in system]
 
 
 def _collection_chunk_count(cm: Any, name: str) -> int:
@@ -441,16 +395,14 @@ def _collection_chunk_count(cm: Any, name: str) -> int:
     try:
         with cm.connection(name) as conn:
             exists = conn.execute(
-                """
-                SELECT EXISTS (
-                    SELECT 1 FROM information_schema.tables
-                    WHERE table_name = 'krag_section_index'
-                )
-                """
-            ).fetchone()[0]
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='krag_section_index'"
+            ).fetchone()
             if not exists:
                 return 0
-            return int(conn.execute("SELECT COUNT(*) FROM krag_section_index").fetchone()[0])
+            return int(
+                conn.execute("SELECT COUNT(*) FROM krag_section_index").fetchone()[0]
+            )
     except Exception as e:
         logger.debug(f"Chunk count failed for '{name}': {e}")
         return 0

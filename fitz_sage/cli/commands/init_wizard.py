@@ -204,7 +204,7 @@ def command(
     """
     Initialize Fitz with an interactive setup wizard.
 
-    Detects available providers (API keys, Ollama, pgvector) and
+    Detects available providers (API keys, local LLM endpoints) and
     creates a working configuration file.
 
     Examples:
@@ -270,8 +270,6 @@ def command(
             else system.llm_endpoint.details
         ),
     )
-    ui.status("pgvector", system.pgvector.available, system.pgvector.details)
-
     for name, key_status in system.api_keys.items():
         ui.status(name.capitalize(), key_status.available)
 

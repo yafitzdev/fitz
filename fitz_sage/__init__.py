@@ -28,9 +28,9 @@ Architecture:
     ├── engines/           # Engine implementations
     │   └── fitz_krag/     # Knowledge Routing Augmented Generation
     ├── runtime/           # Multi-engine orchestration
-    ├── llm/               # LLM service (chat, embedding, rerank)
-    ├── vector_db/         # Vector database service
-    └── ingest/            # Document ingestion
+    ├── llm/               # LLM service (chat, rerank, vision)
+    ├── storage/           # SQLite connection management
+    └── ingestion/         # Document ingestion
 
 Philosophy:
     Knowledge → Engine → Answer

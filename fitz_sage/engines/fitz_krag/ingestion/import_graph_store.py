@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.ingestion.schema import TABLE_PREFIX
 
 if TYPE_CHECKING:
-    from fitz_sage.storage.postgres import PostgresConnectionManager
+    from fitz_sage.storage.sqlite import SqliteConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,22 +20,21 @@ TABLE = f"{TABLE_PREFIX}import_graph"
 class ImportGraphStore:
     """CRUD for the import graph."""
 
-    def __init__(self, connection_manager: "PostgresConnectionManager", collection: str):
+    def __init__(self, connection_manager: "SqliteConnectionManager", collection: str):
         self._cm = connection_manager
         self._collection = collection
 
     def upsert_batch(self, edges: list[dict[str, Any]]) -> None:
-        """Insert or update a batch of import edges."""
         if not edges:
             return
 
         sql = f"""
             INSERT INTO {TABLE}
-                ("source_file_id", "target_module", "target_file_id", "import_names")
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT ("source_file_id", "target_module") DO UPDATE SET
-                "target_file_id" = EXCLUDED."target_file_id",
-                "import_names" = EXCLUDED."import_names"
+                (source_file_id, target_module, target_file_id, import_names)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(source_file_id, target_module) DO UPDATE SET
+                target_file_id = excluded.target_file_id,
+                import_names = excluded.import_names
         """
         with self._cm.connection(self._collection) as conn:
             for edge in edges:
@@ -44,93 +44,62 @@ class ImportGraphStore:
                         edge["source_file_id"],
                         edge["target_module"],
                         edge.get("target_file_id"),
-                        edge.get("import_names", []),
+                        json.dumps(edge.get("import_names", [])),
                     ),
                 )
             conn.commit()
 
     def get_imports(self, file_id: str) -> list[dict[str, Any]]:
-        """Get all imports from a file."""
         sql = f"""
-            SELECT "source_file_id", "target_module", "target_file_id", "import_names"
-            FROM {TABLE} WHERE "source_file_id" = %s
+            SELECT source_file_id, target_module, target_file_id, import_names
+            FROM {TABLE} WHERE source_file_id = ?
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql, (file_id,)).fetchall()
-        return [
-            {
-                "source_file_id": row[0],
-                "target_module": row[1],
-                "target_file_id": row[2],
-                "import_names": row[3] or [],
-            }
-            for row in rows
-        ]
+        return [_row_to_dict(row) for row in rows]
 
     def get_importers(self, file_id: str) -> list[dict[str, Any]]:
-        """Get all files that import this file."""
         sql = f"""
-            SELECT "source_file_id", "target_module", "target_file_id", "import_names"
-            FROM {TABLE} WHERE "target_file_id" = %s
+            SELECT source_file_id, target_module, target_file_id, import_names
+            FROM {TABLE} WHERE target_file_id = ?
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql, (file_id,)).fetchall()
-        return [
-            {
-                "source_file_id": row[0],
-                "target_module": row[1],
-                "target_file_id": row[2],
-                "import_names": row[3] or [],
-            }
-            for row in rows
-        ]
+        return [_row_to_dict(row) for row in rows]
 
     def get_reverse_counts(self) -> dict[str, int]:
-        """Get the number of files that import each file.
-
-        Returns ``{file_id: count}`` — useful for ranking files by connectivity.
-        """
         sql = f"""
-            SELECT "target_file_id", COUNT(*)
+            SELECT target_file_id, COUNT(*)
             FROM {TABLE}
-            WHERE "target_file_id" IS NOT NULL
-            GROUP BY "target_file_id"
+            WHERE target_file_id IS NOT NULL
+            GROUP BY target_file_id
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql).fetchall()
         return {row[0]: int(row[1]) for row in rows}
 
     def delete_by_file(self, file_id: str) -> None:
-        """Delete all import edges for a file (as source)."""
-        sql = f'DELETE FROM {TABLE} WHERE "source_file_id" = %s'
+        sql = f"DELETE FROM {TABLE} WHERE source_file_id = ?"
         with self._cm.connection(self._collection) as conn:
             conn.execute(sql, (file_id,))
             conn.commit()
 
     def resolve_targets(self, path_to_id: dict[str, str]) -> int:
-        """Resolve ``target_file_id`` for all unresolved import edges.
-
-        Builds a module->file_id mapping from *path_to_id* (as returned by
-        ``RawFileStore.list_ids_by_path()``), then UPDATEs every edge whose
-        ``target_file_id IS NULL`` when the ``target_module`` matches a
-        known file.
-
-        Returns the number of edges resolved.
-        """
+        """Resolve target_file_id for edges whose target_file_id is NULL."""
         module_to_id: dict[str, str] = {}
         for path, file_id in path_to_id.items():
             module = _path_to_module(path)
             module_to_id[module] = file_id
 
         select_sql = f"""
-            SELECT "source_file_id", "target_module"
+            SELECT source_file_id, target_module
             FROM {TABLE}
-            WHERE "target_file_id" IS NULL
+            WHERE target_file_id IS NULL
         """
         update_sql = f"""
             UPDATE {TABLE}
-            SET "target_file_id" = %s
-            WHERE "source_file_id" = %s AND "target_module" = %s
+            SET target_file_id = ?
+            WHERE source_file_id = ? AND target_module = ?
         """
         resolved = 0
         with self._cm.connection(self._collection) as conn:
@@ -145,12 +114,26 @@ class ImportGraphStore:
         return resolved
 
 
-def _path_to_module(file_path: str) -> str:
-    """Convert a file path to a Python-style module name.
+def _row_to_dict(row: tuple) -> dict[str, Any]:
+    names = row[3]
+    if isinstance(names, str):
+        try:
+            names = json.loads(names)
+        except (json.JSONDecodeError, TypeError):
+            names = []
+    elif names is None:
+        names = []
+    if not isinstance(names, list):
+        names = []
+    return {
+        "source_file_id": row[0],
+        "target_module": row[1],
+        "target_file_id": row[2],
+        "import_names": names,
+    }
 
-    Intentionally duplicates the 6-line helper in each language strategy
-    to avoid coupling import_graph_store to any specific strategy.
-    """
+
+def _path_to_module(file_path: str) -> str:
     path = file_path.replace("\\", "/")
     if path.startswith("./"):
         path = path[2:]

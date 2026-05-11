@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from fitz_sage.engines.fitz_krag.ingestion.schema import TABLE_PREFIX
 
 if TYPE_CHECKING:
-    from fitz_sage.storage.postgres import PostgresConnectionManager
+    from fitz_sage.storage.sqlite import SqliteConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ TABLE = f"{TABLE_PREFIX}raw_files"
 class RawFileStore:
     """CRUD for raw file storage."""
 
-    def __init__(self, connection_manager: "PostgresConnectionManager", collection: str):
+    def __init__(self, connection_manager: "SqliteConnectionManager", collection: str):
         self._cm = connection_manager
         self._collection = collection
 
@@ -34,20 +34,19 @@ class RawFileStore:
         size_bytes: int,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Insert or update a raw file."""
         meta_json = json.dumps(metadata or {})
         sql = f"""
             INSERT INTO {TABLE}
-                ("id", "path", "content", "content_hash", "file_type", "size_bytes", "metadata")
-            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
-            ON CONFLICT ("id") DO UPDATE SET
-                "path" = EXCLUDED."path",
-                "content" = EXCLUDED."content",
-                "content_hash" = EXCLUDED."content_hash",
-                "file_type" = EXCLUDED."file_type",
-                "size_bytes" = EXCLUDED."size_bytes",
-                "metadata" = EXCLUDED."metadata",
-                "updated_at" = NOW()
+                (id, path, content, content_hash, file_type, size_bytes, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                path = excluded.path,
+                content = excluded.content,
+                content_hash = excluded.content_hash,
+                file_type = excluded.file_type,
+                size_bytes = excluded.size_bytes,
+                metadata = excluded.metadata,
+                updated_at = CURRENT_TIMESTAMP
         """
         with self._cm.connection(self._collection) as conn:
             conn.execute(
@@ -56,72 +55,71 @@ class RawFileStore:
             conn.commit()
 
     def get(self, file_id: str) -> dict[str, Any] | None:
-        """Get a raw file by ID."""
         sql = f"""
-            SELECT "id", "path", "content", "content_hash", "file_type", "size_bytes", "metadata"
-            FROM {TABLE} WHERE "id" = %s
+            SELECT id, path, content, content_hash, file_type, size_bytes, metadata
+            FROM {TABLE} WHERE id = ?
         """
         with self._cm.connection(self._collection) as conn:
             row = conn.execute(sql, (file_id,)).fetchone()
         if not row:
             return None
-        return {
-            "id": row[0],
-            "path": row[1],
-            "content": row[2],
-            "content_hash": row[3],
-            "file_type": row[4],
-            "size_bytes": row[5],
-            "metadata": row[6] if isinstance(row[6], dict) else json.loads(row[6] or "{}"),
-        }
+        return _row_to_dict(row)
 
     def get_by_path(self, path: str) -> dict[str, Any] | None:
-        """Get a raw file by path."""
         sql = f"""
-            SELECT "id", "path", "content", "content_hash", "file_type", "size_bytes", "metadata"
-            FROM {TABLE} WHERE "path" = %s
+            SELECT id, path, content, content_hash, file_type, size_bytes, metadata
+            FROM {TABLE} WHERE path = ?
         """
         with self._cm.connection(self._collection) as conn:
             row = conn.execute(sql, (path,)).fetchone()
         if not row:
             return None
-        return {
-            "id": row[0],
-            "path": row[1],
-            "content": row[2],
-            "content_hash": row[3],
-            "file_type": row[4],
-            "size_bytes": row[5],
-            "metadata": row[6] if isinstance(row[6], dict) else json.loads(row[6] or "{}"),
-        }
+        return _row_to_dict(row)
 
     def delete(self, file_id: str) -> None:
-        """Delete a raw file (cascades to symbols + imports)."""
-        sql = f'DELETE FROM {TABLE} WHERE "id" = %s'
+        """Delete a raw file (cascades to symbols + imports via FK)."""
+        sql = f"DELETE FROM {TABLE} WHERE id = ?"
         with self._cm.connection(self._collection) as conn:
             conn.execute(sql, (file_id,))
             conn.commit()
 
     def list_hashes(self) -> dict[str, str]:
-        """Return {path: content_hash} for all stored files."""
-        sql = f'SELECT "path", "content_hash" FROM {TABLE}'
+        sql = f"SELECT path, content_hash FROM {TABLE}"
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql).fetchall()
         return {row[0]: row[1] for row in rows}
 
     def get_updated_timestamps(self, file_ids: list[str]) -> dict[str, Any]:
-        """Get {file_id: updated_at} for batch of file IDs."""
         if not file_ids:
             return {}
-        placeholders = ", ".join(["%s"] * len(file_ids))
-        sql = f'SELECT "id", "updated_at" FROM {TABLE} WHERE "id" IN ({placeholders})'
+        placeholders = ",".join(["?"] * len(file_ids))
+        sql = f"SELECT id, updated_at FROM {TABLE} WHERE id IN ({placeholders})"
         with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, file_ids).fetchall()
+            rows = conn.execute(sql, tuple(file_ids)).fetchall()
         return {row[0]: row[1] for row in rows}
 
     def list_ids_by_path(self) -> dict[str, str]:
-        """Return {path: file_id} for all stored files."""
-        sql = f'SELECT "path", "id" FROM {TABLE}'
+        sql = f"SELECT path, id FROM {TABLE}"
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql).fetchall()
         return {row[0]: row[1] for row in rows}
+
+
+def _row_to_dict(row: tuple) -> dict[str, Any]:
+    meta = row[6]
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+    elif meta is None:
+        meta = {}
+    return {
+        "id": row[0],
+        "path": row[1],
+        "content": row[2],
+        "content_hash": row[3],
+        "file_type": row[4],
+        "size_bytes": row[5],
+        "metadata": meta,
+    }

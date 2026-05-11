@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.progressive.manifest import FileManifest, ManifestEntry
     from fitz_sage.llm.providers.base import ChatProvider
-    from fitz_sage.storage.postgres import PostgresConnectionManager
+    from fitz_sage.storage.sqlite import SqliteConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class BackgroundIngestWorker:
         source_dir: Path,
         config: "FitzKragConfig",
         chat: "ChatProvider",
-        connection_manager: "PostgresConnectionManager",
+        connection_manager: "SqliteConnectionManager",
         collection: str,
         stores: dict[str, Any],
         vocabulary_store: Any = None,

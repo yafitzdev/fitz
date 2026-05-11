@@ -37,8 +37,8 @@ from fitz_sage.engines.fitz_krag.ingestion.table_store import TableStore
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.llm.providers.base import ChatProvider
-    from fitz_sage.storage.postgres import PostgresConnectionManager
-    from fitz_sage.tabular.store.postgres import PostgresTableStore
+    from fitz_sage.storage.sqlite import SqliteConnectionManager
+    from fitz_sage.tabular.store.sqlite import SqliteTableStore
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +69,10 @@ class KragIngestPipeline:
         self,
         config: "FitzKragConfig",
         chat: "ChatProvider",
-        connection_manager: "PostgresConnectionManager",
+        connection_manager: "SqliteConnectionManager",
         collection: str,
         table_store: "TableStore | None" = None,
-        pg_table_store: "PostgresTableStore | None" = None,
+        pg_table_store: "SqliteTableStore | None" = None,
         vocabulary_store: Any = None,
         entity_graph_store: Any = None,
     ):

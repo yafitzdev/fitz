@@ -6,7 +6,6 @@ Commands:
     fitz query         Query knowledge base (--source to register, --chat for interactive)
     fitz collections   Manage collections (list, info, delete)
     fitz serve         Start the REST API server
-    fitz reset         Reset pgserver database (when stuck/corrupted)
 
 Configuration: .fitz/config.yaml (auto-created on first run)
 
@@ -116,16 +115,6 @@ def serve(
     from fitz_sage.cli.commands import serve as mod
 
     mod.command(host=host, port=port, reload=reload)
-
-
-@app.command("reset")
-def reset(
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt."),
-) -> None:
-    """Reset pgserver database (use when pgserver hangs or gets corrupted)."""
-    from fitz_sage.cli.commands import reset as mod
-
-    mod.reset(force=force)
 
 
 # =============================================================================

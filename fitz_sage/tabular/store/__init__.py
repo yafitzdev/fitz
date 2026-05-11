@@ -10,12 +10,12 @@ from fitz_sage.tabular.store.base import (
     compute_hash,
     decompress_csv,
 )
-from fitz_sage.tabular.store.postgres import PostgresTableStore
+from fitz_sage.tabular.store.sqlite import SqliteTableStore
 
 __all__ = [
     "StoredTable",
     "TableStore",
-    "PostgresTableStore",
+    "SqliteTableStore",
     "compress_csv",
     "compute_hash",
     "decompress_csv",
@@ -24,5 +24,5 @@ __all__ = [
 
 
 def get_table_store(collection: str) -> TableStore:
-    """Return the PostgreSQL table store for a collection."""
-    return PostgresTableStore(collection)
+    """Return the SQLite table store for a collection."""
+    return SqliteTableStore(collection)

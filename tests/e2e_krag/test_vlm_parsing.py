@@ -132,7 +132,7 @@ def vlm_krag_engine(set_workspace):
     """
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
-    from fitz_sage.storage.postgres import PostgresConnectionManager
+    from fitz_sage.storage.sqlite import SqliteConnectionManager
     from tests.e2e_krag.config import get_tier_config, get_tier_names, load_e2e_config
 
     collection = f"e2e_vlm_{uuid.uuid4().hex[:8]}"
@@ -203,7 +203,7 @@ def vlm_krag_engine(set_workspace):
 
     # Cleanup
     try:
-        conn_mgr = PostgresConnectionManager.get_instance()
+        conn_mgr = SqliteConnectionManager.get_instance()
         for table in [
             "krag_raw_files",
             "krag_symbol_index",

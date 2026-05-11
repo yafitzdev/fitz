@@ -16,7 +16,6 @@ class SystemStatus:
 
     api_keys: dict[str, Any]
     llm_endpoint: Any
-    pgvector: Any
 
 
 @dataclass
@@ -44,7 +43,6 @@ class InitService:
         return SystemStatus(
             api_keys=system.api_keys,
             llm_endpoint=system.llm_endpoint,
-            pgvector=system.pgvector,
         )
 
     def load_default_config(self, engine: str = "fitz_krag") -> dict:
@@ -64,7 +62,7 @@ class InitService:
         With the single-protocol LLM architecture, plugin filtering is
         much simpler: ``endpoint`` is always available (the user
         provides a URL); ``openai`` / ``azure_openai`` require an
-        API key; ``pgvector`` requires the system package.
+        API key.
         """
         available = []
 
@@ -76,12 +74,6 @@ class InitService:
             # config-validation time if auth fields are missing.
             if plugin_lower in ("endpoint", "enterprise"):
                 available.append(plugin)
-                continue
-
-            # pgvector requires psycopg/pgvector packages
-            if "pgvector" in plugin_lower:
-                if system.pgvector.available:
-                    available.append(plugin)
                 continue
 
             # OpenAI / Azure presets require OPENAI_API_KEY

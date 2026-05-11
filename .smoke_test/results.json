@@ -1,6 +1,6 @@
 {
-  "collection": "smoke_9f9f0b",
-  "init_s": 2.45,
+  "collection": "smoke_b8d966",
+  "init_s": 1.23,
   "ingest_s": 0.04,
   "files": 9,
   "queries": [
@@ -12,8 +12,8 @@
       "mode_match": true,
       "substring_hits": 2,
       "substring_total": 2,
-      "time_s": 95.15,
-      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks for the \"price and range of the Model X100\".\n2.  **Scan Context for Keywords:** Look for \"Model X100\", \"Price\", \"Range\" in the provided documents.\n3.  **Evaluate Source [S1] (products.md):**\n   - Under `## Model X100`:\n     - Price: $45,000\n     - Range: 300 miles per charge\n   - This directly answers the question based on marketing/general specs.\n4.  **Evaluate Source [S2] (spec/vehicle_specifications.md):**\n   - Un"
+      "time_s": 155.14,
+      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks for the \"price and range of the Model X100\".\n2.  **Scan Context for Keywords:** Look for \"Model X100\", \"Price\", \"Range\" in the provided sources.\n3.  **Evaluate Source [S2] (products.md):**\n   - Contains a section `## Model X100`\n   - Under `### Specifications`:\n     - Price: $45,000\n     - Range: 300 miles per charge\n4.  **Evaluate Source [S3] (spec/vehicle_specifications.md):**\n   - Contains a section `## Model X100"
     },
     {
       "q": "Who is the CEO of TechCorp Industries and what is their background?",
@@ -23,8 +23,8 @@
       "mode_match": true,
       "substring_hits": 2,
       "substring_total": 2,
-      "time_s": 82.21,
-      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks: \"Who is the CEO of TechCorp Industries and what is their background?\"\n2.  **Scan Context for Keywords:** Look for \"CEO\", \"TechCorp Industries\", \"background\".\n3.  **Locate Relevant Information in Context:**\n   - [S1] `people.md` contains a section on \"Sarah Chen\":\n     - \"Sarah Chen is the CEO of TechCorp Industries.\"\n     - \"She joined the company in 2019 after spending 8 years at AutoMotors where she served as VP o"
+      "time_s": 165.46,
+      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks: \"Who is the CEO of TechCorp Industries and what is their background?\"\n2.  **Scan Context for Keywords:** Look for \"CEO\", \"TechCorp Industries\", \"background\".\n3.  **Locate Relevant Information in Context:**\n   - [S2] `people.md` contains a section on \"Sarah Chen\" and \"TechCorp Industries\".\n   - Under \"Sarah Chen\": \"Sarah Chen is the CEO of TechCorp Industries. She joined the company in 2019 after spending 8 years at "
     },
     {
       "q": "How many employees does TechCorp have?",
@@ -34,8 +34,8 @@
       "mode_match": false,
       "substring_hits": 2,
       "substring_total": 2,
-      "time_s": 32.78,
-      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks \"How many employees does TechCorp have?\"\n2.  **Scan Context for Keywords:** Look for \"TechCorp\", \"employees\", \"employee count\", \"headcount\".\n3.  **Extract Relevant Information from Sources:**\n   - [S1] `people.md`: Under \"TechCorp Industries\" -> \"Employees: 5,200\"\n   - [S3] `conflicts.md`:\n     - Finance Team Report: \"Employee count: 5,200 people\"\n     - HR Team Report: \"Total employee count: 4,800 people (includes c"
+      "time_s": 90.92,
+      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks \"How many employees does TechCorp have?\"\n2.  **Scan Context for Keywords:** Look for \"TechCorp\", \"employees\", \"employee count\", \"headcount\", etc., across the provided sources [S1], [S2], [S3].\n3.  **Extract Relevant Information:**\n   - [S1] `people.md`: Under \"TechCorp Industries\" -> Key facts: \"Employees: 5,200\"\n   - [S3] `conflicts.md`: Contains conflicting reports about employee count for Q1 2024:\n     - Finance T"
     },
     {
       "q": "What is the Authentication Service's preferred token rotation interval?",
@@ -45,8 +45,8 @@
       "mode_match": false,
       "substring_hits": 0,
       "substring_total": 0,
-      "time_s": 81.4,
-      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks: \"What is the Authentication Service's preferred token rotation interval?\"\n\n2.  **Scan Context for Keywords:** I need to look for terms like \"token rotation\", \"interval\", \"refresh\", \"duration\", \"expires\", etc., in the provided code snippets.\n   - [S1] `AuthenticationError` class\n   - [S2] `SessionExpiredError` class\n   - [S3] `User` dataclass\n   - [S4] `Session` dataclass with `is_expired()` method\n   - [S5] `is_expi"
+      "time_s": 171.16,
+      "answer_preview": "<think>Here's a thinking process:\n\n1.  **Analyze User Question:** The user asks: \"What is the Authentication Service's preferred token rotation interval?\"\n\n2.  **Scan Context for Keywords:** I need to look for terms like \"token rotation\", \"interval\", \"refresh\", \"duration\", \"expires\", etc., in the provided code snippets.\n   - [S1], [S7]: `is_expired` method checks if session expired based on `datetime.utcnow() > self.expires_at`.\n   - [S2], [S8]: `_generate_token` generates a secure random token."
     },
     {
       "q": "What was the population of Mars in 2023?",
@@ -56,7 +56,7 @@
       "mode_match": true,
       "substring_hits": 0,
       "substring_total": 0,
-      "time_s": 29.59,
+      "time_s": 21.45,
       "answer_preview": "I don't have enough information to answer this question.\n\nTo answer this question, consider adding:\n  - Documents or code files covering this topic\n  - Use fitz_sage.query('your question', source='./path') to query a directory"
     }
   ]

@@ -183,7 +183,7 @@ class FitzKragEngine:
         from concurrent.futures import ThreadPoolExecutor
 
         from fitz_sage.llm.client import get_chat
-        from fitz_sage.storage.postgres import PostgresConnectionManager
+        from fitz_sage.storage.sqlite import SqliteConnectionManager
 
         _t0 = _t.perf_counter()
 
@@ -204,7 +204,7 @@ class FitzKragEngine:
                 "smart",
                 chat_config,
             )
-            pg_future = pool.submit(PostgresConnectionManager.get_instance)
+            pg_future = pool.submit(SqliteConnectionManager.get_instance)
 
             self._chat = chat_future.result()
             self._connection_manager = pg_future.result()
@@ -227,10 +227,10 @@ class FitzKragEngine:
 
         # Table stores
         from fitz_sage.engines.fitz_krag.ingestion.table_store import TableStore
-        from fitz_sage.tabular.store.postgres import PostgresTableStore
+        from fitz_sage.tabular.store.sqlite import SqliteTableStore
 
         self._table_store = TableStore(self._connection_manager, self._config.collection)
-        self._pg_table_store = PostgresTableStore(self._config.collection)
+        self._pg_table_store = SqliteTableStore(self._config.collection)
 
         _ts1 = _t.perf_counter()
         logger.debug(f"[init] store objects: {(_ts1-_t1)*1000:.0f}ms")

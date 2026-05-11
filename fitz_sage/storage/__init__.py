@@ -1,33 +1,31 @@
 # fitz_sage/storage/__init__.py
 """
-Unified PostgreSQL storage for fitz-sage.
+Unified SQLite storage for fitz-sage.
 
-This module provides the storage layer that replaces FAISS + SQLite
-with PostgreSQL + pgvector for unified vector and tabular storage.
+Each collection is a single ``.db`` file under the workspace storage
+directory. Full-text search uses SQLite FTS5 (``bm25()``) instead of
+PostgreSQL ``ts_rank``. No server, no pool, no admin database.
 
 Usage:
     from fitz_sage.storage import get_connection_manager, get_connection
 
-    # Get connection manager singleton
     manager = get_connection_manager()
     manager.start()
 
-    # Get connection for a collection
     with get_connection("my_collection") as conn:
-        conn.execute("SELECT * FROM chunks LIMIT 10")
+        conn.execute("SELECT * FROM krag_section_index LIMIT 10")
 """
 
-from fitz_sage.storage.config import StorageConfig, StorageMode
-from fitz_sage.storage.postgres import (
-    PostgresConnectionManager,
+from fitz_sage.storage.config import StorageConfig
+from fitz_sage.storage.sqlite import (
+    SqliteConnectionManager,
     get_connection,
     get_connection_manager,
 )
 
 __all__ = [
     "StorageConfig",
-    "StorageMode",
-    "PostgresConnectionManager",
+    "SqliteConnectionManager",
     "get_connection_manager",
     "get_connection",
 ]

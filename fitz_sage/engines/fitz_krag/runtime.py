@@ -96,10 +96,10 @@ def _register_fitz_krag_engine():
             return FitzKragConfig(**config_dict)
 
     def fitz_krag_list_collections():
-        """List KRAG collections by finding fitz_* databases with krag_raw_files table."""
+        """List KRAG collections — scan SQLite storage dir + manifest dir."""
         import logging
 
-        from fitz_sage.storage.postgres import get_connection_manager
+        from fitz_sage.storage.sqlite import get_connection_manager
 
         logger = logging.getLogger(__name__)
         try:
@@ -107,31 +107,13 @@ def _register_fitz_krag_engine():
             if not manager._started:
                 manager.start()
 
-            with manager.connection("postgres") as conn:
-                result = conn.execute(
-                    """
-                    SELECT datname FROM pg_database
-                    WHERE datistemplate = false
-                    AND datname LIKE 'fitz_%'
-                    AND datname NOT LIKE 'fitz_fitz_%'
-                    ORDER BY datname
-                    """
-                ).fetchall()
-                candidate_dbs = [row[0] for row in result]
-
-            collections = []
-            for db_name in candidate_dbs:
-                collection_name = db_name[5:]  # Remove "fitz_"
-                if collection_name in ("c__ingest_state", "public", "postgres"):
-                    continue
+            collections: list[str] = []
+            for collection_name in manager.list_collections():
                 try:
                     with manager.connection(collection_name) as conn:
                         has_krag = conn.execute(
-                            """
-                            SELECT 1 FROM information_schema.tables
-                            WHERE table_name = 'krag_raw_files' AND table_schema = 'public'
-                            LIMIT 1
-                            """
+                            "SELECT 1 FROM sqlite_master "
+                            "WHERE type='table' AND name='krag_raw_files' LIMIT 1"
                         ).fetchone()
                         if has_krag:
                             collections.append(collection_name)

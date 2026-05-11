@@ -394,10 +394,10 @@ class KragE2ERunner:
         """Drop PostgreSQL tables and vector data for a test collection."""
         collection = collection or self._base_collection
 
-        from fitz_sage.storage.postgres import PostgresConnectionManager
+        from fitz_sage.storage.sqlite import SqliteConnectionManager
 
         try:
-            conn_mgr = PostgresConnectionManager.get_instance()
+            conn_mgr = SqliteConnectionManager.get_instance()
             # KRAG tables use "krag_" prefix within the collection's database
             table_names = [
                 "krag_raw_files",

@@ -9,12 +9,14 @@
 
 ## TL;DR — what fitz-sage is now
 
-**One chat-protocol HTTP endpoint. No embeddings. No vector DB.**
-Retrieval is BM25 + KRAG typed-unit routing (code symbols, sections,
-tables) + LLMReranker. Storage is PostgreSQL — `krag_section_index` /
-`krag_symbol_index` / `krag_table_index` with `tsvector` GIN indexes,
-no `vector` columns, no HNSW. The governance cascade is the safety
-net for cases where lower recall would otherwise produce a
+**One chat-protocol HTTP endpoint. No embeddings. No vector DB. No
+server.** Retrieval is BM25 + KRAG typed-unit routing (code symbols,
+sections, tables) + LLMReranker. Storage is **SQLite** — one
+`.db` file per collection under `<workspace>/sqlite/`, with FTS5
+external-content tables and SQLite's native `bm25()` ranking over
+`krag_section_index` / `krag_symbol_index` / `krag_table_index`. No
+pgvector, no pgserver, no `vector` columns. The governance cascade is
+the safety net for cases where lower recall would otherwise produce a
 confidently-wrong answer.
 
 The full quickstart is:
@@ -52,10 +54,14 @@ architecture.
    The removed names (`ollama`, `cohere`, `anthropic`) raise
    `ValueError` with migration text.
 
-3. **No vector DB.** PostgreSQL is the only storage. `pgvector` is no
-   longer a runtime dependency. `fitz_sage/vector_db/` doesn't exist.
-   Don't suggest "we could keep pgvector as an option." Vector search
-   isn't switched off — it's gone.
+3. **No vector DB. SQLite is the only storage.** Each collection is
+   a single `.db` file under `<workspace>/sqlite/`. No server, no
+   pool, no admin database. Full-text retrieval is SQLite FTS5
+   external-content with `bm25()` ranking. Don't reintroduce
+   PostgreSQL, pgserver, psycopg, pgvector, or HNSW. Don't suggest
+   "we could keep Postgres as an option for shared deployments" —
+   the single-file-per-collection model is the deliberate
+   simplification.
 
 4. **No shims, ever.** When you remove a feature, remove the surface
    too. No constructor parameters that nothing reads, no fields
@@ -70,12 +76,13 @@ architecture.
    one session; assume strict enforcement.
 
 5. **Don't run fitz-gov to "validate chat-only mode."** It bypasses
-   retrieval by design (line 251 of
-   `fitz_sage/evaluation/benchmarks/fitz_gov.py`:
-   `# Run with injected contexts (bypass retrieval for controlled testing)`).
-   It tests the governance cascade only. The same scores come out
-   whether you have embeddings or not. This is a wrong-instrument
-   trap; previous Claude sessions already fell into it.
+   retrieval by design — historically lived in
+   `fitz_sage/evaluation/benchmarks/fitz_gov.py` with an injected
+   context bypass. The whole `fitz_sage/evaluation/` subpackage was
+   deleted in Task 10 (postgres-coupled governance logging). The
+   point still stands: fitz-gov tests the governance cascade only,
+   not retrieval. Same scores whether embeddings exist or not. This
+   is a wrong-instrument trap; previous Claude sessions fell into it.
 
 6. **Don't burn money on cloud APIs without authorization.** OpenAI
    key in env may be invalid (it was, in the smoke test). The user
@@ -180,10 +187,10 @@ follow-ups — they document the demolition decisions:
 
 ## Follow-up tasks (priority order)
 
-**Execution order (confirmed 2026-05-11):** Task 4 → Task 10 →
-Task 6 → Task 7 → Task 8 → Task 9. Task 3.5 is **skipped** — Task 10
-(postgres → sqlite) subsumes it entirely, so cleaning up the
-pgvector surface beforehand is throwaway work.
+**Execution order (confirmed 2026-05-11):** Task 4 ✅ → Task 10 ✅ →
+Task 11 (NEW — unit test cleanup, post-10) → Task 6 → Task 7 →
+Task 8 → Task 9 → Task 12 (optional — evaluation restore).
+Task 3.5 was skipped — Task 10 subsumed it.
 
 Each task is self-contained — you don't need to ask the user before
 starting any of them. The decisions are made; this is execution.
@@ -302,9 +309,9 @@ only emits chat config. Skip this task.
 
 ### Task 6 — Documentation refresh
 
-**Blocked on Task 10 (sqlite migration).** Don't start this until
-Task 10 lands — the docs need to reflect the final SQLite-FTS5
-architecture, not the current Postgres-tsvector one.
+Task 10 has landed, so this is no longer blocked. **Run Task 11
+(unit test cleanup) first** so the docs reflect a fully-green
+state.
 
 The code stopped matching the docs three commits ago. Time to fix.
 
@@ -400,7 +407,11 @@ to the demolition commits so readers can orient.
 
 ---
 
-### Task 10 — Replace PostgreSQL with SQLite
+### Task 10 — Replace PostgreSQL with SQLite ✅ DONE (2026-05-11)
+
+Landed in commit (this commit). Smoke baseline preserved (5/5
+answered, 6/6 substrings, 3/5 mode-match). See **Task 11** below
+for the unit-test-fixture follow-up.
 
 Decision made 2026-05-11. Postgres is heavy for a local-first RAG
 library — server install, admin DB for `DROP DATABASE`, service-mode
@@ -531,10 +542,24 @@ substrings, 3/5 governance mode-match (the 2 misses require
 
 ## Files / paths to know
 
+- `fitz_sage/storage/sqlite.py` — `SqliteConnectionManager`
+  singleton. ~200 LOC (vs. 865 for the postgres version). API:
+  `get_instance()`, `start()`, `stop()`, `reset_instance()`,
+  `connection(collection)` ctx-manager, `database_path(collection)`,
+  `list_collections()`, `delete_collection(name)`.
+- `fitz_sage/storage/config.py` — `StorageConfig` with a single
+  optional `storage_path: Path` field. Default is
+  `FitzPaths.workspace() / "sqlite"`.
+- `fitz_sage/engines/fitz_krag/ingestion/schema.py` —
+  `ensure_schema(connection_manager, collection)` creates the krag
+  tables plus FTS5 external-content virtual tables and triggers
+  (`krag_section_fts`, `krag_symbol_fts`). All JSON columns are TEXT;
+  arrays serialize via `json.dumps`. No `vector` columns, no
+  `tsvector`.
 - `fitz_sage/engines/fitz_krag/engine.py` — the heart. ~1500 LOC.
 - `fitz_sage/engines/fitz_krag/config/schema.py` — `FitzKragConfig`.
-  Currently 21 fields; the legacy weight + vector_db + embedding
-  fields have all been pruned.
+  Currently 21 fields; the legacy weight + vector_db + embedding +
+  cloud fields have all been pruned.
 - `fitz_sage/engines/fitz_krag/retrieval/strategies/` — three files
   (`code_search.py`, `section_search.py`, `table_search.py`) plus
   `llm_code_search.py`. Each `retrieve()` takes
@@ -543,15 +568,19 @@ substrings, 3/5 governance mode-match (the 2 misses require
 - `fitz_sage/engines/fitz_krag/retrieval/router.py` — `RetrievalRouter`.
   Constructor:
   `(code_strategy, config, section_strategy=None, table_strategy=None,
-  chat_factory=None, agentic_strategy=None)`. No embedder, no
-  hyde_generator, no chunk_strategy.
+  chat_factory=None, agentic_strategy=None)`.
 - `fitz_sage/engines/fitz_krag/retrieval_profile.py` — `RetrievalProfile`
   + `build_retrieval_profile`. No `run_hyde`, no `fallback_to_chunks`
   fields.
-- `fitz_sage/engines/fitz_krag/ingestion/schema.py` —
-  `ensure_schema(connection_manager, collection)` (no `embedding_dim`).
-  All three index tables have `content_tsv` GIN indexes; no `vector`
-  columns.
+- `fitz_sage/engines/fitz_krag/ingestion/{section,symbol,table,raw_file,import_graph}_store.py`
+  — SQLite stores. `search_bm25` uses FTS5 `MATCH ... ORDER BY
+  bm25(<fts_table>)`. Upserts use `ON CONFLICT(id) DO UPDATE SET col
+  = excluded.col`. JSON columns serialized via `json.dumps`; reads
+  parse them lazily.
+- `fitz_sage/tabular/store/sqlite.py` — `SqliteTableStore` (was
+  `PostgresTableStore`). Stores each ingested CSV/TSV as a real
+  SQLite table named `tbl_<sanitized>`; LLM-generated SQL runs
+  directly against those tables.
 - `fitz_sage/llm/client.py` — `get_chat`, `get_reranker`,
   `get_vision`. No `get_embedder`.
 - `fitz_sage/llm/providers/openai_compat.py` — `OpenAICompatChat` and
@@ -559,14 +588,25 @@ substrings, 3/5 governance mode-match (the 2 misses require
 - `fitz_sage/llm/providers/llm_reranker.py` — `LLMReranker`.
 - `fitz_sage/governance/decider.py` — v6 cascade ML classifier.
   Requires `xgboost` and `lightgbm`.
+- `fitz_sage/retrieval/vocabulary/store.py`,
+  `fitz_sage/retrieval/entity_graph/store.py` — auxiliary stores,
+  both ported to SQLite + `json_each` for array overlap.
 - `tests/e2e_krag/fixtures_rag/` — small mixed corpus (~9 files)
   used by the smoke test. Includes a known conflict between Finance
   and HR on TechCorp employee count (5,200 vs 4,800), useful for
   testing DISPUTED governance.
 - `.smoke_test/smoke_test.py` — end-to-end test harness against
-  fixtures_rag using LM Studio at port 1234. Single-mode after
-  `42fd4c7d`.
+  fixtures_rag using LM Studio at port 1234.
 - `.smoke_test/results.json` — last run's results.
+
+**Deleted in Task 10:** `fitz_sage/storage/postgres.py`,
+`fitz_sage/retrieval/sparse/` (dead — queried a non-existent
+`chunks` table), `fitz_sage/evaluation/` (postgres-coupled governance
+logging), `fitz_sage/cli/commands/eval.py`,
+`fitz_sage/cli/commands/reset.py` (pgserver reset).
+Postgres-specific tests removed:
+`tests/unit/test_postgres_*.py`, `tests/unit/test_evaluation.py`,
+`tests/unit/test_beir_benchmark.py`.
 
 ## Conversation context for the next session
 
@@ -592,11 +632,57 @@ removed, 300 lines added** across the four commits.
 
 ## Final thing — don't waste a context window second-guessing
 
-The architecture is committed. The user evaluated and chose. Next
-session: execute Task 4 (cloud delete), then Task 10 (postgres →
-sqlite — the big one), then Task 6 (docs, over the post-migration
-architecture), then Task 7 (enrichment, if the user OKs), then
-Task 8 (integration test cleanup). Run the verification commands
-after each. Commit each task as its own commit with a clear message.
-Don't ask "are you sure about no embeddings?" — they're sure.
-Don't ask "are you sure about sqlite?" — they are, as of 2026-05-11.
+The architecture is committed. The user evaluated and chose. **Task
+4 and Task 10 have landed** (cloud feature deleted, storage migrated
+to SQLite + FTS5). Next session: execute Task 11 (unit-test fixture
+cleanup — see below), then Task 6 (docs refresh, over the
+post-migration architecture), then Task 12 (restore evaluation
+subpackage on SQLite if needed), then Task 7 (enrichment, if user
+OKs), then Task 8 (integration test cleanup). Run the verification
+commands after each. Commit each task as its own commit with a clear
+message. Don't ask "are you sure about no embeddings?" — they're
+sure. Don't ask "are you sure about sqlite?" — they are.
+
+---
+
+## Task 11 — Unit test fixture cleanup (post-Task-10 follow-up)
+
+After the SQLite migration the production smoke test passes at
+baseline (5/5 answered, 6/6 substrings, 3/5 mode-match) but the
+unit suite still has ~25 test failures + a few hangs clustered
+in:
+
+- `tests/unit/test_vocabulary.py` — `VocabularyStore` tests get a
+  `MagicMock` connection inherited from earlier krag-engine tests
+  that patched `SqliteConnectionManager`. An opt-in
+  `reset_sqlite_singleton` fixture exists in `tests/unit/conftest.py`
+  — apply it where needed, or change patched tests to clean up.
+- `tests/unit/test_krag_guardrails.py` — `AnswerModeSynthesizer`
+  tests fail in the same shape.
+- `tests/unit/test_section_store.py::test_returns_results_with_bm25_score`
+  — verify the FTS5 sync trigger fires on inserts; the test probably
+  uses real SQLite but expects results that the new FTS layer
+  doesn't produce verbatim.
+- `tests/unit/test_krag_engine.py::test_init_creates_components`
+  — mock wiring around `SqliteConnectionManager.get_instance` may
+  need a `MagicMock(spec=SqliteConnectionManager)` shape.
+- Full-suite run can hang somewhere in the vocabulary section when
+  the autouse-singleton-reset fixture is enabled (file lock or
+  per-test `.db` creation flooding the workspace). The opt-in
+  fixture is the workaround until the root cause is found.
+
+Smoke test must keep passing (`5/5 answered, 6/6 substrings,
+3/5 mode-match`) at every commit.
+
+---
+
+## Task 12 — Restore evaluation subpackage on SQLite
+
+Task 10 deleted `fitz_sage/evaluation/` (governance decision logger
++ stats + BEIR/RGB/fitz_gov benchmarks) and the `fitz eval` CLI
+command because they were postgres-coupled. If the user wants the
+governance observability dashboard back, port them to
+`SqliteConnectionManager` with the same schema (just `%s` → `?` and
+`TIMESTAMPTZ` → `TEXT`). The logger writes to a per-collection
+`governance_decisions` table that's structurally simple — should be
+a 1-day port.

@@ -1,49 +1,25 @@
 # fitz_sage/storage/config.py
-"""Configuration schema for unified PostgreSQL storage."""
+"""Configuration schema for SQLite-backed storage."""
 
 from __future__ import annotations
 
-from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 from pydantic import Field
 
-from fitz_sage.core.config_base import DatabaseConfig
+from fitz_sage.core.config_base import ValidationMixin
 
 
-class StorageMode(str, Enum):
-    """Storage deployment mode."""
+class StorageConfig(ValidationMixin):
+    """Configuration for SQLite-backed storage.
 
-    LOCAL = "local"  # pgserver embedded PostgreSQL
-    EXTERNAL = "external"  # External PostgreSQL connection string
-
-
-class StorageConfig(DatabaseConfig):
-    """
-    Configuration for unified PostgreSQL storage.
-
-    Inherits from DatabaseConfig for connection pooling and timeouts.
-
-    Supports two modes:
-    - LOCAL: Uses pgserver for embedded PostgreSQL (zero-friction local dev)
-    - EXTERNAL: Uses user-provided PostgreSQL connection string (shared deployments)
+    SQLite has no server, so the only knob is where the ``.db`` files
+    live. ``None`` means ``FitzPaths.workspace() / "sqlite"``.
     """
 
-    mode: StorageMode = Field(
-        default=StorageMode.LOCAL,
-        description="Storage mode: 'local' (pgserver) or 'external' (connection_string)",
-    )
-
-    # Local mode settings
-    data_dir: Optional[Path] = Field(
+    storage_path: Optional[Path] = Field(
         default=None,
-        description="Data directory for pgserver. None = use FitzPaths.pgdata()",
+        description="Directory holding per-collection .db files. "
+        "None = use FitzPaths.workspace() / 'sqlite'.",
     )
-
-    # Note: connection_string and pool settings inherited from DatabaseConfig
-
-    def validate_mode(self) -> None:
-        """Validate configuration based on mode."""
-        if self.mode == StorageMode.EXTERNAL and not self.connection_string:
-            raise ValueError("connection_string required for external mode")

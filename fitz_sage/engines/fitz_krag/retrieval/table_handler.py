@@ -17,11 +17,11 @@ from fitz_sage.engines.fitz_krag.types import AddressKind, ReadResult
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.llm.providers.base import ChatProvider
-    from fitz_sage.tabular.store.postgres import PostgresTableStore
+    from fitz_sage.tabular.store.sqlite import SqliteTableStore
 
 logger = logging.getLogger(__name__)
 
-SQL_PROMPT = """Generate a PostgreSQL query to answer this question.
+SQL_PROMPT = """Generate a SQLite query to answer this question.
 
 Table name: {table_name}
 Columns (all TEXT type): {columns}
@@ -34,12 +34,12 @@ Rules:
 1. Use only the columns listed above
 2. Use the exact table name: {table_name}
 3. Use LIMIT {max_results} unless aggregating
-4. For text search use ILIKE with '%pattern%' (with quotes around wildcards)
+4. For text search use LIKE with '%pattern%' (SQLite LIKE is case-insensitive for ASCII)
 5. For "highest/maximum" use ORDER BY column DESC LIMIT 1
 6. For "lowest/minimum" use ORDER BY column ASC LIMIT 1
 7. For "who/which" questions, include identifying columns (name, id) in SELECT
 8. For numeric operations (MAX, MIN, AVG, SUM, ORDER BY numbers), \
-use CAST(column AS NUMERIC) or column::NUMERIC
+use CAST(column AS REAL) or CAST(column AS INTEGER)
 9. ALWAYS include in SELECT every column used in ORDER BY, WHERE, or GROUP BY
 10. CRITICAL: When using COUNT, SUM, AVG with non-aggregated columns, \
 you MUST add GROUP BY. Example: SELECT department, COUNT(*) FROM t GROUP BY department
@@ -53,7 +53,7 @@ class TableQueryHandler:
     def __init__(
         self,
         chat: "ChatProvider",
-        pg_table_store: "PostgresTableStore",
+        pg_table_store: "SqliteTableStore",
         config: "FitzKragConfig",
     ):
         self._chat = chat

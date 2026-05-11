@@ -160,7 +160,7 @@ class TestEngineDetectionInit:
     @patch("fitz_sage.retrieval.detection.registry.DetectionOrchestrator")
     @patch("fitz_sage.llm.factory.get_chat_factory")
     @patch("fitz_sage.llm.client.get_chat")
-    @patch("fitz_sage.storage.postgres.PostgresConnectionManager")
+    @patch("fitz_sage.storage.sqlite.SqliteConnectionManager")
     @patch("fitz_sage.engines.fitz_krag.ingestion.raw_file_store.RawFileStore")
     @patch("fitz_sage.engines.fitz_krag.ingestion.symbol_store.SymbolStore")
     @patch("fitz_sage.engines.fitz_krag.ingestion.import_graph_store.ImportGraphStore")

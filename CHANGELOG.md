@@ -9,8 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔄 Changed (storage)
+
+- **Replaced PostgreSQL with SQLite + FTS5.** Each collection is now
+  a single `.db` file under `<workspace>/sqlite/`, opened in WAL mode
+  with `foreign_keys=ON`. Full-text retrieval uses SQLite FTS5
+  external-content virtual tables (`krag_section_fts`,
+  `krag_symbol_fts`) with the built-in `bm25()` ranking. Drops
+  `psycopg`, `psycopg-pool`, and `fitz-pgserver` from the dependency
+  set — SQLite is bundled with Python's stdlib. New
+  `SqliteConnectionManager` is ~200 LOC (vs. 865 for the postgres
+  version it replaced: no server lifecycle, no signal handlers, no
+  nuclear recovery, no admin DB).
+
+  Schema port: `JSONB` columns are now `TEXT` with `json.dumps` /
+  `json.loads` (SQLite JSON1 native); `TEXT[]` arrays are stored as
+  JSON arrays, traversed with `json_each` for set-overlap operations.
+  `to_tsvector` GIN indexes replaced by FTS5 virtual tables + sync
+  triggers. `tsvector @@ to_tsquery` queries replaced by FTS5 `MATCH`
+  with OR-joined word tokens. `ILIKE` replaced by
+  `LIKE ? COLLATE NOCASE`. `RETURNING` not used (SQLite 3.35+ only).
+  Collection enumeration is filesystem-based (`glob fitz_*.db`); 
+  `delete_collection` is `os.unlink`.
+
+  Stores ported: `RawFileStore`, `SymbolStore`, `SectionStore`,
+  `ImportGraphStore`, `TableStore`, `VocabularyStore`,
+  `EntityGraphStore`, `SqliteTableStore` (was `PostgresTableStore`).
+  Touch points updated in `engine.py`, `runtime.py`, `pipeline.py`,
+  `progressive/worker.py`, `retrieval/reader.py`,
+  `retrieval/table_handler.py`, `tabular/query.py`,
+  `tabular/direct_query.py`, `services/fitz_service.py`,
+  `core/detect.py`, and the init/wizard/config CLI commands.
+
+  Smoke test baseline preserved: 5/5 queries answered, 6/6 expected
+  substrings present, 3/5 governance mode-match.
+
 ### 🗑 Removed
 
+- **PostgreSQL storage layer.** `fitz_sage/storage/postgres.py`
+  (865 lines) gone. `psycopg`, `psycopg-pool`, `fitz-pgserver` no
+  longer dependencies.
+- **`fitz_sage/evaluation/`** — the governance-decision logger plus
+  the BEIR / RGB / fitz_gov benchmarks were postgres-coupled. The
+  `fitz eval governance-stats` CLI command went with them. Restoring
+  on SQLite is tracked as Task 12 in HANDOFF.
+- **`fitz_sage/cli/commands/reset.py`** — pgserver reset is
+  meaningless once the database is just a file. To reset a
+  collection: `rm <workspace>/sqlite/fitz_<name>.db*`.
+- **`fitz_sage/retrieval/sparse/`** — dead code that queried a
+  `chunks` table deleted in the vector_db demolition.
+- **Postgres-specific unit tests:** `test_postgres_connection.py`,
+  `test_postgres_recovery.py`, `test_postgres_table_store.py`,
+  `test_evaluation.py`, `test_beir_benchmark.py`.
 - **Fitz Cloud feature** — deleted entirely. Removed `fitz_sage/cloud/`
   (the cloud cache client, config, crypto, and cache-key modules) and
   `fitz_sage/integrations/` (the `FitzOptimizer` plus the LangChain
@@ -21,6 +71,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `llama-index-core` from the dependency set. The cloud cache
   hooks in `answer()` returned `None` already after the embedding
   removal; the surface is now gone too.
+
+### 🐛 Known issues
+
+- ~25 unit tests in `test_vocabulary.py`, `test_krag_guardrails.py`,
+  `test_krag_engine.py`, `test_section_store.py` fail because mocked
+  `SqliteConnectionManager` instances leak across the singleton.
+  An opt-in `reset_sqlite_singleton` fixture is available in
+  `tests/unit/conftest.py`; per-test application is tracked as
+  Task 11 in HANDOFF. Production smoke test is unaffected.
 
 ---
 

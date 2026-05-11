@@ -1,17 +1,15 @@
 # fitz_sage/retrieval/vocabulary/store.py
 """
-Vocabulary store for persisting keywords to PostgreSQL.
+Vocabulary store for persisting keywords to SQLite.
 
-The vocabulary is stored per-collection in the PostgreSQL database:
-- Auto-detected keywords with variations
-- User-defined keywords
-- Metadata about detection
-
-User modifications are preserved across re-ingests.
+Per-collection vocabulary stored alongside the krag tables in the
+collection's ``.db`` file. User modifications are preserved across
+re-ingests.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from fitz_sage.logging.logger import get_logger
@@ -24,93 +22,56 @@ logger = get_logger(__name__)
 
 
 class VocabularyStore:
-    """
-    Manages keyword vocabulary persistence in PostgreSQL.
-
-    Vocabulary is stored per-collection in the database.
-    This ensures keywords from different collections don't mix.
-
-    Usage:
-        store = VocabularyStore(collection="my_collection")
-
-        # Save keywords
-        store.save(keywords, metadata)
-
-        # Load keywords
-        keywords = store.load()
-
-        # Merge new detections with existing (preserves user edits)
-        store.merge_and_save(new_keywords, source_docs=50)
-    """
+    """Manages keyword vocabulary persistence in SQLite."""
 
     SCHEMA_SQL = """
-        -- Keywords table
         CREATE TABLE IF NOT EXISTS keywords (
             id TEXT PRIMARY KEY,
             category TEXT NOT NULL,
-            match TEXT[] NOT NULL DEFAULT '{}',
+            match TEXT NOT NULL DEFAULT '[]',
             occurrences INTEGER NOT NULL DEFAULT 1,
             first_seen TEXT,
-            user_defined BOOLEAN NOT NULL DEFAULT FALSE,
-            auto_generated TEXT[] NOT NULL DEFAULT '{}'
+            user_defined INTEGER NOT NULL DEFAULT 0,
+            auto_generated TEXT NOT NULL DEFAULT '[]'
         );
 
-        -- Vocabulary metadata (singleton)
         CREATE TABLE IF NOT EXISTS vocabulary_meta (
             id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-            generated TIMESTAMPTZ NOT NULL,
+            generated TEXT NOT NULL,
             source_docs INTEGER NOT NULL DEFAULT 0,
             auto_detected INTEGER NOT NULL DEFAULT 0,
             user_modified INTEGER NOT NULL DEFAULT 0
         );
 
-        -- Index for category lookups
         CREATE INDEX IF NOT EXISTS idx_keywords_category
         ON keywords(category);
     """
 
     def __init__(self, collection: str | None = None, path=None):
-        """
-        Initialize the store.
-
-        Args:
-            collection: Collection name for per-collection vocabulary
-            path: Ignored (kept for backwards compatibility)
-        """
         self.collection = collection or "default"
         self._manager = get_connection_manager()
         self._manager.start()
         self._schema_initialized = False
 
     def _ensure_schema(self) -> None:
-        """Create tables schema if not exists."""
         if self._schema_initialized:
             return
 
         with self._manager.connection(self.collection) as conn:
-            conn.execute(self.SCHEMA_SQL)
+            conn.executescript(self.SCHEMA_SQL)
             conn.commit()
 
         self._schema_initialized = True
         logger.debug(f"{STORAGE} Vocabulary schema initialized for '{self.collection}'")
 
     def exists(self) -> bool:
-        """Check if vocabulary has any keywords."""
         self._ensure_schema()
-
         with self._manager.connection(self.collection) as conn:
             result = conn.execute("SELECT COUNT(*) FROM keywords").fetchone()
             return result[0] > 0 if result else False
 
     def load(self) -> list[Keyword]:
-        """
-        Load keywords from PostgreSQL.
-
-        Returns:
-            List of keywords (empty if none exist)
-        """
         self._ensure_schema()
-
         try:
             with self._manager.connection(self.collection) as conn:
                 cursor = conn.execute(
@@ -128,11 +89,11 @@ class VocabularyStore:
                         Keyword(
                             id=row[0],
                             category=row[1],
-                            match=list(row[2]) if row[2] else [],
+                            match=_decode_list(row[2]),
                             occurrences=row[3],
                             first_seen=row[4],
-                            user_defined=row[5],
-                            auto_generated=list(row[6]) if row[6] else [],
+                            user_defined=bool(row[5]),
+                            auto_generated=_decode_list(row[6]),
                         )
                     )
 
@@ -146,14 +107,7 @@ class VocabularyStore:
             return []
 
     def load_with_metadata(self) -> tuple[list[Keyword], VocabularyMetadata | None]:
-        """
-        Load keywords and metadata from PostgreSQL.
-
-        Returns:
-            Tuple of (keywords, metadata)
-        """
         self._ensure_schema()
-
         try:
             keywords = self.load()
 
@@ -161,14 +115,19 @@ class VocabularyStore:
                 result = conn.execute(
                     """
                     SELECT generated, source_docs, auto_detected, user_modified
-                    FROM vocabulary_meta
-                    WHERE id = 1
+                    FROM vocabulary_meta WHERE id = 1
                     """
                 ).fetchone()
 
                 if result:
+                    generated = result[0]
+                    if isinstance(generated, str):
+                        try:
+                            generated = datetime.fromisoformat(generated)
+                        except ValueError:
+                            generated = datetime.now(timezone.utc)
                     metadata = VocabularyMetadata(
-                        generated=result[0] if result[0] else datetime.now(timezone.utc),
+                        generated=generated or datetime.now(timezone.utc),
                         source_docs=result[1],
                         auto_detected=result[2],
                         user_modified=result[3],
@@ -187,17 +146,9 @@ class VocabularyStore:
         keywords: list[Keyword],
         metadata: VocabularyMetadata | None = None,
     ) -> None:
-        """
-        Save keywords to PostgreSQL.
-
-        Args:
-            keywords: Keywords to save
-            metadata: Optional metadata
-        """
         self._ensure_schema()
 
         with self._manager.connection(self.collection) as conn:
-            # Clear existing keywords and insert new ones
             conn.execute("DELETE FROM keywords")
 
             for kw in keywords:
@@ -205,39 +156,44 @@ class VocabularyStore:
                     """
                     INSERT INTO keywords (id, category, match, occurrences, first_seen,
                                          user_defined, auto_generated)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         kw.id,
                         kw.category,
-                        kw.match,
+                        json.dumps(list(kw.match)),
                         kw.occurrences,
                         kw.first_seen,
-                        kw.user_defined,
-                        kw.auto_generated,
+                        1 if kw.user_defined else 0,
+                        json.dumps(list(kw.auto_generated)),
                     ),
                 )
 
-            # Calculate metadata if not provided
             if not metadata:
                 metadata = VocabularyMetadata(
                     auto_detected=len([k for k in keywords if not k.user_defined]),
                     user_modified=len([k for k in keywords if k.user_defined]),
                 )
 
-            # Upsert metadata
+            generated = metadata.generated
+            generated_str = (
+                generated.isoformat()
+                if hasattr(generated, "isoformat")
+                else str(generated) if generated else datetime.now(timezone.utc).isoformat()
+            )
+
             conn.execute(
                 """
                 INSERT INTO vocabulary_meta (id, generated, source_docs, auto_detected, user_modified)
-                VALUES (1, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
-                    generated = EXCLUDED.generated,
-                    source_docs = EXCLUDED.source_docs,
-                    auto_detected = EXCLUDED.auto_detected,
-                    user_modified = EXCLUDED.user_modified
+                VALUES (1, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    generated = excluded.generated,
+                    source_docs = excluded.source_docs,
+                    auto_detected = excluded.auto_detected,
+                    user_modified = excluded.user_modified
                 """,
                 (
-                    metadata.generated,
+                    generated_str,
                     metadata.source_docs,
                     metadata.auto_detected,
                     metadata.user_modified,
@@ -253,58 +209,29 @@ class VocabularyStore:
         new_keywords: list[Keyword],
         source_docs: int = 0,
     ) -> list[Keyword]:
-        """
-        Merge new detections with existing keywords, preserving user edits.
-
-        User-added variations and user-defined keywords are preserved.
-
-        Args:
-            new_keywords: Newly detected keywords
-            source_docs: Number of source documents scanned
-
-        Returns:
-            Merged list of keywords
-        """
         existing, _ = self.load_with_metadata()
-
-        # Build lookup of existing keywords by ID (case-insensitive)
         existing_by_id: dict[str, Keyword] = {kw.id.lower(): kw for kw in existing}
-
         merged: list[Keyword] = []
 
-        # Process new keywords
         for new_kw in new_keywords:
             key = new_kw.id.lower()
 
             if key in existing_by_id:
-                # Merge with existing
                 old_kw = existing_by_id[key]
-
-                # Preserve user-added variations
                 user_variations = set(old_kw.match) - set(old_kw.auto_generated)
-
-                # Combine: new auto-generated + user-added
                 all_variations = set(new_kw.match) | user_variations
                 new_kw.match = sorted(all_variations, key=str.lower)
                 new_kw.auto_generated = new_kw.match.copy()
-
-                # Preserve user_defined flag
                 new_kw.user_defined = old_kw.user_defined
-
-                # Update occurrences to max
                 new_kw.occurrences = max(new_kw.occurrences, old_kw.occurrences)
-
-                # Remove from existing (we've processed it)
                 del existing_by_id[key]
 
             merged.append(new_kw)
 
-        # Add remaining user-defined keywords that weren't re-detected
         for old_kw in existing_by_id.values():
             if old_kw.user_defined:
                 merged.append(old_kw)
 
-        # Calculate metadata
         auto_detected = len([k for k in merged if not k.user_defined])
         user_modified = len([k for k in merged if k.user_defined])
 
@@ -315,24 +242,15 @@ class VocabularyStore:
             user_modified=user_modified,
         )
 
-        # Save
         self.save(merged, metadata)
-
         return merged
 
     def add_keyword(self, keyword: Keyword) -> None:
-        """
-        Add a single keyword to the vocabulary.
-
-        Args:
-            keyword: Keyword to add
-        """
         self._ensure_schema()
 
-        # Check if already exists
         with self._manager.connection(self.collection) as conn:
             result = conn.execute(
-                "SELECT id FROM keywords WHERE LOWER(id) = LOWER(%s)",
+                "SELECT id FROM keywords WHERE LOWER(id) = LOWER(?)",
                 (keyword.id,),
             ).fetchone()
 
@@ -345,16 +263,16 @@ class VocabularyStore:
                 """
                 INSERT INTO keywords (id, category, match, occurrences, first_seen,
                                      user_defined, auto_generated)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     keyword.id,
                     keyword.category,
-                    keyword.match,
+                    json.dumps(list(keyword.match)),
                     keyword.occurrences,
                     keyword.first_seen,
-                    keyword.user_defined,
-                    keyword.auto_generated,
+                    1 if keyword.user_defined else 0,
+                    json.dumps(list(keyword.auto_generated)),
                 ),
             )
             conn.commit()
@@ -362,22 +280,11 @@ class VocabularyStore:
         logger.info(f"[VOCABULARY] Added keyword {keyword.id!r}")
 
     def add_variation(self, keyword_id: str, variation: str) -> bool:
-        """
-        Add a variation to an existing keyword.
-
-        Args:
-            keyword_id: ID of the keyword
-            variation: Variation to add
-
-        Returns:
-            True if successful, False if keyword not found
-        """
         self._ensure_schema()
 
         with self._manager.connection(self.collection) as conn:
-            # Get current match array
             result = conn.execute(
-                "SELECT match FROM keywords WHERE LOWER(id) = LOWER(%s)",
+                "SELECT match FROM keywords WHERE LOWER(id) = LOWER(?)",
                 (keyword_id,),
             ).fetchone()
 
@@ -385,13 +292,13 @@ class VocabularyStore:
                 logger.warning(f"[VOCABULARY] Keyword {keyword_id!r} not found")
                 return False
 
-            current_match = list(result[0]) if result[0] else []
+            current_match = _decode_list(result[0])
 
             if variation not in current_match:
                 current_match.append(variation)
                 conn.execute(
-                    "UPDATE keywords SET match = %s WHERE LOWER(id) = LOWER(%s)",
-                    (current_match, keyword_id),
+                    "UPDATE keywords SET match = ? WHERE LOWER(id) = LOWER(?)",
+                    (json.dumps(current_match), keyword_id),
                 )
                 conn.commit()
                 logger.info(f"[VOCABULARY] Added variation {variation!r} to {keyword_id}")
@@ -399,41 +306,25 @@ class VocabularyStore:
             return True
 
     def remove_keyword(self, keyword_id: str) -> bool:
-        """
-        Remove a keyword from the vocabulary.
-
-        Args:
-            keyword_id: ID of the keyword to remove
-
-        Returns:
-            True if removed, False if not found
-        """
         self._ensure_schema()
 
         with self._manager.connection(self.collection) as conn:
-            result = conn.execute(
-                "DELETE FROM keywords WHERE LOWER(id) = LOWER(%s) RETURNING id",
+            existed = conn.execute(
+                "SELECT 1 FROM keywords WHERE LOWER(id) = LOWER(?)",
                 (keyword_id,),
             ).fetchone()
-
-            if result:
-                conn.commit()
-                logger.info(f"[VOCABULARY] Removed keyword {keyword_id!r}")
-                return True
-
-        logger.warning(f"[VOCABULARY] Keyword {keyword_id!r} not found")
-        return False
+            if not existed:
+                logger.warning(f"[VOCABULARY] Keyword {keyword_id!r} not found")
+                return False
+            conn.execute(
+                "DELETE FROM keywords WHERE LOWER(id) = LOWER(?)",
+                (keyword_id,),
+            )
+            conn.commit()
+            logger.info(f"[VOCABULARY] Removed keyword {keyword_id!r}")
+            return True
 
     def get_by_category(self, category: str) -> list[Keyword]:
-        """
-        Get keywords by category.
-
-        Args:
-            category: Category to filter by
-
-        Returns:
-            Keywords in that category
-        """
         self._ensure_schema()
 
         with self._manager.connection(self.collection) as conn:
@@ -442,7 +333,7 @@ class VocabularyStore:
                 SELECT id, category, match, occurrences, first_seen,
                        user_defined, auto_generated
                 FROM keywords
-                WHERE category = %s
+                WHERE category = ?
                 ORDER BY id
                 """,
                 (category,),
@@ -452,30 +343,37 @@ class VocabularyStore:
                 Keyword(
                     id=row[0],
                     category=row[1],
-                    match=list(row[2]) if row[2] else [],
+                    match=_decode_list(row[2]),
                     occurrences=row[3],
                     first_seen=row[4],
-                    user_defined=row[5],
-                    auto_generated=list(row[6]) if row[6] else [],
+                    user_defined=bool(row[5]),
+                    auto_generated=_decode_list(row[6]),
                 )
                 for row in cursor.fetchall()
             ]
 
     def get_categories(self) -> list[str]:
-        """Get all unique categories in the vocabulary."""
         self._ensure_schema()
-
         with self._manager.connection(self.collection) as conn:
             cursor = conn.execute("SELECT DISTINCT category FROM keywords ORDER BY category")
             return [row[0] for row in cursor.fetchall()]
 
     def clear(self) -> None:
-        """Clear all keywords from the vocabulary."""
         self._ensure_schema()
-
         with self._manager.connection(self.collection) as conn:
             conn.execute("DELETE FROM keywords")
             conn.execute("DELETE FROM vocabulary_meta")
             conn.commit()
-
         logger.info(f"[VOCABULARY] Cleared vocabulary for '{self.collection}'")
+
+
+def _decode_list(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return list(value)
+    try:
+        decoded = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return decoded if isinstance(decoded, list) else []

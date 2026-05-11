@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
     from fitz_sage.engines.fitz_krag.ingestion.section_store import SectionStore
     from fitz_sage.engines.fitz_krag.ingestion.table_store import TableStore
-    from fitz_sage.tabular.store.postgres import PostgresTableStore
+    from fitz_sage.tabular.store.sqlite import SqliteTableStore
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class ContentReader:
         section_store: "SectionStore | None" = None,
         config: "FitzKragConfig | None" = None,
         table_store: "TableStore | None" = None,
-        pg_table_store: "PostgresTableStore | None" = None,
+        pg_table_store: "SqliteTableStore | None" = None,
         source_dir: "Path | None" = None,
     ):
         self._raw_store = raw_store

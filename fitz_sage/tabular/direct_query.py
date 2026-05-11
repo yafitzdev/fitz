@@ -6,7 +6,7 @@ Flow:
 1. Read headers only from file (fast)
 2. LLM selects relevant columns for the query
 3. Parse only those columns from file
-4. Create/update ephemeral PostgreSQL table
+4. Create/update ephemeral SQLite table
 5. LLM generates SQL
 6. Execute and return results
 7. Cleanup (optional)
@@ -26,8 +26,8 @@ from typing import TYPE_CHECKING, Any
 
 from fitz_sage.llm.factory import ChatFactory, ModelTier
 from fitz_sage.logging.logger import get_logger
-from fitz_sage.tabular.store.postgres import (
-    PostgresTableStore,
+from fitz_sage.tabular.store.sqlite import (
+    SqliteTableStore,
     _sanitize_column_name,
 )
 
@@ -275,7 +275,7 @@ class DirectTableQuery:
     chat_factory: ChatFactory
     collection: str = "_direct_tables"
     max_results: int = 100
-    _table_store: PostgresTableStore | None = field(default=None, repr=False)
+    _table_store: SqliteTableStore | None = field(default=None, repr=False)
 
     # Tier assignments per task (developer decision)
     TIER_COLUMN_SELECT: ModelTier = "fast"
@@ -292,7 +292,7 @@ Question: {question}
 Include columns for filtering (WHERE), grouping (GROUP BY), and results.
 Return ONLY a JSON array: ["col1", "col2"]"""
 
-    SQL_PROMPT = """Write a PostgreSQL SQL query to answer this question.
+    SQL_PROMPT = """Write a SQLite SQL query to answer this question.
 
 Question: {question}
 
@@ -301,13 +301,13 @@ Columns: {columns}
 Sample data: {samples}
 
 Examples:
-- "how many X in 2005?" -> SELECT SUM(CAST("units_sold" AS NUMERIC)) FROM "table" WHERE "year_sold" = '2005'
-- "total sales?" -> SELECT SUM(CAST("amount" AS NUMERIC)) FROM "table"
+- "how many X in 2005?" -> SELECT SUM(CAST("units_sold" AS REAL)) FROM "table" WHERE "year_sold" = '2005'
+- "total sales?" -> SELECT SUM(CAST("amount" AS REAL)) FROM "table"
 - "which car?" -> SELECT "car_brand", "model" FROM "table" WHERE ...
 
 Rules:
 1. Use double quotes around column names: "column_name"
-2. For sums/counts of numbers: CAST("column" AS NUMERIC)
+2. For sums/counts of numbers: CAST("column" AS REAL) or CAST("column" AS INTEGER)
 3. Text values are exact strings: WHERE "year_sold" = '2005' (not LIKE)
 4. Table name is: {table_name}
 
@@ -324,10 +324,10 @@ Provide a clear, direct answer based on the data. If the results are empty, say 
 
     def __post_init__(self):
         if self._table_store is None:
-            self._table_store = PostgresTableStore(self.collection)
+            self._table_store = SqliteTableStore(self.collection)
 
     @property
-    def table_store(self) -> PostgresTableStore:
+    def table_store(self) -> SqliteTableStore:
         return self._table_store
 
     def query(
@@ -568,7 +568,7 @@ Provide a clear, direct answer based on the data. If the results are empty, say 
     def _get_sample_data(
         self, pg_table_name: str, columns: list[str], limit: int = 3
     ) -> list[list[str]]:
-        """Fetch sample data from PostgreSQL table."""
+        """Fetch sample data from SQLite table."""
         cols_str = ", ".join(f'"{c}"' for c in columns)
         sql = f'SELECT {cols_str} FROM "{pg_table_name}" ORDER BY _row_num LIMIT {limit}'
 

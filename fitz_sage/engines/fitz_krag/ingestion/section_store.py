@@ -1,55 +1,69 @@
 # fitz_sage/engines/fitz_krag/ingestion/section_store.py
-"""CRUD operations for krag_section_index table with BM25 search."""
+"""CRUD operations for krag_section_index table with FTS5 BM25 search."""
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.ingestion.schema import TABLE_PREFIX
 
 if TYPE_CHECKING:
-    from fitz_sage.storage.postgres import PostgresConnectionManager
+    from fitz_sage.storage.sqlite import SqliteConnectionManager
 
 logger = logging.getLogger(__name__)
 
 TABLE = f"{TABLE_PREFIX}section_index"
+FTS = f"{TABLE_PREFIX}section_fts"
+
+
+def _build_fts_query(query: str) -> str | None:
+    """Convert a free-form query into FTS5 OR-of-tokens.
+
+    FTS5 MATCH has its own syntax; user text needs sanitizing. We
+    extract alphanumeric words and OR-join them. Empty input returns
+    None so the caller can short-circuit.
+    """
+    words = [w for w in re.findall(r"\w+", query) if w]
+    if not words:
+        return None
+    return " OR ".join(words)
 
 
 class SectionStore:
     """CRUD for the section index."""
 
-    def __init__(self, connection_manager: "PostgresConnectionManager", collection: str):
+    def __init__(self, connection_manager: "SqliteConnectionManager", collection: str):
         self._cm = connection_manager
         self._collection = collection
 
     def upsert_batch(self, sections: list[dict[str, Any]]) -> None:
-        """Insert or update a batch of sections."""
         if not sections:
             return
 
         sql = f"""
             INSERT INTO {TABLE}
-                ("id", "raw_file_id", "title", "level", "page_start", "page_end",
-                 "content", "summary", "parent_section_id",
-                 "position", "keywords", "entities", "metadata")
+                (id, raw_file_id, title, level, page_start, page_end,
+                 content, summary, parent_section_id,
+                 position, keywords, entities, metadata)
             VALUES
-                (%s, %s, %s, %s, %s, %s,
-                 %s, %s, %s,
-                 %s, %s, %s::jsonb, %s::jsonb)
-            ON CONFLICT ("id") DO UPDATE SET
-                "title" = EXCLUDED."title",
-                "level" = EXCLUDED."level",
-                "page_start" = EXCLUDED."page_start",
-                "page_end" = EXCLUDED."page_end",
-                "content" = EXCLUDED."content",
-                "summary" = EXCLUDED."summary",
-                "parent_section_id" = EXCLUDED."parent_section_id",
-                "position" = EXCLUDED."position",
-                "keywords" = EXCLUDED."keywords",
-                "entities" = EXCLUDED."entities",
-                "metadata" = EXCLUDED."metadata"
+                (?, ?, ?, ?, ?, ?,
+                 ?, ?, ?,
+                 ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                level = excluded.level,
+                page_start = excluded.page_start,
+                page_end = excluded.page_end,
+                content = excluded.content,
+                summary = excluded.summary,
+                parent_section_id = excluded.parent_section_id,
+                position = excluded.position,
+                keywords = excluded.keywords,
+                entities = excluded.entities,
+                metadata = excluded.metadata
         """
         with self._cm.connection(self._collection) as conn:
             for sec in sections:
@@ -66,7 +80,7 @@ class SectionStore:
                         sec.get("summary"),
                         sec.get("parent_section_id"),
                         sec["position"],
-                        sec.get("keywords", []),
+                        json.dumps(sec.get("keywords", [])),
                         json.dumps(sec.get("entities", [])),
                         json.dumps(sec.get("metadata", {})),
                     ),
@@ -74,48 +88,45 @@ class SectionStore:
             conn.commit()
 
     def search_bm25(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
-        """Full-text search using ts_rank on content_tsv with parent context.
+        """Full-text search using FTS5 + bm25 ranking.
 
-        Joins child sections with their parent so that subsection searches
-        inherit the parent's terms (e.g. "Model Y200" context flows into
-        the child "Specifications" section).  Uses per-term OR matching in
-        the WHERE clause so sections matching *any* query term are candidates,
-        while ts_rank naturally ranks sections with more matching terms higher.
+        The Postgres version unioned each section's tsvector with its
+        parent's for breadcrumb context. The FTS5 port does a direct
+        section match here; downstream ``_score_results`` applies RRF
+        on the returned order, and parent-title breadcrumbs are pulled
+        in by ``SectionSearchStrategy._enrich_with_parent_titles``.
         """
+        fts_query = _build_fts_query(query)
+        if fts_query is None:
+            return []
+
         sql = f"""
-            SELECT s."id", s."raw_file_id", s."title", s."level",
-                   s."page_start", s."page_end", s."content", s."summary",
-                   s."parent_section_id", s."position", s."metadata",
-                   ts_rank(
-                       s."content_tsv" || COALESCE(p."content_tsv", ''::tsvector),
-                       to_tsquery(
-                           replace(plainto_tsquery('english', %s)::text, ' & ', ' | ')
-                       )
-                   ) AS "rank"
-            FROM {TABLE} s
-            LEFT JOIN {TABLE} p ON s."parent_section_id" = p."id"
-            WHERE (s."content_tsv" || COALESCE(p."content_tsv", ''::tsvector))
-                  @@ to_tsquery(
-                      replace(plainto_tsquery('english', %s)::text, ' & ', ' | ')
-                  )
-            ORDER BY "rank" DESC
-            LIMIT %s
+            SELECT s.id, s.raw_file_id, s.title, s.level,
+                   s.page_start, s.page_end, s.content, s.summary,
+                   s.parent_section_id, s.position, s.metadata,
+                   bm25({FTS}) AS rank
+            FROM {FTS}
+            JOIN {TABLE} s ON s.rowid = {FTS}.rowid
+            WHERE {FTS} MATCH ?
+            ORDER BY rank
+            LIMIT ?
         """
         with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, (query, query, limit)).fetchall()
+            rows = conn.execute(sql, (fts_query, limit)).fetchall()
         results = []
         for row in rows:
             d = _row_to_dict(row[:11])
-            d["bm25_score"] = float(row[11]) if row[11] is not None else 0.0
+            # bm25() returns negative numbers (lower=better); flip sign so
+            # downstream code that treats higher-better is consistent.
+            d["bm25_score"] = -float(row[11]) if row[11] is not None else 0.0
             results.append(d)
         return results
 
     def get(self, section_id: str) -> dict[str, Any] | None:
-        """Get a section by ID."""
         sql = f"""
-            SELECT "id", "raw_file_id", "title", "level", "page_start", "page_end",
-                   "content", "summary", "parent_section_id", "position", "metadata"
-            FROM {TABLE} WHERE "id" = %s
+            SELECT id, raw_file_id, title, level, page_start, page_end,
+                   content, summary, parent_section_id, position, metadata
+            FROM {TABLE} WHERE id = ?
         """
         with self._cm.connection(self._collection) as conn:
             row = conn.execute(sql, (section_id,)).fetchone()
@@ -124,74 +135,79 @@ class SectionStore:
         return _row_to_dict(row)
 
     def get_by_file(self, raw_file_id: str) -> list[dict[str, Any]]:
-        """Get all sections for a file, ordered by position."""
         sql = f"""
-            SELECT "id", "raw_file_id", "title", "level", "page_start", "page_end",
-                   "content", "summary", "parent_section_id", "position", "metadata"
+            SELECT id, raw_file_id, title, level, page_start, page_end,
+                   content, summary, parent_section_id, position, metadata
             FROM {TABLE}
-            WHERE "raw_file_id" = %s
-            ORDER BY "position"
+            WHERE raw_file_id = ?
+            ORDER BY position
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql, (raw_file_id,)).fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def search_by_keywords(self, terms: list[str], limit: int = 20) -> list[dict[str, Any]]:
-        """Find sections with matching enriched keywords (array overlap)."""
+        """Find sections with matching enriched keywords.
+
+        Postgres used ``keywords && ARRAY[...]`` for set overlap. SQLite
+        stores keywords as JSON; we expand via ``json_each`` and match
+        against the term list with an IN clause.
+        """
         if not terms:
             return []
+        placeholders = ",".join(["?"] * len(terms))
         sql = f"""
-            SELECT "id", "raw_file_id", "title", "level", "page_start", "page_end",
-                   "content", "summary", "parent_section_id", "position", "metadata"
+            SELECT id, raw_file_id, title, level, page_start, page_end,
+                   content, summary, parent_section_id, position, metadata
             FROM {TABLE}
-            WHERE "keywords" && %s
-            LIMIT %s
+            WHERE EXISTS (
+                SELECT 1 FROM json_each({TABLE}.keywords) k
+                WHERE k.value IN ({placeholders})
+            )
+            LIMIT ?
         """
+        params = (*terms, limit)
         with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, (terms, limit)).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def get_children(self, section_id: str) -> list[dict[str, Any]]:
-        """Get child sections of a parent."""
         sql = f"""
-            SELECT "id", "raw_file_id", "title", "level", "page_start", "page_end",
-                   "content", "summary", "parent_section_id", "position", "metadata"
+            SELECT id, raw_file_id, title, level, page_start, page_end,
+                   content, summary, parent_section_id, position, metadata
             FROM {TABLE}
-            WHERE "parent_section_id" = %s
-            ORDER BY "position"
+            WHERE parent_section_id = ?
+            ORDER BY position
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql, (section_id,)).fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def get_siblings(self, section_id: str) -> list[dict[str, Any]]:
-        """Get sibling sections (same parent)."""
         section = self.get(section_id)
         if not section:
             return []
         parent_id = section.get("parent_section_id")
         if parent_id:
             return self.get_children(parent_id)
-        # Top-level sections: get all level-1 sections for same file
         sql = f"""
-            SELECT "id", "raw_file_id", "title", "level", "page_start", "page_end",
-                   "content", "summary", "parent_section_id", "position", "metadata"
+            SELECT id, raw_file_id, title, level, page_start, page_end,
+                   content, summary, parent_section_id, position, metadata
             FROM {TABLE}
-            WHERE "raw_file_id" = %s AND "parent_section_id" IS NULL
-            ORDER BY "position"
+            WHERE raw_file_id = ? AND parent_section_id IS NULL
+            ORDER BY position
         """
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql, (section["raw_file_id"],)).fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def update_summaries_by_file(self, raw_file_id: str, summaries: list[str]) -> None:
-        """Update summaries for all sections in a file, in position order."""
         ids_sql = f"""
-            SELECT "id" FROM {TABLE}
-            WHERE "raw_file_id" = %s
-            ORDER BY "position"
+            SELECT id FROM {TABLE}
+            WHERE raw_file_id = ?
+            ORDER BY position
         """
-        update_sql = f'UPDATE {TABLE} SET "summary" = %s WHERE "id" = %s'
+        update_sql = f"UPDATE {TABLE} SET summary = ? WHERE id = ?"
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(ids_sql, (raw_file_id,)).fetchall()
             for i, row in enumerate(rows):
@@ -202,17 +218,13 @@ class SectionStore:
     def update_enrichment_by_file(
         self, raw_file_id: str, enriched_dicts: list[dict[str, Any]]
     ) -> None:
-        """Update keywords, entities, and metadata for sections in a file."""
-        sql = (
-            f'UPDATE {TABLE} SET "keywords" = %s, "entities" = %s::jsonb,'
-            f' "metadata" = %s::jsonb WHERE "id" = %s'
-        )
+        sql = f"UPDATE {TABLE} SET keywords = ?, entities = ?, metadata = ? WHERE id = ?"
         with self._cm.connection(self._collection) as conn:
             for item in enriched_dicts:
                 conn.execute(
                     sql,
                     (
-                        item.get("keywords", []),
+                        json.dumps(item.get("keywords", [])),
                         json.dumps(item.get("entities", [])),
                         json.dumps(item.get("metadata", {})),
                         item["id"],
@@ -223,28 +235,30 @@ class SectionStore:
     def get_corpus_summaries(self) -> list[dict[str, Any]]:
         """Fetch all L2 corpus-level summary chunks for this collection."""
         sql = f"""
-            SELECT "id", "raw_file_id", "title", "level", "page_start", "page_end",
-                   "content", "summary", "parent_section_id", "position", "metadata"
+            SELECT id, raw_file_id, title, level, page_start, page_end,
+                   content, summary, parent_section_id, position, metadata
             FROM {TABLE}
-            WHERE "metadata"->>'is_corpus_summary' = 'true'
+            WHERE json_extract(metadata, '$.is_corpus_summary') = 'true'
+               OR json_extract(metadata, '$.is_corpus_summary') = 1
         """
         with self._cm.connection(self._collection) as conn:
-            cursor = conn.execute(sql)
-            return [_row_to_dict(row) for row in cursor.fetchall()]
+            rows = conn.execute(sql).fetchall()
+        return [_row_to_dict(row) for row in rows]
 
     def delete_by_file(self, raw_file_id: str) -> None:
-        """Delete all sections for a file."""
-        sql = f'DELETE FROM {TABLE} WHERE "raw_file_id" = %s'
+        sql = f"DELETE FROM {TABLE} WHERE raw_file_id = ?"
         with self._cm.connection(self._collection) as conn:
             conn.execute(sql, (raw_file_id,))
             conn.commit()
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:
-    """Convert a query row to dict."""
     meta = row[10]
     if isinstance(meta, str):
-        meta = json.loads(meta)
+        try:
+            meta = json.loads(meta)
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
     elif meta is None:
         meta = {}
     return {
