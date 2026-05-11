@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.12.0] - 2026-05-11
+
+### 🎉 Highlights
+
+**Storage swap** — PostgreSQL is gone; SQLite + FTS5 is the only
+storage. One `.db` file per collection, zero install, stdlib only.
+Drops `psycopg`, `psycopg-pool`, `fitz-pgserver` from deps. The
+865-line `PostgresConnectionManager` becomes a ~200-line file-based
+`SqliteConnectionManager`. Retrieval semantics preserved — native
+`bm25()` over FTS5 external-content tables replaces `ts_rank` over
+tsvector GIN. Smoke baseline preserved: 5/5 answered, 6/6
+substrings, 3/5 governance mode-match.
+
+**Fitz Cloud removed** — the cross-org answer cache + LangChain/
+LlamaIndex adapter wrappers are gone. With the embedding rip, the
+cache key path was already disabled; this commit removes the
+surface so there's no dead code. Drops `langchain-core` and
+`llama-index-core` from optional extras.
+
+Net session impact: roughly **15k lines removed, 1.3k lines added**
+across three commits. The "one chat-completions URL is the entire
+stack" pitch now holds — chat model double-duties as generator and
+LLM-prompt-wrapped reranker. No embeddings, no vector DB, no
+postgres, no cloud cache.
 
 ### 🔄 Changed (storage)
 

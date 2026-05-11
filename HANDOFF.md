@@ -93,6 +93,10 @@ architecture.
 ## Recent commits (the trail)
 
 ```
+8fa36a57  refactor(storage): replace PostgreSQL with SQLite + FTS5    (Task 10, v0.12.0)
+c4ab1138  refactor: delete Fitz Cloud feature entirely                (Task 4,  v0.12.0)
+72b0661f  docs(handoff): add Task 3.5 + Task 10 sqlite, lock path A order
+8e16da29  docs(handoff): refresh after Tasks 1+2+3 + mid-Task-1 cleanup
 bdca80ae  refactor(storage): rip out pgvector + the entire vector_db plugin tree
 c7dc48a1  refactor(llm): delete the embedding API and every in-tree consumer
 42fd4c7d  refactor(config): drop dead semantic/section/table weight fields
@@ -102,7 +106,7 @@ a96b32b1  docs(handoff): write HANDOFF.md for the next session   ← original ha
 b936b45d  refactor(retrieval): commit to single-mode architecture, no embeddings anywhere
 ```
 
-`bdca80ae` is the most recent. Read these in full before working on
+`8fa36a57` is the most recent. Read these in full before working on
 follow-ups — they document the demolition decisions:
 `git log --format=%B 3b6b8afc^..HEAD`.
 
@@ -610,25 +614,70 @@ Postgres-specific tests removed:
 
 ## Conversation context for the next session
 
-This session ripped out the entire dense-retrieval scaffolding the
-prior session had left behind:
+### Session 2026-05-11 (today, v0.12.0)
 
-1. Tasks 1+2+3 from the original handoff plus an unplanned
-   mid-Task-1 architectural cleanup. The original handoff's order
-   was right; what got added was a "no shims" pass between Task 1's
-   test-greening and Task 2.
-2. The user introduced a durable feedback rule mid-session:
-   *"are you fixing everything around the tests or do you actually
-   check if what you fix makes sense? the tests are not the truth!"*
-   and *"are you leaving legacy shims? or are you just doing
-   correct architectural edits only?"* — both saved to auto-memory.
-   The new project rule (Architectural rule #4 above) reflects this.
-3. The smoke test ran clean end-to-end at every checkpoint. The
-   3/5 mode-match baseline is stable.
+Landed two big demolitions per the priority order locked at the
+start of session (path A):
 
-The repository is in a much smaller state than the original handoff
-described. Total deletions from this session: roughly **11k lines
-removed, 300 lines added** across the four commits.
+1. **Task 4 — Fitz Cloud deletion** (commit `c4ab1138`). Removed
+   `fitz_sage/cloud/` (5 files: client / config / crypto /
+   cache_key / __init__) and `fitz_sage/integrations/` (the
+   `FitzOptimizer` plus the LangChain `FitzRAGChain` and LlamaIndex
+   `FitzQueryEngine` adapters — every class wrapped cloud caching
+   with zero non-cloud value). Engine cloud cache hooks already
+   returned `None` since the embedding rip; the surface is now gone
+   too. Dropped `langchain-core`, `llama-index-core` from the
+   dependency set. `cryptography` stays — `fitz_sage/llm/auth/
+   certificates.py` uses it for X.509 mTLS (the "for Fitz Cloud"
+   annotation was misleading). −4,139 / +37, 32 files.
+2. **Task 10 — PostgreSQL → SQLite + FTS5** (commit `8fa36a57`).
+   Replaced the 865-line `PostgresConnectionManager` with a
+   200-line `SqliteConnectionManager`: one `.db` file per
+   collection under `<workspace>/sqlite/`, WAL mode,
+   `foreign_keys=ON`. Schema rewritten for SQLite: JSONB → TEXT
+   with JSON1 native, TEXT[] → JSON arrays + `json_each`, tsvector
+   GIN → FTS5 external-content + sync triggers,
+   `to_tsquery`/`ts_rank` → MATCH + `bm25()`, ILIKE →
+   `LIKE COLLATE NOCASE`, `unnest(columns)` → `json_each(columns)`,
+   `information_schema` → `sqlite_master`, `%s` → `?`. Ported all
+   stores (raw_files / sections / symbols / imports / tables /
+   vocabulary / entity_graph / tabular). FitzService list/delete
+   now scans `.db` files. Dropped `psycopg`, `psycopg-pool`,
+   `fitz-pgserver` deps — SQLite is stdlib. Deleted
+   `fitz_sage/evaluation/` (postgres-coupled governance logger +
+   BEIR/RGB/fitz_gov benchmarks), `cli/commands/{eval,reset}.py`,
+   dead `retrieval/sparse/`, and postgres-specific tests
+   (`test_postgres_*.py`, `test_evaluation.py`,
+   `test_beir_benchmark.py`). LLM SQL prompts updated for SQLite
+   syntax. −10,828 / +1,239, 62 files.
+
+Smoke baseline preserved end-to-end (5/5 answered, 6/6 substrings,
+3/5 mode-match).
+
+**One known issue carried into Task 11:** ~25 unit tests in
+`test_vocabulary` / `test_krag_guardrails` / `test_section_store` /
+`test_krag_engine` fail because mocked `SqliteConnectionManager`
+instances leak through the singleton between tests. An opt-in
+`reset_sqlite_singleton` fixture exists in `tests/unit/conftest.py`;
+per-test application is the Task 11 work. Smoke is unaffected.
+
+Total session impact: roughly **15k lines removed, 1.3k lines added**
+across three commits. After both demolitions, the codebase is
+significantly leaner and the "bring one chat-completions URL,
+that's the whole stack" pitch holds — chat model double-duties as
+generator and (LLM-prompt-wrapped) reranker.
+
+### Earlier session 2026-05-10 (v0.11.x demolitions)
+
+The prior session ripped out the dense-retrieval scaffolding —
+Tasks 1+2+3 plus a mid-Task-1 architectural cleanup. The user
+introduced a durable feedback rule mid-session:
+*"are you fixing everything around the tests or do you actually
+check if what you fix makes sense? the tests are not the truth!"*
+and *"are you leaving legacy shims? or are you just doing correct
+architectural edits only?"* — both saved to auto-memory. Project
+rule #4 (no shims) reflects this. Smoke test ran clean at every
+checkpoint; 3/5 mode-match baseline stable.
 
 ## Final thing — don't waste a context window second-guessing
 
