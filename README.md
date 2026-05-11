@@ -64,7 +64,9 @@ A: "I don't have enough information
 ### Where to start 🚀
 
 > [!IMPORTANT]
-> Requires **any OpenAI-compatible LLM endpoint** — local ([llama.cpp](https://github.com/ggerganov/llama.cpp)'s `llama-server`, [vLLM](https://github.com/vllm-project/vllm), LM Studio, Ollama in `/v1/` mode) or cloud (OpenAI, Together, Groq, Fireworks, OpenRouter, …). `fitz-sage` auto-detects a local server on the standard ports (8080 / 8000 / 1234 / 11434) on first run, or falls back to `OPENAI_API_KEY`.
+> Requires **any OpenAI-compatible LLM endpoint** — local ([llama.cpp](https://github.com/ggerganov/llama.cpp), 
+> [vLLM](https://github.com/vllm-project/vllm), LM Studio, Ollama) or cloud (OpenAI, Together, Groq, Fireworks, OpenRouter, …). 
+> `fitz-sage` auto-detects a local server on the standard ports on first run, or falls back to `OPENAI_API_KEY`.
 
 ```bash
 pip install fitz-sage
@@ -78,17 +80,6 @@ fitz query "What is our refund policy?" --source ./docs
 
 That's it. Your documents are now searchable with AI.
 
-> [!TIP]
-> **Single config knob.** No more "find a provider that has both chat *and* embeddings", no more swapping models mid-query. One URL, one model spec, done — local or cloud:
->
-> ```bash
-> # Override config at the CLI for any OpenAI-compatible URL:
-> fitz query "..." --endpoint http://localhost:8080/v1 --model qwen2.5-7b
-> fitz query "..." --endpoint https://api.together.xyz/v1 \
->                  --model meta-llama-3.1-70b \
->                  --api-key-env TOGETHER_API_KEY
-> ```
-
 
 ![fitz-sage quickstart demo](https://raw.githubusercontent.com/yafitzdev/fitz-sage/main/docs/assets/quickstart_demo.gif)
 *Figure 1: Example of user experience for querying documents using fitz-sage.*
@@ -98,7 +89,8 @@ That's it. Your documents are now searchable with AI.
 ### About
 
 Existing RAG tools hallucinate. When the answer isn't in your documents, they invent one — confidently, fluently, wrongly. 
-In production, that's not a minor inconvenience. It's the reason you can't trust the system. I built fitz-sage to solve that problem directly, while working as a Data Engineer in the automotive industry. No LangChain. No LlamaIndex. Every layer written from scratch.
+In production, that's not a minor inconvenience. It's the reason you can't trust the system. I built fitz-sage to solve that 
+problem directly, while working as a Data Engineer in the automotive industry. No LangChain. No LlamaIndex. Every layer written from scratch.
 
 The retrieval architecture is [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md) — documents are parsed into typed units (
 code symbols, sections, tables) and each query is routed to the right search strategy, rather than searching flat chunks uniformly.
@@ -206,7 +198,8 @@ SQL, and epistemic honesty out of the box — without configuration.
 > your docs only cover Q1-Q3, and typical RAG hallucinates a number. `fitz-sage` says: *"I cannot find Q4 revenue figures 
 > in the provided documents."
 >
-> → Detects when to abstain at **86.5% recall** on [fitz-gov](https://github.com/yafitzdev/fitz-gov), a 2,920 case benchmark for epistemic honesty (62.7% hard difficulty). 
+> → Detects when to abstain at **86.5% recall** on [fitz-gov](https://github.com/yafitzdev/fitz-gov), a 2,920 case benchmark for 
+> epistemic honesty (62.7% hard difficulty). 
 > False-trustworthy rate: **5.7%**.
 
 **Actionable failures 🔍**
@@ -225,7 +218,7 @@ SQL, and epistemic honesty out of the box — without configuration.
 > real SQL. Ask "What's the average price by region?" and get an actual computed answer, not fragmented rows.
 
 **Fully local execution possible 🏠** → [OpenAI-Compatible Endpoint](docs/features/platform/openai-compatible-endpoint.md)
-> Embedded PostgreSQL + any local OpenAI-compatible server (llama.cpp, vLLM, LM Studio, Ollama). One protocol, one URL, no API keys required to start.
+> Embedded SQLite + any local OpenAI-compatible server (llama.cpp, vLLM, LM Studio, Ollama). One protocol, one URL, no API keys required to start.
 
 ####
 
@@ -445,9 +438,11 @@ classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yaf
 >fitz query "Your question here" --source ./docs
 >```
 >
->Both models stay hot in their own processes — no model thrashing, no SDK juggling, no second API key. Auto-detection picks them up from the standard ports. No data leaves your machine.
+>Both models stay hot in their own processes — no model thrashing, no SDK juggling, no second API key. Auto-detection picks 
+> them up from the standard ports. No data leaves your machine.
 >
->Other compatible servers: [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.ai) (in `/v1/` mode), [TabbyAPI](https://github.com/theroyallab/tabbyAPI). Anything that speaks the OpenAI HTTP protocol works.
+>Other compatible servers: [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.ai) 
+> (in `/v1/` mode), [TabbyAPI](https://github.com/theroyallab/tabbyAPI). Anything that speaks the OpenAI HTTP protocol works.
 
 </details>
 
@@ -532,11 +527,11 @@ classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yaf
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│                         fitz-sage                               │
+│                         fitz-sage                             │
 ├───────────────────────────────────────────────────────────────┤
 │  User Interfaces                                              │
 │  CLI: query (--source) | init | collections | config | serve  │
-│  SDK: fitz_sage.query(source=...)                                │
+│  SDK: fitz_sage.query(source=...)                             │
 │  API: /query | /chat | /collections | /health                 │
 ├───────────────────────────────────────────────────────────────┤
 │  Engines                                                      │

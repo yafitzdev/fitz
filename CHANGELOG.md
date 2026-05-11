@@ -11,11 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🎉 Highlights
 
-**SQLite + FTS5 Storage** — Replaced PostgreSQL with stdlib `sqlite3` + FTS5 external-content. One `.db` file per collection, zero install, no pgserver. The 865-line `PostgresConnectionManager` becomes a ~200-line `SqliteConnectionManager`. Native `bm25()` over FTS5 replaces `ts_rank` over tsvector GIN; smoke baseline preserved (5/5 answered, 6/6 substrings, 3/5 mode-match).
-
-**Fitz Cloud Removed** — Cross-org answer cache + LangChain/LlamaIndex adapter wrappers gone. Engine cache hooks already returned `None` after the embedding rip; this commit removes the surface so there's no dead code.
-
-**Lean Stack** — Net ~15k LOC removed across three commits. Bring one OpenAI-compatible chat URL — that's the whole runtime. No embeddings, no vector DB, no Postgres, no cloud cache.
+**Storage swap** — PostgreSQL is gone; SQLite + FTS5 is the only
+storage. One `.db` file per collection, zero install, stdlib only.
+Drops `psycopg`, `psycopg-pool`, `fitz-pgserver` from deps. The
+865-line `PostgresConnectionManager` becomes a ~200-line file-based
+`SqliteConnectionManager`. Retrieval semantics preserved — native
+`bm25()` over FTS5 external-content tables replaces `ts_rank` over
+tsvector GIN. Smoke baseline preserved: 5/5 answered, 6/6
+substrings, 3/5 governance mode-match.
 
 ### 🗑 Removed
 
@@ -1935,7 +1938,7 @@ Initial release of Fitz RAG framework.
 ---
 
 [Unreleased]: https://github.com/yafitzdev/fitz-sage/compare/v0.12.0...HEAD
-[0.11.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.11.0...v0.12.0
+[0.12.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.10.4...v0.11.0
 [0.10.4]: https://github.com/yafitzdev/fitz-sage/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/yafitzdev/fitz-sage/compare/v0.10.2...v0.10.3
