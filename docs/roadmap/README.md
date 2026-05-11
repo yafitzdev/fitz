@@ -32,6 +32,20 @@ Reorder query preprocessing: rewrite first, then batch analysis + detection on t
 
 ---
 
+## Next: Query Expansion Without Embeddings (HyDE replacement)
+
+**[Vocabulary-Grounded Query Expansion](./query-expansion-without-embeddings.md)**
+
+Fill the BM25 vocabulary-mismatch gap that HyDE used to cover, without bringing embeddings back. Two approaches: query-time LLM keyword expansion (Query2Doc / generative QE — well-studied, costs 1 extra LLM call per query) and a vocabulary-grounded shortcut that reuses the enrichment bus — `KragEnricher` already builds per-collection keyword variations at ingest time, and `KeywordMatcher.find_in_query()` already returns them. At query time, just OR the matched variations into FTS5. Zero query-time LLM cost. Hybrid Approach 3 falls back to LLM expansion only on vocab-miss.
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | `QueryExpander` over existing `VocabularyStore` / `KeywordMatcher` (Approach 2) | Proposed |
+| 2 | BEIR A/B vs. baseline BM25 (gated on Task 12 — restore evaluation subpackage) | Proposed |
+| 3 | LLM-expansion fallback for vocab-miss queries (Approach 3 hybrid) | Proposed |
+
+---
+
 ## Future: KRAG Agent
 
 **[KRAG Agent — Retrieval-as-Tools with Epistemic Self-Verification](./krag-agent.md)**
