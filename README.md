@@ -100,9 +100,7 @@ Honesty is enforced by an [ML governance classifier](docs/features/governance/go
 
 It runs in production today and powers [fitz-forge](https://github.com/yafitzdev/fitz-forge).
 
-A single chat-protocol implementation (OpenAI HTTP). 2,000+ tests. 99% coverage.
-
-Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](https://github.com/yafitzdev)).
+Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](https://github.com/yafitzdev), [HuggingFace](https://huggingface.co/yafitzdev)).
 
 ![fitz-sage honest_rag](https://raw.githubusercontent.com/yafitzdev/fitz-sage/main/docs/assets/honest_rag.jpg)
 
