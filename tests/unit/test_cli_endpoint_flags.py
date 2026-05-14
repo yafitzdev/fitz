@@ -166,12 +166,18 @@ class TestQueryCommandFlagPlumbing:
     """End-to-end flag plumbing through the CLI runner."""
 
     def test_flags_appear_in_help(self) -> None:
+        import re
+
         from typer.testing import CliRunner
 
         from fitz_sage.cli.cli import app
 
         result = CliRunner().invoke(app, ["query", "--help"])
         assert result.exit_code == 0
-        assert "--endpoint" in result.output
-        assert "--model" in result.output
-        assert "--api-key-env" in result.output
+        # CI runners emit ANSI escape codes inside the rendered help (rich
+        # interleaves color codes between the two dashes of long flags),
+        # which breaks substring matching. Strip them before asserting.
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        assert "--endpoint" in plain
+        assert "--model" in plain
+        assert "--api-key-env" in plain
