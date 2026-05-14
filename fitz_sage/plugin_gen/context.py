@@ -257,46 +257,6 @@ RawDocument has:
 - content: str (file text content)
 - metadata: Dict[str, Any] (source info)
 """,
-        PluginType.CONSTRAINT: """
-Required class structure:
-```python
-from dataclasses import dataclass
-from typing import Sequence
-from fitz_sage.core.chunk import Chunk
-from fitz_sage.governance.constraints.base import ConstraintResult
-
-@dataclass
-class MyConstraint:
-    # Configuration parameters
-    enabled: bool = True
-
-    @property
-    def name(self) -> str:
-        return "my_constraint"
-
-    def apply(
-        self,
-        query: str,
-        chunks: Sequence[Chunk],
-    ) -> ConstraintResult:
-        '''
-        Evaluate if chunks support answering the query.
-
-        Args:
-            query: User's question
-            chunks: Retrieved chunks
-
-        Returns:
-            ConstraintResult.allow() if answer is safe
-            ConstraintResult.deny(reason="...") if answer should be blocked
-        '''
-        pass
-```
-
-ConstraintResult:
-- ConstraintResult.allow(): Allow decisive answer
-- ConstraintResult.deny(reason="...", signal="..."): Block decisive answer
-""",
     }
 
     return protocols.get(plugin_type, "Implement required plugin protocol.")

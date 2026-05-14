@@ -304,16 +304,6 @@ PIPELINE_REGISTRY = PluginRegistry(
     required_method="build",
 )
 
-# Constraint plugins registry (for guardrails)
-CONSTRAINT_REGISTRY = PluginRegistry(
-    name="constraint",
-    scan_packages=["fitz_sage.governance.constraints.plugins"],
-    required_method="apply",
-    plugin_name_attr="name",
-    user_plugin_paths=_get_plugin_paths("constraint"),
-)
-
-
 # =============================================================================
 # Convenience Functions for Python-based Registries
 # =============================================================================
@@ -365,16 +355,6 @@ def available_pipeline_plugins() -> List[str]:
     return PIPELINE_REGISTRY.list_available()
 
 
-def get_constraint_plugin(plugin_name: str) -> Type[Any]:
-    """Get a constraint plugin by name."""
-    return CONSTRAINT_REGISTRY.get(plugin_name)
-
-
-def available_constraint_plugins() -> List[str]:
-    """List available constraint plugins."""
-    return CONSTRAINT_REGISTRY.list_available()
-
-
 # =============================================================================
 # LLM Plugin Discovery
 # =============================================================================
@@ -422,7 +402,6 @@ __all__ = [
     "TYPED_CHUNKING_REGISTRY",
     "RETRIEVER_REGISTRY",
     "PIPELINE_REGISTRY",
-    "CONSTRAINT_REGISTRY",
     # Python-based plugin accessors
     "get_chunking_plugin",
     "available_chunking_plugins",
@@ -432,8 +411,6 @@ __all__ = [
     "available_retrieval_plugins",
     "get_pipeline_plugin",
     "available_pipeline_plugins",
-    "get_constraint_plugin",
-    "available_constraint_plugins",
     # LLM plugin accessors
     "available_llm_plugins",
 ]

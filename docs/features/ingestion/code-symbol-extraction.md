@@ -105,7 +105,7 @@ Two search paths hit the same table:
    for direct symbol-name lookups.
 
 The retrieval router fuses results using Reciprocal Rank Fusion, then
-hands the candidate set to the [LLM reranker](../retrieval/reranking.md).
+hands the candidate set to the [ONNX cross-encoder reranker](../retrieval/reranking.md).
 
 ## Example
 
@@ -150,7 +150,7 @@ class AuthService:
 Each symbol gets summarised by the enrichment pipeline and stored in
 `krag_symbol_index`. At query time, "How does authentication work?"
 finds `AuthService.authenticate` via BM25 over its summary (and a
-final LLM reranker pass), not by hoping a text chunk contains the
+final ONNX cross-encoder reranker pass), not by hoping a text chunk contains the
 right keywords.
 
 ## Files

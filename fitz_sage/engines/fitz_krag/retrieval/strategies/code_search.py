@@ -5,7 +5,7 @@ Symbol-index search: keyword + BM25 + keyword-enrichment boosts.
 fitz-sage uses no dense embeddings on symbols. Code retrieval relies
 on tree-sitter-extracted symbol names (qualified-name keyword match)
 plus full-text BM25 over symbol summaries; precision comes from the
-``LLMReranker`` downstream.
+ONNX cross-encoder reranker (``OnnxReranker``) downstream.
 """
 
 from __future__ import annotations

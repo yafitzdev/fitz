@@ -151,12 +151,14 @@ structural knowledge:
 
 This is deterministic graph traversal — zero LLM calls.
 
-**5. LLM reranker, not embedding cosine.**
+**5. ONNX cross-encoder, not embedding cosine.**
 
-The final ranking step is an LLM call that scores a small candidate
-set in a single JSON-returning chat completion. It uses the same
-canonical chat endpoint — no separate reranker backend, no
-cross-encoder, no embedding model.
+The final ranking step is a dedicated INT8 ONNX cross-encoder
+(`Alibaba-NLP/gte-reranker-modernbert-base` by default). It scores
+`(query, candidate)` pairs in a single batched forward pass — ~30 ms
+on CPU. No external LLM call, no embedding model. Same architecture
+family as the pyrrho governance classifier (ModernBERT + INT8 ONNX
+via `optimum.onnxruntime`).
 
 ---
 
@@ -232,7 +234,7 @@ The pattern: use the LLM for *classification* and *generation*; use
                     │            same-file refs, neighbors)     │
                     │              │                            │
                     │              ▼                            │
-                    │           LLMReranker (1 chat call)       │
+                    │           OnnxReranker (ONNX cross-encoder)│
                     │              │                            │
                     │              ▼                            │
                     │         Read + Assemble + Synthesize      │
@@ -256,7 +258,7 @@ The pattern: use the LLM for *classification* and *generation*; use
 | Section search                  | `fitz_sage/engines/fitz_krag/retrieval/strategies/section_search.py` |
 | Table search                    | `fitz_sage/engines/fitz_krag/retrieval/strategies/table_search.py` |
 | Context expander                | `fitz_sage/engines/fitz_krag/retrieval/expander.py`              |
-| LLM reranker                    | `fitz_sage/engines/fitz_krag/retrieval/reranker.py`              |
+| ONNX reranker                   | `fitz_sage/engines/fitz_krag/retrieval/reranker.py` + `fitz_sage/llm/providers/onnx_reranker.py` |
 | Multi-hop                       | `fitz_sage/engines/fitz_krag/retrieval/multihop.py`              |
 | Symbol store                    | `fitz_sage/engines/fitz_krag/ingestion/symbol_store.py`          |
 | Section store                   | `fitz_sage/engines/fitz_krag/ingestion/section_store.py`         |
@@ -303,5 +305,5 @@ quality as KRAG's `LlmCodeSearchStrategy`, no database required.
 - [Entity Graph](../retrieval/entity-graph.md) — entity-based linking across retrieval units
 - [Hierarchical RAG](../ingestion/hierarchical-rag.md) — L1 / L2 summaries for corpus-level context
 - [Sparse Search](../retrieval/sparse-search.md) — FTS5 + `bm25()` ranking
-- [Reranking](../retrieval/reranking.md) — LLM-based reranker
+- [Reranking](../retrieval/reranking.md) — ONNX cross-encoder reranker
 - [Unified Storage](unified-storage.md) — SQLite + FTS5 layer

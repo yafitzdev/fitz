@@ -5,8 +5,9 @@
 # KRAG = Knowledge Routing Augmented Generation. Documents are parsed
 # into typed retrieval units (code symbols, sections, tables); each
 # query routes to the right structural search strategy. There are
-# no dense embeddings — the LLMReranker provides precision over wide
-# BM25 candidate sets.
+# no dense embeddings — an INT8 ONNX cross-encoder reranker
+# (gte-reranker-modernbert-base) provides precision over wide BM25
+# candidate sets.
 
 fitz_krag:
 
@@ -24,9 +25,11 @@ fitz_krag:
   chat_api_key_env: null
   vision_api_key_env: null
 
-  # Reranker. 'llm' = score candidates with the configured chat factory
-  # (fast tier). null = disabled.
-  rerank: llm
+  # Reranker. 'onnx' = INT8 ONNX cross-encoder (Alibaba-NLP/gte-reranker-
+  # modernbert-base by default; ~30-100ms CPU for 10-20 candidates).
+  # 'onnx/<hf-model-id>' to swap in a different cross-encoder.
+  # null = disabled.
+  rerank: onnx
 
   # Vision (null = disabled). Uses the OpenAI-compatible chat-completions
   # endpoint with image content parts.

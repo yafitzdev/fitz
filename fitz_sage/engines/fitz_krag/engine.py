@@ -329,22 +329,9 @@ class FitzKragEngine:
         self._assembler = ContextAssembler(self._config)
         self._synthesizer = CodeSynthesizer(self._chat, self._config)
 
-        # Guardrails (epistemic constraints)
-        self._constraints: list[Any] = []
-        self._governor: Any = None
-        if self._config.enable_guardrails:
-            from fitz_sage.governance import create_default_constraints
-            from fitz_sage.governance.decider import GovernanceDecider
-
-            self._constraints = create_default_constraints(
-                chat=self._chat_factory("fast"),
-                chat_balanced=self._chat_factory("balanced"),
-            )
-            # LLM judge disabled — requires a model capable of nuanced semantic
-            # reasoning about query-evidence specificity. 7B models (command-r7b,
-            # qwen2.5:7b) are too small and degrade accuracy. Enable by passing
-            # chat=self._chat_factory("smart") when a capable model is available.
-            self._governor = GovernanceDecider()
+        # Guardrails — pyrrho classifier (single INT8 ONNX forward pass).
+        # Lazily loads on first decide() call so engine init stays fast.
+        self._guardrails_enabled = bool(self._config.enable_guardrails)
 
         # Table query handler
         from fitz_sage.engines.fitz_krag.retrieval.table_handler import TableQueryHandler
@@ -376,25 +363,14 @@ class FitzKragEngine:
             detection_modules=list(DEFAULT_MODULES),
         )
 
-        # Reranker.
-        #
-        # Two paths:
-        #   - "llm" -> LLMReranker built locally with our chat factory.
-        #     This is the canonical post-cohere/rerank backend; it
-        #     uses the fast tier so reranking is cheap.
-        #   - any other spec -> get_reranker() (currently raises;
-        #     reserved for future external rerank backends).
+        # Reranker — INT8 ONNX cross-encoder via get_reranker().
+        # Default backbone: Alibaba-NLP/gte-reranker-modernbert-base.
+        # Override with rerank: "onnx/<hf-model-id>" or disable with null.
         self._address_reranker: Any = None
         if self._config.rerank:
-            reranker: Any = None
-            if self._config.rerank == "llm":
-                from fitz_sage.llm.providers.llm_reranker import LLMReranker
+            from fitz_sage.llm.client import get_reranker
 
-                reranker = LLMReranker(chat_factory=self._chat_factory, tier="fast")
-            else:
-                from fitz_sage.llm.client import get_reranker
-
-                reranker = get_reranker(self._config.rerank)
+            reranker = get_reranker(self._config.rerank)
 
             if reranker:
                 from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressReranker
@@ -833,50 +809,28 @@ class FitzKragEngine:
             # 4.5. Execute table queries (SQL generation + execution)
             expanded = self._table_handler.process(sanitized, expanded)
 
-            # 5. Run guardrails (ReadResult satisfies EvidenceItem protocol)
+            # 5. Run guardrails — pyrrho classifier on the (query, contexts) pair.
+            # ReadResult satisfies EvidenceItem (has .content).
             answer_mode = AnswerMode.TRUSTWORTHY
-            if self._constraints and self._governor:
+            governance = None
+            if self._guardrails_enabled:
                 t0 = time.perf_counter()
-                from fitz_sage.governance import run_constraints
-                from fitz_sage.governance.constraints.feature_extractor import extract_features
+                from fitz_sage.governance import decide as pyrrho_decide
 
-                constraint_results = run_constraints(sanitized, expanded, self._constraints)
-                # Build constraint_name -> result dict for feature extraction
-                cr_dict = {
-                    r.metadata.get("constraint_name", f"c{i}"): r
-                    for i, r in enumerate(constraint_results)
-                }
-                features = extract_features(
-                    sanitized,
-                    expanded,
-                    cr_dict,
-                    detection_summary=detection,
-                )
-                # For agentic results with no vector scores, use IE similarity as fallback
-                if features.get("mean_vector_score") is None and features.get("ie_max_similarity"):
-                    ie_sim = features["ie_max_similarity"]
-                    features["mean_vector_score"] = ie_sim
-                    features["max_vector_score"] = ie_sim
-                    features["min_vector_score"] = ie_sim
-                governance = self._governor.decide(
-                    constraint_results, features=features, query=sanitized, chunks=expanded
-                )
+                governance = pyrrho_decide(sanitized, expanded)
                 answer_mode = governance.mode
 
-                # Progressive mode override: guardrails features are degraded
-                # (no summaries, no real vector scores, constraint LLMs see raw code)
-                # but LLM code search already validated relevance via structural
-                # reasoning. Override ABSTAIN → TRUSTWORTHY so generation runs.
+                # Progressive mode: agentic LLM code search already validated
+                # relevance structurally. If pyrrho returns ABSTAIN on a result
+                # set produced by the progressive manifest path, prefer to
+                # generate — the structural retrieval is the stronger signal
+                # here than the classifier's distribution-shifted call.
                 if answer_mode == AnswerMode.ABSTAIN and self._manifest is not None and expanded:
-                    # Only override if abstain was solely from insufficient_evidence
-                    # (expected in progressive mode due to degraded features).
-                    # Preserve abstain from other constraints (real relevance failures).
-                    if set(governance.triggered_constraints) <= {"insufficient_evidence"}:
-                        logger.info(
-                            "Overriding ABSTAIN → TRUSTWORTHY in progressive mode "
-                            "(IE-only abstain with code evidence)"
-                        )
-                        answer_mode = AnswerMode.TRUSTWORTHY
+                    logger.info(
+                        "Overriding ABSTAIN -> TRUSTWORTHY in progressive mode "
+                        "(structural retrieval validated relevance)"
+                    )
+                    answer_mode = AnswerMode.TRUSTWORTHY
 
                 timings.append(("Guardrails", time.perf_counter() - t0))
 
@@ -896,8 +850,8 @@ class FitzKragEngine:
             if answer_mode == AnswerMode.ABSTAIN:
                 governance_reasons = governance.reasons if governance else ()
                 gap_context = self._build_gap_context(sanitized, governance_reasons)
-            elif answer_mode == AnswerMode.DISPUTED and constraint_results:
-                conflict_context = self._build_conflict_context(constraint_results)
+            elif answer_mode == AnswerMode.DISPUTED and governance:
+                conflict_context = {"reason": governance.reason}
             answer = self._synthesizer.generate(
                 sanitized,
                 context,
@@ -934,33 +888,6 @@ class FitzKragEngine:
                 self._bg_worker.signal_query_end()
             # Clear query context
             clear_query_context()
-
-    def _build_conflict_context(
-        self,
-        constraint_results: list,
-    ) -> dict | None:
-        """
-        Extract conflict details from ConflictAware constraint results.
-
-        Returns dict with source names and excerpts of the conflicting
-        chunks so the synthesizer can tell the LLM WHAT specifically disagrees.
-        """
-        for result in constraint_results:
-            if result.signal != "disputed":
-                continue
-            meta = result.metadata
-            excerpt_a = meta.get("ca_conflict_excerpt_a")
-            excerpt_b = meta.get("ca_conflict_excerpt_b")
-            if not excerpt_a or not excerpt_b:
-                continue
-            return {
-                "source_a": meta.get("ca_conflict_source_a", "Source A"),
-                "source_b": meta.get("ca_conflict_source_b", "Source B"),
-                "excerpt_a": excerpt_a,
-                "excerpt_b": excerpt_b,
-                "reason": result.reason or "Sources contain conflicting information",
-            }
-        return None
 
     def _build_gap_context(
         self,

@@ -22,7 +22,7 @@ Level 1: Group summaries (per source file)
 Level 0: Original chunks (granular content)
 ```
 
-Query routing is automatic — summaries match analytical queries via the BM25 + LLM-reranker pipeline because the summary text matches the broader phrasing those queries use.
+Query routing is automatic — summaries match analytical queries via the BM25 + ONNX cross-encoder reranker pipeline because the summary text matches the broader phrasing those queries use.
 
 ## How It Works
 
@@ -148,7 +148,7 @@ observability_patterns.md (L1), corpus_summary (L2)
 - Returns: L0 chunks (same as standard RAG—no hierarchy needed for specific queries)
 - Result: Same as standard RAG
 
-Hierarchy only activates when BM25 + the LLM reranker promote a summary row over the granular ones.
+Hierarchy only activates when BM25 + the ONNX cross-encoder reranker promote a summary row over the granular ones.
 
 ## When Hierarchy Activates
 

@@ -179,10 +179,11 @@ The enterprise provider expects **OpenAI-compatible API format**:
 }
 ```
 
-The LLM reranker (used by retrieval) speaks the same chat-completions
-protocol — it asks the model to score documents and parses the JSON
-response. No separate `/embeddings` endpoint is called; fitz-sage
-dropped the embedding API entirely in v0.12.0.
+Retrieval reranking runs locally via an INT8 ONNX cross-encoder
+(`Alibaba-NLP/gte-reranker-modernbert-base`) — see
+[features/retrieval/reranking.md](../retrieval/reranking.md). It does
+not consume the enterprise gateway. No `/embeddings` endpoint is ever
+called either; fitz-sage dropped the embedding API entirely in v0.12.0.
 
 Model strings are passed verbatim to the gateway. Common formats:
 - `openai/gpt-4o` - Provider-prefixed (BMW gateway style)

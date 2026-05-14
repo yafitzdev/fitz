@@ -3,7 +3,7 @@
 
 Note: Conflict detection at ingest time is deferred - the stub find_conflicts()
 returns empty. Actual conflict detection happens at query time using LLM-based
-analysis in ConflictAwareConstraint.
+analysis via the pyrrho classifier.
 
 For conflict detection tests, see test_governance_constraints.py.
 """
@@ -60,21 +60,9 @@ class TestEpistemicAssessment:
         assert assessment.evidence_density == "sparse"
 
     def test_ingest_time_conflict_detection_deferred(self):
-        """Test that ingest-time conflict detection is deferred to query time.
-
-        Conflict detection during ingestion was removed because embedding-based
-        detection was unreliable. Conflicts are now detected at query time using
-        LLM-based analysis in ConflictAwareConstraint.
+        """Conflict detection during ingestion is deferred to query time
+        (handled now by the pyrrho classifier).
         """
-        from fitz_sage.governance import SemanticMatcher
-
-        from .mock_embedder import create_deterministic_embedder
-
-        embedder = create_deterministic_embedder()
-        semantic_matcher = SemanticMatcher(embedder=embedder)
-
-        # Even with conflicting content, assess_chunk_group no longer detects conflicts
-        # (conflict detection is deferred to query time)
         chunks = [
             Chunk(
                 id="c1",
@@ -92,8 +80,7 @@ class TestEpistemicAssessment:
             ),
         ]
 
-        assessment = assess_chunk_group(chunks, semantic_matcher=semantic_matcher)
-        # Ingest-time conflict detection is disabled - conflicts detected at query time
+        assessment = assess_chunk_group(chunks)
         assert assessment.has_conflicts is False
         assert assessment.agreement_ratio == 1.0
 
@@ -277,29 +264,17 @@ class TestHierarchyEnricherEpistemic:
         assert len(level2_chunks) == 1
 
     def test_enricher_adds_epistemic_metadata(self):
-        """Test that enricher adds epistemic metadata even without conflict detection.
-
-        Conflict detection during ingestion is deferred to query time using
-        LLM-based analysis in ConflictAwareConstraint. The hierarchy enricher
-        still adds epistemic metadata (evidence density, chunk count, etc.)
-        but does not detect conflicts at ingest time.
+        """Enricher adds epistemic metadata (evidence density, chunk count).
+        Conflict detection itself is deferred to query time (pyrrho).
         """
-        from fitz_sage.governance import SemanticMatcher
-
-        from .mock_embedder import create_deterministic_embedder
-
         config = HierarchyConfig(group_by="source", min_group_chunks=1, min_group_content=0)
 
         mock_chat = MagicMock()
         mock_chat.chat.return_value = "Summary of the incident reports."
 
-        embedder = create_deterministic_embedder()
-        semantic_matcher = SemanticMatcher(embedder=embedder)
-
         enricher = HierarchyEnricher(
             config=config,
             chat_factory=create_mock_chat_factory(mock_chat),
-            semantic_matcher=semantic_matcher,
         )
 
         chunks = [
@@ -370,56 +345,3 @@ class TestHierarchyEnricherEpistemic:
         assert "epistemic_groups_with_conflicts" in corpus.metadata
         assert "epistemic_evidence_density" in corpus.metadata
         assert "epistemic_agreement_ratio" in corpus.metadata
-
-
-class TestSingleSourceOfTruth:
-    """Tests verifying that epistemic detection uses the existing constraint plugins."""
-
-    def test_uses_conflict_aware_constraint_patterns(self):
-        """Verify that the same patterns detected by ConflictAwareConstraint are detected here.
-
-        Note: ConflictAwareConstraint now requires an LLM for contradiction detection.
-        Without a chat provider, it skips detection and allows everything.
-        This test verifies the constraint returns expected behavior without LLM,
-        and the epistemic assessment handles conflict detection independently.
-        """
-        from fitz_sage.governance import ConflictAwareConstraint, SemanticMatcher
-
-        from .mock_embedder import create_deterministic_embedder
-
-        # Create semantic matcher for epistemic assessment
-        embedder = create_deterministic_embedder()
-        semantic_matcher = SemanticMatcher(embedder=embedder)
-
-        # Create chunks with a known conflict pattern
-        chunks = [
-            Chunk(
-                id="c1",
-                doc_id="d1",
-                content="The status is confirmed and verified.",
-                chunk_index=0,
-                metadata={},
-            ),
-            Chunk(
-                id="c2",
-                doc_id="d1",
-                content="The status remains unconfirmed pending review.",
-                chunk_index=1,
-                metadata={},
-            ),
-        ]
-
-        # Check via constraint directly (no chat = no LLM conflict detection)
-        # Without chat provider, ConflictAwareConstraint skips detection
-        constraint = ConflictAwareConstraint()  # No chat = allows everything
-        constraint_result = constraint.apply("What is the status?", chunks)
-
-        # Without LLM, constraint allows (no conflict detection possible)
-        assert constraint_result.allow_decisive_answer is True
-
-        # Epistemic assessment can still detect conflicts via semantic matcher
-        assessment = assess_chunk_group(chunks, semantic_matcher=semantic_matcher)
-
-        # Assessment may or may not find conflicts depending on implementation
-        # The key is that neither crashes and both return valid results
-        assert isinstance(assessment.has_conflicts, bool)

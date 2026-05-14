@@ -22,7 +22,7 @@ HAS_OPENAI = importlib.util.find_spec("openai") is not None
 
 
 class TestGetReranker:
-    """get_reranker honours None and otherwise raises (no rerank backend)."""
+    """get_reranker honours None and dispatches the 'onnx' cross-encoder."""
 
     def test_none_returns_none(self) -> None:
         assert get_reranker(None) is None
@@ -32,10 +32,21 @@ class TestGetReranker:
         with pytest.raises(ValueError, match="Unknown rerank provider"):
             get_reranker("anything")
 
-    def test_llm_rerank_engine_construction_required(self) -> None:
-        """The 'llm' rerank backend must be built by the engine layer."""
-        with pytest.raises(ValueError, match="must be constructed at the engine layer"):
-            get_reranker("llm")
+    def test_onnx_rerank_provider_builds(self) -> None:
+        """The 'onnx' rerank spec instantiates an OnnxReranker."""
+        from fitz_sage.llm.providers.onnx_reranker import DEFAULT_MODEL_ID, OnnxReranker
+
+        reranker = get_reranker("onnx")
+        assert isinstance(reranker, OnnxReranker)
+        assert reranker._model_id == DEFAULT_MODEL_ID
+
+    def test_onnx_rerank_custom_model(self) -> None:
+        """`onnx/<hf-model-id>` passes the model id through."""
+        from fitz_sage.llm.providers.onnx_reranker import OnnxReranker
+
+        reranker = get_reranker("onnx/BAAI/bge-reranker-base")
+        assert isinstance(reranker, OnnxReranker)
+        assert reranker._model_id == "BAAI/bge-reranker-base"
 
 
 class TestGetVision:

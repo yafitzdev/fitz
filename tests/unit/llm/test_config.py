@@ -131,10 +131,13 @@ class TestUnknownProvider:
         with pytest.raises(ValueError, match="Unknown rerank provider"):
             create_rerank_provider("anything")
 
-    def test_llm_rerank_must_be_built_by_engine(self) -> None:
-        """The 'llm' rerank backend needs a chat factory (engine builds it)."""
-        with pytest.raises(ValueError, match="must be constructed at the engine layer"):
-            create_rerank_provider("llm")
+    def test_onnx_rerank_provider_builds(self) -> None:
+        """`onnx` dispatches the OnnxReranker with the default model."""
+        from fitz_sage.llm.providers.onnx_reranker import DEFAULT_MODEL_ID, OnnxReranker
+
+        reranker = create_rerank_provider("onnx")
+        assert isinstance(reranker, OnnxReranker)
+        assert reranker._model_id == DEFAULT_MODEL_ID
 
     def test_unknown_vision_provider_raises(self) -> None:
         """Unknown vision provider raises ValueError."""

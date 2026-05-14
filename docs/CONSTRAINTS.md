@@ -1,319 +1,172 @@
-# Epistemic Constraints
+# Epistemic Governance
 
-How Fitz knows when to say "I don't know."
+How fitz-sage decides when to answer, when to flag a dispute, and when to
+abstain.
 
 ---
 
 ## Overview
 
-Most RAG systems confidently answer even when they shouldn't. Fitz uses **epistemic constraints** to detect problematic situations and respond appropriately.
+Most RAG systems confidently answer even when they shouldn't. fitz-sage
+classifies every `(query, retrieved contexts)` pair into one of three
+modes before generating an answer:
+
+| Mode          | Meaning                                                                |
+| ------------- | ---------------------------------------------------------------------- |
+| `TRUSTWORTHY` | Sources consistently and sufficiently support an answer.               |
+| `DISPUTED`    | Sources contradict each other on the answer.                           |
+| `ABSTAIN`     | Sources do not contain enough information to answer.                   |
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  User Query                                                     │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Retrieve Chunks                                                │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Apply Constraints                                              │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────────────┐  │
-│  │ Insufficient  │ │ Conflict      │ │ Causal Attribution    │  │
-│  │ Evidence      │ │ Aware         │ │                       │  │
-│  └───────────────┘ └───────────────┘ └───────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Generate Answer with Appropriate Mode                          │
-│  TRUSTWORTHY | DISPUTED | ABSTAIN                               │
-└─────────────────────────────────────────────────────────────────┘
+User query
+  │
+  ▼
+Retrieve via KRAG + FTS5
+  │
+  ▼
+Pyrrho classifier (single INT8 ONNX forward pass, ~30 ms CPU)
+  │
+  ▼
+TRUSTWORTHY / DISPUTED / ABSTAIN
+  │
+  ▼
+Synthesizer (chat call) generates answer with the right epistemic posture
 ```
+
+The classifier is [`yafitzdev/pyrrho-modernbert-base-v1`](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+on HuggingFace — a fine-tune of `answerdotai/ModernBERT-base` on the
+fitz-gov v5.1 benchmark. The model card has the full headline numbers;
+the short version:
+
+| Metric                     | Pyrrho v1     | Pre-v0.13.0 cascade  | Δ        |
+| -------------------------- | ------------- | -------------------- | -------- |
+| Overall accuracy           | **86.13%**    | 78.7%                | +7.43 pp |
+| False-trustworthy rate     | **5.27%**     | 5.7%                 | -0.43 pp |
+| Wall-clock per decision    | **~30 ms**    | ~500–2000 ms (5 chat calls) | ~50x faster |
+| External LLM dependency    | **none**      | required             | —        |
 
 ---
 
-## Answer Modes
+## What changed in v0.13.0
 
-Constraints determine the answer mode (3-class system):
+The legacy constraint+sklearn cascade was removed entirely:
 
-| Mode | Signal | User sees |
-|------|--------|-----------|
-| **TRUSTWORTHY** | No constraints triggered | Direct answer |
-| **DISPUTED** | Sources conflict | "Sources disagree..." |
-| **ABSTAIN** | Insufficient evidence | "I cannot find..." |
+- 5 constraint plugins (`InsufficientEvidence`, `ConflictAware`,
+  `CausalAttribution`, `SpecificInfoType`, `AnswerVerification`)
+- `feature_extractor.py` (108-dim feature vector)
+- `decider.py` (`GovernanceDecider` with the 4-question cascade
+  classifier)
+- `governor.py` (`AnswerGovernor`)
+- `model_v6_cascade.joblib` (the trained sklearn artifact)
+- `tools/governance/` (feature extraction + training scripts)
 
----
+What remains in `fitz_sage/governance/`:
 
-## Built-in Constraints
-
-### 1. Insufficient Evidence
-
-**Plugin:** `insufficient_evidence`
-
-Prevents confident answers when there's not enough direct evidence.
-
-**What it checks:**
-- Are there any chunks retrieved?
-- For causal questions: is there causal language in sources?
-- For fact questions: are there direct assertions?
-
-**Example:**
-
-```
-Q: "What was our Q4 revenue?"
-Chunks: [Q1 revenue: $10M, Q2 revenue: $12M, Q3 revenue: $11M]
-
-Constraint: Triggered - no Q4 data found
-Mode: ABSTAIN
-Answer: "I cannot find Q4 revenue figures in the provided documents.
-         The available data covers Q1-Q3 only."
-```
-
-**Configuration:**
-
-```yaml
-# Enabled by default, no config needed
-```
+- `pyrrho.py` — the new ONNX inference module
+- `protocol.py` — the `EvidenceItem` protocol (any object with
+  `.content` + `.metadata`)
+- `instructions.py` — the small `AnswerMode → prompt instruction` map
 
 ---
 
-### 2. Conflict Aware
-
-**Plugin:** `conflict_aware`
-
-Detects when sources contradict each other.
-
-**What it detects:**
-- Mutually exclusive claims (A vs not-A)
-- Contradicting values (increased vs decreased)
-- Timeline conflicts (before vs after)
-
-**Example:**
-
-```
-Q: "Was the 2023 incident a security breach?"
-Chunk 1: "The 2023 incident was classified as a security breach..."
-Chunk 2: "Investigation concluded this was an operational issue, not security..."
-
-Constraint: Triggered - conflicting classifications
-Mode: DISPUTED
-Answer: "Sources disagree on this classification.
-         - [Source 1] describes it as a security breach
-         - [Source 2] classifies it as an operational issue"
-```
-
-**Configuration:**
-
-```yaml
-# Enabled by default, no config needed
-```
-
----
-
-### 3. Causal Attribution
-
-**Plugin:** `causal_attribution`
-
-Prevents inventing causal explanations not stated in sources.
-
-**What it enforces:**
-- Causal queries ("why", "what caused") need explicit causal language
-- Won't synthesize causality from correlation
-- Won't invent reasons not in the documents
-
-**Example:**
-
-```
-Q: "Why did the deployment fail?"
-Chunks: [Deployment failed at 3pm. Logs show timeout errors. System was restored at 5pm.]
-
-Constraint: Triggered - no explicit "because" or causal language
-Mode: ABSTAIN
-Answer: "I can describe what happened but cannot determine the cause from
-         the available documents. The deployment failed at 3pm with timeout
-         errors. The documents don't explain why this occurred."
-```
-
-**Configuration:**
-
-```yaml
-# Enabled by default, no config needed
-```
-
----
-
-## How Constraints Work
-
-### Constraint Result
-
-Each constraint returns a result:
+## Public API
 
 ```python
-ConstraintResult(
-    allow_decisive_answer: bool,   # Can we give a confident answer?
-    reason: str,                   # Human-readable explanation
-    signal: str,                   # "abstain", "disputed", "qualified"
-    metadata: dict                 # Debug info
-)
+from fitz_sage.governance import decide, GovernanceDecision
+
+decision = decide(query, retrieved_contexts)
+# decision.mode    → AnswerMode (TRUSTWORTHY / DISPUTED / ABSTAIN)
+# decision.probs   → (p_abstain, p_disputed, p_trustworthy)
+# decision.reason  → one-line human-readable explanation
 ```
 
-### Execution flow
+`retrieved_contexts` is any sequence of objects satisfying the
+`EvidenceItem` protocol — both `Chunk` and KRAG's `ReadResult`
+qualify.
 
-1. Retrieve relevant chunks
-2. Run all constraints on (query, chunks)
-3. Collect signals from any triggered constraints
-4. Resolve to answer mode
-5. Generate answer with appropriate framing
-
-### Signal resolution
-
-Constraint signals are used as **features** for a 5-question cascade ML classifier (GovernanceDecider), not as direct priority rules. The classifier predicts one of 3 classes:
-
-| Classifier Output | AnswerMode | Condition |
-|-------------------|------------|-----------|
-| abstain | ABSTAIN | P(answerable) < threshold |
-| disputed | DISPUTED | P(trustworthy) < threshold |
-| trustworthy | TRUSTWORTHY | Evidence supports answer |
-
-The AnswerGovernor still exists as a fallback when the GovernanceDecider model is not available, but GovernanceDecider is the primary decision path.
-
-See [governance benchmarking](features/governance/governance-benchmarking.md) for details on the cascade classifier (78.7% accuracy, 5.7% false-trustworthy rate).
+`decide()` lazy-loads the model on first call and caches it for the
+process lifetime. First call costs the ONNX-load latency (~1–2 s on
+CPU); subsequent calls are ~30 ms.
 
 ---
 
-## How constraints detect signals
+## Calibrated decision rule
 
-Constraints detect signals (conflict, missing evidence, causal claim
-without support) by a mix of:
-
-1. **Chat-LLM reasoning** — for the heavyweight checks
-   (`conflict_aware`, `insufficient_evidence`, `answer_verification`)
-   the constraint asks the `chat_fast` or `chat_balanced` tier to
-   judge the candidate evidence against the question.
-2. **Lexical patterns** — for fast, deterministic checks
-   (`causal_attribution`, `specific_info_type`) the constraint scans
-   for anchor phrases and structural cues without any model call.
-3. **Optional embedder slot** — `SemanticMatcher` accepts an embedder
-   for language-agnostic anchor-phrase matching, but the production
-   path (`create_default_constraints(chat=..., chat_balanced=...)`)
-   leaves it unset; the embedding API was removed in v0.12.0. The
-   slot remains for tests and downstream consumers that want to plug
-   in their own vector backend.
-
-The result is a deterministic constraint cascade where each step is
-either pure-Python or a single small chat call.
-
----
-
-## Creating Custom Constraints
-
-### Protocol
-
-Constraints implement the `ConstraintPlugin` protocol:
+Raw `argmax` over the 3-way softmax gives the predicted class.
+Production uses a **threshold-calibrated fallback** on the
+`TRUSTWORTHY` probability to favour the safer modes:
 
 ```python
-from fitz_sage.governance.constraints.base import ConstraintPlugin, ConstraintResult
-
-class MyConstraint:
-    @property
-    def name(self) -> str:
-        return "my_constraint"
-
-    def apply(self, query: str, chunks: list) -> ConstraintResult:
-        # Your logic here
-        if some_problem_detected:
-            return ConstraintResult.deny(
-                reason="Explanation for user",
-                signal="qualified"  # or "disputed", "abstain"
-            )
-        return ConstraintResult.allow()
+if pred == TRUSTWORTHY and P(TRUSTWORTHY) < TAU:
+    pred = argmax over (ABSTAIN, DISPUTED)
 ```
 
-### Requirements
-
-Constraints must be:
-- **Deterministic**: same input → same output
-- **Side-effect free**: no mutation, no network calls beyond the
-  optional injected chat client
-- **Fast**: at most one chat call per constraint; ideally zero
-  (lexical / structural detection)
-
-### Example: Recency Constraint
-
-```python
-from datetime import datetime, timedelta
-from fitz_sage.governance.constraints.base import ConstraintResult
-
-class RecencyConstraint:
-    """Warn when sources are outdated."""
-
-    def __init__(self, max_age_days: int = 365):
-        self.max_age = timedelta(days=max_age_days)
-
-    @property
-    def name(self) -> str:
-        return "recency"
-
-    def apply(self, query: str, chunks: list) -> ConstraintResult:
-        now = datetime.utcnow()
-        outdated = []
-
-        for chunk in chunks:
-            created_at = chunk.metadata.get("created_at")
-            if created_at:
-                age = now - datetime.fromisoformat(created_at)
-                if age > self.max_age:
-                    outdated.append(chunk.id)
-
-        if len(outdated) == len(chunks):
-            return ConstraintResult.deny(
-                reason=f"All sources are over {self.max_age.days} days old",
-                signal="qualified",
-                outdated_chunks=outdated
-            )
-
-        return ConstraintResult.allow()
-```
-
-### Registration
-
-Place custom constraints in:
-```
-fitz_sage/governance/constraints/plugins/my_constraint.py
-```
-
-They are auto-discovered.
+`TAU = 0.50` is the default. This is the rule that produces the
+headline numbers above.
 
 ---
 
-## Comparison with Other Systems
+## Where it plugs in
 
-| System          | Uncertainty Handling                         |
-|-----------------|----------------------------------------------|
-| ChatGPT RAG     | None — answers as if always confident        |
-| Generic RAG libs| Prompt-based, easy to bypass with paraphrase |
-| **fitz-sage**   | Built-in cascade; emits TRUSTWORTHY / DISPUTED / ABSTAIN |
+The `FitzKragEngine` calls `decide()` between retrieval and generation:
 
-Fitz treats uncertainty as a **feature**, not a failure.
+1. Retrieve + expand + rerank candidates → `expanded`
+2. `decide(sanitized_query, expanded)` → `governance.mode`
+3. The synthesizer receives `answer_mode` and prepends the matching
+   instruction from `governance/instructions.py`:
+   - `TRUSTWORTHY` → answer clearly and directly
+   - `DISPUTED` → state the disagreement, don't pick a side
+   - `ABSTAIN` → state evidence is insufficient
+4. The engine builds `gap_context` (for ABSTAIN) and a simple
+   conflict reason (for DISPUTED) to pass to the synthesizer.
+
+Toggle with `enable_guardrails: bool` in `FitzKragConfig`. Default
+`true`. The smoke test sets it to `false` to measure raw retrieval
+timing.
 
 ---
 
-## Key Files
+## Why a classifier and not constraints?
 
-| File | Purpose |
-|------|---------|
-| `fitz_sage/governance/constraints/base.py` | Protocol and result types |
-| `fitz_sage/governance/constraints/semantic.py` | Semantic matching utilities |
-| `fitz_sage/governance/constraints/plugins/` | Built-in constraints |
+The old cascade was a chain of small models + LLM judges + hand-coded
+heuristics over 108 features. It worked but was:
+
+- **Slow.** Each constraint did its own LLM call; total ~500–2000 ms.
+- **Brittle.** Constraint thresholds drifted with chat-model changes.
+- **Opaque.** Hard to debug: which signal moved the needle?
+- **Coupled to embeddings.** `SemanticMatcher` needed an embedder
+  fitz-sage no longer ships (v0.12.0 dropped the embedding API).
+
+A single fine-tuned classifier replaces all of that. It sees the
+same `(query, contexts)` pair, decides in one forward pass, and ships
+as a 1.35 GB HF model (INT8 ONNX, deterministic). The +7 pp accuracy
+and -0.43 pp false-trustworthy delta are the validation.
+
+---
+
+## Limitations
+
+The model card calls out two known failure modes:
+
+1. **Multi-source convergence misclassified as DISPUTED.** When multiple
+   authoritative sources agree on a fact with small numerical variation
+   within tolerance (e.g. four climate agencies citing 1.09–1.20 °C of
+   warming), the model occasionally classifies the case as `DISPUTED`.
+   ~57% error rate on the `multi_source_convergence` fitz-gov
+   subcategory (n=7). v2 will target this with augmentation.
+2. **Short clean factual contexts trigger over-abstention.** A single
+   sentence answering the question with no surrounding methodology
+   can be classified as `ABSTAIN`. Training data was 62.7% hard
+   tier1 cases (rich, methodological contexts) — the model under-fits
+   the short-clean pattern. Production RAG chunks are typically
+   tier1-like and largely unaffected.
 
 ---
 
 ## See Also
 
-- [ENGINES.md](ENGINES.md) - RAG engine architecture
-- [CONFIG.md](CONFIG.md) - Configuration reference
-- [PLUGINS.md](PLUGINS.md) - Plugin development
+- [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+- [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov) — the evaluation dataset
+- [pyrrho training code](https://github.com/yafitzdev/pyrrho)
+- [`features/governance/governance-benchmarking.md`](features/governance/governance-benchmarking.md) — historical notes on the pre-v0.13.0 cascade
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — where governance fits in the engine pipeline

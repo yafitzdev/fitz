@@ -76,8 +76,8 @@ def _build_config(collection: str) -> FitzKragConfig:
         chat_balanced="endpoint/smoke-chat",
         chat_smart="endpoint/smoke-chat",
         chat_base_url=LM_STUDIO_URL,
-        # Default rerank: llm — wires LLMReranker.
-        rerank="llm",
+        # Default rerank: onnx — wires OnnxReranker (gte-reranker-modernbert-base).
+        rerank="onnx",
         # Disable optional features to keep the smoke fast.
         enable_query_rewriting=False,
         enable_detection=False,

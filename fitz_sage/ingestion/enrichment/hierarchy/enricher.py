@@ -44,7 +44,7 @@ from fitz_sage.llm.factory import ChatFactory, ModelTier
 from fitz_sage.prompts import hierarchy as hierarchy_prompts
 
 if TYPE_CHECKING:
-    from fitz_sage.governance.constraints.semantic import SemanticMatcher
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -84,23 +84,11 @@ class EpistemicAssessment:
         }
 
 
-def assess_chunk_group(
-    chunks: List[Chunk],
-    semantic_matcher: SemanticMatcher | None = None,
-) -> EpistemicAssessment:
-    """
-    Assess the epistemic status of a chunk group before summarization.
+def assess_chunk_group(chunks: List[Chunk]) -> EpistemicAssessment:
+    """Assess the epistemic status of a chunk group before summarization.
 
-    Note: Conflict detection during ingestion is deferred. Conflict detection
-    is more accurately performed at query time using LLM-based analysis in
-    ConflictAwareConstraint.
-
-    Args:
-        chunks: List of chunks to assess
-        semantic_matcher: Unused, kept for API compatibility. Will be removed.
-
-    Returns:
-        EpistemicAssessment with evidence density information
+    Conflict detection moved to query time in v0.13.0 (pyrrho classifier).
+    This function now only reports evidence density.
     """
     if not chunks:
         return EpistemicAssessment(evidence_density="sparse", chunk_count=0)
@@ -169,23 +157,18 @@ class HierarchyEnricher:
         self,
         config: HierarchyConfig,
         chat_factory: ChatFactory,
-        semantic_matcher: SemanticMatcher | None = None,
         embedder: Embedder | None = None,
     ):
-        """
-        Initialize the hierarchy enricher.
+        """Initialize the hierarchy enricher.
 
         Args:
             config: Hierarchy configuration with rules
             chat_factory: Chat factory for per-task tier selection
-            semantic_matcher: Optional SemanticMatcher for conflict detection.
-                             If not provided, conflicts won't be detected.
             embedder: Optional embedder for semantic grouping.
                      Required when config.grouping_strategy == "semantic".
         """
         self._config = config
         self._chat_factory = chat_factory
-        self._semantic_matcher = semantic_matcher
         self._embedder = embedder
 
         # Initialize semantic grouper if configured
@@ -355,7 +338,7 @@ class HierarchyEnricher:
             Tuple of (summary_content, assessment) - summary is stored as metadata, not as a chunk.
         """
         # Assess epistemic status before summarizing
-        assessment = assess_chunk_group(chunks, semantic_matcher=self._semantic_matcher)
+        assessment = assess_chunk_group(chunks)
 
         if assessment.has_conflicts:
             logger.info(
@@ -572,7 +555,7 @@ Write a high-level overview (3-5 paragraphs) synthesizing the key insights.
             Tuple of (summary_content, assessment) - summary is stored as metadata, not as a chunk.
         """
         # Assess epistemic status before summarizing
-        assessment = assess_chunk_group(chunks, semantic_matcher=self._semantic_matcher)
+        assessment = assess_chunk_group(chunks)
 
         if assessment.has_conflicts:
             logger.info(

@@ -7,6 +7,132 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.13.0] - 2026-05-15
+
+### 🎉 Highlights
+
+**Two encoder swaps. The retrieval + governance pipeline is now
+fully local CPU.**
+
+1. **Governance is [pyrrho](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+   now.** The constraint+sklearn cascade is gone. Every
+   `(query, retrieved contexts)` pair runs through a single INT8 ONNX
+   forward pass over the ModernBERT-base pyrrho fine-tune and returns
+   one of `TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` in ~30 ms on CPU.
+2. **Reranking is an ONNX cross-encoder now.** The chat-call-based
+   `LLMReranker` is gone. Reranking runs locally via
+   [`Alibaba-NLP/gte-reranker-modernbert-base`](https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base) —
+   a 149M-parameter ModernBERT cross-encoder served as INT8 ONNX
+   through `optimum.onnxruntime`. ~30–100 ms CPU for 10–20 candidates.
+
+Both encoders share the same `optimum`/`transformers`/INT8 ONNX
+toolchain. After this release the chat endpoint is only used for
+query rewriting, multi-query decomposition, detection, and the
+synthesizer.
+
+**Governance swap (pyrrho replaces the cascade):**
+
+| Metric                  | Cascade (v0.12.x) | Pyrrho v1 (v0.13.0) | Δ        |
+| ----------------------- | ----------------- | ------------------- | -------- |
+| Overall accuracy        | 78.7%             | **86.13%**          | +7.43 pp |
+| False-trustworthy rate  | 5.7%              | **5.27%**           | -0.43 pp |
+| Wall-clock per decision | ~500–2000 ms      | **~30 ms**          | ~50x     |
+| External LLM calls      | 4–5               | **0**               | —        |
+
+**Reranker swap (ONNX cross-encoder replaces `LLMReranker`):**
+
+| Metric                  | LLMReranker (v0.12.x) | OnnxReranker (v0.13.0)              |
+| ----------------------- | --------------------- | ----------------------------------- |
+| Per-query reranker cost | 1 chat call           | 1 ONNX forward pass                 |
+| CPU latency (10–20 docs)| ~500–2000 ms          | ~30–100 ms                          |
+| External dependency     | chat endpoint         | none (local, cached)                |
+| Ranking quality         | model-dependent       | matches 1.2B `nemotron-rerank` on Hit@1 |
+
+Net code change in `fitz_sage/`: **-6,254 lines** (-12% of production
+code). Combined with v0.12.0 we're at **-20,805 lines vs v0.11.0**
+(-30%).
+
+### 🚀 Added
+
+- **`fitz_sage/governance/pyrrho.py`** — single-pass governance
+  classifier. `decide(query, contexts) -> GovernanceDecision`,
+  lazy-loaded INT8 ONNX, calibrated `TAU = 0.50` fallback on
+  low-confidence `TRUSTWORTHY` predictions.
+- **`fitz_sage/llm/providers/onnx_reranker.py`** — `OnnxReranker`.
+  Lazy-loads tokenizer + INT8 ONNX `SequenceClassification` model via
+  `optimum.onnxruntime`. Batched forward over `(query, doc)` pairs;
+  returns `RerankResult` list sorted by score desc. Accepts any HF
+  cross-encoder via `OnnxReranker(model_id=...)`.
+- New rerank spec **`onnx`** (default) and **`onnx/<hf-model-id>`** in
+  `create_rerank_provider`. Examples:
+  - `rerank: onnx` → `gte-reranker-modernbert-base`
+  - `rerank: onnx/BAAI/bge-reranker-base`
+  - `rerank: onnx/jinaai/jina-reranker-v3`
+  - `rerank: onnx/cross-encoder/ms-marco-MiniLM-L-6-v2`
+- **Runtime deps:** `transformers>=4.50`, `optimum[onnxruntime]>=1.20`,
+  `numpy>=1.26` (numpy was implicit via downstream deps; now explicit).
+
+### 🗑 Removed
+
+**Governance cascade (-6,316 lines):**
+
+- `fitz_sage/governance/decider.py` — `GovernanceDecider` and the 4-question cascade orchestrator
+- `fitz_sage/governance/governor.py` — `AnswerGovernor`, `decide_answer_mode`
+- `fitz_sage/governance/constraints/` (entire subtree):
+  - `plugins/conflict_aware.py`, `insufficient_evidence.py`, `causal_attribution.py`, `specific_info_type.py`, `answer_verification.py`
+  - `semantic.py` (`SemanticMatcher` + the unused embedder slot)
+  - `feature_extractor.py` (108-feature extraction over chunks + chat outputs)
+  - `aspect_classifier.py`, `numerical_detector.py`, `staged.py`, `runner.py`, `base.py`
+- `fitz_sage/governance/data/model_v6_cascade.joblib` — the trained sklearn cascade artifact
+- `tools/governance/` — feature extraction + cascade training scripts
+- `CONSTRAINT_REGISTRY` and the constraint plugin discovery path from `fitz_sage/core/registry.py`
+- Constraint plugin generator template + plugin type (`fitz_sage/plugin_gen/templates/constraint/`, `PluginType.CONSTRAINT`)
+- Tests for the removed surface: `test_governance.py`, `test_governance_decider.py`, `test_constraints.py`, `test_constraint_runner.py`, `test_staged_pipeline.py`, `test_causal_attribution.py`, `test_krag_guardrails.py`, `tests/integration/test_governance_{constraints,pipeline}.py`
+
+**LLM reranker:**
+
+- `fitz_sage/llm/providers/llm_reranker.py` — `LLMReranker` and
+  the chat-call-based reranker. Its tests (`tests/unit/llm/test_llm_reranker.py`)
+  were removed alongside it.
+- `"llm"` rerank spec — no longer accepted. The engine-layer
+  shortcut in `FitzKragEngine` that special-cased `"llm"` is gone;
+  all rerank providers now flow through `create_rerank_provider`.
+
+### 🔄 Changed
+
+- **`FitzKragConfig.enable_guardrails`** still toggles governance; default unchanged (`True`). When `True`, the engine calls `pyrrho.decide()` between retrieval and generation. When `False`, all answers are `TRUSTWORTHY`.
+- **`FitzKragConfig.rerank` default**: `"llm"` → `"onnx"`. Existing configs that explicitly set `rerank: "llm"` will fail to load with an actionable error message. Migration: change to `rerank: onnx`.
+- **Default config** (`fitz_krag/config/default.yaml`) reflects the new rerank default + updated comments.
+- **`fitz_sage/llm/providers/__init__.py`** — exports `OnnxReranker` (was `LLMReranker`). Optional import so static tooling on a fresh checkout still works without `optimum` installed.
+- **`HierarchyEnricher`** dropped its `semantic_matcher` parameter (was unused since v0.12.0). Same for `assess_chunk_group(chunks)` — no more `semantic_matcher=` kwarg.
+- **`engine.py`** simplification: `_build_conflict_context` removed; `DISPUTED` cases now feed the synthesizer a single-key reason dict from `GovernanceDecision.reason`. ABSTAIN-mode gap context unchanged. Reranker setup dropped the two-branch shim — one code path now: `get_reranker(spec)`.
+- **Docs swept end-to-end**: `CONSTRAINTS.md` (rewritten around pyrrho), `CONFIG.md`, `CONFIG_EXAMPLES.md`, `FEATURE_CONTROL.md`, `PLUGINS.md`, `ARCHITECTURE.md`, `ENGINES.md`, `features/platform/krag.md`, `features/platform/openai-compatible-endpoint.md`, `features/platform/enterprise-gateway.md`, `features/retrieval/reranking.md` (rewritten), `sparse-search.md`, `multi-query-rag.md`, `features/ingestion/{code-symbol-extraction, hierarchical-rag}.md`, `evaluation/beir-results.md`. Governance-benchmarking doc marked historical. README architecture diagram now shows local CPU encoders alongside the chat provider.
+
+### 🔧 Fixed
+
+- `fitz_sage/core/registry.py`: removed broken `CONSTRAINT_REGISTRY` reference + `get_constraint_plugin` / `available_constraint_plugins` accessors. The constraint plugin scan path (`fitz_sage.governance.constraints.plugins`) was already dead after deletion; removing it tidies up the registry.
+
+### Migration from v0.12.x
+
+```yaml
+# old
+rerank: llm
+
+# new (default — faster + local)
+rerank: onnx
+
+# or pin a different cross-encoder
+rerank: onnx/BAAI/bge-reranker-base
+```
+
+No code changes required for consumers of `FitzKragEngine` or the
+public `get_reranker` API — the `RerankProvider` protocol is
+unchanged. First call to `rerank()` and `decide()` downloads the
+respective HF model (cached under `~/.cache/huggingface/`) and
+lazy-loads it via `optimum.onnxruntime`.
+
+---
+
 ## [0.12.0] - 2026-05-14
 
 ### 🎉 Highlights
@@ -1968,7 +2094,8 @@ Initial release of Fitz RAG framework.
 
 ---
 
-[Unreleased]: https://github.com/yafitzdev/fitz-sage/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/yafitzdev/fitz-sage/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.10.4...v0.11.0
 [0.10.4]: https://github.com/yafitzdev/fitz-sage/compare/v0.10.3...v0.10.4

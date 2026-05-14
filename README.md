@@ -9,7 +9,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/fitz-sage.svg)](https://pypi.org/project/fitz-sage/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.12.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.13.0-green.svg)](CHANGELOG.md)
 [![Coverage](https://img.shields.io/badge/coverage-99%25-brightgreen)](https://github.com/yafitzdev/fitz-sage)
 
 [Why `fitz-sage`?](#why-fitz) • [Retrieval Intelligence](#retrieval-intelligence) • [Governance](#governance--know-what-you-dont-know) • [Documentation](#links) • [GitHub](https://github.com/yafitzdev/fitz-sage)
@@ -95,8 +95,10 @@ problem directly, while working as a Data Engineer in the automotive industry. N
 The retrieval architecture is [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md) — documents are parsed into typed units (
 code symbols, sections, tables) and each query is routed to the right search strategy, rather than searching flat chunks uniformly.
 
-Honesty is enforced by an [ML governance classifier](docs/features/governance/governance-benchmarking.md) that decides when to answer, hedge, refuse — validated against 
-[fitz-gov](https://github.com/yafitzdev/fitz-gov), a purpose-built benchmark of 2,920 adversarial test cases (5.7% false-trustworthy rate).
+Honesty is enforced by [**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1) — a fine-tuned ModernBERT encoder that classifies every `(query, retrieved contexts)` pair into
+`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` in a single ~30 ms INT8 ONNX forward pass on CPU. No LLM dependency on the governance path.
+Validated against [fitz-gov](https://github.com/yafitzdev/fitz-gov), a purpose-built benchmark of 2,920 adversarial test cases:
+**86.13% overall accuracy** and **5.27% false-trustworthy rate**.
 
 It runs in production today and powers [fitz-forge](https://github.com/yafitzdev/fitz-forge).
 
@@ -191,14 +193,14 @@ SQL, and epistemic honesty out of the box — without configuration.
 > Ask a question immediately — no ingestion step required. `fitz-sage` serves answers instantly via agentic search while
 > a background worker indexes your files. Queries get faster over time as indexing completes, but they work from second one.
 
-**Honest answers ✅** → [Governance Benchmark](docs/features/governance/governance-benchmarking.md)
-> Most RAG tools confidently answer even when the answer isn't in your documents. Ask "What was our Q4 revenue?" when 
-> your docs only cover Q1-Q3, and typical RAG hallucinates a number. `fitz-sage` says: *"I cannot find Q4 revenue figures 
-> in the provided documents."
+**Honest answers ✅** → [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+> Most RAG tools confidently answer even when the answer isn't in your documents. Ask "What was our Q4 revenue?" when
+> your docs only cover Q1-Q3, and typical RAG hallucinates a number. `fitz-sage` says: *"I cannot find Q4 revenue figures
+> in the provided documents."*
 >
-> → Detects when to abstain at **86.5% recall** on [fitz-gov](https://github.com/yafitzdev/fitz-gov), a 2,920 case benchmark for 
-> epistemic honesty (62.7% hard difficulty). 
-> False-trustworthy rate: **5.7%**.
+> → Detects when to abstain at **92.94% recall** on [fitz-gov](https://github.com/yafitzdev/fitz-gov), a 2,920 case benchmark for
+> epistemic honesty (62.7% hard difficulty).
+> Overall accuracy: **86.13%**. False-trustworthy rate: **5.27%**. One ~30 ms encoder forward pass, no LLM call.
 
 **Actionable failures 🔍**
 > When `fitz-sage` can't answer, it doesn't just refuse — it explains what it searched for, shows related topics that *do* 
@@ -277,7 +279,7 @@ Most RAG implementations are naive vector search—they fail silently on real-wo
 | [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What does the official spec say?" | ❌ Returns notes — Can't distinguish authoritative vs informal sources | ✅ Freshness/authority boosting |
 | [**query-expansion**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | ❌ No matches — User says "fetch", docs say "retrieve"; "db" vs "database" | ✅ LLM-driven synonym expansion (no embeddings) |
 | [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | ❌ Lost context — Pronouns like "it" reference nothing, retrieval fails | ✅ Conversational context resolution |
-| [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ❌ Imprecise ranking — BM25 ≠ true relevance; best answer buried | ✅ LLM reranker scores documents in one call |
+| [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ❌ Imprecise ranking — BM25 ≠ true relevance; best answer buried | ✅ ONNX cross-encoder reranker, ~30 ms on CPU |
 
 <br>
 
@@ -288,76 +290,54 @@ Most RAG implementations are naive vector search—they fail silently on real-wo
 
 ### Governance — Know What You Don't Know
 
-[Feature docs](docs/features/governance/governance-benchmarking.md) • [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov)
+[Feature docs](docs/CONSTRAINTS.md) • [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1) • [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov)
 
-Most RAG systems hallucinate confidently. `fitz-sage` **measures and enforces** epistemic honesty using a 5-question cascade ML 
-classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yafitzdev/fitz-gov), a benchmark for epistemic honesty.
+Most RAG systems hallucinate confidently. `fitz-sage` **measures and enforces** epistemic honesty using
+[**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1) — a fine-tuned ModernBERT-base encoder served as
+INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 
 <br>
 
 ```
-  Query + Retrieved Context
-            │
-            ▼
-  ┌─────────────────────┐
-  │ 5 Constraints       │     Contradiction detection, evidence sufficiency,
-  │ (epistemic sensors) │     causal attribution, answer verification, specific info type
-  └──────────┬──────────┘
-             │ 108 features extracted
-             ▼
-  ┌─────────────────────┐
-  │ Q1: Evidence        │     Is the evidence sufficient?
-  │ sufficient? (ML)    ├───► NO ──► ABSTAIN
-  └──────────┬──────────┘
-             │ YES
-             ▼
-  ┌─────────────────────┐
-  │ Q2: Conflict?       │     Is there material conflict? (ML router)
-  │ (ML)                ├───► YES ──┐
-  └──────────┬──────────┘           │
-             │ NO                   ▼
-             │            ┌─────────────────────┐
-             │            │ Q3: Conflict        │
-             │            │ resolved? (ML)      ├───► NO ──► DISPUTED
-             │            └──────────┬──────────┘
-             │                       └ YES ────────────────► TRUSTWORTHY
-             ▼
-  ┌─────────────────────┐
-  │ Q4: Evidence truly  │     Is the evidence solid enough?
-  │ solid? (ML)         ├───► NO ──► ABSTAIN
-  └──────────┬──────────┘
-             └ YES ────────────────► TRUSTWORTHY
-
+  Query + Retrieved Contexts
+               │
+               ▼
+  ┌──────────────────────────┐
+  │  pyrrho (ModernBERT,     │   single INT8 ONNX forward pass
+  │  INT8 ONNX, ~30 ms CPU)  │   ~150 MB on disk
+  └────────────┬─────────────┘
+               │ softmax → (p_abstain, p_disputed, p_trustworthy)
+               ▼
+  Calibrated threshold (TAU = 0.50 on P(TRUSTWORTHY))
+               │
+               ▼
+  TRUSTWORTHY  /  DISPUTED  /  ABSTAIN  →  synthesizer prompt
 ```
 
 <br>
 
-| Decision | Meaning                              | Recall    |
-|----------|--------------------------------------|-----------|
-| **ABSTAIN** | Evidence doesn't answer the question | **86.5%** |
-| **DISPUTED** | Sources contradict each other        | **86.1%** |
-| **TRUSTWORTHY** | Consistent, sufficient evidence      | **70.0%** |
+| Decision        | Meaning                              | Recall    |
+|-----------------|--------------------------------------|-----------|
+| **ABSTAIN**     | Evidence doesn't answer the question | **92.94%** |
+| **DISPUTED**    | Sources contradict each other        | **94.81%** |
+| **TRUSTWORTHY** | Consistent, sufficient evidence      | **79.38%** |
 
-**Overall accuracy: 78.7%** | **False-trustworthy: 5.7%** on fitz-gov (2,920 cases, 5-fold cross-validated, 62.7% hard difficulty)
+**Overall accuracy: 86.13% ± 0.86** | **False-trustworthy: 5.27% ± 0.21** on fitz-gov v5.1 (3-seed mean, 584-case eval split, 62.7% hard difficulty)
 
 <br>
 
 > [!NOTE]
-> Governance asks "given three relevant documents that partially contradict each other, should you flag a dispute, hedge 
-> the answer, or trust the consensus?" That's a judgment call even humans disagree on.
+> Governance asks "given three relevant documents that partially contradict each other, should you flag a dispute, hedge
+> the answer, or trust the consensus?" That's a judgment call even humans disagree on. Pyrrho was trained on 2,920 labeled
+> cases from fitz-gov v5.1 to make those calls reproducibly.
 
 <strong>The system fails safe 🛡️</strong>
-> The safety-first threshold is tuned so that when the classifier is wrong, it over-hedges ("disputed" instead of "trustworthy") — 
-> annoying but harmless. Over-confidence ("trustworthy" instead of "disputed") is the rarest error mode.
+> Threshold calibration is tuned on the `TRUSTWORTHY` probability: when pyrrho is uncertain, it falls back to the runner-up
+> between `ABSTAIN` and `DISPUTED`. Over-confidence is the rarest error mode.
 
-<strong>These scores are a floor, not a ceiling 👣</strong>
-> All benchmarks were measured using `qwen2.5:3b` — a 3B parameter local model. The governance constraints run on the 
-> fast-tier LLM to keep latency low. Stronger models produce better constraint signals, which feed better features into the classifier. 
-> Upgrading your chat provider should improve governance accuracy for free.
-
-<strong>Zero extra latency ⏱️</strong>
-> The constraints already run as part of the pipeline. The ML classifier just replaces hand-coded rules with a local sklearn model — 
-> inference takes microseconds, no additional API calls.
+<strong>No LLM on the governance path ⏱️</strong>
+> Pyrrho replaces a 5-call constraint cascade with a single encoder forward pass — ~50× faster, zero external API
+> dependency for governance, and +7.43 pp more accurate than the cascade it replaced.
 
 ---
 
@@ -427,14 +407,12 @@ classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yaf
 ># Chat server on port 8080 — fitz-sage's default chat endpoint
 >llama-server -m qwen2.5-7b-instruct-q4_k_m.gguf --port 8080 -c 8192
 >
-># Embedding server on port 8081 — fitz-sage's default embedding endpoint
->llama-server -m nomic-embed-text-v1.5.Q4_K_M.gguf --port 8081 --embeddings
->
 >fitz query "Your question here" --source ./docs
 >```
 >
->Both models stay hot in their own processes — no model thrashing, no SDK juggling, no second API key. Auto-detection picks 
-> them up from the standard ports. No data leaves your machine.
+>One process, one model, hot the whole time. Auto-detection picks up the server on the standard port.
+>Reranking and governance run as local INT8 ONNX encoders on CPU — no separate embedding server, no second API key.
+>No data leaves your machine.
 >
 >Other compatible servers: [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.ai) 
 > (in `/v1/` mode), [TabbyAPI](https://github.com/theroyallab/tabbyAPI). Anything that speaks the OpenAI HTTP protocol works.
@@ -534,11 +512,11 @@ classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yaf
 │  │  FitzKRAG  │  │  Custom... │  (extensible registry)        │
 │  └────────────┘  └────────────┘                               │
 ├───────────────────────────────────────────────────────────────┤
-│  LLM Providers (single OpenAI-compatible HTTP protocol)       │
-│  ┌────────┐ ┌───────────┐ ┌──────────────┐                    │
-│  │  Chat  │ │ Embedding │ │ LLM Reranker │                    │
-│  └────────┘ └───────────┘ └──────────────┘                    │
-│  endpoint/<URL> | openai | azure_openai | enterprise          │
+│  LLM Provider (single OpenAI-compatible HTTP protocol)        │
+│  Chat: endpoint/<URL> | openai | azure_openai | enterprise    │
+├───────────────────────────────────────────────────────────────┤
+│  Local CPU encoders (INT8 ONNX, no external calls)            │
+│  pyrrho (governance)  |  gte-reranker-modernbert-base         │
 ├───────────────────────────────────────────────────────────────┤
 │  Storage (SQLite + FTS5, one .db per collection)              │
 │  metadata | tables | keywords | full-text search (bm25)       │
@@ -549,8 +527,8 @@ classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yaf
 │  Enrichment (baked in)                                        │
 │  summaries | keywords | entities | hierarchical summaries     │
 ├───────────────────────────────────────────────────────────────┤
-│  Constraints (epistemic safety)                               │
-│  ConflictAware | InsufficientEvidence | CausalAttribution     │
+│  Governance (epistemic safety)                                │
+│  pyrrho encoder | TRUSTWORTHY / DISPUTED / ABSTAIN, ~30 ms CPU│
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -754,7 +732,7 @@ MIT
 - [Progressive KRAG & Agentic Search](docs/features/platform/progressive-krag-agentic-search.md)
 - [Ingestion Pipeline](docs/INGESTION.md)
 - [Enrichment (Hierarchies, Entities)](docs/ENRICHMENT.md)
-- [Epistemic Constraints](docs/CONSTRAINTS.md)
+- [Epistemic Governance (pyrrho)](docs/CONSTRAINTS.md)
 - [Governance Benchmarking (fitz-gov)](docs/features/governance/governance-benchmarking.md)
 - [BEIR Benchmark Results](docs/evaluation/beir-results.md)
 - [Plugin Development](docs/PLUGINS.md)

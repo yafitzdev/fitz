@@ -2,9 +2,10 @@
 """
 Section search strategy — BM25 + keyword enrichment for technical documents.
 
-fitz-sage uses no dense embeddings. Section retrieval is PostgreSQL
-full-text-search (``ts_rank``) with keyword-enrichment and freshness
-boosts; precision comes from the ``LLMReranker`` downstream.
+fitz-sage uses no dense embeddings. Section retrieval is SQLite FTS5
+``bm25()`` with keyword-enrichment and freshness boosts; precision
+comes from the ONNX cross-encoder reranker (``OnnxReranker``)
+downstream.
 """
 
 from __future__ import annotations

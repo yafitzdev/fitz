@@ -43,7 +43,7 @@ serving stack already exposes:
 - OpenAI, Together, Fireworks, Groq, DeepInfra, OpenRouter, Mistral La Plateforme
 
 Combined with the v0.12.0 decision to drop the embedding API entirely
-(retrieval is BM25 + KRAG routing + LLM reranker), the chat protocol is
+(retrieval is BM25 + KRAG routing + ONNX cross-encoder reranker), the chat protocol is
 the *only* network protocol fitz-sage speaks.
 
 ## Authentication
@@ -79,7 +79,7 @@ fitz_krag:
   chat_base_url: http://localhost:8080/v1
   chat_api_key_env: null         # unauthenticated local server
 
-  rerank: endpoint/llmreranker   # uses same chat protocol
+  rerank: onnx                   # INT8 ONNX cross-encoder, local on CPU
   collection: default
 ```
 

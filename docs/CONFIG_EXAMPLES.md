@@ -115,19 +115,23 @@ shared top-level ones for that tier only.)
 
 ---
 
-## With LLM reranker
+## With ONNX cross-encoder reranker
 
 ```yaml
 chat_smart: endpoint
 chat_base_url: http://localhost:8080/v1
 chat_smart_model: qwen2.5-7b-instruct
 
-rerank: endpoint/llmreranker      # presence enables the reranker step
+# Default — INT8 ONNX cross-encoder (gte-reranker-modernbert-base, 149M)
+rerank: onnx
+# Or pick a different cross-encoder:
+# rerank: onnx/BAAI/bge-reranker-base
+# rerank: onnx/jinaai/jina-reranker-v3
 collection: my_docs
 ```
 
-The reranker uses the same chat endpoint — it asks the model to score
-documents in a single JSON-returning call.
+The reranker runs locally on CPU (~30–100 ms for 10–20 candidates) and
+does not consume the chat endpoint.
 
 ---
 

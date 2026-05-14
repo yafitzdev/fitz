@@ -68,7 +68,7 @@ fitz_sage/
 ├── engines/           # Engine implementations
 │   └── fitz_krag/     # KRAG with retrieval intelligence
 ├── retrieval/         # SHARED retrieval intelligence (detection, entities, vocabulary, etc.)
-├── llm/               # LLM service layer — single OpenAI-compatible HTTP protocol (chat + reranker)
+├── llm/               # LLM service layer — single OpenAI-compatible HTTP protocol (chat) + ONNX cross-encoder reranker
 ├── storage/           # SQLite connection manager (one .db per collection, FTS5 + bm25)
 ├── ingestion/         # Document ingestion (parser, chunking, enrichment)
 ├── tabular/           # CSV/table query with SQL generation (SqliteTableStore)

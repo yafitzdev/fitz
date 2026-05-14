@@ -122,7 +122,7 @@ jobs:
         run: |
           # Only check imports that don't require heavy ML dependencies
           python -c "from fitz_sage.core import Answer, Provenance, Query; print('Core imports OK')"
-          python -c "from fitz_sage.governance import ConflictAwareConstraint; print('Governance OK')"
+          python -c "from fitz_sage.governance import decide, GovernanceDecision; print('Governance OK')"
           python -c "import fitz_sage; print('Package imports OK')"
 
       - name: Check CLI entry point exists

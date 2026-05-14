@@ -14,7 +14,7 @@ codes, error messages, and technical identifiers need keyword matching.
 
 This is one of several reasons fitz-sage **v0.12.0** dropped the
 embedding layer entirely. The system now runs on a sparse retrieval
-stack — and the structure / typed-units / LLM-reranker around it —
+stack — and the structure / typed-units / ONNX cross-encoder reranker around it —
 without any vector backend.
 
 ## Solution: SQLite FTS5 with native `bm25()`
@@ -153,9 +153,9 @@ Internal parameters:
 2. Doc C — partial (`X-series`) + `battery`
 3. Doc B — `battery` only; no `X100`
 
-Then the **LLM reranker** can re-order this small candidate set in a
-single chat call, using context the BM25 ranker doesn't see (intent,
-phrasing, prior turns).
+Then the **ONNX cross-encoder reranker** re-orders this small
+candidate set in a single forward pass, using `(query, doc)` joint
+context that BM25 doesn't see.
 
 ## Related
 
@@ -163,6 +163,6 @@ phrasing, prior turns).
   storage complements BM25
 - [Query Expansion](query-expansion.md) — LLM-driven synonym expansion
   feeding the BM25 query
-- [Reranking](reranking.md) — LLM-based reranker that runs after BM25
+- [Reranking](reranking.md) — ONNX cross-encoder reranker that runs after BM25
 - [Unified Storage](../platform/unified-storage.md) — the SQLite +
   FTS5 layer the search runs on

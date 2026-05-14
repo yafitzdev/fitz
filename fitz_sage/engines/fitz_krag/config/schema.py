@@ -96,10 +96,11 @@ class FitzKragConfig(BasePluginConfig):
     )
 
     rerank: str | None = Field(
-        default="llm",
+        default="onnx",
         description=(
-            "Reranker backend. 'llm' (default) uses the engine's chat "
-            "factory at the 'fast' tier to score candidates. None "
+            "Reranker backend. 'onnx' (default) loads the INT8 ONNX "
+            "cross-encoder (`Alibaba-NLP/gte-reranker-modernbert-base` "
+            "by default; override with `onnx/<hf-model-id>`). None "
             "disables reranking entirely."
         ),
     )

@@ -3,9 +3,9 @@
 Table search strategy — keyword retrieval over table-name + column-name index.
 
 fitz-sage uses no dense embeddings. Tables are surfaced by name/column
-keyword match; precision comes from the ``LLMReranker`` downstream
-(or, for actual data answers, from ``TableQueryHandler`` which runs
-SQL against the matched table).
+keyword match; precision comes from the ONNX cross-encoder reranker
+(``OnnxReranker``) downstream (or, for actual data answers, from
+``TableQueryHandler`` which runs SQL against the matched table).
 """
 
 from __future__ import annotations

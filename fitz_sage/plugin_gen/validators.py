@@ -474,10 +474,6 @@ class PluginValidator:
                 # Reader requires actual files, skip for now
                 return ValidationResult.passed(ValidationLevel.FUNCTIONAL)
 
-            elif plugin_type == PluginType.CONSTRAINT:
-                result = instance.apply(test_input["query"], test_input["chunks"])
-                return self._validate_constraint_output(result)
-
             return ValidationResult.passed(ValidationLevel.FUNCTIONAL)
 
         except Exception as e:
@@ -510,16 +506,6 @@ class PluginValidator:
                     ValidationLevel.FUNCTIONAL,
                     f"Chunk missing required attribute: {attr}",
                 )
-
-        return ValidationResult.passed(ValidationLevel.FUNCTIONAL)
-
-    def _validate_constraint_output(self, result: Any) -> ValidationResult:
-        """Validate constraint output."""
-        if not hasattr(result, "allow_decisive_answer"):
-            return ValidationResult.failed(
-                ValidationLevel.FUNCTIONAL,
-                "apply must return ConstraintResult with allow_decisive_answer",
-            )
 
         return ValidationResult.passed(ValidationLevel.FUNCTIONAL)
 

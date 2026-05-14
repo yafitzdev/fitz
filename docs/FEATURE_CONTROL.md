@@ -31,7 +31,7 @@ cascade and measure raw retrieval timing.
 │  Declares WHICH provider/model to use                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  vision: endpoint                rerank: endpoint/llmreranker   │
+│  vision: endpoint                rerank: onnx   │
 │  parser: docling_vision          collection: default            │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -46,9 +46,9 @@ cascade and measure raw retrieval timing.
 │    parser: docling_vision   → Uses vision provider              │
 │    parser: glm_ocr          → No VLM (fast, default)            │
 │                                                                 │
-│  LLM Reranker (controlled by `rerank:` presence):               │
+│  ONNX Reranker (controlled by `rerank:` presence):               │
 │    rerank: (omitted / null) → No reranker step                  │
-│    rerank: endpoint/llmreranker → Reranker auto-enabled         │
+│    rerank: onnx → Reranker auto-enabled         │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -90,36 +90,40 @@ vision_model: gpt-4o
 
 ---
 
-## LLM reranker control
+## ONNX reranker control
 
-The reranker is a thin wrapper that asks the chat model to score a
-small candidate set in a single JSON-returning call. It uses the same
-OpenAI-compatible chat endpoint — there's no separate "reranker"
-backend.
+The reranker is an INT8 ONNX cross-encoder
+(`Alibaba-NLP/gte-reranker-modernbert-base` by default) served via
+`optimum.onnxruntime`. One forward pass over `(query, candidate)`
+pairs; ~30–100 ms on CPU for 10–20 candidates. No external API call.
 
 ### How it works
 
-1. Set `rerank:` in the engine config.
+1. Set `rerank:` in the engine config (default: `onnx`).
 2. The retrieval pipeline auto-includes the reranker step when the
-   reranker dependency is present; otherwise it's skipped.
+   provider is configured; otherwise it's skipped.
 
 ### Config example
 
 ```yaml
-# Reranker on
-rerank: endpoint/llmreranker
+# Default — gte-reranker-modernbert-base
+rerank: onnx
 
-# Reranker off (default)
-# rerank: null    # or just omit the key
+# Different cross-encoder
+# rerank: onnx/BAAI/bge-reranker-base
+# rerank: onnx/jinaai/jina-reranker-v3
+
+# Disabled
+# rerank: null    # or omit the key entirely
 ```
 
 ### Key files
 
-| File                                              | Purpose                          |
-| ------------------------------------------------- | -------------------------------- |
-| `fitz_sage/engines/fitz_krag/retrieval/reranker.py` | Pipeline step                  |
-| `fitz_sage/llm/providers/llm_reranker.py`         | Chat-protocol reranker provider  |
-| `fitz_sage/llm/config.py`                         | Provider-spec → instance factory |
+| File                                              | Purpose                            |
+| ------------------------------------------------- | ---------------------------------- |
+| `fitz_sage/engines/fitz_krag/retrieval/reranker.py` | Pipeline step                    |
+| `fitz_sage/llm/providers/onnx_reranker.py`        | ONNX cross-encoder provider        |
+| `fitz_sage/llm/config.py`                         | Provider-spec → instance factory   |
 
 ---
 
@@ -183,7 +187,7 @@ summarizer: endpoint/summarizer
 | Feature        | Config key   | Enable                          | Disable                       |
 | -------------- | ------------ | ------------------------------- | ----------------------------- |
 | VLM in parser  | `parser:` + `vision:` | `parser: docling_vision` + `vision:` set | `parser: docling` / `parser: glm_ocr` |
-| LLM reranker   | `rerank:`    | `rerank: endpoint/llmreranker`  | `rerank: null` (or omit)      |
+| ONNX reranker  | `rerank:`    | `rerank: onnx` (default)        | `rerank: null` (or omit)      |
 | Guardrails     | `enable_guardrails`   | `true` (default)       | `false` (smoke test only)     |
 
 ---

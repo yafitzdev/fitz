@@ -98,5 +98,5 @@ steps:
   sub-query actually hits
 - [Hierarchical RAG](../ingestion/hierarchical-rag.md) — summaries
   help when multi-query extracts high-level themes
-- [Reranking](reranking.md) — the LLM reranker step that follows
+- [Reranking](reranking.md) — the ONNX cross-encoder step that follows
   the merged sub-query results

@@ -8,7 +8,7 @@ The architecture has three load-bearing decisions:
    provider-specific code paths. `chat_smart`, `chat_balanced`,
    `chat_fast` all speak the same `/chat/completions` endpoint.
 2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
-   typed-unit routing (symbols, sections, tables) + an LLM reranker
+   typed-unit routing (symbols, sections, tables) + an ONNX cross-encoder reranker
    that scores documents in a single chat call. No vector DB, no
    embedding model, no `vector` column anywhere.
 3. **No server.** Storage is SQLite — one `.db` file per collection
@@ -40,7 +40,7 @@ The architecture has three load-bearing decisions:
 │  - Query rewriter → analyzer → detection (LLM-classified intent)            │
 │  - Router: symbol search · section search · table SQL                       │
 │  - Expander (import graph, entity links, same-file refs, hierarchy)         │
-│  - LLM reranker (chat call that scores docs)                                │
+│  - ONNX cross-encoder reranker (gte-reranker-modernbert-base)               │
 │  - Synthesizer (chat call that writes the answer)                           │
 │  - Constraints (TRUSTWORTHY / DISPUTED / ABSTAIN guardrails)                │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -91,7 +91,7 @@ Strict import rules enforce separation of concerns (verified by
 Query → rewrite (resolve pronouns / context) → analyze (detect intent)
       → route (symbol / section / table)      → search via FTS5 bm25
       → expand (import graph, entities, hierarchy)
-      → LLM rerank (single chat call scoring documents)
+      → ONNX cross-encoder rerank (gte-reranker-modernbert-base, ~30 ms CPU)
       → constraints check (conflict-aware, evidence sufficiency)
       → synthesize answer (chat call) + provenance
       → AnswerMode ∈ {TRUSTWORTHY, DISPUTED, ABSTAIN}
@@ -126,9 +126,11 @@ speaks OpenAI-compatible HTTP. Everything else is sugar over it:
 Legacy names `ollama`, `cohere`, `anthropic` were removed in v0.12.0
 and raise `ValueError` with migration text.
 
-The **LLMReranker** uses the same chat protocol — it doesn't call a
-separate reranker endpoint. It asks the chat model to score a small
-list of documents in JSON.
+The **`OnnxReranker`** is a separate INT8 ONNX cross-encoder
+(`Alibaba-NLP/gte-reranker-modernbert-base` by default) — same
+architecture family as pyrrho, same `optimum.onnxruntime` loader.
+It scores `(query, candidate)` pairs locally in ~30–100 ms on CPU
+with no external LLM call. See [features/retrieval/reranking.md](features/retrieval/reranking.md).
 
 ---
 
@@ -170,7 +172,7 @@ Features are controlled by **provider presence**, not boolean flags:
 
 ```yaml
 # ENABLED — a reranker is provided
-rerank: endpoint/llmreranker
+rerank: onnx
 chat_smart: endpoint
 chat_base_url: http://localhost:8080/v1
 
@@ -255,7 +257,7 @@ fitz_sage/
 │   ├── vocabulary/      # Keyword storage + matching
 │   └── rewriter/        # LLM-based query rewriting
 ├── llm/                 # Chat layer (single OpenAI-compatible protocol)
-│   ├── providers/       # endpoint, enterprise, llm_reranker
+│   ├── providers/       # endpoint, enterprise, onnx_reranker
 │   ├── auth/            # ApiKeyAuth, M2MAuth, CompositeAuth
 │   ├── config.py        # provider-spec → instance factory
 │   └── client.py        # get_chat, ...

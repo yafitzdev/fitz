@@ -72,7 +72,7 @@ Query
  ├─► Router (symbol search · section search · table SQL)
  │    └─► FTS5 + bm25() over per-collection .db
  ├─► Expander (import graph, entity links, same-file refs, hierarchy)
- ├─► LLMReranker (chat call scoring docs)
+ ├─► OnnxReranker (ONNX cross-encoder, ~30 ms CPU)
  ├─► Constraints (conflict_aware, insufficient_evidence, ...)
  └─► Synthesizer → Answer (+ provenance + mode)
 ```
@@ -112,7 +112,7 @@ and a chat tier. Everything else has working defaults.
 | Entity linking          | Cross-source linking via shared named entities                |
 | Hierarchical summaries  | L1 (section), L2 (doc-level) summaries built at ingest        |
 | Multi-hop retrieval     | Iterative bridge extraction for compound questions            |
-| LLM reranker            | One chat call to rank a small candidate set                   |
+| ONNX reranker           | INT8 cross-encoder, single forward pass on CPU                |
 | Epistemic guardrails    | TRUSTWORTHY / DISPUTED / ABSTAIN constraint cascade           |
 | Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
 | Incremental ingestion   | Re-ingest only changed files (`.fitz/ingest_state.json`)      |

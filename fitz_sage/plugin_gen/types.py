@@ -24,7 +24,6 @@ class PluginType(Enum):
     # Python-based plugins
     CHUNKER = "chunker"
     READER = "reader"
-    CONSTRAINT = "constraint"
 
     @property
     def is_yaml(self) -> bool:
@@ -58,7 +57,6 @@ class PluginType(Enum):
             PluginType.RETRIEVAL: "Retrieval Strategy",
             PluginType.CHUNKER: "Document Chunker",
             PluginType.READER: "File Reader",
-            PluginType.CONSTRAINT: "Epistemic Constraint",
         }
         return names.get(self, self.value)
 
@@ -73,7 +71,6 @@ class PluginType(Enum):
             PluginType.RETRIEVAL: "Define a retrieval strategy",
             PluginType.CHUNKER: "Custom document chunking logic",
             PluginType.READER: "Custom file format reader",
-            PluginType.CONSTRAINT: "Epistemic safety guardrail",
         }
         return descriptions.get(self, "")
 
@@ -91,7 +88,6 @@ class PluginType(Enum):
             PluginType.VECTOR_DB: base / "vector_db",
             PluginType.CHUNKER: base / "chunking",
             PluginType.READER: base / "reader",
-            PluginType.CONSTRAINT: base / "constraint",
             PluginType.RETRIEVAL: base / "retrieval",
         }
 
@@ -115,7 +111,6 @@ class PluginType(Enum):
             / "strategies",
             PluginType.CHUNKER: package_root / "ingestion" / "chunking" / "plugins" / "default",
             PluginType.READER: package_root / "ingestion" / "reader" / "plugins",
-            PluginType.CONSTRAINT: package_root / "core" / "guardrails" / "plugins",
         }
 
         return path_map.get(self, package_root)

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fitz-sage"
-version = "0.12.0"
+version = "0.13.0"
 description = "Intelligent, honest knowledge retrieval in 5 minutes. No infrastructure. No boilerplate."
 readme = "README.md"
 license = {text = "MIT"}
@@ -67,6 +67,12 @@ dependencies = [
     "pypdfium2>=4.0",
     "python-docx>=1.0",
     "python-pptx>=0.6",
+    # Governance: pyrrho classifier (single INT8 ONNX forward pass, ~30ms CPU).
+    # numpy is implicit via the others; transformers ships the tokenizer used
+    # at inference; optimum[onnxruntime] gives the ORT inference session.
+    "transformers>=4.50",
+    "optimum[onnxruntime]>=1.20",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
@@ -121,7 +127,7 @@ include = ["fitz_sage*"]
 exclude = ["tests*", "tools*", "examples*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.yaml", "*.yml", "*.joblib"]
+"*" = ["*.yaml", "*.yml"]
 
 [project.scripts]
 fitz = "fitz_sage.cli.cli:app"

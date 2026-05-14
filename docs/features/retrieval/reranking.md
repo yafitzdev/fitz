@@ -1,9 +1,9 @@
-# Reranking (LLM-based)
+# Reranking (ONNX cross-encoder)
 
 ## Problem
 
-BM25 optimises for **recall** — find candidates that contain the
-right tokens. But token overlap isn't the same as true relevance:
+BM25 + FTS5 optimises for **recall** — find candidates that contain
+the right tokens. Token overlap isn't the same as true relevance:
 
 - Two sections can both mention the query terms while only one
   actually answers the question.
@@ -12,11 +12,11 @@ right tokens. But token overlap isn't the same as true relevance:
 - BM25 is intent-blind: it can't tell a "how do I do X?" question
   from a "what is X?" question.
 
-## Solution: LLM reranker
+## Solution: ONNX cross-encoder reranker
 
-After FTS5 / BM25 returns a candidate set, ask the chat model to
-score each `(query, candidate)` pair in a single JSON-returning
-chat completion. Re-order by the model's score, keep the top-K.
+After FTS5 / BM25 returns a candidate set, a single INT8 ONNX
+cross-encoder scores each `(query, candidate)` pair in one batched
+forward pass. Re-order by the model's score, keep the top-K.
 
 ```
 Query: "What's the battery warranty?"
@@ -26,55 +26,68 @@ Query: "What's the battery warranty?"
    returns ~20 candidates
             │
             ▼
-   LLMReranker — precision         ◀── enabled when `rerank:` is set
-   one chat call scoring each pair
+   ONNX cross-encoder — precision           ◀── enabled when `rerank:` is set
+   one forward pass over (q, doc) pairs
+   ~30–100 ms CPU for 10–20 candidates
             │
             ▼
-   Top 5 truly-relevant candidates
+   Top-K truly-relevant candidates
             │
             ▼
-   Synthesizer + constraint cascade
+   Synthesizer + governance (pyrrho)
 ```
 
-This is **not a cross-encoder** model in the classical sense — it's
-the same OpenAI-compatible chat protocol fitz-sage already speaks for
-everything else. No separate reranker backend, no second SDK, no
-embedding model.
+**Default backbone:** [`Alibaba-NLP/gte-reranker-modernbert-base`](https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base) —
+149M-parameter ModernBERT cross-encoder. Matches 1.2B-parameter
+rerankers on Hit@1, and INT8 ONNX quantisation gives 2.7–3.4× CPU
+speedup with ~98% of full-precision quality.
 
-## Why an LLM, not a cross-encoder?
+Override via `rerank: onnx/<hf-model-id>` — e.g.
+`onnx/BAAI/bge-reranker-base` for a multilingual alternative,
+`onnx/jinaai/jina-reranker-v3` for higher quality at larger size.
 
-The legacy reranker plugins (Cohere rerank-v3.5, BGE reranker, etc.)
-were dropped in v0.12.0 along with the embedding stack. The reasoning:
+## Why a cross-encoder, not the chat model?
 
-1. **One protocol.** Adding a cross-encoder means adding a second
-   network protocol, a second model to host, and a second auth path.
-2. **Intent-aware.** A chat model sees the query and the candidate
-   together with full instruction-following context. It can weight
-   intent (`how do I` vs `what is`) the way a cross-encoder can't.
-3. **Cheap.** One chat call to rank 10–20 candidates is fast — well
-   under 2 s on a 7B local model, low-millisecond on cloud APIs.
-4. **Already in the stack.** The synthesizer is a chat call; the
-   query rewriter is a chat call; the detection step is a chat call.
-   Reranking just rides the same path.
+fitz-sage v0.13.x served reranking via a chat-completion call
+(`LLMReranker`) — the model was asked to grade each candidate. That
+worked but cost one chat call per query on the hot path. v0.14.0
+swaps in a dedicated cross-encoder for three reasons:
+
+1. **Latency.** ~30–100 ms CPU for 10–20 candidates vs ~500–2000 ms
+   for a 7B chat model.
+2. **No external dependency.** Inference is local; the governance
+   path was already chat-free since v0.13.0, and now reranking is
+   too.
+3. **Stronger ranking signal.** Cross-encoders are the textbook
+   solution for `(query, doc)` relevance scoring and saturate the
+   benchmark — chat-based reranking was reinventing this with worse
+   inductive bias.
+
+The same architectural pattern as the
+[pyrrho governance classifier](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1):
+ModernBERT-base + INT8 ONNX + `optimum.onnxruntime`, lazy-loaded on
+first call, cached for the process lifetime.
 
 ## How it works
 
 ```python
-prompt = build_rerank_prompt(query, candidates)
-# Sends a structured chat-completion request:
-#   system: "You are scoring retrieval candidates for relevance ..."
-#   user:   <query> + <numbered candidate snippets>
-response_json = chat.chat([...])
-# Returns: [{"id": "...", "score": 0.91, "why": "..."}]
+# Each batch of (query, doc) pairs goes through one ONNX forward pass.
+enc = tokenizer([query] * len(docs), docs,
+                padding=True, truncation=True, max_length=512,
+                return_tensors="np")
+logits = model(**enc).logits      # shape (B, 1) for sequence-classification heads
+scores = logits[:, 0]             # higher = more relevant
 ```
 
-The response is JSON. The reranker parses it, attaches `rerank_score`
-to each candidate's metadata, and re-orders.
+Sequence-classification head with `num_labels=1` is the standard
+cross-encoder shape; 2-class heads (some BGE variants) are handled by
+taking `pos_logit - neg_logit`.
 
 ### Smart skip
 
-If the candidate pool is small (default: `< 6`), the reranker step is
-bypassed — there's nothing to rank.
+If the candidate pool is small (below `rerank_min_addresses`), the
+reranker step is bypassed — there's nothing meaningful to rank. Same
+behaviour as v0.13.x; the threshold is unchanged.
 
 ### VIP preservation
 
@@ -84,30 +97,31 @@ include" by design.
 
 ## Key design decisions
 
-1. **Provider-presence pattern.** Set `rerank: endpoint/llmreranker`
-   and the step runs; omit (or set `null`) and it doesn't.
-2. **Single chat call.** The whole candidate set goes in one prompt
-   — saves per-candidate latency and lets the model see the candidates
-   in context with each other.
-3. **JSON contract.** The reranker speaks a documented JSON shape;
-   parsing failures fall back to the original order.
-4. **Metadata, not destructive.** `rerank_score` is added to each
-   candidate's metadata; the original BM25 rank stays available.
+1. **Provider-presence pattern.** Set `rerank: onnx` and the step
+   runs; omit (or set `null`) and it doesn't.
+2. **Same INT8 ONNX path as pyrrho.** Zero new infrastructure — the
+   `optimum`/`transformers` deps are already in `pyproject.toml`.
+3. **Override via spec.** `rerank: onnx/<hf-model-id>` lets users
+   swap in any HF cross-encoder with a `SequenceClassification` head.
+4. **Lazy load.** Tokenizer + model load on first `rerank()` call,
+   not at engine init — keeps startup fast.
+5. **Batched forward.** Pairs go through in batches of 16 by default;
+   `batch_size` is configurable per `OnnxReranker` instance.
 
 ## Configuration
 
-### Enable
+### Enable (default)
 
 ```yaml
-rerank: endpoint/llmreranker
+rerank: onnx        # uses Alibaba-NLP/gte-reranker-modernbert-base
 ```
 
-The reranker uses the configured chat tier (defaults to `chat_smart`).
-Override:
+### Use a different cross-encoder
 
 ```yaml
-rerank: endpoint/llmreranker
-rerank_tier: balanced       # use chat_balanced instead of chat_smart
+rerank: onnx/BAAI/bge-reranker-base
+# rerank: onnx/jinaai/jina-reranker-v3
+# rerank: onnx/cross-encoder/ms-marco-MiniLM-L-6-v2
 ```
 
 ### Disable
@@ -121,8 +135,8 @@ rerank_tier: balanced       # use chat_balanced instead of chat_smart
 | Component                  | Path                                                              |
 | -------------------------- | ----------------------------------------------------------------- |
 | Pipeline step              | `fitz_sage/engines/fitz_krag/retrieval/reranker.py`               |
-| Reranker chat provider     | `fitz_sage/llm/providers/llm_reranker.py`                         |
-| Factory dispatch           | `fitz_sage/llm/config.py`                                         |
+| ONNX reranker provider     | `fitz_sage/llm/providers/onnx_reranker.py`                        |
+| Factory dispatch           | `fitz_sage/llm/config.py` (`create_rerank_provider`)              |
 
 ## Example
 
@@ -136,16 +150,16 @@ rerank_tier: balanced       # use chat_balanced instead of chat_smart
 4. "Battery warranty: 8 years or 100,000 miles." (bm25 rank 4)
 5. "Charging the battery takes 45 minutes ..."   (bm25 rank 5)
 
-**After LLM reranker:**
+**After ONNX cross-encoder reranker:**
 
-1. "Battery warranty: 8 years or 100,000 miles." (rerank 0.94)
-2. "Warranty terms vary by component ..."        (rerank 0.78)
-3. "Battery specifications: 75 kWh capacity ..." (rerank 0.61)
-4. "The battery uses lithium-ion cells ..."      (rerank 0.45)
-5. "Charging the battery takes 45 minutes ..."   (rerank 0.32)
+1. "Battery warranty: 8 years or 100,000 miles." (rerank 8.72)
+2. "Warranty terms vary by component ..."        (rerank 4.91)
+3. "Battery specifications: 75 kWh capacity ..." (rerank 1.34)
+4. "The battery uses lithium-ion cells ..."      (rerank 0.62)
+5. "Charging the battery takes 45 minutes ..."   (rerank -0.18)
 
-The reranker correctly promotes the warranty-specific row over the
-broader battery-spec candidates.
+The reranker promotes the warranty-specific row over the broader
+battery-spec candidates. Raw logits — magnitudes vary by backbone.
 
 ## Interaction with other features
 
@@ -153,13 +167,14 @@ broader battery-spec candidates.
 | ---------------------- | ------------------------------------------------------------------ |
 | Sparse search (FTS5)   | Runs *before* reranking; produces the candidate pool               |
 | Query expansion        | Runs *before* reranking; all expanded results land in one pool     |
-| KRAG routing           | Reranker is intent-aware via the query text it receives            |
+| KRAG routing           | Cross-encoder sees the rewritten query, not the raw user text      |
 | Multi-hop              | Reranker runs inside each hop independently                        |
-| Constraint cascade     | Reranker output feeds the constraint cascade; reranker doesn't see constraints |
+| Governance (pyrrho)    | Reranker output feeds the pyrrho classifier; reranker doesn't see  |
+|                        | governance decisions                                                |
 
 ## Related
 
 - [Sparse Search (FTS5 + bm25)](sparse-search.md) — the recall layer
 - [Multi-Hop Reasoning](multi-hop-reasoning.md) — reranker runs inside each hop
 - [Unified Storage](../platform/unified-storage.md) — SQLite + FTS5 layer
-- [OpenAI-Compatible Endpoint](../platform/openai-compatible-endpoint.md) — the protocol everything speaks
+- [Epistemic Governance (pyrrho)](../../CONSTRAINTS.md) — the next encoder in the pipeline

@@ -44,7 +44,7 @@ Or override the entire chat stack per-invocation with CLI flags
 | --------------- | -------------------------------- | --------------------------------------------- |
 | `chat_fast`     | Cheap/fast                       | Classification, detection, query rewriting    |
 | `chat_balanced` | Middle tier                      | SQL generation, table queries, enrichment     |
-| `chat_smart`    | Best reasoning                   | Answer synthesis, LLM reranker                |
+| `chat_smart`    | Best reasoning                   | Answer synthesis                              |
 
 Each tier takes a provider spec (almost always `endpoint`). Pair it
 with a model name via the per-tier `*_model` key, or with a
@@ -85,7 +85,7 @@ Features are switched on by **provider presence**, not boolean flags:
 
 | Feature       | Enabled when                                | Disabled when                       |
 | ------------- | ------------------------------------------- | ----------------------------------- |
-| LLM reranker  | `rerank: endpoint/llmreranker`              | `rerank:` omitted (or `null`)       |
+| ONNX reranker | `rerank: onnx` (default)                    | `rerank: null` (or omitted)         |
 | VLM in parser | `parser: docling_vision` + `vision:` set    | `parser: docling` or `parser: glm_ocr` |
 | Enrichment    | `chat_*` configured (always-on otherwise)   | no chat provider                    |
 

@@ -1,4 +1,14 @@
-# Governance Benchmarking (fitz-gov)
+# Governance Benchmarking (fitz-gov) — Historical (pre-v0.13.0)
+
+> **Note.** This document describes the **constraint+sklearn cascade**
+> that served as fitz-sage's governance backend through v0.12.x. As of
+> v0.13.0 the cascade has been removed and replaced by the
+> [pyrrho](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+> classifier — see [`docs/CONSTRAINTS.md`](../../CONSTRAINTS.md) for
+> the current architecture. The fitz-gov benchmark dataset itself is
+> still active, and pyrrho's headline numbers (86.13% accuracy, 5.27%
+> false-trustworthy on the same eval split) are measured against the
+> same v5.1 set.
 
 ## The Problem with RAG Benchmarks
 

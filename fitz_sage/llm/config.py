@@ -436,33 +436,29 @@ def create_rerank_provider(
     spec: str | None,
     config: dict[str, Any] | None = None,
 ) -> RerankProvider | None:
-    """
-    Create a rerank provider from a spec string.
+    """Create a rerank provider from a spec string.
 
-    The only first-class rerank backend is ``llm`` — an
-    ``LLMReranker`` that scores candidates with a chat model. Because
-    it requires a chat factory, the engine layer constructs it
-    directly (see ``FitzKragEngine``) and only routes through this
-    function for non-``llm`` specs (which currently raise).
+    The canonical backend is ``onnx`` — an INT8 ONNX cross-encoder
+    served via `optimum.onnxruntime`. Default model is
+    `Alibaba-NLP/gte-reranker-modernbert-base`. Override with
+    ``onnx/<hf-model-id>`` to use a different cross-encoder.
 
     Pass ``None`` to disable reranking entirely.
     """
     if spec is None:
         return None
 
-    provider, _ = parse_provider_string(spec)
+    provider, model = parse_provider_string(spec)
     _check_removed(provider)
 
-    if provider == "llm":
-        raise ValueError(
-            "The 'llm' rerank provider must be constructed at the engine "
-            "layer because it needs a chat factory. fitz_krag does this "
-            "automatically when config.rerank is 'llm'."
-        )
+    if provider == "onnx":
+        from fitz_sage.llm.providers.onnx_reranker import DEFAULT_MODEL_ID, OnnxReranker
+
+        return OnnxReranker(model_id=model or DEFAULT_MODEL_ID)
 
     raise ValueError(
         f"Unknown rerank provider: {provider}. "
-        f"Supported: 'llm' (constructed by the engine) or None to disable."
+        f"Supported: 'onnx' (or 'onnx/<hf-model-id>'), or None to disable."
     )
 
 

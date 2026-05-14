@@ -7,7 +7,7 @@ to enable.
 | File                       | Feature                                                          |
 | -------------------------- | ---------------------------------------------------------------- |
 | `sparse-search.md`         | FTS5 + native `bm25()` over typed-unit stores                    |
-| `reranking.md`             | LLM-based reranker (single chat call scoring candidates)         |
+| `reranking.md`             | INT8 ONNX cross-encoder reranker (gte-reranker-modernbert-base)  |
 | `query-rewriting.md`       | LLM-based query reformulation (pronouns, typos, intent)          |
 | `query-expansion.md`       | Rule-based synonym / acronym expansion                           |
 | `multi-query-rag.md`       | Decomposes long queries into focused sub-queries                 |

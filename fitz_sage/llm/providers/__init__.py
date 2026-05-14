@@ -45,8 +45,12 @@ except ImportError:
     # static tooling on a fresh checkout still works.
     pass
 
-# LLM-based reranker — the canonical rerank backend after the
-# cohere/rerank deletion. Pure Python, no extra deps.
-from fitz_sage.llm.providers.llm_reranker import LLMReranker  # noqa: E402,F401
+# ONNX cross-encoder reranker — canonical rerank backend (gte-reranker-
+# modernbert-base by default). Loads lazily so static tooling on a fresh
+# checkout still works without optimum/transformers installed yet.
+try:
+    from fitz_sage.llm.providers.onnx_reranker import OnnxReranker  # noqa: F401
 
-__all__.append("LLMReranker")
+    __all__.append("OnnxReranker")
+except ImportError:
+    pass

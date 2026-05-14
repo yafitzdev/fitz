@@ -10,9 +10,12 @@ Most RAG systems confidently answer questions even when the answer isn't in the 
 
 The system cannot distinguish between "I have evidence" and "I'm making an educated guess."
 
-## Solution: Epistemic Guardrails
+## Solution: pyrrho classifier
 
-Fitz has built-in constraint plugins that detect uncertainty and refuse to answer when evidence is insufficient:
+Every `(query, retrieved contexts)` pair runs through the **pyrrho**
+fine-tuned classifier (a ModernBERT-base head distilled on the
+fitz-gov benchmark, served as INT8 ONNX). A single forward pass
+returns one of `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`:
 
 ```
 Q: "What was our Q4 revenue?"
@@ -24,15 +27,17 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 
 ## How It Works
 
-### Constraint Plugins
+### Single-pass classification
 
-Three guardrails run automatically on every answer. ConflictAware and CausalAttribution use a unified `SemanticMatcher` layer internally for semantic classification:
+Pyrrho replaces the constraint+sklearn cascade that fitz-sage used
+through v0.12.x. Each decision is one ONNX inference call (~30 ms
+on CPU), no external LLM dependency.
 
-| Constraint | What It Catches | Example |
-|------------|-----------------|---------|
-| **ConflictAware** | Sources disagree | "Document A says X, but Document B says Y. This is a conflict." |
-| **InsufficientEvidence** | No supporting evidence | "I cannot find information about X in the provided documents." |
-| **CausalAttribution** | Correlation ≠ causation | "The data shows a correlation, but I cannot determine causation without additional evidence." |
+| Case it catches              | Resulting mode | Example                                                                        |
+| ---------------------------- | -------------- | ------------------------------------------------------------------------------ |
+| Sources disagree             | `DISPUTED`     | "Document A says X, but Document B says Y. The sources disagree."              |
+| Insufficient evidence        | `ABSTAIN`      | "I cannot find information about X in the provided documents."                 |
+| Sufficient supporting evidence | `TRUSTWORTHY` | Direct answer with citations.                                                  |
 
 ### Answer Modes
 

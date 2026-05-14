@@ -18,8 +18,6 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from fitz_sage.governance import SemanticMatcher
-
 from .mock_embedder import create_deterministic_embedder
 
 
@@ -91,18 +89,6 @@ def reset_sqlite_singleton():
 def mock_embedder():
     """Fixture providing a deterministic mock embedder."""
     return create_deterministic_embedder()
-
-
-@pytest.fixture
-def semantic_matcher(mock_embedder) -> SemanticMatcher:
-    """Fixture providing a SemanticMatcher with mock embedder."""
-    return SemanticMatcher(
-        # Thresholds tuned for mock embedder clusters
-        causal_threshold=0.70,
-        assertion_threshold=0.70,
-        query_threshold=0.70,
-        conflict_threshold=0.70,
-    )
 
 
 def _generate_test_certificate(days_valid: int = 365) -> tuple[bytes, bytes]:

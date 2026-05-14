@@ -6,7 +6,7 @@
 > the embedding layer entirely. The numbers here are kept as a
 > historical baseline; they are not representative of the current
 > system. The current retrieval stack is BM25 (via SQLite FTS5) +
-> KRAG typed-unit routing + LLM reranker.
+> KRAG typed-unit routing + ONNX cross-encoder reranker.
 
 **Last updated:** 2026-02-20
 **Datasets run:** scifact, scidocs, fiqa (Tier 1)

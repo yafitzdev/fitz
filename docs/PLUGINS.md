@@ -21,8 +21,9 @@ This guide covers what's pluggable and how to add a new one.
 | Guardrail / constraint | Python | `fitz_sage/governance/constraints/plugins/` | `constraints:` list             |
 
 There is **no embedding plugin, no vector-DB plugin, no rerank plugin**.
-The reranker that does run (`LLMReranker`) is a thin wrapper over the
-canonical chat provider — see `fitz_sage/llm/providers/llm_reranker.py`.
+The reranker that does run (`OnnxReranker`) is an INT8 ONNX cross-encoder
+(`Alibaba-NLP/gte-reranker-modernbert-base` by default) — see
+`fitz_sage/llm/providers/onnx_reranker.py`.
 
 ---
 
@@ -31,8 +32,9 @@ canonical chat provider — see `fitz_sage/llm/providers/llm_reranker.py`.
 Features are controlled by **provider presence**, not boolean flags:
 
 ```yaml
-# ENABLED — a reranker is provided
-rerank: endpoint/llmreranker
+# ENABLED (default) — INT8 ONNX cross-encoder
+rerank: onnx
+# or: rerank: onnx/<hf-model-id>  to swap in a different cross-encoder
 
 # DISABLED — omit the key (or set null)
 # rerank not set → no reranking step in the pipeline
@@ -78,7 +80,7 @@ OpenAI-compatible endpoint instead — e.g. Ollama exposes one at
 | ------------ | ---------------------------------------------------------- |
 | `endpoint`   | Canonical OpenAI-compatible chat (any URL)                 |
 | `enterprise` | Same protocol + enterprise auth (M2M OAuth2, mTLS, CA bundle) |
-| `llm_reranker` | Internal — wraps a chat provider to score documents      |
+| `onnx_reranker` | Internal — INT8 ONNX cross-encoder (gte-reranker-modernbert-base) |
 
 ### Model tiers
 

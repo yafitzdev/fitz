@@ -1,21 +1,11 @@
 # fitz_sage/core/conflicts.py
 """
-Conflict Detection - Core epistemic capability for fitz-sage.
+Conflict detection stub kept for hierarchy-enricher compatibility.
 
-Conflict detection is performed at QUERY TIME using LLM-based analysis
-in ConflictAwareConstraint. This module provides an empty stub for
-ingest-time compatibility.
-
-Architecture:
-- Query-time: ConflictAwareConstraint uses fast LLM to detect contradictions
-- Ingest-time: No conflict detection (too expensive, deferred to query time)
-
-The LLM-based approach was chosen because embedding-based conflict detection
-(cosine similarity) cannot reliably distinguish between:
-- Complementary information (should NOT be flagged)
-- Contradictory claims (SHOULD be flagged)
-
-See fitz_sage.governance.constraints.plugins.conflict_aware for the LLM implementation.
+Conflict detection moved to query time in v0.13.0: the pyrrho classifier
+(`fitz_sage.governance.pyrrho`) decides TRUSTWORTHY / DISPUTED / ABSTAIN
+in a single forward pass over (query, contexts). No ingest-time conflict
+extraction is needed.
 """
 
 from __future__ import annotations
@@ -26,19 +16,10 @@ from fitz_sage.core.chunk import Chunk
 
 
 def find_conflicts(chunks: Sequence[Chunk]) -> list[tuple[str, str, str, str]]:
-    """
-    Ingest-time conflict detection stub.
+    """Ingest-time conflict-detection stub. Returns an empty list.
 
-    Returns an empty list. Actual conflict detection happens at query time
-    using LLM-based analysis in ConflictAwareConstraint.
-
-    This stub exists for hierarchy enricher compatibility during ingestion.
-
-    Args:
-        chunks: Sequence of chunks to analyze (unused)
-
-    Returns:
-        Empty list (conflict detection deferred to query time)
+    Kept so the hierarchy enricher can call it unconditionally;
+    actual conflict detection happens at query time via pyrrho.
     """
     return []
 
