@@ -543,8 +543,8 @@ classifier trained on 2,920 labeled cases from [fitz-gov](https://github.com/yaf
 │  └────────┘ └───────────┘ └──────────────┘                    │
 │  endpoint/<URL> | openai | azure_openai | enterprise          │
 ├───────────────────────────────────────────────────────────────┤
-│  Storage (PostgreSQL + pgvector)                              │
-│  vectors | metadata | tables | keywords | full-text search    │
+│  Storage (SQLite + FTS5, one .db per collection)              │
+│  metadata | tables | keywords | full-text search (bm25)       │
 ├───────────────────────────────────────────────────────────────┤
 │  Retrieval (address-based, baked-in intelligence)             │
 │  symbols | sections | tables | import graphs | reranking      │
@@ -753,7 +753,7 @@ MIT
 - [REST API](docs/API.md)
 - [Configuration Guide](docs/CONFIG.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Unified Storage (PostgreSQL + pgvector)](docs/features/platform/unified-storage.md)
+- [Unified Storage (SQLite + FTS5)](docs/features/platform/unified-storage.md)
 - [Progressive KRAG & Agentic Search](docs/features/platform/progressive-krag-agentic-search.md)
 - [Ingestion Pipeline](docs/INGESTION.md)
 - [Enrichment (Hierarchies, Entities)](docs/ENRICHMENT.md)

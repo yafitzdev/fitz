@@ -1,6 +1,10 @@
 # Shell scripts (local dev)
 fitz.ps1
 
+# Local-only contributor notes — not for GitHub
+HANDOFF.md
+CLAUDE.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

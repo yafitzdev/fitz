@@ -1,252 +1,159 @@
-# Unified Storage with PostgreSQL + pgvector
+# Unified Storage with SQLite + FTS5
 
-> Why fitz-sage uses PostgreSQL instead of a dedicated vector database.
+> Why fitz-sage stores everything in SQLite and ranks with FTS5 `bm25()`.
 
 ---
 
 ## TL;DR
 
-Fitz uses **PostgreSQL + pgvector** for all storage—vectors, metadata, and structured tables. This means:
+As of **v0.12.0** fitz-sage stores everything — metadata, structured tables,
+keywords, full-text — in **SQLite with WAL mode and FTS5 indexes**.
+One `.db` file per collection under `<workspace>/sqlite/`. Zero install,
+stdlib only.
 
-- **One database** for everything (no FAISS + SQLite + Qdrant juggling)
-- **Full SQL** for table queries (joins, aggregations, GROUP BY)
-- **Zero infrastructure** for local use (embedded via `pgserver`)
-- **Same code path** whether you're running locally or in production
-
----
-
-## The Decision
-
-### Why Not a Dedicated Vector Database?
-
-Dedicated vector databases (Pinecone, Weaviate, Qdrant, Milvus) are optimized for one thing: vector similarity search. They're excellent at scale—billions of vectors, millisecond latencies, distributed deployments.
-
-But for fitz-sage's use case, they introduce unnecessary complexity:
-
-| Concern | Dedicated Vector DB | PostgreSQL + pgvector |
-|---------|--------------------|-----------------------|
-| **Deployment** | Separate service to run | Embedded or existing Postgres |
-| **Structured data** | Hack it or use another DB | Native SQL |
-| **Hybrid queries** | Limited or none | Full SQL + vectors in one query |
-| **Local development** | Docker or cloud | `pip install` (pgserver) |
-| **Maintenance** | Two systems | One system |
-
-### The Performance Question
-
-> "Isn't pgvector slower than specialized vector databases?"
-
-Yes—by 2-5x for pure vector search. But here's what actually matters:
-
-| Operation | Dedicated VectorDB | pgvector | Impact on Query |
-|-----------|-------------------|----------|-----------------|
-| Vector search | 5ms | 15ms | +10ms |
-| LLM generation | 500-2000ms | 500-2000ms | 0ms |
-| **Total query time** | 505-2005ms | 515-2015ms | **+0.5-2%** |
-
-Vector search is **less than 1% of total query time**. The LLM dominates. Optimizing vector search from 5ms to 15ms is imperceptible to users.
-
-For fitz-sage's target scale (<10M vectors per collection), pgvector with HNSW indexing provides:
-- **99% recall** (same as dedicated DBs)
-- **<50ms latency** at 1M vectors
-- **Zero maintenance** (no index retraining)
-
-### What We Gained
-
-By choosing PostgreSQL, fitz-sage gets capabilities that would require significant engineering with a dedicated vector DB:
-
-**1. Real SQL for Structured Data**
-
-```sql
--- This "just works" on ingested CSVs
-SELECT product, AVG(price)
-FROM sales_data
-WHERE region = 'EMEA'
-GROUP BY product
-ORDER BY AVG(price) DESC;
-```
-
-With a vector-only database, you'd need to:
-- Store tables as vectors (losing SQL capabilities)
-- Run a separate SQL database
-- Sync data between systems
-
-**2. Hybrid Queries**
-
-```sql
--- Vector similarity + metadata filtering in one query
-SELECT * FROM chunks
-WHERE source_file LIKE '%.py'
-  AND created_at > '2024-01-01'
-ORDER BY embedding <=> query_vector
-LIMIT 10;
-```
-
-**3. Transactional Consistency**
-
-Vectors, metadata, and tables are in one transaction. No eventual consistency issues, no sync problems.
-
-**4. Zero-Friction Local Development**
-
-```bash
-pip install fitz-sage  # Includes pgserver
-fitz query "What is our refund policy?" --source ./docs
-# PostgreSQL starts automatically, invisibly
-```
-
-No Docker. No cloud accounts. No configuration.
+- **No vector database.** Retrieval is BM25 over FTS5 external-content
+  tables, plus KRAG address routing and LLM reranking — vectors were
+  removed in the same release as the embedding pipeline.
+- **No server.** SQLite is a file. Open it, query it, close it.
+  Each call gets its own connection (microseconds to open).
+- **One file per collection.** `fitz_<collection>.db`. Delete a
+  collection by `os.unlink`.
+- **Stdlib + nothing.** Drops the `psycopg`, `psycopg-pool`,
+  `fitz-pgserver`, `faiss-cpu`, `pgvector` chain of dependencies.
 
 ---
 
 ## How It Works
 
-### Local Mode (Default)
-
-Fitz uses [fitz-pgserver](https://github.com/yafitzdev/fitz-pgserver)—a pip-installable embedded PostgreSQL with pgvector included (fork of pgserver with Windows crash recovery fixes).
+### File layout
 
 ```
 ~/.fitz/
-└── pgdata/           # PostgreSQL data directory (auto-managed)
-    ├── base/         # Database files
-    ├── pg_wal/       # Write-ahead log
+└── sqlite/
+    ├── fitz_default.db        # collection "default"
+    ├── fitz_default.db-wal    # WAL journal
+    ├── fitz_default.db-shm    # shared-memory file
+    ├── fitz_codebase.db       # collection "codebase"
     └── ...
 ```
 
-- **First query**: ~5 seconds (PostgreSQL initializes)
-- **Subsequent queries**: <1 second (server stays warm)
-- **Disk usage**: ~50MB base + your data
+### Connection pragmas
 
-### External Mode (Production)
+Every connection opened by `SqliteConnectionManager` runs these pragmas:
 
-For production or shared deployments, point fitz at any PostgreSQL 14+ instance with pgvector:
-
-```yaml
-# .fitz/config.yaml
-vector_db: pgvector
-vector_db_kwargs:
-  mode: external
-  connection_string: postgresql://user:pass@host:5432/mydb
+```sql
+PRAGMA journal_mode = WAL;        -- writers don't block readers
+PRAGMA synchronous = NORMAL;      -- WAL-safe durability
+PRAGMA foreign_keys = ON;
+PRAGMA temp_store = MEMORY;
+PRAGMA busy_timeout = 30000;      -- 30s lock wait
 ```
 
-Same code, same behavior—just a different PostgreSQL instance.
+WAL gives multi-reader / single-writer concurrency without the cost of a
+server. The 30-second `busy_timeout` covers the rare contention case.
+
+### Connection lifecycle
+
+`SqliteConnectionManager` is a process-wide singleton, but it holds no
+pool — each `with manager.connection(collection) as conn:` opens a fresh
+`sqlite3.Connection` and closes it on exit. SQLite open is on the order
+of tens of microseconds; pooling is unnecessary and adds lock complexity.
 
 ---
 
-## Technical Details
+## Schema (per collection)
 
-### Schema
-
-Each collection gets its own database with two core tables:
+A collection's `.db` file holds the krag stores (sections, symbols,
+import graphs, raw files, tables) plus the keyword vocabulary, all in
+one file. The shapes are owned by each store; the recurring pattern is:
 
 ```sql
--- Vector chunks (documents)
-CREATE TABLE chunks (
-    id TEXT PRIMARY KEY,
-    vector vector(768),           -- pgvector type
-    payload JSONB NOT NULL,       -- metadata, content, source
-    created_at TIMESTAMPTZ DEFAULT NOW()
+-- A content table (example: sections)
+CREATE TABLE IF NOT EXISTS sections (
+    id            TEXT PRIMARY KEY,
+    doc_id        TEXT NOT NULL,
+    title         TEXT,
+    level         INTEGER,
+    page_start    INTEGER,
+    page_end      INTEGER,
+    content       TEXT NOT NULL,
+    summary       TEXT,
+    parent_section_id TEXT,
+    position      INTEGER,
+    metadata      TEXT NOT NULL DEFAULT '{}'
 );
 
--- HNSW index for fast similarity search
-CREATE INDEX chunks_vector_idx ON chunks
-USING hnsw (vector vector_cosine_ops)
-WITH (m = 16, ef_construction = 64);
-
--- Full-text search index
-CREATE INDEX chunks_content_idx ON chunks
-USING gin (to_tsvector('english', payload->>'content'));
+-- An external-content FTS5 index over `content`
+CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts
+USING fts5(content, content='sections', content_rowid='rowid');
 ```
+
+The FTS5 table mirrors `content` from the base table; updates flow
+through triggers so the index stays current without storing the text
+twice on disk.
+
+### Search
 
 ```sql
--- Structured tables (from CSVs)
-CREATE TABLE tbl_{table_name} (
-    _row_idx INTEGER,
-    _source_file TEXT,
-    -- Dynamic columns from CSV headers
-    column1 TEXT,
-    column2 TEXT,
-    ...
-);
+SELECT s.*, bm25(sections_fts) AS rank
+FROM sections_fts
+JOIN sections s ON s.rowid = sections_fts.rowid
+WHERE sections_fts MATCH ?
+ORDER BY rank
+LIMIT ?;
 ```
 
-### HNSW Index
-
-Fitz uses HNSW (Hierarchical Navigable Small World) indexing:
-
-| Property | Value | Why |
-|----------|-------|-----|
-| **Recall** | ~99% | Same as dedicated vector DBs |
-| **Maintenance** | Zero | No periodic retraining needed |
-| **Updates** | Incremental | Add/delete without rebuilding |
-| **Parameters** | m=16, ef_construction=64 | Balanced for typical workloads |
-
-### Hybrid Search
-
-Fitz combines vector similarity with full-text search using Reciprocal Rank Fusion:
-
-```sql
--- Simplified hybrid search
-WITH vector_results AS (
-    SELECT id, ROW_NUMBER() OVER (ORDER BY vector <=> $query) as rank
-    FROM chunks LIMIT 100
-),
-text_results AS (
-    SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank(...) DESC) as rank
-    FROM chunks WHERE to_tsvector(...) @@ plainto_tsquery($text)
-    LIMIT 100
-)
-SELECT id,
-    1/(60 + v.rank) * 0.7 + 1/(60 + t.rank) * 0.3 as score
-FROM vector_results v FULL JOIN text_results t USING (id)
-ORDER BY score DESC;
-```
+FTS5's `bm25()` returns negative numbers (lower = better match).
+The store flips the sign before returning so downstream consumers can
+treat higher as better — match this convention if you add a new store.
 
 ---
 
-## Trade-offs We Accepted
+## Schema port notes (PostgreSQL → SQLite)
 
-| Trade-off | Why It's Acceptable |
-|-----------|---------------------|
-| **5s cold start** | Only on first query of session; server stays warm |
-| **2-5x slower vector search** | <1% of total query time; LLM dominates |
-| **~15MB dependency** | Smaller than most ML libraries |
-| **External process** | Managed automatically by pgserver |
+For anyone reading old code or migrating extensions:
 
----
-
-## When to Use External PostgreSQL
-
-Use the embedded pgserver (default) for:
-- Local development
-- Single-user deployments
-- Prototyping
-
-Use external PostgreSQL for:
-- Production deployments
-- Multi-user access
-- Existing PostgreSQL infrastructure
-- Managed services (AWS RDS, GCP Cloud SQL, etc.)
+| PostgreSQL                                | SQLite                                      |
+| ----------------------------------------- | ------------------------------------------- |
+| `JSONB`                                   | `TEXT` + JSON1 (`json_extract`, `json_each`)|
+| `TEXT[]`                                  | JSON arrays + `json_each`                   |
+| `tsvector @@ to_tsquery(...) + ts_rank()` | FTS5 virtual table + `bm25()`               |
+| `ILIKE`                                   | `LIKE COLLATE NOCASE`                       |
+| `unnest(columns)`                         | `json_each(columns)`                        |
+| `%s` parameter binding                    | `?` parameter binding                       |
+| `DROP DATABASE`                           | `os.unlink(path)` (+ remove `-wal`/`-shm`)  |
 
 ---
 
-## Summary
+## Trade-offs we accepted
 
-Fitz chose PostgreSQL + pgvector because:
-
-1. **Simplicity** > marginal performance gains
-2. **Full SQL** > vector-only limitations
-3. **One system** > multiple databases to sync
-4. **Zero friction** > infrastructure requirements
-
-For fitz-sage's scale and use case, this is the right trade-off. If you're building a system that needs to search billions of vectors with sub-millisecond latency, a dedicated vector database makes sense. For knowledge bases, codebases, and document collections—PostgreSQL is more than enough.
+| Trade-off                                  | Why it's acceptable                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| **No native vector search**                | fitz-sage moved to a chat-only retrieval architecture in v0.11/v0.12 — vectors were never in the hot path.   |
+| **Single-writer concurrency**              | A knowledge-base workload is read-heavy; WAL handles it.                                                     |
+| **No multi-host shared storage**           | Workloads that need that need a real database — out of scope for fitz-sage's single-process target.          |
+| **No `DROP DATABASE` semantics**           | Collections map 1:1 to files. `delete_collection` is `os.unlink`.                                            |
 
 ---
 
-## Related Features
+## When this is the wrong choice
 
-- [**Hybrid Search**](../retrieval/hybrid-search.md) - Dense + sparse search powered by pgvector + tsvector
-- [**Sparse Search**](../retrieval/sparse-search.md) - PostgreSQL full-text search (tsvector)
-- [**Tabular Data Routing**](../ingestion/tabular-data-routing.md) - SQL queries on ingested tables (same PostgreSQL)
-- [**Entity Graph**](../retrieval/entity-graph.md) - Entity-chunk relationships stored in PostgreSQL
-- [**Reranking**](../retrieval/reranking.md) - Query-time precision layer (not stored, but complements vector retrieval)
+Use a different tool if any of these apply:
 
-*See also: [Configuration Guide](../CONFIG.md) for pgvector settings*
+- You need multi-node, multi-writer access to the same store.
+- Your corpus exceeds what a single SQLite file can comfortably hold
+  (hundreds of GB).
+- You need dedicated approximate-nearest-neighbour search at scale —
+  fitz-sage's retrieval doesn't, but if yours does, route around the
+  store entirely (build it on top, not inside it).
+
+---
+
+## Related
+
+- [**KRAG**](krag.md) — Knowledge Routing Augmented Generation, the
+  retrieval layer that sits on top of these stores.
+- [**Configuration Guide**](../../CONFIG.md) — the few storage knobs
+  worth knowing about.
+- [**CHANGELOG**](../../../CHANGELOG.md) — the v0.12.0 entry covers the
+  storage swap and what got removed alongside it.

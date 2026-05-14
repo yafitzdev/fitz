@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.12.0] - 2026-05-11
+## [0.12.0] - 2026-05-14
 
 ### 🎉 Highlights
 
@@ -47,6 +47,8 @@ substrings, 3/5 governance mode-match.
 - **Unit-test singleton cascade**: the ~25 failures in `test_vocabulary` / `test_krag_guardrails` / `test_section_store` / `test_krag_engine` were caused by `test_krag_detection` and `test_krag_engine` patching `SqliteConnectionManager` without resetting the singleton afterward; the MagicMock leaked into later tests. Both files now apply the opt-in `reset_sqlite_singleton` fixture via module-level `pytestmark = pytest.mark.usefixtures(...)`.
 - **`test_krag_engine` stale-postgres patch**: `PostgresTableStore` import path no longer exists post-Cloud-removal; the engine constructs `SqliteTableStore` instead. Updated the patch target.
 - **`test_section_store` BM25 sign**: the test fed a positive raw `bm25()` value but production code negates the FTS5 result (FTS5 returns lower-better; downstream wants higher-better). Test input flipped to negative so the assertion matches reality.
+- **`test_cli_endpoint_flags` ANSI brittleness**: linux CI runners render typer/rich help with embedded color escapes that split `--endpoint` into `-` + `-endpoint`, breaking the substring assertion. Test now strips ANSI before matching.
+- **CI workflow stale-postgres steps**: `.github/workflows/ci.yml` had a "Run postgres tests (Linux only)" step that selected zero tests post-Cloud-removal (exit code 5). Removed it, dropped the now-pointless `-m "not postgres"` filter, and pruned `fitz-pgserver` / `psycopg` / `psycopg-pool` / `faiss-cpu` from the pip install lists. `mutation.yml` dropped its `--ignore=tests/unit/test_postgres_recovery.py` for a file that no longer exists.
 
 ---
 

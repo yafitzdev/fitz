@@ -67,13 +67,11 @@ fitz_sage/
 ├── core/              # Paradigm-agnostic contracts (Query, Answer, Provenance)
 ├── engines/           # Engine implementations
 │   └── fitz_krag/     # KRAG with retrieval intelligence
-├── retrieval/         # SHARED retrieval intelligence (detection, sparse, entities, etc.)
-├── llm/               # LLM service layer (chat, embedding, rerank, vision)
-├── storage/           # PostgreSQL connection manager
-├── vector_db/         # Vector DB abstraction + pgvector plugin
+├── retrieval/         # SHARED retrieval intelligence (detection, entities, vocabulary, etc.)
+├── llm/               # LLM service layer — single OpenAI-compatible HTTP protocol (chat + reranker)
+├── storage/           # SQLite connection manager (one .db per collection, FTS5 + bm25)
 ├── ingestion/         # Document ingestion (parser, chunking, enrichment)
-├── cloud/             # Encrypted cache API
-├── tabular/           # CSV/table query with SQL generation
+├── tabular/           # CSV/table query with SQL generation (SqliteTableStore)
 ├── runtime/           # Multi-engine orchestration
 ├── cli/               # Command-line interface
 ├── api/               # REST API (FastAPI)
@@ -87,9 +85,8 @@ core/        ← NO imports from engines/, ingestion/
 retrieval/   ← May import from core/
 llm/         ← May import from core/
 storage/     ← May import from core/
-vector_db/   ← May import from core/, storage/
 ingestion/   ← May import from core/
-engines/     ← May import from core/, llm/, vector_db/, storage/, retrieval/
+engines/     ← May import from core/, llm/, storage/, retrieval/
 runtime/     ← May import from all (orchestration layer)
 cli/         ← May import from all (user-facing layer)
 tools/       ← May import from all (development tools)
