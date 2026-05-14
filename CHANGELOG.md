@@ -15,30 +15,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 storage. One `.db` file per collection, zero install, stdlib only.
 Drops `psycopg`, `psycopg-pool`, `fitz-pgserver` from deps. The
 865-line `PostgresConnectionManager` becomes a ~200-line file-based
-`SqliteConnectionManager`. Retrieval semantics preserved — native
-`bm25()` over FTS5 external-content tables replaces `ts_rank` over
-tsvector GIN. Smoke baseline preserved: 5/5 answered, 6/6
-substrings, 3/5 governance mode-match.
+`SqliteConnectionManager`.
+
+**Embeddings removed.** The entire embedding pipeline — provider
+protocol, retrieval-side `embed_batch` calls, HyDE, contextual
+embeddings, chunk-fallback, vector columns — is gone. Retrieval is
+now BM25 (native FTS5 `bm25()`) + KRAG typed-unit routing + an LLM
+reranker that scores documents in a single chat call. No vector DB,
+no embedding model, no second network protocol. Validated on
+fitz-gov v5 — the chat-only stack matches or beats the prior hybrid
+on the metrics that matter.
+
+**Single chat protocol.** OpenAI-compatible HTTP is the only chat
+path. `endpoint` is the canonical provider; `openai`, `azure_openai`,
+`enterprise` are presets over it. Legacy `cohere`, `anthropic`,
+`ollama` provider names removed (raise `ValueError` with migration
+text). Ollama still works — point `chat_base_url` at
+`http://localhost:11434/v1`.
+
+Smoke baseline preserved: 5/5 answered, 6/6 substrings, 3/5
+governance mode-match.
 
 ### 🗑 Removed
 
 - **`fitz_sage/storage/postgres.py`** — 865-line PostgreSQL connection manager (`8fa36a57`)
 - **`fitz_sage/cloud/`** + **`fitz_sage/integrations/`** — Fitz Cloud cache client + LangChain/LlamaIndex adapter wrappers (`c4ab1138`)
-- **`fitz_sage/evaluation/`** — governance decision logger + BEIR/RGB/fitz_gov benchmarks (postgres-coupled; SQLite port is Task 12 in HANDOFF) (`8fa36a57`)
+- **`fitz_sage/evaluation/`** — governance decision logger + BEIR/RGB/fitz_gov benchmarks (postgres-coupled) (`8fa36a57`)
 - **`fitz_sage/cli/commands/eval.py`** + **`reset.py`** — `fitz eval` and pgserver reset commands (`8fa36a57`, `c4ab1138`)
 - **`fitz_sage/retrieval/sparse/`** — dead code that queried a `chunks` table deleted in the vector_db demolition (`8fa36a57`)
+- **`fitz_sage/vector_db/`** + every plugin in it — vector-DB abstraction and pgvector backend (`bdca80ae`)
+- **Embedding API** — `OpenAICompatEmbedding`, the `Embedder` provider protocol, `get_embedder()`, all per-provider embedding implementations, ingestion-side `embed_batch` calls, and the `embedding:` config key (`c7dc48a1`, `23fb8606`, `39e6ac02`, `b936b45d`)
+- **HyDE** (`fitz_sage/retrieval/hyde/`) — hypothetical document generation; pointless without embeddings (`65ad6962`)
+- **ChunkFallbackStrategy** — fell back to dense chunk search when typed-unit retrieval missed; obsolete in chat-only mode (`65ad6962`)
+- **Contextual embeddings module** — summary-prefixed embeddings for disambiguation (`c7dc48a1`)
+- **DiffIngestExecutor** surface — the embedding-aware ingest orchestrator; KRAG's own ingest pipeline took over (`65ad6962`)
+- **Legacy chat providers** — `cohere`, `anthropic`, `ollama` per-vendor implementations. Passing these names raises `ValueError` with migration text pointing at `endpoint` + `chat_base_url` (`c7dc48a1`)
 - **`FitzKragConfig.cloud` field** + engine `_cloud_client` / `_check_cloud_cache` / `_store_cloud_cache` / `_build_cache_versions` / `CLOUD_OPTIMIZER_VERSION` (`c4ab1138`)
+- **`retrieval_mode` config flag** — was the transitional toggle between hybrid and chat-only modes; chat-only is now the only mode (`b936b45d`)
 - **Postgres-specific tests:** `test_postgres_{connection,recovery,table_store}.py`, `test_evaluation.py`, `test_beir_benchmark.py`, `tests/integration/test_cloud_cache_e2e.py`, `tests/unit/integrations/`, `tests/manual/` (`8fa36a57`, `c4ab1138`)
-- **Deps:** `psycopg`, `psycopg-pool`, `fitz-pgserver` (storage); `langchain-core`, `llama-index-core` extras (`8fa36a57`, `c4ab1138`)
+- **Deps:** `psycopg`, `psycopg-pool`, `fitz-pgserver` (storage); `pgvector`, `faiss-cpu` (vector DB); `langchain-core`, `llama-index-core` extras (`8fa36a57`, `c4ab1138`, `bdca80ae`)
 
 ### 🔄 Changed
 
 - **Storage backend** — PostgreSQL → SQLite. New `SqliteConnectionManager` with WAL mode + `foreign_keys=ON`; one `.db` per collection under `<workspace>/sqlite/` (`8fa36a57`)
+- **Retrieval pipeline** — embeddings + RRF over dense/sparse → pure FTS5 `bm25()` + KRAG typed-unit routing + LLM reranker. The reranker speaks the same OpenAI-compatible chat protocol as the synthesizer; no separate cross-encoder backend (`b936b45d`, `c7dc48a1`)
+- **Chat protocol** — per-vendor SDK paths consolidated into `OpenAICompatChat`. `endpoint` is canonical; `openai`, `azure_openai`, `enterprise` are configuration presets. Per-tier overrides (`chat_smart_base_url`, `chat_smart_model`, `chat_smart_api_key_env`) let you mix local and cloud (`c7dc48a1`, `969bfb43`)
+- **CLI overrides** — `fitz query --endpoint <URL> --model <name> --api-key-env <VAR>` lets users point at any OpenAI-compatible server without editing config (`969bfb43`)
 - **Retrieval ranking** — FTS5 `MATCH` + native `bm25()` replaces `tsvector @@ to_tsquery` + `ts_rank` (`8fa36a57`)
 - **Schema port** — `JSONB` → `TEXT` + JSON1; `TEXT[]` → JSON arrays + `json_each`; `ILIKE` → `LIKE COLLATE NOCASE`; `unnest(columns)` → `json_each(columns)`; `%s` → `?` (`8fa36a57`)
 - **Collection lifecycle** — `list_collections` scans `glob fitz_*.db`; `delete_collection` is `os.unlink` (was `DROP DATABASE` against admin DB) (`8fa36a57`)
 - **`PostgresTableStore` → `SqliteTableStore`** — dynamic per-CSV table model preserved; LLM SQL prompts updated to SQLite syntax (`8fa36a57`)
-- **Architectural Rule #3** in HANDOFF: "PostgreSQL is the only storage" → "SQLite is the only storage" (`8fa36a57`)
 - Stores ported to SQLite: `RawFileStore`, `SymbolStore`, `SectionStore`, `ImportGraphStore`, `TableStore`, `VocabularyStore`, `EntityGraphStore` (`8fa36a57`)
 
 ### 🔧 Fixed
