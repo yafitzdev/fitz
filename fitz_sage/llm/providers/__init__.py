@@ -47,6 +47,6 @@ except ImportError:
 
 # LLM-based reranker — the canonical rerank backend after the
 # cohere/rerank deletion. Pure Python, no extra deps.
-from fitz_sage.llm.providers.llm_reranker import LLMReranker  # noqa: E402
+from fitz_sage.llm.providers.llm_reranker import LLMReranker  # noqa: E402,F401
 
 __all__.append("LLMReranker")

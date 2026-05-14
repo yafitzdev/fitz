@@ -69,9 +69,7 @@ class SqliteConnectionManager:
         self._started = False
 
     @classmethod
-    def get_instance(
-        cls, config: Optional[StorageConfig] = None
-    ) -> "SqliteConnectionManager":
+    def get_instance(cls, config: Optional[StorageConfig] = None) -> "SqliteConnectionManager":
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls(config)

@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
 from fitz_sage.retrieval.vocabulary.detector import (
     DetectorPattern,
     KeywordDetector,

@@ -193,5 +193,3 @@ class TestDeleteByFile:
         assert "DELETE" in args[0]
         assert args[1] == ("file1",)
         conn.commit.assert_called_once()
-
-

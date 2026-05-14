@@ -395,14 +395,11 @@ def _collection_chunk_count(cm: Any, name: str) -> int:
     try:
         with cm.connection(name) as conn:
             exists = conn.execute(
-                "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name='krag_section_index'"
+                "SELECT name FROM sqlite_master " "WHERE type='table' AND name='krag_section_index'"
             ).fetchone()
             if not exists:
                 return 0
-            return int(
-                conn.execute("SELECT COUNT(*) FROM krag_section_index").fetchone()[0]
-            )
+            return int(conn.execute("SELECT COUNT(*) FROM krag_section_index").fetchone()[0])
     except Exception as e:
         logger.debug(f"Chunk count failed for '{name}': {e}")
         return 0

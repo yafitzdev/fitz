@@ -125,9 +125,7 @@ class RetrievalRouter:
                     futures.append((fut, temporal_tag))
 
                 if self._section_strategy and (not weights or weights.get("section", 1.0) > 0.05):
-                    fut = pool.submit(
-                        self._run_strategy, self._section_strategy, q, limit, profile
-                    )
+                    fut = pool.submit(self._run_strategy, self._section_strategy, q, limit, profile)
                     futures.append((fut, temporal_tag))
 
                 if self._table_strategy and (not weights or weights.get("table", 1.0) > 0.05):

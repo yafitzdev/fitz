@@ -181,9 +181,7 @@ class SqliteTableStore:
 
             try:
                 cols_str = ", ".join(f'"{c}"' for c in columns)
-                cursor = conn.execute(
-                    f'SELECT {cols_str} FROM "{table_name}" ORDER BY _row_num'
-                )
+                cursor = conn.execute(f'SELECT {cols_str} FROM "{table_name}" ORDER BY _row_num')
                 rows = [list(row) for row in cursor.fetchall()]
             except Exception as e:
                 logger.warning(f"{STORAGE} Failed to fetch data from '{table_name}': {e}")
@@ -233,9 +231,7 @@ class SqliteTableStore:
         with self._manager.connection(self.collection) as conn:
             try:
                 cursor = conn.execute(sql, params)
-                col_names = (
-                    [desc[0] for desc in cursor.description] if cursor.description else []
-                )
+                col_names = [desc[0] for desc in cursor.description] if cursor.description else []
                 rows = [list(row) for row in cursor.fetchall()]
                 return col_names, rows
             except Exception as e:
@@ -252,9 +248,7 @@ class SqliteTableStore:
         with self._manager.connection(self.collection) as conn:
             try:
                 cursor = conn.execute(sql, params)
-                col_names = (
-                    [desc[0] for desc in cursor.description] if cursor.description else []
-                )
+                col_names = [desc[0] for desc in cursor.description] if cursor.description else []
                 rows = [list(row) for row in cursor.fetchall()]
                 return col_names, rows
             except Exception as e:
@@ -311,9 +305,7 @@ class SqliteTableStore:
 
             table_name, existing_cols_json, existing_original_json = result
             existing_cols = json.loads(existing_cols_json) if existing_cols_json else []
-            existing_original = (
-                json.loads(existing_original_json) if existing_original_json else []
-            )
+            existing_original = json.loads(existing_original_json) if existing_original_json else []
 
             sanitized_new = [_sanitize_column_name(c) for c in new_columns]
             for i, col in enumerate(sanitized_new):

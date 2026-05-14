@@ -67,6 +67,7 @@ class TestFitzKragConfig:
         assert not hasattr(config, "rerank_kwargs")
         assert not hasattr(config, "vision_kwargs")
 
+
 class TestDefaultYaml:
     def test_default_config_path_exists(self):
         path = get_default_config_path()

@@ -473,10 +473,7 @@ class FitzKragEngine:
         ensure_schema(self._connection_manager, self._config.collection)
 
         _t5 = _t.perf_counter()
-        logger.debug(
-            f"[init] schema: {(_t5-_t4)*1000:.0f}ms, "
-            f"total: {(_t5-_t0)*1000:.0f}ms"
-        )
+        logger.debug(f"[init] schema: {(_t5-_t4)*1000:.0f}ms, " f"total: {(_t5-_t0)*1000:.0f}ms")
 
         # Chat models already warming up from init (background threads above).
 

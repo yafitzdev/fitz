@@ -76,9 +76,7 @@ def detect_endpoint() -> DetectedEndpoint | None:
         for host in ("localhost", "127.0.0.1"):
             base_url = f"http://{host}:{port}/v1"
             try:
-                response = httpx.get(
-                    f"{base_url}/models", timeout=_PROBE_TIMEOUT_SECONDS
-                )
+                response = httpx.get(f"{base_url}/models", timeout=_PROBE_TIMEOUT_SECONDS)
             except Exception:
                 continue
 
@@ -207,7 +205,7 @@ def _print_setup_instructions() -> None:
     print("    export OPENAI_API_KEY=sk-...")
     print("    Re-run `fitz query ...`\n")
     print("  Option 3 — any OpenAI-compatible cloud (Together, Groq, …):")
-    print("    fitz query \"...\" --endpoint https://api.together.xyz/v1 \\")
+    print('    fitz query "..." --endpoint https://api.together.xyz/v1 \\')
     print("        --model meta-llama-3.1-70b --api-key-env TOGETHER_API_KEY\n")
 
 

@@ -21,10 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
+from fitz_sage.core import Query  # noqa: E402
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig  # noqa: E402
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine  # noqa: E402
-from fitz_sage.core import Query  # noqa: E402
-
 
 CORPUS_DIR = ROOT / "tests" / "e2e_krag" / "fixtures_rag"
 

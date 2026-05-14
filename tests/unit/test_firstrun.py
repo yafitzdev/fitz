@@ -33,9 +33,7 @@ class TestDetectEndpoint:
         """A server with one chat model populates chat_models."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "data": [{"id": "qwen2.5-7b-instruct"}]
-        }
+        mock_response.json.return_value = {"data": [{"id": "qwen2.5-7b-instruct"}]}
 
         # First probe responds; rest do not.
         responses = [mock_response] + [Exception("nope")] * 20
@@ -76,9 +74,7 @@ class TestDetectEndpoint:
         """Servers that put models under 'models' (not 'data') still work."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "models": [{"name": "llama3"}, {"name": "bge-base"}]
-        }
+        mock_response.json.return_value = {"models": [{"name": "llama3"}, {"name": "bge-base"}]}
         with patch("httpx.get", return_value=mock_response):
             endpoint = detect_endpoint()
 
@@ -97,11 +93,12 @@ class TestRunFirstrunSetup:
             base_url="http://localhost:8080/v1",
             chat_models=[EndpointModel(id="qwen2.5-7b-instruct")],
         )
-        with patch(
-            "fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint
-        ), patch(
-            "fitz_sage.core.firstrun.FitzPaths.config",
-            return_value=tmp_path / "config.yaml",
+        with (
+            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint),
+            patch(
+                "fitz_sage.core.firstrun.FitzPaths.config",
+                return_value=tmp_path / "config.yaml",
+            ),
         ):
             ok = run_firstrun_setup()
 
@@ -113,11 +110,12 @@ class TestRunFirstrunSetup:
     def test_openai_key_fallback(self, tmp_path, monkeypatch) -> None:
         """No local endpoint + OPENAI_API_KEY -> openai preset config."""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-        with patch(
-            "fitz_sage.core.firstrun.detect_endpoint", return_value=None
-        ), patch(
-            "fitz_sage.core.firstrun.FitzPaths.config",
-            return_value=tmp_path / "config.yaml",
+        with (
+            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=None),
+            patch(
+                "fitz_sage.core.firstrun.FitzPaths.config",
+                return_value=tmp_path / "config.yaml",
+            ),
         ):
             ok = run_firstrun_setup()
 
@@ -128,11 +126,12 @@ class TestRunFirstrunSetup:
     def test_no_provider_aborts(self, tmp_path, monkeypatch) -> None:
         """No endpoint, no key -> setup fails with instructions."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        with patch(
-            "fitz_sage.core.firstrun.detect_endpoint", return_value=None
-        ), patch(
-            "fitz_sage.core.firstrun.FitzPaths.config",
-            return_value=tmp_path / "config.yaml",
+        with (
+            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=None),
+            patch(
+                "fitz_sage.core.firstrun.FitzPaths.config",
+                return_value=tmp_path / "config.yaml",
+            ),
         ):
             ok = run_firstrun_setup()
 
@@ -145,11 +144,12 @@ class TestRunFirstrunSetup:
             base_url="http://localhost:8080/v1",
             chat_models=[],
         )
-        with patch(
-            "fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint
-        ), patch(
-            "fitz_sage.core.firstrun.FitzPaths.config",
-            return_value=tmp_path / "config.yaml",
+        with (
+            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint),
+            patch(
+                "fitz_sage.core.firstrun.FitzPaths.config",
+                return_value=tmp_path / "config.yaml",
+            ),
         ):
             ok = run_firstrun_setup()
 

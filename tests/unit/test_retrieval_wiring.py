@@ -283,9 +283,7 @@ class TestSectionKeywordBoostIncreasesScore:
 # ===========================================================================
 
 
-def _make_code_strategy(
-    symbol_store=None, config=None, raw_store=None
-) -> CodeSearchStrategy:
+def _make_code_strategy(symbol_store=None, config=None, raw_store=None) -> CodeSearchStrategy:
     """Build a CodeSearchStrategy with mocked dependencies."""
     store = symbol_store or MagicMock()
     cfg = config or _make_config()

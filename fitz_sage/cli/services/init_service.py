@@ -78,9 +78,7 @@ class InitService:
 
             # OpenAI / Azure presets require OPENAI_API_KEY
             if "openai" in plugin_lower or "azure" in plugin_lower:
-                if system.api_keys.get(
-                    "openai", type("", (), {"available": False})
-                ).available:
+                if system.api_keys.get("openai", type("", (), {"available": False})).available:
                     available.append(plugin)
                 continue
 

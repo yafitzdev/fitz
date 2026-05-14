@@ -276,8 +276,7 @@ class EntityGraphStore:
                 (*like_params, limit),
             )
             return [
-                {"name": row[0], "type": row[1], "mentions": row[2]}
-                for row in cursor.fetchall()
+                {"name": row[0], "type": row[1], "mentions": row[2]} for row in cursor.fetchall()
             ]
 
     # =========================================================================
@@ -308,9 +307,7 @@ class EntityGraphStore:
             return {
                 "entities": entities,
                 "edges": edges,
-                "top_entities": [
-                    {"name": row[0], "mentions": row[1]} for row in top_entities
-                ],
+                "top_entities": [{"name": row[0], "mentions": row[1]} for row in top_entities],
             }
 
     def clear(self) -> None:

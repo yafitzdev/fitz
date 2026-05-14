@@ -413,14 +413,10 @@ def create_chat_provider(
     if provider == "endpoint":
         from fitz_sage.llm.providers.openai_compat import OpenAICompatChat
 
-        auth, kwargs = _resolve_endpoint_kwargs(
-            spec, config, require_model=True, role="chat_smart"
-        )
+        auth, kwargs = _resolve_endpoint_kwargs(spec, config, require_model=True, role="chat_smart")
         base_url = kwargs.pop("base_url")
         model_name = kwargs.pop("model")
-        return OpenAICompatChat(
-            auth, model=model_name, base_url=base_url, tier=tier, **kwargs
-        )
+        return OpenAICompatChat(auth, model=model_name, base_url=base_url, tier=tier, **kwargs)
 
     if provider in ("openai", "azure_openai"):
         from fitz_sage.llm.providers.openai_compat import OpenAICompatChat
@@ -490,9 +486,7 @@ def create_vision_provider(
     if provider == "endpoint":
         from fitz_sage.llm.providers.openai_compat import OpenAICompatVision
 
-        auth, kwargs = _resolve_endpoint_kwargs(
-            spec, config, require_model=True, role="vision"
-        )
+        auth, kwargs = _resolve_endpoint_kwargs(spec, config, require_model=True, role="vision")
         base_url = kwargs.pop("base_url")
         model_name = kwargs.pop("model")
         return OpenAICompatVision(auth, model=model_name, base_url=base_url, **kwargs)
@@ -507,8 +501,7 @@ def create_vision_provider(
         return OpenAICompatVision(auth, **kwargs)
 
     raise ValueError(
-        f"Unknown vision provider: {provider}. "
-        f"Supported: 'endpoint', 'openai', 'azure_openai'."
+        f"Unknown vision provider: {provider}. " f"Supported: 'endpoint', 'openai', 'azure_openai'."
     )
 
 
