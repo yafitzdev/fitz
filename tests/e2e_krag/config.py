@@ -43,22 +43,15 @@ def get_tier_config(tier_name: str, base_config: dict[str, Any] | None = None) -
         available = [t["name"] for t in tiers]
         raise ValueError(f"Unknown tier: {tier_name}. Available: {available}")
 
-    # Build tier config matching the expected structure
-    embedding_plugin = tier.get("embedding", base_config.get("embedding"))
-    embedding_model = tier.get("embedding_model", "")
-
+    # Build tier config matching the expected structure.
+    # Post-v0.12.0: embedding / vector_db removed; chat carries the endpoint
+    # provider + per-tier base_url + optional api_key_env.
     return {
         "chat": {
             "plugin_name": tier["chat"],
+            "base_url": tier.get("chat_base_url"),
+            "api_key_env": tier.get("chat_api_key_env"),
             "models": tier.get("chat_models", {}),
-        },
-        "embedding": {
-            "plugin_name": embedding_plugin,
-            "model": embedding_model,
-        },
-        "vector_db": {
-            "plugin_name": base_config["vector_db"],
-            "kwargs": base_config.get("vector_db_kwargs", {}),
         },
     }
 

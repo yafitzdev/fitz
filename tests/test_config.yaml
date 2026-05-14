@@ -1,30 +1,30 @@
 # tests/test_config.yaml
 # Unified test configuration - ALL tests use this
-
-# Vector DB
-vector_db: pgvector
-vector_db_kwargs: {}
+#
+# v0.12.0 migration: legacy providers (ollama / cohere / pgvector) were removed.
+# Chat now flows through the `endpoint` provider against an OpenAI-compatible URL.
+# fitz-sage no longer uses embeddings — retrieval is BM25 + KRAG routing + LLM rerank.
 
 # Tiered execution (local -> cloud fallback)
-# Each tier specifies its own chat AND embedding to isolate failures
 tiers:
   - name: local
-    chat: ollama
+    # Ollama runs an OpenAI-compatible server on :11434/v1
+    chat: endpoint
+    chat_base_url: http://localhost:11434/v1
     chat_models:
       smart: qwen3.5:2b
       fast: qwen3.5:2b
       balanced: qwen3.5:2b
-    embedding: ollama
-    embedding_model: nomic-embed-text
 
   - name: cloud
-    chat: cohere
+    # OpenAI cloud (or any OpenAI-compatible endpoint — Together, Groq, etc.)
+    chat: endpoint
+    chat_base_url: https://api.openai.com/v1
+    chat_api_key_env: OPENAI_API_KEY
     chat_models:
-      smart: command-a-03-2025
-      fast: command-r7b-12-2024
-      balanced: command-r-08-2024
-    embedding: cohere
-    embedding_model: embed-v4.0
+      smart: gpt-4o-mini
+      fast: gpt-4o-mini
+      balanced: gpt-4o-mini
 
 # Response cache (E2E)
 cache:

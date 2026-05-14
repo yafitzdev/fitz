@@ -41,9 +41,12 @@ substrings, 3/5 governance mode-match.
 - **Architectural Rule #3** in HANDOFF: "PostgreSQL is the only storage" → "SQLite is the only storage" (`8fa36a57`)
 - Stores ported to SQLite: `RawFileStore`, `SymbolStore`, `SectionStore`, `ImportGraphStore`, `TableStore`, `VocabularyStore`, `EntityGraphStore` (`8fa36a57`)
 
-### 🐛 Known issues
+### 🔧 Fixed
 
-- ~25 unit tests in `test_vocabulary`, `test_krag_guardrails`, `test_section_store`, `test_krag_engine` fail — mocked `SqliteConnectionManager` instances leak across the singleton. Opt-in `reset_sqlite_singleton` fixture in `tests/unit/conftest.py`; per-test application is Task 11 in HANDOFF. Smoke test unaffected.
+- **`SqliteConnectionManager` deadlock**: class-level `_lock` was a non-reentrant `threading.Lock`, so `reset_instance()` → `stop()` (which also takes the lock) deadlocked from the same thread. Switched to `threading.RLock`.
+- **Unit-test singleton cascade**: the ~25 failures in `test_vocabulary` / `test_krag_guardrails` / `test_section_store` / `test_krag_engine` were caused by `test_krag_detection` and `test_krag_engine` patching `SqliteConnectionManager` without resetting the singleton afterward; the MagicMock leaked into later tests. Both files now apply the opt-in `reset_sqlite_singleton` fixture via module-level `pytestmark = pytest.mark.usefixtures(...)`.
+- **`test_krag_engine` stale-postgres patch**: `PostgresTableStore` import path no longer exists post-Cloud-removal; the engine constructs `SqliteTableStore` instead. Updated the patch target.
+- **`test_section_store` BM25 sign**: the test fed a positive raw `bm25()` value but production code negates the FTS5 result (FTS5 returns lower-better; downstream wants higher-better). Test input flipped to negative so the assertion matches reality.
 
 ---
 

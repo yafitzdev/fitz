@@ -109,7 +109,9 @@ class TestUpsertBatch:
 
 class TestSearchBm25:
     def test_returns_results_with_bm25_score(self, store, mock_cm):
-        row = _make_row() + (0.85,)  # bm25_score appended
+        # FTS5 bm25() returns negative numbers (lower=better); production code
+        # flips the sign so downstream consumers treat higher as better.
+        row = _make_row() + (-0.85,)
         conn = MagicMock()
         conn.execute.return_value.fetchall.return_value = [row]
         mock_cm.connection.return_value.__enter__ = MagicMock(return_value=conn)

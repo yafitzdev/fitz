@@ -12,11 +12,19 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouter
 from fitz_sage.engines.fitz_krag.retrieval_profile import RetrievalProfile
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
+
+# Tests in this file @patch SqliteConnectionManager. Without resetting the
+# singleton, the MagicMock leaks into subsequent tests in collection order
+# and cascades into ~25 failures across test_vocabulary / test_section_store /
+# test_krag_guardrails. The fixture is defined in tests/unit/conftest.py.
+pytestmark = pytest.mark.usefixtures("reset_sqlite_singleton")
 
 # ---------------------------------------------------------------------------
 # Helpers

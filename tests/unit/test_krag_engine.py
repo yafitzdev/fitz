@@ -25,6 +25,12 @@ from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 
+# Tests in this file @patch SqliteConnectionManager. Without resetting the
+# singleton, the MagicMock leaks into subsequent tests in collection order
+# and cascades into ~25 failures across test_vocabulary / test_section_store /
+# test_krag_guardrails. The fixture is defined in tests/unit/conftest.py.
+pytestmark = pytest.mark.usefixtures("reset_sqlite_singleton")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -162,8 +168,8 @@ class TestEngineInit:
             "CodeSynthesizer": (
                 "fitz_sage.engines.fitz_krag.generation" ".synthesizer.CodeSynthesizer"
             ),
-            # shared tabular
-            "PostgresTableStore": ("fitz_sage.tabular.store.postgres.PostgresTableStore"),
+            # shared tabular (SQLite-backed after Cloud removal)
+            "SqliteTableStore": "fitz_sage.tabular.store.sqlite.SqliteTableStore",
             # factory
             "get_chat_factory": "fitz_sage.llm.factory.get_chat_factory",
         }

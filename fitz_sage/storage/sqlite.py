@@ -61,7 +61,7 @@ class SqliteConnectionManager:
     """
 
     _instance: Optional["SqliteConnectionManager"] = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __init__(self, config: Optional[StorageConfig] = None):
         self.config = config or StorageConfig()

@@ -205,10 +205,8 @@ class KragE2ERunner:
 
         chat_plugin = tier_config["chat"]["plugin_name"]
         chat_models = tier_config["chat"].get("models", {})
-        embedding_plugin = tier_config["embedding"]["plugin_name"]
-        embedding_model = tier_config["embedding"].get("model", "")
-        vector_db_plugin = tier_config["vector_db"]["plugin_name"]
-        vector_db_kwargs = tier_config["vector_db"].get("kwargs", {})
+        chat_base_url = tier_config["chat"].get("base_url")
+        chat_api_key_env = tier_config["chat"].get("api_key_env")
 
         # Build flat chat specs
         chat_fast = (
@@ -222,25 +220,17 @@ class KragE2ERunner:
         chat_smart = (
             f"{chat_plugin}/{chat_models['smart']}" if chat_models.get("smart") else chat_plugin
         )
-        embedding_spec = (
-            f"{embedding_plugin}/{embedding_model}" if embedding_model else embedding_plugin
-        )
 
-        logger.info(
-            f"KRAG E2E Setup: chat={chat_plugin}, embedding={embedding_plugin}, "
-            f"vector_db={vector_db_plugin}"
-        )
+        logger.info(f"KRAG E2E Setup: chat={chat_plugin} base_url={chat_base_url}")
 
         tier_collection = self._collection_for_tier(tier_name)
         self._tier_collections.add(tier_collection)
 
-        # Build KRAG config
+        # Build KRAG config — post-v0.12.0 schema (no embedding / vector_db; BM25 + KRAG routing + LLM rerank)
         config_dict = {
             "chat_fast": chat_fast,
             "chat_balanced": chat_balanced,
             "chat_smart": chat_smart,
-            "embedding": embedding_spec,
-            "vector_db": vector_db_plugin,
             "collection": tier_collection,
             # Disable guardrails for E2E tests to isolate retrieval testing
             "enable_guardrails": False,
@@ -249,8 +239,11 @@ class KragE2ERunner:
             # Higher retrieval for better recall
             "top_addresses": 20,
             "top_read": 10,
-            "vector_db_kwargs": vector_db_kwargs,
         }
+        if chat_base_url:
+            config_dict["chat_base_url"] = chat_base_url
+        if chat_api_key_env:
+            config_dict["chat_api_key_env"] = chat_api_key_env
 
         cfg = FitzKragConfig(**config_dict)
         self.engine = FitzKragEngine(cfg)
@@ -306,10 +299,8 @@ class KragE2ERunner:
 
         chat_plugin = tier_config["chat"]["plugin_name"]
         chat_models = tier_config["chat"].get("models", {})
-        embedding_plugin = tier_config["embedding"]["plugin_name"]
-        embedding_model = tier_config["embedding"].get("model", "")
-        vector_db_plugin = tier_config["vector_db"]["plugin_name"]
-        vector_db_kwargs = tier_config["vector_db"].get("kwargs", {})
+        chat_base_url = tier_config["chat"].get("base_url")
+        chat_api_key_env = tier_config["chat"].get("api_key_env")
 
         # Build flat chat specs
         chat_fast = (
@@ -323,9 +314,6 @@ class KragE2ERunner:
         chat_smart = (
             f"{chat_plugin}/{chat_models['smart']}" if chat_models.get("smart") else chat_plugin
         )
-        embedding_spec = (
-            f"{embedding_plugin}/{embedding_model}" if embedding_model else embedding_plugin
-        )
 
         tier_collection = self._collection_for_tier(tier_name)
         self._tier_collections.add(tier_collection)
@@ -335,15 +323,16 @@ class KragE2ERunner:
             "chat_fast": chat_fast,
             "chat_balanced": chat_balanced,
             "chat_smart": chat_smart,
-            "embedding": embedding_spec,
-            "vector_db": vector_db_plugin,
             "collection": tier_collection,
             "enable_guardrails": False,
             "strict_grounding": False,
             "top_addresses": 20,
             "top_read": 10,
-            "vector_db_kwargs": vector_db_kwargs,
         }
+        if chat_base_url:
+            config_dict["chat_base_url"] = chat_base_url
+        if chat_api_key_env:
+            config_dict["chat_api_key_env"] = chat_api_key_env
 
         cfg = FitzKragConfig(**config_dict)
         self.engine = FitzKragEngine(cfg)
