@@ -76,37 +76,25 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Install minimal dependencies for unit tests (skip heavy ML dependencies like docling/torch)
+          # Minimal deps for unit tests (skip heavy ML deps like docling/torch).
           pip install pydantic pyyaml httpx typing-extensions typer jinja2
           pip install pytest pytest-cov pytest-xdist psutil
-          # Scientific computing (needed for embeddings/vectors in unit tests)
-          pip install numpy faiss-cpu
-          # Cloud module encryption
+          # Scientific computing (semantic matching helpers in unit tests).
+          pip install numpy
+          # Cert generation in tests/unit/conftest.py.
           pip install cryptography
-          # Auth resilience (lightweight, needed for M2M auth)
+          # Auth resilience (lightweight, needed for M2M auth).
           pip install tenacity circuitbreaker
-          # Property testing
+          # Property testing.
           pip install hypothesis
-          # Embedded postgres for storage tests
-          pip install fitz-pgserver psycopg psycopg-pool
-          # Install package in editable mode without dependencies (they're already installed above)
+          # Install package in editable mode without deps (already installed above).
           pip install -e . --no-deps
 
       - name: Run tests
         env:
           PYTHONUTF8: 1
         run: |
-          # Run non-postgres tests in parallel (fast)
-          pytest tests/unit/ -v --tb=short -n 2 -m "not postgres"
-
-      - name: Run postgres tests (Linux only)
-        if: runner.os == 'Linux'
-        env:
-          PYTHONUTF8: 1
-        run: |
-          # Run postgres tests serially (pgserver can't handle parallel workers)
-          # Skip on Windows - initdb.exe fails on GitHub runners
-          pytest tests/unit/ -v --tb=short -m "postgres"
+          pytest tests/unit/ -v --tb=short -n 2
 
   # ===========================================================================
   # Core Module Import Check (Lightweight)
@@ -159,27 +147,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Install minimal dependencies for unit tests (skip heavy ML deps)
+          # Minimal deps for unit tests (skip heavy ML deps).
           pip install pydantic pyyaml httpx typing-extensions typer jinja2
           pip install pytest pytest-cov pytest-xdist psutil
-          # Scientific computing (needed for embeddings/vectors)
-          pip install numpy faiss-cpu
-          # Cloud module encryption
+          pip install numpy
           pip install cryptography
-          # Auth resilience (lightweight, needed for M2M auth)
           pip install tenacity circuitbreaker
-          # Property testing
           pip install hypothesis
-          # Embedded postgres for storage tests
-          pip install fitz-pgserver psycopg psycopg-pool
           pip install -e . --no-deps
 
       - name: Run tests with coverage
         run: |
-          # Run non-postgres tests in parallel, postgres tests serially
-          # Use --cov-append to combine coverage from both runs
-          pytest tests/unit/ --cov=fitz_sage --cov-report=xml --cov-report=term-missing -n 2 -m "not postgres"
-          pytest tests/unit/ --cov=fitz_sage --cov-report=xml --cov-report=term-missing --cov-append -m "postgres"
+          pytest tests/unit/ --cov=fitz_sage --cov-report=xml --cov-report=term-missing -n 2
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

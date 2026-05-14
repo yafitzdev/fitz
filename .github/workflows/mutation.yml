@@ -85,7 +85,7 @@ jobs:
           timeout 21600 python -m mutmut run \
             --paths-to-mutate "$PATHS" \
             --tests-dir tests/ \
-            --runner "python -m pytest tests/unit/ tests/integration/ -x -q --tb=no --ignore=tests/unit/test_postgres_recovery.py" \
+            --runner "python -m pytest tests/unit/ tests/integration/ -x -q --tb=no" \
             --CI 2>&1 | tee mutmut_output.log | grep -E '(^[0-9]|🎉|🙁|===|Error|FAILED)' | tail -50 || true
 
           echo ""
