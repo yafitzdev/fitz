@@ -185,31 +185,27 @@ See [governance benchmarking](features/governance/governance-benchmarking.md) fo
 
 ---
 
-## Semantic Matching
+## How constraints detect signals
 
-Constraints use **embedding-based semantic matching** for language-agnostic detection.
+Constraints detect signals (conflict, missing evidence, causal claim
+without support) by a mix of:
 
-Instead of keyword matching:
-```python
-# Bad: Only works in English
-if "because" in text or "caused by" in text:
-    has_causal_language = True
-```
+1. **Chat-LLM reasoning** — for the heavyweight checks
+   (`conflict_aware`, `insufficient_evidence`, `answer_verification`)
+   the constraint asks the `chat_fast` or `chat_balanced` tier to
+   judge the candidate evidence against the question.
+2. **Lexical patterns** — for fast, deterministic checks
+   (`causal_attribution`, `specific_info_type`) the constraint scans
+   for anchor phrases and structural cues without any model call.
+3. **Optional embedder slot** — `SemanticMatcher` accepts an embedder
+   for language-agnostic anchor-phrase matching, but the production
+   path (`create_default_constraints(chat=..., chat_balanced=...)`)
+   leaves it unset; the embedding API was removed in v0.12.0. The
+   slot remains for tests and downstream consumers that want to plug
+   in their own vector backend.
 
-Fitz uses embeddings:
-```python
-# Good: Works in any language
-causal_similarity = cosine_similarity(
-    embed(chunk),
-    embed("This was caused by the following reason")
-)
-has_causal_language = causal_similarity > threshold
-```
-
-This means constraints work across:
-- Multiple languages
-- Paraphrased expressions
-- Domain-specific terminology
+The result is a deterministic constraint cascade where each step is
+either pure-Python or a single small chat call.
 
 ---
 
@@ -240,9 +236,11 @@ class MyConstraint:
 ### Requirements
 
 Constraints must be:
-- **Deterministic**: Same input → same output
-- **Side-effect free**: No modifications, no network calls
-- **Fast**: No LLM calls (use pre-computed embeddings)
+- **Deterministic**: same input → same output
+- **Side-effect free**: no mutation, no network calls beyond the
+  optional injected chat client
+- **Fast**: at most one chat call per constraint; ideally zero
+  (lexical / structural detection)
 
 ### Example: Recency Constraint
 
@@ -294,12 +292,11 @@ They are auto-discovered.
 
 ## Comparison with Other Systems
 
-| System | Uncertainty Handling |
-|--------|---------------------|
-| ChatGPT RAG | No explicit handling |
-| LangChain | Prompt-based, not enforced |
-| LlamaIndex | Optional, manual setup |
-| **Fitz** | Built-in, automatic |
+| System          | Uncertainty Handling                         |
+|-----------------|----------------------------------------------|
+| ChatGPT RAG     | None — answers as if always confident        |
+| Generic RAG libs| Prompt-based, easy to bypass with paraphrase |
+| **fitz-sage**   | Built-in cascade; emits TRUSTWORTHY / DISPUTED / ABSTAIN |
 
 Fitz treats uncertainty as a **feature**, not a failure.
 

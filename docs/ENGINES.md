@@ -1,164 +1,179 @@
-# Fitz RAG Engine
+# Engines
 
-This document explains Fitz's RAG engine architecture and core contracts.
+fitz-sage **v0.12.0+**. An engine is anything that implements the
+`KnowledgeEngine` protocol — given a `Query`, return an `Answer` with
+mode (`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN`) and provenance.
 
----
-
-## Overview
-
-Fitz RAG is a traditional Retrieval-Augmented Generation engine with epistemic guardrails and hierarchical summarization capabilities.
-
-```
-Query → Embed → Vector Search → Rerank → Context Build → LLM → Answer
-```
-
-**Key Features**:
-- Separate embedding model for retrieval
-- Vector database for storage (pgvector)
-- Chunk-based retrieval with optional reranking
-- Hierarchical summaries for analytical queries
-- Epistemic guardrails (knows when to say "I don't know")
+The shipping engine is `fitz_krag` (Knowledge Routing Augmented
+Generation). It's the only one most users need.
 
 ---
 
 ## Core Contracts
 
-All engines implement the same interface, defined in `fitz_sage/core/`:
+Defined in `fitz_sage/core/`:
 
-### KnowledgeEngine Protocol
+### `KnowledgeEngine`
 
 ```python
 from typing import Protocol
 from fitz_sage.core import Query, Answer
 
 class KnowledgeEngine(Protocol):
-    """Protocol that all knowledge engines must implement."""
-
-    def answer(self, query: Query) -> Answer:
-        """Execute a query and return an answer."""
-        ...
+    def answer(self, query: Query) -> Answer: ...
 ```
 
-### Query
+### `Query`
 
 ```python
 @dataclass
 class Query:
-    text: str                           # The question
-    constraints: Optional[Constraints]  # Query-time limits
-    metadata: Dict[str, Any]            # Engine hints
+    text: str
+    constraints: Constraints | None = None
+    metadata: dict | None = None
 ```
 
-### Answer
+### `Answer`
 
 ```python
 @dataclass
 class Answer:
-    text: str                      # Generated answer
-    provenance: List[Provenance]   # Source attribution
-    metadata: Dict[str, Any]       # Engine metadata
+    text: str
+    mode: AnswerMode                  # TRUSTWORTHY | DISPUTED | ABSTAIN
+    provenance: list[Provenance]
+    metadata: dict
 ```
 
-### Provenance
+### `Provenance`
 
 ```python
 @dataclass
 class Provenance:
-    source_id: str              # Unique source identifier
-    excerpt: Optional[str]      # Relevant excerpt
-    metadata: Dict[str, Any]    # Source metadata
+    source_id: str        # collection-qualified address
+    excerpt: str | None
+    metadata: dict
 ```
 
 ---
 
-## Fitz KRAG Engine
+## `fitz_krag` — the production engine
 
-**Location**: `fitz_sage/engines/fitz_krag/`
+**Location:** `fitz_sage/engines/fitz_krag/`
+
+KRAG is a structure-first retriever. Instead of chunking documents into
+fixed-size text windows and embedding them, it parses code, prose, and
+tables into typed units (`Symbol`, `Section`, `TableSpec`) and routes
+queries to the right strategy.
+
+```
+Query
+ ├─► Rewriter (resolves pronouns / coreference via chat call)
+ ├─► Analyzer (detects intent: temporal, comparison, aggregation, ...)
+ ├─► Router (symbol search · section search · table SQL)
+ │    └─► FTS5 + bm25() over per-collection .db
+ ├─► Expander (import graph, entity links, same-file refs, hierarchy)
+ ├─► LLMReranker (chat call scoring docs)
+ ├─► Constraints (conflict_aware, insufficient_evidence, ...)
+ └─► Synthesizer → Answer (+ provenance + mode)
+```
 
 ### Usage
 
 ```python
-from fitz_sage.engines.fitz_krag import run_fitz_krag
+from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
+from fitz_sage.core import Query
 
-answer = run_fitz_krag("What is quantum computing?")
-print(answer.text)
-print(answer.provenance)
+cfg = FitzKragConfig(
+    chat_fast="endpoint",
+    chat_balanced="endpoint",
+    chat_smart="endpoint",
+    chat_base_url="http://localhost:8080/v1",
+    chat_smart_model="qwen2.5-7b-instruct",
+    collection="my_docs",
+)
+engine = FitzKragEngine(cfg)
+answer = engine.answer(Query(text="What is X?"))
 ```
+
+The convenience function `run_fitz_krag(text, **overrides)` wraps
+this for one-shots.
 
 ### Configuration
 
-```yaml
-# .fitz/config.yaml
-chat_fast: cohere/command-r7b-12-2024
-chat_balanced: cohere/command-r-08-2024
-chat_smart: cohere/command-a-03-2025
-embedding: cohere/embed-v4.0
-rerank: cohere/rerank-v3.5       # or null to disable
-collection: my_knowledge
-parser: glm_ocr                  # or docling, docling_vision
+See [CONFIG.md](CONFIG.md) for every key. The minimum is `collection:`
+and a chat tier. Everything else has working defaults.
 
-vector_db: pgvector
-vector_db_kwargs:
-  mode: local  # or "external" with connection_string
-```
+### Built-in features
 
-### Features
-
-| Feature | Description |
-|---------|-------------|
-| **Hierarchical Summaries** | L0 chunks + L1 doc summaries + L2 corpus summary |
-| **Epistemic Guardrails** | Detects contradictions, insufficient evidence |
-| **Artifact Generation** | Auto-generates architecture docs, data models, etc. |
-| **Incremental Ingestion** | Only re-processes changed files |
+| Feature                 | What it does                                                  |
+| ----------------------- | ------------------------------------------------------------- |
+| Symbol / section / table routing | Per-content-type retrieval strategies              |
+| Import graph traversal  | Code: walks references and imports across files               |
+| Entity linking          | Cross-source linking via shared named entities                |
+| Hierarchical summaries  | L1 (section), L2 (doc-level) summaries built at ingest        |
+| Multi-hop retrieval     | Iterative bridge extraction for compound questions            |
+| LLM reranker            | One chat call to rank a small candidate set                   |
+| Epistemic guardrails    | TRUSTWORTHY / DISPUTED / ABSTAIN constraint cascade           |
+| Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
+| Incremental ingestion   | Re-ingest only changed files (`.fitz/ingest_state.json`)      |
 
 ---
 
-## Alternative Engines
+## Engine selection
 
-Fitz supports a pluggable engine architecture. You can swap engines via configuration:
+The default engine is `fitz_krag`. Choose another via the runtime API
+or the CLI:
 
 ```python
 from fitz_sage import run
 
-# Default: Fitz KRAG
 answer = run("What is X?", engine="fitz_krag")
-
-# Custom engine (see CUSTOM_ENGINES.md)
-answer = run("What is X?", engine="my_custom_engine")
 ```
 
-### Available Engines
+```bash
+fitz query "What is X?" --engine fitz_krag --source ./docs
+```
 
-| Engine | Description | Status |
-|--------|-------------|--------|
-| `fitz_krag` | KRAG with epistemic guardrails | Production |
+### Available engines
 
-Custom engines can be registered via the engine registry. See [CUSTOM_ENGINES.md](CUSTOM_ENGINES.md).
+| Engine     | Status     | Description                                         |
+| ---------- | ---------- | --------------------------------------------------- |
+| `fitz_krag`| Production | KRAG with epistemic guardrails (this doc's subject) |
+
+Custom engines register through the engine registry — see
+[CUSTOM_ENGINES.md](CUSTOM_ENGINES.md).
 
 ---
 
-## Custom Engines
-
-You can create your own engine. See [CUSTOM_ENGINES.md](CUSTOM_ENGINES.md) for details.
+## Custom engines
 
 ```python
-from fitz_sage.core import Query, Answer
+from fitz_sage.core import Query, Answer, AnswerMode
 from fitz_sage.runtime import EngineRegistry
 
 class MyEngine:
     def answer(self, query: Query) -> Answer:
-        # Your logic here
-        return Answer(text="...", provenance=[])
+        return Answer(
+            text="...",
+            mode=AnswerMode.TRUSTWORTHY,
+            provenance=[],
+            metadata={},
+        )
 
-# Register and use
-EngineRegistry.get_global().register("my_engine", lambda c: MyEngine())
+EngineRegistry.get_global().register("my_engine", lambda cfg: MyEngine())
 ```
+
+You don't need to subclass anything — duck-typing on the protocol is
+enough. See [CUSTOM_ENGINES.md](CUSTOM_ENGINES.md) for the registry and
+config-loader hooks.
 
 ---
 
-## Standalone Code Retrieval
+## Standalone code retrieval
 
-For code-only retrieval without the full KRAG stack, fitz-sage provides a lightweight `CodeRetriever`:
+For code-only use cases where ingesting a full collection is overkill,
+fitz-sage ships a lightweight `CodeRetriever` that reads files
+directly from disk — no SQLite, no ingestion pipeline:
 
 ```bash
 pip install fitz-sage[code]
@@ -166,26 +181,36 @@ pip install fitz-sage[code]
 
 ```python
 from fitz_sage.code import CodeRetriever
+from fitz_sage.llm.factory import get_chat_factory
 
-retriever = CodeRetriever(source_dir="./myproject", chat_factory=my_factory)
+retriever = CodeRetriever(
+    source_dir="./myproject",
+    chat_factory=get_chat_factory({
+        "fast":   "endpoint",
+        "smart":  "endpoint",
+    }, base_url="http://localhost:8080/v1", smart_model="qwen2.5-7b-instruct"),
+)
 results = retriever.retrieve("How does authentication work?")
 ```
 
-**Pipeline:** AST structural index → LLM file selection → import graph expansion → neighbor expansion → compression.
+Pipeline: AST structural index → LLM file selection → import-graph
+expansion → neighbor-directory expansion → compression. No database.
 
-No PostgreSQL, no pgvector, no docling. See [KRAG docs](features/platform/krag.md#standalone-code-retrieval) for details.
-
-| Component | Path |
-|-----------|------|
-| CodeRetriever | `fitz_sage/code/retriever.py` |
-| Indexer (file list, AST index, import graph) | `fitz_sage/code/indexer.py` |
-| LLM prompts | `fitz_sage/code/prompts.py` |
+| Component                          | Path                          |
+| ---------------------------------- | ----------------------------- |
+| `CodeRetriever`                    | `fitz_sage/code/retriever.py` |
+| Indexer (file list, AST, imports)  | `fitz_sage/code/indexer.py`   |
+| LLM prompts                        | `fitz_sage/code/prompts.py`   |
 
 ---
 
-## Architecture Principles
+## Architecture principles
 
-1. **Protocol-Based**: Engines implement protocols, not inherit from base classes
-2. **Config-Driven**: Engine behavior controlled by configuration
-3. **Shared Infrastructure**: LLM, vector DB, ingestion shared across engines
-4. **Standardized I/O**: All engines use Query → Answer
+1. **Protocol over inheritance.** Implement `KnowledgeEngine` by
+   exposing a single `answer()` method.
+2. **Config-driven.** Engine behaviour lives in YAML / `*Config`
+   dataclasses, not in Python keywords.
+3. **Shared infrastructure.** Chat layer, SQLite storage, and
+   ingestion are shared across engines.
+4. **Honest answers.** Every `Answer` carries a `mode` — engines never
+   pretend they know something they don't.

@@ -1,174 +1,165 @@
-# Reranking (Cross-Encoder Precision)
+# Reranking (LLM-based)
 
 ## Problem
 
-Vector search optimizes for recall—finding candidates that might be relevant. But embedding similarity doesn't always correlate with true relevance:
+BM25 optimises for **recall** — find candidates that contain the
+right tokens. But token overlap isn't the same as true relevance:
 
-- Semantically similar chunks may not answer the specific question
-- The top-5 by vector distance aren't always the best 5 for the query
-- Dense search retrieves broadly; users need precise answers
+- Two sections can both mention the query terms while only one
+  actually answers the question.
+- The top-5 by `bm25()` aren't always the best 5 for the user's
+  *intent*.
+- BM25 is intent-blind: it can't tell a "how do I do X?" question
+  from a "what is X?" question.
 
-## Solution: Two-Stage Ranking (Baked In)
+## Solution: LLM reranker
 
-Use vector search for **recall** (find candidates), then cross-encoder reranking for **precision** (re-order by true relevance):
+After FTS5 / BM25 returns a candidate set, ask the chat model to
+score each `(query, candidate)` pair in a single JSON-returning
+chat completion. Re-order by the model's score, keep the top-K.
 
 ```
 Query: "What's the battery warranty?"
-            ↓
-    Vector Search (recall)
-    Returns 40 candidates
-            ↓
-    Cross-Encoder Rerank (precision)  ← Auto-enabled when rerank provider configured
-    Re-scores each (query, chunk) pair
-            ↓
-    Top 5 truly relevant chunks
+            │
+            ▼
+   FTS5 + bm25() — recall
+   returns ~20 candidates
+            │
+            ▼
+   LLMReranker — precision         ◀── enabled when `rerank:` is set
+   one chat call scoring each pair
+            │
+            ▼
+   Top 5 truly-relevant candidates
+            │
+            ▼
+   Synthesizer + constraint cascade
 ```
 
-**Reranking is baked in** - it automatically activates when you configure a rerank provider. No plugin choice needed.
+This is **not a cross-encoder** model in the classical sense — it's
+the same OpenAI-compatible chat protocol fitz-sage already speaks for
+everything else. No separate reranker backend, no second SDK, no
+embedding model.
 
-## How It Works
+## Why an LLM, not a cross-encoder?
 
-### Architecture
+The legacy reranker plugins (Cohere rerank-v3.5, BGE reranker, etc.)
+were dropped in v0.12.0 along with the embedding stack. The reasoning:
 
-Reranking is a **conditional pipeline step** that runs after VectorSearchStep when a reranker is available:
+1. **One protocol.** Adding a cross-encoder means adding a second
+   network protocol, a second model to host, and a second auth path.
+2. **Intent-aware.** A chat model sees the query and the candidate
+   together with full instruction-following context. It can weight
+   intent (`how do I` vs `what is`) the way a cross-encoder can't.
+3. **Cheap.** One chat call to rank 10–20 candidates is fast — well
+   under 2 s on a 7B local model, low-millisecond on cloud APIs.
+4. **Already in the stack.** The synthesizer is a chat call; the
+   query rewriter is a chat call; the detection step is a chat call.
+   Reranking just rides the same path.
 
+## How it works
+
+```python
+prompt = build_rerank_prompt(query, candidates)
+# Sends a structured chat-completion request:
+#   system: "You are scoring retrieval candidates for relevance ..."
+#   user:   <query> + <numbered candidate snippets>
+response_json = chat.chat([...])
+# Returns: [{"id": "...", "score": 0.91, "why": "..."}]
 ```
-VectorSearchStep (recall layer)
-├─ Detection (temporal, aggregation, comparison, freshness)
-├─ Query expansion, multi-query, keyword filtering
-├─ Hybrid search (dense + sparse + RRF)
-└─ Returns 40 candidates
-         ↓
-RerankStep (precision layer) [if rerank provider configured]
-├─ Separates VIP chunks (score=1.0, always kept)
-├─ Sends (query, chunk.content) pairs to cross-encoder
-├─ Receives relevance scores (0.0-1.0)
-├─ Re-orders by cross-encoder confidence
-└─ Returns top 15
-         ↓
-LimitStep + ThresholdStep
-└─ Returns final 5 chunks for generation
-```
 
-### Cross-Encoder vs Bi-Encoder
+The response is JSON. The reranker parses it, attaches `rerank_score`
+to each candidate's metadata, and re-orders.
 
-| Aspect | Bi-Encoder (Vector Search) | Cross-Encoder (Reranking) |
-|--------|---------------------------|---------------------------|
-| **Speed** | Fast (pre-computed embeddings) | Slow (query-time inference) |
-| **Accuracy** | Good recall | Better precision |
-| **Scale** | Millions of docs | Top 50-100 candidates |
-| **How it works** | Embed query and docs separately | Process (query, doc) pairs together |
+### Smart skip
 
-Cross-encoders are more accurate because they see query and document together, but too slow to run on the full corpus. That's why we use two stages.
+If the candidate pool is small (default: `< 6`), the reranker step is
+bypassed — there's nothing to rank.
 
-## Key Design Decisions
+### VIP preservation
 
-1. **Baked in** - Automatically enabled when rerank provider is configured. No plugin choice needed.
+Artifact rows (architecture narrative, dependency summary) carry a
+sentinel `score = 1.0` and bypass the reranker. They're "always
+include" by design.
 
-2. **Provider-agnostic** - Interface via `RerankProvider` protocol. Swap providers without code changes.
+## Key design decisions
 
-3. **VIP preservation** - Artifacts and high-confidence chunks (score=1.0) bypass reranking entirely.
-
-4. **Score metadata** - Adds `rerank_score` to chunk metadata for downstream filtering.
-
-5. **Independent of detection** - Reranking doesn't know about temporal/aggregation/comparison detection—it just re-orders whatever VectorSearchStep returns.
-
-6. **Smart skip** - Skips reranking if fewer than 20 candidates. Cross-encoder adds latency and cost with diminishing value on small pools.
+1. **Provider-presence pattern.** Set `rerank: endpoint/llmreranker`
+   and the step runs; omit (or set `null`) and it doesn't.
+2. **Single chat call.** The whole candidate set goes in one prompt
+   — saves per-candidate latency and lets the model see the candidates
+   in context with each other.
+3. **JSON contract.** The reranker speaks a documented JSON shape;
+   parsing failures fall back to the original order.
+4. **Metadata, not destructive.** `rerank_score` is added to each
+   candidate's metadata; the original BM25 rank stays available.
 
 ## Configuration
 
-### Enable Reranking
+### Enable
 
 ```yaml
-# .fitz/config.yaml
-rerank: cohere/rerank-v3.5          # Provider/model - this alone enables reranking
+rerank: endpoint/llmreranker
 ```
 
-### Disable Reranking (default)
+The reranker uses the configured chat tier (defaults to `chat_smart`).
+Override:
 
 ```yaml
-# .fitz/config.yaml
-rerank: null                        # No provider = no reranking
-# Or simply omit the rerank line
+rerank: endpoint/llmreranker
+rerank_tier: balanced       # use chat_balanced instead of chat_smart
 ```
 
-### Provider Options
-
-| Provider | Config | Model |
-|----------|--------|-------|
-| Cohere | `rerank: cohere/rerank-v3.5` | Default reranker |
-| Cohere (multilingual) | `rerank: cohere/rerank-multilingual-v3.0` | Multilingual support |
-
-### Pipeline Behavior
-
-When reranking is enabled, the `dense` plugin automatically includes:
+### Disable
 
 ```yaml
-# Automatic behavior (no config needed):
-# - vector_search: k=40 (larger candidate pool)
-# - rerank: k=15, min_chunks=20 (skip if < 20 candidates)
-# - limit: k=5 (final limit from top_k config)
-# - threshold: 0.6 (filter low-confidence chunks)
+# rerank: null    # or omit the key entirely
 ```
-
-**Smart Skip**: If vector search returns fewer than 20 chunks (e.g., small collection or specific query), reranking is skipped to save latency and API costs. The cross-encoder's value is in narrowing a large pool - with only 20 candidates, vector similarity is sufficient.
 
 ## Files
 
-- **RerankStep:** `fitz_sage/engines/fitz_krag/retrieval/steps/rerank.py`
-- **RerankProvider protocol:** `fitz_sage/llm/providers/base.py`
-- **Cohere implementation:** `fitz_sage/llm/providers/cohere.py`
-- **Plugin definition:** `fitz_sage/engines/fitz_krag/retrieval/plugins/dense.yaml` (uses `enabled_if: reranker`)
-- **Plugin loader:** `fitz_sage/engines/fitz_krag/retrieval/loader.py`
-
-## Benefits
-
-| Without Reranking | With Reranking |
-|-------------------|----------------|
-| Vector distance = relevance | Cross-encoder = true relevance |
-| Top-k by embedding similarity | Top-k by query-document fit |
-| Fast | Slightly slower but more accurate |
-| All features still work | All features + precision layer |
+| Component                  | Path                                                              |
+| -------------------------- | ----------------------------------------------------------------- |
+| Pipeline step              | `fitz_sage/engines/fitz_krag/retrieval/reranker.py`               |
+| Reranker chat provider     | `fitz_sage/llm/providers/llm_reranker.py`                         |
+| Factory dispatch           | `fitz_sage/llm/config.py`                                         |
 
 ## Example
 
 **Query:** "What's the warranty period for the battery?"
 
-**After VectorSearchStep (top 5 by vector similarity):**
-1. "Battery specifications: 75 kWh capacity..." (score: 0.89)
-2. "Warranty terms vary by component..." (score: 0.87)
-3. "The battery uses lithium-ion cells..." (score: 0.85)
-4. "Battery warranty: 8 years or 100,000 miles" (score: 0.83)
-5. "Charging the battery takes 45 minutes..." (score: 0.82)
+**After FTS5 + bm25 (top 5 by BM25):**
 
-**After RerankStep (cross-encoder re-scored):**
-1. "Battery warranty: 8 years or 100,000 miles" (rerank: 0.94)
-2. "Warranty terms vary by component..." (rerank: 0.78)
-3. "Battery specifications: 75 kWh capacity..." (rerank: 0.61)
-4. "The battery uses lithium-ion cells..." (rerank: 0.45)
-5. "Charging the battery takes 45 minutes..." (rerank: 0.32)
+1. "Battery specifications: 75 kWh capacity ..."  (bm25 rank 1)
+2. "Warranty terms vary by component ..."        (bm25 rank 2)
+3. "The battery uses lithium-ion cells ..."      (bm25 rank 3)
+4. "Battery warranty: 8 years or 100,000 miles." (bm25 rank 4)
+5. "Charging the battery takes 45 minutes ..."   (bm25 rank 5)
 
-The cross-encoder correctly identifies the warranty-specific chunk as most relevant.
+**After LLM reranker:**
 
-## Interaction with Other Features
+1. "Battery warranty: 8 years or 100,000 miles." (rerank 0.94)
+2. "Warranty terms vary by component ..."        (rerank 0.78)
+3. "Battery specifications: 75 kWh capacity ..." (rerank 0.61)
+4. "The battery uses lithium-ion cells ..."      (rerank 0.45)
+5. "Charging the battery takes 45 minutes ..."   (rerank 0.32)
 
-| Feature | Relationship |
-|---------|-------------|
-| Hybrid Search | Runs before reranking; RRF fusion + cross-encoder = two-layer ranking |
-| Query Expansion | Runs before reranking; all expanded results reranked together |
-| Detection System | Inside VectorSearchStep; reranking is unaware of detected intent |
-| Multi-hop | Reranking runs inside each hop independently |
-| Entity Graph | Adds chunks to candidate pool; reranking can demote if not relevant |
+The reranker correctly promotes the warranty-specific row over the
+broader battery-spec candidates.
 
-## Dependencies
+## Interaction with other features
 
-- Requires rerank provider (e.g., `rerank: cohere/rerank-v3.5`)
-- Works with all other retrieval features (hybrid search, detection, etc.)
-- No separate plugin choice needed
+| Feature                | Relationship                                                       |
+| ---------------------- | ------------------------------------------------------------------ |
+| Sparse search (FTS5)   | Runs *before* reranking; produces the candidate pool               |
+| Query expansion        | Runs *before* reranking; all expanded results land in one pool     |
+| KRAG routing           | Reranker is intent-aware via the query text it receives            |
+| Multi-hop              | Reranker runs inside each hop independently                        |
+| Constraint cascade     | Reranker output feeds the constraint cascade; reranker doesn't see constraints |
 
-## Related Features
+## Related
 
-- [**Hybrid Search**](hybrid-search.md) - Dense + sparse fusion (first ranking layer)
-- [**Sparse Search**](sparse-search.md) - PostgreSQL full-text search component
-- [**Multi-Hop Reasoning**](multi-hop-reasoning.md) - Reranking runs inside each hop
-- [**Unified Storage**](unified-storage.md) - PostgreSQL stores vectors, reranking is query-time only
+- [Sparse Search (FTS5 + bm25)](sparse-search.md) — the recall layer
+- [Multi-Hop Reasoning](multi-hop-reasoning.md) — reranker runs inside each hop
+- [Unified Storage](../platform/unified-storage.md) — SQLite + FTS5 layer
+- [OpenAI-Compatible Endpoint](../platform/openai-compatible-endpoint.md) — the protocol everything speaks

@@ -11,7 +11,7 @@ The enrichment pipeline adds AI-generated metadata to chunks during ingestion. A
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Standard Pipeline                                              │
-│  Files → Parse → Chunk → Embed → Store                          │
+│  Files → Parse → Chunk → Index (SQLite + FTS5)                  │
 └─────────────────────────────────────────────────────────────────┘
                      │
                      ▼
@@ -143,7 +143,7 @@ Extracts exact-match identifiers for vocabulary-based retrieval.
 - Constants: `MAX_RETRIES`, `API_KEY`
 - API endpoints: `/api/v2/users`
 
-**Stored in:** PostgreSQL `keywords` table (via `VocabularyStore`) for exact-match retrieval at query time.
+**Stored in:** SQLite `keywords` table (via `VocabularyStore`) for exact-match retrieval at query time.
 
 ---
 
@@ -326,7 +326,7 @@ enrichment:
 | `fitz_sage/ingestion/enrichment/pipeline.py` | Main orchestrator |
 | `fitz_sage/ingestion/enrichment/config.py` | Configuration schema |
 | `fitz_sage/ingestion/enrichment/hierarchy/enricher.py` | Hierarchy generation |
-| `fitz_sage/retrieval/vocabulary/store.py` | Keyword vocabulary storage (PostgreSQL) |
+| `fitz_sage/retrieval/vocabulary/store.py` | Keyword vocabulary storage (SQLite) |
 
 ---
 

@@ -22,7 +22,7 @@ Level 1: Group summaries (per source file)
 Level 0: Original chunks (granular content)
 ```
 
-Query routing is automatic—summaries match analytical queries via embedding similarity.
+Query routing is automatic — summaries match analytical queries via the BM25 + LLM-reranker pipeline because the summary text matches the broader phrasing those queries use.
 
 ## How It Works
 
@@ -44,25 +44,28 @@ Query routing is automatic—summaries match analytical queries via embedding si
 
 ### At Query Time
 
-Only L0 and L2 chunks are indexed (L1 exists only as metadata). Semantic search returns:
+Only L0 and L2 are indexed in FTS5 (L1 lives as metadata on each L0
+row). BM25 returns:
 
 ```
 Q: "What are the overall trends?"
-→ L2 corpus summary has high embedding similarity
+→ L2 corpus summary scores high on the abstract phrasing
 → Returns corpus summary for high-level view
 → Result: High-level answer spanning all documents
 
 Q: "What did users say about the async tutorial?"
-→ L0 individual chunks from async_tutorial.md have high similarity
-→ L1 summary available via hierarchy_summary metadata
+→ L0 chunks from async_tutorial.md score high on the specific tokens
+→ L1 summary available via hierarchy_summary metadata for context
 → Result: Specific, granular content with file-level context
 ```
 
 ## Key Design Decisions
 
-1. **Always-on** - Summaries are generated automatically during ingestion. No configuration needed.
+1. **Always-on** — summaries are generated automatically during ingestion. No configuration needed.
 
-2. **Automatic routing** - Query embeddings naturally match the appropriate hierarchy level. No explicit routing logic.
+2. **Automatic routing** — abstract queries lexically match the L2
+   summary; specific queries match L0 token-for-token. The LLM
+   reranker resolves edge cases.
 
 3. **Incremental updates** - When a file changes, only its L1 summary regenerates. L2 regenerates if significant change.
 
@@ -145,7 +148,7 @@ observability_patterns.md (L1), corpus_summary (L2)
 - Returns: L0 chunks (same as standard RAG—no hierarchy needed for specific queries)
 - Result: Same as standard RAG
 
-Hierarchy only activates when embedding similarity favors summaries.
+Hierarchy only activates when BM25 + the LLM reranker promote a summary row over the granular ones.
 
 ## When Hierarchy Activates
 

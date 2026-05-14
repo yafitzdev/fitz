@@ -2,29 +2,34 @@
 
 ## Problem
 
-Standard RAG takes a large query (e.g., full test report + spec + requirements) and embeds it as one vector. This dilutes the semantic signal and retrieves irrelevant chunks.
+Standard RAG takes a large query (e.g., a full test report + spec
+excerpt + requirements doc) and uses it as one BM25 query. The TF
+distribution gets flat, the relevant tokens drown in surrounding
+context, and FTS5 returns mostly noise.
 
-## Solution: Automatic Query Expansion
+## Solution: automatic query decomposition
 
-Instead of embedding the entire input as one query, automatically extract key search terms and run multiple targeted queries.
+Instead of running the entire input as one query, ask the fast chat
+tier to extract key search terms, then run multiple targeted FTS5
+queries.
 
-## How It Works
+## How it works
 
 ```
 Query comes in
     │
-    ├─ len(query) < 300 chars? → Single vector search (standard behavior)
+    ├─ len(query) < 300 chars? → Single FTS5 + bm25() search
     │
     └─ len(query) >= 300 chars?
            │
            ▼
-       Fast LLM: "Extract key search terms"
+       Fast chat tier: "Extract key search terms"
            │
            ▼
-       Multiple targeted queries (3-5)
+       3–5 targeted sub-queries
            │
            ▼
-       Vector search for each → Dedupe → Rerank → Return
+       FTS5 + bm25() per sub-query  →  Dedupe  →  Rerank  →  Return
 ```
 
 ## Key Design Decisions
@@ -85,8 +90,13 @@ steps:
 - Support ticket routing with metadata
 - Any scenario with long, structured input + unstructured knowledge base
 
-## Related Features
+## Related
 
-- [**HyDE**](hyde.md) - Generates hypothetical docs for abstract queries (complements multi-query for different scenarios)
-- [**Query Expansion**](query-expansion.md) - Synonym/acronym expansion (rule-based, runs alongside multi-query)
-- [**Hierarchical RAG**](../ingestion/hierarchical-rag.md) - Summaries help when multi-query extracts high-level themes
+- [Query Expansion](query-expansion.md) — rule-based synonym/acronym
+  expansion; complements multi-query
+- [Sparse Search (FTS5 + bm25)](sparse-search.md) — what each
+  sub-query actually hits
+- [Hierarchical RAG](../ingestion/hierarchical-rag.md) — summaries
+  help when multi-query extracts high-level themes
+- [Reranking](reranking.md) — the LLM reranker step that follows
+  the merged sub-query results

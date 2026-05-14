@@ -1,6 +1,19 @@
 # Architecture Overview
 
-High-level system design of Fitz.
+High-level system design of fitz-sage **v0.12.0+**.
+
+The architecture has three load-bearing decisions:
+
+1. **One protocol.** OpenAI-compatible HTTP. No SDK dependencies, no
+   provider-specific code paths. `chat_smart`, `chat_balanced`,
+   `chat_fast` all speak the same `/chat/completions` endpoint.
+2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
+   typed-unit routing (symbols, sections, tables) + an LLM reranker
+   that scores documents in a single chat call. No vector DB, no
+   embedding model, no `vector` column anywhere.
+3. **No server.** Storage is SQLite — one `.db` file per collection
+   under `<workspace>/sqlite/`. Open it, query it, close it. WAL mode
+   gives multi-reader / single-writer concurrency.
 
 ---
 
@@ -8,7 +21,7 @@ High-level system design of Fitz.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  User Interface Layer                                                       │
+│  User Interface                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                          │
 │  │  CLI        │  │  Python SDK │  │  REST API   │                          │
@@ -18,47 +31,35 @@ High-level system design of Fitz.
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Runtime Layer                                                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  Engine Orchestrator                                                │    │
-│  │  - Configuration loading                                            │    │
-│  │  - Engine instantiation                                             │    │
-│  │  - Request routing                                                  │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
+│  Runtime (engine orchestrator: load config → build engine → dispatch)       │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Engine Layer                                                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────┐  ┌─────────────────────────────────┐   │
-│  │  FitzKRAG Engine                │  │  Custom Engines                 │   │
-│  │  KRAG pipeline                  │  │  (extensible via registry)      │   │
-│  │  - Retrieval                    │  │                                 │   │
-│  │  - Constraints (guardrails)     │  │                                 │   │
-│  │  - Generation                   │  │                                 │   │
-│  └─────────────────────────────────┘  └─────────────────────────────────┘   │
+│  Engine: FitzKRAG                                                           │
+│  - Query rewriter → analyzer → detection (LLM-classified intent)            │
+│  - Router: symbol search · section search · table SQL                       │
+│  - Expander (import graph, entity links, same-file refs, hierarchy)         │
+│  - LLM reranker (chat call that scores docs)                                │
+│  - Synthesizer (chat call that writes the answer)                           │
+│  - Constraints (TRUSTWORTHY / DISPUTED / ABSTAIN guardrails)                │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
           ┌─────────────────────────┼─────────────────────────┐
           ▼                         ▼                         ▼
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────────┐
-│  LLM Services       │  │  Storage Layer      │  │  Ingestion Pipeline     │
+│  LLM (chat only)    │  │  Storage (SQLite)   │  │  Ingestion Pipeline     │
 ├─────────────────────┤  ├─────────────────────┤  ├─────────────────────────┤
-│  - Chat             │  │  PostgreSQL +       │  │  - Parsing              │
-│  - Embedding        │  │  pgvector           │  │  - Chunking             │
-│  - Rerank           │  │  (vectors, metadata │  │  - Enrichment           │
-│  - Vision           │  │   tables, SQL)      │  │  - Embedding            │
+│  endpoint provider  │  │  WAL + FTS5         │  │  Parse (Docling / OCR)  │
+│  (any OpenAI-       │  │  one .db per        │  │  Chunk (semantic +      │
+│  compatible URL)    │  │  collection         │  │   structured)           │
+│  + enterprise auth  │  │  bm25() ranking     │  │  Enrich (summaries,     │
+│  (M2M, mTLS, CA)    │  │  json_each, json1   │  │   keywords, entities)   │
 └─────────────────────┘  └─────────────────────┘  └─────────────────────────┘
-          │                         │                         │
-          ▼                         ▼                         ▼
+          │
+          ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  External Services                                                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │  Cohere     │  │  OpenAI     │  │  Anthropic  │  │  Ollama (local)     │ │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+│  External: llama.cpp · vLLM · Ollama · LM Studio · OpenAI · Together · ...  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -66,255 +67,177 @@ High-level system design of Fitz.
 
 ## Layer Dependencies
 
-Strict import rules enforce separation of concerns:
+Strict import rules enforce separation of concerns (verified by
+`python -m tools.contract_map --fail-on-errors`):
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  core/              FOUNDATION - No upward imports              │
-│  - Query, Answer    Core data types                             │
-│  - Provenance       Source tracking                             │
-│  - Protocols        Engine/plugin interfaces                    │
-└─────────────────────────────────────────────────────────────────┘
-     ▲              ▲              ▲              ▲              ▲
-     │              │              │              │              │
-┌──────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌────────────┐
-│ llm/     │ │ storage/  │ │ vector_db/│ │retrieval/ │ │ ingestion/ │
-│ Chat,    │ │ PostgreSQL│ │ pgvector  │ │ Detection,│ │ Parse,     │
-│ Embed,   │ │ connection│ │ abstrac-  │ │ Sparse,   │ │ Chunk,     │
-│ Rerank   │ │ manager   │ │ tion      │ │ Entities  │ │ Enrich     │
-└──────────┘ └───────────┘ └───────────┘ └───────────┘ └────────────┘
-     ▲              ▲              ▲              ▲
-     └──────────────┼──────────────┼──────────────┘
-                    │              │
-                    ┌──────────────────────┐
-                    │  engines/            │
-                    │  FitzKRAG + custom   │
-                    │  Orchestrate layers  │
-                    └──────────────────────┘
-                               ▲
-                    ┌──────────────────────┐
-                    │  runtime/            │
-                    │  Multi-engine        │
-                    │  orchestration       │
-                    └──────────────────────┘
-                               ▲
-                    ┌──────────────────────┐
-                    │  cli/, api/, sdk/    │
-                    │  User-facing layer   │
-                    └──────────────────────┘
-```
-
-**Import rules:**
-
-| Layer | Can Import From |
-|-------|-----------------|
-| `core/` | No imports from engines/, ingestion/ |
-| `retrieval/` | `core/` |
-| `llm/` | `core/` |
-| `storage/` | `core/` |
-| `vector_db/` | `core/`, `storage/` |
-| `ingestion/` | `core/` |
-| `engines/` | `core/`, `llm/`, `vector_db/`, `storage/`, `retrieval/` |
-| `runtime/` | All layers |
-| `cli/`, `api/` | All layers |
-
-Verify with: `python -m tools.contract_map --fail-on-errors`
+| Layer            | May import from                              |
+| ---------------- | -------------------------------------------- |
+| `core/`          | nothing (no imports from engines/ingestion)  |
+| `retrieval/`     | `core/`                                      |
+| `llm/`           | `core/`                                      |
+| `storage/`       | `core/`                                      |
+| `ingestion/`     | `core/`                                      |
+| `engines/`       | `core/`, `llm/`, `storage/`, `retrieval/`    |
+| `runtime/`       | all layers                                   |
+| `cli/`, `api/`   | all layers                                   |
 
 ---
 
 ## Data Flow
 
-### Query Flow
+### Query
 
 ```
-┌─────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  Query  │───▶│  Retrieve   │───▶│ Constraints │───▶│  Generate   │
-│         │    │  Chunks     │    │  Check      │    │  Answer     │
-└─────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-                     │                   │                  │
-                     ▼                   ▼                  ▼
-              ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-              │ Vector DB   │    │ TRUSTWORTHY │    │  Answer +   │
-              │ Similarity  │    │ DISPUTED    │    │  Provenance │
-              │ Search      │    │ ABSTAIN     │    │  Sources    │
-              │             │    │             │    │             │
-              └─────────────┘    └─────────────┘    └─────────────┘
+Query → rewrite (resolve pronouns / context) → analyze (detect intent)
+      → route (symbol / section / table)      → search via FTS5 bm25
+      → expand (import graph, entities, hierarchy)
+      → LLM rerank (single chat call scoring documents)
+      → constraints check (conflict-aware, evidence sufficiency)
+      → synthesize answer (chat call) + provenance
+      → AnswerMode ∈ {TRUSTWORTHY, DISPUTED, ABSTAIN}
 ```
 
-### Ingestion Flow
+### Ingestion
 
 ```
-┌─────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  Files  │───▶│   Parse     │───▶│   Chunk     │───▶│   Embed     │
-│         │    │             │    │             │    │             │
-└─────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-                     │                   │                  │
-                     ▼                   ▼                  ▼
-              ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-              │ Docling     │    │ Semantic    │    │ Cohere/     │
-              │ (PDF, DOCX) │    │ Chunking    │    │ OpenAI/     │
-              │ + VLM       │    │ + Metadata  │    │ Ollama      │
-              └─────────────┘    └─────────────┘    └─────────────┘
-                                       │
-                                       ▼
-                                ┌─────────────┐    ┌─────────────┐
-                                │  Enrich     │───▶│   Store     │
-                                │ (always on) │    │             │
-                                └─────────────┘    └─────────────┘
-                                       │                  │
-                                       ▼                  ▼
-                                ┌─────────────┐    ┌─────────────┐
-                                │ChunkEnricher│    │ PostgreSQL  │
-                                │ + Hierarchy │    │ + pgvector  │
-                                │             │    │             │
-                                └─────────────┘    └─────────────┘
+Files → Parse (Docling for PDF/DOCX, GLM-OCR for scans, tree-sitter
+        for code, native parsers for CSV/XLSX/SQL/JSON)
+      → Chunk (sections, symbols, table rows — typed units, not
+        fixed-size windows)
+      → Enrich (LLM-generated summaries, keywords, named entities;
+        hierarchical L1/L2 summaries)
+      → Index into per-collection SQLite + FTS5 external-content tables
 ```
 
 ---
 
-## Plugin System
+## Chat Provider Model
 
-### Architecture
+The LLM layer has exactly one canonical provider — **`endpoint`** — that
+speaks OpenAI-compatible HTTP. Everything else is sugar over it:
+
+| Spec                                   | Resolves to                                              |
+| -------------------------------------- | -------------------------------------------------------- |
+| `endpoint/<URL>/<model>` or YAML triple | `chat_base_url` + `model` + optional `chat_api_key_env` |
+| `openai/<model>`                       | endpoint pointing at `https://api.openai.com/v1`         |
+| `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |
+| `enterprise/<provider>/<model>`        | endpoint + M2M / mTLS / custom-CA auth                   |
+
+Legacy names `ollama`, `cohere`, `anthropic` were removed in v0.12.0
+and raise `ValueError` with migration text.
+
+The **LLMReranker** uses the same chat protocol — it doesn't call a
+separate reranker endpoint. It asks the chat model to score a small
+list of documents in JSON.
+
+---
+
+## Storage Model
+
+One **SQLite** file per collection:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Configuration (.fitz/config.yaml)                                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  chat_smart: cohere/command-a-03-2025  ◀─── provider/model string           │
-│  chat_fast: cohere/command-r7b-12-2024                                      │
-│  embedding: cohere/embed-v4.0                                               │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Factory (fitz_sage/llm/config.py)                                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  create_chat_provider(spec="cohere/command-a-03-2025")                      │
-│                                                                             │
-│  Parses provider/model spec, resolves auth, instantiates provider:          │
-│  - cohere → CohereChat + ApiKeyAuth(COHERE_API_KEY)                         │
-│  - enterprise → EnterpriseChat + CompositeAuth(M2MAuth + ApiKeyAuth)        │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Provider Instance                                                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  CohereChat(model="command-a-03-2025", auth=ApiKeyAuth(...))                │
-│  - chat(messages) -> str                                                    │
-│  - Implements ChatProvider protocol                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
+<workspace>/sqlite/
+├── fitz_default.db
+├── fitz_default.db-wal
+├── fitz_default.db-shm
+└── fitz_<other>.db
 ```
 
-### Plugin Types
+Connections are opened per call with these pragmas:
 
-| Type | Format | Purpose | Examples |
-|------|--------|---------|----------|
-| Chat | Python | LLM completion | Cohere, OpenAI, Anthropic, Ollama, Enterprise |
-| Embedding | Python | Vector embeddings | Cohere, OpenAI, Ollama |
-| Rerank | Python | Result reranking | Cohere, Ollama |
-| Vision | Python | Image understanding | OpenAI, Anthropic, Ollama |
-| Vector DB | YAML | Vector storage | pgvector (PostgreSQL) |
-| Retrieval | YAML | Search strategy | Dense, Dense+Rerank |
-| Chunking | Python | Text splitting | Semantic, Fixed |
-| Parser | Python | Document parsing | Docling, Docling+VLM |
-| Guardrail | Python | Epistemic safety | Conflict, Evidence |
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 30000;
+```
+
+Each store inside the `.db` (sections, symbols, table-store, import
+graph, vocabulary, entity graph) has an FTS5 external-content companion
+indexed over its searchable columns. `search_bm25()` queries the FTS5
+table and joins back; the raw `bm25()` value (negative = better) is
+sign-flipped so downstream consumers treat higher as better.
+
+See [features/platform/unified-storage.md](features/platform/unified-storage.md)
+for the full schema-port notes (PostgreSQL → SQLite).
 
 ---
 
 ## Feature Control
 
-Features are controlled by plugin selection, not boolean flags:
+Features are controlled by **provider presence**, not boolean flags:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  WRONG: Boolean flags                                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  rerank:                                                                    │
-│    enabled: true          ◀─── Anti-pattern                                 │
-│    provider: cohere                                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
+```yaml
+# ENABLED — a reranker is provided
+rerank: endpoint/llmreranker
+chat_smart: endpoint
+chat_base_url: http://localhost:8080/v1
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  RIGHT: Provider presence                                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  rerank: cohere/rerank-v3.5  ◀─── Enables reranking (baked in)              │
-│  # or                                                                       │
-│  rerank: null                ◀─── No reranking                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+# DISABLED — omit the key (or set null)
+# rerank not set → no reranking step in the pipeline
 ```
 
-**Feature Control Examples:**
-
-| Feature | Enabled By | Disabled By |
-|---------|------------|-------------|
-| Reranking | `rerank: cohere/rerank-v3.5` | `rerank: null` (or omit) |
-| Vision/VLM | `parser: docling_vision` | `parser: docling` or `parser: glm_ocr` |
-| Enrichment | Chat client available (automatic) | No chat client configured |
+There is one structural exception: `enable_guardrails: bool` in
+`FitzKragConfig` — used by the smoke test to bypass the constraints
+cascade for raw retrieval timing.
 
 ---
 
 ## Core Types
 
-### Query
-
 ```python
 @dataclass
 class Query:
-    text: str                      # The question
-    constraints: Constraints = None  # Query-time constraints
-    metadata: dict = None          # Additional query metadata
-```
+    text: str
+    constraints: Constraints | None = None
+    metadata: dict | None = None
 
-### Answer
 
-```python
 @dataclass
 class Answer:
-    text: str                      # The response
-    mode: AnswerMode               # TRUSTWORTHY, DISPUTED, ABSTAIN
-    provenance: list[Provenance]   # Source attribution chain
-    metadata: dict                 # Additional info
+    text: str
+    mode: AnswerMode              # TRUSTWORTHY | DISPUTED | ABSTAIN
+    provenance: list[Provenance]  # source attribution chain
+    metadata: dict
 ```
 
-### Chunk
-
-```python
-@dataclass
-class Chunk:
-    id: str                        # Unique identifier
-    content: str                   # Chunk content
-    metadata: dict                 # Source file, page, etc.
-```
+There is no public `Chunk` type in the retrieval path — KRAG uses
+**typed units** (`Symbol`, `Section`, `TableSpec`) with structural
+metadata, not fixed-size text windows.
 
 ---
 
-## Configuration
+## Configuration Layout
 
 ```
-.fitz/
-├── config.yaml           # Main config file
-├── pgdata/               # PostgreSQL data (local mode)
-└── ingest_state.json     # Incremental ingestion state
+~/.fitz/
+├── config/
+│   └── fitz_krag.yaml       # engine config (chat tiers, retrieval knobs)
+├── sqlite/                  # one .db per collection
+│   ├── fitz_default.db
+│   └── ...
+└── ingest_state.json        # incremental ingest manifest
 ```
 
-**Config structure:**
+Minimal config:
 
 ```yaml
-# .fitz/config.yaml
-chat_fast: cohere/command-r7b-12-2024
-chat_balanced: cohere/command-r-08-2024
-chat_smart: cohere/command-a-03-2025
-embedding: cohere/embed-v4.0
-rerank: cohere/rerank-v3.5       # or null to disable
-vision: null                     # or cohere (for docling_vision parser)
+chat_fast: endpoint
+chat_balanced: endpoint
+chat_smart: endpoint
+chat_base_url: http://localhost:8080/v1
+chat_smart_model: qwen2.5-7b-instruct
 collection: default
-parser: glm_ocr                  # or docling, docling_vision
+```
 
-# Vector storage (PostgreSQL + pgvector)
-vector_db: pgvector
-vector_db_kwargs:
-  mode: local  # or "external" with connection_string
+Override per-invocation:
+
+```bash
+fitz query "..." \
+  --endpoint https://api.together.xyz/v1 \
+  --model meta-llama-3.1-70b \
+  --api-key-env TOGETHER_API_KEY
 ```
 
 ---
@@ -323,82 +246,56 @@ vector_db_kwargs:
 
 ```
 fitz_sage/
-├── core/                        # Foundation layer
-│   ├── types.py                 # Query, Answer, Chunk
-│   ├── protocols.py             # KnowledgeEngine protocol
-│   └── paths.py                 # Config path management
-│
-├── engines/                     # Engine implementations
-│   └── fitz_krag/
-│       ├── engine.py            # Main KRAG engine
-│       ├── retrieval/           # Retrieval steps + strategies
-│       ├── generation/          # Answer generation + RGS
-│       ├── pipeline/            # KRAGPipeline orchestration
-│       └── guardrails/plugins/  # Epistemic guardrails (Python)
-│
-├── retrieval/                   # SHARED retrieval intelligence
-│   ├── detection/               # Unified query classification (LLM-based)
-│   ├── sparse/                  # BM25 hybrid search
-│   ├── entity_graph/            # Entity-based linking
-│   ├── vocabulary/              # Keyword storage + matching
-│   ├── hyde/                    # Hypothetical document generation
-│   └── rewriter/                # LLM-based query rewriting
-│
-├── llm/                         # LLM service layer
-│   ├── providers/               # Python providers (Cohere, OpenAI, Anthropic, Ollama, Enterprise)
-│   ├── auth/                    # Auth system (ApiKeyAuth, M2MAuth, CompositeAuth)
-│   ├── config.py                # Factory dispatch (provider/model → instance)
-│   └── client.py                # Public API (get_chat, get_embedder, ...)
-│
-├── storage/                     # PostgreSQL connection manager
-│
-├── vector_db/                   # Vector DB abstraction
-│   └── plugins/                 # DB plugins (YAML)
-│
-├── ingestion/                   # Document processing
-│   ├── parser/plugins/          # Parser plugins (Python)
-│   ├── chunking/plugins/        # Chunking plugins (Python)
-│   └── enrichment/              # Enrichment pipeline
-│
-├── cloud/                       # Encrypted cache API
-│
-├── tabular/                     # CSV/table query with SQL generation
-│
-├── runtime/                     # Multi-engine orchestration
-│
-├── cli/                         # CLI commands
-│   └── commands/                # Typer commands
-│
-├── api/                         # REST API (FastAPI)
-│
-└── sdk/                         # Stateful Python interface
+├── core/                # Foundation layer (Query, Answer, Provenance, protocols)
+├── engines/
+│   └── fitz_krag/       # KRAG engine: retrieval/, generation/, ingestion/
+├── retrieval/           # SHARED retrieval intelligence
+│   ├── detection/       # LLM-based query classification
+│   ├── entity_graph/    # Entity-based linking
+│   ├── vocabulary/      # Keyword storage + matching
+│   └── rewriter/        # LLM-based query rewriting
+├── llm/                 # Chat layer (single OpenAI-compatible protocol)
+│   ├── providers/       # endpoint, enterprise, llm_reranker
+│   ├── auth/            # ApiKeyAuth, M2MAuth, CompositeAuth
+│   ├── config.py        # provider-spec → instance factory
+│   └── client.py        # get_chat, ...
+├── storage/             # SqliteConnectionManager (WAL, FTS5)
+├── ingestion/           # parser plugins, chunking plugins, enrichment
+├── tabular/             # CSV/XLSX → SqliteTableStore + SQL generation
+├── governance/          # constraints, semantic matching, decision modes
+├── runtime/             # multi-engine orchestration
+├── cli/                 # typer commands
+├── api/                 # FastAPI app + routes
+├── sdk/                 # stateful Python interface
+├── code/                # standalone code retriever (CodeRetriever)
+└── structured/          # JSON/YAML schema-aware retrieval
 ```
 
 ---
 
 ## Design Principles
 
-1. **Explicit over clever**: No magic. Read the config, know what happens.
-
-2. **Answers over architecture**: Optimize for time-to-insight.
-
-3. **Honest over helpful**: Say "I don't know" rather than hallucinate.
-
-4. **Files over frameworks**: YAML plugins over class hierarchies.
-
-5. **Config-driven**: Provider selection lives only in config files.
-
-6. **Local-first**: Works offline with Ollama + embedded PostgreSQL.
-
-7. **Provenance always**: Every answer traces back to sources.
+1. **Explicit over clever.** No magic. Read the config; know what happens.
+2. **One protocol.** Every chat call goes through `endpoint` (or its presets).
+3. **Structure-first retrieval.** Parse code/docs into typed units at
+   ingest; route to the right strategy at query time.
+4. **No embeddings.** BM25 + KRAG routing + LLM rerank covers the
+   ground the embedding stack used to. Confirmed against fitz-gov v5.
+5. **Honest over helpful.** Say `ABSTAIN` instead of hallucinating.
+6. **Files over frameworks.** Plugins are Python modules wired by config,
+   not framework abstractions.
+7. **Local-first.** llama.cpp / Ollama / LM Studio on localhost gives
+   you everything offline.
+8. **Provenance always.** Every answer traces back to source addresses.
 
 ---
 
 ## See Also
 
-- [Unified Storage](features/platform/unified-storage.md) - Why PostgreSQL + pgvector
-- [PLUGINS.md](PLUGINS.md) - Plugin development guide
-- [CONFIG.md](CONFIG.md) - Configuration reference
-- [FEATURE_CONTROL.md](FEATURE_CONTROL.md) - Feature control architecture
-- [INGESTION.md](INGESTION.md) - Ingestion pipeline
-- [CONSTRAINTS.md](CONSTRAINTS.md) - Epistemic guardrails
+- [Unified Storage](features/platform/unified-storage.md) — SQLite + FTS5
+- [PLUGINS.md](PLUGINS.md) — plugin development guide
+- [CONFIG.md](CONFIG.md) — configuration reference
+- [FEATURE_CONTROL.md](FEATURE_CONTROL.md) — feature-control architecture
+- [INGESTION.md](INGESTION.md) — ingestion pipeline
+- [CONSTRAINTS.md](CONSTRAINTS.md) — epistemic guardrails
+- [features/platform/openai-compatible-endpoint.md](features/platform/openai-compatible-endpoint.md) — the canonical chat provider

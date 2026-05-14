@@ -1,18 +1,25 @@
 # Feature Control Architecture
 
-This document explains how optional features (VLM for figure description, reranking) are controlled in Fitz.
+How optional features (VLM in the parser, LLM reranking) are switched
+on and off in fitz-sage **v0.12.0+**.
 
 ---
 
 ## Design Philosophy
 
-Fitz uses a **provider-presence pattern** for optional features:
+fitz-sage uses a **provider-presence pattern**:
 
-- **Config declares WHICH** provider/model to use
-- **Provider presence determines IF** the feature is used
-- **No `enabled: true/false` flags** - setting a provider enables the feature
+- **Config declares WHICH** provider/model to use.
+- **Provider presence determines IF** the feature runs.
+- **No `enabled: true / false` flags.** Setting a provider enables
+  the feature; omitting it (or setting `null`) skips that step.
 
-This keeps the config declarative and avoids boolean flags that can get out of sync.
+This keeps the config declarative and avoids boolean flags that
+can drift out of sync with the actual provider config.
+
+The single exception is `enable_guardrails: bool` in
+`FitzKragConfig` — used by the smoke test to bypass the constraints
+cascade and measure raw retrieval timing.
 
 ---
 
@@ -20,11 +27,11 @@ This keeps the config declarative and avoids boolean flags that can get out of s
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  CONFIG (.fitz/config.yaml — auto-created on first run)         │
+│  CONFIG (~/.fitz/config/<engine>.yaml)                          │
 │  Declares WHICH provider/model to use                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  vision: cohere                  rerank: cohere/rerank-v3.5    │
+│  vision: endpoint                rerank: endpoint/llmreranker   │
 │  parser: docling_vision          collection: default            │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -35,146 +42,154 @@ This keeps the config declarative and avoids boolean flags that can get out of s
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  VLM (controlled by parser plugin):                             │
-│    ┌──────────────────────┐    ┌──────────────────┐             │
-│    │  parser: docling     │    │ parser:          │             │
-│    ├──────────────────────┤    │ docling_vision   │             │
-│    │ No VLM               │    ├──────────────────┤             │
-│    │ Figures → "[Figure]" │    │ Uses VLM from    │             │
-│    └──────────────────────┘    │ vision: config   │             │
-│                                └──────────────────┘             │
+│    parser: docling          → No VLM (figures become "[Figure]")│
+│    parser: docling_vision   → Uses vision provider              │
+│    parser: glm_ocr          → No VLM (fast, default)            │
 │                                                                 │
-│  Reranking (controlled by provider presence):                   │
-│    ┌────────────────────┐    ┌────────────────────────┐         │
-│    │   rerank: null     │    │ rerank:                │         │
-│    ├────────────────────┤    │ cohere/rerank-v3.5     │         │
-│    │ No reranking       │    ├────────────────────────┤         │
-│    │ Pure vector search │    │ Reranking auto-        │         │
-│    └────────────────────┘    │ enabled (baked)        │         │
-│                              └────────────────────────┘         │
+│  LLM Reranker (controlled by `rerank:` presence):               │
+│    rerank: (omitted / null) → No reranker step                  │
+│    rerank: endpoint/llmreranker → Reranker auto-enabled         │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## VLM (Vision Language Model) Control
+## VLM (vision-language model) control
 
-VLM is used to describe figures and images in PDFs during ingestion.
+The VLM is used by the `docling_vision` parser to describe figures /
+images in PDFs during ingestion.
 
-### How it works:
+### How it works
 
-1. Set a vision provider (cohere, openai, anthropic, ollama) in `.fitz/config.yaml`
-2. Config saves the provider in `vision:` section
-3. **Parser plugin** determines if VLM is actually used:
-   - `parser: docling` → Figures become `[Figure]` placeholder
-   - `parser: docling_vision` → Figures get VLM-generated descriptions
+1. Set a vision provider in `~/.fitz/config/fitz_krag.yaml`.
+2. Choose the parser:
+   - `parser: docling`         → figures replaced by `[Figure]`
+   - `parser: docling_vision`  → figures get VLM-generated descriptions
+   - `parser: glm_ocr`         → fast default; no VLM, GLM-OCR for scans
 
-### Config example:
+### Config example
 
 ```yaml
-# Parser choice enables VLM
-parser: docling_vision  # ← Uses VLM
-# parser: docling       # ← No VLM
-# parser: glm_ocr       # ← Fast default, no VLM
+parser: docling_vision           # parser choice toggles VLM use
 
-# Vision provider (used only if parser: docling_vision)
-vision: cohere          # or openai, anthropic, ollama
+vision: endpoint                 # any OpenAI-compatible vision model
+vision_base_url: https://api.openai.com/v1
+vision_api_key_env: OPENAI_API_KEY
+vision_model: gpt-4o
 ```
 
-### Key files:
+### Key files
 
-| File | Purpose |
-|------|---------|
-| `fitz_sage/ingestion/parser/router.py` | Routes files to parsers based on config |
-| `fitz_sage/ingestion/parser/plugins/docling.py` | Standard parser (no VLM) |
-| `fitz_sage/ingestion/parser/plugins/docling_vision.py` | VLM-enabled parser |
-| `fitz_sage/cli/commands/ingest.py` | Reads `chunking.default.parser` config |
+| File                                              | Purpose                          |
+| ------------------------------------------------- | -------------------------------- |
+| `fitz_sage/ingestion/parser/router.py`            | Routes by file ext + config      |
+| `fitz_sage/ingestion/parser/plugins/docling.py`   | Standard parser (no VLM)         |
+| `fitz_sage/ingestion/parser/plugins/docling_vision.py` | VLM-enabled parser          |
+| `fitz_sage/ingestion/parser/plugins/glm_ocr.py`   | pdfplumber + GLM-OCR hybrid      |
 
 ---
 
-## Reranking Control
+## LLM reranker control
 
-Reranking improves retrieval quality by re-scoring chunks with a cross-encoder model.
+The reranker is a thin wrapper that asks the chat model to score a
+small candidate set in a single JSON-returning call. It uses the same
+OpenAI-compatible chat endpoint — there's no separate "reranker"
+backend.
 
-### How it works:
+### How it works
 
-1. Set a rerank provider (typically cohere) in `.fitz/config.yaml`
-2. Config saves the provider in `rerank:` section
-3. **Reranking is automatically enabled** when a rerank provider is configured
-4. No separate plugin choice needed - it's baked into the `dense` retrieval pipeline
+1. Set `rerank:` in the engine config.
+2. The retrieval pipeline auto-includes the reranker step when the
+   reranker dependency is present; otherwise it's skipped.
 
-### Config example:
+### Config example
 
 ```yaml
-# Rerank provider presence enables reranking
-rerank: cohere/rerank-v3.5      # ← Reranking enabled
-# rerank: null                  # ← No reranking (default)
+# Reranker on
+rerank: endpoint/llmreranker
+
+# Reranker off (default)
+# rerank: null    # or just omit the key
 ```
 
-### Key files:
+### Key files
 
-| File | Purpose |
-|------|---------|
-| `fitz_sage/engines/fitz_krag/retrieval/plugins/dense.yaml` | Retrieval pipeline (rerank steps have `enabled_if: reranker`) |
-| `fitz_sage/engines/fitz_krag/retrieval/loader.py` | Skips rerank steps when no reranker provided |
-| `fitz_sage/llm/providers/cohere.py` | Cohere rerank implementation |
+| File                                              | Purpose                          |
+| ------------------------------------------------- | -------------------------------- |
+| `fitz_sage/engines/fitz_krag/retrieval/reranker.py` | Pipeline step                  |
+| `fitz_sage/llm/providers/llm_reranker.py`         | Chat-protocol reranker provider  |
+| `fitz_sage/llm/config.py`                         | Provider-spec → instance factory |
 
 ---
 
-## Why This Pattern?
+## Constraints
 
-### Advantages:
-
-1. **No boolean flags to sync** - Provider presence itself is the toggle
-2. **Baked-in intelligence** - Reranking joins other automatic features like hybrid search
-3. **Simpler config** - One retrieval plugin, not two
-4. **Explicit** - Reading the config tells you exactly what will happen
-
-### Comparison with alternatives:
+The epistemic constraint cascade (TRUSTWORTHY / DISPUTED / ABSTAIN) is
+controlled by a **list of constraint plugins**, not provider presence:
 
 ```yaml
-# ❌ OLD: Plugin choice was the toggle
-retrieval:
-  plugin_name: dense_rerank     # Had to choose plugin
-
-# ✅ NEW: Provider presence is the toggle
-rerank: cohere/rerank-v3.5      # This alone enables reranking
+constraints:
+  - conflict_aware
+  - insufficient_evidence
+  - causal_attribution
+  - specific_info_type
 ```
+
+Constraints are presence-controlled by entry in the list. To run
+without constraints, set `enable_guardrails: false` (the boolean
+escape hatch used by the smoke test).
 
 ---
 
-## Adding New Optional Features
+## Why this pattern?
 
-Follow this pattern for any new optional feature:
+1. **No boolean flags to sync.** Provider presence is the toggle.
+2. **Reading the config tells you the runtime.** No hidden defaults
+   silently flipping behaviour.
+3. **One retrieval pipeline.** Steps are conditionally executed; you
+   don't have to swap pipeline plugins to add/remove features.
 
-1. **For ingestion-time features** (like VLM): Create two parser plugins
-2. **For query-time features** (like reranking): Use `enabled_if` in pipeline steps
+---
 
-Example for a hypothetical "summarizer" feature at query time:
+## Adding a new optional feature
+
+Pattern:
+
+1. **Ingestion-time** (like VLM): create two parser plugins, let
+   `parser:` pick.
+2. **Query-time**: add a config dependency (e.g. `summarizer:`) and
+   skip the pipeline step when the dependency is absent.
+
+Sketch for a hypothetical query-time summarizer:
+
+```python
+# In the pipeline step
+if config.summarizer is None:
+    return inputs   # passthrough — feature disabled
+summarizer = build_summarizer(config.summarizer)
+return summarizer.run(inputs)
+```
 
 ```yaml
-# In retrieval plugin YAML:
-steps:
-  - type: summarize
-    enabled_if: summarizer      # Only runs if summarizer dependency provided
-
-# In config:
-summarizer: cohere              # Presence enables the feature
+# Config to switch it on
+summarizer: endpoint/summarizer
 ```
 
 ---
 
 ## Quick Reference
 
-| Feature | Config Key | Enable | Disable |
-|---------|-----------|--------|---------|
-| VLM | `vision:` + `parser:` | `parser: docling_vision` | `parser: docling` or `parser: glm_ocr` |
-| Rerank | `rerank:` | `rerank: cohere/rerank-v3.5` | `rerank: null` (or omit) |
+| Feature        | Config key   | Enable                          | Disable                       |
+| -------------- | ------------ | ------------------------------- | ----------------------------- |
+| VLM in parser  | `parser:` + `vision:` | `parser: docling_vision` + `vision:` set | `parser: docling` / `parser: glm_ocr` |
+| LLM reranker   | `rerank:`    | `rerank: endpoint/llmreranker`  | `rerank: null` (or omit)      |
+| Guardrails     | `enable_guardrails`   | `true` (default)       | `false` (smoke test only)     |
 
 ---
 
 ## See Also
 
-- [Reranking Feature](features/retrieval/reranking.md) - Detailed reranking documentation
-- [PLUGINS.md](PLUGINS.md) - Plugin development guide
-- [CLI.md](CLI.md) - CLI reference
+- [Reranking](features/retrieval/reranking.md) — detailed reranker docs
+- [PLUGINS.md](PLUGINS.md) — plugin development guide
+- [CONFIG.md](CONFIG.md) — full configuration reference

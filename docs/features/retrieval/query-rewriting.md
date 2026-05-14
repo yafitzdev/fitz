@@ -114,20 +114,22 @@ User: "How does it handle expired sessions?"
 
 ## Performance
 
-- Uses fast-tier LLM (e.g., GPT-4o-mini, Claude Haiku)
-- Single LLM call per query (~100-200ms)
-- Skipped for very short queries (< 3 characters)
-- On failure, falls back to original query (no blocking)
-
-Typical overhead: 100-300ms per query. Worth it for conversational UX.
+- Uses the fast chat tier (any OpenAI-compatible model).
+- One chat call per query — typically 100–300 ms on cloud, sub-second
+  on a 7B local model.
+- Skipped for very short queries (< 3 characters).
+- On failure, falls back to the original query (no blocking).
 
 ## Dependencies
 
-- Fast-tier chat model configured in `chat:` config section
-- No additional dependencies beyond existing LLM infrastructure
+- A fast chat tier wired up via `chat_fast:`.
+- No additional dependencies beyond the existing chat infrastructure.
 
-## Related Features
+## Related
 
-- [**Query Expansion**](query-expansion.md) - Synonym/acronym expansion (rule-based, complements LLM rewriting)
-- [**HyDE**](hyde.md) - Hypothetical doc generation (another query transformation technique)
-- [**Multi-Query RAG**](multi-query-rag.md) - Decomposes long queries into focused searches
+- [Query Expansion](query-expansion.md) — rule-based synonym / acronym
+  expansion that runs alongside LLM rewriting
+- [Multi-Query RAG](multi-query-rag.md) — decomposes long queries into
+  focused sub-queries
+- [Sparse Search (FTS5 + bm25)](sparse-search.md) — the retrieval step
+  the rewritten query feeds into

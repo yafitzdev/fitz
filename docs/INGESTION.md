@@ -367,32 +367,29 @@ answer = fitz_sage.query("What is quantum computing?", source="./docs")
 
 ### Advanced usage
 
+Drive ingestion directly through the engine for fine-grained control:
+
 ```python
-from fitz_sage.ingestion.diff.executor import DiffIngestExecutor
-from fitz_sage.ingestion.parser import ParserRouter
-from fitz_sage.ingestion.chunking.router import ChunkingRouter
-from fitz_sage.ingestion.state import IngestStateManager
+from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
 
-# Build components
-parser_router = ParserRouter(docling_parser="docling_vision")
-chunking_router = ChunkingRouter.from_config(config)
-state_manager = IngestStateManager()
-
-# Create executor
-executor = DiffIngestExecutor(
-    state_manager=state_manager,
-    vector_db_writer=vector_db,
-    embedder=embedder,
-    parser_router=parser_router,
-    chunking_router=chunking_router,
+cfg = FitzKragConfig(
+    chat_fast="endpoint",
+    chat_balanced="endpoint",
+    chat_smart="endpoint",
+    chat_base_url="http://localhost:8080/v1",
+    chat_smart_model="qwen2.5-7b-instruct",
     collection="my_collection",
-    embedding_id="cohere:embed-english-v3.0",
 )
+engine = FitzKragEngine(cfg)
 
-# Run ingestion
-summary = executor.run(path="./docs", force=False)
-print(f"Ingested {summary.ingested} files")
+# Ingest a directory; incremental by default (skips unchanged files).
+summary = engine.ingest("./docs")
+print(f"Ingested {summary.documents} documents, {summary.symbols} symbols")
 ```
+
+For one-off ingest of a single file, pass the path; for force-reingest,
+pass `force=True`. Incremental state is tracked in
+`.fitz/ingest_state.json` (per-file mtime + content hash).
 
 ---
 

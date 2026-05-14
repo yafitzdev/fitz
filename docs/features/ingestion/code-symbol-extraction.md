@@ -72,7 +72,7 @@ If AST parsing fails (syntax errors, unsupported constructs), strategies fall ba
 
 ## Import Graph
 
-Symbol extraction also builds an **import graph** — file-level dependency edges stored in PostgreSQL:
+Symbol extraction also builds an **import graph** — file-level dependency edges stored in SQLite:
 
 ```
 auth/service.py ──imports──► auth/models.py
@@ -89,19 +89,23 @@ Relative imports are resolved to absolute module names, so `from .models import 
 
 ## Storage
 
-Symbols are stored in `krag_symbol_index` with:
-- **Vector column** (`summary_vector`) — HNSW-indexed for semantic search
-- **BM25 column** (`content_tsv`) — auto-generated tsvector over name + qualified_name + summary
-- **Name indexes** — for direct name/qualified_name lookup
-- **Keyword array** — enrichment-extracted keywords for exact matching
-- **Entity array** — enrichment-extracted named entities
+Symbols are stored in `krag_symbol_index` inside the collection's
+SQLite `.db` with:
 
-Three search paths hit the same table:
-1. **Vector search** — semantic similarity on summary embeddings
-2. **BM25 search** — full-text search on name + summary
-3. **Name search** — ILIKE on name and qualified_name
+- **FTS5 external-content index** over name + qualified_name + summary
+- **Name + qualified-name indexes** for direct lookup
+- **Keyword JSON array** — enrichment-extracted exact-match identifiers
+- **Entity JSON array** — enrichment-extracted named entities
 
-The retrieval router fuses results from all three using RRF (Reciprocal Rank Fusion).
+Two search paths hit the same table:
+
+1. **BM25 search** — FTS5 `MATCH` + native `bm25()` over name +
+   qualified_name + summary.
+2. **Name search** — `LIKE COLLATE NOCASE` on name and qualified_name
+   for direct symbol-name lookups.
+
+The retrieval router fuses results using Reciprocal Rank Fusion, then
+hands the candidate set to the [LLM reranker](../retrieval/reranking.md).
 
 ## Example
 
@@ -139,11 +143,15 @@ class AuthService:
 **Extracted imports:**
 
 | target_module | import_names |
-|--------------|-------------|
-| `hashlib` | `hashlib` |
-| `typing` | `Optional` |
+|---------------|--------------|
+| `hashlib`     | `hashlib`    |
+| `typing`      | `Optional`   |
 
-Each symbol gets summarized by the enrichment pipeline, embedded, and stored in `krag_symbol_index`. At query time, "How does authentication work?" finds `AuthService.authenticate` via semantic search on its summary — not by hoping a text chunk contains the right keywords.
+Each symbol gets summarised by the enrichment pipeline and stored in
+`krag_symbol_index`. At query time, "How does authentication work?"
+finds `AuthService.authenticate` via BM25 over its summary (and a
+final LLM reranker pass), not by hoping a text chunk contains the
+right keywords.
 
 ## Files
 
@@ -160,7 +168,8 @@ Each symbol gets summarized by the enrichment pipeline, embedded, and stored in 
 
 ## Standalone Code Retrieval
 
-For use cases that don't need the full KRAG pipeline (no PostgreSQL, no pgvector, no docling), see the standalone `CodeRetriever` in `fitz_sage/code/`:
+For use cases that don't need the full KRAG pipeline (no SQLite store,
+no ingest), see the standalone `CodeRetriever` in `fitz_sage/code/`:
 
 ```bash
 pip install fitz-sage[code]
@@ -173,12 +182,16 @@ retriever = CodeRetriever(source_dir="./myproject", chat_factory=my_factory)
 results = retriever.retrieve("How does auth work?")
 ```
 
-Uses AST-based structural indexing and LLM file selection — same algorithm as KRAG's `LlmCodeSearchStrategy`, but reads from disk instead of PostgreSQL.
+Uses AST-based structural indexing and LLM file selection — same
+algorithm as KRAG's `LlmCodeSearchStrategy`, but reads from disk
+directly.
 
-## Related Features
+## Related
 
-- [**KRAG**](../platform/krag.md) — The engine architecture that symbols plug into
-- [**Hybrid Search**](../retrieval/hybrid-search.md) — BM25 + vector fusion used for symbol retrieval
-- [**Keyword Vocabulary**](../retrieval/keyword-vocabulary.md) — Exact-match on function names, class names
-- [**Entity Graph**](../retrieval/entity-graph.md) — Entity-based linking across symbols and sections
-- [**Contextual Embeddings**](../retrieval/contextual-embeddings.md) — Summary-prefixed embeddings for disambiguation
+- [KRAG](../platform/krag.md) — the engine architecture symbols plug into
+- [Sparse Search (FTS5 + bm25)](../retrieval/sparse-search.md) — the
+  index symbol search runs on
+- [Keyword Vocabulary](../retrieval/keyword-vocabulary.md) — exact-match
+  on function names, class names, etc.
+- [Entity Graph](../retrieval/entity-graph.md) — entity-based linking
+  across symbols and sections

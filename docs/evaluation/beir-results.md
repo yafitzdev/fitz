@@ -1,8 +1,16 @@
-# BEIR Benchmark Results
+# BEIR Benchmark Results (Historical, pre-v0.12.0)
+
+> **Note.** These results were measured against the *hybrid*
+> retrieval stack that fitz-sage ran before **v0.12.0**, when both
+> dense embeddings and BM25 contributed to ranking. v0.12.0 removed
+> the embedding layer entirely. The numbers here are kept as a
+> historical baseline; they are not representative of the current
+> system. The current retrieval stack is BM25 (via SQLite FTS5) +
+> KRAG typed-unit routing + LLM reranker.
 
 **Last updated:** 2026-02-20
 **Datasets run:** scifact, scidocs, fiqa (Tier 1)
-**Retrieval:** Hybrid BM25 (0.6) + Semantic (0.4) via `SectionSearchStrategy`
+**Retrieval (at the time):** Hybrid BM25 (0.6) + dense embeddings (0.4) via `SectionSearchStrategy`
 
 ---
 

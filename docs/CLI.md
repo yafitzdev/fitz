@@ -1,54 +1,80 @@
-<!-- docs/CLI.md -->
-# Fitz AI - CLI Documentation
+# CLI Reference
 
-## Overview
+fitz-sage **v0.12.0+**. The CLI is one binary, `fitz`, with a small
+set of commands.
 
-Fitz provides a clean, minimal command-line interface for local-first RAG. Version 0.10.0 consolidates the workflow into a single `fitz query` command that handles both document registration and querying.
+```bash
+fitz --help
+fitz <command> --help
+```
 
 ---
 
 ## Quick Start
 
 ```bash
-# Zero-config RAG in one command
-fitz query "What are the main topics?" --source ./docs
+# One-shot: register docs + query
+fitz query "What is X?" --source ./docs
 
-# Config is auto-created on first run at .fitz/config.yaml
-fitz query "What's in my docs?" --source ./docs  # Register docs + query
-fitz query "Follow-up question"                  # Query existing collection
+# Subsequent queries reuse the collection
+fitz query "Follow-up question"
+
+# Point at any OpenAI-compatible endpoint without editing config
+fitz query "What is X?" \
+  --endpoint https://api.together.xyz/v1 \
+  --model meta-llama-3.1-70b \
+  --api-key-env TOGETHER_API_KEY \
+  --source ./docs
 ```
 
 ---
 
 ## Commands
 
+### `fitz init`
+
+Scaffold a default engine config. Drops `~/.fitz/config/fitz_krag.yaml`
+with sensible local-first defaults. Re-run to upgrade an old config
+to the v0.12.0 schema.
+
+```bash
+fitz init
+```
+
+The wizard auto-detects an OpenAI-compatible server on
+`http://localhost:8080/v1`, `:11434/v1` (Ollama), or `:1234/v1`
+(LM Studio) and writes the right `chat_base_url`.
+
+---
+
 ### `fitz query`
 
-The main entry point. Point at documents and ask questions. Combines document registration and querying into one command.
+Ask a question. With `--source`, registers documents first; without
+it, queries the active collection.
 
 ```bash
 fitz query "Your question"
 fitz query "What is this about?" --source ./docs
 fitz query "Summarize the key points" -c my_collection --source ./docs
-fitz query --chat                                # Interactive multi-turn mode
-fitz query --chat -c my_collection               # Chat with specific collection
+fitz query --chat                                # interactive
+fitz query --chat -c my_collection               # interactive on a collection
 ```
 
-**Arguments:**
-- `QUESTION` - Question to ask (optional when using `--chat`)
+**Arguments**
+- `QUESTION` — the question (optional with `--chat`)
 
-**Options:**
-- `-s, --source PATH` - Path to documents (file or directory). Registers documents before querying.
-- `-c, --collection NAME` - Collection name
-- `-e, --engine NAME` - Engine to use
-- `--chat` - Interactive multi-turn chat mode
+**Options**
+- `-s, --source PATH` — register documents (file or directory) before querying
+- `-c, --collection TEXT` — collection name (default: `default`)
+- `-e, --engine TEXT` — engine name (default: `fitz_krag`)
+- `--chat` — interactive multi-turn mode
+- `--endpoint TEXT` — OpenAI-compatible URL; overrides `chat_base_url`
+- `-m, --model TEXT` — chat model name; overrides smart-tier model
+- `--api-key-env TEXT` — env var holding the API key; overrides `chat_api_key_env`
 
-**How `--source` works:**
-When you pass `--source`, Fitz registers (ingests) the documents into the collection, then runs your query against them. On subsequent queries without `--source`, Fitz uses the already-registered collection.
-
-**Chat mode:**
-- Type questions naturally
-- Exit with `exit`, `quit`, or Ctrl+C
+**Chat mode**
+- Type questions naturally.
+- Exit with `exit`, `quit`, or `Ctrl+C`.
 
 ---
 
@@ -57,13 +83,30 @@ When you pass `--source`, Fitz registers (ingests) the documents into the collec
 Manage collections (list, info, delete).
 
 ```bash
-fitz collections
+fitz collections          # interactive menu
+fitz collections list
+fitz collections info my_collection
+fitz collections delete my_collection
 ```
 
-Interactive menu to:
-- List all collections
-- View collection info
-- Delete collections
+A collection is a single `.db` file under `~/.fitz/sqlite/fitz_<name>.db`.
+`delete` removes the file (and its `-wal` / `-shm` siblings) — there's no
+DB-level `DROP DATABASE` step because there's no server.
+
+---
+
+### `fitz config`
+
+Inspect / explain the effective merged config.
+
+```bash
+fitz config show
+fitz config show --engine fitz_krag
+fitz config path
+```
+
+`show` prints the resolved YAML (after merging defaults, env overrides,
+and per-engine overrides). `path` prints the on-disk location.
 
 ---
 
@@ -74,104 +117,102 @@ Start the REST API server.
 ```bash
 fitz serve
 fitz serve --host 0.0.0.0 -p 8080
-fitz serve --reload              # Auto-reload for development
+fitz serve --reload                  # auto-reload (dev)
 ```
 
-**Options:**
-- `-h, --host` - Host to bind to (default: 127.0.0.1)
-- `-p, --port` - Port to bind to (default: 8000)
-- `--reload` - Enable auto-reload
+**Options**
+- `-h, --host TEXT` — bind host (default `127.0.0.1`)
+- `-p, --port INT` — bind port (default `8000`)
+- `--reload` — auto-reload on code change
 
-**API Endpoints:**
-- `POST /query` - Query the knowledge base (optional `source` field to register documents)
-- `POST /chat` - Multi-turn conversation
-- `GET /collections` - List collections
-- `GET /collections/{name}` - Collection details
-- `DELETE /collections/{name}` - Delete a collection
-- `GET /health` - Health check
-
----
-
-### `fitz reset`
-
-Reset the pgserver database. Use when pgserver hangs or gets corrupted.
-
-```bash
-fitz reset
-fitz reset --force       # Skip confirmation prompt
-```
-
-**Options:**
-- `-f, --force` - Skip confirmation prompt
+**Endpoints** (see [API.md](API.md) for the full schema)
+- `POST /query` — query the knowledge base; pass `source` to register first
+- `POST /chat` — multi-turn conversation
+- `GET /collections` — list
+- `GET /collections/{name}` — details
+- `DELETE /collections/{name}` — delete
+- `GET /health` — health check
 
 ---
 
 ## Configuration
 
-Config is auto-created on first run at `.fitz/config.yaml` in your project root:
+The minimum on-disk config (`~/.fitz/config/fitz_krag.yaml`) is:
 
 ```yaml
-chat_fast: cohere/command-r7b-12-2024
-chat_balanced: cohere/command-r-08-2024
-chat_smart: cohere/command-a-03-2025
-embedding: cohere/embed-v4.0
-rerank: cohere/rerank-v3.5      # or null to disable
-vision: null                     # or cohere (for docling_vision parser)
+chat_fast: endpoint
+chat_balanced: endpoint
+chat_smart: endpoint
+chat_base_url: http://localhost:8080/v1
+chat_smart_model: qwen2.5-7b-instruct
 collection: default
-parser: glm_ocr                  # or docling, docling_vision
-
-vector_db: pgvector
-vector_db_kwargs:
-  mode: local  # or "external" with connection_string
 ```
+
+`fitz init` writes a version of this matching whatever you have
+running locally. See [CONFIG.md](CONFIG.md) for every key and
+[CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) for ready-to-paste
+configurations.
 
 ---
 
 ## Environment Variables
 
+API keys are read from environment variables (never put them in
+config). The CLI looks up the variable name from `chat_api_key_env`,
+or from the `--api-key-env` flag.
+
 ```bash
-# Cohere (recommended)
-export COHERE_API_KEY="your-key"
+# OpenAI
+export OPENAI_API_KEY="..."
 
-# OpenAI (alternative)
-export OPENAI_API_KEY="your-key"
+# Together / Groq / Mistral
+export TOGETHER_API_KEY="..."
 
-# Azure OpenAI
-export AZURE_OPENAI_API_KEY="your-key"
-export AZURE_OPENAI_ENDPOINT="your-endpoint"
+# Local servers (no key)
+# llama-server --port 8080
+# ollama serve
+# LM Studio (Settings → Developer → Local Server)
 ```
+
+`FITZ_HOME` overrides `~/.fitz/` if you want to relocate config +
+storage.
+
+`FITZ_LOG_LEVEL=DEBUG` enables verbose logging for any command.
 
 ---
 
 ## Common Workflows
 
-### Local-First Setup
+### Local-first setup
 
 ```bash
-# Start Ollama (for local LLM)
-ollama serve
-ollama pull llama3.2
+# Start a local OpenAI-compatible server
+llama-server -m qwen2.5-7b-instruct.gguf --port 8080 &
 
-# Query (PostgreSQL starts automatically via pgserver, config auto-created on first run)
+# Scaffold a config that points at it
+fitz init
+
+# Ingest + query
 fitz query "What's in my docs?" --source ./docs
 ```
 
-### Multi-Turn Exploration
+### Multi-turn exploration
 
 ```bash
-# Register docs and enter chat mode
-fitz query --chat --source ./docs -c my_project
-
-# Or chat with an existing collection
-fitz query --chat -c my_project
+fitz query --chat --source ./docs -c project_x
+# ... or pick up an existing collection ...
+fitz query --chat -c project_x
 ```
 
-### Development Workflow
+### Cloud-only
 
 ```bash
-# Edit .fitz/config.yaml to configure providers
-fitz query "Summarize the architecture" --source ./project -c project
-fitz query --chat -c project     # Interactive exploration
+export OPENAI_API_KEY=...
+fitz query "What is X?" \
+  --endpoint https://api.openai.com/v1 \
+  --model gpt-4o \
+  --api-key-env OPENAI_API_KEY \
+  --source ./docs
 ```
 
 ---
@@ -182,3 +223,6 @@ fitz query --chat -c project     # Interactive exploration
 fitz --help
 fitz <command> --help
 ```
+
+See also: [CONFIG.md](CONFIG.md), [TROUBLESHOOTING.md](TROUBLESHOOTING.md),
+[API.md](API.md).

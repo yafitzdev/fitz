@@ -48,7 +48,6 @@ Fitz includes a lightweight, SDK-free enterprise provider that supports:
 ```yaml
 # .fitz/config.yaml
 chat_smart: enterprise/openai/gpt-4o
-embedding: enterprise/openai/text-embedding-3-small
 
 auth:
   type: m2m
@@ -180,13 +179,10 @@ The enterprise provider expects **OpenAI-compatible API format**:
 }
 ```
 
-**Embedding endpoint:** `POST /embeddings`
-```json
-{
-  "model": "openai/text-embedding-3-small",
-  "input": "Hello world"
-}
-```
+The LLM reranker (used by retrieval) speaks the same chat-completions
+protocol — it asks the model to score documents and parses the JSON
+response. No separate `/embeddings` endpoint is called; fitz-sage
+dropped the embedding API entirely in v0.12.0.
 
 Model strings are passed verbatim to the gateway. Common formats:
 - `openai/gpt-4o` - Provider-prefixed (BMW gateway style)
@@ -197,7 +193,7 @@ Model strings are passed verbatim to the gateway. Common formats:
 
 1. **No SDK dependencies** - Uses httpx directly. No OpenAI/Anthropic/Cohere SDKs.
 
-2. **OpenAI-compatible API** - Works with any gateway that implements the OpenAI chat/embedding API format.
+2. **OpenAI-compatible API** - Works with any gateway that implements the OpenAI chat-completions format.
 
 3. **Composite authentication** - M2M and API key auth can be combined for dual-header requirements.
 
@@ -218,7 +214,6 @@ Model strings are passed verbatim to the gateway. Common formats:
 ```yaml
 # .fitz/config.yaml
 chat_smart: enterprise/openai/gpt-4o
-embedding: enterprise/openai/text-embedding-3-small
 collection: default
 
 auth:
@@ -234,10 +229,7 @@ auth:
   client_cert_path: /etc/ssl/client.crt
   client_key_path: /etc/ssl/client.key
 
-# Vector DB remains standard
-vector_db: pgvector
-vector_db_kwargs:
-  mode: local
+# Storage: SQLite + FTS5 (auto-managed). No vector_db / pgvector knobs.
 ```
 
 ```bash

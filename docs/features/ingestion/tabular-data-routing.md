@@ -8,7 +8,7 @@ Tables in documents get chunked arbitrarily, breaking structure:
 - **Standard RAG:** Returns fragments like "Alice" + "salary column" (separated chunks)
 - **Expected:** Query the full table: `SELECT salary FROM employees WHERE name = 'Alice'`
 
-Semantic search fails on entity-specific table queries because embeddings don't capture row-level data. Tables need **structured querying (SQL)**, not chunk retrieval.
+Text-based retrieval (BM25, full-text, or embedding similarity) fails on entity-specific table queries because chunked text doesn't capture row-level data. Tables need **structured querying (SQL)**, not chunk retrieval.
 
 ## Solution: Table Registry + SQL Execution
 

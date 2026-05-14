@@ -4,15 +4,19 @@
 
 Users often use different terminology than what appears in documents:
 
-- "How do I fetch employee data?" - Document uses "retrieve" or "get"
-- "How does the db connection work?" - Document uses "database"
-- "What failures can occur?" - Document uses "errors" or "exceptions"
+- "How do I fetch employee data?" — document uses "retrieve" or "get"
+- "How does the db connection work?" — document uses "database"
+- "What failures can occur?" — document uses "errors" or "exceptions"
 
-Dense semantic search helps with meaning, but exact synonym/acronym expansion improves recall.
+BM25 token matching catches *some* of this (shared stems, casing) but
+not enough — it doesn't know `fetch` ↔ `retrieve` or `db` ↔ `database`.
+With embeddings removed in v0.12.0, the bridging job falls on the
+query side instead of the index side: expand the query into multiple
+phrasings, run each, fuse.
 
-## Solution: Lightweight Query Expansion
+## Solution: lightweight query expansion
 
-Expand queries with synonym and acronym variations before searching:
+Expand queries with synonym and acronym variations before BM25:
 
 ```
 Original query:     "How do I fetch employee data?"
@@ -21,19 +25,19 @@ Expanded queries:   ["How do I fetch employee data?",
                      "How do I retrieve employee data?",
                      "How do I get employee data?"]
                               ↓
-                    Search with all variations
+                    Each variation runs FTS5 + bm25()
                               ↓
-                    RRF fusion of results
+                    Results merged via Reciprocal Rank Fusion
 ```
 
-## How It Works
+## How it works
 
-### At Query Time
+### At query time
 
-1. Query is analyzed for known synonyms and acronyms
-2. Up to 4 additional query variations are generated
-3. Each variation is searched (with hybrid dense+sparse)
-4. Results are merged using Reciprocal Rank Fusion (RRF)
+1. Query is analysed for known synonyms and acronyms (rule-based, fast).
+2. Up to four additional query variations are generated.
+3. Each variation hits the BM25 index.
+4. Results are merged with Reciprocal Rank Fusion (`1 / (60 + rank)`).
 
 ### Expansion Rules
 
@@ -97,21 +101,26 @@ Note: Query expansion uses dictionary-based matching (not LLM) for fast, determi
 
 ## Performance
 
-- Expansion is fast (microseconds, rule-based)
-- Additional embedding calls (one per variation)
-- Additional search calls (one per variation)
-- RRF merge is fast (in-memory)
+- Expansion is fast (microseconds, rule-based).
+- One BM25 search per variation; FTS5 + `bm25()` is sub-10 ms per
+  call on typical collections.
+- RRF merge is in-memory.
 
-Typical overhead: 2-4x search time for 3-5 variations. Worth it for improved recall.
+Typical overhead: 2–4× search time for 3–5 variations. Negligible
+relative to the LLM synthesizer step that follows.
 
 ## Dependencies
 
-- No LLM required (dictionary-based expansion)
-- Fast, deterministic synonym/acronym matching
-- To add new synonyms or acronyms, edit the dicts in `detection/detectors/expansion.py`
+- No LLM required (dictionary-based expansion).
+- Fast, deterministic synonym/acronym matching.
+- To add new synonyms or acronyms, edit the dicts in
+  `detection/detectors/expansion.py`.
 
-## Related Features
+## Related
 
-- [**Hybrid Search**](hybrid-search.md) - Dense + sparse search (expansion runs on both)
-- [**Keyword Vocabulary**](keyword-vocabulary.md) - Exact-match identifiers (complements synonym expansion)
-- [**HyDE**](hyde.md) - LLM-based query expansion (for abstract queries)
+- [Sparse Search (FTS5 + bm25)](sparse-search.md) — what each expanded
+  query actually hits
+- [Keyword Vocabulary](keyword-vocabulary.md) — exact-match identifiers
+  (complements synonym expansion)
+- [Multi-Query RAG](multi-query-rag.md) — for long compound queries
+  the rule-based expander can't handle

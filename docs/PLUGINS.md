@@ -1,250 +1,212 @@
 # Plugin Development Guide
 
-Fitz uses Python providers for LLM services and a plugin system for other components. This guide explains the provider architecture and how to create custom plugins.
+fitz-sage **v0.12.0+** has a much smaller plugin surface than earlier
+versions: chat is mono-protocol (one OpenAI-compatible provider with
+sugar presets), embedding/vector-db are gone, and the remaining plugin
+types are Python modules wired by config.
+
+This guide covers what's pluggable and how to add a new one.
 
 ---
 
-## Feature Control Architecture
+## What's Pluggable
 
-**Important:** Optional features (VLM, reranking) are controlled by plugin choice, not config flags.
+| Type            | Format | Location                                       | Selected by config              |
+| --------------- | ------ | ---------------------------------------------- | -------------------------------- |
+| Chat provider   | Python | `fitz_sage/llm/providers/`                     | `chat_fast` / `chat_smart` / ... |
+| Parser          | Python | `fitz_sage/ingestion/parser/plugins/`          | `parser:`                        |
+| Chunker         | Python | `fitz_sage/ingestion/chunking/plugins/`        | `chunker:` / format auto-routing |
+| Source          | Python | `fitz_sage/ingestion/source/plugins/`          | source spec at ingest time       |
+| Enrichment artifact | Python | `fitz_sage/ingestion/enrichment/artifacts/plugins/` | always-on; presence-controlled |
+| Guardrail / constraint | Python | `fitz_sage/governance/constraints/plugins/` | `constraints:` list             |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  CONFIG declares WHICH provider/model to use                    │
-│  (edit .fitz/config.yaml)                                       │
-├─────────────────────────────────────────────────────────────────┤
-│  vision: cohere             │  rerank: cohere/rerank-v3.5      │
-│  parser: docling_vision     │                                   │
-├─────────────────────────────────────────────────────────────────┤
-│  PROVIDER PRESENCE determines IF the feature is used            │
-├─────────────────────────────────────────────────────────────────┤
-│  Parser (VLM control):                                          │
-│    parser: docling        → No VLM (figures become "[Figure]")  │
-│    parser: docling_vision → Uses VLM from vision: config        │
-│                                                                 │
-│  Reranking (Provider-presence control):                         │
-│    rerank: null   → No reranking (pure vector search)           │
-│    rerank: cohere/rerank-v3.5 → Reranking auto-enabled          │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**The pattern:**
-- Edit `.fitz/config.yaml` to set providers
-- `vision:` and `rerank:` specify WHAT provider/model to use
-- VLM: `parser:` choice specifies IF the feature is used
-- Reranking: Provider presence enables the feature (baked into `dense` plugin)
-
-**Config locations:**
-- Parser: `parser:` → `"docling"`, `"docling_vision"`, or `"glm_ocr"`
-- Reranking: `rerank:` → `cohere/rerank-v3.5` (enabled) or `null` (disabled)
+There is **no embedding plugin, no vector-DB plugin, no rerank plugin**.
+The reranker that does run (`LLMReranker`) is a thin wrapper over the
+canonical chat provider — see `fitz_sage/llm/providers/llm_reranker.py`.
 
 ---
 
-## Overview
+## Feature Control
 
-Fitz uses two types of plugins:
+Features are controlled by **provider presence**, not boolean flags:
 
-- **Python providers** - For LLM service integrations (chat, embedding, rerank, vision). Protocol-based with pluggable auth.
-- **Python plugins** - For logic-based components (chunking, parsing, constraints).
+```yaml
+# ENABLED — a reranker is provided
+rerank: endpoint/llmreranker
 
-**Plugin Types:**
+# DISABLED — omit the key (or set null)
+# rerank not set → no reranking step in the pipeline
+```
 
-| Type | Format | Location | Purpose |
-|------|--------|----------|---------|
-| Chat | Python | `fitz_sage/llm/providers/` | LLM chat/completion |
-| Embedding | Python | `fitz_sage/llm/providers/` | Text embeddings |
-| Rerank | Python | `fitz_sage/llm/providers/` | Document reranking |
-| Vision | Python | `fitz_sage/llm/providers/` | VLM for image description |
-| Retrieval | YAML | `fitz_sage/engines/fitz_krag/retrieval/plugins/` | Retrieval strategies |
-| Chunking | Python | `fitz_sage/ingestion/chunking/plugins/` | Document chunking |
-| Parser | Python | `fitz_sage/ingestion/parser/plugins/` | Document parsing |
-| Guardrail | Python | `fitz_sage/core/guardrails/plugins/` | Epistemic safety |
+The same pattern applies to vision (VLM): set `parser: docling_vision`
+to bake the VLM into ingestion, or set `parser: docling` / `parser: glm_ocr`
+to skip it.
 
-**Note:** Vector storage uses PostgreSQL + pgvector (built-in, not pluggable). See [Unified Storage](features/platform/unified-storage.md).
+Constraints are different — they're a list, and presence in the list
+controls whether each guardrail runs:
+
+```yaml
+constraints:
+  - conflict_aware
+  - insufficient_evidence
+  - causal_attribution
+```
 
 ---
 
-## LLM Providers
+## Chat Provider Model
 
-LLM providers are Python classes that implement protocol interfaces (`ChatProvider`, `EmbeddingProvider`, `RerankProvider`, `VisionProvider`). Each provider wraps a vendor SDK or HTTP client with pluggable authentication.
+The LLM layer has exactly one canonical provider — **`endpoint`** —
+that speaks OpenAI-compatible `/chat/completions`. The other names are
+URL+auth presets over it:
 
-### Built-in Providers
+| Spec form                              | Resolves to                                              |
+| -------------------------------------- | -------------------------------------------------------- |
+| `endpoint` + `chat_base_url`           | the canonical form                                       |
+| `openai/<model>`                       | endpoint pointing at `https://api.openai.com/v1`         |
+| `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |
+| `enterprise/<provider>/<model>`        | endpoint + M2M / mTLS / custom-CA auth                   |
 
-| Provider | Chat | Embedding | Rerank | Vision |
-|----------|------|-----------|--------|--------|
-| `cohere` | Yes | Yes | Yes | - |
-| `openai` | Yes | Yes | - | Yes |
-| `anthropic` | Yes | - | - | Yes |
-| `azure_openai` | Yes | Yes | - | Yes |
-| `ollama` | Yes | Yes | Yes | Yes |
-| `enterprise` | Yes | Yes | - | - |
+Removed in v0.12.0 (raise `ValueError` with migration text):
+`cohere`, `anthropic`, `ollama`. Point fitz-sage at the same model's
+OpenAI-compatible endpoint instead — e.g. Ollama exposes one at
+`http://localhost:11434/v1`.
 
-### Provider Spec Format
+### Built-in providers
 
-Providers are selected using a `provider/model` string:
+| Provider     | Purpose                                                    |
+| ------------ | ---------------------------------------------------------- |
+| `endpoint`   | Canonical OpenAI-compatible chat (any URL)                 |
+| `enterprise` | Same protocol + enterprise auth (M2M OAuth2, mTLS, CA bundle) |
+| `llm_reranker` | Internal — wraps a chat provider to score documents      |
 
-```python
-from fitz_sage.llm import get_chat, get_embedder, get_reranker, get_vision
+### Model tiers
 
-# Provider only (uses default model for tier)
-chat = get_chat("cohere")
-chat = get_chat("cohere", tier="fast")
+`chat_fast`, `chat_balanced`, `chat_smart` are cost-tier slots. Wire
+them to different models or to the same model with different sampling:
 
-# Provider with explicit model
-chat = get_chat("openai/gpt-4o")
-embedder = get_embedder("cohere/embed-multilingual-v3.0")
-reranker = get_reranker("cohere")
-vision = get_vision("openai/gpt-4o")
-```
-
-### Provider Protocols
-
-All providers implement `@runtime_checkable` protocols:
-
-```python
-class ChatProvider(Protocol):
-    def chat(self, messages: list[dict[str, Any]], **kwargs) -> str: ...
-
-class EmbeddingProvider(Protocol):
-    def embed(self, text: str, *, task_type: str | None = None) -> list[float]: ...
-    def embed_batch(self, texts: list[str], *, task_type: str | None = None) -> list[list[float]]: ...
-    @property
-    def dimensions(self) -> int: ...
-
-class RerankProvider(Protocol):
-    def rerank(self, query: str, documents: list[str], top_n: int | None = None) -> list[RerankResult]: ...
-
-class VisionProvider(Protocol):
-    def describe_image(self, image_base64: str, prompt: str | None = None) -> str: ...
+```yaml
+chat_fast: endpoint            # cheap for enrichment / classification
+chat_balanced: endpoint        # default synthesizer
+chat_smart: endpoint           # heavy reasoning paths
+chat_fast_model: qwen2.5-3b-instruct
+chat_balanced_model: qwen2.5-7b-instruct
+chat_smart_model: qwen2.5-32b-instruct
+chat_base_url: http://localhost:8080/v1
+chat_api_key_env: OPENAI_API_KEY    # omit for unauthenticated local servers
 ```
 
 ### Authentication
 
-| Type | Class | Use Case |
-|------|-------|----------|
-| API Key | `ApiKeyAuth` | Standard providers (OpenAI, Cohere, Anthropic) |
-| M2M OAuth2 | `M2MAuth` | Enterprise deployments with client credentials |
-| Composite | `CompositeAuth` | Enterprise gateways (M2M + API key combined) |
+| Auth type     | Class            | Use case                                                |
+| ------------- | ---------------- | ------------------------------------------------------- |
+| None          | n/a              | Unauthenticated local server (llama.cpp, Ollama, LM Studio) |
+| API key       | `ApiKeyAuth`     | OpenAI, Together, Groq, Anthropic-via-compat, ...       |
+| M2M OAuth2    | `M2MAuth`        | Enterprise gateways using client-credentials flow       |
+| Composite     | `CompositeAuth`  | Gateway with M2M bearer + downstream LLM API key        |
 
-Auth is resolved automatically from environment variables:
+API-key env var names are arbitrary — set `chat_api_key_env` to
+whichever env var holds yours.
 
-| Provider | Environment Variable |
-|----------|---------------------|
-| `cohere` | `COHERE_API_KEY` |
-| `openai` | `OPENAI_API_KEY` |
-| `anthropic` | `ANTHROPIC_API_KEY` |
-| `azure_openai` | `AZURE_OPENAI_API_KEY` |
-| `ollama` | None (no auth) |
-| `enterprise` | Configured via auth block |
-
-### Model Tiers
-
-Chat providers support three model tiers for cost optimization:
-
-| Tier | Use Case | Example |
-|------|----------|---------|
-| `smart` | User-facing queries | `gpt-4o`, `command-a-03-2025` |
-| `fast` | Background tasks, enrichment | `gpt-4o-mini`, `command-r7b` |
-| `balanced` | Bulk operations, evaluation | Middle-ground models |
-
-### Enterprise Authentication
-
-For enterprise deployments with M2M OAuth2:
-
-```yaml
-# In engine config
-auth:
-  type: enterprise
-  token_url: https://auth.example.com/oauth/token
-  client_id: ${CLIENT_ID}
-  client_secret: ${CLIENT_SECRET}
-  llm_api_key_env: LLM_API_KEY
-  # Optional mTLS
-  cert_path: /path/to/ca.pem
-  client_cert_path: /path/to/client.pem
-  client_key_path: /path/to/client-key.pem
-```
-
-Features: automatic token refresh, exponential backoff, circuit breaker, mTLS support.
+See [`features/platform/enterprise-gateway.md`](features/platform/enterprise-gateway.md)
+for the full M2M / mTLS story.
 
 ---
 
-## Vector DB Plugin
+## Adding a Chat Provider
 
-Fitz uses PostgreSQL + pgvector for unified storage of vectors, metadata, and structured tables.
+The expected case is that you don't need to — any OpenAI-compatible
+server already works via `endpoint`. Add a new provider only when the
+wire protocol isn't OpenAI-compatible (e.g. legacy enterprise gateways
+with custom JSON shape). Then:
 
-**Plugin:** `pgvector` (default, no configuration needed)
+1. Create `fitz_sage/llm/providers/myprovider.py`.
+2. Implement `ChatProvider`:
 
-### Configuration
+   ```python
+   from typing import Any
+   from fitz_sage.llm.types import ChatProvider
 
-```yaml
-# Local mode (default) - embedded PostgreSQL via pgserver
-vector_db: pgvector
-vector_db_kwargs:
-  mode: local
+   class MyChat:
+       def __init__(self, model: str, auth):
+           self.model = model
+           self.auth = auth
 
-# External mode - your PostgreSQL instance
-vector_db: pgvector
-vector_db_kwargs:
-  mode: external
-  connection_string: postgresql://user:pass@host:5432/dbname
-```
-
-### Why PostgreSQL?
-
-Fitz uses PostgreSQL + pgvector instead of dedicated vector databases for:
-
-- **Unified storage** - Vectors, metadata, and tables in one database
-- **Full SQL** - Real queries, joins, aggregations on structured data
-- **Zero friction** - `pip install` includes embedded PostgreSQL (pgserver)
-- **One code path** - Same behavior locally and in production
-
-See [Unified Storage](features/platform/unified-storage.md) for the full rationale.
-
-### HNSW Index Settings
-
-```yaml
-vector_db_kwargs:
-  hnsw_m: 16                # Graph connectivity (default: 16)
-  hnsw_ef_construction: 64  # Build quality (default: 64)
-```
-
-Higher values = better recall but slower indexing.
+       def chat(self, messages: list[dict[str, Any]], **kwargs) -> str:
+           ...
+   ```
+3. Register it in `fitz_sage/llm/config.py`'s provider factory
+   (`_create_chat`).
+4. Add a unit test that asserts the dispatch wire-up.
 
 ---
 
-## Using LLM Providers
+## Adding a Parser
 
-In configuration:
-
-```yaml
-# .fitz/config.yaml
-chat_smart: cohere/command-a-03-2025
-chat_fast: cohere/command-r7b-12-2024
-embedding: cohere/embed-v4.0
-rerank: cohere/rerank-v3.5
-collection: default
-
-# Vector storage (pgvector is the default)
-vector_db: pgvector
-vector_db_kwargs:
-  mode: local
-```
-
-In code:
+Parsers go in `fitz_sage/ingestion/parser/plugins/<name>.py` and
+inherit from `BaseParser`:
 
 ```python
-from fitz_sage.llm import get_chat, get_embedder, get_reranker, get_vision
+from fitz_sage.ingestion.parser.base_parser import BaseParser
+from fitz_sage.ingestion.parser.types import ParsedDocument
 
-chat = get_chat("cohere", tier="smart")
-response = chat.chat([{"role": "user", "content": "Hello"}])
+class MyParser(BaseParser):
+    name = "my_parser"
+    supported_extensions = (".myfmt",)
 
-embedder = get_embedder("cohere")
-vector = embedder.embed("Some text")
-
-reranker = get_reranker("cohere")
-results = reranker.rerank("query", ["doc1", "doc2"])
+    def parse(self, path: str) -> ParsedDocument:
+        ...
 ```
+
+Auto-discovery walks `parser/plugins/` at import time, so dropping the
+file is sufficient. Pick by setting `parser: my_parser` in config.
+
+---
+
+## Adding a Chunker
+
+Chunkers live under `fitz_sage/ingestion/chunking/plugins/`. They
+implement the `Chunker` protocol (`chunk(parsed: ParsedDocument) -> list[Chunk]`).
+Routing is by file extension or content type — see
+`ingestion/chunking/router.py`.
+
+The default (markdown, plaintext, code, table) covers most cases.
+Add a new plugin only when you have a format-specific structure to
+preserve (e.g. a custom XML dialect).
+
+---
+
+## Adding a Constraint Plugin
+
+Constraints (epistemic guardrails) live under
+`fitz_sage/governance/constraints/plugins/`. They implement the
+`Constraint` protocol — given retrieved context, return a verdict
+(`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN`) and a rationale.
+
+The five built-ins are:
+
+| Plugin                  | What it checks                                          |
+| ----------------------- | ------------------------------------------------------- |
+| `conflict_aware`        | Authoritative sources contradict each other             |
+| `insufficient_evidence` | Retrieved context doesn't actually answer the question  |
+| `causal_attribution`    | Causal claim isn't supported by the retrieved evidence  |
+| `specific_info_type`    | Numeric / date / entity expectations vs what was found  |
+| `answer_verification`   | Generated answer is grounded in retrieved sources       |
+
+See [CONSTRAINTS.md](CONSTRAINTS.md) for the full semantics.
+
+---
+
+## Adding an Enrichment Artifact
+
+Enrichment artifacts are LLM-generated supplementary content
+(architecture narrative, dependency summary, etc.) attached to a
+collection. They live under
+`fitz_sage/ingestion/enrichment/artifacts/plugins/` and implement the
+`ArtifactBuilder` protocol.
+
+These are presence-controlled: include the plugin in the list and it
+runs once per collection during ingestion.
 
 ---
 
@@ -253,14 +215,31 @@ results = reranker.rerank("query", ["doc1", "doc2"])
 ### Unknown Provider
 
 ```
-ValueError: Unknown chat provider: 'my_provider'
+ValueError: Unknown chat provider: 'cohere'
 ```
 
-- Check the provider name is one of: `cohere`, `openai`, `anthropic`, `azure_openai`, `ollama`, `enterprise`
-- Check the `provider/model` format is correct (e.g., `openai/gpt-4o`)
+That provider was removed in v0.12.0. Use `endpoint` with the
+provider's OpenAI-compatible URL. Migration mapping for the most
+common cases:
+
+| Was              | Now                                                        |
+| ---------------- | ---------------------------------------------------------- |
+| `cohere`         | not available — pick an OpenAI-compatible model            |
+| `ollama`         | `endpoint` with `chat_base_url: http://localhost:11434/v1` |
+| `anthropic`      | not available — Claude isn't OpenAI-compatible             |
 
 ### Authentication Failed
 
-- Verify environment variable is set: `echo $COHERE_API_KEY`
-- Check the correct env var for your provider (see Authentication section above)
-- For enterprise auth, verify M2M config fields are complete
+- Set the env var named in `chat_api_key_env` (e.g. `OPENAI_API_KEY`).
+- For enterprise auth, confirm all M2M fields are filled and the env
+  vars referenced by `${...}` are set.
+
+---
+
+## See Also
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — system overview
+- [CONFIG.md](CONFIG.md) — full configuration reference
+- [FEATURE_CONTROL.md](FEATURE_CONTROL.md) — provider-presence pattern
+- [features/platform/openai-compatible-endpoint.md](features/platform/openai-compatible-endpoint.md) — the canonical chat provider
+- [features/platform/enterprise-gateway.md](features/platform/enterprise-gateway.md) — M2M / mTLS / CA bundle

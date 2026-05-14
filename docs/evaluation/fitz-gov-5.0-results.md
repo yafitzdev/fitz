@@ -201,8 +201,8 @@ Adding 1,797 cases to a benchmark calibrated on 1,113 inevitably introduces more
 ## Reproduction
 
 ```bash
-# Feature extraction (requires ollama + cohere or other providers)
-python -m tools.governance.extract_features --chat cohere --embedding ollama --workers 1
+# Feature extraction (requires a configured chat endpoint)
+python -m tools.governance.extract_features --workers 1
 
 # Train cascade classifier
 python -m tools.governance.train_classifier --mode cascade --time-budget 200
@@ -215,7 +215,7 @@ python -m tools.governance.calibrate_cascade
 
 | File | Purpose |
 |------|---------|
-| `tools/governance/extract_features.py` | Feature extraction (real embeddings + detection) |
+| `tools/governance/extract_features.py` | Feature extraction (chat-based detection signals) |
 | `tools/governance/train_classifier.py` | Cascade training with hyperparameter search |
 | `tools/governance/calibrate_cascade.py` | 4-threshold sweep for critical case minimization |
 | `tools/governance/data/features.csv` | 2,920 rows × 95 columns |

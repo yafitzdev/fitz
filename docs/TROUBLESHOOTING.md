@@ -1,12 +1,16 @@
 # Troubleshooting Guide
 
-Common issues and solutions for Fitz.
+Common issues and solutions for fitz-sage **v0.12.0+** (single OpenAI-compatible
+HTTP protocol, SQLite + FTS5 storage, no embeddings, no vector DB).
 
 ---
 
 ## Quick Diagnostics
 
-Check your config file at `.fitz/config.yaml` and verify providers, API keys, and storage settings are correct.
+Check `~/.fitz/config/<engine>.yaml` and verify the chat endpoint URL,
+API-key environment variable, and collection name are correct.
+
+Run `fitz config show` to print the effective merged config.
 
 ---
 
@@ -16,16 +20,54 @@ Check your config file at `.fitz/config.yaml` and verify providers, API keys, an
 
 **Error:**
 ```
-ConfigNotFoundError: Config file not found: .fitz/config.yaml
+ConfigNotFoundError: Config file not found
 ```
 
 **Solution:**
 
-Edit `.fitz/config.yaml` (auto-created on first run). Or with auto-init in Python:
-```python
-from fitz_sage import fitz
-f = fitz(auto_init=True)  # Creates default config
+Run `fitz init` to scaffold the default config, or pass `--endpoint`,
+`--model`, and `--api-key-env` directly on the `fitz query` command:
+
+```bash
+fitz query "What is X?" \
+  --endpoint https://api.openai.com/v1 \
+  --model gpt-4o-mini \
+  --api-key-env OPENAI_API_KEY \
+  --source ./docs
 ```
+
+---
+
+### Cannot connect to chat endpoint
+
+**Error:**
+```
+LLMError: Cannot connect to http://localhost:8080/v1
+```
+
+**Solution:**
+
+1. Confirm an OpenAI-compatible server is running and reachable at the
+   configured `chat_base_url`. Common local options:
+
+   ```bash
+   # llama.cpp
+   llama-server -m model.gguf --port 8080
+
+   # vLLM
+   python -m vllm.entrypoints.openai.api_server --model my-model --port 8080
+
+   # LM Studio: enable the local server in Settings → Developer
+   ```
+
+2. Verify reachability:
+   ```bash
+   curl http://localhost:8080/v1/models
+   ```
+
+3. If using Ollama, point fitz-sage at Ollama's OpenAI-compatible
+   endpoint (`http://localhost:11434/v1`). The legacy `ollama`
+   provider name was removed in v0.12.0 — use `endpoint` instead.
 
 ---
 
@@ -33,166 +75,63 @@ f = fitz(auto_init=True)  # Creates default config
 
 **Error:**
 ```
-AuthenticationError: API key not found
+AuthenticationError: API key not found in environment variable OPENAI_API_KEY
 ```
 
 **Solution:**
 
-Set the appropriate environment variable:
+Set the env var named in `chat_api_key_env` (defaults vary by config):
 
 ```bash
-# Cohere
-export COHERE_API_KEY="your-key-here"
+# Linux / macOS
+export OPENAI_API_KEY="..."
+export TOGETHER_API_KEY="..."
 
-# OpenAI
-export OPENAI_API_KEY="your-key-here"
+# Windows (PowerShell)
+$env:OPENAI_API_KEY = "..."
 
-# Anthropic
-export ANTHROPIC_API_KEY="your-key-here"
+# Windows (cmd)
+set OPENAI_API_KEY=...
 ```
 
-On Windows:
-```cmd
-set COHERE_API_KEY=your-key-here
-```
+For unauthenticated local servers, leave `chat_api_key_env` unset.
 
 ---
 
-### Ollama Not Running
+### Storage path errors
 
 **Error:**
 ```
-LLMError: Cannot connect to Ollama at http://localhost:11434
+sqlite3.OperationalError: unable to open database file
 ```
+
+**Cause:** The workspace storage directory doesn't exist or isn't writable.
 
 **Solution:**
 
-1. Start Ollama:
+1. Confirm `<workspace>/sqlite/` exists. By default `<workspace>` is
+   `~/.fitz/` (override with `FITZ_HOME` or the `storage_path` config
+   key).
+2. Verify write permissions for the user running fitz-sage.
+3. To start fresh, delete the per-collection file (the collection
+   name maps to `fitz_<collection>.db`):
    ```bash
-   ollama serve
-   ```
-
-2. Pull required models:
-   ```bash
-   ollama pull llama3.2
-   ollama pull nomic-embed-text
-   ```
-
-3. Verify it's running:
-   ```bash
-   curl http://localhost:11434/api/tags
+   rm ~/.fitz/sqlite/fitz_<collection>.db
+   rm ~/.fitz/sqlite/fitz_<collection>.db-wal
+   rm ~/.fitz/sqlite/fitz_<collection>.db-shm
    ```
 
 ---
 
-### PostgreSQL/pgserver Issues
+### Stale collection / schema mismatch
 
-**Error:**
-```
-Could not start pgserver: pgdata directory locked
-```
+If a collection was created on a much older fitz-sage and a `SELECT`
+errors out with a missing column, the simplest path is to delete the
+collection's `.db` and re-ingest. There is no in-place migration step.
 
-**Cause:** A previous PostgreSQL process didn't shut down cleanly, leaving lock files.
-
-**Solution:**
-
-Fitz automatically attempts to clean up zombie processes, but if it persists:
-
-1. Kill any zombie postgres processes:
-   ```bash
-   # Linux/macOS
-   pkill -9 postgres
-
-   # Windows
-   taskkill /F /IM postgres.exe
-   ```
-
-2. Remove the pgdata directory:
-   ```bash
-   rm -rf ~/.fitz/pgdata
-   ```
-
-3. Fitz will recreate it on next run.
-
----
-
-**Error:**
-```
-PostgreSQL connection failed: connection refused
-```
-
-**Solution for local mode:**
-1. Check if another process is using port 5432
-2. Remove pgdata and let Fitz reinitialize:
-   ```bash
-   rm -rf ~/.fitz/pgdata
-   ```
-
-**Solution for external mode:**
-1. Verify connection string in config:
-   ```yaml
-   vector_db_kwargs:
-     mode: external
-     connection_string: postgresql://user:pass@host:5432/dbname
-   ```
-2. Ensure pgvector extension is installed:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
-
----
-
-**Error:**
-```
-pgvector extension not found
-```
-
-**Cause:** External PostgreSQL doesn't have pgvector installed.
-
-**Solution:**
-
-Install pgvector on your PostgreSQL instance:
 ```bash
-# Ubuntu/Debian
-sudo apt install postgresql-16-pgvector
-
-# macOS with Homebrew
-brew install pgvector
-
-# Or compile from source
-git clone https://github.com/pgvector/pgvector.git
-cd pgvector && make && sudo make install
-```
-
-Then enable in your database:
-```sql
-CREATE EXTENSION vector;
-```
-
----
-
-### Windows Symlink Error
-
-**Error:**
-```
-WinError 1314: A required privilege is not held by the client
-```
-
-This occurs when downloading Docling models on Windows.
-
-**Solution:**
-
-Fitz automatically handles this, but if you see the error:
-
-```python
-import os
-os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
-```
-
-Or set before running:
-```cmd
-set HF_HUB_DISABLE_SYMLINKS=1
-fitz query --source ./docs "test query"
+fitz collections delete my_collection
+fitz query --source ./docs "..."
 ```
 
 ---
@@ -206,11 +145,14 @@ RateLimitError: Rate limit exceeded
 
 **Solution:**
 
-1. Wait and retry (automatic backoff)
-2. Reduce batch size for ingestion
-3. Use a lighter model tier:
+1. Wait and retry (the chat provider applies exponential backoff
+   automatically — see `fitz_sage/llm/auth/`).
+2. Reduce ingest batch size, or stagger ingest with `--max-concurrent`.
+3. Point `chat_fast` at a cheaper model for the bulk of the work:
    ```yaml
-   chat_fast: cohere/command-r7b-12-2024  # Lighter model
+   chat_fast: gpt-4o-mini
+   chat_balanced: gpt-4o-mini
+   chat_smart: gpt-4o
    ```
 
 ---
@@ -223,42 +165,18 @@ ValueError: No chunks created from documents
 ```
 
 **Causes:**
-- Documents are empty or unreadable
-- Parser failed silently
-- All content filtered out
+- Documents are empty or unreadable.
+- Parser failed silently (try `--verbose`).
+- All content filtered out by chunking rules.
 
 **Solution:**
 
-1. Check document contents manually
-2. Try with verbose logging:
+1. Check document contents manually.
+2. Enable verbose logging:
    ```bash
    fitz query --source ./docs --verbose "test query"
    ```
-3. Check supported formats in [INGESTION.md](INGESTION.md)
-
----
-
-### Vector Dimension Mismatch
-
-**Error:**
-```
-ValueError: Vector dimension mismatch: expected 1024, got 768
-```
-
-**Cause:** Embedding model changed after initial ingestion.
-
-**Solution:**
-
-Clear the collection and re-ingest:
-```bash
-fitz collections delete my_collection
-fitz query --source ./docs "test query"
-```
-
-Or in Python:
-```python
-fitz_sage.query("test query", source="./docs")
-```
+3. Check supported formats in [INGESTION.md](INGESTION.md).
 
 ---
 
@@ -270,22 +188,18 @@ ValueError: No documents found in ./path
 ```
 
 **Causes:**
-- Wrong path
-- No supported file types
-- Files filtered by .gitignore patterns
+- Wrong path.
+- No supported file types.
+- Files filtered by `.gitignore` patterns.
 
 **Solution:**
 
-1. Verify path exists:
-   ```bash
-   ls ./path
-   ```
-
-2. Check file extensions (supported: `.pdf`, `.docx`, `.md`, `.txt`, `.py`, etc.)
-
+1. Verify path exists.
+2. Check file extensions (supported: `.pdf`, `.docx`, `.md`, `.txt`,
+   `.py`, `.go`, `.ts`, `.java`, `.cs`, `.sql`, `.xlsx`, `.csv`, etc.).
 3. Try with a specific file:
    ```bash
-   fitz query --source ./path/specific_file.pdf "test query"
+   fitz query --source ./path/file.pdf "test query"
    ```
 
 ---
@@ -294,17 +208,15 @@ ValueError: No documents found in ./path
 
 **Error:**
 ```
-TimeoutError: Request timed out after 120 seconds
+TimeoutError: Request timed out
 ```
 
 **Solution:**
 
-1. Check network connection
-2. For large files, increase timeout in config
-3. Try smaller batches:
-   ```yaml
-   chunk_size: 500  # Smaller chunks
-   ```
+1. Check network connection.
+2. For large documents, lower `chunk_size` or `top_addresses` so
+   each LLM call stays within timeout.
+3. Switch to a faster model for the synthesizer.
 
 ---
 
@@ -313,7 +225,7 @@ TimeoutError: Request timed out after 120 seconds
 ### Enable Debug Logging
 
 ```yaml
-# In .fitz/config.yaml
+# In ~/.fitz/config/fitz_krag.yaml
 logging:
   level: DEBUG
 ```
@@ -325,31 +237,27 @@ FITZ_LOG_LEVEL=DEBUG fitz query --source ./docs "test query"
 
 ### Inspect State File
 
-Check what files are tracked:
 ```bash
 cat .fitz/ingest_state.json | python -m json.tool
 ```
 
-### Test Individual Components
+### Test Chat Endpoint Directly
 
 ```python
-# Test embedding
-from fitz_sage.llm import get_embedder
-embedder = get_embedder("cohere/embed-v4.0")
-vector = embedder.embed("test")
-print(f"Embedding dim: {len(vector)}")
+from fitz_sage.llm.client import get_chat
 
-# Test vector DB
-from fitz_sage.vector_db.registry import get_vector_db_plugin
-vdb = get_vector_db_plugin("pgvector")
-collections = vdb.list_collections()
-print(f"Collections: {collections}")
-
-# Test chat
-from fitz_sage.llm import get_chat
-chat = get_chat("cohere", tier="smart")
+chat = get_chat("endpoint", tier="smart")  # or use the full URL form
 response = chat.chat([{"role": "user", "content": "Hello"}])
-print(f"Response: {response}")
+print(response)
+```
+
+### Inspect the SQLite Store
+
+```bash
+sqlite3 ~/.fitz/sqlite/fitz_<collection>.db
+.tables
+SELECT COUNT(*) FROM krag_sections;
+SELECT id, title FROM krag_sections LIMIT 5;
 ```
 
 ---
@@ -360,54 +268,55 @@ print(f"Response: {response}")
 
 ```
 EngineError (base)
-├── ConfigurationError    # Config issues
-├── QueryError           # Invalid query
-├── KnowledgeError       # Retrieval issues
-├── GenerationError      # LLM issues
-├── TimeoutError         # Timeout
+├── ConfigurationError       # Config issues
+├── QueryError               # Invalid query
+├── KnowledgeError           # Retrieval issues
+├── GenerationError          # LLM issues
+├── TimeoutError             # Timeout
 └── UnsupportedOperationError
 
 APIError
-├── AuthenticationError  # Bad API key
-├── RateLimitError      # Rate limited
-└── ModelNotFoundError  # Invalid model
+├── AuthenticationError      # Bad API key
+├── RateLimitError           # Rate limited
+└── ModelNotFoundError       # Invalid model
 
 ConfigError
-├── ConfigNotFoundError  # Missing config
-├── ConfigParseError    # Invalid YAML
-└── ConfigValidationError # Schema error
+├── ConfigNotFoundError      # Missing config
+├── ConfigParseError         # Invalid YAML
+└── ConfigValidationError    # Schema error
 ```
 
-### HTTP Status Codes (API)
+### HTTP Status Codes (REST API)
 
 | Code | Meaning |
 |------|---------|
-| 400 | Bad request (invalid input) |
-| 401 | Authentication failed |
-| 404 | Collection/resource not found |
-| 429 | Rate limited |
-| 500 | Internal server error |
-| 501 | Feature not supported |
+| 400  | Bad request (invalid input) |
+| 401  | Authentication failed |
+| 404  | Collection / resource not found |
+| 429  | Rate limited |
+| 500  | Internal server error |
+| 501  | Feature not supported |
 
 ---
 
 ## Getting Help
 
-1. **Check config:** Verify `.fitz/config.yaml` is correct
-2. **Check logs:** Enable DEBUG level
+1. **Check config:** `fitz config show`
+2. **Check logs:** enable DEBUG level
 3. **Report issues:** [GitHub Issues](https://github.com/yafitzdev/fitz-sage/issues)
 
-When reporting issues, include:
-- Fitz version: `pip show fitz-sage`
+When reporting, include:
+- fitz-sage version: `pip show fitz-sage`
 - Python version: `python --version`
-- OS: Windows/macOS/Linux
-- Full error traceback
-- Contents of `.fitz/config.yaml`
+- OS
+- Full traceback
+- Effective config (`fitz config show`, with secrets redacted)
 
 ---
 
 ## See Also
 
-- [CONFIG.md](CONFIG.md) - Configuration reference
-- [CLI.md](CLI.md) - CLI commands
-- [INGESTION.md](INGESTION.md) - Ingestion pipeline
+- [CONFIG.md](CONFIG.md) — Configuration reference
+- [CLI.md](CLI.md) — CLI commands
+- [INGESTION.md](INGESTION.md) — Ingestion pipeline
+- [features/platform/unified-storage.md](features/platform/unified-storage.md) — SQLite + FTS5 storage layer

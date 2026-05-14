@@ -2,7 +2,7 @@
 
 ## Overview
 
-Progressive KRAG eliminates the ingestion barrier entirely. Instead of requiring users to run `fitz ingest` (which takes minutes for LLM summarization and embedding) before they can ask questions, users now point at a folder and query immediately. An LLM-driven agentic search handles unindexed files on the fly, while a background worker silently indexes everything. Queries get progressively faster as indexing completes -- but they work from second one.
+Progressive KRAG eliminates the ingestion barrier entirely. Instead of requiring users to run a separate ingest command (which takes minutes for LLM summarisation) before they can ask questions, users point at a folder and query immediately. An LLM-driven agentic search handles unindexed files on the fly, while a background worker silently indexes everything. Queries get progressively faster as indexing completes — but they work from second one.
 
 **Before**: `fitz ingest ./docs` (wait minutes) -> `fitz query "question"`
 **After**: `fitz point ./docs` (instant) -> `fitz query "question"` (works immediately)
@@ -72,7 +72,7 @@ Thread-safe manifest with JSON persistence at `~/.fitz/collections/{collection}/
 
 ### 2. ManifestBuilder (`progressive/builder.py`)
 
-Fast directory scanner that builds the manifest without any LLM calls, embedding calls, or database access. Runs in <500ms for 100 files.
+Fast directory scanner that builds the manifest without any LLM calls or database access. Runs in <500ms for 100 files.
 
 **Extraction**: Reuses existing ingestion strategies for symbol extraction:
 - `PythonCodeIngestStrategy` for `.py` (stdlib `ast`, ~50ms/file)
@@ -107,10 +107,10 @@ LLM-driven file selection for files not yet at EMBEDDED state. This is what make
 Daemon thread that indexes files through a three-phase state machine. Each phase processes files in priority order (queried files first).
 
 | Phase | Transition | What happens | LLM? |
-|-------|-----------|--------------|------|
-| 1 | REGISTERED -> PARSED | Store raw content, extract symbols/imports via strategies, store in DB | No |
+|-------|------------|--------------|------|
+| 1 | REGISTERED -> PARSED | Store raw content, extract symbols/imports via strategies, write to SQLite | No |
 | 2 | PARSED -> SUMMARIZED | Generate LLM summaries in batches. **Pauses during active queries.** | Yes |
-| 3 | SUMMARIZED -> EMBEDDED | Compute embeddings, update vector fields. **Runs concurrently with queries.** | Embedding API |
+| 3 | SUMMARIZED -> INDEXED | Build FTS5 / structural indexes for completed units. **Runs concurrently with queries.** | No |
 
 **Priority queue**:
 - P1: Files the user just queried about
@@ -183,7 +183,11 @@ The ingestion pipeline code (`ingestion/pipeline.py`, `ingestion/strategies/`, `
 
 **Why remove `ingest` instead of keeping both?** The `point` workflow strictly dominates: it does everything `ingest` did (via the background worker) plus it lets queries work immediately. Keeping `ingest` would mean maintaining two paths that converge to the same outcome, with the slower one offering no advantage.
 
-**Why BM25 pre-filter instead of embedding?** At manifest-build time, embeddings don't exist yet (that's the whole point -- we haven't indexed). The BM25 pre-filter uses pure Python token overlap scoring with no dependencies. It's fast enough for 500+ files and keeps the LLM prompt under budget.
+**Why a BM25 pre-filter?** A pure-Python token-overlap scorer with
+no dependencies is fast enough for 500+ files and keeps the LLM prompt
+under budget. Since v0.12.0 dropped embeddings entirely, BM25 is also
+the index used throughout the rest of retrieval — keeping the
+agentic-search pre-filter aligned with the steady-state path.
 
 **Why daemon thread instead of async?** The background worker needs to coordinate with the query thread (pause during LLM calls, boost priority). `threading.Event` provides simple, correct coordination without introducing async complexity into the existing synchronous engine.
 

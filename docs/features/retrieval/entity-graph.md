@@ -1,147 +1,149 @@
-# Entity Graph (Related Chunk Discovery)
+# Entity Graph (Related-Address Discovery)
 
 ## Problem
 
-Standard semantic search retrieves chunks independently. This fails when:
+Token-overlap retrieval (FTS5 BM25) returns rows independently. That
+fails when:
 
 - **Q:** "What else mentions TechCorp?"
-- **Standard RAG:** Only returns chunks that match the query semantically
-- **Expected:** Also return chunks that mention the same entities (TechCorp, its products, people, etc.)
+- **Pure BM25:** returns only rows that match the query terms
+- **Expected:** also return rows that mention the same entities
+  (TechCorp's products, people, related systems)
 
-Semantic similarity doesn't capture entity relationships. If Chunk A and Chunk B both mention "AuthService" but discuss different aspects, they won't be retrieved together unless the query happens to match both.
+BM25 doesn't model entity relationships. If section A and section B
+both mention `AuthService` but discuss different aspects, they won't
+co-occur unless the query happens to match both.
 
-## Solution: Entity-Based Chunk Linking
+## Solution: entity-based linking
 
-Build a graph linking entities to chunks during ingestion. At query time, expand retrieved chunks by finding related chunks via shared entities.
-
-```
-Initial retrieval:     [Chunk A (mentions AuthService, OAuth2)]
-                              ↓
-                    Entity Graph Lookup
-                              ↓
-                    Shared entities: AuthService, OAuth2
-                              ↓
-                    Find chunks mentioning same entities
-                              ↓
-Expanded results:      [Chunk A, Chunk B (AuthService), Chunk C (OAuth2)]
-```
-
-## How It Works
-
-### At Ingestion Time
-
-1. **Entity extraction** - The EntityModule (part of ChunkEnricher) extracts named entities from each chunk
-2. **Graph population** - Entities and chunk associations stored in PostgreSQL:
-   - `entities` table: Entity names, types, mention counts
-   - `entity_chunks` table: Many-to-many mapping of entities to chunks
+During ingestion, extract named entities per typed unit (symbol /
+section / table) and store them as edges in a small SQLite graph.
+At query time, after the BM25 hit list comes back, expand it by
+walking shared-entity edges.
 
 ```
-Chunk: "The AuthService class handles OAuth2 authentication..."
-          ↓
-Entities: [("AuthService", "class"), ("OAuth2", "technology")]
-          ↓
-Graph edges:  AuthService → chunk_abc123
-              OAuth2 → chunk_abc123
+Initial BM25 hits:  [Section A (mentions AuthService, OAuth2)]
+                              │
+                              ▼
+                       Entity-graph lookup
+                              │
+                              ▼
+                   Shared entities: AuthService, OAuth2
+                              │
+                              ▼
+              Other addresses mentioning the same entities
+                              │
+                              ▼
+Expanded set:   [Section A, Section B (AuthService), Section C (OAuth2)]
 ```
 
-### At Query Time
+## How it works
 
-1. **Initial retrieval** - Standard semantic search returns top-k chunks
-2. **Entity lookup** - Get entities mentioned in retrieved chunks
-3. **Graph expansion** - Find other chunks sharing those entities
-4. **Ranking** - Rank related chunks by number of shared entities
-5. **Merge** - Combine with original results (avoiding duplicates)
+### At ingestion time
+
+1. **Entity extraction.** The `EntityModule` of `ChunkEnricher`
+   extracts named entities from each chunk via the chat-tier LLM.
+2. **Graph population.** Entities + address associations are stored
+   in two SQLite tables alongside the rest of the collection:
+
+   ```
+   entities         : (id, name, type, mention_count)
+   entity_addresses : (entity_id, address_id, count)
+   ```
+
+   FTS5 index on `entities.name` lets you do prefix / phrase lookups
+   on entity names without scanning.
+
+### At query time
+
+1. **Initial retrieval.** BM25 + KRAG routing returns a top-K set.
+2. **Entity lookup.** Pull entities for the top hits.
+3. **Graph expansion.** Find other addresses sharing those entities,
+   subject to `min_shared_entities` and `max_total`.
+4. **Ranking.** Sort expansions by number of shared entities.
+5. **Merge + dedupe.** Combine with the original BM25 hits.
 
 ```python
-# Simplified flow in VectorSearchStep
-initial_chunks = semantic_search(query, k=5)
-entity_names = get_entities_for_chunks(initial_chunks)
-related_chunks = entity_graph.get_related_chunks(
-    chunk_ids=initial_chunks,
-    max_total=10,
-    min_shared_entities=2
-)
-final_chunks = merge_and_dedupe(initial_chunks, related_chunks)
+initial = bm25_search(query, k=20)
+ents    = entity_store.entities_for(initial)
+related = entity_store.addresses_sharing(ents, min_shared=2, max_total=10)
+final   = dedupe(initial + related)
 ```
 
-## Key Design Decisions
+## Key design decisions
 
-1. **Always-on** - Baked into the enrichment and retrieval pipelines. No configuration.
+1. **Always-on.** Baked into the enrichment + retrieval pipelines;
+   no configuration knob.
+2. **SQLite-native storage.** Lives alongside the rest of the
+   collection in the same `.db` file. No separate graph database, no
+   network.
+3. **Lightweight graph.** Only stores entity-address edges + a
+   denormalised mention count. No full entity attributes.
+4. **Ingestion-time extraction.** Entities extracted once via the
+   chat model during ingest; query-time path is pure SQL.
+5. **Configurable expansion.** `min_shared_entities` controls how
+   tight the linkage must be (default 1); `max_total` caps the size
+   of the expanded set.
 
-2. **PostgreSQL storage** - Uses the unified storage system. No separate graph database.
+## Entity types
 
-3. **Lightweight graph** - Only stores entity-chunk edges, not full entity attributes.
+The `EntityModule` extracts these types (tunable via prompt):
 
-4. **Ingestion-time extraction** - Entities extracted once during ingestion (via LLM), not at query time.
-
-5. **Configurable expansion** - `min_shared_entities` controls how related chunks must be (default: 1).
-
-6. **Corpus summary injection** - For thematic queries, entity graph expansion also injects corpus-level summaries to provide broader context beyond individual chunk matches.
-
-## Entity Types
-
-The EntityModule extracts these entity types:
-
-| Type | Examples |
-|------|----------|
-| `class` | AuthService, UserController, PaymentGateway |
-| `function` | validateToken(), processPayment() |
-| `person` | John Smith, Alice (when mentioned as people) |
-| `organization` | TechCorp, Acme Inc, Engineering Team |
-| `technology` | OAuth2, PostgreSQL, React, Kubernetes |
-| `concept` | Authentication, Rate Limiting, Caching |
+| Type           | Examples                                          |
+| -------------- | ------------------------------------------------- |
+| `class`        | `AuthService`, `UserController`, `PaymentGateway` |
+| `function`     | `validateToken()`, `processPayment()`             |
+| `person`       | John Smith, Alice (when contextually a person)    |
+| `organization` | TechCorp, Acme Inc, Engineering Team              |
+| `technology`   | OAuth2, SQLite, React, Kubernetes                 |
+| `concept`      | Authentication, Rate Limiting, Caching            |
 
 ## Configuration
 
-No configuration required. Feature is baked into the enrichment and retrieval pipelines.
+None for the user. Tunable via constructor / engine config:
 
-Internal parameters:
-- `max_total`: Maximum related chunks to retrieve (default: 20)
-- `min_shared_entities`: Minimum shared entities to consider related (default: 1)
+- `max_total` — max related addresses retrieved (default 20)
+- `min_shared_entities` — minimum shared entities to count as related
+  (default 1)
 
 ## Files
 
-- **Graph store:** `fitz_sage/retrieval/entity_graph/store.py`
-- **Entity extraction:** `fitz_sage/ingestion/enrichment/modules/chunk/entities.py`
-- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/steps/vector_search.py`
-
-## Benefits
-
-| Without Entity Graph | With Entity Graph |
-|---------------------|-------------------|
-| Only semantically similar chunks | Also conceptually related chunks |
-| Miss chunks about same entities | Discover via shared entity links |
-| No entity-based exploration | "What else mentions X?" works |
-| Isolated chunk retrieval | Connected knowledge retrieval |
+| Component             | Path                                                              |
+| --------------------- | ----------------------------------------------------------------- |
+| Graph store           | `fitz_sage/retrieval/entity_graph/store.py`                       |
+| Entity extraction     | `fitz_sage/ingestion/enrichment/modules/chunk/entities.py`        |
+| KRAG integration      | `fitz_sage/engines/fitz_krag/retrieval/expander.py`               |
 
 ## Example
 
-**Documents:**
-- Chunk A: "The AuthService class validates JWT tokens using OAuth2 protocol."
-- Chunk B: "AuthService logs all authentication attempts to the audit table."
-- Chunk C: "OAuth2 refresh tokens expire after 30 days by default."
+**Sections:**
+- A: "The `AuthService` class validates JWT tokens using the OAuth2 protocol."
+- B: "`AuthService` logs all authentication attempts to the audit table."
+- C: "OAuth2 refresh tokens expire after 30 days by default."
 
 **Query:** "How does authentication work?"
 
-**Without Entity Graph:**
-- Returns: Chunk A (best semantic match)
+**Without entity graph:** BM25 returns A (strongest token overlap).
 
-**With Entity Graph:**
-- Initial: Chunk A (semantic match)
-- Entities found: AuthService, OAuth2
-- Graph expansion: Chunk B (shares AuthService), Chunk C (shares OAuth2)
-- Returns: Chunk A, Chunk B, Chunk C
+**With entity graph:**
+- Initial: A
+- Entities found in A: `AuthService`, `OAuth2`
+- Graph expansion: B (shares `AuthService`), C (shares `OAuth2`)
+- Final: A, B, C
 
-The LLM now has complete context about AuthService behavior and OAuth2 configuration.
+The synthesizer then has complete context about `AuthService`
+behaviour *and* OAuth2 configuration.
 
 ## Dependencies
 
-- Requires EntityModule in enrichment pipeline (always on)
-- PostgreSQL for graph storage (unified storage)
-- Part of VectorSearchStep (no additional latency for graph lookup)
+- `EntityModule` in the enrichment pipeline (always on by default).
+- Same SQLite `.db` as the rest of the collection (no separate store).
+- Runs inside the KRAG expander; no extra LLM calls at query time.
 
-## Related Features
+## Related
 
-- **Enrichment** - EntityModule extracts entities during ingestion
-- **Multi-Hop Reasoning** - Can use entity graph for traversal hints
-- **Comparison Queries** - Entity graph helps retrieve both compared entities
+- **Enrichment** — extracts the entities during ingest
+- [Multi-Hop Reasoning](multi-hop-reasoning.md) — can use the entity
+  graph for bridge extraction
+- [Comparison Queries](comparison-queries.md) — entity graph helps
+  retrieve both compared entities

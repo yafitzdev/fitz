@@ -73,7 +73,7 @@ Five constraints run on every query, each contributing diagnostic signals:
 | **SpecificInfoType** | Missing specific information | Info type requested, entity mismatch |
 | **AnswerVerification** | Citation-grounded verification (quote + string match) | Citation quality, count |
 
-Additionally, embedding-based features (vector scores, score distributions), inter-chunk text features (pairwise overlap, assertion density, TF-IDF similarity), and query classification features (temporal, comparison, aggregation detection) feed into the classifier. Detection signals use the ML+keyword `DetectionClassifier` (temporal 90.6% recall, comparison 90.2% recall).
+Additionally, retrieval-side features (BM25 scores, score distributions), inter-chunk text features (pairwise overlap, assertion density, TF-IDF similarity), and query classification features (temporal, comparison, aggregation detection) feed into the classifier. Detection signals use the ML+keyword `DetectionClassifier` (temporal 90.6% recall, comparison 90.2% recall).
 
 **Total: 108 features** (after one-hot encoding of categorical constraint outputs, 3 noisy features pruned in v6) across constraint metadata, retrieval scores, text analysis, and query classification.
 
@@ -174,7 +174,7 @@ Instead of classifying each chunk independently, compare chunks pairwise:
 This is critical because single-chunk classification can't see inter-source conflicts.
 
 ### 2. Critical Entity Matching
-Years and numbered qualifiers must match exactly — high embedding similarity isn't enough:
+Years and numbered qualifiers must match exactly — high token overlap isn't enough:
 ```
 Query: "2024 World Series" + Context: "2021 World Series" -> ABSTAIN
 Query: "type 2 diabetes" + Context: "type 1 diabetes" -> ABSTAIN
@@ -198,7 +198,7 @@ The top features the classifier relies on:
 | 1 | Context length (mean) | Context | Proxy for evidence depth |
 | 2 | Context length (total) | Context | Total evidence available |
 | 3 | Context length (std) | Context | Asymmetry between sources |
-| 4 | Vector score (mean) | Retrieval | Retrieval confidence |
+| 4 | Retrieval score (mean) | Retrieval | BM25 retrieval confidence |
 | 5 | Disputed signal | Constraint | CA constraint fired |
 | 6 | Chunk length CV | Inter-chunk | Length variation (disputed chunks have higher variance) |
 | 7 | Max pairwise overlap | Inter-chunk | Text similarity between sources |
@@ -211,8 +211,8 @@ Context and inter-chunk features dominate because they're available for every ca
 ## Running the Benchmark
 
 ```bash
-# Feature extraction (requires LLM provider)
-python -m tools.governance.extract_features --chat cohere --embedding ollama --workers 1
+# Feature extraction (requires a configured chat endpoint)
+python -m tools.governance.extract_features --workers 1
 
 # Train cascade classifier
 python -m tools.governance.train_classifier --mode cascade --time-budget 200
