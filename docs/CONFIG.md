@@ -159,8 +159,8 @@ strict_grounding: false
 ```
 
 KRAG also exposes detection, multi-hop, and rewriter switches under
-their respective config blocks. The defaults match the smoke baseline
-that ships in `.smoke_test/`.
+their respective config blocks. The defaults are the smoke-tested
+baseline.
 
 ---
 

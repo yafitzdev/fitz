@@ -5,6 +5,10 @@ fitz.ps1
 HANDOFF.md
 CLAUDE.md
 
+# Local-only end-to-end smoke harness (needs a live LM Studio server;
+# can't run in CI). Kept on disk, not shipped.
+.smoke_test/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
