@@ -52,6 +52,16 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   no longer pulled). `TRANSFORMERS_VERBOSITY=error` is set before the
   tokenizer import to silence the benign "no DL framework found"
   advisory.
+- **Extracted `OnnxEncoderBackend`** (`fitz_sage/encoders/onnx.py`) — a
+  shared base class for the local INT8 ONNX encoders. `pyrrho.py` and
+  `onnx_reranker.py` were duplicating the lock-guarded lazy load,
+  `hf_hub_download` + `InferenceSession` setup, and tokenizer wiring
+  line for line; that path now lives once in `OnnxEncoderBackend`.
+  `Pyrrho` and `OnnxReranker` are thin subclasses that own only their
+  tokenizer call shape and logit post-processing. No public API change:
+  `governance.decide()` still works (now a wrapper over a process-wide
+  `Pyrrho` singleton) and `OnnxReranker`'s constructor + surface are
+  unchanged.
 
 ---
 
