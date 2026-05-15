@@ -11,17 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🎉 Highlights
 
-**Multi-hop retrieval is on by default, and the retrieval stack is now
-one pipeline.** The retrieve → rerank → read path used to exist twice —
-inline in the engine for single-hop queries, and again (minus
-reranking) inside the multi-hop controller. It is now a single
-`RetrievalPass` unit; the engine runs it once, the multi-hop controller
-loops it. Two consequences: the INT8 ONNX cross-encoder reranker now
-runs on **every** query — multi-hop previously bypassed it entirely —
-and each multi-hop iteration is gated by the pyrrho governance verdict
-rather than a per-hop "is this enough?" chat call. `enable_multi_hop`
-is therefore `true` by default: a single hop stays the common case, and
-the only added cost on the default path is one ~30 ms ONNX pyrrho call.
+**Multi-hop retrieval is on by default.** Retrieval is now one
+`RetrievalPass` (retrieve → rerank → read) that the multi-hop controller
+loops, gated by the pyrrho classifier instead of a per-hop chat call. A
+single hop stays the common case, and the cross-encoder reranker now
+runs on every query — multi-hop used to skip it.
 
 **Dropped `optimum` → dropped `torch` (~2 GB).** The pyrrho governance
 classifier and the gte-reranker cross-encoder now run on raw
