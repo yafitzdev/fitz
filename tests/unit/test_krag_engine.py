@@ -73,6 +73,11 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine._query_rewriter = None
     engine._address_reranker = None
     engine._hop_controller = None
+    from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
+
+    engine._retrieval_pass = RetrievalPass(
+        engine._retrieval_router, engine._address_reranker, engine._reader, engine._config
+    )
     engine._chat_factory = None
     engine._vocabulary_store = None
     engine._keyword_matcher = None
@@ -336,7 +341,7 @@ class TestAnswer:
         engine._reader.read.assert_not_called()
 
     def test_answer_no_read_results_returns_fallback(self):
-        """Reader returning [] yields a symbols-found fallback Answer."""
+        """Retrieval finding addresses but reading nothing yields an abstain Answer."""
         engine = _make_engine()
         query = _make_query()
 
@@ -346,9 +351,10 @@ class TestAnswer:
 
         result = engine.answer(query)
 
-        assert "Found matching symbols" in result.text
+        assert result.mode == AnswerMode.ABSTAIN
+        assert result.metadata["answer_mode"] == "abstain"
+        assert "gap_context" in result.metadata
         assert result.provenance == []
-        assert result.metadata["engine"] == "fitz_krag"
 
         # Expander should never be called
         engine._expander.expand.assert_not_called()

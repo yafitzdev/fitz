@@ -2,8 +2,11 @@
 """
 Multi-hop retrieval controller for KRAG.
 
-Iterative retrieve → read → evaluate → bridge cycle adapted for
-KRAG's address-based architecture (Address/ReadResult instead of Chunk).
+Loops a `RetrievalPass` (retrieve -> rerank -> read): after each pass the
+pyrrho governance classifier judges whether the accumulated evidence is
+enough. TRUSTWORTHY / DISPUTED -> stop; ABSTAIN -> extract a bridge
+question and run another pass. The pass already reranks, so every hop's
+candidates get the cross-encoder — multi-hop is purely a loop on top.
 """
 
 from __future__ import annotations
@@ -11,11 +14,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.types import ReadResult
 
 if TYPE_CHECKING:
-    from fitz_sage.engines.fitz_krag.retrieval.reader import ContentReader
-    from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouter
+    from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
+    from fitz_sage.governance import Pyrrho
     from fitz_sage.llm.factory import ChatFactory
 
 logger = logging.getLogger(__name__)
@@ -23,25 +27,23 @@ logger = logging.getLogger(__name__)
 
 class KragHopController:
     """
-    Multi-hop retrieval adapted for KRAG's address-based architecture.
+    Multi-hop retrieval: loop a `RetrievalPass`, pyrrho-gated.
 
-    Iterates: retrieve addresses → read content → evaluate sufficiency →
-    extract bridge questions → re-retrieve with bridge queries.
+    Iterates: run a pass -> evaluate sufficiency (pyrrho) -> extract a
+    bridge question -> run another pass with the bridge query.
     """
 
     def __init__(
         self,
-        router: "RetrievalRouter",
-        reader: "ContentReader",
+        retrieval_pass: "RetrievalPass",
         chat_factory: "ChatFactory",
+        governance: "Pyrrho | None" = None,
         max_hops: int = 2,
-        top_read: int = 5,
     ):
-        self._router = router
-        self._reader = reader
+        self._pass = retrieval_pass
         self._chat_factory = chat_factory
+        self._governance = governance
         self._max_hops = max_hops
-        self._top_read = top_read
 
     def execute(
         self,
@@ -59,36 +61,24 @@ class KragHopController:
             Accumulated read results across all hops
         """
         all_results: list[ReadResult] = []
-        seen_keys: set[tuple[str, str]] = set()
+        seen: set[tuple[str, str]] = set()
         current_query = query
 
         for hop in range(self._max_hops):
-            # 1. Retrieve addresses
-            addresses = self._router.retrieve(current_query, profile)
-            if not addresses:
+            results = self._pass.run(current_query, profile, exclude=seen)
+            if not results:
                 break
 
-            # Filter out already-seen addresses
-            new_addresses = []
-            for addr in addresses:
-                key = (addr.source_id, addr.location)
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    new_addresses.append(addr)
-
-            if not new_addresses:
-                break
-
-            # 2. Read content
-            results = self._reader.read(new_addresses, self._top_read)
+            for r in results:
+                seen.add((r.address.source_id, r.address.location))
             all_results.extend(results)
 
-            # 3. Evaluate sufficiency
+            # Evaluate sufficiency — pyrrho verdict, no chat call.
             if self._is_sufficient(query, all_results):
                 logger.debug(f"Multi-hop: sufficient evidence at hop {hop + 1}")
                 break
 
-            # 4. Extract bridge questions
+            # Extract bridge questions to fill the remaining gap.
             bridge_questions = self._extract_bridge(query, all_results)
             if not bridge_questions:
                 logger.debug(f"Multi-hop: no bridge questions at hop {hop + 1}")
@@ -100,27 +90,18 @@ class KragHopController:
         return all_results
 
     def _is_sufficient(self, query: str, results: list[ReadResult]) -> bool:
-        """Evaluate if current evidence is sufficient to answer the query."""
-        if not results:
+        """Decide whether to stop hopping, using the pyrrho governance verdict.
+
+        TRUSTWORTHY or DISPUTED -> stop (evidence is enough, or the sources
+        disagree and more retrieval will not resolve it); ABSTAIN -> keep
+        hopping. With no classifier wired (governance disabled) there is no
+        cheap sufficiency signal, so the loop relies on bridge extraction
+        and max_hops to terminate.
+        """
+        if not results or self._governance is None:
             return False
-
-        context = self._build_context(results)
-        prompt = (
-            "Given this question and retrieved evidence, determine if there is "
-            "enough information to answer the question.\n\n"
-            f"Question: {query}\n\n"
-            f"Retrieved evidence:\n{context}\n\n"
-            "Respond with ONLY 'SUFFICIENT' or 'INSUFFICIENT'."
-        )
-
-        try:
-            chat = self._chat_factory("fast")
-            response = chat.chat([{"role": "user", "content": prompt}])
-            response_upper = response.upper()
-            return "SUFFICIENT" in response_upper and "INSUFFICIENT" not in response_upper
-        except Exception as e:
-            logger.warning(f"Evidence evaluation failed: {e}")
-            return True  # Assume sufficient on error to avoid infinite loops
+        decision = self._governance.decide(query, results)
+        return decision.mode is not AnswerMode.ABSTAIN
 
     def _extract_bridge(self, query: str, results: list[ReadResult]) -> list[str]:
         """Generate bridge questions to fill evidence gaps."""

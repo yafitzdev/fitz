@@ -70,6 +70,15 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   through a new `governance.create_governance()` factory; the module-level
   `governance.decide()` wrapper + its process-wide singleton are gone — the
   engine owns a config-built `Pyrrho` instance.
+- **Retrieval stack unified into one `RetrievalPass`.** Tiers 1-4 of
+  retrieval — candidate generation, cross-strategy fusion, precision
+  rerank, read — were duplicated: the engine ran them inline for
+  single-hop queries while `KragHopController` ran its own copy (minus
+  reranking) for multi-hop. They are now one `RetrievalPass` unit
+  (`engines/fitz_krag/retrieval/retrieval_pass.py`) — the engine runs it
+  once, the hop controller loops it. The cross-encoder reranker
+  consequently runs on **every** query, multi-hop included (multi-hop
+  previously bypassed it).
 
 ---
 

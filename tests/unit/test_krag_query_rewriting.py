@@ -54,6 +54,11 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine._query_rewriter = None
     engine._address_reranker = None
     engine._hop_controller = None
+    from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
+
+    engine._retrieval_pass = RetrievalPass(
+        engine._retrieval_router, engine._address_reranker, engine._reader, engine._config
+    )
     engine._table_store = MagicMock(name="table_store")
     engine._pg_table_store = MagicMock(name="pg_table_store")
     engine._chat_factory = None

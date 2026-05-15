@@ -435,15 +435,25 @@ class FitzKragEngine:
             except Exception as e:
                 logger.debug(f"Entity graph store init: {e}")
 
-        # Multi-hop controller
+        # Retrieval pass — Tiers 1-4 (retrieve -> rerank -> read) as one unit.
+        from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
+
+        self._retrieval_pass = RetrievalPass(
+            router=self._retrieval_router,
+            reranker=self._address_reranker,
+            reader=self._reader,
+            config=self._config,
+        )
+
+        # Multi-hop controller — loops the retrieval pass, pyrrho-gated.
         self._hop_controller: Any = None
         if self._config.enable_multi_hop:
             from fitz_sage.engines.fitz_krag.retrieval.multihop import KragHopController
 
             self._hop_controller = KragHopController(
-                router=self._retrieval_router,
-                reader=self._reader,
+                retrieval_pass=self._retrieval_pass,
                 chat_factory=self._chat_factory,
+                governance=self._governance,
                 max_hops=self._config.max_hops,
             )
 
@@ -744,26 +754,26 @@ class FitzKragEngine:
                 extended_signals=(batch_result.extended_signals if batch_result else None),
             )
 
-            # 2. Retrieve addresses (or multi-hop)
+            # 2. Retrieve — one retrieval pass, or a multi-hop loop of passes.
+            #    A pass is Tiers 1-4: retrieve -> fuse -> rerank -> read.
             _progress("Retrieving relevant sources...")
             t0 = time.perf_counter()
             use_multi_hop = self._hop_controller and (
                 self._config.enable_multi_hop or profile.multi_hop
             )
             if use_multi_hop:
-                # Multi-hop: iterative retrieve → read → evaluate → bridge
                 read_results = self._hop_controller.execute(retrieval_query, profile)
-                addresses = [r.address for r in read_results] if read_results else []
             else:
-                addresses = self._retrieval_router.retrieve(
+                read_results = self._retrieval_pass.run(
                     retrieval_query,
                     profile,
                     rewrite_result=rewrite_result,
                     progress=progress,
                 )
+            addresses = [r.address for r in read_results]
             timings.append(("Retrieval", time.perf_counter() - t0))
 
-            if not addresses:
+            if not read_results:
                 _report_timings(_progress, timings, pipeline_start)
                 gap_context = self._build_gap_context(sanitized)
                 return Answer(
@@ -776,31 +786,6 @@ class FitzKragEngine:
                         "answer_mode": "abstain",
                         "gap_context": gap_context,
                     },
-                )
-
-            # 2.5. Rerank addresses (when reranker configured)
-            if self._address_reranker and not use_multi_hop:
-                t0 = time.perf_counter()
-                addresses = self._address_reranker.rerank(retrieval_query, addresses)
-                timings.append(("Rerank", time.perf_counter() - t0))
-
-            # 3. Read content for top addresses (skip if multi-hop already read)
-            if use_multi_hop:
-                pass  # read_results already populated by hop controller
-            else:
-                _progress(
-                    f"Reading content from {min(len(addresses), self._config.top_read)} sources..."
-                )
-                t0 = time.perf_counter()
-                read_results = self._reader.read(addresses, self._config.top_read)
-                timings.append(("Read content", time.perf_counter() - t0))
-
-            if not read_results:
-                _report_timings(_progress, timings, pipeline_start)
-                return Answer(
-                    text="Found matching symbols but could not read their content.",
-                    provenance=[],
-                    metadata={"engine": "fitz_krag", "query": query.text},
                 )
 
             # 4. Expand with context
