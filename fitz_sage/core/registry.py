@@ -361,10 +361,10 @@ def available_pipeline_plugins() -> List[str]:
 
 # Provider capabilities mapping
 _LLM_PROVIDER_CAPABILITIES: Dict[str, List[str]] = {
-    "cohere": ["chat", "embedding", "rerank"],
-    "openai": ["chat", "embedding"],
-    "anthropic": ["chat"],
-    "ollama": ["chat", "embedding", "rerank"],
+    "endpoint": ["chat", "vision"],
+    "openai": ["chat", "vision"],
+    "azure_openai": ["chat", "vision"],
+    "enterprise": ["chat", "vision"],
 }
 
 

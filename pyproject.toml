@@ -23,10 +23,8 @@ keywords = [
     "llm",
     "ai",
     "knowledge-base",
-    "vector-database",
     "semantic-search",
     "document-processing",
-    "embeddings",
     "nlp",
     "clara",
     "compression",
@@ -84,12 +82,6 @@ dependencies = [
 [project.optional-dependencies]
 # Advanced document parsing (PDF layout analysis, table detection, figures)
 docs = ["docling>=2.0"]
-
-# Standalone code retrieval (no SQLite-based stores, no docling)
-code = []
-
-# Local LLM (Ollama Python client)
-local = ["ollama>=0.1.0"]
 
 # REST API server
 api = ["fastapi>=0.100.0", "uvicorn[standard]>=0.23.0"]
@@ -187,7 +179,6 @@ markers = [
     "e2e_krag_formats: marks tests as KRAG format e2e tests (PPTX/XLSX/SQL/Go/Java/TS)",
     "sqlite: marks tests as sqlite-specific (connection manager, table store)",
     "llm: marks tests requiring real LLM API calls",
-    "embeddings: marks tests requiring real embedding API calls",
     # Category markers
     "performance: marks tests as performance benchmarks",
     "scalability: marks tests as scalability tests (large corpus, concurrent)",

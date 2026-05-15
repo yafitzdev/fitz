@@ -42,6 +42,11 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
 
 ### 🔄 Changed
 
+- **Code retrieval consolidated onto KRAG.** Removed the standalone
+  `fitz_sage/code/` `CodeRetriever`; `FitzKragEngine` now exposes a public
+  `retrieve()` method — the retrieval half of `answer()`, usable without
+  synthesis. The `[code]` extra is gone.
+
 - **`fitz_sage/governance/pyrrho.py`** + **`fitz_sage/llm/providers/onnx_reranker.py`** —
   rewrote both load paths: `huggingface_hub.hf_hub_download` to fetch
   the pre-built `.onnx`, `onnxruntime.InferenceSession` to run it,

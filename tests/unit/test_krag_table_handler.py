@@ -27,17 +27,17 @@ def _make_handler(
     else:
         chat.chat.return_value = chat_response
 
-    pg_table_store = MagicMock(name="pg_table_store")
-    pg_table_store.get_table_name.return_value = table_name
-    pg_table_store.get_columns.return_value = columns
-    pg_table_store.get_row_count.return_value = row_count
-    pg_table_store.execute_query.return_value = execute_result
+    sqlite_table_store = MagicMock(name="sqlite_table_store")
+    sqlite_table_store.get_table_name.return_value = table_name
+    sqlite_table_store.get_columns.return_value = columns
+    sqlite_table_store.get_row_count.return_value = row_count
+    sqlite_table_store.execute_query.return_value = execute_result
 
     config = MagicMock(name="config")
     config.max_table_results = max_table_results
 
-    handler = TableQueryHandler(chat, pg_table_store, config)
-    return handler, chat, pg_table_store
+    handler = TableQueryHandler(chat, sqlite_table_store, config)
+    return handler, chat, sqlite_table_store
 
 
 def _make_table_read_result(

@@ -138,10 +138,8 @@ class DatabaseConfig(PoolConfigMixin, TimeoutMixin, ValidationMixin):
     Base for database/storage configurations.
 
     Combines connection pooling, timeouts, and validation.
-    Example: storage config, vector DB config.
+    Example: storage config.
     """
-
-    connection_string: Optional[str] = Field(default=None, description="Database connection string")
 
 
 class FeatureConfig(FeatureToggleMixin, ValidationMixin):

@@ -195,6 +195,15 @@ class FitzKragConfig(BasePluginConfig):
         description="Number of top addresses to read content for",
     )
 
+    retrieval_workers: int = Field(
+        default=4,
+        ge=1,
+        description=(
+            "Max retrieval strategies run concurrently. Set to 1 to serialize "
+            "LLM calls for single-model local servers (LM Studio, llama-server)."
+        ),
+    )
+
     keyword_weight: float = Field(
         default=0.4,
         ge=0.0,

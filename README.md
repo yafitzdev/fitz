@@ -493,15 +493,11 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 
 <strong>Codebase Search 🐍</strong> → [Code Symbol Extraction](docs/features/ingestion/code-symbol-extraction.md) • [KRAG](docs/features/platform/krag.md)
 
-> **Two modes of code retrieval:**
+> **Code retrieval:**
 >
-> **Full KRAG** — tree-sitter parses your codebase into symbols (functions, classes, methods) with qualified names, 
+> tree-sitter parses your codebase into symbols (functions, classes, methods) with qualified names, 
 > references, and import graphs. No chunking—each symbol is a precise, addressable unit. Cross-file dependencies are 
 > tracked, so "what calls this function?" is a graph traversal, not a text search.
->
-> **Standalone (`pip install fitz-sage[code]`)** — Zero-dependency code retrieval via `CodeRetriever`. Builds an AST 
-> structural index, uses an LLM to select relevant files, expands via import graph and neighbor directories, and returns 
-> compressed results. No PostgreSQL, no pgvector, no docling—just point at a directory and ask.
 >
 > *Example:* A team inherits a legacy Django monolith—200k lines, sparse docs. They point fitz at the codebase and ask 
 > "Where is user authentication handled?" or "What depends on the billing module?" FitzKRAG returns specific functions with 

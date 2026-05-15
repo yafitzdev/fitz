@@ -9,6 +9,8 @@ content is read on demand after ranking.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -26,6 +28,7 @@ from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
+    from fitz_sage.engines.fitz_krag.types import Address, ReadResult
 
 logger = get_logger(__name__)
 
@@ -79,6 +82,19 @@ def _build_provider_config(
         cfg["auth"] = {"api_key_env": api_key_env}
 
     return cfg or None
+
+
+@dataclass
+class _RetrievalOutcome:
+    """Carrier for the retrieval half of the KRAG pipeline.
+
+    Produced by ``_retrieve_core``; consumed by ``answer()`` and ``retrieve()``.
+    """
+
+    sanitized: str
+    expanded: list[ReadResult]
+    addresses: list[Address]
+    timings: list[tuple[str, float]]
 
 
 class FitzKragEngine:
@@ -230,7 +246,7 @@ class FitzKragEngine:
         from fitz_sage.tabular.store.sqlite import SqliteTableStore
 
         self._table_store = TableStore(self._connection_manager, self._config.collection)
-        self._pg_table_store = SqliteTableStore(self._config.collection)
+        self._sqlite_table_store = SqliteTableStore(self._config.collection)
 
         _ts1 = _t.perf_counter()
         logger.debug(f"[init] store objects: {(_ts1-_t1)*1000:.0f}ms")
@@ -264,7 +280,7 @@ class FitzKragEngine:
             section_store=self._section_store,
             config=self._config,
             table_store=self._table_store,
-            pg_table_store=self._pg_table_store,
+            sqlite_table_store=self._sqlite_table_store,
         )
         self._expander = CodeExpander(
             self._raw_store,
@@ -341,7 +357,7 @@ class FitzKragEngine:
         from fitz_sage.engines.fitz_krag.retrieval.table_handler import TableQueryHandler
 
         self._table_handler = TableQueryHandler(
-            self._chat_factory("balanced"), self._pg_table_store, self._config
+            self._chat_factory("balanced"), self._sqlite_table_store, self._config
         )
 
         # Shared detection
@@ -628,251 +644,321 @@ class FitzKragEngine:
         Returns:
             Answer with file:line provenance
         """
-        import uuid
+        import time
 
-        from fitz_sage.logging import clear_query_context, set_query_context
-
-        # Generate query ID for tracing
-        query_id = f"q-{uuid.uuid4().hex[:8]}"
-
-        # Set query context for all logging in this request
-        set_query_context(query_id=query_id)
-        logger.info("Starting query processing", query_length=len(query.text) if query.text else 0)
+        from fitz_sage.engines.fitz_krag.context.compressor import compress_results
 
         if not query.text or not query.text.strip():
             raise QueryError("Query text cannot be empty")
 
+        with self._query_scope():
+            logger.info("Starting query processing", query_length=len(query.text))
+            try:
+                _progress = progress or (lambda _: None)
+                pipeline_start = time.perf_counter()
+
+                # 1-4. Analyze, detect, retrieve, read, expand, table queries
+                outcome = self._retrieve_core(query, progress=progress)
+                sanitized = outcome.sanitized
+                expanded = outcome.expanded
+                timings = outcome.timings
+
+                if not expanded:
+                    _report_timings(_progress, timings, pipeline_start)
+                    gap_context = self._build_gap_context(sanitized)
+                    return Answer(
+                        text=self._synthesizer._build_abstain_message(sanitized, gap_context),
+                        provenance=[],
+                        mode=AnswerMode.ABSTAIN,
+                        metadata={
+                            "engine": "fitz_krag",
+                            "query": query.text,
+                            "answer_mode": "abstain",
+                            "gap_context": gap_context,
+                        },
+                    )
+
+                # 5. Run governance — pyrrho classifier on the (query, contexts) pair.
+                # ReadResult satisfies EvidenceItem (has .content).
+                answer_mode = AnswerMode.TRUSTWORTHY
+                governance = None
+                if self._governance is not None:
+                    t0 = time.perf_counter()
+                    governance = self._governance.decide(sanitized, expanded)
+                    answer_mode = governance.mode
+
+                    # Progressive mode: agentic LLM code search already validated
+                    # relevance structurally. If pyrrho returns ABSTAIN on a result
+                    # set produced by the progressive manifest path, prefer to
+                    # generate — the structural retrieval is the stronger signal
+                    # here than the classifier's distribution-shifted call.
+                    if (
+                        answer_mode == AnswerMode.ABSTAIN
+                        and self._manifest is not None
+                        and expanded
+                    ):
+                        logger.info(
+                            "Overriding ABSTAIN -> TRUSTWORTHY in progressive mode "
+                            "(structural retrieval validated relevance)"
+                        )
+                        answer_mode = AnswerMode.TRUSTWORTHY
+
+                    timings.append(("Governance", time.perf_counter() - t0))
+
+                # 5.5. Compress code context (AST-based, ~50-70% token reduction)
+                expanded = compress_results(expanded)
+
+                # 6. Assemble context
+                context = self._assembler.assemble(sanitized, expanded)
+
+                # 7. Generate answer with answer mode
+                _progress("Generating answer...")
+                t0 = time.perf_counter()
+                gap_context = None
+                conflict_context = None
+                if answer_mode == AnswerMode.ABSTAIN:
+                    governance_reasons = governance.reasons if governance else ()
+                    gap_context = self._build_gap_context(sanitized, governance_reasons)
+                elif answer_mode == AnswerMode.DISPUTED and governance:
+                    conflict_context = {"reason": governance.reason}
+                answer = self._synthesizer.generate(
+                    sanitized,
+                    context,
+                    expanded,
+                    answer_mode=answer_mode,
+                    gap_context=gap_context,
+                    conflict_context=conflict_context,
+                )
+                timings.append(("Generation", time.perf_counter() - t0))
+
+                # Report timing breakdown
+                _report_timings(_progress, timings, pipeline_start)
+
+                # 7.5. Boost queried files for background worker priority
+                if self._bg_worker:
+                    queried_paths = [
+                        a.metadata.get("disk_path")
+                        for a in outcome.addresses
+                        if a.metadata.get("disk_path")
+                    ]
+                    if queried_paths:
+                        self._bg_worker.boost_files(queried_paths)
+
+                return answer
+
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "retriev" in error_msg or "search" in error_msg:
+                    raise KnowledgeError(f"Retrieval failed: {e}") from e
+                elif "generat" in error_msg or "llm" in error_msg:
+                    raise GenerationError(f"Generation failed: {e}") from e
+                else:
+                    raise KnowledgeError(f"KRAG pipeline error: {e}") from e
+
+    def retrieve(
+        self, query: Query, *, progress: Callable[[str], None] | None = None
+    ) -> list[ReadResult]:
+        """Retrieve relevant sources for a query — content, no synthesis.
+
+        Runs the KRAG retrieval pipeline (analyze, detect, retrieve, read,
+        expand, compress) and returns the expanded, compressed results. This
+        is the retrieval primitive ``answer()`` builds on; use it directly
+        when the source material is wanted rather than a generated answer.
+
+        Args:
+            query: Query object with question text.
+            progress: Optional callback for status updates.
+
+        Returns:
+            List of ReadResult with file content and Address provenance.
+            Empty list when nothing relevant is found.
+        """
+        from fitz_sage.engines.fitz_krag.context.compressor import compress_results
+
+        if not query.text or not query.text.strip():
+            raise QueryError("Query text cannot be empty")
+
+        with self._query_scope():
+            logger.info("Starting retrieval", query_length=len(query.text))
+            try:
+                outcome = self._retrieve_core(query, progress=progress)
+                if not outcome.expanded:
+                    return []
+                return compress_results(outcome.expanded)
+            except Exception as e:
+                raise KnowledgeError(f"Retrieval failed: {e}") from e
+
+    @contextmanager
+    def _query_scope(self) -> Any:
+        """Query-scoped logging context + background-worker signalling.
+
+        Shared by answer() and retrieve() — both are queries from the
+        background worker's perspective.
+        """
+        import uuid
+
+        from fitz_sage.logging import clear_query_context, set_query_context
+
+        set_query_context(query_id=f"q-{uuid.uuid4().hex[:8]}")
         if self._bg_worker:
             self._bg_worker.signal_query_start()
         try:
-            # 0. Sanitize and normalize query
-            import re
-            import time
-
-            sanitized = re.sub(r"<[^>]+>", "", query.text).strip()
-            if not sanitized:
-                sanitized = query.text.strip()
-
-            # Truncate excessively long queries
-            MAX_QUERY_LENGTH = 500
-            if len(sanitized) > MAX_QUERY_LENGTH:
-                original_length = len(sanitized)
-                sanitized = sanitized[:MAX_QUERY_LENGTH]
-                logger.debug(
-                    "Query truncated", original_length=original_length, new_length=MAX_QUERY_LENGTH
-                )
-
-            _progress = progress or (lambda _: None)
-            timings: list[tuple[str, float]] = []
-            pipeline_start = time.perf_counter()
-
-            # 1. Rewrite-first pipeline:
-            #    Step 1: Rewrite query (if configured)
-            #    Step 2: Batch(Analysis + Detection) on rewritten query
-            _progress("Analyzing query...")
-            t0 = time.perf_counter()
-            from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
-
-            retrieval_query = sanitized
-            rewrite_result = None
-
-            # Step 1: Rewrite (individual LLM call, runs first)
-            if self._query_rewriter:
-                try:
-                    rewrite_result = self._query_rewriter.rewrite(sanitized)
-                    if rewrite_result.rewritten_query != sanitized:
-                        retrieval_query = rewrite_result.rewritten_query
-                        logger.debug(
-                            "Query rewritten",
-                            original_preview=sanitized[:50],
-                            rewritten_preview=retrieval_query[:50],
-                        )
-                except Exception as e:
-                    logger.warning("Query rewriting failed, using original", error=str(e))
-
-            # Step 2: Analysis + Detection on rewritten query
-            classify_query = retrieval_query
-            fast_analysis = self._fast_analyze(classify_query)
-            need_llm_analysis = fast_analysis is None
-            need_detection = bool(
-                self._detection_orchestrator and self._needs_detection(classify_query)
-            )
-
-            # Run non-LLM gates to refine detection
-            detection_limit_to = None
-            if need_detection:
-                flagged = self._detection_orchestrator.gate_categories(classify_query)
-                if flagged is not None and len(flagged) == 0:
-                    need_detection = False
-                else:
-                    detection_limit_to = flagged
-
-            if need_llm_analysis or need_detection:
-                # Batch analysis + detection in one LLM call.
-                try:
-                    batch_result = self._query_batcher.batch_classify(
-                        classify_query,
-                        include_analysis=need_llm_analysis,
-                        include_detection=need_detection,
-                        detection_limit_to=detection_limit_to,
-                        include_rewriting=False,
-                        include_extended=True,
-                    )
-                    analysis = batch_result.analysis if batch_result.analysis else fast_analysis
-                    detection = (
-                        self._build_detection_summary(
-                            batch_result.detection_results, classify_query
-                        )
-                        if need_detection and batch_result.detection_results is not None
-                        else None
-                    )
-                except Exception as e:
-                    logger.warning(f"Batched query intelligence failed: {e}")
-                    analysis = fast_analysis or QueryAnalysis(
-                        primary_type=QueryType.GENERAL,
-                        confidence=0.3,
-                        refined_query=sanitized,
-                    )
-                    detection = None
-                    batch_result = None
-            else:
-                # No LLM needed: fast_analyze succeeded, no detection needed
-                analysis = fast_analysis
-                detection = None
-                batch_result = None
-            timings.append(("Analysis + Detection", time.perf_counter() - t0))
-
-            # Build retrieval profile — single object with all gates and signals
-            from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
-
-            profile = build_retrieval_profile(
-                analysis,
-                detection,
-                self._config,
-                query_length=len(retrieval_query),
-                has_chat_factory=bool(self._chat_factory),
-                extended_signals=(batch_result.extended_signals if batch_result else None),
-            )
-
-            # 2. Retrieve — one retrieval pass, or a multi-hop loop of passes.
-            #    A pass is Tiers 1-4: retrieve -> fuse -> rerank -> read.
-            _progress("Retrieving relevant sources...")
-            t0 = time.perf_counter()
-            use_multi_hop = self._hop_controller and self._config.enable_multi_hop
-            if use_multi_hop:
-                read_results = self._hop_controller.execute(retrieval_query, profile)
-            else:
-                read_results = self._retrieval_pass.run(
-                    retrieval_query,
-                    profile,
-                    rewrite_result=rewrite_result,
-                    progress=progress,
-                )
-            addresses = [r.address for r in read_results]
-            timings.append(("Retrieval", time.perf_counter() - t0))
-
-            if not read_results:
-                _report_timings(_progress, timings, pipeline_start)
-                gap_context = self._build_gap_context(sanitized)
-                return Answer(
-                    text=self._synthesizer._build_abstain_message(sanitized, gap_context),
-                    provenance=[],
-                    mode=AnswerMode.ABSTAIN,
-                    metadata={
-                        "engine": "fitz_krag",
-                        "query": query.text,
-                        "answer_mode": "abstain",
-                        "gap_context": gap_context,
-                    },
-                )
-
-            # 4. Expand with context
-            t0 = time.perf_counter()
-            expanded = self._expander.expand(
-                read_results, entity_expansion_limit=profile.entity_expansion_limit
-            )
-            timings.append(("Expand context", time.perf_counter() - t0))
-
-            # 4.5. Execute table queries (SQL generation + execution)
-            expanded = self._table_handler.process(sanitized, expanded)
-
-            # 5. Run governance — pyrrho classifier on the (query, contexts) pair.
-            # ReadResult satisfies EvidenceItem (has .content).
-            answer_mode = AnswerMode.TRUSTWORTHY
-            governance = None
-            if self._governance is not None:
-                t0 = time.perf_counter()
-                governance = self._governance.decide(sanitized, expanded)
-                answer_mode = governance.mode
-
-                # Progressive mode: agentic LLM code search already validated
-                # relevance structurally. If pyrrho returns ABSTAIN on a result
-                # set produced by the progressive manifest path, prefer to
-                # generate — the structural retrieval is the stronger signal
-                # here than the classifier's distribution-shifted call.
-                if answer_mode == AnswerMode.ABSTAIN and self._manifest is not None and expanded:
-                    logger.info(
-                        "Overriding ABSTAIN -> TRUSTWORTHY in progressive mode "
-                        "(structural retrieval validated relevance)"
-                    )
-                    answer_mode = AnswerMode.TRUSTWORTHY
-
-                timings.append(("Governance", time.perf_counter() - t0))
-
-            # 5.5. Compress code context (AST-based, ~50-70% token reduction)
-            from fitz_sage.engines.fitz_krag.context.compressor import compress_results
-
-            expanded = compress_results(expanded)
-
-            # 6. Assemble context
-            context = self._assembler.assemble(sanitized, expanded)
-
-            # 7. Generate answer with answer mode
-            _progress("Generating answer...")
-            t0 = time.perf_counter()
-            gap_context = None
-            conflict_context = None
-            if answer_mode == AnswerMode.ABSTAIN:
-                governance_reasons = governance.reasons if governance else ()
-                gap_context = self._build_gap_context(sanitized, governance_reasons)
-            elif answer_mode == AnswerMode.DISPUTED and governance:
-                conflict_context = {"reason": governance.reason}
-            answer = self._synthesizer.generate(
-                sanitized,
-                context,
-                expanded,
-                answer_mode=answer_mode,
-                gap_context=gap_context,
-                conflict_context=conflict_context,
-            )
-            timings.append(("Generation", time.perf_counter() - t0))
-
-            # Report timing breakdown
-            _report_timings(_progress, timings, pipeline_start)
-
-            # 7.5. Boost queried files for background worker priority
-            if self._bg_worker:
-                queried_paths = [
-                    a.metadata.get("disk_path") for a in addresses if a.metadata.get("disk_path")
-                ]
-                if queried_paths:
-                    self._bg_worker.boost_files(queried_paths)
-
-            return answer
-
-        except Exception as e:
-            error_msg = str(e).lower()
-            if "retriev" in error_msg or "search" in error_msg:
-                raise KnowledgeError(f"Retrieval failed: {e}") from e
-            elif "generat" in error_msg or "llm" in error_msg:
-                raise GenerationError(f"Generation failed: {e}") from e
-            else:
-                raise KnowledgeError(f"KRAG pipeline error: {e}") from e
+            yield
         finally:
             if self._bg_worker:
                 self._bg_worker.signal_query_end()
-            # Clear query context
             clear_query_context()
+
+    def _retrieve_core(
+        self, query: Query, *, progress: Callable[[str], None] | None = None
+    ) -> _RetrievalOutcome:
+        """Run the retrieval half of the KRAG pipeline.
+
+        Analyze + detect → retrieve → read → expand → table queries. Returns
+        the expanded ReadResults (pre-governance, pre-compression). Callers
+        guarantee non-empty query text and supply the query-scoped context.
+        """
+        import re
+        import time
+
+        from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
+        from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
+
+        # 0. Sanitize and normalize query
+        sanitized = re.sub(r"<[^>]+>", "", query.text).strip()
+        if not sanitized:
+            sanitized = query.text.strip()
+
+        # Truncate excessively long queries
+        MAX_QUERY_LENGTH = 500
+        if len(sanitized) > MAX_QUERY_LENGTH:
+            original_length = len(sanitized)
+            sanitized = sanitized[:MAX_QUERY_LENGTH]
+            logger.debug(
+                "Query truncated", original_length=original_length, new_length=MAX_QUERY_LENGTH
+            )
+
+        _progress = progress or (lambda _: None)
+        timings: list[tuple[str, float]] = []
+
+        # 1. Rewrite-first pipeline:
+        #    Step 1: Rewrite query (if configured)
+        #    Step 2: Batch(Analysis + Detection) on rewritten query
+        _progress("Analyzing query...")
+        t0 = time.perf_counter()
+
+        retrieval_query = sanitized
+        rewrite_result = None
+
+        # Step 1: Rewrite (individual LLM call, runs first)
+        if self._query_rewriter:
+            try:
+                rewrite_result = self._query_rewriter.rewrite(sanitized)
+                if rewrite_result.rewritten_query != sanitized:
+                    retrieval_query = rewrite_result.rewritten_query
+                    logger.debug(
+                        "Query rewritten",
+                        original_preview=sanitized[:50],
+                        rewritten_preview=retrieval_query[:50],
+                    )
+            except Exception as e:
+                logger.warning("Query rewriting failed, using original", error=str(e))
+
+        # Step 2: Analysis + Detection on rewritten query
+        classify_query = retrieval_query
+        fast_analysis = self._fast_analyze(classify_query)
+        need_llm_analysis = fast_analysis is None
+        need_detection = bool(
+            self._detection_orchestrator and self._needs_detection(classify_query)
+        )
+
+        # Run non-LLM gates to refine detection
+        detection_limit_to = None
+        if need_detection:
+            flagged = self._detection_orchestrator.gate_categories(classify_query)
+            if flagged is not None and len(flagged) == 0:
+                need_detection = False
+            else:
+                detection_limit_to = flagged
+
+        if need_llm_analysis or need_detection:
+            # Batch analysis + detection in one LLM call.
+            try:
+                batch_result = self._query_batcher.batch_classify(
+                    classify_query,
+                    include_analysis=need_llm_analysis,
+                    include_detection=need_detection,
+                    detection_limit_to=detection_limit_to,
+                    include_rewriting=False,
+                    include_extended=True,
+                )
+                analysis = batch_result.analysis if batch_result.analysis else fast_analysis
+                detection = (
+                    self._build_detection_summary(batch_result.detection_results, classify_query)
+                    if need_detection and batch_result.detection_results is not None
+                    else None
+                )
+            except Exception as e:
+                logger.warning(f"Batched query intelligence failed: {e}")
+                analysis = fast_analysis or QueryAnalysis(
+                    primary_type=QueryType.GENERAL,
+                    confidence=0.3,
+                    refined_query=sanitized,
+                )
+                detection = None
+                batch_result = None
+        else:
+            # No LLM needed: fast_analyze succeeded, no detection needed
+            analysis = fast_analysis
+            detection = None
+            batch_result = None
+        timings.append(("Analysis + Detection", time.perf_counter() - t0))
+
+        # Build retrieval profile — single object with all gates and signals
+        profile = build_retrieval_profile(
+            analysis,
+            detection,
+            self._config,
+            query_length=len(retrieval_query),
+            has_chat_factory=bool(self._chat_factory),
+            extended_signals=(batch_result.extended_signals if batch_result else None),
+        )
+
+        # 2. Retrieve — one retrieval pass, or a multi-hop loop of passes.
+        #    A pass is Tiers 1-4: retrieve -> fuse -> rerank -> read.
+        _progress("Retrieving relevant sources...")
+        t0 = time.perf_counter()
+        use_multi_hop = self._hop_controller and self._config.enable_multi_hop
+        if use_multi_hop:
+            read_results = self._hop_controller.execute(retrieval_query, profile)
+        else:
+            read_results = self._retrieval_pass.run(
+                retrieval_query,
+                profile,
+                rewrite_result=rewrite_result,
+                progress=progress,
+            )
+        addresses = [r.address for r in read_results]
+        timings.append(("Retrieval", time.perf_counter() - t0))
+
+        if not read_results:
+            return _RetrievalOutcome(
+                sanitized=sanitized, expanded=[], addresses=[], timings=timings
+            )
+
+        # 4. Expand with context
+        t0 = time.perf_counter()
+        expanded = self._expander.expand(
+            read_results, entity_expansion_limit=profile.entity_expansion_limit
+        )
+        timings.append(("Expand context", time.perf_counter() - t0))
+
+        # 4.5. Execute table queries (SQL generation + execution)
+        expanded = self._table_handler.process(sanitized, expanded)
+
+        return _RetrievalOutcome(
+            sanitized=sanitized, expanded=expanded, addresses=addresses, timings=timings
+        )
 
     def _build_gap_context(
         self,
@@ -1065,7 +1151,7 @@ class FitzKragEngine:
                 },
                 vocabulary_store=self._vocabulary_store,
                 entity_graph_store=self._entity_graph_store,
-                pg_table_store=self._pg_table_store,
+                sqlite_table_store=self._sqlite_table_store,
                 enricher=enricher,
             )
             self._bg_worker.start()

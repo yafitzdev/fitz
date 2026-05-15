@@ -32,14 +32,14 @@ class ContentReader:
         section_store: "SectionStore | None" = None,
         config: "FitzKragConfig | None" = None,
         table_store: "TableStore | None" = None,
-        pg_table_store: "SqliteTableStore | None" = None,
+        sqlite_table_store: "SqliteTableStore | None" = None,
         source_dir: "Path | None" = None,
     ):
         self._raw_store = raw_store
         self._section_store = section_store
         self._config = config
         self._table_store = table_store
-        self._pg_table_store = pg_table_store
+        self._sqlite_table_store = sqlite_table_store
         self._source_dir = source_dir
 
     def read(self, addresses: list[Address], limit: int) -> list[ReadResult]:
@@ -232,17 +232,17 @@ class ContentReader:
         col_list = ", ".join(columns)
         content = f"Table: {name}\nColumns: {col_list}\nRow count: {row_count}"
 
-        # Fetch sample rows if pg_table_store is available
-        if self._pg_table_store:
+        # Fetch sample rows if sqlite_table_store is available
+        if self._sqlite_table_store:
             try:
-                pg_table_name = self._pg_table_store.get_table_name(table_id)
-                if pg_table_name:
-                    col_info = self._pg_table_store.get_columns(table_id)
+                table_name = self._sqlite_table_store.get_table_name(table_id)
+                if table_name:
+                    col_info = self._sqlite_table_store.get_columns(table_id)
                     if col_info:
                         sanitized_cols, _ = col_info
                         cols_str = ", ".join(f'"{c}"' for c in sanitized_cols[:20])
-                        sql = f'SELECT {cols_str} FROM "{pg_table_name}" LIMIT 3'
-                        result = self._pg_table_store.execute_query(table_id, sql)
+                        sql = f'SELECT {cols_str} FROM "{table_name}" LIMIT 3'
+                        result = self._sqlite_table_store.execute_query(table_id, sql)
                         if result:
                             col_names, rows = result
                             if rows:

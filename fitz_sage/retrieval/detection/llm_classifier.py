@@ -10,10 +10,10 @@ Similar to the enrichment bus, but for query-time classification.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.llm.factory import ChatFactory, ModelTier
 from fitz_sage.logging.logger import get_logger
 
@@ -84,7 +84,7 @@ class LLMClassifier:
         try:
             chat = self.chat_factory(self.TIER_CLASSIFY)
             response = chat.chat([{"role": "user", "content": prompt}])
-            raw_results = self._parse_response(response)
+            raw_results = parse_llm_json(response)
             return self._distribute_to_modules(raw_results, active_modules)
         except Exception as e:
             logger.warning(f"LLM classification failed: {e}")
@@ -96,47 +96,6 @@ class LLMClassifier:
         fragments = [m.prompt_fragment() for m in active]
         combined = ",\n  ".join(fragments)
         return PROMPT_HEADER.format(query=query, module_fragments=combined)
-
-    def _parse_response(self, response: str) -> dict[str, Any]:
-        """Parse JSON from LLM response, handling markdown code blocks."""
-        text = response.strip()
-
-        # Try to find JSON in code block
-        if "```" in text:
-            parts = text.split("```")
-            for part in parts:
-                part = part.strip()
-                if part.startswith("json"):
-                    part = part[4:].strip()
-                if part.startswith("{"):
-                    try:
-                        return json.loads(part)
-                    except json.JSONDecodeError:
-                        continue
-
-        # Try direct parse
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        # Try to find JSON object in text
-        start = text.find("{")
-        if start >= 0:
-            depth = 0
-            for i, char in enumerate(text[start:], start):
-                if char == "{":
-                    depth += 1
-                elif char == "}":
-                    depth -= 1
-                    if depth == 0:
-                        try:
-                            return json.loads(text[start : i + 1])
-                        except json.JSONDecodeError:
-                            break
-
-        logger.warning(f"Failed to parse LLM response as JSON: {text[:100]}...")
-        return {}
 
     def _distribute_to_modules(
         self,

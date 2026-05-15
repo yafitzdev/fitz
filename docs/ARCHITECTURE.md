@@ -272,7 +272,6 @@ fitz_sage/
 ├── cli/                 # typer commands
 ├── api/                 # FastAPI app + routes
 ├── sdk/                 # stateful Python interface
-├── code/                # standalone code retriever (CodeRetriever)
 └── structured/          # JSON/YAML schema-aware retrieval
 ```
 

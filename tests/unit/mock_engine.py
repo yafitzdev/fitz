@@ -55,7 +55,7 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
         engine._retrieval_router, engine._address_reranker, engine._reader, engine._config
     )
     engine._table_store = MagicMock(name="table_store")
-    engine._pg_table_store = MagicMock(name="pg_table_store")
+    engine._sqlite_table_store = MagicMock(name="sqlite_table_store")
     engine._chat_factory = None
     engine._vocabulary_store = None
     engine._keyword_matcher = None

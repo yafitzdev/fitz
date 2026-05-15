@@ -72,7 +72,7 @@ class KragIngestPipeline:
         connection_manager: "SqliteConnectionManager",
         collection: str,
         table_store: "TableStore | None" = None,
-        pg_table_store: "SqliteTableStore | None" = None,
+        sqlite_table_store: "SqliteTableStore | None" = None,
         vocabulary_store: Any = None,
         entity_graph_store: Any = None,
     ):
@@ -87,7 +87,7 @@ class KragIngestPipeline:
         self._import_store = ImportGraphStore(connection_manager, collection)
         self._section_store = SectionStore(connection_manager, collection)
         self._table_store = table_store or TableStore(connection_manager, collection)
-        self._pg_table_store = pg_table_store
+        self._sqlite_table_store = sqlite_table_store
         self._vocabulary_store = vocabulary_store
         self._entity_graph_store = entity_graph_store
 
@@ -347,8 +347,8 @@ class KragIngestPipeline:
                 # Clean up table data for deleted files
                 table_records = self._table_store.get_by_file(file_id)
                 for rec in table_records:
-                    if self._pg_table_store:
-                        self._pg_table_store.delete(rec["table_id"])
+                    if self._sqlite_table_store:
+                        self._sqlite_table_store.delete(rec["table_id"])
                 self._table_store.delete_by_file(file_id)
                 self._raw_store.delete(file_id)
         stats["files_deleted"] = len(deleted_paths)
@@ -698,9 +698,9 @@ class KragIngestPipeline:
         )
 
         # Store in shared PostgresTableStore
-        if self._pg_table_store:
+        if self._sqlite_table_store:
             try:
-                self._pg_table_store.store(
+                self._sqlite_table_store.store(
                     table_id=parsed.table_id,
                     columns=parsed.columns,
                     rows=parsed.rows,

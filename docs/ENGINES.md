@@ -169,41 +169,6 @@ config-loader hooks.
 
 ---
 
-## Standalone code retrieval
-
-For code-only use cases where ingesting a full collection is overkill,
-fitz-sage ships a lightweight `CodeRetriever` that reads files
-directly from disk — no SQLite, no ingestion pipeline:
-
-```bash
-pip install fitz-sage[code]
-```
-
-```python
-from fitz_sage.code import CodeRetriever
-from fitz_sage.llm.factory import get_chat_factory
-
-retriever = CodeRetriever(
-    source_dir="./myproject",
-    chat_factory=get_chat_factory({
-        "fast":   "endpoint",
-        "smart":  "endpoint",
-    }, base_url="http://localhost:8080/v1", smart_model="qwen2.5-7b-instruct"),
-)
-results = retriever.retrieve("How does authentication work?")
-```
-
-Pipeline: AST structural index → LLM file selection → import-graph
-expansion → neighbor-directory expansion → compression. No database.
-
-| Component                          | Path                          |
-| ---------------------------------- | ----------------------------- |
-| `CodeRetriever`                    | `fitz_sage/code/retriever.py` |
-| Indexer (file list, AST, imports)  | `fitz_sage/code/indexer.py`   |
-| LLM prompts                        | `fitz_sage/code/prompts.py`   |
-
----
-
 ## Architecture principles
 
 1. **Protocol over inheritance.** Implement `KnowledgeEngine` by

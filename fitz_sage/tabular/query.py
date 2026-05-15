@@ -168,7 +168,7 @@ Return ONLY the SQL query, no explanation."""
         Get table info from chunk metadata and store.
 
         Returns:
-            Tuple of (pg_table_name, sanitized_columns, original_columns) or None.
+            Tuple of (table_name, sanitized_columns, original_columns) or None.
         """
         table_id = chunk.metadata.get("table_id")
         if not table_id:
@@ -180,8 +180,8 @@ Return ONLY the SQL query, no explanation."""
             return None
 
         # Get PostgreSQL table name
-        pg_table_name = self.table_store.get_table_name(table_id)
-        if not pg_table_name:
+        table_name = self.table_store.get_table_name(table_id)
+        if not table_name:
             logger.warning(f"Table {table_id} not found in store")
             return None
 
@@ -192,17 +192,17 @@ Return ONLY the SQL query, no explanation."""
             return None
 
         sanitized_cols, original_cols = columns_info
-        return pg_table_name, sanitized_cols, original_cols
+        return table_name, sanitized_cols, original_cols
 
     def _get_sample_data(
-        self, pg_table_name: str, columns: list[str], limit: int = 3
+        self, table_name: str, columns: list[str], limit: int = 3
     ) -> list[list[str]]:
         """Fetch sample data from PostgreSQL table."""
         if self.table_store is None:
             return []
 
         cols_str = ", ".join(f'"{c}"' for c in columns)
-        sql = f'SELECT {cols_str} FROM "{pg_table_name}" LIMIT {limit}'
+        sql = f'SELECT {cols_str} FROM "{table_name}" LIMIT {limit}'
 
         result = self.table_store.execute_query("", sql)
         if result:
@@ -233,16 +233,16 @@ Return ONLY the SQL query, no explanation."""
             if table_info is None:
                 return chunk
 
-            pg_table_name, sanitized_cols, original_cols = table_info
+            table_name, sanitized_cols, original_cols = table_info
             row_count = self.table_store.get_row_count(chunk.metadata.get("table_id", ""))
 
             logger.debug(
-                f"Processing table {pg_table_name}: "
+                f"Processing table {table_name}: "
                 f"{len(sanitized_cols)} cols, {row_count} rows"
             )
 
             # 2. Get sample data for LLM context
-            sample_rows = self._get_sample_data(pg_table_name, sanitized_cols)
+            sample_rows = self._get_sample_data(table_name, sanitized_cols)
 
             # 3. LLM selects relevant columns (using original names for user-friendliness)
             needed_original = self._select_columns(query, original_cols, sample_rows)
@@ -256,15 +256,15 @@ Return ONLY the SQL query, no explanation."""
                 needed_sanitized = sanitized_cols  # Fallback to all
 
             # 4. Generate SQL with sanitized column names
-            sample_for_sql = self._get_sample_data(pg_table_name, needed_sanitized)
-            sql = self._generate_sql(query, pg_table_name, needed_sanitized, sample_for_sql)
+            sample_for_sql = self._get_sample_data(table_name, needed_sanitized)
+            sql = self._generate_sql(query, table_name, needed_sanitized, sample_for_sql)
             logger.debug(f"Generated SQL: {sql}")
 
             # 5. Execute against PostgreSQL
             result = self.table_store.execute_query(chunk.metadata.get("table_id", ""), sql)
 
             if result is None:
-                logger.warning(f"SQL execution failed for {pg_table_name}")
+                logger.warning(f"SQL execution failed for {table_name}")
                 return chunk
 
             col_names, rows = result

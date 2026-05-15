@@ -166,26 +166,6 @@ right keywords.
 | Import graph store | `fitz_sage/engines/fitz_krag/ingestion/import_graph_store.py` |
 | DB schema | `fitz_sage/engines/fitz_krag/ingestion/schema.py` |
 
-## Standalone Code Retrieval
-
-For use cases that don't need the full KRAG pipeline (no SQLite store,
-no ingest), see the standalone `CodeRetriever` in `fitz_sage/code/`:
-
-```bash
-pip install fitz-sage[code]
-```
-
-```python
-from fitz_sage.code import CodeRetriever
-
-retriever = CodeRetriever(source_dir="./myproject", chat_factory=my_factory)
-results = retriever.retrieve("How does auth work?")
-```
-
-Uses AST-based structural indexing and LLM file selection — same
-algorithm as KRAG's `LlmCodeSearchStrategy`, but reads from disk
-directly.
-
 ## Related
 
 - [KRAG](../platform/krag.md) — the engine architecture symbols plug into

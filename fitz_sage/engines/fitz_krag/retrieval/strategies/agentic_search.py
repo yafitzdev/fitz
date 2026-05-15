@@ -12,12 +12,12 @@ For files not yet indexed (not at EMBEDDED state), this strategy:
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.progressive.parsed_cache import RICH_DOC_EXTENSIONS
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
@@ -177,16 +177,10 @@ class AgenticSearchStrategy:
             )
             response = chat.chat([{"role": "user", "content": prompt}])
             text = response.strip()
-
-            # Parse JSON array from response
-            start = text.find("[")
-            end = text.rfind("]") + 1
-            if start >= 0 and end > start:
-                parsed = json.loads(text[start:end])
-                if isinstance(parsed, list):
-                    return [
-                        str(p) for p in parsed[:_LLM_MAX_FILES] if isinstance(p, str) and p.strip()
-                    ]
+            parsed = parse_llm_json(text, as_array=True)
+            return [
+                str(p) for p in parsed[:_LLM_MAX_FILES] if isinstance(p, str) and p.strip()
+            ]
         except Exception as e:
             logger.warning(f"Agentic file selection failed: {e}")
 

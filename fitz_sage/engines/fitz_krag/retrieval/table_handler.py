@@ -53,11 +53,11 @@ class TableQueryHandler:
     def __init__(
         self,
         chat: "ChatProvider",
-        pg_table_store: "SqliteTableStore",
+        sqlite_table_store: "SqliteTableStore",
         config: "FitzKragConfig",
     ):
         self._chat = chat
-        self._pg_table_store = pg_table_store
+        self._sqlite_table_store = sqlite_table_store
         self._config = config
 
     def process(self, query: str, read_results: list[ReadResult]) -> list[ReadResult]:
@@ -85,21 +85,21 @@ class TableQueryHandler:
         if not table_id:
             return result
 
-        pg_table_name = self._pg_table_store.get_table_name(table_id)
-        if not pg_table_name:
+        table_name = self._sqlite_table_store.get_table_name(table_id)
+        if not table_name:
             return result
 
-        col_info = self._pg_table_store.get_columns(table_id)
+        col_info = self._sqlite_table_store.get_columns(table_id)
         if not col_info:
             return result
 
         sanitized_cols, original_cols = col_info
-        row_count = self._pg_table_store.get_row_count(table_id)
-        sample_rows = self._get_sample_data(pg_table_name, sanitized_cols)
+        row_count = self._sqlite_table_store.get_row_count(table_id)
+        sample_rows = self._get_sample_data(table_name, sanitized_cols)
 
         # Generate SQL and get validated result in one pass (no double execution)
         sql, col_names, rows = self._generate_and_execute_sql(
-            query, pg_table_name, sanitized_cols, sample_rows
+            query, table_name, sanitized_cols, sample_rows
         )
         if not rows:
             return result
@@ -127,12 +127,12 @@ class TableQueryHandler:
         )
 
     def _get_sample_data(
-        self, pg_table_name: str, columns: list[str], limit: int = 3
+        self, table_name: str, columns: list[str], limit: int = 3
     ) -> list[list[str]]:
         """Fetch sample data from PostgreSQL table."""
         cols_str = ", ".join(f'"{c}"' for c in columns)
-        sql = f'SELECT {cols_str} FROM "{pg_table_name}" LIMIT {limit}'
-        result = self._pg_table_store.execute_query("", sql)
+        sql = f'SELECT {cols_str} FROM "{table_name}" LIMIT {limit}'
+        result = self._sqlite_table_store.execute_query("", sql)
         if result:
             _, rows = result
             return [[str(v) if v is not None else "" for v in row] for row in rows]
@@ -158,7 +158,7 @@ class TableQueryHandler:
                 query, table_name, columns, sample_rows, previous_error
             )
 
-            result = self._pg_table_store.execute_query("", sql)
+            result = self._sqlite_table_store.execute_query("", sql)
             if result is not None:
                 col_names, rows = result
                 return sql, col_names, rows
@@ -175,7 +175,7 @@ class TableQueryHandler:
 
         try:
             cm = get_connection_manager()
-            with cm.connection(self._pg_table_store.collection) as conn:
+            with cm.connection(self._sqlite_table_store.collection) as conn:
                 conn.execute(sql.replace("%", "%%"))
             return "Query execution failed"
         except Exception as e:

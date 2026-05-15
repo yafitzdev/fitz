@@ -13,6 +13,7 @@ import time as _time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable
 
+from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.types import Address
 
 if TYPE_CHECKING:
@@ -116,7 +117,7 @@ class RetrievalRouter:
         # Submit all strategy calls concurrently
         _t_strategies = _time.perf_counter()
         _progress = progress or (lambda _: None)
-        pool = ThreadPoolExecutor(max_workers=4)
+        pool = ThreadPoolExecutor(max_workers=self._config.retrieval_workers)
         futures: list[tuple[Future, str | None]] = []  # (future, temporal_tag)
         try:
             for q, temporal_tag in tagged_queries:
@@ -141,7 +142,7 @@ class RetrievalRouter:
             # Collect strategy results
             for fut, temporal_tag in futures:
                 try:
-                    batch = fut.result(timeout=60)
+                    batch = fut.result(timeout=600)
                     if temporal_tag:
                         batch = self._tag_temporal(batch, temporal_tag)
                     all_addresses.extend(batch)
@@ -151,7 +152,7 @@ class RetrievalRouter:
             # Collect agentic results
             if agentic_future:
                 try:
-                    agentic_addresses = agentic_future.result(timeout=60)
+                    agentic_addresses = agentic_future.result(timeout=600)
                     all_addresses.extend(agentic_addresses)
                 except Exception as e:
                     logger.warning(f"Agentic strategy failed: {e}")
@@ -265,16 +266,10 @@ class RetrievalRouter:
                 f"Query: {query}\n\n"
                 'Output: ["query1", "query2", ...]'
             )
-            import json
-
             response = chat.chat([{"role": "user", "content": prompt}])
             text = response.strip()
-            start = text.find("[")
-            end = text.rfind("]") + 1
-            if start >= 0 and end > start:
-                parsed = json.loads(text[start:end])
-                if isinstance(parsed, list):
-                    return [str(q) for q in parsed[:3] if isinstance(q, str) and q.strip()]
+            parsed = parse_llm_json(text, as_array=True)
+            return [str(q) for q in parsed[:3] if isinstance(q, str) and q.strip()]
         except Exception as e:
             logger.warning(f"Multi-query expansion failed: {e}")
         return []

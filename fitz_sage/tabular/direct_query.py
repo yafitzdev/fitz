@@ -403,19 +403,19 @@ Provide a clear, direct answer based on the data. If the results are empty, say 
                 )
 
             # Step 4: Get table name and generate SQL
-            pg_table_name = self.table_store.get_table_name(table_id)
+            table_name = self.table_store.get_table_name(table_id)
             columns_info = self.table_store.get_columns(table_id)
 
-            if not pg_table_name or not columns_info:
+            if not table_name or not columns_info:
                 raise ValueError(f"Failed to access table {table_id}")
 
             sanitized_cols, original_cols = columns_info
 
             # Get sample data for SQL generation
-            sample_rows = self._get_sample_data(pg_table_name, sanitized_cols)
+            sample_rows = self._get_sample_data(table_name, sanitized_cols)
 
             # Step 5: Generate SQL
-            sql = self._generate_sql(question, pg_table_name, sanitized_cols, sample_rows)
+            sql = self._generate_sql(question, table_name, sanitized_cols, sample_rows)
             logger.debug(f"Generated SQL: {sql}")
 
             # Step 6: Execute (with retry logic for missing columns)
@@ -437,12 +437,12 @@ Provide a clear, direct answer based on the data. If the results are empty, say 
                         columns_info = self.table_store.get_columns(table_id)
                         if columns_info:
                             sanitized_cols, original_cols = columns_info
-                            sample_rows = self._get_sample_data(pg_table_name, sanitized_cols)
+                            sample_rows = self._get_sample_data(table_name, sanitized_cols)
 
                 # Regenerate SQL with updated columns
                 sql = self._generate_sql(
                     question,
-                    pg_table_name,
+                    table_name,
                     sanitized_cols,
                     sample_rows,
                     previous_error="Query failed. Use only these columns: "
@@ -566,11 +566,11 @@ Provide a clear, direct answer based on the data. If the results are empty, say 
         return chat.chat([{"role": "user", "content": prompt}])
 
     def _get_sample_data(
-        self, pg_table_name: str, columns: list[str], limit: int = 3
+        self, table_name: str, columns: list[str], limit: int = 3
     ) -> list[list[str]]:
         """Fetch sample data from SQLite table."""
         cols_str = ", ".join(f'"{c}"' for c in columns)
-        sql = f'SELECT {cols_str} FROM "{pg_table_name}" ORDER BY _row_num LIMIT {limit}'
+        sql = f'SELECT {cols_str} FROM "{table_name}" ORDER BY _row_num LIMIT {limit}'
 
         result = self.table_store.execute_query("", sql)
         if result:

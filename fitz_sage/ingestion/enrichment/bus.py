@@ -25,12 +25,12 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.ingestion.enrichment.modules import (
     EnrichmentModule,
     EntityModule,
@@ -227,7 +227,7 @@ class ChunkEnricher:
         results: list[ChunkEnrichmentResult] = []
 
         # Try to extract JSON from response
-        json_data = self._extract_json(response)
+        json_data = parse_llm_json(response, as_array=True)
 
         if isinstance(json_data, list):
             for i, item in enumerate(json_data):
@@ -246,41 +246,6 @@ class ChunkEnricher:
             results.append(ChunkEnrichmentResult(chunk_index=len(results)))
 
         return results
-
-    def _extract_json(self, response: str) -> Any:
-        """Extract JSON from LLM response, handling markdown code blocks."""
-        text = response.strip()
-
-        # Try to find JSON in code block
-        if "```" in text:
-            parts = text.split("```")
-            for part in parts:
-                part = part.strip()
-                if part.startswith("json"):
-                    part = part[4:].strip()
-                if part.startswith("[") or part.startswith("{"):
-                    try:
-                        return json.loads(part)
-                    except json.JSONDecodeError:
-                        continue
-
-        # Try direct parse
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        # Try to find array in text
-        start = text.find("[")
-        end = text.rfind("]")
-        if start != -1 and end != -1 and end > start:
-            try:
-                return json.loads(text[start : end + 1])
-            except json.JSONDecodeError:
-                pass
-
-        logger.warning("[ENRICH] Failed to parse JSON from response")
-        return []
 
 
 # =============================================================================

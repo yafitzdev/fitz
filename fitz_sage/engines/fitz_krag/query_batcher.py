@@ -9,11 +9,11 @@ One batched call takes ~20s.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.query_analyzer import (
     QueryAnalysis,
     QueryType,
@@ -152,7 +152,7 @@ class QueryBatcher:
         try:
             chat = self.chat_factory("fast")
             response = chat.chat([{"role": "user", "content": prompt}])
-            raw = self._parse_json(response)
+            raw = parse_llm_json(response)
         except Exception as e:
             logger.warning(f"Batched query intelligence failed: {e}")
             raw = {}
@@ -232,44 +232,6 @@ class QueryBatcher:
             sections_json=",\n".join(json_parts),
             sections_instructions="\n\n".join(instruction_parts),
         )
-
-    def _parse_json(self, response: str) -> dict[str, Any]:
-        """Parse JSON from LLM response, handling markdown and malformed output."""
-        text = response.strip()
-
-        if "```" in text:
-            parts = text.split("```")
-            for part in parts:
-                part = part.strip()
-                if part.startswith("json"):
-                    part = part[4:].strip()
-                if part.startswith("{"):
-                    try:
-                        return json.loads(part)
-                    except json.JSONDecodeError:
-                        continue
-
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        start = text.find("{")
-        if start >= 0:
-            depth = 0
-            for i, char in enumerate(text[start:], start):
-                if char == "{":
-                    depth += 1
-                elif char == "}":
-                    depth -= 1
-                    if depth == 0:
-                        try:
-                            return json.loads(text[start : i + 1])
-                        except json.JSONDecodeError:
-                            break
-
-        logger.warning(f"Batch response not parseable as JSON: {text[:100]}...")
-        return {}
 
     def _distribute(
         self,

@@ -254,7 +254,6 @@ The pattern: use the LLM for *classification* and *generation*; use
 | Retrieval router                | `fitz_sage/engines/fitz_krag/retrieval/router.py`                |
 | Code search                     | `fitz_sage/engines/fitz_krag/retrieval/strategies/code_search.py`|
 | LLM-driven code search          | `fitz_sage/engines/fitz_krag/retrieval/strategies/llm_code_search.py` |
-| Standalone code retrieval       | `fitz_sage/code/retriever.py`                                    |
 | Section search                  | `fitz_sage/engines/fitz_krag/retrieval/strategies/section_search.py` |
 | Table search                    | `fitz_sage/engines/fitz_krag/retrieval/strategies/table_search.py` |
 | Context expander                | `fitz_sage/engines/fitz_krag/retrieval/expander.py`              |
@@ -265,37 +264,6 @@ The pattern: use the LLM for *classification* and *generation*; use
 | Table store                     | `fitz_sage/engines/fitz_krag/ingestion/table_store.py`           |
 | Import graph store              | `fitz_sage/engines/fitz_krag/ingestion/import_graph_store.py`    |
 | Ingestion pipeline              | `fitz_sage/engines/fitz_krag/ingestion/pipeline.py`              |
-
----
-
-## Standalone code retrieval
-
-For code-only use cases where ingesting a full collection is overkill,
-fitz-sage ships a standalone `CodeRetriever` that reads files directly
-from disk — no SQLite, no ingestion step, no schema:
-
-```bash
-pip install fitz-sage[code]
-```
-
-```python
-from fitz_sage.code import CodeRetriever
-from fitz_sage.llm.factory import get_chat_factory
-
-retriever = CodeRetriever(
-    source_dir="./myproject",
-    chat_factory=get_chat_factory({
-        "fast":  "endpoint",
-        "smart": "endpoint",
-    }, base_url="http://localhost:8080/v1",
-       smart_model="qwen2.5-7b-instruct"),
-)
-results = retriever.retrieve("How does authentication work?")
-```
-
-Pipeline: AST structural index → LLM file selection → import-graph
-expansion → neighbor-directory expansion → compression. Same retrieval
-quality as KRAG's `LlmCodeSearchStrategy`, no database required.
 
 ---
 

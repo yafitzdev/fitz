@@ -52,7 +52,7 @@ class BackgroundIngestWorker:
         stores: dict[str, Any],
         vocabulary_store: Any = None,
         entity_graph_store: Any = None,
-        pg_table_store: Any = None,
+        sqlite_table_store: Any = None,
         enricher: Any = None,
     ) -> None:
         self._manifest = manifest
@@ -68,7 +68,7 @@ class BackgroundIngestWorker:
         self._table_store = stores["table"]
         self._vocabulary_store = vocabulary_store
         self._entity_graph_store = entity_graph_store
-        self._pg_table_store = pg_table_store
+        self._sqlite_table_store = sqlite_table_store
         self._enricher = enricher
 
         # Parsed text cache dir — same location builder uses
@@ -341,9 +341,9 @@ class BackgroundIngestWorker:
         )
 
         # Store all rows in PostgresTableStore for SQL queries
-        if self._pg_table_store:
+        if self._sqlite_table_store:
             try:
-                self._pg_table_store.store(
+                self._sqlite_table_store.store(
                     table_id=parsed.table_id,
                     columns=parsed.columns,
                     rows=parsed.rows,

@@ -2,7 +2,7 @@
 """
 Evaluate retrieval quality against ground truth.
 
-Uses fitz-sage's own ChatFactory — no fitz-graveyard dependency.
+Uses fitz-sage's KRAG engine — point() to ingest, retrieve() to query.
 
 Usage:
     python tools/retrieval_eval/eval.py --source-dir .
@@ -37,25 +37,29 @@ def run_retrieval(
     max_manifest_chars: int = 120_000,
     limit: int = 30,
 ) -> list[str]:
-    """Run retrieval pipeline and return selected file paths."""
-    from fitz_sage.code import CodeRetriever
-    from fitz_sage.llm.providers.enterprise import EnterpriseChat
+    """Run KRAG retrieval and return selected file paths."""
+    import hashlib
+    from pathlib import Path
 
-    # Create chat client directly (no auth needed for local LM Studio)
-    client = EnterpriseChat(auth=None, base_url=base_url, model=model, timeout=300)
+    from fitz_sage.core import Query
+    from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+    from fitz_sage.runtime.runner import create_engine
 
-    # chat_factory: tier -> client (same client for all tiers)
-    def chat_factory(tier: str = "smart") -> EnterpriseChat:
-        return client
-
-    retriever = CodeRetriever(
-        source_dir=source_dir,
-        chat_factory=chat_factory,
-        llm_tier="smart",
-        max_manifest_chars=max_manifest_chars,
+    source = Path(source_dir).resolve()
+    collection = "retrieval_eval_" + hashlib.sha1(str(source).encode("utf-8")).hexdigest()[:16]
+    model_spec = f"endpoint/{model}"
+    config = FitzKragConfig(
+        collection=collection,
+        chat_fast=model_spec,
+        chat_balanced=model_spec,
+        chat_smart=model_spec,
+        chat_base_url=base_url,
+        top_read=limit,
+        retrieval_workers=1,
     )
-
-    results = retriever.retrieve(query, limit=limit)
+    engine = create_engine("fitz_krag", config=config)
+    engine.point(source, collection=collection, start_worker=False)
+    results = engine.retrieve(Query(text=query))
     return [r.file_path for r in results]
 
 

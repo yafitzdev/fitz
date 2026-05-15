@@ -26,6 +26,7 @@ captured at construction time can rotate without restart.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Iterator
 
 from fitz_sage.llm.auth import AuthProvider
@@ -33,6 +34,38 @@ from fitz_sage.llm.auth.httpx_auth import DynamicHttpxAuth
 from fitz_sage.llm.providers.base import ModelTier
 
 logger = logging.getLogger(__name__)
+
+# Reasoning models (Qwen3, DeepSeek-R1, …) emit <think>…</think> blocks in
+# their output. Strip them from completed responses so downstream JSON
+# parsers receive clean text.
+_THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
+
+def _strip_thinking(text: str) -> str:
+    """Remove <think>…</think> reasoning blocks from model output."""
+    text = _THINK_RE.sub("", text)
+    # Handle an unclosed <think> (generation ended mid-thought).
+    if "<think>" in text:
+        text = (
+            text.split("</think>")[-1].lstrip()
+            if "</think>" in text
+            else text.split("<think>")[0].rstrip()
+        )
+    return text
+
+
+def _build_http_client(auth: AuthProvider) -> Any:
+    """Build the httpx.Client shared by the OpenAI-compatible providers."""
+    import httpx
+
+    request_kwargs = auth.get_request_kwargs()
+    return httpx.Client(
+        auth=DynamicHttpxAuth(auth),
+        verify=request_kwargs.get("verify", True),
+        cert=request_kwargs.get("cert"),
+        timeout=httpx.Timeout(600.0, connect=5.0),
+    )
+
 
 # Default OpenAI cloud models, used when the ``openai`` preset is selected
 # without an explicit model. ``endpoint`` users always specify their model.
@@ -70,17 +103,9 @@ class OpenAICompatChat:
         models: dict[ModelTier, str] | None = None,
         **kwargs: Any,
     ) -> None:
-        import httpx
         import openai
 
-        request_kwargs = auth.get_request_kwargs()
-
-        http_client = httpx.Client(
-            auth=DynamicHttpxAuth(auth),
-            verify=request_kwargs.get("verify", True),
-            cert=request_kwargs.get("cert"),
-            timeout=httpx.Timeout(600.0, connect=5.0),
-        )
+        http_client = _build_http_client(auth)
 
         client_kwargs: dict[str, Any] = {
             # The SDK requires a non-empty api_key string; real auth is
@@ -107,7 +132,7 @@ class OpenAICompatChat:
         )
 
         if response.choices and response.choices[0].message:
-            return response.choices[0].message.content or ""
+            return _strip_thinking(response.choices[0].message.content or "")
         return ""
 
     def chat_stream(self, messages: list[dict[str, Any]], **kwargs: Any) -> Iterator[str]:
@@ -147,17 +172,9 @@ class OpenAICompatVision:
         base_url: str | None = None,
         **kwargs: Any,
     ) -> None:
-        import httpx
         import openai
 
-        request_kwargs = auth.get_request_kwargs()
-
-        http_client = httpx.Client(
-            auth=DynamicHttpxAuth(auth),
-            verify=request_kwargs.get("verify", True),
-            cert=request_kwargs.get("cert"),
-            timeout=httpx.Timeout(600.0, connect=5.0),
-        )
+        http_client = _build_http_client(auth)
 
         client_kwargs: dict[str, Any] = {
             "api_key": "unused",
@@ -207,7 +224,7 @@ class OpenAICompatVision:
         )
 
         if response.choices and response.choices[0].message:
-            return response.choices[0].message.content or ""
+            return _strip_thinking(response.choices[0].message.content or "")
         return ""
 
 
