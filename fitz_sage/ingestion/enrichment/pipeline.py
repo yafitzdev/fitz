@@ -77,13 +77,11 @@ class EnrichmentPipeline:
         config: EnrichmentConfig,
         project_root: Path,
         chat_factory: ChatFactory | None = None,
-        embedder: object | None = None,
         collection: str | None = None,
     ):
         self.config = config
         self.project_root = Path(project_root).resolve()
         self._chat_factory = chat_factory
-        self._embedder = embedder
         self._collection = collection
 
         self._chunk_enricher: ChunkEnricher | None = None
@@ -122,16 +120,9 @@ class EnrichmentPipeline:
         self._hierarchy_enricher = HierarchyEnricher(
             config=self.config.hierarchy,
             chat_factory=self._chat_factory,
-            embedder=self._embedder,
         )
 
-        if self.config.hierarchy.grouping_strategy == "semantic":
-            logger.info(
-                f"[ENRICHMENT] Hierarchy enricher initialized with semantic grouping "
-                f"(n_clusters={self.config.hierarchy.n_clusters}, "
-                f"max={self.config.hierarchy.max_clusters})"
-            )
-        elif self.config.hierarchy.rules:
+        if self.config.hierarchy.rules:
             logger.info(
                 f"[ENRICHMENT] Hierarchy enricher initialized with "
                 f"{len(self.config.hierarchy.rules)} rules"
@@ -164,7 +155,6 @@ class EnrichmentPipeline:
         config: EnrichmentConfig | Dict[str, Any] | None,
         project_root: Path,
         chat_factory: ChatFactory | None = None,
-        embedder: object | None = None,
         collection: str | None = None,
     ) -> "EnrichmentPipeline":
         """
@@ -174,7 +164,6 @@ class EnrichmentPipeline:
             config: EnrichmentConfig, dict, or None (uses defaults)
             project_root: Root directory of the project
             chat_factory: Chat factory for per-task tier selection
-            embedder: Embedder for semantic grouping (optional)
             collection: Collection name for keyword vocabulary
         """
         if config is None:
@@ -186,7 +175,6 @@ class EnrichmentPipeline:
             config=config,
             project_root=project_root,
             chat_factory=chat_factory,
-            embedder=embedder,
             collection=collection,
         )
 

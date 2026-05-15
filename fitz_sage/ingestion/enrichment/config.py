@@ -73,35 +73,25 @@ class HierarchyConfig(BaseModel):
 
     Hierarchical enrichment generates multi-level summaries:
     - Level 0: Original chunks (unchanged)
-    - Level 1: Group summaries (chunks grouped by metadata key or semantic similarity)
+    - Level 1: Group summaries (chunks grouped by metadata key)
     - Level 2: Corpus summary (summary of all groups)
 
     Zero-config mode (recommended):
         Just set enabled=True in the engine config.
         Uses smart defaults: group_by="source", default prompts.
 
-    Semantic grouping mode:
-        Set grouping_strategy="semantic" to cluster chunks by embedding similarity.
-        Requires embedder to be provided.
-
     Power-user mode:
         Configure custom rules for complex grouping scenarios.
 
     Attributes:
-        grouping_strategy: "metadata" (default) or "semantic" for embedding-based clustering
-        group_by: Metadata key for grouping (used when strategy is "metadata")
-        n_clusters: Number of clusters for semantic grouping (None = auto-detect)
-        max_clusters: Maximum clusters for auto-detection
+        group_by: Metadata key for grouping chunks
         group_prompt: Custom prompt for group summaries (optional)
         corpus_prompt: Custom prompt for corpus summary (optional)
         rules: Advanced rules for power users (optional, overrides simple mode)
     """
 
     # No enabled field - hierarchy is always on
-    grouping_strategy: str = "metadata"  # "metadata" or "semantic"
-    group_by: str = "source_file"  # Default: each file is a group (metadata mode)
-    n_clusters: int | None = None  # For semantic grouping (None = auto-detect)
-    max_clusters: int = 10  # Upper bound for auto-detection
+    group_by: str = "source_file"  # Default: each file is a group
     group_prompt: str | None = None  # Uses DEFAULT_GROUP_PROMPT if None
     corpus_prompt: str | None = None  # Uses DEFAULT_CORPUS_PROMPT if None
     rules: list[HierarchyRule] = Field(default_factory=list)  # Power user
