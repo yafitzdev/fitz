@@ -43,7 +43,7 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     Build a FitzKragEngine with every component replaced by a MagicMock.
 
     Bypasses __init__ entirely so no real imports are triggered.
-    Detection and guardrails are disabled by default.
+    Detection and governance are disabled by default.
     """
     config = _make_config(**config_overrides)
     engine = FitzKragEngine.__new__(FitzKragEngine)
@@ -63,7 +63,7 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine._assembler = MagicMock(name="assembler")
     engine._synthesizer = MagicMock(name="synthesizer")
     engine._detection_orchestrator = None
-    engine._guardrails_enabled = False
+    engine._governance = None
     engine._table_store = MagicMock(name="table_store")
     engine._pg_table_store = MagicMock(name="pg_table_store")
     engine._query_rewriter = None
@@ -205,7 +205,7 @@ class TestEngineDetectionInit:
         mock_factory = MagicMock(name="chat_factory")
         mock_get_chat_factory.return_value = mock_factory
 
-        config = _make_config(enable_detection=True, enable_guardrails=False)
+        config = _make_config(enable_detection=True, governance=None)
         engine = FitzKragEngine(config)
 
         # All tiers use the user-configured spec; no provider-specific

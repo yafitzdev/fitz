@@ -58,10 +58,18 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   `hf_hub_download` + `InferenceSession` setup, and tokenizer wiring
   line for line; that path now lives once in `OnnxEncoderBackend`.
   `Pyrrho` and `OnnxReranker` are thin subclasses that own only their
-  tokenizer call shape and logit post-processing. No public API change:
-  `governance.decide()` still works (now a wrapper over a process-wide
-  `Pyrrho` singleton) and `OnnxReranker`'s constructor + surface are
-  unchanged.
+  tokenizer call shape and logit post-processing. `OnnxReranker`'s
+  constructor + public surface are unchanged.
+- **`enable_guardrails` → `governance` (provider-presence config).** The
+  `enable_guardrails: bool` flag is replaced by `governance: <spec> | null`,
+  matching the `rerank` / `vision` / `parser` pattern. `governance: pyrrho`
+  (default) enables the classifier; `governance: null` disables it;
+  `governance: pyrrho/<hf-model-id>` selects a custom pyrrho fine-tune.
+  A config still using `enable_guardrails` gets an actionable error from
+  the loader pointing at the replacement. The engine builds the classifier
+  through a new `governance.create_governance()` factory; the module-level
+  `governance.decide()` wrapper + its process-wide singleton are gone — the
+  engine owns a config-built `Pyrrho` instance.
 
 ---
 

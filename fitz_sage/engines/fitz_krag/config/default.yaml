@@ -36,6 +36,11 @@ fitz_krag:
   vision: null
   parser: docling
 
+  # Governance. 'pyrrho' = INT8 ONNX epistemic classifier that labels each
+  # answer TRUSTWORTHY / DISPUTED / ABSTAIN before generation.
+  # 'pyrrho/<hf-model-id>' to swap in a custom fine-tune. null = disabled.
+  governance: pyrrho
+
   collection: default
 
   # Code retrieval

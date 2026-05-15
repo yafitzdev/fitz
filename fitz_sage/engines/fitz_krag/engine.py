@@ -90,7 +90,7 @@ class FitzKragEngine:
     2. Retrieve addresses (pointers to code symbols / document sections)
     3. Read content for top-ranked addresses
     4. Expand with context (imports, class context, same-file refs)
-    5. Run epistemic guardrails — determine AnswerMode
+    5. Run epistemic governance — determine AnswerMode
     6. Assemble LLM context
     7. Generate grounded answer with file:line provenance
     """
@@ -329,9 +329,13 @@ class FitzKragEngine:
         self._assembler = ContextAssembler(self._config)
         self._synthesizer = CodeSynthesizer(self._chat, self._config)
 
-        # Guardrails — pyrrho classifier (single INT8 ONNX forward pass).
-        # Lazily loads on first decide() call so engine init stays fast.
-        self._guardrails_enabled = bool(self._config.enable_guardrails)
+        # Governance — pyrrho classifier (single INT8 ONNX forward pass).
+        # Provider-presence: the `governance:` config key builds the
+        # classifier (`pyrrho` / `pyrrho/<model>`) or disables it (`null`).
+        # The model lazily loads on first decide() so engine init stays fast.
+        from fitz_sage.governance import create_governance
+
+        self._governance = create_governance(self._config.governance)
 
         # Table query handler
         from fitz_sage.engines.fitz_krag.retrieval.table_handler import TableQueryHandler
@@ -605,7 +609,7 @@ class FitzKragEngine:
         Execute a query using KRAG approach.
 
         Flow: analyze → detect → retrieve → (cache check) → read → expand →
-              guardrails → assemble → generate → (cache store)
+              governance → assemble → generate → (cache store)
 
         Args:
             query: Query object with question text
@@ -809,15 +813,13 @@ class FitzKragEngine:
             # 4.5. Execute table queries (SQL generation + execution)
             expanded = self._table_handler.process(sanitized, expanded)
 
-            # 5. Run guardrails — pyrrho classifier on the (query, contexts) pair.
+            # 5. Run governance — pyrrho classifier on the (query, contexts) pair.
             # ReadResult satisfies EvidenceItem (has .content).
             answer_mode = AnswerMode.TRUSTWORTHY
             governance = None
-            if self._guardrails_enabled:
+            if self._governance is not None:
                 t0 = time.perf_counter()
-                from fitz_sage.governance import decide as pyrrho_decide
-
-                governance = pyrrho_decide(sanitized, expanded)
+                governance = self._governance.decide(sanitized, expanded)
                 answer_mode = governance.mode
 
                 # Progressive mode: agentic LLM code search already validated
@@ -832,7 +834,7 @@ class FitzKragEngine:
                     )
                     answer_mode = AnswerMode.TRUSTWORTHY
 
-                timings.append(("Guardrails", time.perf_counter() - t0))
+                timings.append(("Governance", time.perf_counter() - t0))
 
             # 5.5. Compress code context (AST-based, ~50-70% token reduction)
             from fitz_sage.engines.fitz_krag.context.compressor import compress_results

@@ -50,7 +50,7 @@ class FitzKragConfig(BasePluginConfig):
 
     chat_fast: str = Field(
         default="endpoint/qwen2.5-7b-instruct",
-        description="Chat model for detection, guardrails (provider/model)",
+        description="Chat model for detection and query analysis (provider/model)",
     )
 
     chat_balanced: str = Field(
@@ -238,12 +238,17 @@ class FitzKragConfig(BasePluginConfig):
     )
 
     # ==========================================================================
-    # Guardrails
+    # Governance
     # ==========================================================================
 
-    enable_guardrails: bool = Field(
-        default=True,
-        description="Enable epistemic guardrails (constraint checking before generation)",
+    governance: str | None = Field(
+        default="pyrrho",
+        description=(
+            "Epistemic governance classifier. 'pyrrho' (default) labels each "
+            "answer TRUSTWORTHY / DISPUTED / ABSTAIN via an INT8 ONNX "
+            "classifier; 'pyrrho/<hf-model-id>' swaps in a custom fine-tune. "
+            "null disables governance entirely."
+        ),
     )
 
     # ==========================================================================

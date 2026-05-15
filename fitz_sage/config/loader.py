@@ -80,6 +80,27 @@ def deep_merge(base: dict, override: dict) -> dict:
 
 
 # =============================================================================
+# Removed Config Keys
+# =============================================================================
+
+# Config keys removed in past releases, mapped to actionable migration text.
+_REMOVED_CONFIG_KEYS: dict[str, str] = {
+    "enable_guardrails": (
+        "`enable_guardrails` was replaced by `governance` in v0.13.1.\n"
+        "  enable_guardrails: true   ->  governance: pyrrho\n"
+        "  enable_guardrails: false  ->  governance: null"
+    ),
+}
+
+
+def _check_removed_config_keys(config: dict[str, Any]) -> None:
+    """Raise an actionable error if the config uses a removed key."""
+    for key, message in _REMOVED_CONFIG_KEYS.items():
+        if key in config:
+            raise ValueError(message)
+
+
+# =============================================================================
 # Loading Functions
 # =============================================================================
 
@@ -160,6 +181,7 @@ def load_engine_config(engine: str):
     user_config = _load_user_config(engine)
 
     if user_config is not None:
+        _check_removed_config_keys(user_config)
         # Merge user config over defaults
         merged = deep_merge(defaults, user_config)
         logger.debug(f"Merged config for {engine}: defaults + user overrides")

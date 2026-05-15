@@ -86,8 +86,8 @@ def _reason_for(mode: AnswerMode, probs: tuple[float, float, float]) -> str:
 class Pyrrho(OnnxEncoderBackend):
     """The pyrrho classifier — one INT8 ONNX forward pass per query."""
 
-    def __init__(self) -> None:
-        super().__init__(model_id=MODEL_ID, onnx_file=ONNX_FILE)
+    def __init__(self, model_id: str = MODEL_ID) -> None:
+        super().__init__(model_id=model_id, onnx_file=ONNX_FILE)
 
     def decide(self, query: str, contexts: list[EvidenceItem]) -> GovernanceDecision:
         """Classify a (query, contexts) pair into one of the three governance modes.
@@ -128,14 +128,4 @@ class Pyrrho(OnnxEncoderBackend):
         return GovernanceDecision(mode=mode, probs=probs, reason=_reason_for(mode, probs))
 
 
-# Process-wide singleton — the model loads lazily on the first decide() call.
-_pyrrho = Pyrrho()
-
-
-def decide(query: str, contexts: list[EvidenceItem]) -> GovernanceDecision:
-    """Classify a (query, contexts) pair. Thin wrapper over the process-wide
-    `Pyrrho` singleton — see `Pyrrho.decide`."""
-    return _pyrrho.decide(query, contexts)
-
-
-__all__ = ["GovernanceDecision", "Pyrrho", "decide", "MODEL_ID", "TAU"]
+__all__ = ["GovernanceDecision", "Pyrrho", "MODEL_ID", "TAU"]

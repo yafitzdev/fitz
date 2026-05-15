@@ -232,8 +232,8 @@ class KragE2ERunner:
             "chat_balanced": chat_balanced,
             "chat_smart": chat_smart,
             "collection": tier_collection,
-            # Disable guardrails for E2E tests to isolate retrieval testing
-            "enable_guardrails": False,
+            # Disable governance for E2E tests to isolate retrieval testing
+            "governance": None,
             # Relax strict grounding for test flexibility
             "strict_grounding": False,
             # Higher retrieval for better recall
@@ -324,7 +324,7 @@ class KragE2ERunner:
             "chat_balanced": chat_balanced,
             "chat_smart": chat_smart,
             "collection": tier_collection,
-            "enable_guardrails": False,
+            "governance": None,
             "strict_grounding": False,
             "top_addresses": 20,
             "top_read": 10,

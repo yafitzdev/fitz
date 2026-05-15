@@ -26,6 +26,9 @@ def test_load_config_from_defaults():
     # Verify None for disabled features
     assert config.vision is None or isinstance(config.vision, str)
 
+    # Verify governance defaults to the pyrrho classifier
+    assert config.governance == "pyrrho"
+
     # Verify generation settings
     assert hasattr(config, "enable_citations")
     assert hasattr(config, "strict_grounding")
@@ -73,3 +76,35 @@ def test_config_none_for_disabled():
 
     assert config.rerank is None
     assert config.vision is None
+
+
+def test_enable_guardrails_raises_migration_error():
+    """A config using the removed `enable_guardrails` key gets an actionable error."""
+    with patch(
+        "fitz_sage.config.loader._load_user_config",
+        return_value={"enable_guardrails": False},
+    ):
+        with pytest.raises(ValueError, match="enable_guardrails"):
+            load_engine_config("fitz_krag")
+
+
+def test_create_governance_dispatch():
+    """`create_governance` maps a config spec to a classifier instance or None."""
+    from fitz_sage.governance import Pyrrho, create_governance
+
+    assert create_governance(None) is None
+
+    default = create_governance("pyrrho")
+    assert isinstance(default, Pyrrho)
+
+    custom = create_governance("pyrrho/acme/custom-fine-tune")
+    assert isinstance(custom, Pyrrho)
+    assert custom._model_id == "acme/custom-fine-tune"
+
+
+def test_create_governance_unknown_provider():
+    """An unknown governance provider raises an actionable error."""
+    from fitz_sage.governance import create_governance
+
+    with pytest.raises(ValueError, match="Unknown governance provider"):
+        create_governance("bogus")

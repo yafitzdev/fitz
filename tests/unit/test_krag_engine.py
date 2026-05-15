@@ -66,7 +66,7 @@ def _make_engine(**config_overrides) -> FitzKragEngine:
     engine._table_handler.process.side_effect = lambda q, results: results
     engine._assembler = MagicMock(name="assembler")
     engine._synthesizer = MagicMock(name="synthesizer")
-    engine._guardrails_enabled = False
+    engine._governance = None
     engine._detection_orchestrator = None
     engine._table_store = MagicMock(name="table_store")
     engine._pg_table_store = MagicMock(name="pg_table_store")

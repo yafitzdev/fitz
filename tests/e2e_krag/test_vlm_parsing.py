@@ -137,15 +137,16 @@ def vlm_krag_engine(set_workspace):
 
     collection = f"e2e_vlm_{uuid.uuid4().hex[:8]}"
 
-    # Load base tier config for chat/embedding/vector_db
+    # Load base tier config for chat models + endpoint. Post-v0.12.0:
+    # no embedding / vector_db — retrieval is BM25 + KRAG routing + ONNX
+    # rerank, and the endpoint is carried by chat_base_url.
     e2e_config = load_e2e_config()
     tier_names = get_tier_names(e2e_config)
     tier_config = get_tier_config(tier_names[0], e2e_config)
 
     chat_plugin = tier_config["chat"]["plugin_name"]
     chat_models = tier_config["chat"].get("models", {})
-    embedding_plugin = tier_config["embedding"]["plugin_name"]
-    embedding_model = tier_config["embedding"].get("model", "")
+    chat_base_url = tier_config["chat"].get("base_url")
 
     chat_fast = f"{chat_plugin}/{chat_models['fast']}" if chat_models.get("fast") else chat_plugin
     chat_balanced = (
@@ -154,28 +155,24 @@ def vlm_krag_engine(set_workspace):
     chat_smart = (
         f"{chat_plugin}/{chat_models['smart']}" if chat_models.get("smart") else chat_plugin
     )
-    embedding_spec = (
-        f"{embedding_plugin}/{embedding_model}" if embedding_model else embedding_plugin
-    )
 
     config_dict = {
         "chat_fast": chat_fast,
         "chat_balanced": chat_balanced,
         "chat_smart": chat_smart,
-        "embedding": embedding_spec,
-        "vector_db": tier_config["vector_db"]["plugin_name"],
         "collection": collection,
         # VLM config — endpoint provider points at the detected URL.
         "vision": f"endpoint/{VISION_MODEL}",
         "vision_base_url": _RESOLVED_VISION_BASE_URL,
         "parser": "docling_vision",
         # Relax for testing
-        "enable_guardrails": False,
+        "governance": None,
         "strict_grounding": False,
         "top_addresses": 20,
         "top_read": 10,
-        "vector_db_kwargs": tier_config["vector_db"].get("kwargs", {}),
     }
+    if chat_base_url:
+        config_dict["chat_base_url"] = chat_base_url
 
     cfg = FitzKragConfig(**config_dict)
     engine = FitzKragEngine(cfg)
