@@ -150,8 +150,8 @@ For enterprise (M2M / mTLS) deployments see
 ## Retrieval knobs
 
 ```yaml
-top_addresses: 20      # how many candidates to fetch from FTS5 (default 20)
-top_read: 10           # how many to read into context after rerank (default 10)
+top_addresses: 50      # how many candidates to fetch from FTS5 (default 50)
+top_read: 50           # how many to read into context after rerank (default 50)
 governance: pyrrho
 strict_grounding: false
 ```

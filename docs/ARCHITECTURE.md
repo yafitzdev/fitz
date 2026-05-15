@@ -42,7 +42,7 @@ The architecture has three load-bearing decisions:
 │  - Expander (import graph, entity links, same-file refs, hierarchy)         │
 │  - ONNX cross-encoder reranker (gte-reranker-modernbert-base)               │
 │  - Synthesizer (chat call that writes the answer)                           │
-│  - Constraints (TRUSTWORTHY / DISPUTED / ABSTAIN guardrails)                │
+│  - Governance (pyrrho → TRUSTWORTHY / DISPUTED / ABSTAIN)                   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
           ┌─────────────────────────┼─────────────────────────┐
