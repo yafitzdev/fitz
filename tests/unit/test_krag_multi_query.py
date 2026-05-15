@@ -28,6 +28,7 @@ def _make_config(
     """Create a mock FitzKragConfig with multi-query-relevant fields."""
     cfg = MagicMock()
     cfg.top_addresses = top_addresses
+    cfg.retrieval_workers = 4
     cfg.enable_multi_query = enable_multi_query
     cfg.multi_query_min_length = multi_query_min_length
     return cfg

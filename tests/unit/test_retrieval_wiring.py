@@ -28,6 +28,7 @@ def _make_config(**overrides) -> MagicMock:
     """Build a mock FitzKragConfig with sensible defaults."""
     cfg = MagicMock()
     cfg.top_addresses = overrides.get("top_addresses", 10)
+    cfg.retrieval_workers = overrides.get("retrieval_workers", 4)
     cfg.enable_multi_query = overrides.get("enable_multi_query", False)
     cfg.multi_query_min_length = overrides.get("multi_query_min_length", 300)
     cfg.min_relevance_score = overrides.get("min_relevance_score", 0)

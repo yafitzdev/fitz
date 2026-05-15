@@ -28,6 +28,7 @@ def _make_router_config(top_addresses: int = 10) -> MagicMock:
     """Create a mock FitzKragConfig for the router."""
     cfg = MagicMock()
     cfg.top_addresses = top_addresses
+    cfg.retrieval_workers = 4
     cfg.enable_multi_query = False
     return cfg
 
