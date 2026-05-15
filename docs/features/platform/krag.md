@@ -158,7 +158,7 @@ The final ranking step is a dedicated INT8 ONNX cross-encoder
 `(query, candidate)` pairs in a single batched forward pass — ~30 ms
 on CPU. No external LLM call, no embedding model. Same architecture
 family as the pyrrho governance classifier (ModernBERT + INT8 ONNX
-via `optimum.onnxruntime`).
+on raw `onnxruntime`).
 
 ---
 

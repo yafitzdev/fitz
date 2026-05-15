@@ -108,10 +108,10 @@ headline numbers above.
 
 ## Where it plugs in
 
-The `FitzKragEngine` calls `decide()` between retrieval and generation:
+The `FitzKragEngine` runs the pyrrho classifier between retrieval and generation:
 
 1. Retrieve + expand + rerank candidates → `expanded`
-2. `decide(sanitized_query, expanded)` → `governance.mode`
+2. The classifier scores `(sanitized_query, expanded)` → `governance.mode`
 3. The synthesizer receives `answer_mode` and prepends the matching
    instruction from `governance/instructions.py`:
    - `TRUSTWORTHY` → answer clearly and directly
@@ -120,9 +120,10 @@ The `FitzKragEngine` calls `decide()` between retrieval and generation:
 4. The engine builds `gap_context` (for ABSTAIN) and a simple
    conflict reason (for DISPUTED) to pass to the synthesizer.
 
-Toggle with `enable_guardrails: bool` in `FitzKragConfig`. Default
-`true`. The smoke test sets it to `false` to measure raw retrieval
-timing.
+Set the classifier with `governance: <spec> | null` in `FitzKragConfig`.
+`governance: pyrrho` (default) runs it; `governance: null` disables
+governance entirely — the smoke test uses `null` to measure raw
+retrieval timing.
 
 ---
 

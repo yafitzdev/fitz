@@ -241,3 +241,16 @@ If you're migrating from v0.11.x:
 
 Loading a config with any of the deleted keys raises a `ValueError`
 with the migration message.
+
+---
+
+## What's gone in v0.13.1
+
+| Removed key                  | Replacement          |
+| ---------------------------- | -------------------- |
+| `enable_guardrails: true`    | `governance: pyrrho` |
+| `enable_guardrails: false`   | `governance: null`   |
+
+`enable_guardrails` is replaced by `governance`, which follows the
+provider-presence pattern (`rerank`, `vision`, `parser`). Loading a
+config with the old key raises a `ValueError` with the migration message.

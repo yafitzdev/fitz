@@ -1,7 +1,7 @@
 # Feature Control Architecture
 
-How optional features (VLM in the parser, LLM reranking) are switched
-on and off in fitz-sage **v0.12.0+**.
+How optional features (VLM in the parser, ONNX reranking, governance)
+are switched on and off in fitz-sage **v0.12.0+**.
 
 ---
 
@@ -16,10 +16,6 @@ fitz-sage uses a **provider-presence pattern**:
 
 This keeps the config declarative and avoids boolean flags that
 can drift out of sync with the actual provider config.
-
-The single exception is `enable_guardrails: bool` in
-`FitzKragConfig` — used by the smoke test to bypass the constraints
-cascade and measure raw retrieval timing.
 
 ---
 
@@ -93,9 +89,9 @@ vision_model: gpt-4o
 ## ONNX reranker control
 
 The reranker is an INT8 ONNX cross-encoder
-(`Alibaba-NLP/gte-reranker-modernbert-base` by default) served via
-`optimum.onnxruntime`. One forward pass over `(query, candidate)`
-pairs; ~30–100 ms on CPU for 10–20 candidates. No external API call.
+(`Alibaba-NLP/gte-reranker-modernbert-base` by default) run on raw
+`onnxruntime`. One forward pass over `(query, candidate)` pairs;
+~30–100 ms on CPU for 10–20 candidates. No external API call.
 
 ### How it works
 
@@ -127,22 +123,21 @@ rerank: onnx
 
 ---
 
-## Constraints
+## Governance
 
-The epistemic constraint cascade (TRUSTWORTHY / DISPUTED / ABSTAIN) is
-controlled by a **list of constraint plugins**, not provider presence:
+Epistemic governance (TRUSTWORTHY / DISPUTED / ABSTAIN) follows the
+provider-presence pattern — the `governance:` key declares the
+classifier:
 
 ```yaml
-constraints:
-  - conflict_aware
-  - insufficient_evidence
-  - causal_attribution
-  - specific_info_type
+governance: pyrrho                  # default — the pyrrho INT8 ONNX classifier
+# governance: pyrrho/<hf-model-id>  # a custom pyrrho fine-tune
+# governance: null                  # disable governance (smoke test only)
 ```
 
-Constraints are presence-controlled by entry in the list. To run
-without constraints, set `enable_guardrails: false` (the boolean
-escape hatch used by the smoke test).
+`governance: pyrrho` runs a single INT8 ONNX forward pass per query;
+`governance: null` skips the step. The v0.13.0 constraint+sklearn
+cascade it replaced is gone.
 
 ---
 
@@ -188,7 +183,7 @@ summarizer: endpoint/summarizer
 | -------------- | ------------ | ------------------------------- | ----------------------------- |
 | VLM in parser  | `parser:` + `vision:` | `parser: docling_vision` + `vision:` set | `parser: docling` / `parser: glm_ocr` |
 | ONNX reranker  | `rerank:`    | `rerank: onnx` (default)        | `rerank: null` (or omit)      |
-| Guardrails     | `enable_guardrails`   | `true` (default)       | `false` (smoke test only)     |
+| Governance     | `governance:`         | `governance: pyrrho` (default)  | `governance: null`            |
 
 ---
 

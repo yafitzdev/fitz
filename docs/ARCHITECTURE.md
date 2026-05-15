@@ -8,9 +8,9 @@ The architecture has three load-bearing decisions:
    provider-specific code paths. `chat_smart`, `chat_balanced`,
    `chat_fast` all speak the same `/chat/completions` endpoint.
 2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
-   typed-unit routing (symbols, sections, tables) + an ONNX cross-encoder reranker
-   that scores documents in a single chat call. No vector DB, no
-   embedding model, no `vector` column anywhere.
+   typed-unit routing (symbols, sections, tables) + an ONNX cross-encoder
+   reranker that scores candidates in a single local forward pass — no
+   chat call. No vector DB, no embedding model, no `vector` column anywhere.
 3. **No server.** Storage is SQLite — one `.db` file per collection
    under `<workspace>/sqlite/`. Open it, query it, close it. WAL mode
    gives multi-reader / single-writer concurrency.
@@ -87,14 +87,19 @@ Strict import rules enforce separation of concerns (verified by
 
 ### Query
 
+Retrieval runs as a tiered pipeline. Tiers 2-5 form one `RetrievalPass`
+(retrieve → rerank → read); multi-hop loops the pass on a bridge query
+when pyrrho judges the evidence insufficient.
+
 ```
-Query → rewrite (resolve pronouns / context) → analyze (detect intent)
-      → route (symbol / section / table)      → search via FTS5 bm25
-      → expand (import graph, entities, hierarchy)
-      → ONNX cross-encoder rerank (gte-reranker-modernbert-base, ~30 ms CPU)
-      → constraints check (conflict-aware, evidence sufficiency)
-      → synthesize answer (chat call) + provenance
-      → AnswerMode ∈ {TRUSTWORTHY, DISPUTED, ABSTAIN}
+Tier 1  Transform   rewrite (pronouns / context) → analyze → detect intent
+Tier 2  Generate    route to symbol / section / table search over FTS5 bm25
+Tier 3  Fuse        merge across strategies, dedup, keyword-boost
+Tier 4  Rerank      ONNX cross-encoder (gte-reranker-modernbert-base, ~30 ms CPU)
+Tier 5  Read        fetch content for the surviving addresses
+        expand      import graph, entity links, hierarchical context
+Tier 6  Govern      pyrrho → AnswerMode ∈ {TRUSTWORTHY, DISPUTED, ABSTAIN}
+        synthesize  chat call writes the answer + provenance
 ```
 
 ### Ingestion
@@ -128,9 +133,10 @@ and raise `ValueError` with migration text.
 
 The **`OnnxReranker`** is a separate INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base` by default) — same
-architecture family as pyrrho, same `optimum.onnxruntime` loader.
-It scores `(query, candidate)` pairs locally in ~30–100 ms on CPU
-with no external LLM call. See [features/retrieval/reranking.md](features/retrieval/reranking.md).
+architecture family as pyrrho, and both run on raw `onnxruntime`
+via the shared `OnnxEncoderBackend`. It scores `(query, candidate)`
+pairs locally in ~30–100 ms on CPU with no external LLM call.
+See [features/retrieval/reranking.md](features/retrieval/reranking.md).
 
 ---
 
@@ -171,18 +177,15 @@ for the full schema-port notes (PostgreSQL → SQLite).
 Features are controlled by **provider presence**, not boolean flags:
 
 ```yaml
-# ENABLED — a reranker is provided
+# ENABLED — a provider is named
 rerank: onnx
+governance: pyrrho
 chat_smart: endpoint
 chat_base_url: http://localhost:8080/v1
 
 # DISABLED — omit the key (or set null)
-# rerank not set → no reranking step in the pipeline
+# rerank: null → no reranking step; governance: null → no governance
 ```
-
-There is one structural exception: `enable_guardrails: bool` in
-`FitzKragConfig` — used by the smoke test to bypass the constraints
-cascade for raw retrieval timing.
 
 ---
 
@@ -264,7 +267,7 @@ fitz_sage/
 ├── storage/             # SqliteConnectionManager (WAL, FTS5)
 ├── ingestion/           # parser plugins, chunking plugins, enrichment
 ├── tabular/             # CSV/XLSX → SqliteTableStore + SQL generation
-├── governance/          # constraints, semantic matching, decision modes
+├── governance/          # pyrrho classifier, answer modes, instructions
 ├── runtime/             # multi-engine orchestration
 ├── cli/                 # typer commands
 ├── api/                 # FastAPI app + routes
@@ -281,7 +284,7 @@ fitz_sage/
 2. **One protocol.** Every chat call goes through `endpoint` (or its presets).
 3. **Structure-first retrieval.** Parse code/docs into typed units at
    ingest; route to the right strategy at query time.
-4. **No embeddings.** BM25 + KRAG routing + LLM rerank covers the
+4. **No embeddings.** BM25 + KRAG routing + ONNX rerank covers the
    ground the embedding stack used to. Confirmed against fitz-gov v5.
 5. **Honest over helpful.** Say `ABSTAIN` instead of hallucinating.
 6. **Files over frameworks.** Plugins are Python modules wired by config,

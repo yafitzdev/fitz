@@ -2,154 +2,89 @@
 
 ## Problem
 
-Questions requiring multi-step reasoning fail with single-pass retrieval:
+Some questions can't be answered from a single retrieval pass — the
+answer is one reference away:
 
 - **Q:** "Who wrote the paper cited by the 2023 review?"
-- **Single-pass RAG:** Returns only the 2023 review (missing the original paper and its author)
-- **Expected:** Step 1: Find review → Step 2: Extract citation → Step 3: Find cited paper → Step 4: Extract author
+- **Single-pass retrieval:** returns the 2023 review only. It contains
+  the citation, not the cited paper or its author.
+- **What's needed:** find the review → extract the citation → retrieve
+  the cited paper → read off the author.
 
-Standard RAG retrieves once and answers. Multi-step questions need **iterative retrieval** to follow references across documents.
+Following a chain like that needs **iterative retrieval**.
 
-## Solution: Iterative Retrieval
+## Solution: loop the retrieval pass
 
-Fitz performs multi-hop reasoning automatically when queries require traversing references:
-
-```
-Q: "Who wrote the paper cited by the 2023 review?"
-     ↓
-Step 1: Retrieve 2023 review
-     ↓
-Step 2: Extract cited paper reference from review
-     ↓
-Step 3: Retrieve the cited paper
-     ↓
-Step 4: Extract author from paper
-     ↓
-Result: "Dr. Jane Smith wrote the paper cited by the 2023 review"
-```
-
-## How It Works
-
-### Components
-
-1. **HopController** - Orchestrates multi-hop retrieval
-   - Detects if query requires multi-hop reasoning
-   - Manages hop limit (default: 3 hops max)
-   - Tracks retrieved chunks across hops
-
-2. **EvidenceEvaluator** - Determines if current evidence is sufficient
-   - Uses LLM to assess: "Can we answer the question with retrieved chunks?"
-   - Returns: `SUFFICIENT`, `INSUFFICIENT`, or `NEEDS_MORE`
-
-3. **BridgeExtractor** - Generates follow-up queries
-   - Extracts "bridge" information from retrieved chunks
-   - Creates focused sub-queries for next hop
-   - Example: "2023 review cites Smith et al. 2021" → "Find Smith et al. 2021 paper"
-
-### Multi-Hop Process
+`KragHopController` loops the **retrieval pass** — one round of
+retrieve → rerank → read. After each pass it asks the pyrrho governance
+classifier whether the accumulated evidence is enough:
 
 ```
-Initial query → Hop 1 retrieval
-                    ↓
-             Evidence sufficient? ───Yes──→ Generate answer
-                    ↓ No
-          Extract bridge question
-                    ↓
-             Hop 2 retrieval
-                    ↓
-             Evidence sufficient? ───Yes──→ Generate answer
-                    ↓ No
-          Extract bridge question
-                    ↓
-             Hop 3 retrieval (max)
-                    ↓
-          Generate answer with all hops
+Query → RetrievalPass (retrieve → rerank → read) → pyrrho verdict
+          TRUSTWORTHY / DISPUTED  → stop — generate the answer
+          ABSTAIN                 → extract a bridge question, loop
 ```
 
-### Query Detection
+- `TRUSTWORTHY` / `DISPUTED` → **stop.** The evidence answers the
+  question, or the sources disagree and more retrieval won't resolve it.
+- `ABSTAIN` → **keep going.** Extract a bridge question from what's been
+  read, and run another pass with it.
 
-Multi-hop reasoning activates automatically for:
-- Citation chasing: "Who cited X?", "What does paper Y cite?"
-- Transitive relationships: "What company owns the supplier of part Z?"
-- Sequential dependencies: "What changed after the policy update?"
-- Reference following: "Find the spec mentioned in the design doc"
+The sufficiency check is the pyrrho verdict — a ~30 ms INT8 ONNX forward
+pass, **no chat call**. The only chat call multi-hop adds is bridge
+extraction, spent only on the `ABSTAIN` path.
 
-## Key Design Decisions
+## On by default
 
-1. **Always-on** - Multi-hop detection is baked into retrieval. No configuration needed.
+`enable_multi_hop` defaults to `true`. A single hop is the common case:
+for most queries pyrrho returns `TRUSTWORTHY` after the first pass and
+the loop exits. The cost on that path is one ~30 ms pyrrho call for the
+sufficiency check — no chat call. `max_hops` (default `2`) caps the loop.
 
-2. **Max 3 hops** - Prevents infinite loops and excessive LLM calls.
+## Key design decisions
 
-3. **Graceful degradation** - If hop limit reached, answer with available evidence.
-
-4. **LLM-guided** - Uses the same LLM to evaluate evidence and extract bridge questions.
-
-5. **Cumulative context** - Each hop accumulates chunks; final answer uses all hops.
+1. **Pyrrho is the sufficiency signal.** The loop reuses the governance
+   verdict instead of a separate "is this enough?" chat call — so
+   multi-hop adds no chat call on the common single-hop path.
+2. **Rerank inside every pass.** Each hop runs a full `RetrievalPass`,
+   so the cross-encoder reranks every hop's candidates.
+3. **Bridge extraction stays a chat call.** Writing a focused follow-up
+   query is genuine text generation; it runs only when pyrrho `ABSTAIN`s.
+4. **Deduplicated across hops.** Each pass skips the addresses earlier
+   hops already read.
+5. **Graceful stop.** The loop ends on a `TRUSTWORTHY` / `DISPUTED`
+   verdict, an empty pass, no bridge question, or `max_hops`.
 
 ## Configuration
 
-No configuration required. Feature is baked into the retrieval pipeline.
+```yaml
+enable_multi_hop: true   # default — loop the pass, pyrrho-gated
+max_hops: 2              # default — hop cap (1-5)
+```
 
-Internal parameters in `HopController`:
-- `max_hops`: Maximum iterations (default: 3)
-- `min_confidence`: Minimum evidence confidence to stop hopping (default: 0.7)
+`enable_multi_hop: false` runs a single retrieval pass with no loop.
 
 ## Files
 
-- **Hop controller:** `fitz_sage/engines/fitz_krag/retrieval/multihop/controller.py`
-- **Evidence evaluator:** `fitz_sage/engines/fitz_krag/retrieval/multihop/evaluator.py`
-- **Bridge extractor:** `fitz_sage/engines/fitz_krag/retrieval/multihop/extractor.py`
-- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/pipeline.py` (called from retrieval steps)
+| Component      | Path                                                      |
+| -------------- | --------------------------------------------------------- |
+| Hop controller | `fitz_sage/engines/fitz_krag/retrieval/multihop.py`       |
+| Retrieval pass | `fitz_sage/engines/fitz_krag/retrieval/retrieval_pass.py` |
+| Governance     | `fitz_sage/governance/pyrrho.py`                          |
 
-## Benefits
+## Example: citation chasing
 
-| Single-Pass Retrieval | Multi-Hop Reasoning |
-|-----------------------|---------------------|
-| Only finds direct matches | Follows references across docs |
-| Fails on transitive queries | Handles "A → B → C" chains |
-| No citation chasing | Automatic citation traversal |
-| Partial information | Complete multi-step answers |
+**Query:** "Who wrote the paper cited by the 2023 review?"
 
-## Example Use Cases
+- **Hop 1** — retrieve the 2023 review. Pyrrho `ABSTAIN`: the review
+  cites the paper but doesn't name its author. Bridge question:
+  *"Find the paper Smith et al. cited in the 2023 review."*
+- **Hop 2** — retrieve the cited paper. Pyrrho `TRUSTWORTHY`: the author
+  is in the evidence. Stop and answer.
 
-### Citation Chasing
+## Related
 
-**Query:** "Who cited the 2020 transformer paper?"
-
-- **Hop 1:** Retrieve 2020 transformer paper
-- **Hop 2:** Find documents that cite it
-- **Answer:** "The transformer paper was cited by Smith (2021), Johnson (2022), and Lee (2023)"
-
-### Transitive Relationships
-
-**Query:** "What company owns the supplier of part X100?"
-
-- **Hop 1:** Find part X100 documentation → supplier is "Acme Corp"
-- **Hop 2:** Find Acme Corp information → owned by "TechGiant Inc"
-- **Answer:** "TechGiant Inc owns Acme Corp, the supplier of part X100"
-
-### Sequential Dependencies
-
-**Query:** "What features were added after the v2.0 release?"
-
-- **Hop 1:** Find v2.0 release date → "Released 2023-01-15"
-- **Hop 2:** Find changelog entries after 2023-01-15
-- **Answer:** "After v2.0, these features were added: async API, caching, webhooks"
-
-## Dependencies
-
-- Same LLM provider used for answering (no additional dependencies)
-- No external services required
-
-## Performance Considerations
-
-- **Latency:** Each hop adds ~1-2s (LLM call + retrieval)
-- **Cost:** Each hop = 1 LLM call for evidence evaluation + 1 for bridge extraction
-- **Typical hops:** 80% of multi-hop queries resolve in 1-2 hops
-
-## Related Features
-
-- [**Comparison Queries**](comparison-queries.md) - Multi-entity retrieval (related but single-hop)
-- [**Temporal Queries**](temporal-queries.md) - Period filtering (related but single-hop)
-- [**Epistemic Honesty**](../governance/epistemic-honesty.md) - ABSTAIN if even multi-hop can't find answer
-- [**Reranking**](reranking.md) - Runs inside each hop for precision
+- [Reranking](reranking.md) — the cross-encoder inside each pass
+- [Epistemic Governance (pyrrho)](../../CONSTRAINTS.md) — the verdict that gates the loop
+- [Comparison Queries](comparison-queries.md) — multi-entity retrieval (single-hop)
+- [Temporal Queries](temporal-queries.md) — period filtering (single-hop)

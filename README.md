@@ -259,8 +259,27 @@ units, each with its own storage format and search strategy.
 
 ### Retrieval Intelligence
 
-Most RAG implementations are naive vector search—they fail silently on real-world queries. 
-`fitz-sage` has [built-in intelligence](docs/features/retrieval) that handles edge cases automatically:
+Most RAG implementations are naive vector search — they fail silently on real-world queries.
+`fitz-sage` runs retrieval as a **tiered pipeline**, each tier with one job:
+
+<br>
+
+| Tier | Stage | What it does |
+|------|-------|--------------|
+| **1** | Transform | Rewrite the query, detect intent (temporal, comparison, aggregation), build a retrieval profile |
+| **2** | Generate | BM25 + KRAG typed-unit strategies — symbols, sections, tables — run in parallel |
+| **3** | Fuse | Merge candidates across strategies, deduplicate, keyword-boost |
+| **4** | Rerank | INT8 ONNX cross-encoder reorders by true relevance — ~30 ms on CPU |
+| **5** | Read | Fetch content for the surviving addresses, on demand |
+| **6** | Govern | `pyrrho` classifies the evidence → `TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` |
+
+<br>
+
+**Tiers 2–5 form one retrieval pass.** Most queries take a single pass; multi-hop loops it — bridge question, retrieve again — when `pyrrho` judges the evidence insufficient. Reranking lives inside the pass, so the cross-encoder runs on every query.
+
+<br>
+
+Across those tiers, [built-in intelligence](docs/features/retrieval) handles the edge cases that break naive RAG:
 
 <br>
 
@@ -680,8 +699,6 @@ curl -X POST http://localhost:8000/query \
 > ```yaml
 > chat_smart: endpoint/qwen2.5-7b-instruct
 > chat_base_url: http://localhost:8080/v1
-> embedding: endpoint/nomic-embed-text-v1.5
-> embedding_base_url: http://localhost:8081/v1
 > ```
 > Or override at the CLI without editing YAML:
 > ```bash
@@ -692,7 +709,6 @@ curl -X POST http://localhost:8000/query \
 > Either use the `openai` preset (built-in OpenAI URL):
 > ```yaml
 > chat_smart: openai/gpt-4o
-> embedding: openai/text-embedding-3-small
 > # OPENAI_API_KEY in env
 > ```
 > Or any OpenAI-compatible cloud via the `endpoint` provider:

@@ -86,11 +86,9 @@ Features are switched on by **provider presence**, not boolean flags:
 | Feature       | Enabled when                                | Disabled when                       |
 | ------------- | ------------------------------------------- | ----------------------------------- |
 | ONNX reranker | `rerank: onnx` (default)                    | `rerank: null` (or omitted)         |
+| Governance    | `governance: pyrrho` (default)              | `governance: null`                  |
 | VLM in parser | `parser: docling_vision` + `vision:` set    | `parser: docling` or `parser: glm_ocr` |
 | Enrichment    | `chat_*` configured (always-on otherwise)   | no chat provider                    |
-
-The one boolean exception is `enable_guardrails`, used by the smoke
-test to bypass constraints for raw retrieval timing.
 
 ---
 
@@ -154,7 +152,7 @@ For enterprise (M2M / mTLS) deployments see
 ```yaml
 top_addresses: 20      # how many candidates to fetch from FTS5 (default 20)
 top_read: 10           # how many to read into context after rerank (default 10)
-enable_guardrails: true
+governance: pyrrho
 strict_grounding: false
 ```
 

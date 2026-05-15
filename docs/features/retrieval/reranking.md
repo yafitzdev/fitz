@@ -48,16 +48,15 @@ Override via `rerank: onnx/<hf-model-id>` — e.g.
 
 ## Why a cross-encoder, not the chat model?
 
-fitz-sage v0.13.x served reranking via a chat-completion call
+Before v0.13.0, fitz-sage served reranking via a chat-completion call
 (`LLMReranker`) — the model was asked to grade each candidate. That
-worked but cost one chat call per query on the hot path. v0.14.0
-swaps in a dedicated cross-encoder for three reasons:
+worked but cost one chat call per query on the hot path. v0.13.0
+swapped in a dedicated cross-encoder for three reasons:
 
 1. **Latency.** ~30–100 ms CPU for 10–20 candidates vs ~500–2000 ms
    for a 7B chat model.
-2. **No external dependency.** Inference is local; the governance
-   path was already chat-free since v0.13.0, and now reranking is
-   too.
+2. **No external dependency.** Inference is local — both the
+   governance and reranking paths went chat-free in v0.13.0.
 3. **Stronger ranking signal.** Cross-encoders are the textbook
    solution for `(query, doc)` relevance scoring and saturate the
    benchmark — chat-based reranking was reinventing this with worse
@@ -65,7 +64,7 @@ swaps in a dedicated cross-encoder for three reasons:
 
 The same architectural pattern as the
 [pyrrho governance classifier](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1):
-ModernBERT-base + INT8 ONNX + `optimum.onnxruntime`, lazy-loaded on
+ModernBERT-base + INT8 ONNX on raw `onnxruntime`, lazy-loaded on
 first call, cached for the process lifetime.
 
 ## How it works
@@ -99,8 +98,9 @@ include" by design.
 
 1. **Provider-presence pattern.** Set `rerank: onnx` and the step
    runs; omit (or set `null`) and it doesn't.
-2. **Same INT8 ONNX path as pyrrho.** Zero new infrastructure — the
-   `optimum`/`transformers` deps are already in `pyproject.toml`.
+2. **Shared with pyrrho.** Both encoders subclass `OnnxEncoderBackend`
+   — one `onnxruntime` + `transformers` load path, no separate
+   infrastructure.
 3. **Override via spec.** `rerank: onnx/<hf-model-id>` lets users
    swap in any HF cross-encoder with a `SequenceClassification` head.
 4. **Lazy load.** Tokenizer + model load on first `rerank()` call,
