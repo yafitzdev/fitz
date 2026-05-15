@@ -6,6 +6,11 @@ TRUSTWORTHY / DISPUTED / ABSTAIN.
 Replaces the constraint+sklearn cascade. One forward pass through an
 INT8 ONNX ModernBERT-base fine-tune (~30 ms on CPU), no LLM call.
 
+Inference runs on raw `onnxruntime` — the pre-quantized ONNX is pulled
+straight from the model repo with `huggingface_hub`, and the tokenizer
+comes from `transformers`. No `optimum`, and therefore no `torch`, on
+the dependency path.
+
 Model card:
     https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1
 
@@ -35,6 +40,8 @@ import threading
 from dataclasses import dataclass
 from typing import Iterable
 
+import numpy as np
+
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.governance.protocol import EvidenceItem
 from fitz_sage.logging.logger import get_logger
@@ -43,7 +50,7 @@ logger = get_logger(__name__)
 
 
 MODEL_ID = "yafitzdev/pyrrho-modernbert-base-v1"
-ONNX_FILE = "model_quantized.onnx"
+ONNX_FILE = "model_quantized.onnx"  # pre-quantized INT8, at the repo root
 MAX_LENGTH = 4096
 TAU = 0.50
 
@@ -67,23 +74,31 @@ class GovernanceDecision:
 
 _lock = threading.Lock()
 _tokenizer = None
-_model = None
+_session = None
 
 
 def _load() -> None:
-    """Lazy-load the tokenizer + INT8 ONNX model once per process."""
-    global _tokenizer, _model
-    if _tokenizer is not None and _model is not None:
+    """Lazy-load the tokenizer + INT8 ONNX session once per process."""
+    global _tokenizer, _session
+    if _tokenizer is not None and _session is not None:
         return
     with _lock:
-        if _tokenizer is not None and _model is not None:
+        if _tokenizer is not None and _session is not None:
             return
-        from optimum.onnxruntime import ORTModelForSequenceClassification
+        import os
+
+        # transformers is used purely as a tokenizer here — silence its
+        # advisory that no DL framework (torch/TF/Flax) is installed.
+        os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+
+        import onnxruntime as ort
+        from huggingface_hub import hf_hub_download
         from transformers import AutoTokenizer
 
         logger.info(f"Loading pyrrho governance model: {MODEL_ID} ({ONNX_FILE})")
         _tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        _model = ORTModelForSequenceClassification.from_pretrained(MODEL_ID, file_name=ONNX_FILE)
+        onnx_path = hf_hub_download(repo_id=MODEL_ID, filename=ONNX_FILE)
+        _session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
 
 
 def _format_input(query: str, contexts: Iterable[str]) -> str:
@@ -128,11 +143,9 @@ def decide(query: str, contexts: list[EvidenceItem]) -> GovernanceDecision:
         max_length=MAX_LENGTH,
         return_tensors="np",
     )
-    out = _model(**enc)  # type: ignore[misc]
-    logits = out.logits[0]
-
-    # numpy softmax (avoid the torch dep on the inference path)
-    import numpy as np
+    # Feed only the inputs the ONNX graph declares (input_ids, attention_mask).
+    feed = {i.name: enc[i.name] for i in _session.get_inputs()}  # type: ignore[union-attr]
+    logits = _session.run(None, feed)[0][0]  # type: ignore[union-attr]
 
     exp = np.exp(logits - logits.max())
     probs_arr = exp / exp.sum()

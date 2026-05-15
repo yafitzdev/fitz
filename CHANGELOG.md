@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### 🎉 Highlights
+
+**Dropped `optimum` → dropped `torch` (~2 GB).** The pyrrho governance
+classifier and the gte-reranker cross-encoder now run on raw
+`onnxruntime` instead of `optimum.onnxruntime`. `optimum 2.x`
+hard-depends on `torch`, which the pre-built-INT8-ONNX load path never
+needs — so `pip install fitz-sage` was dragging in ~2 GB of PyTorch
+for nothing. Both encoders load the pre-quantized `.onnx` straight
+from the model repo with `huggingface_hub` and run it through an
+`onnxruntime.InferenceSession`. Verified torch-absent: pyrrho `decide()`
+warm ~11 ms, reranker `rerank()` warm ~17 ms.
+
+### 🔧 Fixed
+
+- **Reranker now genuinely runs INT8 ONNX.** v0.13.0 loaded the
+  reranker with `ORTModelForSequenceClassification.from_pretrained(
+  model_id, export=True)` — which exports **FP32** ONNX from the
+  PyTorch checkpoint on the fly, (a) ignored the pre-built quantized
+  ONNX the model repo already ships, and (b) required `torch` to do
+  the export (and `torch` was not a declared dependency — a fresh
+  install + first rerank call could crash). The CHANGELOG + docs
+  claimed "INT8 ONNX". Now `OnnxReranker` loads the pre-built
+  `onnx/model_int8.onnx` (151 MB) that
+  `Alibaba-NLP/gte-reranker-modernbert-base` publishes — genuine INT8.
+
+### 🔄 Changed
+
+- **`fitz_sage/governance/pyrrho.py`** + **`fitz_sage/llm/providers/onnx_reranker.py`** —
+  rewrote both load paths: `huggingface_hub.hf_hub_download` to fetch
+  the pre-built `.onnx`, `onnxruntime.InferenceSession` to run it,
+  `transformers.AutoTokenizer` for tokenisation. No `optimum` import
+  anywhere.
+- **`OnnxReranker`** gained `onnx_subfolder` / `onnx_file` constructor
+  params so a custom `model_id` can point at wherever that repo keeps
+  its pre-built ONNX. There is no longer a torch-backed `export=True`
+  fallback — if the named ONNX can't be fetched, `_load()` raises a
+  clear error (pick a model that ships ONNX).
+- **Dependencies:** dropped `optimum[onnxruntime]`; added `onnxruntime`
+  and `huggingface-hub` as explicit direct deps. `transformers` stays
+  (tokeniser only — torch is an optional extra of transformers and is
+  no longer pulled). `TRANSFORMERS_VERBOSITY=error` is set before the
+  tokenizer import to silence the benign "no DL framework found"
+  advisory.
+
+---
+
 ## [0.13.0] - 2026-05-15
 
 ### 🎉 Highlights

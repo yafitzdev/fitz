@@ -46,11 +46,9 @@ except ImportError:
     pass
 
 # ONNX cross-encoder reranker — canonical rerank backend (gte-reranker-
-# modernbert-base by default). Loads lazily so static tooling on a fresh
-# checkout still works without optimum/transformers installed yet.
-try:
-    from fitz_sage.llm.providers.onnx_reranker import OnnxReranker  # noqa: F401
+# modernbert-base by default). The module imports cleanly with just numpy;
+# onnxruntime / transformers / huggingface_hub are imported lazily on the
+# first rerank() call.
+from fitz_sage.llm.providers.onnx_reranker import OnnxReranker  # noqa: E402,F401
 
-    __all__.append("OnnxReranker")
-except ImportError:
-    pass
+__all__.append("OnnxReranker")

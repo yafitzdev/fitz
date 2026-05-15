@@ -5,17 +5,24 @@ ONNX cross-encoder reranker.
 Default backbone:
 [`Alibaba-NLP/gte-reranker-modernbert-base`](https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base)
 — a 149M-parameter ModernBERT cross-encoder that matches 1.2B-parameter
-rerankers on Hit@1 and quantises cleanly to INT8 ONNX (2.7–3.4x CPU
-speedup vs FP32, ~98% of full-precision quality).
+rerankers on Hit@1.
 
-Same architectural family as the pyrrho governance classifier
-(ModernBERT + INT8 ONNX via `optimum.onnxruntime`); inference path is
-identical and the deps are already in `pyproject.toml`.
+The load path pulls the **pre-built INT8 ONNX** the model repo ships
+at `onnx/model_int8.onnx` (151 MB) and runs it on raw `onnxruntime` —
+no on-the-fly export, no `optimum`, no `torch`, ~2.7-3.4x faster on CPU
+than FP32. This mirrors how the pyrrho governance classifier loads its
+pre-quantized `model_quantized.onnx`.
+
+A custom `model_id` must ship a pre-built ONNX; point `onnx_subfolder`
+/ `onnx_file` at it. If the file can't be fetched, `_load()` raises a
+clear error (there is no torch-backed export fallback by design).
 
 Public surface — implements `RerankProvider`:
 
-    reranker = OnnxReranker()
-    reranker = OnnxReranker(model_id="Alibaba-NLP/gte-reranker-modernbert-base")
+    reranker = OnnxReranker()                       # gte-reranker INT8
+    reranker = OnnxReranker(model_id="BAAI/bge-reranker-base",
+                            onnx_subfolder="onnx",
+                            onnx_file="model_quantized.onnx")
     results = reranker.rerank(query, documents, top_n=5)
 """
 
@@ -25,12 +32,18 @@ import logging
 import threading
 from typing import Iterable
 
+import numpy as np
+
 from fitz_sage.llm.providers.base import RerankResult
 
 logger = logging.getLogger(__name__)
 
 
 DEFAULT_MODEL_ID = "Alibaba-NLP/gte-reranker-modernbert-base"
+# gte-reranker-modernbert-base ships pre-built ONNX variants under onnx/;
+# model_int8.onnx is the 151 MB dynamic-INT8 quantization.
+DEFAULT_ONNX_SUBFOLDER = "onnx"
+DEFAULT_ONNX_FILE = "model_int8.onnx"
 MAX_LENGTH = 512  # gte-modernbert-base is trained at 512; longer inputs are truncated.
 DEFAULT_BATCH_SIZE = 16
 
@@ -42,6 +55,11 @@ class OnnxReranker:
         model_id: HuggingFace repo id of the cross-encoder. Defaults to
             `Alibaba-NLP/gte-reranker-modernbert-base`. Any HF cross-encoder
             with a `SequenceClassification` head (num_labels=1) works.
+        onnx_subfolder: Repo subfolder holding the pre-built ONNX
+            (`"onnx"` for the default model; `""` if the file sits at
+            the repo root, as pyrrho does).
+        onnx_file: Pre-built ONNX filename to load. Defaults to the INT8
+            variant.
         max_length: Tokenizer truncation cap (default 512).
         batch_size: Number of `(query, doc)` pairs per ONNX forward pass.
     """
@@ -49,30 +67,56 @@ class OnnxReranker:
     def __init__(
         self,
         model_id: str = DEFAULT_MODEL_ID,
+        onnx_subfolder: str = DEFAULT_ONNX_SUBFOLDER,
+        onnx_file: str = DEFAULT_ONNX_FILE,
         max_length: int = MAX_LENGTH,
         batch_size: int = DEFAULT_BATCH_SIZE,
     ) -> None:
         self._model_id = model_id
+        self._onnx_subfolder = onnx_subfolder
+        self._onnx_file = onnx_file
         self._max_length = max_length
         self._batch_size = batch_size
         self._lock = threading.Lock()
         self._tokenizer = None
-        self._model = None
+        self._session = None
 
     def _load(self) -> None:
-        if self._tokenizer is not None and self._model is not None:
+        if self._tokenizer is not None and self._session is not None:
             return
         with self._lock:
-            if self._tokenizer is not None and self._model is not None:
+            if self._tokenizer is not None and self._session is not None:
                 return
-            from optimum.onnxruntime import ORTModelForSequenceClassification
+            import os
+
+            # transformers is used purely as a tokenizer here — silence its
+            # advisory that no DL framework (torch/TF/Flax) is installed.
+            os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+
+            import onnxruntime as ort
+            from huggingface_hub import hf_hub_download
             from transformers import AutoTokenizer
 
-            logger.info(f"Loading ONNX reranker: {self._model_id}")
             self._tokenizer = AutoTokenizer.from_pretrained(self._model_id)
-            self._model = ORTModelForSequenceClassification.from_pretrained(
-                self._model_id, export=True
+            logger.info(
+                f"Loading ONNX reranker {self._model_id} "
+                f"({self._onnx_subfolder or '.'}/{self._onnx_file})"
             )
+            try:
+                onnx_path = hf_hub_download(
+                    repo_id=self._model_id,
+                    filename=self._onnx_file,
+                    subfolder=self._onnx_subfolder or None,
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    f"Could not fetch the pre-built ONNX "
+                    f"'{self._onnx_subfolder or '.'}/{self._onnx_file}' from "
+                    f"{self._model_id}: {e}. Point `onnx_subfolder` / "
+                    f"`onnx_file` at a cross-encoder ONNX the repo actually "
+                    f"ships."
+                ) from e
+            self._session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
 
     def rerank(
         self,
@@ -102,10 +146,9 @@ class OnnxReranker:
 
     def _score_pairs(self, query: str, documents: list[str]) -> list[float]:
         """Run the cross-encoder forward pass in batches and return raw logits."""
-        import numpy as np
-
         n = len(documents)
         scores = [0.0] * n
+        input_names = [i.name for i in self._session.get_inputs()]  # type: ignore[union-attr]
         for start in range(0, n, self._batch_size):
             batch_docs = documents[start : start + self._batch_size]
             queries = [query] * len(batch_docs)
@@ -117,8 +160,9 @@ class OnnxReranker:
                 max_length=self._max_length,
                 return_tensors="np",
             )
-            out = self._model(**enc)  # type: ignore[misc]
-            logits = out.logits
+            # Feed only the inputs the ONNX graph declares.
+            feed = {name: enc[name] for name in input_names}
+            logits = self._session.run(None, feed)[0]  # type: ignore[union-attr]
             # Sequence-classification head with num_labels=1 -> shape (B, 1).
             # If a model exposes a 2-class head (logits shape (B, 2)) we take
             # the positive-class logit as the relevance score.
