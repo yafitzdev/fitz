@@ -335,8 +335,12 @@ class FitzKragConfig(BasePluginConfig):
     # ==========================================================================
 
     enable_multi_hop: bool = Field(
-        default=False,
-        description="Enable multi-hop iterative retrieval for complex queries",
+        default=True,
+        description=(
+            "Multi-hop iterative retrieval. Each hop's sufficiency is judged "
+            "by the pyrrho governance classifier (no chat call), so a single "
+            "hop is the common case."
+        ),
     )
 
     max_hops: int = Field(

@@ -79,6 +79,16 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   once, the hop controller loops it. The cross-encoder reranker
   consequently runs on **every** query, multi-hop included (multi-hop
   previously bypassed it).
+- **Multi-hop is on by default** (`enable_multi_hop: true`) and free of
+  the per-hop sufficiency chat call. `KragHopController` no longer asks a
+  chat model "is this enough?" after each hop — it reads the pyrrho
+  verdict: `TRUSTWORTHY`/`DISPUTED` -> stop, `ABSTAIN` -> bridge question
+  + another pass. A single hop stays the common case; the added cost on
+  the default path is one ~30 ms ONNX pyrrho call, no chat call.
+- **Removed the dead `multi_hop` query signal.** The LLM-detected
+  `multi_hop` extended signal (in `query_batcher`'s prompt and
+  `RetrievalProfile`) never affected routing and is redundant now that
+  pyrrho gates hops — dropped from both.
 
 ---
 

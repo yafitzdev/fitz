@@ -83,16 +83,14 @@ _EXTENDED_JSON = """\
   "extended": {{
     "specificity": "broad" | "moderate" | "narrow",
     "answer_type": "factual" | "procedural" | "comparative" | "exploratory",
-    "domain": "general" | "technical" | "legal" | "financial" | "medical",
-    "multi_hop": true/false
+    "domain": "general" | "technical" | "legal" | "financial" | "medical"
   }}"""
 
 _EXTENDED_INSTRUCTIONS = """\
 ## extended
 - specificity: "broad" for overview/survey questions, "narrow" for specific fact/symbol lookup, "moderate" otherwise
 - answer_type: what kind of answer the user expects
-- domain: primary domain vocabulary of the query
-- multi_hop: true if answering requires combining information from multiple unrelated sections or documents"""
+- domain: primary domain vocabulary of the query"""
 
 
 @dataclass

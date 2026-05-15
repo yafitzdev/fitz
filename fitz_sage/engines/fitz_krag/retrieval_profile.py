@@ -62,7 +62,6 @@ class RetrievalProfile:
     specificity: str = "moderate"
     answer_type: str = "factual"
     domain: str = "general"
-    multi_hop: bool = False
 
     # Source refs (for logging/debugging)
     analysis_type: str = "general"
@@ -95,7 +94,6 @@ def build_retrieval_profile(
     specificity = ext.get("specificity", "moderate")
     answer_type = ext.get("answer_type", "factual")
     domain = ext.get("domain", "general")
-    multi_hop = ext.get("multi_hop", False)
 
     # --- Analysis-derived ---
     if analysis:
@@ -208,7 +206,6 @@ def build_retrieval_profile(
         specificity=specificity,
         answer_type=answer_type,
         domain=domain,
-        multi_hop=multi_hop,
         analysis_type=primary_type,
         analysis_confidence=confidence,
     )

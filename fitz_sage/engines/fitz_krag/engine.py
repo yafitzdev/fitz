@@ -758,9 +758,7 @@ class FitzKragEngine:
             #    A pass is Tiers 1-4: retrieve -> fuse -> rerank -> read.
             _progress("Retrieving relevant sources...")
             t0 = time.perf_counter()
-            use_multi_hop = self._hop_controller and (
-                self._config.enable_multi_hop or profile.multi_hop
-            )
+            use_multi_hop = self._hop_controller and self._config.enable_multi_hop
             if use_multi_hop:
                 read_results = self._hop_controller.execute(retrieval_query, profile)
             else:
