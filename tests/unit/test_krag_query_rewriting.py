@@ -64,13 +64,14 @@ class TestQueryRewriting:
     """Tests for query rewriting integration in the answer() pipeline."""
 
     def test_rewrite_called_and_rewritten_query_used(self):
-        """Rewriter called directly first; rewritten query used for retrieval and batcher."""
+        """batch_classify returns a rewrite_result; rewritten query is used for retrieval."""
         engine = _make_engine()
         query = _make_query(
             "How does the authentication system handle user login sessions securely?"
         )
 
-        # Enable rewriter and configure it to return a real RewriteResult
+        from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
+        from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
         from fitz_sage.retrieval.rewriter.types import RewriteResult, RewriteType
 
         rewritten = "authentication module implementation for secure user login session handling"
@@ -80,21 +81,23 @@ class TestQueryRewriting:
             rewrite_type=RewriteType.RETRIEVAL,
             confidence=0.9,
         )
-        engine._query_rewriter = MagicMock(name="rewriter")
-        engine._query_rewriter.rewrite.return_value = rewrite_result
+        batch_result = BatchResult(
+            analysis=QueryAnalysis(
+                primary_type=QueryType.GENERAL, confidence=0.8, refined_query=rewritten
+            ),
+            rewrite_result=rewrite_result,
+        )
+        engine._query_batcher.batch_classify.side_effect = None
+        engine._query_batcher.batch_classify.return_value = batch_result
 
         expected = _wire_happy_path(engine, query.text)
 
         result = engine.answer(query)
 
-        # Rewriter called directly with the sanitized query (Step 1)
-        engine._query_rewriter.rewrite.assert_called_once_with(query.text)
-
-        # Batcher called with the rewritten query for analysis (rewritten is 9 words > 8)
+        # batch_classify was called (once, with the sanitized original query)
         engine._query_batcher.batch_classify.assert_called_once()
         batch_call_args = engine._query_batcher.batch_classify.call_args
-        assert batch_call_args[0][0] == rewritten
-        assert batch_call_args[1].get("include_rewriting") is False
+        assert batch_call_args[0][0] == query.text
 
         # Router receives the rewritten query and the rewrite_result
         engine._retrieval_router.retrieve.assert_called_once()
@@ -105,11 +108,12 @@ class TestQueryRewriting:
         assert result is expected
 
     def test_original_query_used_when_rewrite_returns_same_text(self):
-        """When rewriter returns same text, original query flows through unchanged."""
+        """When batch_classify returns rewrite_result with same text, original flows through."""
         engine = _make_engine()
         query = _make_query("What is the login function and how does it validate user credentials?")
 
-        # Rewriter returns the original text unchanged
+        from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
+        from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
         from fitz_sage.retrieval.rewriter.types import RewriteResult, RewriteType
 
         rewrite_result = RewriteResult(
@@ -118,15 +122,18 @@ class TestQueryRewriting:
             rewrite_type=RewriteType.NONE,
             confidence=0.0,
         )
-        engine._query_rewriter = MagicMock(name="rewriter")
-        engine._query_rewriter.rewrite.return_value = rewrite_result
+        batch_result = BatchResult(
+            analysis=QueryAnalysis(
+                primary_type=QueryType.GENERAL, confidence=0.8, refined_query=query.text
+            ),
+            rewrite_result=rewrite_result,
+        )
+        engine._query_batcher.batch_classify.side_effect = None
+        engine._query_batcher.batch_classify.return_value = batch_result
 
         expected = _wire_happy_path(engine, query.text)
 
         result = engine.answer(query)
-
-        # Rewriter was called
-        engine._query_rewriter.rewrite.assert_called_once_with(query.text)
 
         # Router uses original query (rewrite returned same text)
         engine._retrieval_router.retrieve.assert_called_once()

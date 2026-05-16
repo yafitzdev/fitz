@@ -25,7 +25,6 @@ Usage:
         ...
 """
 
-from .detectors import ExpansionDetector
 from .llm_classifier import LLMClassifier
 from .modules import (
     DEFAULT_MODULES,
@@ -63,6 +62,4 @@ __all__ = [
     "FreshnessModule",
     "RewriterModule",
     "TemporalModule",
-    # Dict-based detectors
-    "ExpansionDetector",
 ]

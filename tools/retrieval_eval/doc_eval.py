@@ -261,61 +261,57 @@ def run_retrieval(engine, query_text: str, top_k: int = 15):
     saved_agentic = getattr(engine._retrieval_router, "_agentic_strategy", None)
     engine._retrieval_router._agentic_strategy = None
 
-    sanitized = re.sub(r"<[^>]+>", "", query_text).strip()[:500]
+    sanitized = re.sub(r"<[^>]+>", "", query_text).strip()[:8000]
 
-    # 1. Rewrite-first pipeline (mirrors engine.answer dispatch)
-    retrieval_query = sanitized
-    rewrite_result = None
-
-    if engine._query_rewriter:
-        try:
-            rewrite_result = engine._query_rewriter.rewrite(sanitized)
-            if rewrite_result.rewritten_query != sanitized:
-                retrieval_query = rewrite_result.rewritten_query
-        except Exception:
-            pass
-
-    classify_query = retrieval_query
-    fast_analysis = engine._fast_analyze(classify_query)
+    # 1. Query prep — one batched LLM call (mirrors engine._retrieve_core)
+    fast_analysis = engine._fast_analyze(sanitized)
     need_llm_analysis = fast_analysis is None
-    need_detection = bool(
-        engine._detection_orchestrator and engine._needs_detection(classify_query)
-    )
+    need_detection = bool(engine._detection_orchestrator and engine._needs_detection(sanitized))
 
     detection_limit_to = None
     if need_detection:
-        flagged = engine._detection_orchestrator.gate_categories(classify_query)
+        flagged = engine._detection_orchestrator.gate_categories(sanitized)
         if flagged is not None and len(flagged) == 0:
             need_detection = False
         else:
             detection_limit_to = flagged
 
-    if need_llm_analysis or need_detection:
-        try:
-            batch_result = engine._query_batcher.batch_classify(
-                classify_query,
-                include_analysis=need_llm_analysis,
-                include_detection=need_detection,
-                detection_limit_to=detection_limit_to,
-                include_rewriting=False,
-            )
-            analysis = batch_result.analysis if batch_result.analysis else fast_analysis
-            detection = (
-                engine._build_detection_summary(batch_result.detection_results, classify_query)
-                if need_detection and batch_result.detection_results is not None
-                else None
-            )
-        except Exception:
-            analysis = fast_analysis
-            detection = None
-    else:
+    retrieval_query = sanitized
+    rewrite_result = None
+    try:
+        batch_result = engine._query_batcher.batch_classify(
+            sanitized,
+            include_analysis=need_llm_analysis,
+            include_detection=need_detection,
+            detection_limit_to=detection_limit_to,
+            include_rewriting=engine._config.enable_query_rewriting,
+            include_extended=True,
+            include_keywords=True,
+        )
+        analysis = batch_result.analysis if batch_result.analysis else fast_analysis
+        detection = (
+            engine._build_detection_summary(batch_result.detection_results)
+            if need_detection and batch_result.detection_results is not None
+            else None
+        )
+        rewrite_result = batch_result.rewrite_result
+        if rewrite_result and rewrite_result.rewritten_query != sanitized:
+            retrieval_query = rewrite_result.rewritten_query
+    except Exception:
         analysis = fast_analysis
         detection = None
+        batch_result = None
 
     # 2. Build retrieval profile and retrieve addresses
     from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
 
-    profile = build_retrieval_profile(analysis, detection, engine._config)
+    profile = build_retrieval_profile(
+        analysis,
+        detection,
+        engine._config,
+        extended_signals=(batch_result.extended_signals if batch_result else None),
+        keywords=(batch_result.keywords if batch_result else None),
+    )
 
     if engine._hop_controller:
         read_results = engine._hop_controller.execute(retrieval_query, profile)

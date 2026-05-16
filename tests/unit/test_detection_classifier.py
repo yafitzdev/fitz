@@ -280,18 +280,10 @@ class TestDetectionOrchestratorGating:
         mock_llm = MagicMock()
         mock_llm.classify.return_value = {}
 
-        mock_expansion = MagicMock()
-        mock_expansion.detect.return_value = DetectionResult.not_detected(
-            DetectionCategory.EXPANSION
-        )
-
         orch = DetectionOrchestrator.__new__(DetectionOrchestrator)
         orch.chat_factory = MagicMock()
-        orch.embedder = None
         orch._classifier = mock_llm
         orch._ml_classifier = mock_clf
-        orch._expansion_detector = mock_expansion
-        orch._concept_detector = None
 
         return orch, mock_llm
 

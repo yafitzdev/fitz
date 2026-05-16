@@ -13,7 +13,6 @@ import time as _time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable
 
-from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.types import Address
 
 if TYPE_CHECKING:
@@ -43,14 +42,12 @@ class RetrievalRouter:
         config: "FitzKragConfig",
         section_strategy: "SectionSearchStrategy | None" = None,
         table_strategy: "TableSearchStrategy | None" = None,
-        chat_factory: Any = None,
         agentic_strategy: Any = None,
     ):
         self._code_strategy = code_strategy
         self._section_strategy = section_strategy
         self._table_strategy = table_strategy
         self._config = config
-        self._chat_factory = chat_factory
         self._agentic_strategy = agentic_strategy
         self._keyword_matcher: Any = None  # Set by engine for vocabulary filtering
 
@@ -93,17 +90,16 @@ class RetrievalRouter:
                 for entity in profile.comparison_entities:
                     tagged_queries.append((f"{query} {entity}", None))
 
-        # Multi-query expansion: prefer rewriter's decomposed queries over separate LLM call
+            # Semantic keyword leg — synonyms/acronyms/related terms from
+            # the query-prep bus, run as one extra BM25 query for recall.
+            if profile.keywords:
+                tagged_queries.append((" ".join(profile.keywords), None))
+
+        # Multi-query: the rewriter's decomposed sub-queries (skip [0] = original).
         rewrite_variations = rewrite_result.all_query_variations if rewrite_result else []
         if len(rewrite_variations) > 1:
-            # Rewriter already decomposed — use its variations (skip [0] = original)
             for var in rewrite_variations[1:]:
                 tagged_queries.append((var, None))
-        elif profile.run_multi_query if profile else False:
-            # Fallback: only when rewriter is disabled or didn't decompose
-            expanded = self._expand_query(query)
-            for eq in expanded:
-                tagged_queries.append((eq, None))
 
         run_agentic = profile.run_agentic if profile else True
         unique_queries = list(dict.fromkeys(q for q, _ in tagged_queries))
@@ -255,24 +251,6 @@ class RetrievalRouter:
                 )
             )
         return tagged
-
-    def _expand_query(self, query: str) -> list[str]:
-        """Decompose a long query into focused sub-queries via LLM."""
-        try:
-            chat = self._chat_factory("fast")
-            prompt = (
-                "Break this complex query into 2-3 simpler, focused search queries.\n"
-                "Return ONLY a JSON array of strings.\n\n"
-                f"Query: {query}\n\n"
-                'Output: ["query1", "query2", ...]'
-            )
-            response = chat.chat([{"role": "user", "content": prompt}])
-            text = response.strip()
-            parsed = parse_llm_json(text, as_array=True)
-            return [str(q) for q in parsed[:3] if isinstance(q, str) and q.strip()]
-        except Exception as e:
-            logger.warning(f"Multi-query expansion failed: {e}")
-        return []
 
     def _apply_keyword_boost(self, query: str, addresses: list[Address]) -> list[Address]:
         """Boost addresses matching vocabulary keywords found in the query."""

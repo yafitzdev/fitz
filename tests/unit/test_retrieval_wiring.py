@@ -7,7 +7,7 @@ boost, and freshness boost in section/code strategies.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -29,8 +29,6 @@ def _make_config(**overrides) -> MagicMock:
     cfg = MagicMock()
     cfg.top_addresses = overrides.get("top_addresses", 10)
     cfg.retrieval_workers = overrides.get("retrieval_workers", 4)
-    cfg.enable_multi_query = overrides.get("enable_multi_query", False)
-    cfg.multi_query_min_length = overrides.get("multi_query_min_length", 300)
     cfg.min_relevance_score = overrides.get("min_relevance_score", 0)
     cfg.keyword_weight = overrides.get("keyword_weight", 0.4)
     cfg.code_bm25_weight = overrides.get("code_bm25_weight", 0.3)
@@ -42,7 +40,6 @@ def _make_router(
     code_strategy=None,
     section_strategy=None,
     table_strategy=None,
-    chat_factory=None,
 ) -> RetrievalRouter:
     """Build a RetrievalRouter with mocked strategies."""
     config = config or _make_config()
@@ -54,7 +51,6 @@ def _make_router(
         config=config,
         section_strategy=section_strategy,
         table_strategy=table_strategy,
-        chat_factory=chat_factory,
     )
     return router
 
@@ -113,50 +109,6 @@ class TestRouterRewriteVariations:
         assert "q3" in code_calls
         # 3 total calls: original + 2 variations
         assert code_strategy.retrieve.call_count == 3
-
-
-class TestRouterFallbackToExpandQuery:
-    """Test 2: Without rewrite_result, router falls back to _expand_query when profile.run_multi_query=True."""
-
-    def test_router_falls_back_to_expand_query(self):
-        code_strategy = MagicMock()
-        code_strategy.retrieve = MagicMock(return_value=[])
-
-        router = _make_router(code_strategy=code_strategy)
-
-        long_query = "a" * 300
-
-        profile = RetrievalProfile(run_multi_query=True)
-
-        with patch.object(router, "_expand_query", return_value=["eq1", "eq2"]) as mock_expand:
-            router.retrieve(long_query, profile)
-            mock_expand.assert_called_once_with(long_query)
-
-        # Original query + 2 expanded = 3 calls
-        assert code_strategy.retrieve.call_count == 3
-
-
-class TestRouterSkipsExpandWhenRewriteHasVariations:
-    """Test 3: _expand_query NOT called when rewrite_result has variations."""
-
-    def test_router_skips_expand_when_rewrite_has_variations(self):
-        chat_factory = MagicMock()
-        config = _make_config(enable_multi_query=True, multi_query_min_length=5)
-
-        code_strategy = MagicMock()
-        code_strategy.retrieve = MagicMock(return_value=[])
-
-        router = _make_router(
-            config=config,
-            code_strategy=code_strategy,
-            chat_factory=chat_factory,
-        )
-
-        rewrite_result = SimpleNamespace(all_query_variations=["q1", "q2", "q3"])
-
-        with patch.object(router, "_expand_query", return_value=["eq1"]) as mock_expand:
-            router.retrieve("q1", rewrite_result=rewrite_result)
-            mock_expand.assert_not_called()
 
 
 class TestRouterUsesDetectionComparisonQueries:

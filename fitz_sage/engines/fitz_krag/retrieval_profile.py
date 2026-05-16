@@ -43,8 +43,10 @@ class RetrievalProfile:
     comparison_queries: list[str] = field(default_factory=list)
     comparison_entities: list[str] = field(default_factory=list)
 
+    # Semantic keyword expansion (from the query-prep bus)
+    keywords: list[str] = field(default_factory=list)
+
     # Feature gates
-    run_multi_query: bool = False
     run_agentic: bool = True
     inject_corpus_summaries: bool = False
 
@@ -73,9 +75,8 @@ def build_retrieval_profile(
     detection: Any,
     config: "FitzKragConfig",
     *,
-    query_length: int = 0,
-    has_chat_factory: bool = False,
     extended_signals: dict[str, Any] | None = None,
+    keywords: list[str] | None = None,
 ) -> RetrievalProfile:
     """Build a RetrievalProfile from classification outputs + config.
 
@@ -86,9 +87,8 @@ def build_retrieval_profile(
         analysis: Query type classification (None = no signal).
         detection: DetectionSummary (None = no detection ran).
         config: Engine config with default values.
-        query_length: Length of retrieval query (for multi-query gate).
-        has_chat_factory: Whether chat factory is available (for multi-query).
         extended_signals: Optional dict from LLM with advisory signals.
+        keywords: Semantic keyword expansion from the query-prep bus.
     """
     ext = extended_signals or {}
     specificity = ext.get("specificity", "moderate")
@@ -160,18 +160,6 @@ def build_retrieval_profile(
     elif answer_type in ("comparative", "exploratory"):
         top_read = int(top_read * 1.2)
 
-    # --- Multi-query gate (from router._should_run_multi_query) ---
-    run_multi_query = (
-        config.enable_multi_query
-        and has_chat_factory
-        and query_length >= config.multi_query_min_length
-    )
-    if run_multi_query and analysis:
-        if primary_type in ("code", "data"):
-            run_multi_query = False
-        elif confidence >= 0.8:
-            run_multi_query = False
-
     # --- Agentic gate (from router._should_run_agentic) ---
     run_agentic = True
     if analysis and primary_type == "data":
@@ -197,7 +185,7 @@ def build_retrieval_profile(
         comparison_queries=comparison_queries,
         comparison_entities=comparison_entities,
         temporal_references=temporal_references,
-        run_multi_query=run_multi_query,
+        keywords=keywords or [],
         run_agentic=run_agentic,
         inject_corpus_summaries=inject_corpus_summaries,
         boost_recency=boost_recency,

@@ -9,24 +9,24 @@ context, and FTS5 returns mostly noise.
 
 ## Solution: automatic query decomposition
 
-Instead of running the entire input as one query, ask the fast chat
-tier to extract key search terms, then run multiple targeted FTS5
-queries.
+Instead of running the entire input as one query, the query-prep
+call's rewrite section decomposes a compound query into focused
+sub-queries, each run as its own targeted FTS5 search.
 
 ## How it works
 
 ```
 Query comes in
     │
-    ├─ len(query) < 300 chars? → Single FTS5 + bm25() search
+    ▼
+Query-prep call — rewrite section
     │
-    └─ len(query) >= 300 chars?
+    ├─ single-topic query  → one FTS5 + bm25() search
+    │
+    └─ compound / multi-topic query
            │
            ▼
-       Fast chat tier: "Extract key search terms"
-           │
-           ▼
-       3–5 targeted sub-queries
+       is_compound = true  →  focused decomposed sub-queries
            │
            ▼
        FTS5 + bm25() per sub-query  →  Dedupe  →  Rerank  →  Return
@@ -36,9 +36,9 @@ Query comes in
 
 1. **Always-on** - No user configuration needed. Built into the KRAG retrieval pipeline.
 
-2. **Fast LLM** - Uses `tier="fast"` model for query expansion. Cheap (~100-200ms) and negligible cost.
+2. **No extra LLM call** - Decomposition is one section of the batched query-prep call (`tier="fast"`); it adds no round-trip of its own.
 
-3. **Length-based routing** - Only triggers for queries ≥300 characters. Short queries bypass expansion entirely.
+3. **Content-based** - Triggers when the query covers multiple distinct topics or points — not by length.
 
 4. **LLM handles extraction** - No regex, no entity configuration. LLM figures out what's important (Jira tickets, error codes, names, etc.).
 
@@ -63,7 +63,7 @@ Expected: ACK within 100ms. Actual: Timeout.
 
 ## Configuration
 
-No configuration required — multi-query expansion is automatic in the KRAG retrieval pipeline. Queries longer than ~300 characters are expanded; shorter queries are not.
+No configuration required — query decomposition is automatic. The query-prep call's rewrite section splits compound, multi-topic queries into focused sub-queries; single-topic queries run as one search.
 
 ## Benefits
 

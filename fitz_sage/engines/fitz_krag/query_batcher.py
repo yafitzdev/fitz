@@ -19,6 +19,7 @@ from fitz_sage.engines.fitz_krag.query_analyzer import (
     QueryType,
     parse_analysis_dict,
 )
+from fitz_sage.retrieval.detection.detectors.expansion import expand_terms
 from fitz_sage.retrieval.detection.llm_classifier import distribute_to_modules
 from fitz_sage.retrieval.rewriter.rewriter import parse_rewrite_dict
 from fitz_sage.retrieval.rewriter.types import RewriteResult, RewriteType
@@ -76,7 +77,8 @@ _REWRITING_INSTRUCTIONS = """\
 - If no rewrite needed, set rewrite_type "none" and return the original query
 - Fix typos, remove filler words, simplify complex phrasing
 - Convert questions to statement form: "What is X?" -> "X definition overview"
-- If multiple topics, set is_compound=true and provide decomposed_queries
+- If the query covers multiple topics or several distinct points, set
+  is_compound=true and provide focused decomposed_queries
 - Resolve pronouns if conversation history is present"""
 
 _EXTENDED_JSON = """\
@@ -92,6 +94,16 @@ _EXTENDED_INSTRUCTIONS = """\
 - answer_type: what kind of answer the user expects
 - domain: primary domain vocabulary of the query"""
 
+_KEYWORDS_JSON = """\
+  "keywords": ["term", "term", ...]"""
+
+_KEYWORDS_INSTRUCTIONS = """\
+## keywords
+- 5-10 terms a relevant document would use to discuss this query:
+  synonyms, acronym expansions, sibling concepts, domain vocabulary
+- Single words or short phrases — broaden the query's vocabulary,
+  do not just repeat the words already in the query"""
+
 
 @dataclass
 class BatchResult:
@@ -101,6 +113,7 @@ class BatchResult:
     detection_results: dict["DetectionCategory", "DetectionResult"] | None = None
     rewrite_result: RewriteResult | None = None
     extended_signals: dict[str, Any] | None = None
+    keywords: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -119,9 +132,10 @@ class QueryBatcher:
         detection_limit_to: "set[DetectionCategory] | None" = None,
         include_rewriting: bool = True,
         include_extended: bool = False,
+        include_keywords: bool = True,
         conversation_context: Any = None,
     ) -> BatchResult:
-        """Run analysis + detection + rewriting in a single LLM call.
+        """Run analysis + detection + rewriting + keywords in one LLM call.
 
         Args:
             query: User query text.
@@ -130,6 +144,7 @@ class QueryBatcher:
             detection_limit_to: Only include these detection categories (None = all).
             include_rewriting: Include query rewriting.
             include_extended: Include extended advisory signals (specificity, domain, etc.).
+            include_keywords: Include semantic keyword expansion.
             conversation_context: Optional ConversationContext for rewriting.
 
         Returns:
@@ -146,6 +161,7 @@ class QueryBatcher:
             active_modules=active_modules,
             include_rewriting=include_rewriting,
             include_extended=include_extended,
+            include_keywords=include_keywords,
             conversation_context=conversation_context,
         )
 
@@ -165,6 +181,7 @@ class QueryBatcher:
             active_modules=active_modules,
             include_rewriting=include_rewriting,
             include_extended=include_extended,
+            include_keywords=include_keywords,
         )
 
     def _get_active_modules(
@@ -184,6 +201,7 @@ class QueryBatcher:
         active_modules: list["DetectionModule"],
         include_rewriting: bool,
         include_extended: bool = False,
+        include_keywords: bool = False,
         conversation_context: Any = None,
     ) -> str:
         """Build the combined prompt from active sections."""
@@ -211,10 +229,22 @@ class QueryBatcher:
             json_parts.append(_REWRITING_JSON)
             instruction_parts.append(_REWRITING_INSTRUCTIONS)
 
+        if include_keywords:
+            section_names.append("keywords")
+            json_parts.append(_KEYWORDS_JSON)
+            instruction_parts.append(_KEYWORDS_INSTRUCTIONS)
+
         if include_extended:
             section_names.append("extended")
             json_parts.append(_EXTENDED_JSON)
             instruction_parts.append(_EXTENDED_INSTRUCTIONS)
+
+        if include_rewriting and (include_analysis or include_detection or include_keywords):
+            instruction_parts.append(
+                "## ordering\n"
+                "First determine the rewritten query, then base analysis, "
+                "detection, and keywords on that rewritten intent."
+            )
 
         history_section = ""
         if conversation_context and hasattr(conversation_context, "format_for_prompt"):
@@ -243,6 +273,7 @@ class QueryBatcher:
         active_modules: list["DetectionModule"],
         include_rewriting: bool,
         include_extended: bool = False,
+        include_keywords: bool = False,
     ) -> BatchResult:
         """Distribute parsed JSON to per-section parsers with independent fallbacks."""
         result = BatchResult()
@@ -288,5 +319,21 @@ class QueryBatcher:
             extended_data = raw.get("extended")
             if isinstance(extended_data, dict):
                 result.extended_signals = extended_data
+
+        if include_keywords:
+            llm_keywords: list[str] = []
+            kw_data = raw.get("keywords")
+            if isinstance(kw_data, list):
+                llm_keywords = [str(k).strip() for k in kw_data if isinstance(k, str) and k.strip()]
+            # Fuse deterministic dict expansion (synonyms / acronyms) — always
+            # available, independent of whether the LLM section parsed.
+            seen: set[str] = set()
+            merged: list[str] = []
+            for term in (*llm_keywords, *expand_terms(query)):
+                low = term.lower()
+                if low not in seen:
+                    seen.add(low)
+                    merged.append(term)
+            result.keywords = merged
 
         return result

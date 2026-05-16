@@ -292,17 +292,6 @@ class FitzKragConfig(BasePluginConfig):
         description="Enable LLM-based query rewriting for retrieval optimization",
     )
 
-    enable_multi_query: bool = Field(
-        default=True,
-        description="Enable multi-query expansion for long/complex queries",
-    )
-
-    multi_query_min_length: int = Field(
-        default=300,
-        ge=50,
-        description="Minimum query character length to trigger multi-query expansion",
-    )
-
     # ==========================================================================
     # Reranking
     # ==========================================================================

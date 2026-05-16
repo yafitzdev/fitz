@@ -273,7 +273,6 @@ class FitzKragEngine:
             config=self._config,
             section_strategy=section_strategy,
             table_strategy=table_strategy,
-            chat_factory=None,  # Set after chat_factory is created
         )
         self._reader = ContentReader(
             self._raw_store,
@@ -367,14 +366,8 @@ class FitzKragEngine:
 
             self._detection_orchestrator = DetectionOrchestrator(chat_factory=self._chat_factory)
 
-        # Query rewriting
-        self._query_rewriter: Any = None
-        if self._config.enable_query_rewriting:
-            from fitz_sage.retrieval.rewriter.rewriter import QueryRewriter
-
-            self._query_rewriter = QueryRewriter(chat_factory=self._chat_factory)
-
-        # Batched query intelligence (analysis + detection + rewriting in 1 LLM call)
+        # Batched query intelligence: rewrite + analysis + detection +
+        # keywords in one LLM call (the only query-prep call).
         from fitz_sage.engines.fitz_krag.query_batcher import QueryBatcher
         from fitz_sage.retrieval.detection.modules import DEFAULT_MODULES
 
@@ -417,9 +410,6 @@ class FitzKragEngine:
             self._retrieval_router._code_strategy = llm_strategy
             code_strategy = llm_strategy  # so HyDE/raw_store wiring below reaches it
 
-        # Wire chat_factory into router for multi-query expansion
-        if self._config.enable_multi_query:
-            self._retrieval_router._chat_factory = self._chat_factory
         # Wire raw_store for freshness boosting
         code_strategy._raw_store = self._raw_store
         section_strategy._raw_store = self._raw_store
@@ -559,20 +549,13 @@ class FitzKragEngine:
         "should would will shall may might be been being have has had".split()
     )
 
-    def _build_detection_summary(self, results: dict, query: str) -> Any:
-        """Build DetectionSummary from batched detection results.
-
-        Adds the dict-based expansion detector (not LLM) and wraps
-        module results into the same structure detect_for_retrieval returns.
-        """
+    def _build_detection_summary(self, results: dict) -> Any:
+        """Wrap batched detection-module results into a DetectionSummary."""
         from fitz_sage.retrieval.detection.protocol import (
             DetectionCategory,
             DetectionResult,
         )
         from fitz_sage.retrieval.detection.registry import DetectionSummary
-
-        expansion_detector = self._detection_orchestrator._get_expansion_detector()
-        expansion_result = expansion_detector.detect(query)
 
         return DetectionSummary(
             temporal=results.get(
@@ -591,7 +574,6 @@ class FitzKragEngine:
                 DetectionCategory.FRESHNESS,
                 DetectionResult.not_detected(DetectionCategory.FRESHNESS),
             ),
-            expansion=expansion_result,
             rewriter=results.get(
                 DetectionCategory.REWRITER,
                 DetectionResult.not_detected(DetectionCategory.REWRITER),
@@ -829,8 +811,9 @@ class FitzKragEngine:
         if not sanitized:
             sanitized = query.text.strip()
 
-        # Truncate excessively long queries
-        MAX_QUERY_LENGTH = 500
+        # Truncate only pathologically long input — multi-query
+        # decomposition handles genuinely long queries downstream.
+        MAX_QUERY_LENGTH = 8000
         if len(sanitized) > MAX_QUERY_LENGTH:
             original_length = len(sanitized)
             sanitized = sanitized[:MAX_QUERY_LENGTH]
@@ -841,87 +824,69 @@ class FitzKragEngine:
         _progress = progress or (lambda _: None)
         timings: list[tuple[str, float]] = []
 
-        # 1. Rewrite-first pipeline:
-        #    Step 1: Rewrite query (if configured)
-        #    Step 2: Batch(Analysis + Detection) on rewritten query
+        # 1. Query prep — one batched LLM call: rewrite + analysis +
+        #    detection + keywords. Always runs; the keyword section is
+        #    wanted on every query.
         _progress("Analyzing query...")
         t0 = time.perf_counter()
 
-        retrieval_query = sanitized
-        rewrite_result = None
-
-        # Step 1: Rewrite (individual LLM call, runs first)
-        if self._query_rewriter:
-            try:
-                rewrite_result = self._query_rewriter.rewrite(sanitized)
-                if rewrite_result.rewritten_query != sanitized:
-                    retrieval_query = rewrite_result.rewritten_query
-                    logger.debug(
-                        "Query rewritten",
-                        original_preview=sanitized[:50],
-                        rewritten_preview=retrieval_query[:50],
-                    )
-            except Exception as e:
-                logger.warning("Query rewriting failed, using original", error=str(e))
-
-        # Step 2: Analysis + Detection on rewritten query
-        classify_query = retrieval_query
-        fast_analysis = self._fast_analyze(classify_query)
+        # fast-analyze + ML gate decide which sections the prompt carries;
+        # rewriting and keywords are always included.
+        fast_analysis = self._fast_analyze(sanitized)
         need_llm_analysis = fast_analysis is None
-        need_detection = bool(
-            self._detection_orchestrator and self._needs_detection(classify_query)
-        )
-
-        # Run non-LLM gates to refine detection
+        need_detection = bool(self._detection_orchestrator and self._needs_detection(sanitized))
         detection_limit_to = None
         if need_detection:
-            flagged = self._detection_orchestrator.gate_categories(classify_query)
+            flagged = self._detection_orchestrator.gate_categories(sanitized)
             if flagged is not None and len(flagged) == 0:
                 need_detection = False
             else:
                 detection_limit_to = flagged
 
-        if need_llm_analysis or need_detection:
-            # Batch analysis + detection in one LLM call.
-            try:
-                batch_result = self._query_batcher.batch_classify(
-                    classify_query,
-                    include_analysis=need_llm_analysis,
-                    include_detection=need_detection,
-                    detection_limit_to=detection_limit_to,
-                    include_rewriting=False,
-                    include_extended=True,
+        retrieval_query = sanitized
+        rewrite_result = None
+        try:
+            batch_result = self._query_batcher.batch_classify(
+                sanitized,
+                include_analysis=need_llm_analysis,
+                include_detection=need_detection,
+                detection_limit_to=detection_limit_to,
+                include_rewriting=self._config.enable_query_rewriting,
+                include_extended=True,
+                include_keywords=True,
+            )
+            analysis = batch_result.analysis if batch_result.analysis else fast_analysis
+            detection = (
+                self._build_detection_summary(batch_result.detection_results)
+                if need_detection and batch_result.detection_results is not None
+                else None
+            )
+            rewrite_result = batch_result.rewrite_result
+            if rewrite_result and rewrite_result.rewritten_query != sanitized:
+                retrieval_query = rewrite_result.rewritten_query
+                logger.debug(
+                    "Query rewritten",
+                    original_preview=sanitized[:50],
+                    rewritten_preview=retrieval_query[:50],
                 )
-                analysis = batch_result.analysis if batch_result.analysis else fast_analysis
-                detection = (
-                    self._build_detection_summary(batch_result.detection_results, classify_query)
-                    if need_detection and batch_result.detection_results is not None
-                    else None
-                )
-            except Exception as e:
-                logger.warning(f"Batched query intelligence failed: {e}")
-                analysis = fast_analysis or QueryAnalysis(
-                    primary_type=QueryType.GENERAL,
-                    confidence=0.3,
-                    refined_query=sanitized,
-                )
-                detection = None
-                batch_result = None
-        else:
-            # No LLM needed: fast_analyze succeeded, no detection needed
-            analysis = fast_analysis
+        except Exception as e:
+            logger.warning(f"Batched query intelligence failed: {e}")
+            analysis = fast_analysis or QueryAnalysis(
+                primary_type=QueryType.GENERAL,
+                confidence=0.3,
+                refined_query=sanitized,
+            )
             detection = None
             batch_result = None
-        timings.append(("Analysis + Detection", time.perf_counter() - t0))
+        timings.append(("Query prep", time.perf_counter() - t0))
 
         # Build retrieval profile — single object with all gates and signals
         profile = build_retrieval_profile(
             analysis,
             detection,
             self._config,
-            query_length=len(retrieval_query),
-            has_chat_factory=bool(self._chat_factory),
             extended_signals=(batch_result.extended_signals if batch_result else None),
+            keywords=(batch_result.keywords if batch_result else None),
         )
 
         # 2. Retrieve — one retrieval pass, or a multi-hop loop of passes.

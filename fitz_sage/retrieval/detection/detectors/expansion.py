@@ -1,25 +1,16 @@
 # fitz_sage/retrieval/detection/detectors/expansion.py
 """
-Query expansion detector.
+Dictionary-based query term expansion.
 
-Generates query variations using:
-- Synonym substitution
-- Acronym expansion
-
-This is kept as a dict-based detector (not LLM) because it generates
-variations from a fixed dictionary, not classification.
+Provides synonym and acronym terms for a query's words. These terms are
+fused into the query-prep keyword set (``QueryBatcher``) so BM25 retrieval
+sees vocabulary the user did not type — a deterministic, zero-LLM
+complement to the LLM-generated semantic keywords.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-
-from fitz_sage.logging.logger import get_logger
-
-from ..protocol import DetectionCategory, DetectionResult, Match
-
-logger = get_logger(__name__)
 
 _WORD_PATTERN = re.compile(r"\b\w+\b")
 
@@ -121,123 +112,23 @@ ACRONYMS: dict[str, str] = {
     "rag": "retrieval augmented generation",
 }
 
-MAX_VARIATIONS = 4
 
+def expand_terms(query: str) -> list[str]:
+    """Synonym + acronym expansion terms for a query's words.
 
-@dataclass
-class ExpansionDetector:
-    """Generates query expansions using synonyms and acronyms."""
-
-    _max_variations: int = field(default=MAX_VARIATIONS, init=False)
-
-    @property
-    def category(self) -> DetectionCategory:
-        return DetectionCategory.EXPANSION
-
-    def detect(self, query: str) -> DetectionResult[None]:
-        """Detect expandable terms and generate variations."""
-        variations = self._expand_query(query)
-
-        # If only original query, nothing to expand
-        if len(variations) <= 1:
-            return DetectionResult.not_detected(self.category)
-
-        # Get matches for metadata
-        matches = self._find_matches(query)
-
-        logger.debug(f"Query expansion: '{query}' -> {len(variations)} variations")
-
-        return DetectionResult(
-            detected=True,
-            category=self.category,
-            confidence=1.0,
-            intent=None,
-            matches=matches,
-            metadata={
-                "original": query,
-                "variation_count": len(variations) - 1,
-            },
-            transformations=variations[1:],  # Exclude original
-        )
-
-    def _get_expansions(self, word: str) -> list[str]:
-        """Get all expansions for a word."""
-        word_lower = word.lower()
-        expansions: list[str] = []
-
-        if word_lower in SYNONYMS:
-            expansions.extend(SYNONYMS[word_lower])
-
-        if word_lower in ACRONYMS:
-            expansions.append(ACRONYMS[word_lower])
-
-        return expansions
-
-    def _replace_word(self, query: str, word: str, replacement: str) -> str:
-        """Replace a word in query, preserving case of first letter."""
-        pattern = re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
-        match = pattern.search(query)
-
-        if not match:
-            return query
-
-        original = match.group(0)
-
-        # Preserve case of first letter
-        if original[0].isupper():
-            replacement = replacement[0].upper() + replacement[1:]
-
-        return pattern.sub(replacement, query, count=1)
-
-    def _expand_query(self, query: str) -> list[str]:
-        """Generate query variations by expanding words."""
-        variations = [query]
-        words = _WORD_PATTERN.findall(query.lower())
-
-        for word in words:
-            expansions = self._get_expansions(word)
-            if expansions and len(variations) < self._max_variations + 1:
-                # Create variation with first expansion
-                variation = self._replace_word(query, word, expansions[0])
-                if variation not in variations:
-                    variations.append(variation)
-
-        return variations[: self._max_variations + 1]
-
-    def _find_matches(self, query: str) -> list[Match]:
-        """Find dictionary matches in query."""
-        words = _WORD_PATTERN.findall(query.lower())
-        matches: list[Match] = []
-
-        for word in words:
-            word_lower = word.lower()
-
-            # Check synonyms
-            if word_lower in SYNONYMS:
-                pos = query.lower().find(word_lower)
-                matches.append(
-                    Match(
-                        text=word,
-                        pattern_name="synonym",
-                        start=pos,
-                        end=pos + len(word) if pos >= 0 else 0,
-                        groups={"expansions": ",".join(SYNONYMS[word_lower])},
-                        confidence=1.0,
-                    )
-                )
-
-            # Check acronyms
-            if word_lower in ACRONYMS:
-                pos = query.lower().find(word_lower)
-                matches.append(
-                    Match(
-                        text=word,
-                        pattern_name="acronym",
-                        start=pos,
-                        end=pos + len(word) if pos >= 0 else 0,
-                        groups={"expansion": ACRONYMS[word_lower]},
-                        confidence=1.0,
-                    )
-                )
-
-        return matches
+    Returns extra keyword *terms* (not full-query variations) drawn from
+    the fixed SYNONYMS / ACRONYMS dictionaries, deduplicated and in query
+    order. Empty when the query has no expandable words.
+    """
+    seen: set[str] = set()
+    terms: list[str] = []
+    for word in _WORD_PATTERN.findall(query.lower()):
+        for syn in SYNONYMS.get(word, []):
+            if syn not in seen:
+                seen.add(syn)
+                terms.append(syn)
+        acronym = ACRONYMS.get(word)
+        if acronym and acronym not in seen:
+            seen.add(acronym)
+            terms.append(acronym)
+    return terms

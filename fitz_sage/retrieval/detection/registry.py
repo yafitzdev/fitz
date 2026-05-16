@@ -34,7 +34,6 @@ class DetectionSummary:
     aggregation: DetectionResult[Any]
     comparison: DetectionResult[Any]
     freshness: DetectionResult[Any]
-    expansion: DetectionResult[Any]
     rewriter: DetectionResult[Any]
     vocabulary: DetectionResult[Any]
 
@@ -65,9 +64,9 @@ class DetectionSummary:
 
     @property
     def query_variations(self) -> list[str]:
-        """Query variations from expansion detector."""
-        if self.expansion.detected:
-            return self.expansion.transformations
+        """Temporal sub-queries — one per detected time period."""
+        if self.temporal.detected:
+            return self.temporal.transformations
         return []
 
     @property
@@ -137,9 +136,8 @@ class DetectionOrchestrator:
 
     chat_factory: ChatFactory | None = None
 
-    # Lazy-loaded classifiers and expansion detector
+    # Lazy-loaded classifiers
     _classifier: LLMClassifier | None = field(default=None, init=False, repr=False)
-    _expansion_detector: Any = field(default=None, init=False, repr=False)
     _ml_classifier: DetectionClassifier | None = field(default=None, init=False, repr=False)
 
     def _ensure_classifier(self) -> LLMClassifier | None:
@@ -155,14 +153,6 @@ class DetectionOrchestrator:
         if self._ml_classifier.available:
             return self._ml_classifier
         return None
-
-    def _get_expansion_detector(self) -> Any:
-        """Lazy-load expansion detector (dict-based, not LLM)."""
-        if self._expansion_detector is None:
-            from .detectors.expansion import ExpansionDetector
-
-            self._expansion_detector = ExpansionDetector()
-        return self._expansion_detector
 
     def gate_categories(self, query: str) -> set["DetectionCategory"] | None:
         """Run ML gate only — no LLM call.
@@ -212,10 +202,6 @@ class DetectionOrchestrator:
             results = {}
             logger.debug("No chat factory available, skipping LLM classification")
 
-        # Get expansion result from dict-based detector (not LLM)
-        expansion_detector = self._get_expansion_detector()
-        expansion_result = expansion_detector.detect(query)
-
         return DetectionSummary(
             temporal=results.get(
                 DetectionCategory.TEMPORAL,
@@ -233,7 +219,6 @@ class DetectionOrchestrator:
                 DetectionCategory.FRESHNESS,
                 DetectionResult.not_detected(DetectionCategory.FRESHNESS),
             ),
-            expansion=expansion_result,
             rewriter=results.get(
                 DetectionCategory.REWRITER,
                 DetectionResult.not_detected(DetectionCategory.REWRITER),

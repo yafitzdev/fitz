@@ -11,33 +11,37 @@ Users often use different terminology than what appears in documents:
 BM25 token matching catches *some* of this (shared stems, casing) but
 not enough — it doesn't know `fetch` ↔ `retrieve` or `db` ↔ `database`.
 With embeddings removed in v0.12.0, the bridging job falls on the
-query side instead of the index side: expand the query into multiple
-phrasings, run each, fuse.
+query side instead of the index side: contribute synonym/acronym
+terms to the query's keyword set, which retrieval searches as one
+extra BM25 leg.
 
-## Solution: lightweight query expansion
+## Solution: synonym/acronym term expansion
 
-Expand queries with synonym and acronym variations before BM25:
+`expand_terms()` adds dictionary synonym/acronym terms to the query's
+keyword set:
 
 ```
-Original query:     "How do I fetch employee data?"
+Original query:   "How do I fetch the db config?"
                               ↓
-Expanded queries:   ["How do I fetch employee data?",
-                     "How do I retrieve employee data?",
-                     "How do I get employee data?"]
+expand_terms() →   ["get", "retrieve", "database", "datastore",
+                    "configuration"]
                               ↓
-                    Each variation runs FTS5 + bm25()
+Merged into the query-prep keyword set (alongside the LLM-generated
+semantic keywords)
                               ↓
-                    Results merged via Reciprocal Rank Fusion
+The keyword set runs as one extra FTS5 + bm25() retrieval leg
 ```
 
 ## How it works
 
 ### At query time
 
-1. Query is analysed for known synonyms and acronyms (rule-based, fast).
-2. Up to four additional query variations are generated.
-3. Each variation hits the BM25 index.
-4. Results are merged with Reciprocal Rank Fusion (`1 / (60 + rank)`).
+1. `expand_terms()` scans the query for known synonyms and acronyms
+   (rule-based, no LLM).
+2. The matched terms are merged into `BatchResult.keywords` alongside
+   the query-prep call's LLM-generated semantic keywords.
+3. The router runs that keyword set as one extra BM25 retrieval leg,
+   pooled and ranked with the other strategy results.
 
 ### Expansion Rules
 
@@ -60,22 +64,19 @@ Expanded queries:   ["How do I fetch employee data?",
 
 ## Key Design Decisions
 
-1. **Always-on** - Baked into the KRAG retrieval router. No configuration.
+1. **Always-on** - Fused into the query-prep keyword set. No configuration.
 
-2. **Rule-based** - No LLM calls. Fast and predictable.
+2. **Rule-based** - No LLM calls. Fast and deterministic.
 
 3. **Bidirectional synonyms** - Both directions work (fetch→retrieve, retrieve→fetch).
 
-4. **Case-preserving** - Preserves first character case of replaced word.
-
-5. **Limit expansions** - Maximum 4 additional variations to control latency.
-
-6. **RRF fusion** - Same RRF fusion used across multi-query expansion.
+4. **Recall-stage** - Loose terms are fine — the cross-encoder reranker filters precision downstream.
 
 ## Files
 
-- **Expansion detector:** `fitz_sage/retrieval/detection/detectors/expansion.py`
-- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
+- **`expand_terms()`:** `fitz_sage/retrieval/detection/detectors/expansion.py`
+- **Keyword fusion:** `fitz_sage/engines/fitz_krag/query_batcher.py` (`_distribute` merges dict terms into `BatchResult.keywords`)
+- **Retrieval leg:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
 
 Note: Query expansion uses dictionary-based matching (not LLM) for fast, deterministic results. Synonyms and acronyms are defined in the `SYNONYMS` and `ACRONYMS` dicts in `expansion.py`.
 
@@ -92,22 +93,19 @@ Note: Query expansion uses dictionary-based matching (not LLM) for fast, determi
 
 **Query:** "How does the db connection work?"
 
-**Expanded to:**
-1. "How does the db connection work?" (original)
-2. "How does the database connection work?" (acronym expansion)
-3. "How does the datastore connection work?" (synonym)
+**`expand_terms()` adds:** `database`, `datastore` (from `db`)
 
-**Result:** Documents mentioning "database connection" are now found even though the user said "db".
+**Result:** Those terms join the keyword set; the keyword leg's BM25
+search surfaces documents that say "database connection" even though
+the user typed "db".
 
 ## Performance
 
-- Expansion is fast (microseconds, rule-based).
-- One BM25 search per variation; FTS5 + `bm25()` is sub-10 ms per
-  call on typical collections.
-- RRF merge is in-memory.
-
-Typical overhead: 2–4× search time for 3–5 variations. Negligible
-relative to the LLM synthesizer step that follows.
+- `expand_terms()` is microsecond-fast (rule-based dictionary lookup).
+- It adds no LLM call — the terms ride along in the query-prep call
+  that already runs.
+- The keyword set adds one extra BM25 leg; FTS5 + `bm25()` is sub-10 ms
+  per call on typical collections.
 
 ## Dependencies
 

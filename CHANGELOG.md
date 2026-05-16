@@ -33,6 +33,12 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   Caps how many retrieval strategies run concurrently. Set it to `1` to
   serialize LLM calls for single-model local servers (LM Studio,
   llama-server).
+- **Semantic keyword recall leg.** The query-prep call now emits a
+  keyword set — LLM-generated semantic keywords fused with deterministic
+  dictionary synonyms/acronyms (`expand_terms`) — and the retrieval
+  router runs it as an extra BM25 leg. Without embeddings, BM25 alone
+  misses vocabulary the user did not type; the keyword leg closes that
+  first-stage recall gap on short, lexically-disjoint queries.
 
 ### 🗑 Removed
 
@@ -52,6 +58,14 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   (`group_by`).
 - **`connection_string` config field** — a leftover from the Postgres
   era; SQLite storage has no connection string.
+- **Standalone `QueryRewriter`** (class + `_needs_rewriting` skip
+  heuristic + its prompt), the router's separate `_expand_query`
+  multi-query LLM call, and the `EXPANSION` detection category
+  (`ExpansionDetector`). Rewriting and keyword expansion are now sections
+  of the one query-prep call; multi-query is the rewrite section's
+  compound-query decomposition.
+- **Config fields `enable_multi_query` and `multi_query_min_length`** —
+  multi-query is no longer length-gated or separately toggled.
 
 ### 🔧 Fixed
 
@@ -67,6 +81,14 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   `Alibaba-NLP/gte-reranker-modernbert-base` publishes — genuine INT8.
 
 ### 🔄 Changed
+
+- **Query prep collapsed into one batched LLM call.** Rewrite, analysis,
+  detection, and the new keyword section run as sections of a single
+  always-on `QueryBatcher` call — replacing the previous separate
+  (heuristically-gated) rewrite call plus the (gated) analysis/detection
+  call. Rewriting always runs now; the `_needs_rewriting` skip-heuristic
+  is gone. The Step-0 query-length cap was raised 500 → 8000 so long
+  pasted queries reach decomposition instead of being clipped first.
 
 - **Code retrieval consolidated onto KRAG.** Removed the standalone
   `fitz_sage/code/` `CodeRetriever`; `FitzKragEngine` now exposes a public

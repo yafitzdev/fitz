@@ -1,8 +1,8 @@
 # fitz_sage/retrieval/detection/detectors/__init__.py
-"""Detector implementations."""
+"""Dictionary-based query term expansion."""
 
-from .expansion import ExpansionDetector
+from .expansion import expand_terms
 
 __all__ = [
-    "ExpansionDetector",
+    "expand_terms",
 ]

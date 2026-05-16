@@ -14,7 +14,6 @@ from fitz_sage.retrieval.detection import (
     DetectionOrchestrator,
     DetectionResult,
     DetectionSummary,
-    ExpansionDetector,
     TemporalIntent,
 )
 from fitz_sage.retrieval.entity_graph import EntityGraphStore
@@ -33,7 +32,6 @@ __all__ = [
     "DetectionOrchestrator",
     "DetectionResult",
     "DetectionSummary",
-    "ExpansionDetector",
     "TemporalIntent",
     # Entity graph
     "EntityGraphStore",

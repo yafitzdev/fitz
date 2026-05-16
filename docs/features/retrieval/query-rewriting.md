@@ -72,7 +72,7 @@ All interpretations are searched and results are merged.
 
 1. **LLM-based** - Uses fast-tier chat model for intelligent rewriting.
 
-2. **Single call** - All transformations in one LLM call for efficiency.
+2. **Batched** - Rewriting is one section of the single query-prep LLM call (alongside analysis, detection, keywords) — no call of its own.
 
 3. **Context-aware** - Maintains conversation history for pronoun resolution.
 
@@ -84,11 +84,9 @@ All interpretations are searched and results are merged.
 
 ## Files
 
-- **Rewriter module:** `fitz_sage/retrieval/rewriter/`
-  - `rewriter.py` - QueryRewriter class
-  - `types.py` - RewriteResult, ConversationContext
-  - `prompts/rewrite.txt` - LLM prompt template
-- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
+- **Rewrite section:** `fitz_sage/engines/fitz_krag/query_batcher.py` (the `rewriting` section of the batched query-prep call)
+- **Result parser:** `fitz_sage/retrieval/rewriter/rewriter.py` (`parse_rewrite_dict`)
+- **Types:** `fitz_sage/retrieval/rewriter/types.py` (`RewriteResult`, `ConversationContext`)
 
 ## Benefits
 
@@ -114,11 +112,9 @@ User: "How does it handle expired sessions?"
 
 ## Performance
 
-- Uses the fast chat tier (any OpenAI-compatible model).
-- One chat call per query — typically 100–300 ms on cloud, sub-second
-  on a 7B local model.
-- Skipped for very short queries (< 3 characters).
-- On failure, falls back to the original query (no blocking).
+- Runs inside the shared query-prep call (fast chat tier) — no chat
+  call of its own.
+- On failure or an empty rewrite, the original query is used unchanged.
 
 ## Dependencies
 

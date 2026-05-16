@@ -23,7 +23,6 @@ class DetectionCategory(Enum):
     COMPARISON = "comparison"
     FRESHNESS = "freshness"
     VOCABULARY = "vocabulary"
-    EXPANSION = "expansion"
     REWRITER = "rewriter"
 
 

@@ -3,56 +3,20 @@
 Tests for fitz_sage.retrieval.rewriter module.
 
 Tests cover:
-1. QueryRewriter - query rewriting with LLM
-2. ConversationContext - conversation history handling
-3. RewriteResult - rewrite result handling
-4. Response parsing - JSON extraction and fallback handling
+1. ConversationContext - conversation history handling
+2. RewriteResult - rewrite result handling
+3. parse_rewrite_dict - JSON dict -> RewriteResult parsing
 """
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
-
 from fitz_sage.retrieval.rewriter import (
     ConversationContext,
     ConversationMessage,
-    QueryRewriter,
     RewriteResult,
     RewriteType,
+    parse_rewrite_dict,
 )
-
-# ---------------------------------------------------------------------------
-# Test Fixtures
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class MockChatClient:
-    """Mock chat client for testing."""
-
-    response: str = (
-        '{"rewritten_query": "test query", "rewrite_type": "none", "confidence": 1.0, "is_ambiguous": false, "disambiguated_queries": []}'
-    )
-    calls: list = None
-
-    def __post_init__(self):
-        if self.calls is None:
-            self.calls = []
-
-    def chat(self, messages: list[dict]) -> str:
-        self.calls.append(messages)
-        return self.response
-
-
-def create_mock_chat_factory(mock_chat):
-    """Create a mock chat factory that returns the mock chat client."""
-
-    def factory(tier: str = "fast"):
-        return mock_chat
-
-    return factory
-
 
 # ---------------------------------------------------------------------------
 # Tests for ConversationContext
@@ -186,314 +150,136 @@ class TestRewriteResult:
 
 
 # ---------------------------------------------------------------------------
-# Tests for QueryRewriter
+# Tests for parse_rewrite_dict
 # ---------------------------------------------------------------------------
 
 
-class TestQueryRewriter:
-    """Tests for QueryRewriter class."""
+class TestParseRewriteDict:
+    """Tests for parse_rewrite_dict function."""
 
-    def test_basic_rewrite(self):
-        """Test basic query rewriting."""
-        response = json.dumps(
-            {
-                "rewritten_query": "improved query about their products and services",
-                "rewrite_type": "clarity",
-                "confidence": 0.9,
-                "is_ambiguous": False,
-                "disambiguated_queries": [],
-            }
-        )
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        # Use a query with pronoun to trigger rewriting heuristic
-        result = rewriter.rewrite("Tell me about their products")
-
-        assert result.original_query == "Tell me about their products"
-        assert result.rewritten_query == "improved query about their products and services"
+    def test_parse_basic_clarity_rewrite(self):
+        """Parse a basic clarity rewrite dict."""
+        data = {
+            "rewritten_query": "authentication module overview",
+            "rewrite_type": "clarity",
+            "confidence": 0.9,
+            "is_ambiguous": False,
+            "disambiguated_queries": [],
+        }
+        result = parse_rewrite_dict(data, "auth module overview")
+        assert result.rewritten_query == "authentication module overview"
         assert result.rewrite_type == RewriteType.CLARITY
         assert result.confidence == 0.9
+        assert result.original_query == "auth module overview"
 
-    def test_chat_called_with_prompt(self):
-        """Test that chat is called with correct message structure."""
-        mock_chat = MockChatClient()
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        # Use a query with pronoun to trigger rewriting heuristic
-        rewriter.rewrite("What does it do and how does it work")
-
-        assert len(mock_chat.calls) == 1
-        messages = mock_chat.calls[0]
-        assert len(messages) == 1
-        assert messages[0]["role"] == "user"
-        assert "What does it do" in messages[0]["content"]
-
-    def test_short_query_skipped(self):
-        """Test that very short queries skip rewriting."""
-        mock_chat = MockChatClient()
-        rewriter = QueryRewriter(
-            chat_factory=create_mock_chat_factory(mock_chat), min_query_length=5
-        )
-
-        result = rewriter.rewrite("ab")
-
-        assert len(mock_chat.calls) == 0
-        assert result.rewrite_type == RewriteType.NONE
-        assert result.rewritten_query == "ab"
-
-    def test_conversation_context_included(self):
-        """Test that conversation context is included in prompt."""
-        mock_chat = MockChatClient()
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-        context = ConversationContext(
-            history=[
-                ConversationMessage(role="user", content="Tell me about TechCorp"),
-                ConversationMessage(role="assistant", content="TechCorp is a company..."),
-            ]
-        )
-
-        rewriter.rewrite("What are their products?", context)
-
-        prompt = mock_chat.calls[0][0]["content"]
-        assert "TechCorp" in prompt
-        assert "Conversation History" in prompt
-
-    def test_conversational_rewrite(self):
-        """Test conversational pronoun resolution."""
-        response = json.dumps(
-            {
-                "rewritten_query": "What are TechCorp's products?",
-                "rewrite_type": "conversational",
-                "confidence": 0.95,
-                "is_ambiguous": False,
-                "disambiguated_queries": [],
-            }
-        )
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-        context = ConversationContext(
-            history=[
-                ConversationMessage(role="user", content="Tell me about TechCorp"),
-            ]
-        )
-
-        result = rewriter.rewrite("What are their products?", context)
-
-        assert result.rewrite_type == RewriteType.CONVERSATIONAL
-        assert "TechCorp" in result.rewritten_query
-
-    def test_ambiguous_query_detection(self):
-        """Test ambiguous query detection."""
-        response = json.dumps(
-            {
-                "rewritten_query": "How to use Python programming and also set up the environment",
-                "rewrite_type": "combined",
-                "confidence": 0.7,
-                "is_ambiguous": True,
-                "disambiguated_queries": [
-                    "Python programming language basics",
-                    "Python programming setup guide",
-                ],
-            }
-        )
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        # Use a compound query to trigger rewriting heuristic
-        result = rewriter.rewrite("How do I use Python and also set up the environment?")
-
-        assert result.is_ambiguous
-        assert len(result.disambiguated_queries) == 2
-
-    def test_chat_error_returns_original(self):
-        """Test that chat errors return original query."""
-
-        class ErrorChat:
-            def chat(self, messages):
-                raise RuntimeError("API error")
-
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(ErrorChat()))
-
-        # Use query with pronoun to trigger heuristic (force LLM call)
-        query = "What does their system do and how does it work?"
-        result = rewriter.rewrite(query)
-
-        assert result.rewrite_type == RewriteType.NONE
-        assert result.rewritten_query == query
-        assert result.confidence == 0.0
-
-    def test_no_rewrite_needed(self):
-        """Test when no rewrite is needed (LLM says query is already good)."""
-        # Query has pronoun to trigger heuristic, but LLM says no rewrite needed
-        query = "What is their revenue for the fiscal year and also operating costs?"
-        response = json.dumps(
-            {
-                "rewritten_query": query,  # Same as original
-                "rewrite_type": "none",
-                "confidence": 1.0,
-                "is_ambiguous": False,
-                "disambiguated_queries": [],
-            }
-        )
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        result = rewriter.rewrite(query)
-
+    def test_parse_none_rewrite_type(self):
+        """parse_rewrite_dict with rewrite_type=none produces NONE."""
+        data = {
+            "rewritten_query": "original query",
+            "rewrite_type": "none",
+            "confidence": 1.0,
+            "is_ambiguous": False,
+            "disambiguated_queries": [],
+        }
+        result = parse_rewrite_dict(data, "original query")
         assert result.rewrite_type == RewriteType.NONE
         assert not result.was_rewritten
 
-
-# ---------------------------------------------------------------------------
-# Tests for Response Parsing
-# ---------------------------------------------------------------------------
-
-
-class TestResponseParsing:
-    """Tests for response parsing logic."""
-
-    def test_parse_valid_json(self):
-        """Test parsing valid JSON response."""
-        response = json.dumps(
-            {
-                "rewritten_query": "test about their functionality",
-                "rewrite_type": "clarity",
-                "confidence": 0.9,
-                "is_ambiguous": False,
-                "disambiguated_queries": [],
-            }
-        )
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        # Use query with pronoun to trigger heuristic
-        result = rewriter.rewrite("Explain their functionality")
-
-        assert result.rewritten_query == "test about their functionality"
-        assert result.rewrite_type == RewriteType.CLARITY
-
-    def test_parse_json_in_markdown(self):
-        """Test parsing JSON wrapped in markdown code block."""
-        response = """```json
-{
-    "rewritten_query": "test about their implementation",
-    "rewrite_type": "retrieval",
-    "confidence": 0.8,
-    "is_ambiguous": false,
-    "disambiguated_queries": []
-}
-```"""
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        # Use query with pronoun to trigger heuristic
-        result = rewriter.rewrite("Describe their implementation")
-
-        assert result.rewritten_query == "test about their implementation"
+    def test_parse_retrieval_rewrite_type(self):
+        """parse_rewrite_dict with rewrite_type=retrieval produces RETRIEVAL."""
+        data = {
+            "rewritten_query": "improved retrieval query",
+            "rewrite_type": "retrieval",
+            "confidence": 0.85,
+            "is_ambiguous": False,
+            "disambiguated_queries": [],
+        }
+        result = parse_rewrite_dict(data, "original query")
         assert result.rewrite_type == RewriteType.RETRIEVAL
 
-    def test_parse_json_with_surrounding_text(self):
-        """Test parsing JSON embedded in response text."""
-        response = """Here's the rewritten query:
-{"rewritten_query": "clarified query about their system", "rewrite_type": "clarity", "confidence": 0.9, "is_ambiguous": false, "disambiguated_queries": []}
-That should work better."""
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
+    def test_parse_decomposition_with_decomposed_queries(self):
+        """Decomposition rewrite includes decomposed_queries (up to 5)."""
+        data = {
+            "rewritten_query": "compound query",
+            "rewrite_type": "decomposition",
+            "confidence": 0.8,
+            "is_compound": True,
+            "decomposed_queries": ["part one", "part two", "part three"],
+            "is_ambiguous": False,
+            "disambiguated_queries": [],
+        }
+        result = parse_rewrite_dict(data, "compound query")
+        assert result.rewrite_type == RewriteType.DECOMPOSITION
+        assert result.is_compound is True
+        assert "part one" in result.decomposed_queries
 
-        # Use query with pronoun to trigger heuristic
-        result = rewriter.rewrite("Explain their system")
-
-        assert result.rewritten_query == "clarified query about their system"
-
-    def test_parse_invalid_json_returns_original(self):
-        """Test that invalid JSON returns original query."""
-        response = "This is not valid JSON"
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        # Use query with pronoun to trigger heuristic
-        query = "Explain their original query processing"
-        result = rewriter.rewrite(query)
-
-        assert result.rewritten_query == query
+    def test_parse_empty_rewritten_query_falls_back_to_original(self):
+        """Empty rewritten_query falls back to original."""
+        data = {
+            "rewritten_query": "",
+            "rewrite_type": "clarity",
+            "confidence": 0.5,
+            "is_ambiguous": False,
+            "disambiguated_queries": [],
+        }
+        result = parse_rewrite_dict(data, "original query text")
+        assert result.rewritten_query == "original query text"
         assert result.rewrite_type == RewriteType.NONE
 
-    def test_parse_empty_rewritten_query(self):
-        """Test that empty rewritten query falls back to original."""
-        response = json.dumps(
-            {
-                "rewritten_query": "",
-                "rewrite_type": "clarity",
-                "confidence": 0.9,
-                "is_ambiguous": False,
-                "disambiguated_queries": [],
-            }
-        )
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        # Use query with pronoun to trigger heuristic
-        query = "Describe their original query processing"
-        result = rewriter.rewrite(query)
-
-        assert result.rewritten_query == query
+    def test_parse_missing_fields_use_defaults(self):
+        """Missing optional fields use sensible defaults."""
+        data = {"rewritten_query": "some query"}
+        result = parse_rewrite_dict(data, "original")
+        assert result.rewritten_query == "some query"
         assert result.rewrite_type == RewriteType.NONE
+        assert result.confidence == 0.5
+        assert result.is_ambiguous is False
+        assert result.disambiguated_queries == []
 
-    def test_parse_limits_disambiguated_queries(self):
-        """Test that disambiguated queries are limited to 3."""
-        response = json.dumps(
-            {
-                "rewritten_query": "test about their features",
-                "rewrite_type": "combined",
-                "confidence": 0.7,
-                "is_ambiguous": True,
-                "disambiguated_queries": ["q1", "q2", "q3", "q4", "q5"],
-            }
-        )
-        mock_chat = MockChatClient(response=response)
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        # Use query with pronoun to trigger heuristic
-        result = rewriter.rewrite("Describe their features")
-
+    def test_parse_disambiguated_queries_limited_to_three(self):
+        """disambiguated_queries are capped at 3."""
+        data = {
+            "rewritten_query": "query",
+            "rewrite_type": "combined",
+            "confidence": 0.7,
+            "is_ambiguous": True,
+            "disambiguated_queries": ["q1", "q2", "q3", "q4", "q5"],
+        }
+        result = parse_rewrite_dict(data, "original")
         assert len(result.disambiguated_queries) == 3
 
+    def test_parse_unknown_rewrite_type_falls_back_to_none(self):
+        """Unknown rewrite_type string falls back to NONE."""
+        data = {
+            "rewritten_query": "some query",
+            "rewrite_type": "invented_type_xyz",
+            "confidence": 0.5,
+        }
+        result = parse_rewrite_dict(data, "original")
+        assert result.rewrite_type == RewriteType.NONE
 
-# ---------------------------------------------------------------------------
-# Tests for Prompt Loading
-# ---------------------------------------------------------------------------
+    def test_parse_conversational_type(self):
+        """parse_rewrite_dict handles conversational rewrite type."""
+        data = {
+            "rewritten_query": "What are TechCorp's products?",
+            "rewrite_type": "conversational",
+            "confidence": 0.95,
+            "is_ambiguous": False,
+            "disambiguated_queries": [],
+        }
+        result = parse_rewrite_dict(data, "What are their products?")
+        assert result.rewrite_type == RewriteType.CONVERSATIONAL
+        assert result.rewritten_query == "What are TechCorp's products?"
+        assert result.was_rewritten
 
-
-class TestPromptLoading:
-    """Tests for prompt template loading."""
-
-    def test_default_prompt_loaded(self):
-        """Test that default prompt template is loaded."""
-        mock_chat = MockChatClient()
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        assert rewriter.prompt_template is not None
-        assert len(rewriter.prompt_template) > 0
-
-    def test_prompt_has_placeholders(self):
-        """Test that default prompt has required placeholders."""
-        mock_chat = MockChatClient()
-        rewriter = QueryRewriter(chat_factory=create_mock_chat_factory(mock_chat))
-
-        assert "{query}" in rewriter.prompt_template
-        assert "{history_section}" in rewriter.prompt_template
-
-    def test_custom_prompt_template(self):
-        """Test custom prompt template."""
-        mock_chat = MockChatClient()
-        custom_template = "Rewrite: {query}\n{history_section}"
-        rewriter = QueryRewriter(
-            chat_factory=create_mock_chat_factory(mock_chat), prompt_template=custom_template
-        )
-
-        # Use query with pronoun to trigger heuristic
-        rewriter.rewrite("Explain their test functionality")
-
-        prompt = mock_chat.calls[0][0]["content"]
-        assert "Rewrite: Explain their test functionality" in prompt
+    def test_parse_combined_type(self):
+        """parse_rewrite_dict handles combined rewrite type."""
+        data = {
+            "rewritten_query": "combined improved query",
+            "rewrite_type": "combined",
+            "confidence": 0.75,
+            "is_ambiguous": False,
+            "disambiguated_queries": [],
+        }
+        result = parse_rewrite_dict(data, "original")
+        assert result.rewrite_type == RewriteType.COMBINED

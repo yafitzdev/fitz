@@ -1,11 +1,11 @@
 # fitz_sage/retrieval/rewriter/__init__.py
 """Query rewriting for improved retrieval."""
 
-from .rewriter import QueryRewriter
+from .rewriter import parse_rewrite_dict
 from .types import ConversationContext, ConversationMessage, RewriteResult, RewriteType
 
 __all__ = [
-    "QueryRewriter",
+    "parse_rewrite_dict",
     "ConversationContext",
     "ConversationMessage",
     "RewriteResult",
