@@ -57,7 +57,7 @@ Detection uses a unified LLM classifier (one call for all detection types). The 
 
 ### Multi-Entity Retrieval
 
-1. **Parallel search** - Execute separate vector searches for each entity
+1. **Parallel search** - Execute separate BM25/FTS5 searches for each entity
 2. **Merge results** - Combine chunks from both searches
 3. **Deduplicate** - Remove overlapping chunks (e.g., docs mentioning both)
 4. **Answer generation** - LLM receives balanced context from both entities
@@ -86,8 +86,7 @@ Internal parameters:
 
 - **Detection module:** `fitz_sage/retrieval/detection/modules/comparison.py`
 - **Orchestrator:** `fitz_sage/retrieval/detection/registry.py`
-- **Strategy:** `fitz_sage/engines/fitz_krag/retrieval/steps/strategies/comparison.py`
-- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/steps/vector_search.py`
+- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
 
 Detection is now LLM-based via the unified `DetectionOrchestrator`. The `ComparisonModule` extracts entities and generates entity-specific sub-queries.
 

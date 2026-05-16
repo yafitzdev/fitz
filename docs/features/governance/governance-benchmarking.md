@@ -220,6 +220,8 @@ Context and inter-chunk features dominate because they're available for every ca
 
 ## Running the Benchmark
 
+_Note: the paths and commands below describe the pre-v0.13.0 constraint-cascade implementation and no longer exist in the current codebase._
+
 ```bash
 # Feature extraction (requires a configured chat endpoint)
 python -m tools.governance.extract_features --workers 1
@@ -234,6 +236,8 @@ python -m tools.governance.calibrate_cascade
 ```
 
 ## Files
+
+_Note: the paths and commands below describe the pre-v0.13.0 constraint-cascade implementation and no longer exist in the current codebase._
 
 | File | Purpose |
 |------|---------|

@@ -7,10 +7,9 @@ HTTP protocol, SQLite + FTS5 storage, no embeddings, no vector DB).
 
 ## Quick Diagnostics
 
-Check `~/.fitz/config/<engine>.yaml` and verify the chat endpoint URL,
-API-key environment variable, and collection name are correct.
-
-Run `fitz config show` to print the effective merged config.
+Open the config file directly at `.fitz/config.yaml` and verify the
+chat endpoint URL, API-key environment variable, and collection name
+are correct.
 
 ---
 
@@ -25,8 +24,9 @@ ConfigNotFoundError: Config file not found
 
 **Solution:**
 
-Run `fitz init` to scaffold the default config, or pass `--endpoint`,
-`--model`, and `--api-key-env` directly on the `fitz query` command:
+The config is created automatically on first run — edit it, or pass
+`--endpoint`, `--model`, and `--api-key-env` directly on the
+`fitz query` command:
 
 ```bash
 fitz query "What is X?" \
@@ -110,8 +110,7 @@ sqlite3.OperationalError: unable to open database file
 **Solution:**
 
 1. Confirm `<workspace>/sqlite/` exists. By default `<workspace>` is
-   `~/.fitz/` (override with `FITZ_HOME` or the `storage_path` config
-   key).
+   `~/.fitz/`.
 2. Verify write permissions for the user running fitz-sage.
 3. To start fresh, delete the per-collection file (the collection
    name maps to `fitz_<collection>.db`):
@@ -147,8 +146,7 @@ RateLimitError: Rate limit exceeded
 
 1. Wait and retry (the chat provider applies exponential backoff
    automatically — see `fitz_sage/llm/auth/`).
-2. Reduce ingest batch size, or stagger ingest with `--max-concurrent`.
-3. Point `chat_fast` at a cheaper model for the bulk of the work:
+2. Point `chat_fast` at a cheaper model for the bulk of the work:
    ```yaml
    chat_fast: gpt-4o-mini
    chat_balanced: gpt-4o-mini
@@ -166,16 +164,14 @@ ValueError: No chunks created from documents
 
 **Causes:**
 - Documents are empty or unreadable.
-- Parser failed silently (try `--verbose`).
+- Parser failed silently (enable DEBUG logging to see why).
 - All content filtered out by chunking rules.
 
 **Solution:**
 
 1. Check document contents manually.
-2. Enable verbose logging:
-   ```bash
-   fitz query --source ./docs --verbose "test query"
-   ```
+2. Enable DEBUG logging by setting `log_level: DEBUG` in
+   `.fitz/config.yaml`, then re-run the query.
 3. Check supported formats in [INGESTION.md](INGESTION.md).
 
 ---
@@ -226,13 +222,7 @@ TimeoutError: Request timed out
 
 ```yaml
 # In ~/.fitz/config/fitz_krag.yaml
-logging:
-  level: DEBUG
-```
-
-Or via environment:
-```bash
-FITZ_LOG_LEVEL=DEBUG fitz query --source ./docs "test query"
+log_level: DEBUG
 ```
 
 ### Inspect State File
@@ -301,7 +291,7 @@ ConfigError
 
 ## Getting Help
 
-1. **Check config:** `fitz config show`
+1. **Check config:** inspect `.fitz/config.yaml` directly
 2. **Check logs:** enable DEBUG level
 3. **Report issues:** [GitHub Issues](https://github.com/yafitzdev/fitz-sage/issues)
 
@@ -310,7 +300,7 @@ When reporting, include:
 - Python version: `python --version`
 - OS
 - Full traceback
-- Effective config (`fitz config show`, with secrets redacted)
+- Effective config (the contents of `.fitz/config.yaml`, with secrets redacted)
 
 ---
 

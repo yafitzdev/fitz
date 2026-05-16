@@ -27,6 +27,32 @@ from the model repo with `huggingface_hub` and run it through an
 `onnxruntime.InferenceSession`. Verified torch-absent: pyrrho `decide()`
 warm ~11 ms, reranker `rerank()` warm ~17 ms.
 
+### 🚀 Added
+
+- **`retrieval_workers` config field** (`FitzKragConfig`, default `4`).
+  Caps how many retrieval strategies run concurrently. Set it to `1` to
+  serialize LLM calls for single-model local servers (LM Studio,
+  llama-server).
+
+### 🗑 Removed
+
+- **Five dead packages**, orphaned by the embeddings / vector-DB / Cloud
+  removals — no product code imported them: `fitz_sage/structured/` (the
+  old vector-DB-era SQL/table stack, superseded by `tabular/`),
+  `fitz_sage/plugin_gen/` (plugin scaffolding generator),
+  `fitz_sage/backends/` (Ollama-era local runtime, with its `local`
+  extra), `fitz_sage/core/http.py` (generic/Cohere HTTP client), and
+  `fitz_sage/llm/transforms.py` (Cohere/Anthropic/Ollama chat
+  transforms).
+- **Semantic hierarchy grouping.** The embedding-based clustering path —
+  `semantic_grouper.py`, `embedding_provider.py`, and the
+  `grouping_strategy` / `n_clusters` / `max_clusters` config knobs — is
+  deleted. It had been unreachable and broken since embeddings were
+  removed in v0.12.0; hierarchy grouping is metadata-key only
+  (`group_by`).
+- **`connection_string` config field** — a leftover from the Postgres
+  era; SQLite storage has no connection string.
+
 ### 🔧 Fixed
 
 - **Reranker now genuinely runs INT8 ONNX.** v0.13.0 loaded the

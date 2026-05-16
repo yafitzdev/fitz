@@ -1,6 +1,6 @@
 # Engines
 
-fitz-sage **v0.12.0+**. An engine is anything that implements the
+fitz-sage **v0.13.0+**. An engine is anything that implements the
 `KnowledgeEngine` protocol — given a `Query`, return an `Answer` with
 mode (`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN`) and provenance.
 
@@ -73,14 +73,15 @@ Query
  │    └─► FTS5 + bm25() over per-collection .db
  ├─► Expander (import graph, entity links, same-file refs, hierarchy)
  ├─► OnnxReranker (ONNX cross-encoder, ~30 ms CPU)
- ├─► Constraints (conflict_aware, insufficient_evidence, ...)
+ ├─► Governance (pyrrho classifier → TRUSTWORTHY / DISPUTED / ABSTAIN)
  └─► Synthesizer → Answer (+ provenance + mode)
 ```
 
 ### Usage
 
 ```python
-from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
+from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
+from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.core import Query
 
 cfg = FitzKragConfig(
@@ -98,6 +99,23 @@ answer = engine.answer(Query(text="What is X?"))
 The convenience function `run_fitz_krag(text, **overrides)` wraps
 this for one-shots.
 
+### Retrieval without synthesis
+
+`answer()` retrieves sources, then generates a grounded answer over
+them. To get the source material itself — not a generated answer —
+call `retrieve()`, the retrieval primitive `answer()` is built on:
+
+```python
+results = engine.retrieve(Query(text="Where is auth handled?"))
+for r in results:                       # list[ReadResult]
+    print(r.file_path, r.content)
+```
+
+`retrieve()` runs the same analyze → detect → route → expand pipeline
+as `answer()` and returns `ReadResult`s (`file_path`, `content`, and an
+`Address` with provenance and score), skipping governance and
+synthesis. It returns an empty list when nothing relevant is found.
+
 ### Configuration
 
 See [CONFIG.md](CONFIG.md) for every key. The minimum is `collection:`
@@ -113,7 +131,7 @@ and a chat tier. Everything else has working defaults.
 | Hierarchical summaries  | L1 (section), L2 (doc-level) summaries built at ingest        |
 | Multi-hop retrieval     | Iterative bridge extraction for compound questions            |
 | ONNX reranker           | INT8 cross-encoder, single forward pass on CPU                |
-| Epistemic guardrails    | TRUSTWORTHY / DISPUTED / ABSTAIN constraint cascade           |
+| Epistemic governance    | TRUSTWORTHY / DISPUTED / ABSTAIN via the pyrrho ONNX classifier |
 | Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
 | Incremental ingestion   | Re-ingest only changed files (`.fitz/ingest_state.json`)      |
 

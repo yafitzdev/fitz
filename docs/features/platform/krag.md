@@ -6,7 +6,7 @@ windows, that embeddings are the right index, and that all content
 types deserve the same search strategy — and replaces them with
 **typed-unit retrieval over a structural index**.
 
-This document explains why, and how it works in v0.12.0+.
+This document explains why, and how it works in v0.13.0+.
 
 ---
 
@@ -83,7 +83,7 @@ Agentic RAG:
 GraphRAG:
   Document → LLM entity/relation extraction → graph → communities → answer
 
-KRAG (v0.12.0+):
+KRAG (v0.13.0+):
   Document → [symbols] [sections] [tables] → FTS5 + structure → routed search
            → expand via graph → LLM rerank → answer
 ```
@@ -164,7 +164,7 @@ on raw `onnxruntime`).
 
 ## Comparison
 
-| Dimension                | Traditional RAG    | Agentic RAG          | GraphRAG                       | KRAG (v0.12.0+)                  |
+| Dimension                | Traditional RAG    | Agentic RAG          | GraphRAG                       | KRAG (v0.13.0+)                  |
 | ------------------------ | ------------------ | -------------------- | ------------------------------ | -------------------------------- |
 | Retrieval unit           | Fixed-size chunk   | Fixed-size chunk     | Entity / community node        | Symbols, sections, tables        |
 | Structure awareness      | None               | Reasoned per-query   | LLM-extracted graph            | Deterministic (AST + imports)    |
@@ -238,9 +238,24 @@ The pattern: use the LLM for *classification* and *generation*; use
                     │              │                            │
                     │              ▼                            │
                     │         Read + Assemble + Synthesize      │
-                    │           + Constraint cascade            │
+                    │           + Governance (pyrrho)           │
                     └───────────────────────────────────────────┘
 ```
+
+---
+
+## Two entry points
+
+KRAG exposes its pipeline two ways:
+
+- **`answer(query)`** — retrieve, then synthesize a grounded `Answer`
+  with a `TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` mode and provenance.
+- **`retrieve(query)`** — run retrieval only and return the expanded
+  sources as `list[ReadResult]` (file content + `Address` provenance),
+  no synthesis. It is the primitive `answer()` builds on — use it when
+  you want the source material rather than a generated answer.
+
+See [ENGINES.md](../../ENGINES.md) for usage.
 
 ---
 

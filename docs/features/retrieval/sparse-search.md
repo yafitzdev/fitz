@@ -117,8 +117,8 @@ KRAG retrieval strategies.
 
 Internal parameters:
 
-- `top_addresses` — how many BM25 candidates to fetch (default 20)
-- `top_read` — how many to keep after expansion + rerank (default 10)
+- `top_addresses` — how many BM25 candidates to fetch (default 50)
+- `top_read` — how many to keep after expansion + rerank (default 50)
 
 ## Files
 

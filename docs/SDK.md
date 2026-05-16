@@ -1,6 +1,6 @@
 # docs/SDK.md
 
-Complete reference for the Fitz Python SDK (v0.10.0).
+Complete reference for the Fitz Python SDK (v0.13.0).
 
 ---
 
@@ -25,8 +25,10 @@ Query the knowledge base.
 
 ```python
 fitz_sage.query(
-    question: str,             # The question to ask
-    top_k: int = None          # Override chunk count
+    question: str,                 # The question to ask
+    source: str | Path = None,     # If provided, registers documents before querying
+    collection: str = None,        # Collection name (uses default if not specified)
+    top_k: int = None              # Override chunk count
 ) -> Answer
 ```
 
@@ -67,7 +69,7 @@ f = fitz(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `collection` | str | `"default"` | Vector DB collection name |
+| `collection` | str | `"default"` | Collection name |
 | `config_path` | str/Path | None | Path to YAML config |
 | `auto_init` | bool | True | Create default config if missing |
 
@@ -211,13 +213,15 @@ answer = run("What is X?", engine="fitz_krag")
 ### Fitz KRAG Specific
 
 ```python
-from fitz_sage import run_fitz_krag, create_fitz_krag_engine
+from fitz_sage.engines.fitz_krag.runtime import run_fitz_krag
 
 # KRAG-specific entry point
 answer = run_fitz_krag("What is X?")
 
-# Create reusable KRAG engine
-engine = create_fitz_krag_engine()
+# Create a reusable KRAG engine via the canonical factory
+from fitz_sage import create_engine
+
+engine = create_engine("fitz_krag")
 ```
 
 ---

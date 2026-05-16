@@ -81,10 +81,7 @@ Optional configuration in `enrichment.yaml`:
 
 ```yaml
 hierarchy:
-  enabled: true  # Default: true
-  group_by: source_id  # or 'semantic' for clustering
-  n_clusters: null  # For semantic grouping
-  max_clusters: 10  # For semantic grouping
+  group_by: source_file   # metadata key to group L1 summaries by
 ```
 
 Internal parameters:
@@ -94,9 +91,8 @@ Internal parameters:
 ## Files
 
 - **Hierarchical enricher:** `fitz_sage/ingestion/enrichment/hierarchy/enricher.py`
-- **Grouping strategies:** `fitz_sage/ingestion/enrichment/hierarchy/grouper.py`
-- **Semantic grouper:** `fitz_sage/ingestion/enrichment/hierarchy/semantic_grouper.py`
-- **Summary storage:** L2 in vector DB (tagged with `hierarchy_level: 2`), L1 as metadata on L0
+- **Chunk grouper (by metadata key):** `fitz_sage/ingestion/enrichment/hierarchy/grouper.py`
+- **Summary storage:** L2 indexed in SQLite FTS5 (tagged `hierarchy_level: 2`), L1 as metadata on L0
 - **Ingestion hook:** `fitz_sage/ingestion/enrichment/pipeline.py` (calls hierarchy enrichment)
 
 ## Benefits
@@ -163,7 +159,7 @@ Hierarchy only activates when BM25 + the ONNX cross-encoder reranker promote a s
 ## Dependencies
 
 - Same LLM provider used for answering (no additional dependencies)
-- Summaries stored in same vector DB as chunks
+- Summaries stored in the same SQLite collection as chunks
 
 ## Performance Considerations
 

@@ -1,6 +1,6 @@
 # Plugin Development Guide
 
-fitz-sage **v0.12.0+** has a much smaller plugin surface than earlier
+fitz-sage **v0.13.0+** has a much smaller plugin surface than earlier
 versions: chat is mono-protocol (one OpenAI-compatible provider with
 sugar presets), embedding/vector-db are gone, and the remaining plugin
 types are Python modules wired by config.
@@ -18,7 +18,6 @@ This guide covers what's pluggable and how to add a new one.
 | Chunker         | Python | `fitz_sage/ingestion/chunking/plugins/`        | `chunker:` / format auto-routing |
 | Source          | Python | `fitz_sage/ingestion/source/plugins/`          | source spec at ingest time       |
 | Enrichment artifact | Python | `fitz_sage/ingestion/enrichment/artifacts/plugins/` | always-on; presence-controlled |
-| Guardrail / constraint | Python | `fitz_sage/governance/constraints/plugins/` | `constraints:` list             |
 
 There is **no embedding plugin, no vector-DB plugin, no rerank plugin**.
 The reranker that does run (`OnnxReranker`) is an INT8 ONNX cross-encoder
@@ -44,15 +43,8 @@ The same pattern applies to vision (VLM): set `parser: docling_vision`
 to bake the VLM into ingestion, or set `parser: docling` / `parser: glm_ocr`
 to skip it.
 
-Constraints are different — they're a list, and presence in the list
-controls whether each guardrail runs:
-
-```yaml
-constraints:
-  - conflict_aware
-  - insufficient_evidence
-  - causal_attribution
-```
+Governance is selected by the engine config's `governance:` field
+(`pyrrho` or `null`) — it is not a plugin.
 
 ---
 
@@ -175,27 +167,6 @@ Routing is by file extension or content type — see
 The default (markdown, plaintext, code, table) covers most cases.
 Add a new plugin only when you have a format-specific structure to
 preserve (e.g. a custom XML dialect).
-
----
-
-## Adding a Constraint Plugin
-
-Constraints (epistemic guardrails) live under
-`fitz_sage/governance/constraints/plugins/`. They implement the
-`Constraint` protocol — given retrieved context, return a verdict
-(`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN`) and a rationale.
-
-The five built-ins are:
-
-| Plugin                  | What it checks                                          |
-| ----------------------- | ------------------------------------------------------- |
-| `conflict_aware`        | Authoritative sources contradict each other             |
-| `insufficient_evidence` | Retrieved context doesn't actually answer the question  |
-| `causal_attribution`    | Causal claim isn't supported by the retrieved evidence  |
-| `specific_info_type`    | Numeric / date / entity expectations vs what was found  |
-| `answer_verification`   | Generated answer is grounded in retrieved sources       |
-
-See [CONSTRAINTS.md](CONSTRAINTS.md) for the full semantics.
 
 ---
 

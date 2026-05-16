@@ -158,5 +158,5 @@ retrieval had a known failure mode of surface-similar-but-wrong
 candidates that the governance cascade then had to clean up. BM25 +
 LLM rerank produces fewer such candidates. Cases that fall off the
 recall curve are exactly the queries where `ABSTAIN` is the right
-answer — which is what the governance constraint cascade does
-correctly. The architecture is now lined up with the philosophy.
+answer — which is what the pyrrho classifier does correctly. The
+architecture is now lined up with the philosophy.

@@ -6,7 +6,7 @@ Core data models and protocols for fitz-sage.
 
 ### Chunk
 
-The fundamental unit of knowledge in fitz-sage. All engines, ingestion pipelines, and vector stores work with chunks.
+A unit of ingested content. Ingestion pipelines parse and chunk source files into Chunk objects.
 
 **Definition:**
 ```python
@@ -134,7 +134,7 @@ answer = Answer(
 **Provenance:**
 
 The `provenance` field provides attribution and allows users to verify the answer against source material. Different engines may provide different levels of provenance:
-- **Fitz RAG**: chunks retrieved from vector DB
+- **Fitz RAG**: chunks retrieved from SQLite storage
 - Custom engines: whatever makes sense for their paradigm
 
 **Answer Mode:**

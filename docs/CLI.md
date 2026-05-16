@@ -31,21 +31,9 @@ fitz query "What is X?" \
 
 ## Commands
 
-### `fitz init`
-
-Scaffold a default engine config. Drops `~/.fitz/config/fitz_krag.yaml`
-with sensible local-first defaults. Re-run to upgrade an old config
-to the v0.12.0 schema.
-
-```bash
-fitz init
-```
-
-The wizard auto-detects an OpenAI-compatible server on
-`http://localhost:8080/v1`, `:11434/v1` (Ollama), or `:1234/v1`
-(LM Studio) and writes the right `chat_base_url`.
-
----
+The CLI has three commands: `query`, `collections`, and `serve`.
+Configuration is auto-created on first run; there is no separate init
+step.
 
 ### `fitz query`
 
@@ -95,21 +83,6 @@ DB-level `DROP DATABASE` step because there's no server.
 
 ---
 
-### `fitz config`
-
-Inspect / explain the effective merged config.
-
-```bash
-fitz config show
-fitz config show --engine fitz_krag
-fitz config path
-```
-
-`show` prints the resolved YAML (after merging defaults, env overrides,
-and per-engine overrides). `path` prints the on-disk location.
-
----
-
 ### `fitz serve`
 
 Start the REST API server.
@@ -148,10 +121,9 @@ chat_smart_model: qwen2.5-7b-instruct
 collection: default
 ```
 
-`fitz init` writes a version of this matching whatever you have
-running locally. See [CONFIG.md](CONFIG.md) for every key and
-[CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) for ready-to-paste
-configurations.
+This file is auto-created on first run. See [CONFIG.md](CONFIG.md) for
+every key and [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) for
+ready-to-paste configurations.
 
 ---
 
@@ -189,10 +161,7 @@ storage.
 # Start a local OpenAI-compatible server
 llama-server -m qwen2.5-7b-instruct.gguf --port 8080 &
 
-# Scaffold a config that points at it
-fitz init
-
-# Ingest + query
+# Ingest + query (config is auto-created on first run)
 fitz query "What's in my docs?" --source ./docs
 ```
 

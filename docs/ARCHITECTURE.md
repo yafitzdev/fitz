@@ -1,6 +1,6 @@
 # Architecture Overview
 
-High-level system design of fitz-sage **v0.12.0+**.
+High-level system design of fitz-sage **v0.13.0+**.
 
 The architecture has three load-bearing decisions:
 
@@ -271,8 +271,7 @@ fitz_sage/
 ├── runtime/             # multi-engine orchestration
 ├── cli/                 # typer commands
 ├── api/                 # FastAPI app + routes
-├── sdk/                 # stateful Python interface
-└── structured/          # JSON/YAML schema-aware retrieval
+└── sdk/                 # stateful Python interface
 ```
 
 ---

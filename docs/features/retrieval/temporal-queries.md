@@ -79,13 +79,13 @@ Results from all sub-queries are merged using RRF:
 
 ## Key Design Decisions
 
-1. **Always-on** - Baked into VectorSearchStep. No configuration.
+1. **Always-on** - Baked into the KRAG retrieval router. No configuration.
 
 2. **Intent-first** - Detects intent before extracting references.
 
 3. **Multi-query** - Generates sub-queries for each time period.
 
-4. **RRF fusion** - Same fusion method as hybrid search and query expansion.
+4. **RRF fusion** - Same RRF fusion used across multi-query expansion.
 
 5. **Metadata tagging** - Chunks tagged with `temporal_refs` for downstream use.
 
@@ -93,7 +93,7 @@ Results from all sub-queries are merged using RRF:
 
 - **Detection module:** `fitz_sage/retrieval/detection/modules/temporal.py`
 - **Orchestrator:** `fitz_sage/retrieval/detection/registry.py`
-- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/steps/vector_search.py`
+- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
 
 Detection is now LLM-based via the unified `DetectionOrchestrator`. The `TemporalModule` contributes its prompt fragment and parses `TemporalIntent` (COMPARISON, TREND, POINT_IN_TIME, RANGE, SEQUENCE) from the combined LLM response.
 

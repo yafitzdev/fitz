@@ -42,7 +42,7 @@ Result: "Alice earns $85,000"
 
 3. **Schema chunk indexing** - Schema chunks indexed for search:
    - Contains: table name, column names, sample rows (top 3)
-   - Embedded and stored in vector DB
+   - Indexed in SQLite FTS5
    - Tagged with `content_type: table_schema`
 
 4. **Table registry** - Mapping of table IDs to source files:
@@ -55,7 +55,7 @@ Result: "Alice earns $85,000"
 
 ### At Query Time
 
-1. **Schema chunk retrieval** - Semantic search retrieves relevant schema chunks
+1. **Schema chunk retrieval** - BM25/FTS5 search retrieves relevant schema chunks
 
 2. **Table loading** - Full table data loaded from SQLite TableStore
 
@@ -86,14 +86,14 @@ No configuration required. Feature is baked into the ingestion and answering pip
 
 Internal parameters:
 - `max_table_rows`: Max rows to index in schema chunk (default: 3 sample rows)
-- `table_store_path`: `.fitz/tables/{collection}.db`
+- Tables are stored inside the collection's own `.db` (under the workspace `sqlite/` dir), not a separate file
 
 ## Files
 
-- **Table store:** `fitz_sage/ingestion/tables/table_store.py`
+- **Table store:** `fitz_sage/engines/fitz_krag/ingestion/table_store.py`
 - **Table detection:** `fitz_sage/ingestion/parser/` (CSV, Markdown, Docling parsers)
-- **SQL generation:** `fitz_sage/engines/fitz_krag/answering/table_query.py`
-- **Table routing step:** `fitz_sage/engines/fitz_krag/retrieval/steps/table_query.py`
+- **SQL generation / table query:** `fitz_sage/engines/fitz_krag/retrieval/table_handler.py`
+- **Table search strategy:** `fitz_sage/engines/fitz_krag/retrieval/strategies/table_search.py`
 
 ## Benefits
 

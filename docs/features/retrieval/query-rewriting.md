@@ -88,7 +88,7 @@ All interpretations are searched and results are merged.
   - `rewriter.py` - QueryRewriter class
   - `types.py` - RewriteResult, ConversationContext
   - `prompts/rewrite.txt` - LLM prompt template
-- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/steps/vector_search.py`
+- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
 
 ## Benefits
 

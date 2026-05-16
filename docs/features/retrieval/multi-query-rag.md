@@ -34,7 +34,7 @@ Query comes in
 
 ## Key Design Decisions
 
-1. **Always-on** - No user configuration needed. Built into existing retrieval plugins.
+1. **Always-on** - No user configuration needed. Built into the KRAG retrieval pipeline.
 
 2. **Fast LLM** - Uses `tier="fast"` model for query expansion. Cheap (~100-200ms) and negligible cost.
 
@@ -63,16 +63,7 @@ Expected: ACK within 100ms. Actual: Timeout.
 
 ## Configuration
 
-No configuration required. Feature is automatically enabled in the `dense` retrieval plugin.
-
-The threshold (300 chars) can be adjusted per-plugin in YAML:
-
-```yaml
-steps:
-  - type: multi_query_search
-    k: 25
-    min_query_length: 300  # Adjust threshold here
-```
+No configuration required — multi-query expansion is automatic in the KRAG retrieval pipeline. Queries longer than ~300 characters are expanded; shorter queries are not.
 
 ## Benefits
 

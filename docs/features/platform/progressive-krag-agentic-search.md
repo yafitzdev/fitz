@@ -5,22 +5,21 @@
 Progressive KRAG eliminates the ingestion barrier entirely. Instead of requiring users to run a separate ingest command (which takes minutes for LLM summarisation) before they can ask questions, users point at a folder and query immediately. An LLM-driven agentic search handles unindexed files on the fly, while a background worker silently indexes everything. Queries get progressively faster as indexing completes — but they work from second one.
 
 **Before**: `fitz ingest ./docs` (wait minutes) -> `fitz query "question"`
-**After**: `fitz point ./docs` (instant) -> `fitz query "question"` (works immediately)
+**After**: `fitz query --source ./docs "question"` (works immediately)
 
 ## User-Facing Changes
 
-### New command: `fitz point`
+### Pointing at a source
+
+The user-facing entry point is `fitz query --source ./docs "question"`:
 
 ```bash
-fitz point ./my-codebase
-# Ready! 847 files registered.
-# Ask questions now -- queries get faster over time.
-
-fitz query "how does authentication work?"
-# Works immediately, even before any file is indexed.
+fitz query --source ./my-codebase "how does authentication work?"
+# Registers the directory, then answers immediately --
+# even before any file is indexed. Queries get faster over time.
 ```
 
-Replaces `fitz ingest` entirely. The `ingest` command, its CLI subcommands, and its SDK/service methods have been removed.
+There is no separate `fitz point` command. `point()` exists as an internal engine/service method, not a CLI command. The old `fitz ingest` command, its CLI subcommands, and its SDK/service methods have been removed.
 
 ### SDK
 
@@ -38,12 +37,12 @@ The REST API's `/query` endpoint accepts an optional `source` field to register 
 ## Architecture
 
 ```
-fitz point ./docs              <- instant (builds manifest, starts background worker)
-fitz query "how does X work?"  <- works immediately
+fitz query --source ./docs "how does X work?"
+  <- builds manifest, starts background worker, answers immediately
 
 Query Router
-+-- Indexed path (files at EMBEDDED state) -> vector + BM25 strategies
-+-- Agentic path (files not yet indexed)   -> LLM picks from manifest, reads from disk
++-- Indexed path (files at SUMMARIZED state) -> BM25 / FTS5 strategies
++-- Agentic path (files not yet indexed)     -> LLM picks from manifest, reads from disk
 +-- Merge results -> standard KRAG generation pipeline
 ```
 
@@ -63,7 +62,7 @@ Thread-safe manifest with JSON persistence at `~/.fitz/collections/{collection}/
 | `rel_path` | Relative path from source root |
 | `content_hash` | SHA-256 for change detection |
 | `file_type` | Extension (`.py`, `.md`, etc.) |
-| `state` | `REGISTERED` -> `PARSED` -> `SUMMARIZED` -> `EMBEDDED` |
+| `state` | `REGISTERED` -> `PARSED` -> `SUMMARIZED` (terminal) |
 | `symbols` | AST-extracted symbols (code files) |
 | `headings` | Regex-extracted headings (doc files) |
 | `priority` | 1-4, boosted when user queries related files |
@@ -85,10 +84,10 @@ Non-Python strategies use lazy `try/except` imports -- if tree-sitter grammars a
 
 ### 3. AgenticSearchStrategy (`retrieval/strategies/agentic_search.py`)
 
-LLM-driven file selection for files not yet at EMBEDDED state. This is what makes queries work before indexing completes.
+LLM-driven file selection for files not yet at SUMMARIZED state. This is what makes queries work before indexing completes.
 
 **Retrieval flow**:
-1. Get files NOT at EMBEDDED state from manifest
+1. Get files NOT at SUMMARIZED state from manifest
 2. Build compact manifest text (~50-100 tokens/file with symbols, headings, paths)
 3. If >50 unindexed files: BM25 pre-filter to top 50
 4. Single LLM call (via `chat_factory("fast")`) picks 5-10 candidate files
@@ -104,13 +103,12 @@ LLM-driven file selection for files not yet at EMBEDDED state. This is what make
 
 ### 4. BackgroundIngestWorker (`progressive/worker.py`)
 
-Daemon thread that indexes files through a three-phase state machine. Each phase processes files in priority order (queried files first).
+Daemon thread that indexes files through a two-phase state machine. Each phase processes files in priority order (queried files first).
 
 | Phase | Transition | What happens | LLM? |
 |-------|------------|--------------|------|
 | 1 | REGISTERED -> PARSED | Store raw content, extract symbols/imports via strategies, write to SQLite | No |
 | 2 | PARSED -> SUMMARIZED | Generate LLM summaries in batches. **Pauses during active queries.** | Yes |
-| 3 | SUMMARIZED -> INDEXED | Build FTS5 / structural indexes for completed units. **Runs concurrently with queries.** | No |
 
 **Priority queue**:
 - P1: Files the user just queried about
@@ -118,7 +116,7 @@ Daemon thread that indexes files through a three-phase state machine. Each phase
 - P3: Small files (<10KB, quick wins)
 - P4: Remaining files by size ascending
 
-**Query coordination**: When a query arrives, the engine calls `signal_query_start()` which pauses LLM summarization (phase 2) so the query gets full LLM priority. After the query completes, `signal_query_end()` resumes the worker. Embedding (phase 3) runs concurrently since it uses a separate API.
+**Query coordination**: When a query arrives, the engine calls `signal_query_start()` which pauses LLM summarization (phase 2) so the query gets full LLM priority. After the query completes, `signal_query_end()` resumes the worker.
 
 **Multi-language support**: Phase 1 uses lazy-initialized strategies for Python, TypeScript/JavaScript, Java, and Go. Each strategy extracts symbols and imports which are stored through the same unified path (symbol store + import store).
 
@@ -150,9 +148,8 @@ The `ContentReader` now accepts a `source_dir: Path` parameter. When an address 
 | `engines/fitz_krag/progressive/__init__.py` | Package exports |
 | `engines/fitz_krag/progressive/manifest.py` | FileManifest, ManifestEntry, FileState, ManifestSymbol, ManifestHeading |
 | `engines/fitz_krag/progressive/builder.py` | ManifestBuilder -- fast AST + heading extraction, no LLM |
-| `engines/fitz_krag/progressive/worker.py` | BackgroundIngestWorker -- daemon thread, 3-phase state machine |
+| `engines/fitz_krag/progressive/worker.py` | BackgroundIngestWorker -- daemon thread, 2-phase state machine |
 | `engines/fitz_krag/retrieval/strategies/agentic_search.py` | AgenticSearchStrategy -- LLM-driven file selection |
-| `cli/commands/point.py` | `fitz point` CLI command |
 
 ### Modified files (6)
 
@@ -162,14 +159,14 @@ The `ContentReader` now accepts a `source_dir: Path` parameter. When an address 
 | `engines/fitz_krag/retrieval/router.py` | Accept `agentic_strategy` param, run alongside indexed strategies |
 | `engines/fitz_krag/retrieval/reader.py` | Accept `source_dir` param, disk fallback for unindexed files |
 | `services/fitz_service.py` | Remove `ingest()`/`IngestResult`, add `point()` |
-| `sdk/fitz.py` | Remove `ingest()`/`IngestStats`, add `point()` |
-| `cli/cli.py` | Remove `ingest`/`ingest-table` commands, add `point` command |
+| `sdk/fitz.py` | `query()` gains a `source=` param (registers the path before querying) |
+| `cli/cli.py` | `query` command gains `--source`/`-s` option |
 
 ### Deleted files (5)
 
 | File | Reason |
 |------|--------|
-| `cli/commands/ingest.py` | Replaced by `point.py` |
+| `cli/commands/ingest.py` | No longer user-facing |
 | `cli/commands/ingest_runner.py` | No longer user-facing |
 | `cli/commands/ingest_helpers.py` | No longer user-facing |
 | `cli/commands/ingest_engines.py` | No longer user-facing |

@@ -182,7 +182,7 @@ Open an issue with:
 4. **Commit with clear messages**
    ```bash
    git commit -m "feat(engines): add hybrid retrieval to fitz_krag"
-   git commit -m "fix(core): handle empty embedding response"
+   git commit -m "fix(core): handle empty retrieval response"
    git commit -m "docs: update engine development guide"
    ```
 
@@ -278,11 +278,11 @@ Engines are the core abstraction in Fitz. Each engine is a complete implementati
 
 ## Plugin Development
 
-Plugins extend functionality within engines (LLM providers, vector DBs, etc.).
+Plugins extend functionality within engines (chat providers, parsers, chunkers, sources, enrichment artifacts).
 
 ### Creating a New Plugin
 
-1. **Identify the plugin type**: `llm-chat`, `llm-embedding`, `llm-rerank`, `retrieval`, `constraint`, `reader`, `chunker`
+1. **Identify the plugin type**: `chat`, `parser`, `chunker`, `source`, `enrichment-artifact`
 
 2. **Create the plugin file**:
    ```python
@@ -316,13 +316,11 @@ Plugins extend functionality within engines (LLM providers, vector DBs, etc.).
 
 | Type | Protocol | Required Method | Return Type |
 |------|----------|-----------------|-------------|
-| `chat` | `ChatPlugin` | `chat(messages)` | `str` |
-| `embedding` | `EmbeddingPlugin` | `embed(text)` | `list[float]` |
-| `rerank` | `RerankPlugin` | `rerank(query, chunks)` | `list[Chunk]` |
-| `vector_db` | `VectorDBPlugin` | `search(collection, vector, limit)` | `list[SearchResult]` |
-| `retrieval` | `RetrievalPlugin` | `retrieve(query)` | `list[Chunk]` |
-| `chunking` | `ChunkerPlugin` | `chunk_text(text, meta)` | `list[Chunk]` |
-| `ingestion` | `IngestPlugin` | `ingest(source, kwargs)` | `Iterable[RawDocument]` |
+| `chat` | `ChatProvider` | `chat(messages)` | `str` |
+| `parser` | `Parser` | `parse(file)` | `ParsedDocument` |
+| `chunker` | `Chunker` | `chunk(document)` | `list[Chunk]` |
+| `source` | `Source` | `discover(root, patterns)` | `Iterable[SourceFile]` |
+| `enrichment-artifact` | `ArtifactGenerator` | `generate(analysis)` | `Artifact` |
 
 ---
 

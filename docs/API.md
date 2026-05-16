@@ -254,7 +254,7 @@ Health check endpoint.
 ```json
 {
   "status": "healthy",
-  "version": "0.10.0",
+  "version": "0.13.0",
   "config_exists": true
 }
 ```
@@ -276,7 +276,7 @@ All endpoints return standard HTTP error codes:
 | 400 | Bad request (invalid input) |
 | 404 | Resource not found |
 | 500 | Internal server error |
-| 501 | Feature not supported by vector DB |
+| 501 | Feature not implemented |
 
 **Error response format:**
 

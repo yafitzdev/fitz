@@ -9,11 +9,11 @@ How documents flow through Fitz from files to searchable chunks.
 The ingestion pipeline transforms your documents into searchable knowledge:
 
 ```
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
-│  Files  │ →  │  Parse  │ →  │  Chunk  │ →  │  Embed  │ →  │  Store  │
-└─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
-                   │              │              │              │
-              ParsedDoc       Chunks[]      Vectors[]     VectorDB
+┌─────────┐    ┌─────────┐    ┌─────────┐    ┌──────────────────────┐
+│  Files  │ →  │  Parse  │ →  │  Chunk  │ →  │ Index (SQLite + FTS5)│
+└─────────┘    └─────────┘    └─────────┘    └──────────────────────┘
+                   │              │
+              ParsedDoc       Chunks[]
 ```
 
 **Key features:**
@@ -99,6 +99,7 @@ Parser.parse(SourceFile) → ParsedDocument
 | `ParserRouter` | Routes files to parsers by extension |
 | `DoclingParser` | PDFs, DOCX, images via Docling |
 | `DoclingVisionParser` | Same + VLM for figure descriptions |
+| `GlmOcrParser` | Hybrid pypdfium2 + GLM-OCR via the vision endpoint |
 | `PlainTextParser` | Text files, markdown, code |
 
 **Parsed document structure:**
@@ -124,7 +125,7 @@ ParsedDocument(
 | `.png`, `.jpg` | Docling | OCR + optional VLM |
 | `.md`, `.txt`, `.py` | PlainText | Direct text reading |
 
-**VLM for figures:** Set `chunking.default.parser: docling_vision` to enable AI-generated figure descriptions instead of `[Figure]` placeholders.
+**VLM for figures:** Set `parser: docling_vision` to enable AI-generated figure descriptions instead of `[Figure]` placeholders.
 
 ---
 
@@ -172,51 +173,24 @@ If the chunker ID changes (e.g., you change chunk_size), affected files are auto
 
 ---
 
-### 5. Embed (Vectorization)
+### 5. Store (SQLite + FTS5)
 
-Converts text to vectors for similarity search.
-
-```
-Embedder.embed_batch(texts) → [vector, vector, ...]
-```
+Persists ingested units for retrieval. There are no vectors and no
+database server — each collection is a single `.db` file.
 
 | Component | Purpose |
 |-----------|---------|
-| `Embedder` (YAML plugin) | Text-to-vector conversion |
+| `SqliteConnectionManager` | One `.db` file per collection under `<workspace>/sqlite/` |
+| `SymbolStore` | Code symbols → `krag_symbol_index` (+ `krag_symbol_fts`) |
+| `SectionStore` | Document sections → `krag_section_index` (+ `krag_section_fts`) |
+| `TableStore` | Table metadata → `krag_table_index` |
 
-**Batch processing:**
-- Chunks are embedded in batches for efficiency
-- Typical batch size: 96 chunks
-- Embedding model determines vector dimension (e.g., 1024 for Cohere)
-
----
-
-### 6. Store (Vector Database)
-
-Persists vectors for retrieval.
-
-```
-VectorDB.upsert(collection, points)
-```
-
-| Component | Purpose |
-|-----------|---------|
-| `VectorDBWriter` | Writes to configured database |
-
-**Point structure:**
-
-```python
-{
-    "id": "chunk_abc123",
-    "vector": [0.1, 0.2, ...],  # 1024 dims
-    "payload": {
-        "content": "The text...",
-        "source_file": "/path/to/doc.pdf",
-        "chunk_index": 0,
-        ...
-    }
-}
-```
+**What happens:**
+- Ingested units (code symbols, document sections, tables, chunks) are
+  written to per-collection SQLite databases.
+- FTS5 indexes back BM25 keyword search over symbol and section text.
+- One `fitz_<collection>.db` lives under the workspace `sqlite/`
+  directory — no server, no connection string, no vectors.
 
 ---
 
@@ -272,7 +246,7 @@ Multi-level summaries for analytical queries. **Always on by default.**
 ```yaml
 enrichment:
   hierarchy:
-    group_by: source_file  # Or use semantic clustering
+    group_by: source_file
 ```
 
 **Levels:**
@@ -307,9 +281,8 @@ Answer: Quantum computing uses qubits...
 |--------|------------|-----|
 | File content changed | Yes | Content hash differs |
 | Chunk size changed | Yes | Chunker ID differs |
-| Embedding model changed | No | Vectors regenerated |
 | New file added | Yes | Not in state |
-| File deleted | Mark deleted | Clean up vectors |
+| File deleted | Mark deleted | Clean up indexed entries |
 
 ---
 

@@ -67,7 +67,7 @@ Query: "List all the people mentioned in the documents"
 ## Technical Details
 
 - **Module**: `fitz_sage/retrieval/detection/modules/aggregation.py`
-- **Integration**: Part of unified `DetectionOrchestrator` in `VectorSearchStep`
+- **Integration**: invoked by the KRAG retrieval router (`fitz_sage/engines/fitz_krag/retrieval/router.py`)
 - **No configuration**: Always active, no opt-out
 
 ### LLM-Based Detection

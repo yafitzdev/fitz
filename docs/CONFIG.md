@@ -1,7 +1,7 @@
 # Configuration Reference
 
-fitz-sage **v0.12.0+**. Engine config lives at
-`~/.fitz/config/<engine>.yaml` (auto-created on first `fitz init`).
+fitz-sage **v0.13.0+**. Engine config lives at
+`~/.fitz/config/<engine>.yaml` (auto-created on first run).
 Storage lives at `~/.fitz/sqlite/fitz_<collection>.db` (auto-created
 on first ingest).
 
@@ -96,11 +96,13 @@ Features are switched on by **provider presence**, not boolean flags:
 
 ```yaml
 collection: default          # active collection
-# storage_path: ~/.fitz/sqlite  # override (defaults to <workspace>/sqlite)
 ```
 
 That's the entire storage surface. SQLite + FTS5 + WAL, one `.db` per
-collection. No `vector_db`, no `connection_string`, no `pgvector_kwargs`.
+collection. Storage paths are derived automatically — one
+`fitz_<collection>.db` under the workspace `sqlite/` directory; there
+is no settable storage-path config key. No `vector_db`, no
+`connection_string`, no `pgvector_kwargs`.
 See [features/platform/unified-storage.md](features/platform/unified-storage.md)
 for the schema and pragmas.
 
@@ -109,19 +111,21 @@ for the schema and pragmas.
 ## Parser
 
 ```yaml
-parser: glm_ocr            # hybrid pdfplumber + GLM-OCR (fast, default)
-# parser: docling          # Docling — slower, no OCR
+parser: docling            # Docling structure extraction (default)
 # parser: docling_vision   # Docling + VLM for figure descriptions
+# parser: glm_ocr          # hybrid pypdfium2 + GLM-OCR, handles scanned pages
 ```
 
 | Parser           | Speed (100pg PDF) | Scanned pages | Install                            |
 | ---------------- | ----------------- | ------------- | ---------------------------------- |
-| `glm_ocr`        | ~28 s             | yes (GLM-OCR) | base install                       |
 | `docling`        | ~21 min           | no            | `pip install fitz-sage[docs]`      |
 | `docling_vision` | ~21 min + VLM     | VLM figures   | `[docs]` + `vision:` set           |
-| `lightweight`    | ms                | no            | base (uses `pypdf` only)           |
-| `plaintext`      | ms                | n/a           | base                               |
-| `csv`            | ms                | n/a           | base                               |
+| `glm_ocr`        | ~28 s             | yes (GLM-OCR) | base install                       |
+
+Only `docling`, `docling_vision`, and `glm_ocr` are selectable `parser:`
+values. `lightweight` is an automatic ImportError fallback (not
+selectable), and plain-text / CSV files are routed by extension to
+built-in plugins — they are not `parser:` options.
 
 ---
 
@@ -152,6 +156,7 @@ For enterprise (M2M / mTLS) deployments see
 ```yaml
 top_addresses: 50      # how many candidates to fetch from FTS5 (default 50)
 top_read: 50           # how many to read into context after rerank (default 50)
+retrieval_workers: 4   # max retrieval strategies run concurrently; set to 1 to serialize LLM calls for single-model local servers (LM Studio, llama-server)
 governance: pyrrho
 strict_grounding: false
 ```

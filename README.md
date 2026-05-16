@@ -214,8 +214,8 @@ SQL, and epistemic honesty out of the box — without configuration.
 
 **Tabular data that is actually searchable 📈** → [Unified Storage](docs/features/platform/unified-storage.md)
 > CSV and table data is a nightmare in most RAG systems—chunked arbitrarily, structure lost, queries fail. `fitz-sage` 
-> stores tables natively in PostgreSQL alongside your vectors—same database, no sync issues. Auto-detects schema and runs 
-> real SQL. Ask "What's the average price by region?" and get an actual computed answer, not fragmented rows.
+> stores tables natively in SQLite alongside every other retrieval unit—one `.db` per collection, no sync issues. Auto-detects 
+> schema and runs real SQL. Ask "What's the average price by region?" and get an actual computed answer, not fragmented rows.
 
 **Fully local execution possible 🏠** → [OpenAI-Compatible Endpoint](docs/features/platform/openai-compatible-endpoint.md)
 > Embedded SQLite + any local OpenAI-compatible server (llama.cpp, vLLM, LM Studio, Ollama). One protocol, one URL, no API keys required to start.
@@ -245,7 +245,7 @@ units, each with its own storage format and search strategy.
 |-----------------------------|----------------|-------------|
 | [**Symbols 🖌️**](docs/features/ingestion/code-symbol-extraction.md) | Code files | Tree-sitter parses functions, classes, and methods into addressable units with qualified names, references, and import graphs. Cross-file dependencies are graph traversals, not text searches. |
 | **Sections 📑** | Documents (PDF, markdown, text) | Headings and paragraphs are extracted with parent/child hierarchy. Deeply nested sections include parent context; top-level headings include child summaries. |
-| [**Tables 📅**](docs/features/ingestion/tabular-data-routing.md) | CSV files or tables within documents | Native PostgreSQL storage with auto-detected schema. Real SQL execution from natural language — not chunked text. |
+| [**Tables 📅**](docs/features/ingestion/tabular-data-routing.md) | CSV files or tables within documents | Native SQLite storage with auto-detected schema. Real SQL execution from natural language — not chunked text. |
 | **Images 🖼️** | Figures and diagrams within documents | VLM-powered figure extraction and visual understanding. *(Coming soon)* |
 | **Chunks 🧩** | Any content as fallback | Traditional chunk-based retrieval when structured extraction doesn't apply. Automatic fallback — no configuration needed. |
 
@@ -518,7 +518,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 │                         fitz-sage                             │
 ├───────────────────────────────────────────────────────────────┤
 │  User Interfaces                                              │
-│  CLI: query (--source) | init | collections | config | serve  │
+│  CLI: query (--source) | collections | serve                  │
 │  SDK: fitz_sage.query(source=...)                             │
 │  API: /query | /chat | /collections | /health                 │
 ├───────────────────────────────────────────────────────────────┤
@@ -563,7 +563,6 @@ fitz query "question"                  # Query existing collection
 fitz query --chat                      # Multi-turn conversation mode
 fitz collections                       # List and delete knowledge collections
 fitz serve                             # Start REST API server
-fitz reset                             # Reset pgserver database (when stuck/corrupted)
 ```
 
 Config: `.fitz/config.yaml` — auto-created on first run, edit to change models.
@@ -752,7 +751,6 @@ MIT
 - [KRAG — Knowledge Routing Augmented Generation](docs/features/platform/krag.md)
 - [Code Symbol Extraction](docs/features/ingestion/code-symbol-extraction.md)
 - [Tabular Data Routing](docs/features/ingestion/tabular-data-routing.md)
-- [Standalone Code Retrieval](docs/features/code/standalone-code-retrieval.md)
 - [Enterprise Gateway](docs/features/platform/enterprise-gateway.md)
 - [Engines](docs/ENGINES.md)
 - [Configuration Examples](docs/CONFIG_EXAMPLES.md)

@@ -177,7 +177,7 @@ Classifies each chunk's content type for retrieval boosting.
 
 **Stored in:** `chunk.metadata["content_type"]`
 
-**Used by:** VectorSearchStep for document type boosting at query time (narrative vs structured queries).
+**Used by:** the KRAG retrieval router for document type boosting at query time (narrative vs structured queries).
 
 ---
 
@@ -232,7 +232,7 @@ Hierarchy creates summary layers:
 | "Explain the auth module" | L1 auth summary + L0 chunks |
 | "How does validateToken work?" | L0 original chunks |
 
-No special query syntax needed - summaries match analytical queries via vector similarity.
+No special query syntax needed - summaries match analytical queries via FTS5/BM25 retrieval.
 
 ### Configuration
 
@@ -241,9 +241,7 @@ Hierarchy configuration is the only enrichment setting available. Enrichment run
 ```yaml
 enrichment:
   hierarchy:
-    grouping_strategy: metadata   # or "semantic"
     group_by: source_file         # metadata key for grouping
-    # n_clusters: 10              # for semantic grouping
     # group_prompt: "..."         # custom group summary prompt
     # corpus_prompt: "..."        # custom corpus summary prompt
 ```

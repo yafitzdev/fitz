@@ -49,9 +49,9 @@ Every answer includes a **mode** indicating confidence level:
 
 ## Key Design Decisions
 
-1. **Always-on** - Constraints run automatically on every answer. No configuration needed.
+1. **Always-on** - The pyrrho classifier runs automatically on every answer. No configuration needed.
 
-2. **Post-generation filtering** - Constraints evaluate the LLM's answer and retrieved chunks, not the raw query.
+2. **Post-generation filtering** - The governance classifier evaluates the LLM's answer and retrieved chunks, not the raw query.
 
 3. **Explicit modes** - The mode field is first-class in the Answer dataclass, not a hidden flag.
 
@@ -61,23 +61,12 @@ Every answer includes a **mode** indicating confidence level:
 
 ## Configuration
 
-No configuration required. Constraints are baked into the answer generation pipeline.
-
-To disable (not recommended):
-```yaml
-# config.yaml
-constraints:
-  enabled: false
-```
+No configuration required. The pyrrho classifier is baked into the answer generation pipeline. Governance is selected by the `governance:` field (`pyrrho` or `null`).
 
 ## Files
 
-- **Constraint plugins:** `fitz_sage/governance/constraints/plugins/`
-  - `conflict_aware.py` - Detects contradictions across sources
-  - `insufficient_evidence.py` - Blocks confident answers without evidence
-  - `causal_attribution.py` - Prevents hallucinated causality
-- **Constraint runner:** `fitz_sage/engines/fitz_krag/answering/constraints.py`
-- **Answer modes:** `fitz_sage/core/answer.py` (AnswerMode enum)
+- **Governance backend:** `fitz_sage/governance/pyrrho.py`
+- **Answer modes:** `fitz_sage/core/answer_mode.py` (AnswerMode enum)
 
 ## Benefits
 
@@ -92,7 +81,7 @@ constraints:
 
 **Query:** "What caused the Q4 sales decline?"
 
-**Without constraints:**
+**Without the governance classifier:**
 ```
 Answer: The Q4 sales decline was primarily caused by increased competition
 and seasonal factors.
@@ -100,7 +89,7 @@ and seasonal factors.
 Mode: TRUSTWORTHY
 ```
 
-**With constraints (CausalAttribution):**
+**With the pyrrho classifier:**
 ```
 Answer: Q4 sales declined by 15% compared to Q3. However, I cannot determine
 the causal factors from the available data. The documents mention increased

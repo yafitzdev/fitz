@@ -60,7 +60,7 @@ Expanded queries:   ["How do I fetch employee data?",
 
 ## Key Design Decisions
 
-1. **Always-on** - Baked into VectorSearchStep. No configuration.
+1. **Always-on** - Baked into the KRAG retrieval router. No configuration.
 
 2. **Rule-based** - No LLM calls. Fast and predictable.
 
@@ -70,12 +70,12 @@ Expanded queries:   ["How do I fetch employee data?",
 
 5. **Limit expansions** - Maximum 4 additional variations to control latency.
 
-6. **RRF fusion** - Same fusion method as hybrid search for consistent ranking.
+6. **RRF fusion** - Same RRF fusion used across multi-query expansion.
 
 ## Files
 
 - **Expansion detector:** `fitz_sage/retrieval/detection/detectors/expansion.py`
-- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/steps/vector_search.py`
+- **Integration:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
 
 Note: Query expansion uses dictionary-based matching (not LLM) for fast, deterministic results. Synonyms and acronyms are defined in the `SYNONYMS` and `ACRONYMS` dicts in `expansion.py`.
 
