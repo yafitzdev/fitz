@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-05-17
+
 ### 🎉 Highlights
 
 **Multi-hop retrieval is on by default.** Retrieval is now one
@@ -80,6 +82,13 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   `onnx/model_int8.onnx` (151 MB) that
   `Alibaba-NLP/gte-reranker-modernbert-base` publishes — genuine INT8.
 
+- **First-run config no longer offers dead LLM providers.**
+  `core/registry.py`'s `_LLM_PROVIDER_CAPABILITIES` still advertised the
+  removed `cohere` / `anthropic` / `ollama` providers and an `embedding`
+  capability, so the first-run provider selection presented a menu with
+  non-functional options. Corrected to the live set — `endpoint` /
+  `openai` / `azure_openai` / `enterprise`.
+
 ### 🔄 Changed
 
 - **Query prep collapsed into one batched LLM call.** Rewrite, analysis,
@@ -94,6 +103,16 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   `fitz_sage/code/` `CodeRetriever`; `FitzKragEngine` now exposes a public
   `retrieve()` method — the retrieval half of `answer()`, usable without
   synthesis. The `[code]` extra is gone.
+
+- **v0.13.02 dead-code audit cleanup.** Alongside the code-retrieval
+  consolidation: unified the LLM-JSON parser that was duplicated three
+  times (plus two inline copies) into `core/json_utils.parse_llm_json`;
+  unified the duplicated `httpx` client builder into `_build_http_client`;
+  renamed the mislabeled `_pg_table_store` → `_sqlite_table_store` (it was
+  always a `SqliteTableStore`); removed dead code — `IngestionVectorError`
+  (exported, never raised) and the unused `RetrievalStrategy` protocol;
+  and dropped stale `vector-database` / `embeddings` keywords and the
+  `embeddings` pytest marker from `pyproject.toml`.
 
 - **`fitz_sage/governance/pyrrho.py`** + **`fitz_sage/llm/providers/onnx_reranker.py`** —
   rewrote both load paths: `huggingface_hub.hf_hub_download` to fetch
@@ -148,6 +167,17 @@ warm ~11 ms, reranker `rerank()` warm ~17 ms.
   `multi_hop` extended signal (in `query_batcher`'s prompt and
   `RetrievalProfile`) never affected routing and is redundant now that
   pyrrho gates hops — dropped from both.
+
+### 📝 Docs
+
+- **Documentation sync.** Audited the full `docs/` tree against the
+  v0.12 / v0.13 architecture and corrected ~30 files: removed references
+  to deleted internals (`CodeRetriever`, the constraint cascade,
+  `VectorSearchStep`, vector DB / embeddings), documented the new public
+  `FitzKragEngine.retrieve()` API, fixed stale config and CLI-command
+  docs, and deleted the obsolete `framework-integrations` doc. The
+  retrieval feature docs were further updated for the one-call query-prep
+  refactor.
 
 ---
 
