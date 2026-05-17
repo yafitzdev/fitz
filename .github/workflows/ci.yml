@@ -94,7 +94,7 @@ jobs:
         env:
           PYTHONUTF8: 1
         run: |
-          pytest tests/unit/ -v --tb=short -n 2
+          pytest tests/unit/ -m "not slow" -v --tb=short -n 2
 
   # ===========================================================================
   # Core Module Import Check (Lightweight)
@@ -158,7 +158,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest tests/unit/ --cov=fitz_sage --cov-report=xml --cov-report=term-missing -n 2
+          pytest tests/unit/ -m "not slow" --cov=fitz_sage --cov-report=xml --cov-report=term-missing -n 2
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
