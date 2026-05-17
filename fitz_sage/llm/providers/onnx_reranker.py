@@ -30,8 +30,6 @@ from __future__ import annotations
 
 from typing import Iterable
 
-import numpy as np
-
 from fitz_sage.encoders.onnx import OnnxEncoderBackend
 from fitz_sage.llm.providers.base import RerankResult
 
@@ -99,6 +97,8 @@ class OnnxReranker(OnnxEncoderBackend):
 
     def _score_pairs(self, query: str, documents: list[str]) -> list[float]:
         """Run the cross-encoder forward pass in batches and return raw logits."""
+        import numpy as np
+
         n = len(documents)
         scores = [0.0] * n
         for start in range(0, n, self._batch_size):

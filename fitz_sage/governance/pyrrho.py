@@ -39,8 +39,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-import numpy as np
-
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.encoders.onnx import OnnxEncoderBackend
 from fitz_sage.governance.protocol import EvidenceItem
@@ -100,6 +98,8 @@ class Pyrrho(OnnxEncoderBackend):
             A GovernanceDecision with the selected AnswerMode, the full softmax
             distribution, and a one-line human-readable reason.
         """
+        import numpy as np
+
         if not contexts:
             return GovernanceDecision(
                 mode=AnswerMode.ABSTAIN,
