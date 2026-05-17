@@ -24,7 +24,7 @@ except ImportError:
     _has_scipy = False
 
 from fitz_sage.retrieval.detection.classifier import DetectionClassifier
-from fitz_sage.retrieval.detection.protocol import DetectionCategory, DetectionResult
+from fitz_sage.retrieval.detection.protocol import DetectionCategory
 from fitz_sage.retrieval.detection.registry import DetectionOrchestrator
 
 # ---------------------------------------------------------------------------

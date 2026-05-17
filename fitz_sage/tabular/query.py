@@ -237,8 +237,7 @@ Return ONLY the SQL query, no explanation."""
             row_count = self.table_store.get_row_count(chunk.metadata.get("table_id", ""))
 
             logger.debug(
-                f"Processing table {table_name}: "
-                f"{len(sanitized_cols)} cols, {row_count} rows"
+                f"Processing table {table_name}: " f"{len(sanitized_cols)} cols, {row_count} rows"
             )
 
             # 2. Get sample data for LLM context

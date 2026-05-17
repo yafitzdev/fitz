@@ -154,7 +154,6 @@ class TestExpandTermsDictionaryConsistency:
     def test_synonym_terms_are_from_dictionary(self):
         """Synonym expansion terms are values from the SYNONYMS dict."""
         result = expand_terms("delete")
-        expected_synonyms = set(SYNONYMS.get("delete", []))
         # All returned terms for "delete" should be from its synonym list
         for term in result:
             # Could be synonym expansion or acronym expansion

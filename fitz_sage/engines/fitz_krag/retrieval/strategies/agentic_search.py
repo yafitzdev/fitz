@@ -178,9 +178,7 @@ class AgenticSearchStrategy:
             response = chat.chat([{"role": "user", "content": prompt}])
             text = response.strip()
             parsed = parse_llm_json(text, as_array=True)
-            return [
-                str(p) for p in parsed[:_LLM_MAX_FILES] if isinstance(p, str) and p.strip()
-            ]
+            return [str(p) for p in parsed[:_LLM_MAX_FILES] if isinstance(p, str) and p.strip()]
         except Exception as e:
             logger.warning(f"Agentic file selection failed: {e}")
 
