@@ -13,6 +13,13 @@ def strategy():
     return PythonCodeIngestStrategy()
 
 
+def _one(symbols, kind):
+    """The single symbol of the given kind — test sources have exactly one."""
+    matches = [s for s in symbols if s.kind == kind]
+    assert len(matches) == 1, f"expected exactly one {kind}, got {len(matches)}"
+    return matches[0]
+
+
 class TestContentTypes:
     def test_handles_python(self, strategy):
         assert ".py" in strategy.content_types()
@@ -25,8 +32,7 @@ class TestFunctionExtraction:
     return "world"
 '''
         result = strategy.extract(source, "test.py")
-        assert len(result.symbols) == 1
-        sym = result.symbols[0]
+        sym = _one(result.symbols, "function")
         assert sym.name == "hello"
         assert sym.kind == "function"
         assert sym.start_line == 1
@@ -36,7 +42,7 @@ class TestFunctionExtraction:
     def test_function_with_args(self, strategy):
         source = "def add(a: int, b: int) -> int:\n    return a + b\n"
         result = strategy.extract(source, "math.py")
-        sym = result.symbols[0]
+        sym = _one(result.symbols, "function")
         assert "a: int" in sym.signature
         assert "b: int" in sym.signature
         assert "-> int" in sym.signature
@@ -44,14 +50,14 @@ class TestFunctionExtraction:
     def test_async_function(self, strategy):
         source = "async def fetch(url: str) -> str:\n    pass\n"
         result = strategy.extract(source, "net.py")
-        sym = result.symbols[0]
+        sym = _one(result.symbols, "function")
         assert sym.name == "fetch"
         assert "async def" in sym.signature
 
     def test_function_with_defaults(self, strategy):
         source = "def greet(name: str, greeting: str = 'hello') -> str:\n    return f'{greeting} {name}'\n"
         result = strategy.extract(source, "test.py")
-        sym = result.symbols[0]
+        sym = _one(result.symbols, "function")
         assert "greeting: str=..." in sym.signature
 
 
@@ -68,7 +74,7 @@ class TestClassExtraction:
         result = strategy.extract(source, "animals.py")
         symbols = result.symbols
         # Class + __init__ + bark
-        assert len(symbols) == 3
+        assert len([s for s in symbols if s.kind != "module"]) == 3
         class_sym = [s for s in symbols if s.kind == "class"][0]
         assert class_sym.name == "Dog"
         methods = [s for s in symbols if s.kind == "method"]
@@ -80,7 +86,7 @@ class TestClassExtraction:
     def test_class_with_bases(self, strategy):
         source = "class MyEngine(KnowledgeEngine):\n    pass\n"
         result = strategy.extract(source, "engine.py")
-        class_sym = result.symbols[0]
+        class_sym = _one(result.symbols, "class")
         assert "KnowledgeEngine" in class_sym.signature
 
     def test_method_qualified_name(self, strategy):
@@ -191,7 +197,7 @@ class TestModulePath:
     def test_path_to_module(self, strategy):
         source = "def func(): pass\n"
         result = strategy.extract(source, "fitz_sage/engines/krag/engine.py")
-        sym = result.symbols[0]
+        sym = _one(result.symbols, "function")
         assert sym.qualified_name == "fitz_sage.engines.krag.engine.func"
 
     def test_init_path(self, strategy):
@@ -202,7 +208,7 @@ class TestModulePath:
         # Use a proper constant name
         source2 = "MAX = 1\n"
         result2 = strategy.extract(source2, "pkg/__init__.py")
-        sym = result2.symbols[0]
+        sym = _one(result2.symbols, "constant")
         assert sym.qualified_name == "pkg.MAX"
 
 
@@ -244,5 +250,21 @@ class Processor:
     def test_references_extracted(self, strategy):
         source = "def process(data):\n    result = transform(data)\n    return result\n"
         result = strategy.extract(source, "test.py")
-        sym = result.symbols[0]
+        sym = _one(result.symbols, "function")
         assert "transform" in sym.references
+
+
+class TestModuleExtraction:
+    def test_module_symbol_carries_docstring(self, strategy):
+        source = '"""What this module does."""\n\ndef f():\n    pass\n'
+        result = strategy.extract(source, "pkg/thing.py")
+        mod = _one(result.symbols, "module")
+        assert mod.name == "thing"
+        assert mod.qualified_name == "pkg.thing"
+        assert mod.docstring == "What this module does."
+
+    def test_module_symbol_without_docstring(self, strategy):
+        source = "def f():\n    pass\n"
+        result = strategy.extract(source, "pkg/thing.py")
+        mod = _one(result.symbols, "module")
+        assert mod.docstring == ""

@@ -6,11 +6,13 @@ from __future__ import annotations
 import json
 import logging
 import re
+import uuid
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.ingestion.schema import TABLE_PREFIX
 
 if TYPE_CHECKING:
+    from fitz_sage.engines.fitz_krag.ingestion.strategies.base import SymbolEntry
     from fitz_sage.storage.sqlite import SqliteConnectionManager
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,58 @@ def _build_fts_query(query: str) -> str | None:
     return " OR ".join(words)
 
 
+_IDENT_SPLIT = re.compile(
+    r"[._/\s-]+"  # separators
+    r"|(?<=[a-z0-9])(?=[A-Z])"  # camelCase boundary
+    r"|(?<=[A-Z])(?=[A-Z][a-z])"  # ACRONYMWord boundary
+)
+
+
+def _split_identifier(text: str) -> str:
+    """Split camelCase / PascalCase / snake_case identifiers into words."""
+    return " ".join(p for p in _IDENT_SPLIT.split(text) if p)
+
+
+def _build_index_text(sym: dict[str, Any]) -> str:
+    """Derive the FTS-indexed text for a symbol.
+
+    Identifiers are indexed both whole and word-split, so ``GovernanceDecision``
+    is findable as ``governance`` and as the exact identifier; signature and
+    docstring add the symbol's own descriptive vocabulary.
+    """
+    name = sym.get("name") or ""
+    qualified_name = sym.get("qualified_name") or ""
+    parts = [
+        name,
+        _split_identifier(name),
+        qualified_name,
+        _split_identifier(qualified_name),
+        sym.get("signature") or "",
+        sym.get("docstring") or "",
+    ]
+    return " ".join(p for p in parts if p)
+
+
+def symbol_entry_to_dict(sym: "SymbolEntry", raw_file_id: str) -> dict[str, Any]:
+    """Convert an extracted SymbolEntry into a SymbolStore.upsert_batch row."""
+    return {
+        "id": str(uuid.uuid4()),
+        "name": sym.name,
+        "qualified_name": sym.qualified_name,
+        "kind": sym.kind,
+        "raw_file_id": raw_file_id,
+        "start_line": sym.start_line,
+        "end_line": sym.end_line,
+        "signature": sym.signature,
+        "docstring": sym.docstring,
+        "imports": sym.imports,
+        "references": sym.references,
+        "keywords": [],
+        "entities": [],
+        "metadata": {},
+    }
+
+
 class SymbolStore:
     """CRUD for the symbol index."""
 
@@ -41,11 +95,11 @@ class SymbolStore:
         sql = f"""
             INSERT INTO {TABLE}
                 (id, name, qualified_name, kind, raw_file_id,
-                 start_line, end_line, signature,
+                 start_line, end_line, signature, index_text,
                  imports, "references", keywords, entities, metadata)
             VALUES
                 (?, ?, ?, ?, ?,
-                 ?, ?, ?,
+                 ?, ?, ?, ?,
                  ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
@@ -54,6 +108,7 @@ class SymbolStore:
                 start_line = excluded.start_line,
                 end_line = excluded.end_line,
                 signature = excluded.signature,
+                index_text = excluded.index_text,
                 imports = excluded.imports,
                 "references" = excluded."references",
                 keywords = excluded.keywords,
@@ -73,6 +128,7 @@ class SymbolStore:
                         sym["start_line"],
                         sym["end_line"],
                         sym.get("signature"),
+                        _build_index_text(sym),
                         json.dumps(sym.get("imports", [])),
                         json.dumps(sym.get("references", [])),
                         json.dumps(sym.get("keywords", [])),
@@ -83,7 +139,7 @@ class SymbolStore:
             conn.commit()
 
     def search_bm25(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
-        """FTS5 BM25 search over symbol name + qualified_name."""
+        """FTS5 BM25 search over the derived symbol index_text."""
         fts_query = _build_fts_query(query)
         if fts_query is None:
             return []

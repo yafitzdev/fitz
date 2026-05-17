@@ -13,10 +13,11 @@ class SymbolEntry:
 
     name: str
     qualified_name: str
-    kind: str  # "function", "class", "method", "constant"
+    kind: str  # "module", "function", "class", "method", "constant"
     start_line: int
     end_line: int
     signature: str | None = None
+    docstring: str = ""  # author docstring / doc-comment, folded into the symbol FTS index
     imports: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
 

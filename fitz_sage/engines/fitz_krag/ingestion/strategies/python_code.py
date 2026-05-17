@@ -35,29 +35,28 @@ class PythonCodeIngestStrategy:
             logger.warning(f"Syntax error in {file_path}: {e}, using regex fallback")
             return _regex_fallback(source, file_path)
 
-        lines = source.splitlines()
         module_name = _path_to_module(file_path)
-        symbols: list[SymbolEntry] = []
+        symbols: list[SymbolEntry] = [_extract_module(tree, module_name)]
         imports: list[ImportEdge] = []
 
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                symbols.append(_extract_function(node, lines, module_name))
+                symbols.append(_extract_function(node, module_name))
 
             elif isinstance(node, ast.ClassDef):
                 # Class itself
-                symbols.append(_extract_class(node, lines, module_name))
+                symbols.append(_extract_class(node, module_name))
                 # Methods and class-level constants
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        symbols.append(_extract_method(item, lines, module_name, node.name))
+                        symbols.append(_extract_method(item, module_name, node.name))
                     elif isinstance(item, ast.Assign):
-                        entry = _extract_constant(item, lines, module_name, class_name=node.name)
+                        entry = _extract_constant(item, module_name, class_name=node.name)
                         if entry:
                             symbols.append(entry)
 
             elif isinstance(node, ast.Assign):
-                entry = _extract_constant(node, lines, module_name)
+                entry = _extract_constant(node, module_name)
                 if entry:
                     symbols.append(entry)
 
@@ -147,9 +146,25 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
     return IngestResult(symbols=symbols, imports=imports)
 
 
+def _extract_module(tree: ast.Module, module_name: str) -> SymbolEntry:
+    """The module itself as a symbol — carries the module docstring for the index."""
+    end_line = 1
+    first = tree.body[0] if tree.body else None
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+        end_line = first.end_lineno or 1
+    return SymbolEntry(
+        name=module_name.rsplit(".", 1)[-1] or module_name,
+        qualified_name=module_name,
+        kind="module",
+        start_line=1,
+        end_line=end_line,
+        signature=None,
+        docstring=ast.get_docstring(tree) or "",
+    )
+
+
 def _extract_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
-    lines: list[str],
     module_name: str,
 ) -> SymbolEntry:
     """Extract a top-level function."""
@@ -165,13 +180,13 @@ def _extract_function(
         start_line=start,
         end_line=end,
         signature=sig,
+        docstring=ast.get_docstring(node) or "",
         references=refs,
     )
 
 
 def _extract_class(
     node: ast.ClassDef,
-    lines: list[str],
     module_name: str,
 ) -> SymbolEntry:
     """Extract a class (header + docstring, not full body)."""
@@ -188,13 +203,13 @@ def _extract_class(
         start_line=start,
         end_line=end,
         signature=sig,
+        docstring=ast.get_docstring(node) or "",
         references=refs,
     )
 
 
 def _extract_method(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
-    lines: list[str],
     module_name: str,
     class_name: str,
 ) -> SymbolEntry:
@@ -211,13 +226,13 @@ def _extract_method(
         start_line=start,
         end_line=end,
         signature=sig,
+        docstring=ast.get_docstring(node) or "",
         references=refs,
     )
 
 
 def _extract_constant(
     node: ast.Assign,
-    lines: list[str],
     module_name: str,
     class_name: str | None = None,
 ) -> SymbolEntry | None:

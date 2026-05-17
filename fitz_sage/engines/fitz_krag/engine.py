@@ -1132,11 +1132,11 @@ class FitzKragEngine:
         Phase 1 and starts with Phase 2 (LLM summaries).
         """
         import hashlib
-        import uuid
 
         from fitz_sage.engines.fitz_krag.ingestion.strategies.python_code import (
             PythonCodeIngestStrategy,
         )
+        from fitz_sage.engines.fitz_krag.ingestion.symbol_store import symbol_entry_to_dict
         from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
 
         _progress = progress or (lambda _: None)
@@ -1219,22 +1219,7 @@ class FitzKragEngine:
                 if result is not None:
                     if result.symbols:
                         symbol_dicts = [
-                            {
-                                "id": str(uuid.uuid4()),
-                                "name": sym.name,
-                                "qualified_name": sym.qualified_name,
-                                "kind": sym.kind,
-                                "raw_file_id": entry.file_id,
-                                "start_line": sym.start_line,
-                                "end_line": sym.end_line,
-                                "signature": sym.signature,
-                                "imports": sym.imports,
-                                "references": sym.references,
-                                "keywords": [],
-                                "entities": [],
-                                "metadata": {},
-                            }
-                            for sym in result.symbols
+                            symbol_entry_to_dict(sym, entry.file_id) for sym in result.symbols
                         ]
                         self._symbol_store.upsert_batch(symbol_dicts)
 

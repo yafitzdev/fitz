@@ -30,7 +30,7 @@ from fitz_sage.engines.fitz_krag.ingestion.strategies.technical_doc import (
     SectionEntry,
     TechnicalDocIngestStrategy,
 )
-from fitz_sage.engines.fitz_krag.ingestion.symbol_store import SymbolStore
+from fitz_sage.engines.fitz_krag.ingestion.symbol_store import SymbolStore, symbol_entry_to_dict
 from fitz_sage.engines.fitz_krag.ingestion.table_store import TableStore
 
 if TYPE_CHECKING:
@@ -237,25 +237,10 @@ class KragIngestPipeline:
 
         # 4a. Store symbols
         if all_symbols:
-            symbol_dicts = []
-            for i, sym in enumerate(all_symbols):
-                symbol_dicts.append(
-                    {
-                        "id": str(uuid.uuid4()),
-                        "name": sym.name,
-                        "qualified_name": sym.qualified_name,
-                        "kind": sym.kind,
-                        "raw_file_id": all_symbol_file_ids[i],
-                        "start_line": sym.start_line,
-                        "end_line": sym.end_line,
-                        "signature": sym.signature,
-                        "imports": sym.imports,
-                        "references": sym.references,
-                        "keywords": [],
-                        "entities": [],
-                        "metadata": {},
-                    }
-                )
+            symbol_dicts = [
+                symbol_entry_to_dict(sym, all_symbol_file_ids[i])
+                for i, sym in enumerate(all_symbols)
+            ]
 
             # Enrich symbols with keywords + entities
             if self._enricher:

@@ -4,7 +4,7 @@ Database schema for Fitz KRAG engine on SQLite.
 
 Tables:
 - krag_raw_files: stores original file content (keyed by content hash)
-- krag_symbol_index: code symbol registry (+ FTS5 over name/qualified_name)
+- krag_symbol_index: code symbol registry (+ FTS5 over a derived index_text)
 - krag_import_graph: file-level dependency links
 - krag_section_index: document section registry (+ FTS5 over title/content)
 - krag_table_index: table metadata registry (+ FTS5 over name)
@@ -61,6 +61,7 @@ def _symbol_index_ddl() -> str:
         start_line INTEGER NOT NULL,
         end_line INTEGER NOT NULL,
         signature TEXT,
+        index_text TEXT NOT NULL DEFAULT '',
         imports TEXT NOT NULL DEFAULT '[]',
         "references" TEXT NOT NULL DEFAULT '[]',
         keywords TEXT NOT NULL DEFAULT '[]',
@@ -78,27 +79,27 @@ def _symbol_index_ddl() -> str:
         ON {TABLE_PREFIX}symbol_index(raw_file_id);
 
     CREATE VIRTUAL TABLE IF NOT EXISTS {TABLE_PREFIX}symbol_fts USING fts5(
-        name, qualified_name,
+        index_text,
         content='{TABLE_PREFIX}symbol_index',
         content_rowid='rowid',
         tokenize='porter unicode61'
     );
     CREATE TRIGGER IF NOT EXISTS {TABLE_PREFIX}symbol_ai
         AFTER INSERT ON {TABLE_PREFIX}symbol_index BEGIN
-        INSERT INTO {TABLE_PREFIX}symbol_fts(rowid, name, qualified_name)
-        VALUES (new.rowid, new.name, new.qualified_name);
+        INSERT INTO {TABLE_PREFIX}symbol_fts(rowid, index_text)
+        VALUES (new.rowid, new.index_text);
     END;
     CREATE TRIGGER IF NOT EXISTS {TABLE_PREFIX}symbol_ad
         AFTER DELETE ON {TABLE_PREFIX}symbol_index BEGIN
-        INSERT INTO {TABLE_PREFIX}symbol_fts({TABLE_PREFIX}symbol_fts, rowid, name, qualified_name)
-        VALUES('delete', old.rowid, old.name, old.qualified_name);
+        INSERT INTO {TABLE_PREFIX}symbol_fts({TABLE_PREFIX}symbol_fts, rowid, index_text)
+        VALUES('delete', old.rowid, old.index_text);
     END;
     CREATE TRIGGER IF NOT EXISTS {TABLE_PREFIX}symbol_au
         AFTER UPDATE ON {TABLE_PREFIX}symbol_index BEGIN
-        INSERT INTO {TABLE_PREFIX}symbol_fts({TABLE_PREFIX}symbol_fts, rowid, name, qualified_name)
-        VALUES('delete', old.rowid, old.name, old.qualified_name);
-        INSERT INTO {TABLE_PREFIX}symbol_fts(rowid, name, qualified_name)
-        VALUES (new.rowid, new.name, new.qualified_name);
+        INSERT INTO {TABLE_PREFIX}symbol_fts({TABLE_PREFIX}symbol_fts, rowid, index_text)
+        VALUES('delete', old.rowid, old.index_text);
+        INSERT INTO {TABLE_PREFIX}symbol_fts(rowid, index_text)
+        VALUES (new.rowid, new.index_text);
     END;
     """
 
