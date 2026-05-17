@@ -1,7 +1,7 @@
 # Feature Control Architecture
 
 How optional features (VLM in the parser, ONNX reranking, governance)
-are switched on and off in fitz-sage **v0.12.0+**.
+are switched on and off in fitz-sage **v0.14.0+**.
 
 ---
 

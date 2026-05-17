@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Common issues and solutions for fitz-sage **v0.12.0+** (single OpenAI-compatible
+Common issues and solutions for fitz-sage **v0.14.0+** (single OpenAI-compatible
 HTTP protocol, SQLite + FTS5 storage, no embeddings, no vector DB).
 
 ---

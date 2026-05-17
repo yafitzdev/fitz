@@ -1,6 +1,6 @@
 # Architecture Overview
 
-High-level system design of fitz-sage **v0.13.0+**.
+High-level system design of fitz-sage **v0.14.0+**.
 
 The architecture has three load-bearing decisions:
 

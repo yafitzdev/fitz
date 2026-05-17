@@ -1,6 +1,6 @@
 # CLI Reference
 
-fitz-sage **v0.12.0+**. The CLI is one binary, `fitz`, with a small
+fitz-sage **v0.14.0+**. The CLI is one binary, `fitz`, with a small
 set of commands.
 
 ```bash

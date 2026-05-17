@@ -1,6 +1,6 @@
 # Configuration Reference
 
-fitz-sage **v0.13.0+**. Engine config lives at
+fitz-sage **v0.14.0+**. Engine config lives at
 `~/.fitz/config/<engine>.yaml` (auto-created on first run).
 Storage lives at `~/.fitz/sqlite/fitz_<collection>.db` (auto-created
 on first ingest).
