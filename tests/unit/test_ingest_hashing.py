@@ -121,14 +121,14 @@ class TestComputeChunkId:
             chunk_index=0,
             parser_id="md.v1",
             chunker_id="tokens_800_120",
-            embedding_id="openai:text-embedding-3-small",
+            config_id="openai:text-embedding-3-small",
         )
         id2 = compute_chunk_id(
             content_hash="sha256:abc",
             chunk_index=0,
             parser_id="md.v1",
             chunker_id="tokens_800_120",
-            embedding_id="openai:text-embedding-3-small",
+            config_id="openai:text-embedding-3-small",
         )
 
         assert id1 == id2
@@ -140,14 +140,14 @@ class TestComputeChunkId:
             chunk_index=0,
             parser_id="md.v1",
             chunker_id="tokens_800_120",
-            embedding_id="openai:text-embedding-3-small",
+            config_id="openai:text-embedding-3-small",
         )
         id2 = compute_chunk_id(
             content_hash="sha256:def",
             chunk_index=0,
             parser_id="md.v1",
             chunker_id="tokens_800_120",
-            embedding_id="openai:text-embedding-3-small",
+            config_id="openai:text-embedding-3-small",
         )
 
         assert id1 != id2
@@ -159,14 +159,14 @@ class TestComputeChunkId:
             chunk_index=0,
             parser_id="md.v1",
             chunker_id="tokens_800_120",
-            embedding_id="openai:text-embedding-3-small",
+            config_id="openai:text-embedding-3-small",
         )
         id2 = compute_chunk_id(
             content_hash="sha256:abc",
             chunk_index=1,
             parser_id="md.v1",
             chunker_id="tokens_800_120",
-            embedding_id="openai:text-embedding-3-small",
+            config_id="openai:text-embedding-3-small",
         )
 
         assert id1 != id2
@@ -178,7 +178,7 @@ class TestComputeChunkId:
             "chunk_index": 0,
             "parser_id": "md.v1",
             "chunker_id": "tokens_800_120",
-            "embedding_id": "openai:text-embedding-3-small",
+            "config_id": "openai:text-embedding-3-small",
         }
 
         id1 = compute_chunk_id(**base)
@@ -191,8 +191,8 @@ class TestComputeChunkId:
         id3 = compute_chunk_id(**{**base, "chunker_id": "tokens_1000_150"})
         assert id1 != id3
 
-        # Different embedding
-        id4 = compute_chunk_id(**{**base, "embedding_id": "cohere:embed-english-v3.0"})
+        # Different config
+        id4 = compute_chunk_id(**{**base, "config_id": "v2-config"})
         assert id1 != id4
 
     def test_returns_hex_string(self):
@@ -202,7 +202,7 @@ class TestComputeChunkId:
             chunk_index=0,
             parser_id="md.v1",
             chunker_id="tokens_800_120",
-            embedding_id="openai:text-embedding-3-small",
+            config_id="openai:text-embedding-3-small",
         )
 
         # Should be 64 hex chars (no prefix)

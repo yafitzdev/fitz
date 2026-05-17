@@ -79,7 +79,7 @@ def compute_chunk_id(
     chunk_index: int,
     parser_id: str,
     chunker_id: str,
-    embedding_id: str,
+    config_id: str,
 ) -> str:
     """
     Compute deterministic chunk ID per spec §5.2.
@@ -89,7 +89,7 @@ def compute_chunk_id(
     - chunk_index (position in file)
     - parser_id (parser version)
     - chunker_id (chunker config)
-    - embedding_id (embedding config)
+    - config_id (extra config identifier)
 
     This ensures:
     - Same file + same config = same chunk IDs (safe upserts)
@@ -101,10 +101,10 @@ def compute_chunk_id(
         chunk_index: 0-based index of chunk within file
         parser_id: Parser identifier (e.g., "md.v1")
         chunker_id: Chunker identifier (e.g., "tokens_800_120")
-        embedding_id: Embedding identifier (e.g., "openai:text-embedding-3-small")
+        config_id: Extra config identifier that invalidates chunk IDs when changed
 
     Returns:
-        SHA-256 hash as hex string (no prefix, used as vector ID)
+        SHA-256 hash as hex string (no prefix, used as the chunk ID)
     """
     # Build the composite key
     key = "|".join(
@@ -113,7 +113,7 @@ def compute_chunk_id(
             str(chunk_index),
             parser_id,
             chunker_id,
-            embedding_id,
+            config_id,
         ]
     )
 
