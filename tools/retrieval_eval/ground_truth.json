@@ -613,7 +613,7 @@
     ],
     "relevant_files": [
       "fitz_sage/tabular/store/base.py",
-      "fitz_sage/tabular/store/postgres.py",
+      "fitz_sage/tabular/store/sqlite.py",
       "fitz_sage/structured/executor.py"
     ],
     "category": "structured"

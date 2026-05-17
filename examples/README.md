@@ -16,8 +16,8 @@ python examples/01_quickstart.py
 | File | Description | Key Features |
 |------|-------------|--------------|
 | [`01_quickstart.py`](01_quickstart.py) | Basic SDK usage | `fitz()` → `ingest()` → `ask()` |
-| [`02_tabular_sql.py`](02_tabular_sql.py) | CSV → SQL queries | Native PostgreSQL tables, computed answers |
-| [`03_local_ollama.py`](03_local_ollama.py) | 100% local setup | No API keys, Ollama + embedded PostgreSQL |
+| [`02_tabular_sql.py`](02_tabular_sql.py) | CSV → SQL queries | Native SQLite tables, computed answers |
+| [`03_local_ollama.py`](03_local_ollama.py) | 100% local setup | No API keys, Ollama + SQLite |
 | [`04_multi_collection.py`](04_multi_collection.py) | Multiple knowledge bases | Isolated collections, domain separation |
 | [`05_advanced_queries.py`](05_advanced_queries.py) | Query intelligence | Keyword matching, comparisons, aggregations |
 
@@ -142,15 +142,12 @@ fitz reset                   # Reset data
 Fitz works out of the box. Customize via `.fitz/config.yaml`:
 
 ```yaml
-# LLM providers (format: provider/model)
-chat_fast: ollama/qwen3.5:2b
-chat_balanced: ollama/qwen3.5:4b
-chat_smart: ollama/qwen3.5:9b
-embedding: ollama/nomic-embed-text
-rerank: null
-
-# Storage (always PostgreSQL)
-vector_db: pgvector
+# LLM tiers - point at any OpenAI-compatible endpoint (here: Ollama)
+chat_fast: endpoint
+chat_balanced: endpoint
+chat_smart: endpoint
+chat_base_url: http://localhost:11434/v1
+chat_smart_model: qwen3.5:9b
 ```
 
 ## More Resources

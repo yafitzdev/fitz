@@ -45,7 +45,7 @@ class SectionSearchStrategy:
         """
         Retrieve section addresses matching the query.
 
-        1. BM25 full-text search (PostgreSQL ts_rank)
+        1. BM25 full-text search (SQLite FTS5 bm25())
         2. Keyword-enrichment boost (domain-scaled)
         3. Optional freshness boost
         4. Parent-title breadcrumb enrichment

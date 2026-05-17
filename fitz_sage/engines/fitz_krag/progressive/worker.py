@@ -319,7 +319,7 @@ class BackgroundIngestWorker:
             logger.debug(f"Doc section extraction failed for {entry.rel_path}: {e}")
 
     def _process_table_file(self, entry: "ManifestEntry", content: str, content_hash: str) -> None:
-        """Parse CSV, store rows in PostgresTableStore, store metadata in TableStore."""
+        """Parse CSV, store rows in SqliteTableStore, store metadata in TableStore."""
         from fitz_sage.tabular.parser.csv_parser import get_sample_rows, parse_csv
 
         abs_path = Path(entry.abs_path)
@@ -340,7 +340,7 @@ class BackgroundIngestWorker:
             size_bytes=entry.size_bytes,
         )
 
-        # Store all rows in PostgresTableStore for SQL queries
+        # Store all rows in SqliteTableStore for SQL queries
         if self._sqlite_table_store:
             try:
                 self._sqlite_table_store.store(
@@ -351,7 +351,7 @@ class BackgroundIngestWorker:
                     file_hash=content_hash,
                 )
             except Exception as e:
-                logger.warning(f"PostgresTableStore.store failed for {entry.rel_path}: {e}")
+                logger.warning(f"SqliteTableStore.store failed for {entry.rel_path}: {e}")
                 return
 
         # Delete old table metadata for this file
@@ -674,7 +674,7 @@ class BackgroundIngestWorker:
                 return None
 
             content = path.read_text(encoding="utf-8", errors="replace")
-            # Strip NUL bytes for PostgreSQL compatibility
+            # Strip NUL bytes for SQLite text compatibility
             return content.replace("\x00", "")
         except Exception as e:
             logger.debug(f"Cannot read {entry.rel_path}: {e}")

@@ -2,7 +2,7 @@
 """
 Integration test fixtures.
 
-These tests require real services (postgres, real LLM endpoints, etc.).
+These tests require real services (real LLM endpoints, etc.).
 """
 
 from __future__ import annotations

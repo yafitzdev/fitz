@@ -3,7 +3,7 @@
 Tabular Data - CSV files become queryable SQL tables.
 
 Unlike other RAG systems that chunk CSVs into fragments, Fitz stores tables
-natively in PostgreSQL. You can run real SQL queries and get computed answers.
+natively in SQLite. You can run real SQL queries and get computed answers.
 
 Requirements:
     pip install fitz-sage

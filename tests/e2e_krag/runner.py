@@ -9,7 +9,7 @@ Handles the full lifecycle:
 2. Create FitzKragEngine with collection
 3. Ingest test fixtures via KragIngestPipeline
 4. Run test scenarios via engine.answer()
-5. Clean up PostgreSQL tables for collection
+5. Clean up SQLite tables for collection
 """
 
 from __future__ import annotations
@@ -287,7 +287,7 @@ class KragE2ERunner:
 
         logger.info(f"KRAG E2E: Switching to tier '{tier_name}'")
 
-        # Close old engine's connection pools to free pgserver connections
+        # Close old engine's connection pools to free SQLite connections
         if self.engine:
             self.engine._connection_manager.close_pool(self.engine._config.collection)
 
@@ -380,7 +380,7 @@ class KragE2ERunner:
         logger.info("KRAG E2E Teardown: Complete")
 
     def _cleanup_collection(self, collection: str | None = None) -> None:
-        """Drop PostgreSQL tables and vector data for a test collection."""
+        """Drop SQLite tables for a test collection."""
         collection = collection or self._base_collection
 
         from fitz_sage.storage.sqlite import SqliteConnectionManager
@@ -402,7 +402,7 @@ class KragE2ERunner:
                     pass
             logger.debug(f"Dropped KRAG tables for collection '{collection}'")
         except Exception as e:
-            logger.debug(f"PostgreSQL cleanup failed (non-fatal): {e}")
+            logger.debug(f"SQLite cleanup failed (non-fatal): {e}")
 
     def run_scenario(self, scenario: TestScenario, use_cache: bool = True) -> ScenarioResult:
         """Run a single test scenario."""

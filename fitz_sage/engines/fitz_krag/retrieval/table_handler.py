@@ -129,7 +129,7 @@ class TableQueryHandler:
     def _get_sample_data(
         self, table_name: str, columns: list[str], limit: int = 3
     ) -> list[list[str]]:
-        """Fetch sample data from PostgreSQL table."""
+        """Fetch sample data from SQLite table."""
         cols_str = ", ".join(f'"{c}"' for c in columns)
         sql = f'SELECT {cols_str} FROM "{table_name}" LIMIT {limit}'
         result = self._sqlite_table_store.execute_query("", sql)
@@ -163,14 +163,14 @@ class TableQueryHandler:
                 col_names, rows = result
                 return sql, col_names, rows
 
-            # Capture actual PostgreSQL error for the retry prompt
+            # Capture actual SQLite error for the retry prompt
             previous_error = self._capture_sql_error(sql)
             logger.warning(f"SQL validation failed (attempt {attempt + 1}/{max_retries + 1})")
 
         return sql, [], []
 
     def _capture_sql_error(self, sql: str) -> str:
-        """Re-execute SQL to capture the PostgreSQL error message."""
+        """Re-execute SQL to capture the SQLite error message."""
         from fitz_sage.storage import get_connection_manager
 
         try:

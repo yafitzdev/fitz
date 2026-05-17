@@ -23,7 +23,6 @@ from . import cache as _cache
 from . import config as _config
 from . import ingestion as _ingestion
 from . import plugins as _plugins
-from . import storage as _storage
 from .workspace import WorkspaceManager
 
 
@@ -61,17 +60,6 @@ class FitzPaths:
     def config(cls) -> Path:
         """Default config file path: {workspace}/config.yaml"""
         return _config.config()
-
-    # PostgreSQL data (pgserver)
-    @classmethod
-    def pgdata(cls, collection: Optional[str] = None) -> Path:
-        """PostgreSQL data directory for pgserver."""
-        return _storage.pgdata(collection)
-
-    @classmethod
-    def ensure_pgdata(cls, collection: Optional[str] = None) -> Path:
-        """Get pgdata path and create it if it doesn't exist."""
-        return _storage.ensure_pgdata(collection)
 
     # Ingestion
     @classmethod

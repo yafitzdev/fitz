@@ -45,7 +45,6 @@ class TestCollectionsHelpers:
     def test_cli_context_loads_config(self):
         """Test CLIContext loads config."""
         mock_ctx = MagicMock()
-        mock_ctx.vector_db_plugin = "pgvector"
 
         with patch("fitz_sage.cli.context.CLIContext.load", return_value=mock_ctx):
             from fitz_sage.cli.context import CLIContext
@@ -53,7 +52,6 @@ class TestCollectionsHelpers:
             ctx = CLIContext.load()
 
         assert ctx is not None
-        assert ctx.vector_db_plugin == "pgvector"
 
 
 class TestDisplayCollectionsTable:

@@ -666,7 +666,7 @@ class KragIngestPipeline:
     def _process_table_file(
         self, rel_path: str, abs_path: Path, file_id: str
     ) -> dict[str, Any] | None:
-        """Process a table file: store raw preview + store in PostgresTableStore."""
+        """Process a table file: store raw preview + store in SqliteTableStore."""
         try:
             from fitz_sage.tabular.parser.csv_parser import get_sample_rows, parse_csv
 
@@ -696,7 +696,7 @@ class KragIngestPipeline:
             size_bytes=len(content.encode()),
         )
 
-        # Store in shared PostgresTableStore
+        # Store in shared SqliteTableStore
         if self._sqlite_table_store:
             try:
                 self._sqlite_table_store.store(
@@ -707,7 +707,7 @@ class KragIngestPipeline:
                     file_hash=content_hash,
                 )
             except Exception as e:
-                logger.warning(f"PostgresTableStore.store failed for {rel_path}: {e}")
+                logger.warning(f"SqliteTableStore.store failed for {rel_path}: {e}")
                 return None
 
         # Delete old table metadata for this file

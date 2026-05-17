@@ -572,7 +572,7 @@ class TestSuggestKeywords:
 
 
 class TestVocabularyStore:
-    """Tests for VocabularyStore class (PostgreSQL-based)."""
+    """Tests for VocabularyStore class (SQLite-based)."""
 
     def test_save_and_load(self):
         """Test basic save and load."""
@@ -588,7 +588,7 @@ class TestVocabularyStore:
         loaded = store.load()
 
         assert len(loaded) == 2
-        # PostgreSQL sorts by category, id so order may differ
+        # SQLite sorts by category, id so order may differ
         ids = {k.id for k in loaded}
         assert "TC-1001" in ids
         assert "JIRA-123" in ids

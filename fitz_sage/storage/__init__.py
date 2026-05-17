@@ -3,8 +3,8 @@
 Unified SQLite storage for fitz-sage.
 
 Each collection is a single ``.db`` file under the workspace storage
-directory. Full-text search uses SQLite FTS5 (``bm25()``) instead of
-PostgreSQL ``ts_rank``. No server, no pool, no admin database.
+directory. Full-text search uses SQLite FTS5 (``bm25()``). No server,
+no pool, no admin database.
 
 Usage:
     from fitz_sage.storage import get_connection_manager, get_connection

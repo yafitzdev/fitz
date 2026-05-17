@@ -21,7 +21,7 @@ def create_mock_chat_factory():
 
 
 class MockTableStore:
-    """Mock PostgresTableStore for testing."""
+    """Mock SqliteTableStore for testing."""
 
     def __init__(self):
         self._tables: dict[str, dict] = {}

@@ -12,9 +12,9 @@ Tables:
 Full-text search uses SQLite FTS5 with external-content tables and
 triggers that keep the FTS index in sync with the base tables on
 INSERT / UPDATE / DELETE. Ranking is via the built-in ``bm25()``
-function (lower = more relevant). Arrays (TEXT[] in the Postgres
-schema) and JSONB columns are stored as TEXT containing JSON; query
-sites use ``json_each`` / ``json_extract`` for traversal.
+function (lower = more relevant). Array and JSON columns are stored
+as TEXT containing JSON; query sites use ``json_each`` /
+``json_extract`` for traversal.
 """
 
 from __future__ import annotations

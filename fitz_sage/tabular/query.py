@@ -4,17 +4,17 @@ Table Query Step - Handles schema chunks at query time.
 
 When a schema chunk is retrieved:
 1. LLM selects relevant columns (column pruning)
-2. LLM generates PostgreSQL query
-3. Query executed directly against PostgreSQL
+2. LLM generates SQL query
+3. Query executed directly against SQLite
 4. Results are formatted and chunk is augmented
 
 Multi-table join support:
 - When multiple schema chunks are retrieved, LLM detects if query needs joins
-- LLM generates SQL with JOINs using actual PostgreSQL table names
-- Query executed against PostgreSQL database
+- LLM generates SQL with JOINs using actual SQLite table names
+- Query executed against SQLite database
 
 Table storage:
-- All tables stored as native PostgreSQL tables via SqliteTableStore
+- All tables stored as native SQLite tables via SqliteTableStore
 - Direct SQL execution without data loading
 - Efficient handling of large tables
 """
@@ -46,8 +46,8 @@ class TableQueryStep:
     For each schema chunk retrieved:
     1. Gets table metadata from SqliteTableStore
     2. LLM selects relevant columns (column pruning)
-    3. LLM generates PostgreSQL query
-    4. Query executed directly against PostgreSQL
+    3. LLM generates SQL query
+    4. Query executed directly against SQLite
     5. Results formatted and chunk augmented
 
     Regular (non-table) chunks pass through unchanged.
@@ -133,7 +133,7 @@ Return ONLY the SQL query, no explanation."""
 
         When multiple schema chunks are retrieved:
         1. LLM decides if query needs multiple tables
-        2. If yes, generate JOIN SQL executed against PostgreSQL
+        2. If yes, generate JOIN SQL executed against SQLite
         3. If no, each table processed independently
 
         Args:
@@ -179,7 +179,7 @@ Return ONLY the SQL query, no explanation."""
             logger.warning("TableStore not provided")
             return None
 
-        # Get PostgreSQL table name
+        # Get SQLite table name
         table_name = self.table_store.get_table_name(table_id)
         if not table_name:
             logger.warning(f"Table {table_id} not found in store")
@@ -197,7 +197,7 @@ Return ONLY the SQL query, no explanation."""
     def _get_sample_data(
         self, table_name: str, columns: list[str], limit: int = 3
     ) -> list[list[str]]:
-        """Fetch sample data from PostgreSQL table."""
+        """Fetch sample data from SQLite table."""
         if self.table_store is None:
             return []
 
@@ -212,12 +212,12 @@ Return ONLY the SQL query, no explanation."""
 
     def _process_table_chunk(self, query: str, chunk: Chunk) -> Chunk:
         """
-        Process a table schema chunk using PostgreSQL.
+        Process a table schema chunk using SQLite.
 
         1. Get table info from store
         2. LLM selects relevant columns
-        3. LLM generates PostgreSQL query
-        4. Execute query directly against PostgreSQL
+        3. LLM generates SQL query
+        4. Execute query directly against SQLite
         5. Return augmented chunk
 
         Args:
@@ -259,7 +259,7 @@ Return ONLY the SQL query, no explanation."""
             sql = self._generate_sql(query, table_name, needed_sanitized, sample_for_sql)
             logger.debug(f"Generated SQL: {sql}")
 
-            # 5. Execute against PostgreSQL
+            # 5. Execute against SQLite
             result = self.table_store.execute_query(chunk.metadata.get("table_id", ""), sql)
 
             if result is None:
@@ -302,7 +302,7 @@ Return ONLY the SQL query, no explanation."""
         """
         Process multiple tables with JOIN support.
 
-        Generates and executes JOIN SQL directly against PostgreSQL.
+        Generates and executes JOIN SQL directly against SQLite.
 
         Args:
             query: User query.
@@ -329,7 +329,7 @@ Return ONLY the SQL query, no explanation."""
             sql = self._generate_multi_table_sql(query, tables_info)
             logger.debug(f"Generated multi-table SQL: {sql}")
 
-            # Execute against PostgreSQL
+            # Execute against SQLite
             result = self.table_store.execute_multi_table_query(sql)
 
             if result is None:
@@ -476,7 +476,7 @@ Results ({len(results)} rows):
         sample_rows: list[list[str]],
         max_retries: int = 2,
     ) -> str:
-        """Generate PostgreSQL query with validation and retry."""
+        """Generate SQL query with validation and retry."""
         previous_error = None
 
         for attempt in range(max_retries + 1):

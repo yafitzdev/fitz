@@ -203,9 +203,9 @@ class FitzKragEngine:
 
         _t0 = _t.perf_counter()
 
-        # LLM providers and PostgreSQL are independent — init in parallel.
-        # PostgreSQL startup (pgserver) can take 1-2s; LLM provider init
-        # creates one HTTP client. Overlapping saves the slower of the two.
+        # The SQLite store and the LLM provider init independently, so run
+        # them in parallel. LLM provider init creates one HTTP client;
+        # overlapping with store startup saves the slower of the two.
         chat_config = _build_provider_config(
             self._config.chat_base_url,
             self._config.chat_api_key_env,

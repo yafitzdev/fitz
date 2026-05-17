@@ -3,14 +3,13 @@
 Fully Local Setup - No API keys, no cloud, complete privacy.
 
 Fitz can run 100% locally using:
-- Ollama for LLM and embeddings
-- Embedded PostgreSQL (pgserver) for storage
+- Ollama for the LLM (via its OpenAI-compatible endpoint)
+- SQLite for storage
 
 Requirements:
     1. Install Ollama: https://ollama.ai
-    2. Pull models:
+    2. Pull a model:
        ollama pull llama3.2
-       ollama pull nomic-embed-text
     3. Start Ollama:
        ollama serve
 
@@ -27,26 +26,16 @@ from pathlib import Path
 
 # Fitz auto-detects Ollama, but you can also configure manually
 config_content = """
-# Local-only configuration - no API keys needed
+# Local-only configuration - no API keys needed.
+# Point fitz-sage at Ollama's OpenAI-compatible endpoint.
 
-chat:
-  plugin_name: local_ollama
-  kwargs:
-    models:
-      smart: llama3.2
-      fast: llama3.2
-    base_url: http://localhost:11434
+chat_fast: endpoint
+chat_balanced: endpoint
+chat_smart: endpoint
+chat_base_url: http://localhost:11434/v1
+chat_smart_model: llama3.2
 
-embedding:
-  plugin_name: local_ollama
-  kwargs:
-    model: nomic-embed-text
-    base_url: http://localhost:11434
-
-# Storage is always local PostgreSQL (embedded via pgserver)
-vector_db: pgvector
-vector_db_kwargs:
-  mode: local
+collection: local_demo
 """
 
 # Write config to temp location
@@ -73,8 +62,8 @@ docs_dir.mkdir()
 
 All data processing happens locally on your machine.
 No data is sent to external servers.
-Documents are stored in a local PostgreSQL database.
-Embeddings are generated using local Ollama models.
+Documents are stored in a local SQLite database.
+Answers are generated using local Ollama models.
 """
 )
 
@@ -83,9 +72,9 @@ Embeddings are generated using local Ollama models.
 # Local Setup Guide
 
 1. Install Ollama from ollama.ai
-2. Pull required models: llama3.2 and nomic-embed-text
+2. Pull a model: llama3.2
 3. Run 'ollama serve' to start the local server
-4. Fitz will automatically use embedded PostgreSQL
+4. Fitz stores everything in a local SQLite database
 """
 )
 
@@ -93,8 +82,7 @@ Embeddings are generated using local Ollama models.
 # Step 3: Ingest and query locally
 # =============================================================================
 
-print("Ingesting documents locally...")
-print("(First run may take a moment as PostgreSQL initializes)\n")
+print("Ingesting documents locally...\n")
 
 try:
     stats = f.ingest(str(docs_dir))
@@ -112,8 +100,7 @@ try:
     print("=" * 60)
     print("SUCCESS! Everything ran locally:")
     print("  - LLM: Ollama (llama3.2)")
-    print("  - Embeddings: Ollama (nomic-embed-text)")
-    print("  - Storage: PostgreSQL (embedded)")
+    print("  - Storage: SQLite (local file)")
     print("  - No data left your machine")
     print("=" * 60)
 
@@ -122,8 +109,7 @@ except Exception as e:
     print("\nMake sure Ollama is running:")
     print("  1. Install from https://ollama.ai")
     print("  2. Run: ollama pull llama3.2")
-    print("  3. Run: ollama pull nomic-embed-text")
-    print("  4. Run: ollama serve")
+    print("  3. Run: ollama serve")
 
 # Cleanup
 import shutil

@@ -90,11 +90,9 @@ class SectionStore:
     def search_bm25(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
         """Full-text search using FTS5 + bm25 ranking.
 
-        The Postgres version unioned each section's tsvector with its
-        parent's for breadcrumb context. The FTS5 port does a direct
-        section match here; downstream ``_score_results`` applies RRF
-        on the returned order, and parent-title breadcrumbs are pulled
-        in by ``SectionSearchStrategy._enrich_with_parent_titles``.
+        This does a direct section match; downstream ``_score_results``
+        applies RRF on the returned order, and parent-title breadcrumbs
+        are pulled in by ``SectionSearchStrategy._enrich_with_parent_titles``.
         """
         fts_query = _build_fts_query(query)
         if fts_query is None:
@@ -149,9 +147,8 @@ class SectionStore:
     def search_by_keywords(self, terms: list[str], limit: int = 20) -> list[dict[str, Any]]:
         """Find sections with matching enriched keywords.
 
-        Postgres used ``keywords && ARRAY[...]`` for set overlap. SQLite
-        stores keywords as JSON; we expand via ``json_each`` and match
-        against the term list with an IN clause.
+        Keywords are stored as JSON; we expand them via ``json_each`` and
+        match against the term list with an IN clause.
         """
         if not terms:
             return []
