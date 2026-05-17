@@ -709,7 +709,6 @@ class TestCodeExpander:
                 "references": [],
                 "raw_file_id": "f2",
                 "signature": "def helper_fn()",
-                "summary": "A useful helper function",
                 "metadata": {},
             },
         ]
@@ -733,7 +732,7 @@ class TestCodeExpander:
         summaries = [r for r in expanded if r.metadata.get("context_type") == "import_summaries"]
         assert len(summaries) == 1
         assert "utils.helper_fn" in summaries[0].content
-        assert "A useful helper function" in summaries[0].content
+        assert "function helper_fn" in summaries[0].content
 
     def test_expand_import_summaries_unresolved_skipped(self):
         """target_file_id=None edges are skipped (stdlib/third-party)."""

@@ -242,7 +242,6 @@ def _extract_class(node, lines, module_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     superclass = node.child_by_field_name("superclass")
     interfaces = node.child_by_field_name("interfaces")
@@ -259,7 +258,6 @@ def _extract_class(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=" ".join(sig_parts),
-        source=source,
     )
 
 
@@ -271,7 +269,6 @@ def _extract_interface(node, lines, module_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     return SymbolEntry(
         name=name,
@@ -280,7 +277,6 @@ def _extract_interface(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=f"interface {name}",
-        source=source,
     )
 
 
@@ -292,7 +288,6 @@ def _extract_enum(node, lines, module_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     return SymbolEntry(
         name=name,
@@ -301,7 +296,6 @@ def _extract_enum(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=f"enum {name}",
-        source=source,
     )
 
 
@@ -313,7 +307,6 @@ def _extract_record(node, lines, module_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     return SymbolEntry(
         name=name,
@@ -322,7 +315,6 @@ def _extract_record(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=f"record {name}",
-        source=source,
     )
 
 
@@ -334,7 +326,6 @@ def _extract_method(node, lines, module_name, class_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     return_type = node.child_by_field_name("type")
     params = node.child_by_field_name("parameters")
@@ -348,7 +339,6 @@ def _extract_method(node, lines, module_name, class_name):
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
     )
 
 
@@ -358,7 +348,6 @@ def _extract_constructor(node, lines, module_name, class_name):
     name = _node_text(name_node) if name_node else class_name
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     params = node.child_by_field_name("parameters")
     sig = f"{name}{_node_text(params) if params else '()'}"
@@ -370,7 +359,6 @@ def _extract_constructor(node, lines, module_name, class_name):
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
     )
 
 
@@ -394,7 +382,6 @@ def _extract_field(node, lines, module_name, class_name):
                         start_line=start,
                         end_line=end,
                         signature=source.strip().rstrip(";"),
-                        source=source,
                     )
                 )
     return fields

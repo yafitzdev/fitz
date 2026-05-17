@@ -156,7 +156,6 @@ def _extract_function(
     start = node.lineno
     end = node.end_lineno or start
     sig = _build_signature(node)
-    source = "\n".join(lines[start - 1 : end])
     refs = _extract_references(node)
 
     return SymbolEntry(
@@ -166,7 +165,6 @@ def _extract_function(
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
         references=refs,
     )
 
@@ -181,7 +179,6 @@ def _extract_class(
     end = node.end_lineno or start
     bases = [_name_of(b) for b in node.bases if _name_of(b)]
     sig = f"class {node.name}({', '.join(bases)})" if bases else f"class {node.name}"
-    source = "\n".join(lines[start - 1 : end])
     refs = [_name_of(b) for b in node.bases if _name_of(b)]
 
     return SymbolEntry(
@@ -191,7 +188,6 @@ def _extract_class(
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
         references=refs,
     )
 
@@ -206,7 +202,6 @@ def _extract_method(
     start = node.lineno
     end = node.end_lineno or start
     sig = _build_signature(node)
-    source = "\n".join(lines[start - 1 : end])
     refs = _extract_references(node)
 
     return SymbolEntry(
@@ -216,7 +211,6 @@ def _extract_method(
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
         references=refs,
     )
 
@@ -239,7 +233,6 @@ def _extract_constant(
 
     start = node.lineno
     end = node.end_lineno or start
-    source = "\n".join(lines[start - 1 : end])
 
     qualified = f"{module_name}.{class_name}.{name}" if class_name else f"{module_name}.{name}"
 
@@ -250,7 +243,6 @@ def _extract_constant(
         start_line=start,
         end_line=end,
         signature=None,
-        source=source,
     )
 
 

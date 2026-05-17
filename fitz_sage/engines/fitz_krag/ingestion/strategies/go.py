@@ -150,7 +150,7 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
 
     for m in _FUNC_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
-        block, end_line = _regex_extract_block(lines, line_no)
+        _, end_line = _regex_extract_block(lines, line_no)
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
@@ -159,13 +159,12 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
                 start_line=line_no,
                 end_line=end_line,
                 signature=f"func {m.group(1)}()",
-                source=block,
             )
         )
 
     for m in _METHOD_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
-        block, end_line = _regex_extract_block(lines, line_no)
+        _, end_line = _regex_extract_block(lines, line_no)
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
@@ -174,13 +173,12 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
                 start_line=line_no,
                 end_line=end_line,
                 signature=f"func (...) {m.group(1)}()",
-                source=block,
             )
         )
 
     for m in _STRUCT_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
-        block, end_line = _regex_extract_block(lines, line_no)
+        _, end_line = _regex_extract_block(lines, line_no)
         seen_type_names.add(m.group(1))
         symbols.append(
             SymbolEntry(
@@ -190,13 +188,12 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
                 start_line=line_no,
                 end_line=end_line,
                 signature=f"type {m.group(1)} struct",
-                source=block,
             )
         )
 
     for m in _IFACE_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
-        block, end_line = _regex_extract_block(lines, line_no)
+        _, end_line = _regex_extract_block(lines, line_no)
         seen_type_names.add(m.group(1))
         symbols.append(
             SymbolEntry(
@@ -206,7 +203,6 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
                 start_line=line_no,
                 end_line=end_line,
                 signature=f"type {m.group(1)} interface",
-                source=block,
             )
         )
 
@@ -216,7 +212,7 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
         if name in seen_type_names:
             continue
         line_no = source[: m.start()].count("\n") + 1
-        block, end_line = _regex_extract_block(lines, line_no)
+        _, end_line = _regex_extract_block(lines, line_no)
         symbols.append(
             SymbolEntry(
                 name=name,
@@ -225,7 +221,6 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
                 start_line=line_no,
                 end_line=end_line,
                 signature=f"type {name}",
-                source=block,
             )
         )
 
@@ -256,7 +251,6 @@ def _extract_function(node, lines, module_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     params = node.child_by_field_name("parameters")
     result = node.child_by_field_name("result")
@@ -271,7 +265,6 @@ def _extract_function(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
     )
 
 
@@ -285,7 +278,6 @@ def _extract_method(node, lines, module_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     receiver_type = _extract_receiver_type(receiver_node)
     params = node.child_by_field_name("parameters")
@@ -307,7 +299,6 @@ def _extract_method(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
     )
 
 
@@ -324,7 +315,6 @@ def _extract_type_decl(node, lines, module_name):
             name = _node_text(name_node)
             start = node.start_point[0] + 1
             end = node.end_point[0] + 1
-            source = "\n".join(lines[start - 1 : end])
 
             if type_node and type_node.type == "struct_type":
                 kind = "struct"
@@ -344,7 +334,6 @@ def _extract_type_decl(node, lines, module_name):
                     start_line=start,
                     end_line=end,
                     signature=sig,
-                    source=source,
                 )
             )
     return symbols
@@ -355,7 +344,6 @@ def _extract_const_var(node, lines, module_name, kind):
     symbols = []
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     for child in node.children:
         if child.type in ("const_spec", "var_spec"):
@@ -370,7 +358,6 @@ def _extract_const_var(node, lines, module_name, kind):
                         start_line=start,
                         end_line=end,
                         signature=f"{kind} {name}",
-                        source=source,
                     )
                 )
     return symbols

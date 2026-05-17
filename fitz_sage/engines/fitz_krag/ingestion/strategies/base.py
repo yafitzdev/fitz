@@ -17,7 +17,6 @@ class SymbolEntry:
     start_line: int
     end_line: int
     signature: str | None = None
-    source: str = ""  # Raw source code for summarization (not stored long-term)
     imports: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
 

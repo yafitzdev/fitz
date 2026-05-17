@@ -170,7 +170,7 @@ class CodeSearchStrategy:
             kind=AddressKind.SYMBOL,
             source_id=r["raw_file_id"],
             location=r["qualified_name"],
-            summary=r.get("summary") or f"{r['kind']} {r['name']}",
+            summary=f"{r['kind']} {r['name']}",
             score=r.get("combined_score", 0.0),
             metadata={
                 "symbol_id": r["id"],

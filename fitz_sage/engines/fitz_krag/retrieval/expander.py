@@ -308,7 +308,7 @@ class CodeExpander:
                 # Only include symbols that match import_names (if specified)
                 if import_names and sym["name"] not in import_names:
                     continue
-                summary_text = sym.get("summary") or f"{sym['kind']} {sym['name']}"
+                summary_text = f"{sym['kind']} {sym['name']}"
                 summary_lines.append(f"- {sym['qualified_name']}: {summary_text}")
 
             if len(summary_lines) >= self._config.max_import_expansions:

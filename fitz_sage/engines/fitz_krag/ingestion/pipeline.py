@@ -2,8 +2,8 @@
 """
 KRAG Ingestion Pipeline.
 
-Scans source files, extracts symbols via language strategies, generates
-LLM summaries in batches, and stores everything in the SQLite store.
+Scans source files, extracts code symbols / document sections / tables,
+and stores everything in the SQLite store.
 """
 
 from __future__ import annotations
@@ -235,10 +235,8 @@ class KragIngestPipeline:
         stats["symbols_extracted"] = len(all_symbols)
         stats["sections_extracted"] = len(all_sections)
 
-        # 4a. Batch summarize symbols
+        # 4a. Store symbols
         if all_symbols:
-            summaries = self._summarize_symbols(all_symbols)
-
             symbol_dicts = []
             for i, sym in enumerate(all_symbols):
                 symbol_dicts.append(
@@ -251,7 +249,6 @@ class KragIngestPipeline:
                         "start_line": sym.start_line,
                         "end_line": sym.end_line,
                         "signature": sym.signature,
-                        "summary": summaries[i] if i < len(summaries) else None,
                         "imports": sym.imports,
                         "references": sym.references,
                         "keywords": [],
@@ -540,50 +537,6 @@ class KragIngestPipeline:
                         break
         except Exception as e:
             logger.warning(f"Failed to inject vision client: {e}")
-
-    def _summarize_symbols(self, symbols: list[SymbolEntry]) -> list[str]:
-        """Generate 1-2 sentence summaries for symbols, batched."""
-        summaries: list[str] = []
-        batch_size = self._config.summary_batch_size
-
-        for i in range(0, len(symbols), batch_size):
-            batch = symbols[i : i + batch_size]
-            prompt = self._build_summary_prompt(batch)
-
-            try:
-                response = self._chat.chat(
-                    [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You summarize code symbols. For each symbol, write a concise "
-                                "1-2 sentence description of what it does. Return a JSON array "
-                                "of strings, one per symbol, in the same order."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                )
-                batch_summaries = self._parse_summary_response(response, len(batch))
-            except Exception as e:
-                logger.warning(f"Summary generation failed for batch: {e}")
-                batch_summaries = [f"{sym.kind} {sym.name}" for sym in batch]
-            summaries.extend(batch_summaries)
-
-        return summaries
-
-    def _build_summary_prompt(self, batch: list[SymbolEntry]) -> str:
-        """Build prompt for batch summarization."""
-        parts = []
-        for i, sym in enumerate(batch):
-            # Truncate source to avoid token overflow
-            source = sym.source[:500] if sym.source else "(no source)"
-            parts.append(
-                f"Symbol {i + 1}: {sym.kind} '{sym.qualified_name}'\n"
-                f"Signature: {sym.signature or 'N/A'}\n"
-                f"Source:\n```\n{source}\n```"
-            )
-        return "\n\n".join(parts)
 
     def _parse_summary_response(self, response: str, expected_count: int) -> list[str]:
         """Parse LLM response into list of summary strings."""

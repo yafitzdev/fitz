@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -120,16 +121,27 @@ class BackgroundIngestWorker:
     def _run(self) -> None:
         """Main worker loop."""
         try:
+            t0 = time.perf_counter()
             # Phase 1: REGISTERED → PARSED (fast, no LLM)
             self._process_registered_files()
 
             # Phase 2: PARSED → SUMMARIZED (LLM, pauses during queries)
+            t1 = time.perf_counter()
             self._process_parsed_files()
 
             # Phase 2.5: Enrich SUMMARIZED files with keywords + entities (LLM)
+            t2 = time.perf_counter()
             self._enrich_summarized_files()
 
-            logger.info("Background indexing complete")
+            t3 = time.perf_counter()
+            logger.info(
+                "Background indexing complete in %.1fs "
+                "(parse=%.1fs, summarize=%.1fs, enrich=%.1fs)",
+                t3 - t0,
+                t1 - t0,
+                t2 - t1,
+                t3 - t2,
+            )
         except Exception as e:
             logger.error(f"Background worker failed: {e}")
 
@@ -246,7 +258,6 @@ class BackgroundIngestWorker:
                                     "start_line": sym.start_line,
                                     "end_line": sym.end_line,
                                     "signature": sym.signature,
-                                    "summary": None,
                                     "imports": sym.imports,
                                     "references": sym.references,
                                     "keywords": [],
@@ -428,8 +439,10 @@ class BackgroundIngestWorker:
             self._table_store.update_summary(record["id"], summary)
 
     def _process_parsed_files(self) -> None:
-        """PARSED → SUMMARIZED: Generate LLM summaries."""
-        # Collect symbols needing summaries
+        """PARSED → SUMMARIZED: summarize tables and document sections.
+
+        Code symbols carry no summary and advance straight to SUMMARIZED.
+        """
         for entry in self._get_ordered_files(FileState.PARSED):
             if self._stop_event.is_set():
                 return
@@ -442,56 +455,16 @@ class BackgroundIngestWorker:
 
             try:
                 ext = entry.file_type
-
-                if ext in _CODE_EXTENSIONS:
-                    self._summarize_file_symbols(entry)
-                elif ext in _TABLE_EXTENSIONS:
+                if ext in _TABLE_EXTENSIONS:
                     self._summarize_table(entry)
-                else:
+                elif ext not in _CODE_EXTENSIONS:
                     self._summarize_file_sections(entry)
-
                 self._manifest.update_state(entry.rel_path, FileState.SUMMARIZED)
 
             except Exception as e:
                 logger.warning(f"Background summarize failed for {entry.rel_path}: {e}")
 
         self._manifest.save()
-
-    def _summarize_file_symbols(self, entry: "ManifestEntry") -> None:
-        """Generate summaries for all symbols in a file."""
-        from fitz_sage.engines.fitz_krag.ingestion.strategies.base import SymbolEntry
-
-        # Read file content to get symbol source code
-        content = self._read_file(entry)
-        if not content:
-            return
-
-        lines = content.splitlines()
-
-        # Build SymbolEntry objects with source code
-        symbols = []
-        for sym in entry.symbols:
-            source = "\n".join(lines[max(0, sym.start_line - 1) : sym.end_line])
-            symbols.append(
-                SymbolEntry(
-                    name=sym.name,
-                    qualified_name=sym.qualified_name,
-                    kind=sym.kind,
-                    start_line=sym.start_line,
-                    end_line=sym.end_line,
-                    signature=sym.signature,
-                    source=source[:500],
-                )
-            )
-
-        if not symbols:
-            return
-
-        # Generate summaries
-        summaries = self._batch_summarize_symbols(symbols)
-
-        # Update symbol store with summaries
-        self._symbol_store.update_summaries_by_file(entry.file_id, summaries)
 
     def _summarize_file_sections(self, entry: "ManifestEntry") -> None:
         """Generate summaries for all sections in a file."""
@@ -515,37 +488,6 @@ class BackgroundIngestWorker:
 
         # Update section store with summaries
         self._section_store.update_summaries_by_file(entry.file_id, summaries)
-
-    def _batch_summarize_symbols(self, symbols: list) -> list[str]:
-        """Generate summaries for a batch of symbols."""
-        parts = []
-        for i, sym in enumerate(symbols):
-            source = sym.source[:500] if sym.source else "(no source)"
-            parts.append(
-                f"Symbol {i + 1}: {sym.kind} '{sym.qualified_name}'\n"
-                f"Signature: {sym.signature or 'N/A'}\n"
-                f"Source:\n```\n{source}\n```"
-            )
-        prompt = "\n\n".join(parts)
-
-        try:
-            response = self._chat.chat(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You summarize code symbols. For each symbol, write a concise "
-                            "1-2 sentence description of what it does. Return a JSON array "
-                            "of strings, one per symbol, in the same order."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ]
-            )
-            return self._parse_summary_response(response, len(symbols))
-        except Exception as e:
-            logger.warning(f"Summary generation failed: {e}")
-            return [f"{sym.kind} {sym.name}" for sym in symbols]
 
     def _batch_summarize_sections(self, sections: list[dict]) -> list[str]:
         """Generate summaries for a batch of sections."""

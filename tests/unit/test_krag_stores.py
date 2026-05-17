@@ -84,7 +84,6 @@ class TestSymbolStore:
                 "start_line": 1,
                 "end_line": 5,
                 "signature": "def func()",
-                "summary": "A function",
                 "imports": [],
                 "references": [],
                 "metadata": {},
@@ -103,7 +102,7 @@ class TestSymbolStore:
     def test_search_by_name(self, mock_cm):
         cm, conn = mock_cm
         conn.execute.return_value.fetchall.return_value = [
-            ("s1", "func", "mod.func", "function", "f1", 1, 5, "def func()", "A function", {})
+            ("s1", "func", "mod.func", "function", "f1", 1, 5, "def func()", {})
         ]
         store = SymbolStore(cm, "test_col")
         results = store.search_by_name("func")
@@ -130,7 +129,6 @@ class TestSymbolStore:
                 1,
                 3,
                 "def helper()",
-                "A helper",
                 {},
                 ["os", "sys"],
             ),
@@ -143,7 +141,6 @@ class TestSymbolStore:
                 5,
                 10,
                 "def main_fn()",
-                "Main function",
                 {},
                 ["helper"],
             ),

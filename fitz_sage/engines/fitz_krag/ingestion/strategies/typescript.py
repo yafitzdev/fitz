@@ -229,7 +229,6 @@ def _extract_function(node, lines, module_name):
     end = node.end_point[0] + 1
     params = node.child_by_field_name("parameters")
     sig = f"function {name}{_node_text(params) if params else '()'}"
-    source = "\n".join(lines[start - 1 : end])
 
     return SymbolEntry(
         name=name,
@@ -238,7 +237,6 @@ def _extract_function(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
     )
 
 
@@ -250,7 +248,6 @@ def _extract_class(node, lines, module_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     heritage = _get_heritage(node)
     sig = f"class {name}{heritage}" if heritage else f"class {name}"
@@ -262,7 +259,6 @@ def _extract_class(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
     )
 
 
@@ -274,7 +270,6 @@ def _extract_interface(node, lines, module_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     return SymbolEntry(
         name=name,
@@ -283,7 +278,6 @@ def _extract_interface(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=f"interface {name}",
-        source=source,
     )
 
 
@@ -295,7 +289,6 @@ def _extract_type_alias(node, lines, module_name):
     name = _node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
-    source = "\n".join(lines[start - 1 : end])
 
     return SymbolEntry(
         name=name,
@@ -304,7 +297,6 @@ def _extract_type_alias(node, lines, module_name):
         start_line=start,
         end_line=end,
         signature=f"type {name}",
-        source=source,
     )
 
 
@@ -318,7 +310,6 @@ def _extract_method(node, lines, module_name, class_name):
     end = node.end_point[0] + 1
     params = node.child_by_field_name("parameters")
     sig = f"{name}{_node_text(params) if params else '()'}"
-    source = "\n".join(lines[start - 1 : end])
 
     return SymbolEntry(
         name=name,
@@ -327,7 +318,6 @@ def _extract_method(node, lines, module_name, class_name):
         start_line=start,
         end_line=end,
         signature=sig,
-        source=source,
     )
 
 
@@ -344,7 +334,6 @@ def _extract_lexical(node, lines, module_name):
             name = _node_text(name_node)
             start = node.start_point[0] + 1
             end = node.end_point[0] + 1
-            source = "\n".join(lines[start - 1 : end])
 
             if value_node and value_node.type == "arrow_function":
                 params = value_node.child_by_field_name("parameters")
@@ -362,7 +351,6 @@ def _extract_lexical(node, lines, module_name):
                     start_line=start,
                     end_line=end,
                     signature=sig,
-                    source=source,
                 )
             )
     return symbols

@@ -1228,7 +1228,6 @@ class FitzKragEngine:
                                 "start_line": sym.start_line,
                                 "end_line": sym.end_line,
                                 "signature": sym.signature,
-                                "summary": None,
                                 "imports": sym.imports,
                                 "references": sym.references,
                                 "keywords": [],

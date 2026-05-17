@@ -41,11 +41,11 @@ class SymbolStore:
         sql = f"""
             INSERT INTO {TABLE}
                 (id, name, qualified_name, kind, raw_file_id,
-                 start_line, end_line, signature, summary,
+                 start_line, end_line, signature,
                  imports, "references", keywords, entities, metadata)
             VALUES
                 (?, ?, ?, ?, ?,
-                 ?, ?, ?, ?,
+                 ?, ?, ?,
                  ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
@@ -54,7 +54,6 @@ class SymbolStore:
                 start_line = excluded.start_line,
                 end_line = excluded.end_line,
                 signature = excluded.signature,
-                summary = excluded.summary,
                 imports = excluded.imports,
                 "references" = excluded."references",
                 keywords = excluded.keywords,
@@ -74,7 +73,6 @@ class SymbolStore:
                         sym["start_line"],
                         sym["end_line"],
                         sym.get("signature"),
-                        sym.get("summary"),
                         json.dumps(sym.get("imports", [])),
                         json.dumps(sym.get("references", [])),
                         json.dumps(sym.get("keywords", [])),
@@ -85,14 +83,14 @@ class SymbolStore:
             conn.commit()
 
     def search_bm25(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
-        """FTS5 BM25 search over symbol name + qualified_name + summary."""
+        """FTS5 BM25 search over symbol name + qualified_name."""
         fts_query = _build_fts_query(query)
         if fts_query is None:
             return []
 
         sql = f"""
             SELECT s.id, s.name, s.qualified_name, s.kind, s.raw_file_id,
-                   s.start_line, s.end_line, s.signature, s.summary, s.metadata,
+                   s.start_line, s.end_line, s.signature, s.metadata,
                    bm25({FTS}) AS rank
             FROM {FTS}
             JOIN {TABLE} s ON s.rowid = {FTS}.rowid
@@ -104,8 +102,8 @@ class SymbolStore:
             rows = conn.execute(sql, (fts_query, limit)).fetchall()
         results = []
         for row in rows:
-            d = _row_to_dict(row[:10])
-            d["bm25_score"] = -float(row[10]) if row[10] is not None else 0.0
+            d = _row_to_dict(row[:9])
+            d["bm25_score"] = -float(row[9]) if row[9] is not None else 0.0
             results.append(d)
         return results
 
@@ -114,7 +112,7 @@ class SymbolStore:
         pattern = f"%{query}%"
         sql = f"""
             SELECT id, name, qualified_name, kind, raw_file_id,
-                   start_line, end_line, signature, summary, metadata
+                   start_line, end_line, signature, metadata
             FROM {TABLE}
             WHERE name LIKE ? COLLATE NOCASE
                OR qualified_name LIKE ? COLLATE NOCASE
@@ -133,7 +131,7 @@ class SymbolStore:
     def get(self, symbol_id: str) -> dict[str, Any] | None:
         sql = f"""
             SELECT id, name, qualified_name, kind, raw_file_id,
-                   start_line, end_line, signature, summary, metadata
+                   start_line, end_line, signature, metadata
             FROM {TABLE} WHERE id = ?
         """
         with self._cm.connection(self._collection) as conn:
@@ -146,7 +144,7 @@ class SymbolStore:
         """All symbols for a file. ``references`` returned as a Python list."""
         sql = f"""
             SELECT id, name, qualified_name, kind, raw_file_id,
-                   start_line, end_line, signature, summary, metadata,
+                   start_line, end_line, signature, metadata,
                    "references"
             FROM {TABLE}
             WHERE raw_file_id = ?
@@ -156,8 +154,8 @@ class SymbolStore:
             rows = conn.execute(sql, (raw_file_id,)).fetchall()
         results = []
         for row in rows:
-            d = _row_to_dict(row[:10])
-            d["references"] = _decode_json_list(row[10])
+            d = _row_to_dict(row[:9])
+            d["references"] = _decode_json_list(row[9])
             results.append(d)
         return results
 
@@ -167,7 +165,7 @@ class SymbolStore:
         placeholders = ",".join(["?"] * len(terms))
         sql = f"""
             SELECT id, name, qualified_name, kind, raw_file_id,
-                   start_line, end_line, signature, summary, metadata
+                   start_line, end_line, signature, metadata
             FROM {TABLE}
             WHERE EXISTS (
                 SELECT 1 FROM json_each({TABLE}.keywords) k
@@ -211,31 +209,6 @@ class SymbolStore:
             )
         return list(files.values())
 
-    def get_summaries_by_file(self, raw_file_id: str) -> list[dict[str, Any]]:
-        sql = f"""
-            SELECT id, name, kind, summary
-            FROM {TABLE}
-            WHERE raw_file_id = ?
-            ORDER BY start_line
-        """
-        with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, (raw_file_id,)).fetchall()
-        return [{"id": row[0], "name": row[1], "kind": row[2], "summary": row[3]} for row in rows]
-
-    def update_summaries_by_file(self, raw_file_id: str, summaries: list[str]) -> None:
-        ids_sql = f"""
-            SELECT id FROM {TABLE}
-            WHERE raw_file_id = ?
-            ORDER BY start_line
-        """
-        update_sql = f"UPDATE {TABLE} SET summary = ? WHERE id = ?"
-        with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(ids_sql, (raw_file_id,)).fetchall()
-            for i, row in enumerate(rows):
-                if i < len(summaries):
-                    conn.execute(update_sql, (summaries[i], row[0]))
-            conn.commit()
-
     def update_enrichment_by_file(
         self, raw_file_id: str, enriched_dicts: list[dict[str, Any]]
     ) -> None:
@@ -267,7 +240,7 @@ def _decode_json_list(value: Any) -> list:
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:
-    meta = row[9]
+    meta = row[8]
     if isinstance(meta, str):
         try:
             meta = json.loads(meta)
@@ -284,6 +257,5 @@ def _row_to_dict(row: tuple) -> dict[str, Any]:
         "start_line": row[5],
         "end_line": row[6],
         "signature": row[7],
-        "summary": row[8],
         "metadata": meta,
     }
