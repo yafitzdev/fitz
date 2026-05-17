@@ -1,0 +1,233 @@
+{
+  "mode": "section",
+  "corpus": "tools/retrieval_eval/corpus/section",
+  "collection": "reval_section",
+  "queries": [
+    {
+      "id": "section-01",
+      "query": "What are the three paradigms of RAG and how do they differ?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Naive RAG"},
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Advanced RAG"},
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Modular RAG"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "OVERVIEW OF RAG"}
+      ]
+    },
+    {
+      "id": "section-02",
+      "query": "What chunking and indexing strategies are used in RAG systems?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Indexing Optimization"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "RETRIEVAL"}
+      ]
+    },
+    {
+      "id": "section-03",
+      "query": "How does query optimization work in retrieval augmented generation?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Query Optimization"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "RETRIEVAL"}
+      ]
+    },
+    {
+      "id": "section-04",
+      "query": "What metrics are used to evaluate RAG systems?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Evaluation Aspects"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "TASK AND EVALUATION"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "Evaluation Benchmarks"}
+      ]
+    },
+    {
+      "id": "section-05",
+      "query": "What evaluation benchmarks and tools exist for RAG like RAGAS and ARES?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Evaluation Benchmarks and Tools"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "Evaluation Aspects"}
+      ]
+    },
+    {
+      "id": "section-06",
+      "query": "How does RAG compare to fine-tuning for LLMs?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "RAG vs Fine-tuning"}
+      ]
+    },
+    {
+      "id": "section-07",
+      "query": "What is the standard deduction amount?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "irs_1040_instructions_2024.pdf", "heading": "Standard Deduction"},
+        {"grade": 1, "doc": "irs_1040_instructions_2024.pdf", "heading": "What's New"}
+      ]
+    },
+    {
+      "id": "section-08",
+      "query": "Do I have to file a tax return if my income is below a certain amount?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "irs_1040_instructions_2024.pdf", "heading": "Do You Have To File"},
+        {"grade": 1, "doc": "irs_1040_instructions_2024.pdf", "heading": "Chart A-For Most People"}
+      ]
+    },
+    {
+      "id": "section-09",
+      "query": "How do I report pension and annuity income on my tax return?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "irs_1040_instructions_2024.pdf", "heading": "Pensions and Annuities"},
+        {"grade": 1, "doc": "irs_1040_instructions_2024.pdf", "heading": "Simplified Method"}
+      ]
+    },
+    {
+      "id": "section-10",
+      "query": "What if I can't file my tax return on time?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "irs_1040_instructions_2024.pdf", "heading": "Can't File on Time"},
+        {"grade": 1, "doc": "irs_1040_instructions_2024.pdf", "heading": "When and Where Should You File"}
+      ]
+    },
+    {
+      "id": "section-11",
+      "query": "What are the key characteristics of trustworthy AI according to NIST?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "nist_ai_rmf_100-1.pdf", "heading": "AI Risks and Trustworthiness"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Valid and Reliable"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Safe"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Fair"}
+      ]
+    },
+    {
+      "id": "section-12",
+      "query": "How does the NIST AI framework define AI safety?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Safe"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Secure and Resilient"}
+      ]
+    },
+    {
+      "id": "section-13",
+      "query": "What is the GOVERN function in the NIST AI risk management framework?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Govern"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "AI RMF Core"}
+      ]
+    },
+    {
+      "id": "section-14",
+      "query": "What challenges exist for AI risk measurement?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Risk Measurement"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Challenges for AI Risk Management"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Risk Tolerance"}
+      ]
+    },
+    {
+      "id": "section-15",
+      "query": "How does the NIST framework address AI explainability and interpretability?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Explainable and Interpretable"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Accountable and Transparent"}
+      ]
+    },
+    {
+      "id": "section-16",
+      "query": "How does the NIST AI framework address privacy in AI systems?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Privacy-Enhanced"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Fair"}
+      ]
+    },
+    {
+      "id": "section-17",
+      "query": "How should organizations prioritize AI risks according to NIST?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Risk Prioritization"},
+        {"grade": 1, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Organizational Integration"}
+      ]
+    },
+    {
+      "id": "section-18",
+      "query": "What private delivery services can I use to file my tax return?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "irs_1040_instructions_2024.pdf", "heading": "Private Delivery Services"}
+      ]
+    },
+    {
+      "id": "section-19",
+      "query": "What are the different retrieval sources used in RAG?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Retrieval Source"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "RETRIEVAL"}
+      ]
+    },
+    {
+      "id": "section-20",
+      "query": "What is adaptive retrieval and how does it decide when to retrieve?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Adaptive Retrieval"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "AUGMENTATION PROCESS"}
+      ]
+    },
+    {
+      "id": "section-vm-01",
+      "query": "How much of my income can I subtract from tax if I don't itemize my expenses?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "doc": "irs_1040_instructions_2024.pdf", "heading": "Standard Deduction"}
+      ]
+    },
+    {
+      "id": "section-vm-02",
+      "query": "What are my options if I won't be ready to submit my return by the April deadline?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "doc": "irs_1040_instructions_2024.pdf", "heading": "Can't File on Time"}
+      ]
+    },
+    {
+      "id": "section-vm-03",
+      "query": "What does the earliest, most basic retrieve-then-answer setup for language models look like?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Naive RAG"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "OVERVIEW OF RAG"}
+      ]
+    },
+    {
+      "id": "section-vm-04",
+      "query": "How does the framework deal with whether people can understand the reasoning behind an AI's output?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "doc": "nist_ai_rmf_100-1.pdf", "heading": "Explainable and Interpretable"}
+      ]
+    },
+    {
+      "id": "section-vm-05",
+      "query": "What approaches reshape or broaden a user's question before the search runs?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "doc": "rag_survey_2312.10997.pdf", "heading": "Query Optimization"},
+        {"grade": 1, "doc": "rag_survey_2312.10997.pdf", "heading": "RETRIEVAL"}
+      ]
+    }
+  ]
+}

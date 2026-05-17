@@ -317,10 +317,10 @@ class KragIngestPipeline:
             if self._entity_graph_store:
                 self._populate_entity_graph(section_dicts, "section_id")
 
-        # 4b-2. Hierarchical summaries (L1 groups + L2 corpus)
+        # 4b-2. Hierarchical L1/L2 summaries — document sections only. Code
+        # symbols carry their own machine-readable structure (imports, AST),
+        # so symbol-level hierarchy summaries are redundant for code.
         if self._config.enable_hierarchy:
-            if all_symbols:
-                self._generate_hierarchy_symbols(symbol_dicts, all_symbol_file_ids)
             if all_sections:
                 self._generate_hierarchy_sections(section_dicts, all_section_file_ids)
 
@@ -848,51 +848,6 @@ class KragIngestPipeline:
     # ------------------------------------------------------------------
     # Hierarchical summaries
     # ------------------------------------------------------------------
-
-    def _generate_hierarchy_symbols(
-        self, symbol_dicts: list[dict[str, Any]], file_ids: list[str]
-    ) -> None:
-        """Generate L1 file-level summaries for symbols."""
-        try:
-            groups: dict[str, list[dict]] = {}
-            for i, sym in enumerate(symbol_dicts):
-                fid = file_ids[i] if i < len(file_ids) else sym.get("raw_file_id", "")
-                groups.setdefault(fid, []).append(sym)
-
-            l1_summaries: list[str] = []
-            for file_id, symbols in groups.items():
-                names = [s.get("name", "") for s in symbols[:10]]
-                summaries = [s.get("summary", "") for s in symbols[:10] if s.get("summary")]
-                content = "\n".join(f"- {n}: {s}" for n, s in zip(names, summaries) if s)
-                if not content:
-                    continue
-
-                try:
-                    group_summary = self._chat.chat(
-                        [
-                            {
-                                "role": "system",
-                                "content": (
-                                    "Summarize this group of code symbols in 2-3 sentences. "
-                                    "Focus on what this file/module does overall."
-                                ),
-                            },
-                            {"role": "user", "content": content},
-                        ]
-                    )
-                    l1_summaries.append(group_summary)
-                    for sym in symbols:
-                        meta = sym.get("metadata", {})
-                        meta["hierarchy_summary"] = group_summary
-                        sym["metadata"] = meta
-                except Exception as e:
-                    logger.debug(f"L1 summary failed for file group: {e}")
-
-            # L2 corpus summary
-            if l1_summaries:
-                self._generate_corpus_summary(l1_summaries, "code")
-        except Exception as e:
-            logger.warning(f"Hierarchy generation for symbols failed: {e}")
 
     def _generate_hierarchy_sections(
         self, section_dicts: list[dict[str, Any]], file_ids: list[str]

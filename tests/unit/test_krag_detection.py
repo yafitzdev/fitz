@@ -332,9 +332,8 @@ class TestEngineAnswerDetectionFlow:
         """Detection result from batched call is passed to router.retrieve."""
         engine = _make_engine(enable_detection=True)
 
-        # Wire up detection orchestrator (gate_categories decides which modules run)
+        # Wire up detection orchestrator
         mock_orchestrator = MagicMock(name="detection_orchestrator")
-        mock_orchestrator.gate_categories.return_value = None  # run all modules
         mock_orchestrator._get_expansion_detector.return_value.detect.return_value = MagicMock(
             detected=False
         )

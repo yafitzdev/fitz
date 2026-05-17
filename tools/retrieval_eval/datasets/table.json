@@ -1,0 +1,196 @@
+{
+  "mode": "table",
+  "corpus": "tools/retrieval_eval/corpus/table",
+  "collection": "reval_table",
+  "queries": [
+    {
+      "id": "table-01",
+      "query": "What is Alice Chen's salary?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "employees.csv", "value": "125000"},
+        {"grade": 1, "doc": "employees.csv", "value": "Alice Chen"}
+      ]
+    },
+    {
+      "id": "table-02",
+      "query": "Who is the highest paid employee?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "employees.csv", "value": "Olivia Wright"},
+        {"grade": 2, "doc": "employees.csv", "value": "180000"},
+        {"grade": 1, "doc": "employees.csv", "value": "VP Marketing"}
+      ]
+    },
+    {
+      "id": "table-03",
+      "query": "How many employees work in Engineering?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "employees.csv", "value": "Engineering"}
+      ]
+    },
+    {
+      "id": "table-04",
+      "query": "Which employees work in New York?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "employees.csv", "value": "Alice Chen"},
+        {"grade": 2, "doc": "employees.csv", "value": "David Kim"},
+        {"grade": 2, "doc": "employees.csv", "value": "Iris Johnson"},
+        {"grade": 2, "doc": "employees.csv", "value": "Maria Rodriguez"}
+      ]
+    },
+    {
+      "id": "table-05",
+      "query": "What is the average salary in the Engineering department?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "employees.csv", "value": "Engineering"}
+      ]
+    },
+    {
+      "id": "table-06",
+      "query": "Who earns more than 140000?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "employees.csv", "value": "Bob Martinez"},
+        {"grade": 2, "doc": "employees.csv", "value": "Grace Lee"},
+        {"grade": 2, "doc": "employees.csv", "value": "Nathan Clark"},
+        {"grade": 2, "doc": "employees.csv", "value": "Olivia Wright"}
+      ]
+    },
+    {
+      "id": "table-07",
+      "query": "Which products are low on stock with less than 20 units?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "products.csv", "value": "Ergonomic Chair"},
+        {"grade": 2, "doc": "products.csv", "value": "Standing Desk"}
+      ]
+    },
+    {
+      "id": "table-08",
+      "query": "What is the most expensive product?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "products.csv", "value": "Standing Desk"},
+        {"grade": 2, "doc": "products.csv", "value": "549.99"}
+      ]
+    },
+    {
+      "id": "table-09",
+      "query": "How many electronics products do we have?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "products.csv", "value": "Electronics"}
+      ]
+    },
+    {
+      "id": "table-10",
+      "query": "What products does TechSupply Co supply?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "products.csv", "value": "Wireless Mouse"},
+        {"grade": 2, "doc": "products.csv", "value": "Mechanical Keyboard"},
+        {"grade": 2, "doc": "products.csv", "value": "Webcam HD"},
+        {"grade": 2, "doc": "products.csv", "value": "Wireless Charger"},
+        {"grade": 2, "doc": "products.csv", "value": "External SSD 1TB"}
+      ]
+    },
+    {
+      "id": "table-11",
+      "query": "Which product has the highest customer rating?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "products.csv", "value": "Noise-Cancelling Headphones"},
+        {"grade": 2, "doc": "products.csv", "value": "4.9"}
+      ]
+    },
+    {
+      "id": "table-12",
+      "query": "What was the total sales amount for Acme Corp?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "sales.csv", "value": "Acme Corp"}
+      ]
+    },
+    {
+      "id": "table-13",
+      "query": "Which customer spent the most overall?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "sales.csv", "value": "MegaCorp"}
+      ]
+    },
+    {
+      "id": "table-14",
+      "query": "How many sales were made in the West region?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "sales.csv", "value": "West"}
+      ]
+    },
+    {
+      "id": "table-15",
+      "query": "What were the sales in February 2025?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "sales.csv", "value": "S009"},
+        {"grade": 2, "doc": "sales.csv", "value": "S010"},
+        {"grade": 2, "doc": "sales.csv", "value": "S011"},
+        {"grade": 2, "doc": "sales.csv", "value": "S012"},
+        {"grade": 2, "doc": "sales.csv", "value": "S013"},
+        {"grade": 2, "doc": "sales.csv", "value": "S014"},
+        {"grade": 2, "doc": "sales.csv", "value": "S015"}
+      ]
+    },
+    {
+      "id": "table-16",
+      "query": "What is the largest single sale by total amount?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "sales.csv", "value": "1599.92"},
+        {"grade": 1, "doc": "sales.csv", "value": "GlobalTech"},
+        {"grade": 1, "doc": "sales.csv", "value": "Noise-Cancelling Headphones"}
+      ]
+    },
+    {
+      "id": "table-17",
+      "query": "Which departments have employees working remotely?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "employees.csv", "value": "Henry Brown"},
+        {"grade": 2, "doc": "employees.csv", "value": "Jack Taylor"},
+        {"grade": 2, "doc": "employees.csv", "value": "Nathan Clark"}
+      ]
+    },
+    {
+      "id": "table-18",
+      "query": "What furniture items cost less than 50 dollars?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "products.csv", "value": "Monitor Stand"},
+        {"grade": 2, "doc": "products.csv", "value": "Desk Lamp"}
+      ]
+    },
+    {
+      "id": "table-19",
+      "query": "How many orders were paid by credit card?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "sales.csv", "value": "Credit Card"}
+      ]
+    },
+    {
+      "id": "table-20",
+      "query": "Who are the junior engineers and what are their salaries?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "doc": "employees.csv", "value": "David Kim"},
+        {"grade": 2, "doc": "employees.csv", "value": "Leo Garcia"},
+        {"grade": 1, "doc": "employees.csv", "value": "Junior Engineer"}
+      ]
+    }
+  ]
+}

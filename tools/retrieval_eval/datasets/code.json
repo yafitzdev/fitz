@@ -1,0 +1,117 @@
+{
+  "mode": "code",
+  "corpus": "fitz_sage/engines/fitz_krag/retrieval",
+  "collection": "reval_code",
+  "queries": [
+    {
+      "id": "code-01",
+      "query": "Where is multi-hop iterative retrieval implemented?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/multihop.py"},
+        {"grade": 1, "path": "fitz_sage/engines/fitz_krag/retrieval/router.py"}
+      ]
+    },
+    {
+      "id": "code-02",
+      "query": "Where is the agentic search strategy defined?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/strategies/agentic_search.py"}
+      ]
+    },
+    {
+      "id": "code-03",
+      "query": "How does the retrieval router dispatch and fuse strategies?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/router.py"},
+        {"grade": 1, "path": "fitz_sage/engines/fitz_krag/retrieval/ranker.py"}
+      ]
+    },
+    {
+      "id": "code-04",
+      "query": "Where is BM25 keyword code search over symbols?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/strategies/code_search.py"}
+      ]
+    },
+    {
+      "id": "code-05",
+      "query": "Where is document section search implemented?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/strategies/section_search.py"}
+      ]
+    },
+    {
+      "id": "code-06",
+      "query": "Where are retrieved addresses reranked?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/reranker.py"},
+        {"grade": 1, "path": "fitz_sage/engines/fitz_krag/retrieval/ranker.py"}
+      ]
+    },
+    {
+      "id": "code-07",
+      "query": "Where is table search and SQL query handling?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/strategies/table_search.py"},
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/table_handler.py"}
+      ]
+    },
+    {
+      "id": "code-08",
+      "query": "Which strategy lets the model decide its own next step and explore the knowledge base iteratively?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/strategies/agentic_search.py"}
+      ]
+    },
+    {
+      "id": "code-09",
+      "query": "Where do we follow references from one document into others to pull in more context?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/multihop.py"}
+      ]
+    },
+    {
+      "id": "code-10",
+      "query": "Where is the natural-language code lookup that finds functions by intent rather than by their name?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/strategies/llm_code_search.py"},
+        {"grade": 1, "path": "fitz_sage/engines/fitz_krag/retrieval/strategies/code_search.py"}
+      ]
+    },
+    {
+      "id": "code-11",
+      "query": "What broadens the retrieved set with imported and structurally-related symbols?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/expander.py"}
+      ]
+    },
+    {
+      "id": "code-12",
+      "query": "What component combines fetching candidates, merging, scoring, and reading into a single cycle?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/retrieval_pass.py"},
+        {"grade": 1, "path": "fitz_sage/engines/fitz_krag/retrieval/router.py"}
+      ]
+    },
+    {
+      "id": "code-13",
+      "query": "Where does the engine pull the actual file text for the pieces it chose to surface?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval/reader.py"}
+      ]
+    }
+  ]
+}

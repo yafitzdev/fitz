@@ -830,18 +830,11 @@ class FitzKragEngine:
         _progress("Analyzing query...")
         t0 = time.perf_counter()
 
-        # fast-analyze + ML gate decide which sections the prompt carries;
-        # rewriting and keywords are always included.
+        # fast-analyze gates the analysis section, _needs_detection gates the
+        # detection section; rewriting and keywords are always included.
         fast_analysis = self._fast_analyze(sanitized)
         need_llm_analysis = fast_analysis is None
         need_detection = bool(self._detection_orchestrator and self._needs_detection(sanitized))
-        detection_limit_to = None
-        if need_detection:
-            flagged = self._detection_orchestrator.gate_categories(sanitized)
-            if flagged is not None and len(flagged) == 0:
-                need_detection = False
-            else:
-                detection_limit_to = flagged
 
         retrieval_query = sanitized
         rewrite_result = None
@@ -850,7 +843,6 @@ class FitzKragEngine:
                 sanitized,
                 include_analysis=need_llm_analysis,
                 include_detection=need_detection,
-                detection_limit_to=detection_limit_to,
                 include_rewriting=self._config.enable_query_rewriting,
                 include_extended=True,
                 include_keywords=True,

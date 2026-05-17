@@ -129,7 +129,6 @@ class QueryBatcher:
         *,
         include_analysis: bool = True,
         include_detection: bool = True,
-        detection_limit_to: "set[DetectionCategory] | None" = None,
         include_rewriting: bool = True,
         include_extended: bool = False,
         include_keywords: bool = True,
@@ -141,7 +140,6 @@ class QueryBatcher:
             query: User query text.
             include_analysis: Include query type classification.
             include_detection: Include detection modules.
-            detection_limit_to: Only include these detection categories (None = all).
             include_rewriting: Include query rewriting.
             include_extended: Include extended advisory signals (specificity, domain, etc.).
             include_keywords: Include semantic keyword expansion.
@@ -150,7 +148,7 @@ class QueryBatcher:
         Returns:
             BatchResult with per-section results (None for excluded sections).
         """
-        active_modules = self._get_active_modules(detection_limit_to) if include_detection else []
+        active_modules = list(self.detection_modules) if include_detection else []
         if include_detection and not active_modules:
             include_detection = False
 
@@ -183,14 +181,6 @@ class QueryBatcher:
             include_extended=include_extended,
             include_keywords=include_keywords,
         )
-
-    def _get_active_modules(
-        self, limit_to: "set[DetectionCategory] | None"
-    ) -> list["DetectionModule"]:
-        """Filter detection modules by gated categories."""
-        if limit_to is None:
-            return list(self.detection_modules)
-        return [m for m in self.detection_modules if m.category in limit_to]
 
     def _build_prompt(
         self,

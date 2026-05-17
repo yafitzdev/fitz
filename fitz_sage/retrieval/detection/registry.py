@@ -14,7 +14,6 @@ from typing import Any
 from fitz_sage.llm.factory import ChatFactory
 from fitz_sage.logging.logger import get_logger
 
-from .classifier import DetectionClassifier
 from .llm_classifier import LLMClassifier
 from .modules import AggregationType, TemporalIntent
 from .protocol import DetectionCategory, DetectionResult
@@ -136,35 +135,14 @@ class DetectionOrchestrator:
 
     chat_factory: ChatFactory | None = None
 
-    # Lazy-loaded classifiers
+    # Lazy-loaded LLM classifier
     _classifier: LLMClassifier | None = field(default=None, init=False, repr=False)
-    _ml_classifier: DetectionClassifier | None = field(default=None, init=False, repr=False)
 
     def _ensure_classifier(self) -> LLMClassifier | None:
         """Lazy-load LLM classifier with all modules."""
         if self._classifier is None and self.chat_factory is not None:
             self._classifier = LLMClassifier(chat_factory=self.chat_factory)
         return self._classifier
-
-    def _ensure_ml_classifier(self) -> DetectionClassifier | None:
-        """Lazy-load ML classifier; returns None if unavailable."""
-        if self._ml_classifier is None:
-            self._ml_classifier = DetectionClassifier()
-        if self._ml_classifier.available:
-            return self._ml_classifier
-        return None
-
-    def gate_categories(self, query: str) -> set["DetectionCategory"] | None:
-        """Run ML gate only — no LLM call.
-
-        Returns:
-            Set of flagged categories, or None if gate unavailable (run all).
-            Empty set means skip detection entirely.
-        """
-        gate = self._ensure_ml_classifier()
-        if gate is None:
-            return None
-        return gate.predict(query)
 
     def detect_for_retrieval(self, query: str) -> DetectionSummary:
         """
@@ -182,22 +160,7 @@ class DetectionOrchestrator:
         classifier = self._ensure_classifier()
 
         if classifier:
-            gate = self._ensure_ml_classifier()
-            if gate is not None:
-                flagged = gate.predict(query)
-                if flagged is None:
-                    # Gate error or unavailable — run all modules
-                    results = classifier.classify(query, limit_to=None)
-                elif len(flagged) == 0:
-                    # No categories flagged — skip LLM entirely
-                    results = {}
-                    logger.debug("Detection gate flagged no categories; skipping LLM")
-                else:
-                    # Run only flagged modules
-                    results = classifier.classify(query, limit_to=flagged)
-            else:
-                # No gate available — run all modules unchanged
-                results = classifier.classify(query, limit_to=None)
+            results = classifier.classify(query)
         else:
             results = {}
             logger.debug("No chat factory available, skipping LLM classification")
