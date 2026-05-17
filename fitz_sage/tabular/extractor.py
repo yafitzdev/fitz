@@ -3,7 +3,7 @@
 Table Extractor - Extracts tables from ParsedDocument during ingestion.
 
 Tables are extracted before chunking, converted to schema chunks with
-embedded JSON data, and stored in the vector DB for later SQL queries.
+embedded JSON data, and stored in the SQLite store for later SQL queries.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class TableExtractor:
         extractor = TableExtractor()
         modified_doc, table_chunks = extractor.extract(parsed_doc)
 
-        # table_chunks go to vector DB
+        # table_chunks go to the SQLite store
         # modified_doc goes to chunker (tables removed)
     """
 

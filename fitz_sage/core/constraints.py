@@ -55,7 +55,7 @@ class Constraints:
     - {"author": "Smith", "reviewed": True} - AND conditions
 
     The exact semantics are engine-specific:
-    - Fitz RAG: applies as vector DB metadata filters
+    - Fitz RAG: applies as SQLite store metadata filters
     - Custom engines: define their own filter logic
 
     Engines should ignore unknown filter keys gracefully.

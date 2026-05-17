@@ -31,7 +31,7 @@ def user_llm_plugins(plugin_type: str) -> Path:
     Location: ~/.fitz/plugins/llm/{plugin_type}/
 
     Args:
-        plugin_type: One of 'chat', 'embedding', 'rerank'
+        plugin_type: One of 'chat', 'rerank'
     """
     return user_plugins() / "llm" / plugin_type
 

@@ -29,11 +29,6 @@ MODEL_DEFAULTS = {
         "anthropic": "claude-sonnet-4-20250514",
         "ollama": "llama3.2",
     },
-    "embedding": {
-        "cohere": "embed-english-v3.0",
-        "openai": "text-embedding-3-small",
-        "ollama": "nomic-embed-text",
-    },
     "rerank": {
         "cohere": "rerank-v3.5",
         "ollama": "qllama/bge-reranker-v2-m3",
@@ -51,7 +46,7 @@ def get_default_model(plugin_type: str, plugin_name: str, tier: str = "smart") -
     """Get the default model for a plugin.
 
     Args:
-        plugin_type: Type of plugin (chat, embedding, rerank, vision)
+        plugin_type: Type of plugin (chat, rerank, vision)
         plugin_name: Name of the plugin (cohere, openai, etc.)
         tier: Model tier for chat plugins ("smart", "fast", or "balanced")
 
@@ -68,7 +63,7 @@ def prompt_model(plugin_type: str, plugin_name: str, tier: str = "smart") -> str
     """Prompt for model selection with smart default.
 
     Args:
-        plugin_type: Type of plugin (chat, embedding, rerank)
+        plugin_type: Type of plugin (chat, rerank)
         plugin_name: Name of the plugin
         tier: Model tier for chat plugins ("smart", "fast", or "balanced")
 

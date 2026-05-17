@@ -2,7 +2,7 @@
 """
 Agentic search strategy — LLM-driven file selection from manifest.
 
-For files not yet indexed (not at EMBEDDED state), this strategy:
+For files not yet indexed (not at SUMMARIZED state), this strategy:
 1. Builds compact manifest text
 2. Uses BM25 pre-filter when >50 unindexed files
 3. Asks LLM to pick relevant files
@@ -56,7 +56,7 @@ class AgenticSearchStrategy:
     def retrieve(self, query: str, limit: int) -> list[Address]:
         """Retrieve addresses for unindexed files via LLM file selection.
 
-        1. Get files NOT at EMBEDDED state from manifest
+        1. Get files NOT at SUMMARIZED state from manifest
         2. Build compact manifest text (~50-100 tokens/file)
         3. If >50 unindexed files: BM25 pre-filter to top 50
         4. LLM picks ~5-10 candidate files

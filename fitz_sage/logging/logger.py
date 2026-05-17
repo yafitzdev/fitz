@@ -63,7 +63,7 @@ def get_logger(name: str) -> StructuredLogger:
             logger.info("Processing query")  # Includes query_id
 
         # Track operations
-        with logger.operation("vector_search"):
+        with logger.operation("bm25_search"):
             results = search()  # Logs timing automatically
 
     Returns:

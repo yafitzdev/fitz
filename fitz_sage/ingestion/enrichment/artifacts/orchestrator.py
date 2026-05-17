@@ -47,7 +47,7 @@ class ArtifactOrchestrator:
 
         # Ingest artifacts
         for artifact in artifacts:
-            # Store in vector DB
+            # Store in the SQLite store
             pass
     """
 

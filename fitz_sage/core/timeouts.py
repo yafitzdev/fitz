@@ -35,7 +35,6 @@ class Timeouts:
 
     # LLM operation timeouts
     LLM_CHAT: ClassVar[int] = 300  # 5 minutes for chat
-    LLM_EMBED: ClassVar[int] = 120  # 2 minutes for embedding
     LLM_RERANK: ClassVar[int] = 60  # 1 minute for reranking
     LLM_VISION: ClassVar[int] = 180  # 3 minutes for vision
 
@@ -63,7 +62,7 @@ class Timeouts:
         Get timeout for a named operation.
 
         Args:
-            operation: Operation name (e.g., "chat", "embed", "health")
+            operation: Operation name (e.g., "chat", "health")
 
         Returns:
             Timeout in seconds
@@ -81,7 +80,6 @@ class Timeouts:
             "api_slow": cls.API_SLOW,
             # LLM operations
             "chat": cls.LLM_CHAT,
-            "embed": cls.LLM_EMBED,
             "rerank": cls.LLM_RERANK,
             "vision": cls.LLM_VISION,
             # Database
@@ -128,7 +126,7 @@ def get_httpx_timeout(operation: str = "api") -> "httpx.Timeout":  # noqa: F821
     connect = TIMEOUTS.CONNECT
 
     # Special handling for long operations
-    if operation in ("chat", "embed", "vision", "ingest"):
+    if operation in ("chat", "vision", "ingest"):
         return httpx.Timeout(timeout, connect=connect)
 
     return httpx.Timeout(timeout, connect=connect)

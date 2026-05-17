@@ -3,8 +3,7 @@
 KRAG Ingestion Pipeline.
 
 Scans source files, extracts symbols via language strategies, generates
-LLM summaries in batches, embeds summaries, and stores everything in
-PostgreSQL.
+LLM summaries in batches, and stores everything in the SQLite store.
 """
 
 from __future__ import annotations
@@ -61,7 +60,7 @@ class KragIngestPipeline:
     Steps:
     1. Scan source for files
     2. Compute content hashes, diff against stored hashes
-    3. For new/changed files: extract -> summarize -> enrich -> embed -> store
+    3. For new/changed files: extract -> summarize -> enrich -> store
     4. For deleted files: cascade delete
     """
 

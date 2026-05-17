@@ -3,7 +3,7 @@
 Data models for tabular data routing.
 
 ParsedTable represents a table extracted from a document.
-Schema chunks are created with embedded table data for vector DB storage.
+Schema chunks are created with embedded table data for storage.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def create_schema_chunk(table: ParsedTable) -> Chunk:
     """
     Create a schema chunk with embedded table data.
 
-    The chunk content is human-readable (for embedding/retrieval).
+    The chunk content is human-readable (for retrieval).
     The full table data is stored in metadata as JSON (for SQL queries).
 
     Args:
@@ -92,7 +92,7 @@ def create_schema_chunk(table: ParsedTable) -> Chunk:
     Returns:
         Chunk with table schema in content and full data in metadata.
     """
-    # Human-readable content for embedding/retrieval
+    # Human-readable content for retrieval
     content = f"""Table from {table.source_doc}
 Columns: {", ".join(table.headers)}
 Row count: {table.row_count} rows
@@ -147,8 +147,8 @@ def create_schema_chunk_for_stored_table(
     """
     Create a lightweight schema chunk for a table stored in TableStore.
 
-    Unlike create_schema_chunk(), this does NOT embed table_data in metadata.
-    The actual table data lives in TableStore (SQLite or Qdrant payloads).
+    Unlike create_schema_chunk(), this does NOT inline table_data in metadata.
+    The actual table data lives in TableStore (SQLite).
     At query time, TableQueryStep fetches the table from TableStore.
 
     Args:
@@ -166,7 +166,7 @@ def create_schema_chunk_for_stored_table(
     if sample_rows:
         sample_str = _format_sample_from_rows(columns, sample_rows)
 
-    # Human-readable content for embedding/retrieval
+    # Human-readable content for retrieval
     content = f"""Table from {source_file}
 Columns: {", ".join(columns)}
 Row count: {row_count} rows

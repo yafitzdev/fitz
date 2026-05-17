@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 # Base prompt for all summaries
 BASE_PROMPT = """You are creating a summary for a knowledge retrieval system.
-Your summary will be embedded and retrieved when users ask analytical questions.
+Your summary will be stored and retrieved when users ask analytical questions.
 
 TASK: Summarize this document to capture information useful for trend analysis and insights.
 

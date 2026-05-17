@@ -89,13 +89,12 @@ class TestDisplayCollectionInfo:
             _display_collection_info(
                 name="my_collection",
                 chunk_count=150,
-                metadata={"vector_size": 768},
+                metadata={},
             )
 
         captured = capsys.readouterr()
         assert "my_collection" in captured.out
         assert "150" in captured.out
-        assert "768" in captured.out
 
     def test_display_collection_info_vectors_count(self, capsys):
         """Test _display_collection_info handles vectors_count key."""
@@ -153,7 +152,7 @@ class TestCollectionsWithData:
         mock_service.get_collection.return_value = CollectionInfo(
             name="docs",
             chunk_count=10,
-            metadata={"vector_size": 768},
+            metadata={},
         )
 
         with patch("fitz_sage.cli.commands.collections.FitzService", return_value=mock_service):

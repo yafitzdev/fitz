@@ -38,7 +38,7 @@ class StructuredLogger:
             logger.info("Processing query")  # Includes context automatically
 
         # Add operation timing
-        with logger.operation("vector_search"):
+        with logger.operation("bm25_search"):
             results = do_search()  # Logs start, end, duration automatically
     """
 

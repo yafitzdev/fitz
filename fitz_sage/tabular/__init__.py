@@ -6,11 +6,11 @@ Three modes of operation:
 
 1. **Embedded tables** (from documents):
    Tables extracted from markdown, PDF, etc. are stored as JSON in chunk payloads.
-   Small and quick - data lives in vector DB.
+   Small and quick - data lives in the SQLite store.
 
 2. **Standalone table files** (CSV, TSV):
-   Tables from files are stored in PostgreSQL via TableStore.
-   Schema chunk in vector DB points to table_id, actual data fetched at query time.
+   Tables from files are stored via TableStore.
+   Schema chunk in the store points to table_id, actual data fetched at query time.
 
 3. **Direct table query** (quickstart mode):
    Fast path for querying tables without RAG pipeline.

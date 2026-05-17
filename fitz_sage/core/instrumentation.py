@@ -75,7 +75,7 @@ class BenchmarkHook(Protocol):
         Called before method execution.
 
         Args:
-            layer: Plugin layer (e.g., "engine", "llm.chat", "vector_db", "chunking")
+            layer: Plugin layer (e.g., "engine", "llm.chat", "chunking")
             plugin_name: Name of the plugin (e.g., "fitz_krag", "openai", "pinecone")
             method: Method being called (e.g., "answer", "chat", "search")
             args: Positional arguments to the method
@@ -113,21 +113,21 @@ class CachingHook(Protocol):
 
     CachingHooks can intercept method calls and return cached results,
     bypassing the actual method execution. This is useful for caching
-    expensive operations like embeddings during benchmarks.
+    expensive operations during benchmarks.
 
     Example:
-        class EmbeddingCacheHook:
+        class ChatCacheHook:
             def __init__(self):
                 self._cache = {}
 
             def get_cached_result(self, layer, plugin_name, method, args, kwargs):
-                if layer == "llm.embedding" and method == "embed":
-                    key = (plugin_name, args[0])  # (plugin, text)
+                if layer == "llm.chat" and method == "chat":
+                    key = (plugin_name, args[0])  # (plugin, prompt)
                     return self._cache.get(key, _NO_CACHE)
                 return _NO_CACHE
 
             def cache_result(self, layer, plugin_name, method, args, kwargs, result):
-                if layer == "llm.embedding" and method == "embed":
+                if layer == "llm.chat" and method == "chat":
                     key = (plugin_name, args[0])
                     self._cache[key] = result
     """
@@ -399,7 +399,7 @@ def maybe_wrap(
 
     Args:
         target: Plugin instance to potentially wrap
-        layer: Plugin layer (e.g., "engine", "llm.chat", "vector_db")
+        layer: Plugin layer (e.g., "engine", "llm.chat")
         plugin_name: Plugin name (e.g., "fitz_krag", "openai")
         methods_to_track: If provided, only these methods are instrumented
 
@@ -409,7 +409,7 @@ def maybe_wrap(
     Example:
         def get_llm_plugin(name, type):
             plugin = _load_plugin(name, type)
-            return maybe_wrap(plugin, f"llm.{type}", name, {"chat", "embed"})
+            return maybe_wrap(plugin, f"llm.{type}", name, {"chat"})
     """
     if not has_hooks():
         return target

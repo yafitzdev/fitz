@@ -5,7 +5,7 @@ Artifact generation for improved code retrieval.
 Artifacts are high-level summaries of a codebase that provide context
 for understanding code structure and relationships. They are:
 1. Generated once per ingest (or when code changes significantly)
-2. Stored in the vector DB with special metadata
+2. Stored in the SQLite store with special metadata
 3. Always retrieved with every query (score=1.0)
 
 Artifact plugins are auto-discovered from the plugins/ directory.

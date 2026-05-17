@@ -61,7 +61,7 @@ class fitz:
         Initialize the Fitz SDK.
 
         Args:
-            collection: Name for the vector DB collection. Documents ingested
+            collection: Name for the collection. Documents ingested
                        with this Fitz instance will be stored in this collection.
             config_path: Path to a YAML config file. If not provided, uses
                         the default config at .fitz/config.yaml or creates one.
@@ -77,7 +77,7 @@ class fitz:
 
     @property
     def collection(self) -> str:
-        """The vector DB collection name."""
+        """The collection name."""
         return self._collection
 
     @property

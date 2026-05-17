@@ -1,10 +1,5 @@
 # tests/unit/conftest.py
-"""
-Test fixtures for unit tests.
-
-Provides mock embedders for testing semantic matching without
-requiring actual embedding API calls.
-"""
+"""Test fixtures for unit tests."""
 
 from __future__ import annotations
 
@@ -17,8 +12,6 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-
-from .mock_embedder import create_deterministic_embedder
 
 
 def pytest_collection_modifyitems(config, items):
@@ -83,12 +76,6 @@ def reset_sqlite_singleton():
     SqliteConnectionManager.reset_instance()
     yield
     SqliteConnectionManager.reset_instance()
-
-
-@pytest.fixture
-def mock_embedder():
-    """Fixture providing a deterministic mock embedder."""
-    return create_deterministic_embedder()
 
 
 def _generate_test_certificate(days_valid: int = 365) -> tuple[bytes, bytes]:

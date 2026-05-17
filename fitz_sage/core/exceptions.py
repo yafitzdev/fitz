@@ -46,7 +46,7 @@ class KnowledgeError(EngineError):
     Knowledge retrieval or processing error.
 
     Raised when the engine cannot access or process knowledge, for example:
-    - Vector DB connection failure
+    - SQLite store connection failure
     - Document not found
     - Corrupted knowledge base
     - Index unavailable

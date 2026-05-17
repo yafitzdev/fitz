@@ -146,7 +146,6 @@ def display_sources(chunks, max_sources: int = 5, indent: int = 0) -> None:
         table.add_column("#", style="dim", width=3)
         table.add_column("Document", style="cyan", max_width=40)
         table.add_column("Chunk", style="dim", justify="center", width=5)
-        table.add_column("Vector", style="yellow", justify="right", width=7)
         table.add_column("Rerank", style="green", justify="right", width=7)
         table.add_column("Excerpt", style="dim", max_width=45)
 
@@ -170,10 +169,8 @@ def display_sources(chunks, max_sources: int = 5, indent: int = 0) -> None:
             chunk_idx = metadata.get("chunk_index", "-")
             chunk_str = str(chunk_idx) if chunk_idx != "-" else "-"
 
-            # Get scores
-            vector_score = metadata.get("vector_score")
+            # Get score
             rerank_score = metadata.get("rerank_score")
-            vector_str = f"{vector_score:.3f}" if vector_score is not None else "-"
             rerank_str = f"{rerank_score:.3f}" if rerank_score is not None else "-"
 
             # Excerpt
@@ -182,7 +179,7 @@ def display_sources(chunks, max_sources: int = 5, indent: int = 0) -> None:
             excerpt = excerpt.replace("\n", " ").replace("\r", " ")
             excerpt = _sanitize_for_display(excerpt)
 
-            table.add_row(str(i), filename, chunk_str, vector_str, rerank_str, excerpt)
+            table.add_row(str(i), filename, chunk_str, rerank_str, excerpt)
 
         if indent > 0:
             console.print(Padding(table, (0, 0, 0, indent)))

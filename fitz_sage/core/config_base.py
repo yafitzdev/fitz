@@ -36,7 +36,7 @@ class PoolConfigMixin(BaseModel):
     """
     Database/connection pool configuration pattern.
 
-    Used by: storage, vector_db, any pooled resource.
+    Used by: storage, any pooled resource.
     """
 
     pool_min_size: int = Field(default=1, ge=1, le=100, description="Minimum connections in pool")
@@ -161,7 +161,6 @@ class TimeoutDefaults(Enum):
     NORMAL = 30  # Standard API calls
     SLOW = 60  # File operations, complex queries
     CHAT = 300  # LLM chat completions
-    EMBED = 120  # Embedding operations
 
     @classmethod
     def get(cls, operation: str) -> int:
@@ -170,7 +169,6 @@ class TimeoutDefaults(Enum):
             "health": cls.FAST.value,
             "query": cls.NORMAL.value,
             "chat": cls.CHAT.value,
-            "embed": cls.EMBED.value,
             "file": cls.SLOW.value,
         }
         return mapping.get(operation, cls.NORMAL.value)

@@ -30,7 +30,7 @@ class CSVParser(BaseParser):
 
     Extracts structured table data (columns + rows) and creates a Table object
     in ParsedDocument.tables. Also creates a schema description element for
-    vector search ("What columns are in the employee data?").
+    search ("What columns are in the employee data?").
 
     Example:
         parser = CSVParser()
@@ -118,7 +118,7 @@ class CSVParser(BaseParser):
             },
         )
 
-        # Create schema description element (for vector search)
+        # Create schema description element (for search)
         schema_text = (
             f"Table '{file_path.stem}' has {len(columns)} columns: {', '.join(columns)}. "
             f"Contains {len(normalized_rows)} rows of data from {file_path.name}."

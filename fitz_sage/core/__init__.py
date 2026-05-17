@@ -38,7 +38,6 @@ Examples:
     Using FitzPaths:
     >>> from fitz_sage.core import FitzPaths
     >>> config_path = FitzPaths.config()
-    >>> vector_db_path = FitzPaths.vector_db()
 
     Using extract_path:
     >>> from fitz_sage.core import extract_path
@@ -70,7 +69,7 @@ from .exceptions import (
 )
 
 # Path management
-from .paths import FitzPaths, get_config_path, get_vector_db_path, get_workspace
+from .paths import FitzPaths, get_config_path, get_workspace
 from .provenance import Provenance
 
 # Core types
@@ -91,7 +90,6 @@ __all__ = [
     # Path Management
     "FitzPaths",
     "get_workspace",
-    "get_vector_db_path",
     "get_config_path",
     # Exceptions
     "EngineError",

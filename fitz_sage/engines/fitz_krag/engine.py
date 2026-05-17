@@ -53,7 +53,7 @@ def _build_provider_config(
     spec: str | None = None,
 ) -> dict[str, Any] | None:
     """
-    Build a config dict for ``get_chat`` / ``get_embedder`` / ``get_vision``.
+    Build a config dict for ``get_chat`` / ``get_vision``.
 
     Only includes ``base_url`` and ``auth.api_key_env`` when the provider
     spec actually consumes them. The ``openai`` preset has its own
@@ -229,7 +229,7 @@ class FitzKragEngine:
         _t1 = _t.perf_counter()
         logger.debug(f"[init] providers+pg: {(_t1-_t0)*1000:.0f}ms")
 
-        # Ingestion stores (created while embed.dimensions resolves)
+        # Ingestion stores
         from fitz_sage.engines.fitz_krag.ingestion.import_graph_store import ImportGraphStore
         from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
         from fitz_sage.engines.fitz_krag.ingestion.schema import ensure_schema
@@ -251,7 +251,7 @@ class FitzKragEngine:
         _ts1 = _t.perf_counter()
         logger.debug(f"[init] store objects: {(_ts1-_t1)*1000:.0f}ms")
 
-        # Retrieval (created while embed.dimensions resolves in background)
+        # Retrieval
         from fitz_sage.engines.fitz_krag.retrieval.expander import CodeExpander
         from fitz_sage.engines.fitz_krag.retrieval.reader import ContentReader
         from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouter
@@ -1025,7 +1025,7 @@ class FitzKragEngine:
     ) -> Any:
         """Register source directory for progressive querying.
 
-        1. Build manifest (fast, no LLM/embedding; parses + caches rich docs)
+        1. Build manifest (fast, no LLM; parses + caches rich docs)
         2. Persist source_dir so future processes can find it
         3. Create AgenticSearchStrategy, wire into router
         4. Set source_dir on ContentReader (disk fallback)
@@ -1129,12 +1129,12 @@ class FitzKragEngine:
         source_dir: Path,
         progress: Callable[[str], None] | None = None,
     ) -> None:
-        """Fast synchronous AST extraction + embedding for code files.
+        """Fast synchronous AST symbol extraction for code files.
 
         Populates raw_store, symbol_store, and import_store so that LLM code
-        search and hybrid code search work on the very first query. Embeds
-        symbol signatures immediately so vector search works before LLM
-        summaries are generated.
+        search and hybrid code search work on the very first query. Symbol
+        signatures are indexed immediately so symbol/BM25 search works before
+        LLM summaries are generated.
 
         Files are transitioned to PARSED state so the background worker skips
         Phase 1 and starts with Phase 2 (LLM summaries).

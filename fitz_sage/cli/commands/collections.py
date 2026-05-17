@@ -53,13 +53,11 @@ def _display_collection_info(name: str, chunk_count: int, metadata: dict[str, An
 
         table.add_row("Name", name)
         table.add_row("Items", str(chunk_count))
-        table.add_row("Vector Size", str(metadata.get("vector_size", "?")))
 
         console.print(Panel(table, title=f"[bold]{name}[/bold]", border_style="blue"))
     else:
         print(f"  Name: {name}")
         print(f"  Items: {chunk_count}")
-        print(f"  Vector Size: {metadata.get('vector_size', '?')}")
 
 
 def _delete_table_registry(collection: str) -> None:
@@ -77,11 +75,11 @@ def _delete_table_registry(collection: str) -> None:
 
 def command() -> None:
     """
-    Manage vector database collections.
+    Manage collections.
 
     Interactive mode - browse, inspect, and delete collections.
     """
-    ui.header("Collections", "Manage vector database collections")
+    ui.header("Collections", "Manage collections")
 
     service = FitzService()
 

@@ -9,7 +9,7 @@ Version: v3 - Adapts to code vs documentation content
 """
 
 PROMPT = """You are creating a summary for a knowledge retrieval system.
-Your summary will be embedded and retrieved when users ask analytical questions.
+Your summary will be stored and retrieved when users ask analytical questions.
 
 TASK: Summarize this content to capture information useful for understanding and insights.
 

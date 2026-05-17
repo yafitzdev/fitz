@@ -45,7 +45,7 @@ class Artifact:
     Attributes:
         artifact_type: The type of artifact
         title: Human-readable title
-        content: The artifact content (will be embedded)
+        content: The artifact content
         metadata: Additional metadata for filtering/display
     """
 
@@ -60,7 +60,7 @@ class Artifact:
         return True
 
     def to_payload(self) -> Dict[str, Any]:
-        """Convert to vector DB payload format."""
+        """Convert to SQLite store payload format."""
         return {
             "content": self.content,
             "is_artifact": True,
@@ -73,10 +73,10 @@ class Artifact:
 
     def to_chunk(self) -> "Chunk":
         """
-        Convert artifact to a Chunk for vector DB storage.
+        Convert artifact to a Chunk for SQLite store storage.
 
         This enables unified storage flow where artifacts are stored
-        alongside regular chunks in the vector database.
+        alongside regular chunks in the SQLite store.
 
         Returns:
             Chunk instance with artifact metadata

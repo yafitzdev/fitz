@@ -347,7 +347,6 @@ class CollectionInfoBuilder:
     def __init__(self):
         self._name = "test_collection"
         self._chunk_count = 100
-        self._vector_dimensions = 384
         self._metadata = {}
 
     def with_name(self, name: str) -> CollectionInfoBuilder:
@@ -356,10 +355,6 @@ class CollectionInfoBuilder:
 
     def with_chunks(self, count: int) -> CollectionInfoBuilder:
         self._chunk_count = count
-        return self
-
-    def with_dimensions(self, dims: int) -> CollectionInfoBuilder:
-        self._vector_dimensions = dims
         return self
 
     def empty(self) -> CollectionInfoBuilder:
@@ -373,7 +368,6 @@ class CollectionInfoBuilder:
         return CollectionInfo(
             name=self._name,
             chunk_count=self._chunk_count,
-            vector_dimensions=self._vector_dimensions,
             metadata=self._metadata,
         )
 

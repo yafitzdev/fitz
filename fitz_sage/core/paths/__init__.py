@@ -9,7 +9,6 @@ Usage:
     from fitz_sage.core.paths import FitzPaths
 
     config_path = FitzPaths.config()
-    vector_db_path = FitzPaths.vector_db()
 
     # Override workspace for testing
     FitzPaths.set_workspace("/tmp/test_fitz")
@@ -62,17 +61,6 @@ class FitzPaths:
     def config(cls) -> Path:
         """Default config file path: {workspace}/config.yaml"""
         return _config.config()
-
-    # Vector DB / Storage
-    @classmethod
-    def vector_db(cls, collection: Optional[str] = None) -> Path:
-        """Local vector database storage path."""
-        return _storage.vector_db(collection)
-
-    @classmethod
-    def ensure_vector_db(cls, collection: Optional[str] = None) -> Path:
-        """Get vector DB path and create it if it doesn't exist."""
-        return _storage.ensure_vector_db(collection)
 
     # PostgreSQL data (pgserver)
     @classmethod
@@ -155,11 +143,6 @@ def get_workspace() -> Path:
     return FitzPaths.workspace()
 
 
-def get_vector_db_path(collection: Optional[str] = None) -> Path:
-    """Convenience function to get vector DB path."""
-    return FitzPaths.vector_db(collection)
-
-
 def get_config_path() -> Path:
     """Convenience function to get config path."""
     return FitzPaths.config()
@@ -173,7 +156,6 @@ def get_ingest_state_path() -> Path:
 __all__ = [
     "FitzPaths",
     "get_workspace",
-    "get_vector_db_path",
     "get_config_path",
     "get_ingest_state_path",
 ]

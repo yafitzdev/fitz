@@ -2,7 +2,7 @@
 """
 ManifestBuilder — fast directory scan with AST symbol + heading extraction.
 
-No LLM calls, no embedding, no PostgreSQL. Runs in <500ms for 100 files.
+No LLM calls. Runs in <500ms for 100 files.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ class ManifestBuilder:
         - _extract_headings() for .md/.rst/.txt (regex, instant)
         - parsed_cache for rich docs (PDF, DOCX) — parse once, cache forever
 
-        No LLM calls, no embedding calls, no PostgreSQL.
+        No LLM calls.
         """
         from fitz_sage.engines.fitz_krag.progressive.parsed_cache import (
             RICH_DOC_EXTENSIONS,

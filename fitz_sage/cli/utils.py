@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 
 def get_collections(ctx: CLIContext = None) -> List[str]:
     """
-    Get list of collections from vector DB.
+    Get list of collections.
 
     Args:
         ctx: CLIContext (optional, will load if not provided)
@@ -34,26 +34,7 @@ def get_collections(ctx: CLIContext = None) -> List[str]:
     return ctx.get_collections()
 
 
-def get_vector_db_client(ctx: CLIContext = None):
-    """
-    Get vector DB client from ctx.
-
-    Args:
-        ctx: CLIContext (optional, will load if not provided)
-
-    Returns:
-        Vector DB client instance.
-
-    Note:
-        Prefer using ctx.get_vector_db_client() from CLIContext directly.
-    """
-    if ctx is None:
-        ctx = CLIContext.load()
-    return ctx.get_vector_db_client()
-
-
 __all__ = [
     "CLIContext",
     "get_collections",
-    "get_vector_db_client",
 ]

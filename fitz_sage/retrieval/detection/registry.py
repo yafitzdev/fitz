@@ -27,7 +27,7 @@ class DetectionSummary:
     """
     Summary of all detections for retrieval routing.
 
-    Provides convenient accessors for VectorSearchStep routing decisions.
+    Provides convenient accessors for retrieval routing decisions.
     """
 
     temporal: DetectionResult[Any]

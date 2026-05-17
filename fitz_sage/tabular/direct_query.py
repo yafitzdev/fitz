@@ -11,7 +11,7 @@ Flow:
 6. Execute and return results
 7. Cleanup (optional)
 
-This bypasses embedding entirely, giving sub-second query responses.
+This bypasses the RAG pipeline entirely, giving sub-second query responses.
 """
 
 from __future__ import annotations

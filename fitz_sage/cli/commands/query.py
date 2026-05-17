@@ -229,7 +229,7 @@ def _select_collection(service: FitzService, requested: Optional[str]) -> str:
 
     if not collections:
         print()
-        ui.warning("No collections found in vector database.")
+        ui.warning("No collections found.")
         ui.info("Run 'fitz query \"question\" --source ./docs' to get started.")
         raise typer.Exit(0)
 

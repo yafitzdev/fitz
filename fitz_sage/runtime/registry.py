@@ -37,7 +37,7 @@ class EngineCapabilities:
 
     # Storage capabilities
     supports_collections: bool = True
-    """Engine uses persistent collections (vector DB, etc.)"""
+    """Engine uses persistent collections (SQLite store, etc.)"""
 
     requires_documents_at_query: bool = False
     """Engine needs documents added before querying (no persistent storage)"""

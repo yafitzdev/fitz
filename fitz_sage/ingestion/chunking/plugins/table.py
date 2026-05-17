@@ -3,7 +3,7 @@
 Table chunker for structured data files (CSV, SQLite, Excel).
 
 Unlike regular chunkers, this doesn't split table data into chunks.
-Instead, it creates a single schema description chunk for vector search
+Instead, it creates a single schema description chunk for search
 (e.g., "What columns does the employee table have?").
 
 The actual table data is stored separately in TableStore (handled by executor).
@@ -29,7 +29,7 @@ class TableChunker:
     """
     Chunker for tabular data files (CSV, SQLite, Excel).
 
-    Creates schema description chunks for vector search, allowing queries like:
+    Creates schema description chunks for search, allowing queries like:
     - "What columns are in the employee data?"
     - "Which tables contain sales information?"
     - "What data do we have about customers?"
@@ -61,7 +61,7 @@ class TableChunker:
         - Schema information (column names, row count)
         - Table metadata (source file, table ID)
 
-        This chunk enables vector search for table discovery:
+        This chunk enables search for table discovery:
         "What columns are in employees table?" → finds this schema chunk
 
         The actual table rows are NOT chunked - they go to TableStore.
@@ -86,7 +86,7 @@ class TableChunker:
 
         # Create one chunk per table
         for idx, table in enumerate(document.tables):
-            # Build schema description for vector search
+            # Build schema description for search
             schema_text = (
                 f"Table '{table.id}' from {Path(table.source_file).name}\n\n"
                 f"Columns ({len(table.columns)}): {', '.join(table.columns)}\n"

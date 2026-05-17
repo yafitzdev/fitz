@@ -8,7 +8,6 @@ Single implementation of plugin registry logic used by all plugin types:
 - Retriever
 - Pipeline
 - LLM (Python providers, via fitz_sage.llm)
-- Vector DB (YAML-based, via fitz_sage.vector_db.registry)
 
 This module is the SINGLE SOURCE OF TRUTH for all registry access.
 Import everything from here, not from domain-specific modules.
@@ -373,7 +372,7 @@ def available_llm_plugins(plugin_type: str) -> List[str]:
     List available LLM plugins for a given type.
 
     Args:
-        plugin_type: Type of LLM plugin ("chat", "embedding", "rerank", "vision")
+        plugin_type: Type of LLM plugin ("chat", "rerank", "vision")
 
     Returns:
         List of provider names that support the given type

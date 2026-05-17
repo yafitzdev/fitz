@@ -16,7 +16,7 @@ def extract_path(data: Any, path: str, *, default: Any = None, strict: bool = Tr
     Extract a value from nested data using dot/bracket notation.
 
     This is the single implementation for path-based data extraction,
-    used by both LLM runtime and Vector DB plugins.
+    used by the LLM runtime.
 
     Args:
         data: The data structure to extract from (dict, list, or object)

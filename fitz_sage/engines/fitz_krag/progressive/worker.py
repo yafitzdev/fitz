@@ -5,7 +5,7 @@ BackgroundIngestWorker — daemon thread that indexes files progressively.
 State machine per file:
     REGISTERED → PARSED     (store raw content, extract symbols/sections — no LLM)
     PARSED     → SUMMARIZED (generate LLM summaries, pause during active queries)
-    SUMMARIZED → EMBEDDED   (compute embeddings, runs concurrently with queries)
+    SUMMARIZED is terminal.
 
 Priority queue (stdlib PriorityQueue):
     P1: Files user just queried about
@@ -39,7 +39,7 @@ _TABLE_EXTENSIONS = {".csv", ".tsv"}
 
 
 class BackgroundIngestWorker:
-    """Daemon thread that indexes files: REGISTERED → PARSED → SUMMARIZED → EMBEDDED."""
+    """Daemon thread that indexes files: REGISTERED → PARSED → SUMMARIZED."""
 
     def __init__(
         self,

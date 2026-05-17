@@ -55,7 +55,6 @@ class CollectionInfo:
 
     name: str
     chunk_count: int
-    vector_dimensions: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
