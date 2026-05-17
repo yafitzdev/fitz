@@ -72,7 +72,7 @@ A: "I don't have enough information
 pip install fitz-sage
 
 # Local (recommended): start llama-server with any GGUF chat model
-llama-server -m qwen2.5-7b-instruct.gguf --port 8080 &
+llama-server -m gpt-oss-20b.gguf --port 8080 &
 
 # Then point fitz-sage at it — same syntax for cloud:
 fitz query "What is our refund policy?" --source ./docs
@@ -149,7 +149,7 @@ RAG approach:
 You can—but you'll hit walls fast.
 
 **Context window limits 🚨**
-> GPT-4 accepts ~128k tokens. That's roughly 300 pages. Your company wiki, codebase, or document archive is likely 10x-100x 
+> GPT-5 accepts ~272k tokens. That's roughly 600 pages. Your company wiki, codebase, or document archive is likely 5x-50x 
 > larger. You physically cannot paste it all.
 
 **Cost explosion 💥**
@@ -382,7 +382,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >For one-off queries against any OpenAI-compatible URL, skip the config:
 >
 >```bash
->fitz query "..." --endpoint http://localhost:8080/v1 --model qwen2.5-7b
+>fitz query "..." --endpoint http://localhost:8080/v1 --model gpt-oss-20b
 >fitz query "..." --endpoint https://api.together.xyz/v1 \
 >                 --model meta-llama-3.1-70b \
 >                 --api-key-env TOGETHER_API_KEY
@@ -424,7 +424,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >pip install fitz-sage
 >
 ># Chat server on port 8080 — fitz-sage's default chat endpoint
->llama-server -m qwen2.5-7b-instruct-q4_k_m.gguf --port 8080 -c 8192
+>llama-server -m gpt-oss-20b-q4_k_m.gguf --port 8080 -c 8192
 >
 >fitz query "Your question here" --source ./docs
 >```
@@ -687,17 +687,17 @@ curl -X POST http://localhost:8000/query \
 
 **First query is slow**
 > First run initializes the database and warms up the LLM. Subsequent queries are much faster. Local models load
-> on first use — use a smaller GGUF (e.g. Qwen2.5-1.5B) for faster cold start, or run llama-server in advance.
+> on first use, you may run llama-server in advance to mitigate cold start.
 
 **How do I change my LLM endpoint or model?**
 > Edit `.fitz/config.yaml`:
 > ```yaml
-> chat_smart: endpoint/qwen2.5-7b-instruct
+> chat_smart: endpoint/gpt-oss-20b
 > chat_base_url: http://localhost:8080/v1
 > ```
 > Or override at the CLI without editing YAML:
 > ```bash
-> fitz query "..." --endpoint http://localhost:8080/v1 --model qwen2.5-7b
+> fitz query "..." --endpoint http://localhost:8080/v1 --model gpt-oss-20b
 > ```
 
 **How do I use a cloud provider?**
