@@ -1,31 +1,17 @@
 # fitz_sage/retrieval/detection/__init__.py
 """
-Unified detection system using module-based LLM classification.
+Detection system — module-based LLM query classification.
 
-Similar to the enrichment bus pattern:
-- Each module defines its prompt fragment and parsing logic
-- All modules are combined into a single LLM call
-- Results are distributed to modules for parsing
+Each module defines its prompt fragment and parsing logic; all modules are
+combined into the single batched query-prep LLM call (``QueryBatcher``), and
+``DetectionSummary`` wraps the per-category results for retrieval routing.
 
 To add a new detection category:
 1. Create a module in modules/ (inherit from DetectionModule)
 2. Implement category, json_key, prompt_fragment(), parse_result()
 3. Add to DEFAULT_MODULES in modules/__init__.py
-
-Usage:
-    from fitz_sage.retrieval.detection import DetectionOrchestrator
-    from fitz_sage.llm import get_chat_factory
-
-    factory = get_chat_factory("cohere")
-    orchestrator = DetectionOrchestrator(chat_factory=factory)
-    summary = orchestrator.detect_for_retrieval(query)
-
-    if summary.has_temporal_intent:
-        # Route to temporal strategy
-        ...
 """
 
-from .llm_classifier import LLMClassifier
 from .modules import (
     DEFAULT_MODULES,
     AggregationModule,
@@ -33,33 +19,28 @@ from .modules import (
     ComparisonModule,
     DetectionModule,
     FreshnessModule,
-    RewriterModule,
     TemporalIntent,
     TemporalModule,
+    distribute_to_modules,
 )
 from .protocol import DetectionCategory, DetectionResult, Match
-from .registry import DetectionOrchestrator, DetectionSummary
+from .registry import DetectionSummary
 
 __all__ = [
-    # Orchestration
     "DetectionCategory",
-    "DetectionOrchestrator",
     "DetectionResult",
     "DetectionSummary",
+    "Match",
     # Enums
     "AggregationType",
     "TemporalIntent",
-    # Protocol
-    "Match",
-    # LLM Classifier
-    "LLMClassifier",
     # Module system
     "DEFAULT_MODULES",
     "DetectionModule",
+    "distribute_to_modules",
     # Modules
     "AggregationModule",
     "ComparisonModule",
     "FreshnessModule",
-    "RewriterModule",
     "TemporalModule",
 ]

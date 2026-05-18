@@ -99,79 +99,6 @@ def _make_profile(
 
 
 # ---------------------------------------------------------------------------
-# TestEngineDetectionInit
-# ---------------------------------------------------------------------------
-
-
-class TestEngineDetectionInit:
-    """Tests for detection orchestrator initialization."""
-
-    def test_detection_disabled_has_none_orchestrator(self):
-        """Engine with enable_detection=False has None detection_orchestrator."""
-        engine = _make_engine(enable_detection=False)
-
-        assert engine._detection_orchestrator is None
-
-    @patch("fitz_sage.retrieval.detection.registry.DetectionOrchestrator")
-    @patch("fitz_sage.llm.factory.get_chat_factory")
-    @patch("fitz_sage.llm.client.get_chat")
-    @patch("fitz_sage.storage.sqlite.SqliteConnectionManager")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.raw_file_store.RawFileStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.symbol_store.SymbolStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.import_graph_store.ImportGraphStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.section_store.SectionStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.schema.ensure_schema")
-    @patch("fitz_sage.engines.fitz_krag.retrieval.strategies.code_search.CodeSearchStrategy")
-    @patch("fitz_sage.engines.fitz_krag.retrieval.strategies.section_search.SectionSearchStrategy")
-    @patch("fitz_sage.engines.fitz_krag.retrieval.router.RetrievalRouter")
-    @patch("fitz_sage.engines.fitz_krag.retrieval.reader.ContentReader")
-    @patch("fitz_sage.engines.fitz_krag.retrieval.expander.CodeExpander")
-    @patch("fitz_sage.engines.fitz_krag.query_analyzer.QueryAnalyzer")
-    @patch("fitz_sage.engines.fitz_krag.context.assembler.ContextAssembler")
-    @patch("fitz_sage.engines.fitz_krag.generation.synthesizer.CodeSynthesizer")
-    def test_detection_enabled_creates_orchestrator(
-        self,
-        _synth,
-        _asm,
-        _qa,
-        _exp,
-        _reader,
-        _router,
-        _sect_strat,
-        _code_strat,
-        _ensure,
-        _sect_store,
-        _imp_store,
-        _sym_store,
-        _raw_store,
-        mock_pg,
-        mock_get_chat,
-        mock_get_chat_factory,
-        mock_orchestrator_cls,
-    ):
-        """Engine with enable_detection=True creates a DetectionOrchestrator."""
-        mock_pg.get_instance.return_value = MagicMock(name="pg_instance")
-        mock_factory = MagicMock(name="chat_factory")
-        mock_get_chat_factory.return_value = mock_factory
-
-        config = _make_config(enable_detection=True, governance=None)
-        engine = FitzKragEngine(config)
-
-        # All tiers use the user-configured spec; no provider-specific
-        # collapsing in the engine (legacy is_local Ollama check is gone).
-        mock_get_chat_factory.assert_called_once_with(
-            {
-                "fast": config.chat_fast,
-                "balanced": config.chat_balanced,
-                "smart": config.chat_smart,
-            },
-            {"base_url": config.chat_base_url},
-        )
-        mock_orchestrator_cls.assert_called_once_with(chat_factory=mock_factory)
-        assert engine._detection_orchestrator is mock_orchestrator_cls.return_value
-
-
-# ---------------------------------------------------------------------------
 # TestRouterDetection
 # ---------------------------------------------------------------------------
 
@@ -332,13 +259,6 @@ class TestEngineAnswerDetectionFlow:
         """Detection result from batched call is passed to router.retrieve."""
         engine = _make_engine(enable_detection=True)
 
-        # Wire up detection orchestrator
-        mock_orchestrator = MagicMock(name="detection_orchestrator")
-        mock_orchestrator._get_expansion_detector.return_value.detect.return_value = MagicMock(
-            detected=False
-        )
-        engine._detection_orchestrator = mock_orchestrator
-
         # Wire up batcher to return detection results
         from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
         from fitz_sage.retrieval.detection.protocol import DetectionCategory, DetectionResult
@@ -380,7 +300,6 @@ class TestEngineAnswerDetectionFlow:
     def test_detection_disabled_stays_none_in_answer_flow(self):
         """When detection is disabled, detection stays None through answer flow."""
         engine = _make_engine(enable_detection=False)
-        assert engine._detection_orchestrator is None
 
         # Wire up pipeline stages (query must be >8 words to trigger LLM analysis)
         query = _make_query(

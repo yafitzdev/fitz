@@ -86,7 +86,6 @@ class KragIngestPipeline:
         collection: str,
         table_store: "TableStore | None" = None,
         sqlite_table_store: "SqliteTableStore | None" = None,
-        vocabulary_store: Any = None,
         entity_graph_store: Any = None,
     ):
         self._config = config
@@ -102,7 +101,6 @@ class KragIngestPipeline:
         self._section_store = SectionStore(connection_manager, collection)
         self._table_store = table_store or TableStore(connection_manager, collection)
         self._sqlite_table_store = sqlite_table_store
-        self._vocabulary_store = vocabulary_store
         self._entity_graph_store = entity_graph_store
 
         # Enricher
@@ -633,8 +631,6 @@ class KragIngestPipeline:
             return
         self._enricher.enrich_symbols(symbols)
         self._symbol_store.update_enrichment_by_file(file_id, symbols)
-        if self._vocabulary_store:
-            self._save_keywords_to_vocabulary(symbols, [])
         if self._entity_graph_store:
             self._populate_entity_graph(symbols, "symbol_id")
 
@@ -655,48 +651,8 @@ class KragIngestPipeline:
             self._generate_l1_summary(sections)
         # One write persists keywords, entities, and the L1 hierarchy summary
         self._section_store.update_enrichment_by_file(file_id, sections)
-        if self._vocabulary_store:
-            self._save_keywords_to_vocabulary([], sections)
         if self._entity_graph_store:
             self._populate_entity_graph(sections, "section_id")
-
-    # ------------------------------------------------------------------
-    # Vocabulary integration
-    # ------------------------------------------------------------------
-
-    def _save_keywords_to_vocabulary(
-        self,
-        symbol_dicts: list[dict[str, Any]],
-        section_dicts: list[dict[str, Any]],
-    ) -> None:
-        """Collect keywords from enriched dicts and save to VocabularyStore."""
-        try:
-            from fitz_sage.retrieval.vocabulary.models import Keyword
-
-            keywords: list[Keyword] = []
-            seen: set[str] = set()
-
-            for item_list in [symbol_dicts, section_dicts]:
-                for item in item_list:
-                    for kw_str in item.get("keywords", []):
-                        kw_lower = kw_str.lower()
-                        if kw_lower not in seen:
-                            seen.add(kw_lower)
-                            keywords.append(
-                                Keyword(
-                                    id=kw_str,
-                                    category="auto",
-                                    match=[kw_str],
-                                    occurrences=1,
-                                    auto_generated=[kw_str],
-                                )
-                            )
-
-            if keywords:
-                self._vocabulary_store.merge_and_save(keywords, source_docs=len(symbol_dicts))
-                logger.debug(f"Saved {len(keywords)} keywords to vocabulary store")
-        except Exception as e:
-            logger.warning(f"Failed to save keywords to vocabulary: {e}")
 
     # ------------------------------------------------------------------
     # Entity graph integration

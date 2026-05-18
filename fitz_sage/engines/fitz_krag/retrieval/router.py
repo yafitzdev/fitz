@@ -49,7 +49,6 @@ class RetrievalRouter:
         self._table_strategy = table_strategy
         self._config = config
         self._agentic_strategy = agentic_strategy
-        self._keyword_matcher: Any = None  # Set by engine for vocabulary filtering
 
     def retrieve(
         self,
@@ -173,10 +172,6 @@ class RetrievalRouter:
         # Deduplicate
         deduped = self._deduplicate(all_addresses)
 
-        # Keyword vocabulary boost
-        if self._keyword_matcher:
-            deduped = self._apply_keyword_boost(query, deduped)
-
         # Rank using profile if available
         if profile:
             ranker = CrossStrategyRanker()
@@ -251,43 +246,6 @@ class RetrievalRouter:
                 )
             )
         return tagged
-
-    def _apply_keyword_boost(self, query: str, addresses: list[Address]) -> list[Address]:
-        """Boost addresses matching vocabulary keywords found in the query."""
-        try:
-            matched_keywords = self._keyword_matcher.find_in_query(query)
-            if not matched_keywords:
-                return addresses
-
-            # Collect all variations from matched keywords for text matching
-            match_terms = set()
-            for kw in matched_keywords:
-                match_terms.add(kw.id.lower())
-                for variation in getattr(kw, "match", []):
-                    match_terms.add(variation.lower())
-
-            boosted: list[Address] = []
-            for addr in addresses:
-                text = (addr.summary or "") + " " + (addr.location or "")
-                text_lower = text.lower()
-                boost = sum(1 for term in match_terms if term in text_lower)
-                if boost > 0:
-                    boosted.append(
-                        Address(
-                            kind=addr.kind,
-                            source_id=addr.source_id,
-                            location=addr.location,
-                            summary=addr.summary,
-                            score=addr.score + 0.1 * boost,
-                            metadata=addr.metadata,
-                        )
-                    )
-                else:
-                    boosted.append(addr)
-            return boosted
-        except Exception as e:
-            logger.warning(f"Keyword boost failed: {e}")
-            return addresses
 
     def _deduplicate(self, addresses: list[Address]) -> list[Address]:
         """Deduplicate addresses by source_id+location, merging temporal tags."""

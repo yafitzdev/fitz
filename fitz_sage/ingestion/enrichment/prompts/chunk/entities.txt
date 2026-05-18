@@ -1,1 +1,0 @@
-"entities": Array of named entities as objects with "name" and "type" fields. Types: person, organization, product, technology, concept. Example: [{"name": "John Smith", "type": "person"}, {"name": "PostgreSQL", "type": "technology"}]. Return empty array if none found.

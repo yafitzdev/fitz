@@ -108,8 +108,6 @@ class TestEngineInit:
             "TableQueryHandler": (
                 "fitz_sage.engines.fitz_krag.retrieval" ".table_handler.TableQueryHandler"
             ),
-            # query analysis
-            "QueryAnalyzer": ("fitz_sage.engines.fitz_krag" ".query_analyzer.QueryAnalyzer"),
             # context + generation
             "ContextAssembler": (
                 "fitz_sage.engines.fitz_krag.context" ".assembler.ContextAssembler"
@@ -154,11 +152,10 @@ class TestEngineInit:
         _patches["TableSearchStrategy"].assert_called_once()
         _patches["RetrievalRouter"].assert_called_once()
 
-        # Reader, expander, analyzer, assembler, synthesizer, table handler created
+        # Reader, expander, assembler, synthesizer, table handler created
         _patches["ContentReader"].assert_called_once()
         _patches["CodeExpander"].assert_called_once()
         _patches["TableQueryHandler"].assert_called_once()
-        _patches["QueryAnalyzer"].assert_called_once()
         _patches["ContextAssembler"].assert_called_once()
         _patches["CodeSynthesizer"].assert_called_once()
 
@@ -224,8 +221,6 @@ class TestAnswer:
         result = engine.answer(query)
 
         # Verify each stage called with correct args
-        # _query_analyzer is not called in the batched dispatch path
-        engine._query_analyzer.analyze.assert_not_called()
         engine._retrieval_router.retrieve.assert_called_once()
         call_args = engine._retrieval_router.retrieve.call_args
         assert call_args[0][0] == query.text
@@ -270,7 +265,6 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._query_analyzer.analyze.return_value = MagicMock()
         engine._retrieval_router.retrieve.return_value = []
 
         result = engine.answer(query)
@@ -290,7 +284,6 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._query_analyzer.analyze.return_value = MagicMock()
         engine._retrieval_router.retrieve.return_value = [MagicMock()]
         engine._reader.read.return_value = []
 
@@ -312,7 +305,6 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._query_analyzer.analyze.return_value = MagicMock()
         engine._retrieval_router.retrieve.side_effect = RuntimeError(
             "vector search connection timeout"
         )
@@ -328,7 +320,6 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._query_analyzer.analyze.return_value = MagicMock()
         engine._retrieval_router.retrieve.side_effect = RuntimeError("retrieval timeout")
 
         with pytest.raises(KnowledgeError, match="Retrieval failed"):
@@ -342,7 +333,6 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._query_analyzer.analyze.return_value = MagicMock()
         engine._retrieval_router.retrieve.return_value = [MagicMock()]
         engine._reader.read.return_value = [MagicMock()]
         engine._expander.expand.return_value = [MagicMock()]
@@ -361,7 +351,6 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._query_analyzer.analyze.return_value = MagicMock()
         engine._retrieval_router.retrieve.return_value = [MagicMock()]
         engine._reader.read.return_value = [MagicMock()]
         engine._expander.expand.return_value = [MagicMock()]
@@ -380,7 +369,6 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._query_analyzer.analyze.return_value = MagicMock()
         engine._retrieval_router.retrieve.return_value = [MagicMock()]
         engine._reader.read.return_value = [MagicMock()]
         engine._expander.expand.return_value = [MagicMock()]
@@ -395,7 +383,6 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query("what is the average salary?")
 
-        engine._query_analyzer.analyze.return_value = MagicMock()
         engine._retrieval_router.retrieve.return_value = [MagicMock()]
 
         read_result = MagicMock(name="table_read_result")

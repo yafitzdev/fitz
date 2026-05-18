@@ -1,23 +1,16 @@
 # fitz_sage/engines/fitz_krag/query_analyzer.py
 """
-Query analyzer for fitz_krag — classifies queries by knowledge type.
+Query analysis types for fitz_krag — knowledge-type classification.
 
-Uses a single LLM call to determine whether a query targets code, documentation,
-or both, so the retrieval router can prioritize the right strategies.
+Query classification runs as a section of the batched query-prep call
+(``QueryBatcher``). This module holds the shared result types, the per-type
+strategy weights, and the dict parser the batcher uses.
 """
 
 from __future__ import annotations
 
-import json
-import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from fitz_sage.llm.providers.base import ChatProvider
-
-logger = logging.getLogger(__name__)
 
 
 class QueryType(str, Enum):
@@ -56,86 +49,11 @@ _TYPE_WEIGHTS: dict[QueryType, dict[str, float]] = {
     QueryType.DATA: {"code": 0.05, "section": 0.15, "table": 0.70, "chunk": 0.10},
 }
 
-ANALYSIS_PROMPT = """Classify this search query by knowledge type. Return JSON only.
-
-Query: "{query}"
-
-Return this exact structure:
-{{
-  "primary_type": "code" | "documentation" | "general" | "cross" | "data",
-  "secondary_type": null or "code" | "documentation" | "data",
-  "confidence": 0.0-1.0,
-  "entities": ["entity1", "entity2"],
-  "refined_query": "cleaned query text"
-}}
-
-Categories:
-- "code": References functions, classes, methods, implementations, code behavior
-- "documentation": References document sections, specs, procedures, policies
-- "data": Explicitly asks about CSV files, spreadsheet data, database tables, or SQL-like operations (filter rows, count records, aggregate columns). Queries referencing alphanumeric record identifiers (e.g. E016, ID-123) typically target data records. NOT for questions about facts, specifications, or information that happen to involve numbers
-- "general": Overview questions, summaries, "what does this project do"
-- "cross": Explicitly asks about both code and documentation together
-
-"entities": Extract specific symbol names (functions, classes) or section titles mentioned.
-"refined_query": Rewrite the query to be more specific for search. Keep original if already clear.
-"confidence": How confident you are in the classification (0.0-1.0).
-
-Return JSON only, no markdown."""
-
-
-class QueryAnalyzer:
-    """Classifies queries by knowledge type using a single LLM call."""
-
-    def __init__(self, chat: "ChatProvider"):
-        self._chat = chat
-
-    def analyze(self, query: str) -> QueryAnalysis:
-        """
-        Classify a query into knowledge type intent.
-
-        Falls back to GENERAL with low confidence on any failure.
-        """
-        prompt = ANALYSIS_PROMPT.format(query=query)
-
-        try:
-            response = self._chat.chat([{"role": "user", "content": prompt}])
-            if not response:
-                return QueryAnalysis(
-                    primary_type=QueryType.GENERAL, confidence=0.3, refined_query=query
-                )
-            return self._parse_response(response, query)
-        except Exception as e:
-            logger.warning(f"Query analysis failed, defaulting to GENERAL: {e}")
-            return QueryAnalysis(
-                primary_type=QueryType.GENERAL,
-                confidence=0.3,
-                refined_query=query,
-            )
-
-    def _parse_response(self, response: str, original_query: str) -> QueryAnalysis:
-        """Parse LLM JSON response into QueryAnalysis."""
-        text = response.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            text = text.rsplit("```", 1)[0]
-
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            logger.debug(f"Failed to parse query analysis JSON: {text[:200]}")
-            return QueryAnalysis(
-                primary_type=QueryType.GENERAL,
-                confidence=0.3,
-                refined_query=original_query,
-            )
-
-        return parse_analysis_dict(data, original_query)
-
 
 def parse_analysis_dict(data: dict, original_query: str) -> QueryAnalysis:
-    """Parse a dict (already JSON-decoded) into QueryAnalysis.
+    """Parse a JSON-decoded analysis dict into QueryAnalysis.
 
-    Used by both QueryAnalyzer._parse_response and QueryBatcher.
+    Used by the ``QueryBatcher`` analysis section.
     """
     primary = _parse_query_type(data.get("primary_type") or "general")
     secondary = None

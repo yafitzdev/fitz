@@ -32,10 +32,6 @@ def _make_query(text: str = "How does auth work?") -> MagicMock:
 
 def _wire_happy_path(engine: FitzKragEngine, query_text: str) -> Answer:
     """Wire up all pipeline stages to return valid data for a full flow."""
-    analysis = MagicMock(name="analysis")
-    analysis.confidence = 0.8
-    engine._query_analyzer.analyze.return_value = analysis
-
     address = MagicMock(name="addr")
     engine._retrieval_router.retrieve.return_value = [address]
 
@@ -179,9 +175,6 @@ class TestQueryRewriting:
         expected = _wire_happy_path(engine, query.text)
 
         result = engine.answer(query)
-
-        # query_analyzer is not called in the new batched dispatch path
-        engine._query_analyzer.analyze.assert_not_called()
 
         # Router uses original query with no rewrite_result
         engine._retrieval_router.retrieve.assert_called_once()

@@ -1,24 +1,19 @@
 # fitz_sage/retrieval/detection/registry.py
 """
-Detection orchestrator using module-based LLM classification.
+Detection summary — typed accessors over the per-module detection results.
 
-Similar to the enrichment bus pattern - each module contributes its
-prompt fragment and parsing logic, but all are combined into one LLM call.
+The detection modules are classified in one batched LLM call by
+``QueryBatcher``; ``DetectionSummary`` wraps the per-category results into
+convenient accessors for retrieval routing.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from fitz_sage.llm.factory import ChatFactory
-from fitz_sage.logging.logger import get_logger
-
-from .llm_classifier import LLMClassifier
 from .modules import AggregationType, TemporalIntent
-from .protocol import DetectionCategory, DetectionResult
-
-logger = get_logger(__name__)
+from .protocol import DetectionResult
 
 
 @dataclass
@@ -33,8 +28,6 @@ class DetectionSummary:
     aggregation: DetectionResult[Any]
     comparison: DetectionResult[Any]
     freshness: DetectionResult[Any]
-    rewriter: DetectionResult[Any]
-    vocabulary: DetectionResult[Any]
 
     @property
     def has_temporal_intent(self) -> bool:
@@ -55,11 +48,6 @@ class DetectionSummary:
     def boost_recency(self) -> bool:
         """True if recency boosting should be applied."""
         return self.freshness.detected and self.freshness.metadata.get("boost_recency", False)
-
-    @property
-    def boost_authority(self) -> bool:
-        """True if authority boosting should be applied."""
-        return self.freshness.detected and self.freshness.metadata.get("boost_authority", False)
 
     @property
     def query_variations(self) -> list[str]:
@@ -90,15 +78,6 @@ class DetectionSummary:
         return 1
 
     @property
-    def needs_rewriting(self) -> bool:
-        """True if query might benefit from rewriting."""
-        if not self.rewriter.detected:
-            return False
-        return self.rewriter.metadata.get("needs_context", False) or self.rewriter.metadata.get(
-            "is_compound", False
-        )
-
-    @property
     def comparison_entities(self) -> list[str]:
         """Get entities being compared."""
         if self.comparison.detected:
@@ -111,80 +90,3 @@ class DetectionSummary:
         if self.comparison.detected:
             return self.comparison.transformations
         return []
-
-
-@dataclass
-class DetectionOrchestrator:
-    """
-    Orchestrates detection using module-based LLM classification.
-
-    Similar to the enrichment bus - modules define prompt fragments and
-    parsing, but all are combined into a single LLM call.
-
-    Usage:
-        from fitz_sage.llm import get_chat_factory
-
-        factory = get_chat_factory("cohere")
-        orchestrator = DetectionOrchestrator(chat_factory=factory)
-        summary = orchestrator.detect_for_retrieval(query)
-
-        if summary.has_temporal_intent:
-            # Route to temporal strategy
-            ...
-    """
-
-    chat_factory: ChatFactory | None = None
-
-    # Lazy-loaded LLM classifier
-    _classifier: LLMClassifier | None = field(default=None, init=False, repr=False)
-
-    def _ensure_classifier(self) -> LLMClassifier | None:
-        """Lazy-load LLM classifier with all modules."""
-        if self._classifier is None and self.chat_factory is not None:
-            self._classifier = LLMClassifier(chat_factory=self.chat_factory)
-        return self._classifier
-
-    def detect_for_retrieval(self, query: str) -> DetectionSummary:
-        """
-        Run detection optimized for retrieval routing.
-
-        Uses module-based LLM classification for robust detection,
-        with dict-based expansion for query variations.
-
-        Args:
-            query: User's query string
-
-        Returns:
-            DetectionSummary with routing information
-        """
-        classifier = self._ensure_classifier()
-
-        if classifier:
-            results = classifier.classify(query)
-        else:
-            results = {}
-            logger.debug("No chat factory available, skipping LLM classification")
-
-        return DetectionSummary(
-            temporal=results.get(
-                DetectionCategory.TEMPORAL,
-                DetectionResult.not_detected(DetectionCategory.TEMPORAL),
-            ),
-            aggregation=results.get(
-                DetectionCategory.AGGREGATION,
-                DetectionResult.not_detected(DetectionCategory.AGGREGATION),
-            ),
-            comparison=results.get(
-                DetectionCategory.COMPARISON,
-                DetectionResult.not_detected(DetectionCategory.COMPARISON),
-            ),
-            freshness=results.get(
-                DetectionCategory.FRESHNESS,
-                DetectionResult.not_detected(DetectionCategory.FRESHNESS),
-            ),
-            rewriter=results.get(
-                DetectionCategory.REWRITER,
-                DetectionResult.not_detected(DetectionCategory.REWRITER),
-            ),
-            vocabulary=DetectionResult.not_detected(DetectionCategory.VOCABULARY),
-        )

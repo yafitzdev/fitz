@@ -332,11 +332,6 @@ class FitzKragEngine:
 
         threading.Thread(target=_warmup_chat, daemon=True).start()
 
-        # Query Analysis
-        from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalyzer
-
-        self._query_analyzer = QueryAnalyzer(self._chat_factory("fast"))
-
         # Context + Generation
         from fitz_sage.engines.fitz_krag.context.assembler import ContextAssembler
         from fitz_sage.engines.fitz_krag.generation.synthesizer import CodeSynthesizer
@@ -358,13 +353,6 @@ class FitzKragEngine:
         self._table_handler = TableQueryHandler(
             self._chat_factory("balanced"), self._sqlite_table_store, self._config
         )
-
-        # Shared detection
-        self._detection_orchestrator: Any = None
-        if self._config.enable_detection:
-            from fitz_sage.retrieval.detection.registry import DetectionOrchestrator
-
-            self._detection_orchestrator = DetectionOrchestrator(chat_factory=self._chat_factory)
 
         # Batched query intelligence: rewrite + analysis + detection +
         # keywords in one LLM call (the only query-prep call).
@@ -413,22 +401,6 @@ class FitzKragEngine:
         # Wire raw_store for freshness boosting
         code_strategy._raw_store = self._raw_store
         section_strategy._raw_store = self._raw_store
-
-        # Vocabulary store + keyword matcher
-        self._vocabulary_store: Any = None
-        self._keyword_matcher: Any = None
-        if self._config.enable_enrichment:
-            try:
-                from fitz_sage.retrieval.vocabulary.matcher import KeywordMatcher
-                from fitz_sage.retrieval.vocabulary.store import VocabularyStore
-
-                self._vocabulary_store = VocabularyStore(collection=self._config.collection)
-                keywords = self._vocabulary_store.load()
-                if keywords:
-                    self._keyword_matcher = KeywordMatcher(keywords)
-                    self._retrieval_router._keyword_matcher = self._keyword_matcher
-            except Exception as e:
-                logger.debug(f"Vocabulary store init: {e}")
 
         # Entity graph store
         self._entity_graph_store: Any = None
@@ -574,11 +546,6 @@ class FitzKragEngine:
                 DetectionCategory.FRESHNESS,
                 DetectionResult.not_detected(DetectionCategory.FRESHNESS),
             ),
-            rewriter=results.get(
-                DetectionCategory.REWRITER,
-                DetectionResult.not_detected(DetectionCategory.REWRITER),
-            ),
-            vocabulary=DetectionResult.not_detected(DetectionCategory.VOCABULARY),
         )
 
     @staticmethod
@@ -834,7 +801,7 @@ class FitzKragEngine:
         # detection section; rewriting and keywords are always included.
         fast_analysis = self._fast_analyze(sanitized)
         need_llm_analysis = fast_analysis is None
-        need_detection = bool(self._detection_orchestrator and self._needs_detection(sanitized))
+        need_detection = bool(self._config.enable_detection and self._needs_detection(sanitized))
 
         retrieval_query = sanitized
         rewrite_result = None
@@ -846,6 +813,7 @@ class FitzKragEngine:
                 include_rewriting=self._config.enable_query_rewriting,
                 include_extended=True,
                 include_keywords=True,
+                conversation_context=query.metadata.get("conversation_context"),
             )
             analysis = batch_result.analysis if batch_result.analysis else fast_analysis
             detection = (
@@ -1088,7 +1056,6 @@ class FitzKragEngine:
             collection=self._config.collection,
             table_store=self._table_store,
             sqlite_table_store=self._sqlite_table_store,
-            vocabulary_store=self._vocabulary_store,
             entity_graph_store=self._entity_graph_store,
         )
 

@@ -357,7 +357,6 @@ class KragE2ERunner:
             collection=engine._config.collection,
             table_store=engine._table_store,
             sqlite_table_store=engine._sqlite_table_store,
-            vocabulary_store=engine._vocabulary_store,
             entity_graph_store=engine._entity_graph_store,
         )
         return pipeline.ingest(fixtures_dir, force=True)

@@ -22,8 +22,6 @@ class DetectionCategory(Enum):
     AGGREGATION = "aggregation"
     COMPARISON = "comparison"
     FRESHNESS = "freshness"
-    VOCABULARY = "vocabulary"
-    REWRITER = "rewriter"
 
 
 @dataclass

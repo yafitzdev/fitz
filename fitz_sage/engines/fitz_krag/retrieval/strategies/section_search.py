@@ -99,10 +99,11 @@ class SectionSearchStrategy:
             top_half = set(sorted_files[: max(1, len(sorted_files) // 2)])
             for r in results:
                 fid = r["raw_file_id"]
+                # Multiplicative boost — proportionate to each strategy's score scale.
                 if fid in top_quarter:
-                    r["combined_score"] = r.get("combined_score", 0) + 0.1
+                    r["combined_score"] = r.get("combined_score", 0) * 1.5
                 elif fid in top_half:
-                    r["combined_score"] = r.get("combined_score", 0) + 0.05
+                    r["combined_score"] = r.get("combined_score", 0) * 1.2
             results.sort(key=lambda x: x.get("combined_score", 0), reverse=True)
         except Exception as e:
             logger.debug(f"Recency boost skipped: {e}")

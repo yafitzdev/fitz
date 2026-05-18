@@ -20,7 +20,7 @@ from fitz_sage.engines.fitz_krag.query_analyzer import (
     parse_analysis_dict,
 )
 from fitz_sage.retrieval.detection.detectors.expansion import expand_terms
-from fitz_sage.retrieval.detection.llm_classifier import distribute_to_modules
+from fitz_sage.retrieval.detection.modules import distribute_to_modules
 from fitz_sage.retrieval.rewriter.rewriter import parse_rewrite_dict
 from fitz_sage.retrieval.rewriter.types import RewriteResult, RewriteType
 

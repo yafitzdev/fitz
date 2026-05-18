@@ -38,7 +38,6 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     engine._symbol_store = MagicMock(name="symbol_store")
     engine._import_store = MagicMock(name="import_store")
     engine._section_store = MagicMock(name="section_store")
-    engine._query_analyzer = MagicMock(name="query_analyzer")
     engine._retrieval_router = MagicMock(name="retrieval_router")
     engine._reader = MagicMock(name="reader")
     engine._expander = MagicMock(name="expander")
@@ -47,7 +46,6 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     engine._assembler = MagicMock(name="assembler")
     engine._synthesizer = MagicMock(name="synthesizer")
     engine._governance = None
-    engine._detection_orchestrator = None
     engine._query_rewriter = None
     engine._address_reranker = None
     engine._hop_controller = None
@@ -57,8 +55,6 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     engine._table_store = MagicMock(name="table_store")
     engine._sqlite_table_store = MagicMock(name="sqlite_table_store")
     engine._chat_factory = None
-    engine._vocabulary_store = None
-    engine._keyword_matcher = None
     engine._entity_graph_store = None
     engine._bg_worker = None
     engine._manifest = None

@@ -55,7 +55,6 @@ class RetrievalProfile:
 
     # Boost signals
     boost_recency: bool = False
-    boost_authority: bool = False
 
     # Context assembly
     entity_expansion_limit: int = 3
@@ -115,7 +114,6 @@ def build_retrieval_profile(
     comparison_queries: list[str] = []
     comparison_entities: list[str] = []
     boost_recency = False
-    boost_authority = False
 
     temporal_references: list[str] = []
 
@@ -125,7 +123,6 @@ def build_retrieval_profile(
         comparison_queries = list(getattr(detection, "comparison_queries", []) or [])
         comparison_entities = list(getattr(detection, "comparison_entities", []) or [])
         boost_recency = bool(getattr(detection, "boost_recency", False))
-        boost_authority = bool(getattr(detection, "boost_authority", False))
 
         # Extract temporal references for tagging query variations
         temporal = getattr(detection, "temporal", None)
@@ -165,10 +162,12 @@ def build_retrieval_profile(
     if analysis and primary_type == "data":
         run_agentic = False
 
-    # --- Corpus summaries gate (from router._should_inject_corpus_summaries) ---
+    # --- Corpus summaries gate ---
+    # L2 corpus summaries answer overview queries — gate on broad/exploratory intent.
     inject_corpus_summaries = False
-    if analysis and primary_type not in ("code", "data") and confidence < 0.6:
-        inject_corpus_summaries = True
+    if analysis and primary_type not in ("code", "data"):
+        if specificity == "broad" or answer_type == "exploratory":
+            inject_corpus_summaries = True
 
     # --- Entity expansion limit (from engine._is_thematic) ---
     is_thematic = analysis is not None and primary_type not in ("code", "data") and confidence < 0.6
@@ -189,7 +188,6 @@ def build_retrieval_profile(
         run_agentic=run_agentic,
         inject_corpus_summaries=inject_corpus_summaries,
         boost_recency=boost_recency,
-        boost_authority=boost_authority,
         entity_expansion_limit=entity_expansion_limit,
         specificity=specificity,
         answer_type=answer_type,

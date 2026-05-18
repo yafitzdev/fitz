@@ -354,8 +354,8 @@ class TestSectionFreshnessBoostWithRecency:
         # RRF with k=60: BM25 only at ranks 0,1,2,3 → 1/(60+rank)
         assert scores["f0"] > scores["f2"]
         assert scores["f0"] > scores["f3"]
-        assert scores["f0"] == pytest.approx(1 / 60 + 0.1, abs=0.01)
-        assert scores["f1"] == pytest.approx(1 / 61 + 0.05, abs=0.01)
+        assert scores["f0"] == pytest.approx(1 / 60 * 1.5, abs=0.01)
+        assert scores["f1"] == pytest.approx(1 / 61 * 1.2, abs=0.01)
         assert scores["f2"] == pytest.approx(1 / 62, abs=0.001)
 
 
