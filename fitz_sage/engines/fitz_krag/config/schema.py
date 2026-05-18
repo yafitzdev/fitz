@@ -111,11 +111,12 @@ class FitzKragConfig(BasePluginConfig):
     )
 
     parser: str = Field(
-        default="docling",
+        default="cpu",
         description=(
-            "Document parser: 'docling', 'docling_vision' (uses vision "
-            "provider for figure description), or 'glm_ocr' (hybrid "
-            "pypdfium2 + GLM-OCR via the configured vision endpoint)."
+            "Document parser. 'cpu' (default) — server-free, zero-model "
+            "pypdfium2 PDF parsing on CPU. 'docling' / 'docling_vision' "
+            "(figure description via the vision provider) / 'glm_ocr' — "
+            "heavier opt-in parsers for scanned PDFs, figures, complex tables."
         ),
     )
 

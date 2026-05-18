@@ -21,7 +21,7 @@ Usage:
 VLM Integration:
     Use docling_vision parser for VLM-powered figure description:
 
-    router = ParserRouter(docling_parser="docling_vision")
+    router = ParserRouter(parser="docling_vision")
 """
 
 from __future__ import annotations
@@ -51,11 +51,12 @@ class ParserRouter:
         doc = router.parse(source_file)
 
     With VLM for figure description (via docling_vision parser):
-        router = ParserRouter(docling_parser="docling_vision")
+        router = ParserRouter(parser="docling_vision")
     """
 
-    # Which docling parser to use: "docling" or "docling_vision"
-    docling_parser: str = field(default="docling")
+    # Document parser mode: "cpu" (default, zero-model pypdfium2 PDF),
+    # "docling", "docling_vision", or "glm_ocr".
+    parser: str = field(default="cpu")
 
     # Map of extension -> parser instance
     _parsers: Dict[str, Parser] = field(default_factory=dict)
@@ -84,8 +85,8 @@ class ParserRouter:
         for ext in PLAINTEXT_EXTENSIONS:
             self._parsers[ext] = plaintext
 
-        # Register document parsers by config selection
-        if self.docling_parser == "glm_ocr":
+        # glm_ocr owns every rich-document extension when selected.
+        if self.parser == "glm_ocr":
             try:
                 from fitz_sage.ingestion.parser.plugins.glm_ocr import (
                     GLM_OCR_EXTENSIONS,
@@ -98,12 +99,12 @@ class ParserRouter:
                 logger.info("Using glm_ocr parser (hybrid pypdfium2 + GLM-OCR)")
                 return
             except ImportError:
-                logger.warning("GLM-OCR parser import failed, falling back to Docling")
+                logger.warning("GLM-OCR parser import failed, falling back to defaults")
 
-        # Docling (advanced) or lightweight fallback
-        # Docling is optional — install with: pip install fitz-sage[docs]
+        # Docling handles rich documents (DOCX/PPTX/HTML) — and PDFs too when
+        # it is the selected parser. Optional: pip install fitz-sage[docs].
         try:
-            if self.docling_parser == "docling_vision":
+            if self.parser == "docling_vision":
                 from fitz_sage.ingestion.parser.plugins.docling_vision import (
                     DOCLING_EXTENSIONS,
                     DoclingVisionParser,
@@ -133,6 +134,17 @@ class ParserRouter:
             self._parsers[".pdf"] = LightweightPDFParser()
             self._parsers[".docx"] = LightweightDOCXParser()
             self._parsers[".pptx"] = LightweightPPTXParser()
+
+        # CPU-first mode (the default): the zero-model pypdfium2 parser owns
+        # PDF — server-free, no torch, no OCR. docling stays registered for
+        # DOCX/PPTX/HTML, where it has no memory problem (and loads lazily, so
+        # a PDF-only corpus never touches it). An explicit `parser: docling*`
+        # keeps docling on PDF instead.
+        if self.parser not in ("docling", "docling_vision"):
+            from fitz_sage.ingestion.parser.plugins.cpu_pdf import CpuPdfParser
+
+            self._parsers[".pdf"] = CpuPdfParser()
+            logger.info("Using cpu_pdf parser for PDF (server-free, zero-model)")
 
     def register_parser(self, parser: Parser, extensions: Optional[List[str]] = None) -> None:
         """

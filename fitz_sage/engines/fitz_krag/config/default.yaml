@@ -34,7 +34,11 @@ fitz_krag:
   # Vision (null = disabled). Uses the OpenAI-compatible chat-completions
   # endpoint with image content parts.
   vision: null
-  parser: docling
+
+  # Document parser. 'cpu' = server-free, zero-model pypdfium2 PDF parsing
+  # on CPU (the default). 'docling' / 'docling_vision' / 'glm_ocr' are
+  # heavier opt-in parsers for scanned PDFs, figures, and complex tables.
+  parser: cpu
 
   # Governance. 'pyrrho' = INT8 ONNX epistemic classifier that labels each
   # answer TRUSTWORTHY / DISPUTED / ABSTAIN before generation.

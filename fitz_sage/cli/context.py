@@ -85,7 +85,7 @@ class CLIContext:
     rgs_strict_grounding: bool = True
 
     # Chunking/Parser
-    parser: str = "docling"
+    parser: str = "cpu"
     chunk_size: int = 512
     chunk_overlap: int = 0
 

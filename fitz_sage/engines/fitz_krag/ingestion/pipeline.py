@@ -827,7 +827,7 @@ class KragIngestPipeline:
             from fitz_sage.ingestion.parser.router import ParserRouter
             from fitz_sage.ingestion.source.base import SourceFile
 
-            router = ParserRouter(docling_parser=self._config.parser)
+            router = ParserRouter(parser=self._config.parser)
 
             # Inject vision client when using docling_vision parser
             if self._config.parser == "docling_vision" and self._config.vision:
