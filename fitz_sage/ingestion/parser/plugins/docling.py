@@ -126,15 +126,20 @@ class DoclingParser(BaseParser):
                 from docling.datamodel.pipeline_options import PdfPipelineOptions
                 from docling.document_converter import DocumentConverter, PdfFormatOption
 
-                # Enable picture image extraction if VLM is configured
+                # OCR off: fitz-sage targets digital text PDFs, where Docling
+                # reads the embedded text layer directly. Running RapidOCR over
+                # every page rasterizes each one — slow and memory-heavy (it can
+                # exhaust RAM on long PDFs) with no benefit for text PDFs.
+                pipeline_options = PdfPipelineOptions()
+                pipeline_options.do_ocr = False
+
+                # Extract picture images only when a VLM will describe them.
                 if self.vision_client is not None:
-                    pipeline_options = PdfPipelineOptions()
                     pipeline_options.generate_picture_images = True
-                    self._converter = DocumentConverter(
-                        format_options={"pdf": PdfFormatOption(pipeline_options=pipeline_options)}
-                    )
-                else:
-                    self._converter = DocumentConverter()
+
+                self._converter = DocumentConverter(
+                    format_options={"pdf": PdfFormatOption(pipeline_options=pipeline_options)}
+                )
             except ImportError as e:
                 raise ImportError(
                     "Docling is required for this parser. Install it with: pip install docling"
