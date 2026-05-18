@@ -87,6 +87,64 @@ def ingest(engine, dataset: Dataset) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Feature production check
+# ---------------------------------------------------------------------------
+
+# Enrichment features the progressive worker should *reliably* produce, per
+# mode — used to flag a silent-absence regression. Code mode omits entity_graph:
+# bare code symbols rarely carry NER-style named entities, so an empty entity
+# graph there is content-driven, not a regression. Tables are not enriched.
+_EXPECTED_FEATURES = {
+    "code": ("vocabulary",),
+    "section": ("vocabulary", "entity_graph", "hierarchy_l1", "hierarchy_l2"),
+    "table": (),
+}
+
+
+def check_features(dataset: Dataset) -> dict:
+    """Report whether the worker actually produced its corpus enrichment features.
+
+    keyword-vocabulary, entity-graph, and L1/L2 hierarchy are populated by the
+    background worker during ``point()``. If the worker stops producing them,
+    their retrieval consumers silently no-op on empty stores — a regression
+    invisible to recall/nDCG alone. This makes that absence loud and explicit.
+    """
+    from fitz_sage.engines.fitz_krag.ingestion.section_store import SectionStore
+    from fitz_sage.retrieval.entity_graph.store import EntityGraphStore
+    from fitz_sage.retrieval.vocabulary.store import VocabularyStore
+    from fitz_sage.storage.sqlite import SqliteConnectionManager
+
+    col = dataset.collection
+    counts: dict[str, object] = {}
+
+    def _safe(label: str, fn) -> None:
+        try:
+            counts[label] = fn()
+        except Exception as e:  # noqa: BLE001 — a store error must not abort the run
+            counts[label] = f"error: {e}"
+
+    _safe("vocabulary", lambda: len(VocabularyStore(collection=col).load()))
+    _safe("entity_graph", lambda: EntityGraphStore(collection=col).stats().get("entities", 0))
+    if dataset.mode == "section":
+        store = SectionStore(SqliteConnectionManager.get_instance(), col)
+        _safe("hierarchy_l1", lambda: len(store.get_hierarchy_summaries()))
+        _safe("hierarchy_l2", lambda: len(store.get_corpus_summaries()))
+
+    expected = _EXPECTED_FEATURES.get(dataset.mode, ())
+    print()
+    print(f"feature production — {dataset.mode}")
+    for label, value in counts.items():
+        if label not in expected:
+            note = "   (informational — not a regression signal for this mode)"
+        elif isinstance(value, int) and value == 0:
+            note = "   !! EMPTY — enrichment produced nothing (feature regressed)"
+        else:
+            note = ""
+        print(f"  {label:<14} {value}{note}")
+    return counts
+
+
+# ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
 
@@ -336,6 +394,7 @@ def run(
         else:
             indexing_ok = ingest(engine, dataset)
 
+        check_features(dataset)
         records = evaluate(engine, dataset, verbose)
         status = report(dataset, records, baseline, indexing_ok=indexing_ok)
         out_path = save_results(mode, records)
