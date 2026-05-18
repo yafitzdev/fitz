@@ -2,22 +2,138 @@
 """
 Unit tests for entity graph integration in KRAG.
 
+The ingestion tests exercise the *live* path: the background worker schedules
+``core.enrich_file``, which extracts entities and adds them to the
+EntityGraphStore. This is what ``engine.point()`` runs in production.
+
 Tests that:
-- Pipeline calls entity_graph_store.add_chunk_entities during ingestion
+- enrich_file adds extracted entities to the EntityGraphStore
+- symbols/sections without entities are skipped
+- entity graph errors fail gracefully
 - CodeExpander._add_entity_related finds related symbols
-- Entity expansion skipped when no entity_graph_store
-- Graceful failure on entity graph errors
 """
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from fitz_sage.engines.fitz_krag.retrieval.expander import CodeExpander
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers — ingestion core
+# ---------------------------------------------------------------------------
+
+
+def _make_core(*, entity_graph_store: MagicMock | None = None):
+    """Create a KragIngestPipeline core with a mocked connection manager."""
+    from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+    from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
+
+    config = FitzKragConfig(collection="test_col", enable_enrichment=True)
+    return KragIngestPipeline(
+        config=config,
+        chat=MagicMock(),
+        connection_manager=MagicMock(),
+        collection="test_col",
+        entity_graph_store=entity_graph_store,
+    )
+
+
+def _enricher_stamping(entity_sets: list[list[dict]]) -> MagicMock:
+    """Enricher stub: stamps the i-th entity set onto the i-th symbol dict."""
+    enricher = MagicMock()
+
+    def _stamp(dicts):
+        for i, d in enumerate(dicts):
+            d["keywords"] = []
+            d["entities"] = list(entity_sets[i % len(entity_sets)])
+
+    enricher.enrich_symbols.side_effect = _stamp
+    enricher.enrich_sections.side_effect = _stamp
+    return enricher
+
+
+# ---------------------------------------------------------------------------
+# TestEnrichEntityGraphIntegration — produced by core.enrich_file
+# ---------------------------------------------------------------------------
+
+
+class TestEnrichEntityGraphIntegration:
+    """Tests that enrich_file populates the entity graph during ingestion."""
+
+    def test_enrich_file_populates_entity_graph(self):
+        """enrich_file adds each symbol's extracted entities to the graph store."""
+        entity_store = MagicMock()
+        core = _make_core(entity_graph_store=entity_store)
+        core._enricher = _enricher_stamping(
+            [
+                [
+                    {"name": "PostgreSQL", "type": "technology"},
+                    {"name": "auth_handler", "type": "function"},
+                ],
+                [{"name": "Redis", "type": "technology"}],
+            ]
+        )
+        core._symbol_store = MagicMock()
+        core._symbol_store.get_by_file.return_value = [
+            {"id": "sym-001", "keywords": [], "entities": []},
+            {"id": "sym-002", "keywords": [], "entities": []},
+        ]
+
+        core.enrich_file("file-1", ".py")
+
+        assert entity_store.add_chunk_entities.call_count == 2
+
+        first_call = entity_store.add_chunk_entities.call_args_list[0]
+        assert first_call[0][0] == "sym-001"
+        assert first_call[0][1] == [
+            ("PostgreSQL", "technology"),
+            ("auth_handler", "function"),
+        ]
+
+        second_call = entity_store.add_chunk_entities.call_args_list[1]
+        assert second_call[0][0] == "sym-002"
+        assert second_call[0][1] == [("Redis", "technology")]
+
+    def test_enrich_file_skips_symbols_without_entities(self):
+        """A symbol with no extracted entities is not added to the graph."""
+        entity_store = MagicMock()
+        core = _make_core(entity_graph_store=entity_store)
+        core._enricher = _enricher_stamping(
+            [
+                [{"name": "PostgreSQL", "type": "technology"}],
+                [],  # sym-002 has no entities — should be skipped
+            ]
+        )
+        core._symbol_store = MagicMock()
+        core._symbol_store.get_by_file.return_value = [
+            {"id": "sym-001", "keywords": [], "entities": []},
+            {"id": "sym-002", "keywords": [], "entities": []},
+        ]
+
+        core.enrich_file("file-1", ".py")
+
+        entity_store.add_chunk_entities.assert_called_once()
+        assert entity_store.add_chunk_entities.call_args[0][0] == "sym-001"
+
+    def test_graceful_failure_on_entity_graph_errors(self):
+        """enrich_file catches entity graph errors without crashing."""
+        entity_store = MagicMock()
+        entity_store.add_chunk_entities.side_effect = RuntimeError("DB connection lost")
+        core = _make_core(entity_graph_store=entity_store)
+        core._enricher = _enricher_stamping([[{"name": "PostgreSQL", "type": "technology"}]])
+        core._symbol_store = MagicMock()
+        core._symbol_store.get_by_file.return_value = [
+            {"id": "sym-001", "keywords": [], "entities": []},
+        ]
+
+        # Should not raise
+        core.enrich_file("file-1", ".py")
+
+
+# ---------------------------------------------------------------------------
+# Helpers — CodeExpander
 # ---------------------------------------------------------------------------
 
 RAW_FILE_CONTENT = (
@@ -130,140 +246,6 @@ def _make_expander(
     if entity_graph_store is not None:
         expander._entity_graph_store = entity_graph_store
     return expander
-
-
-# ---------------------------------------------------------------------------
-# TestPipelineEntityGraphIntegration
-# ---------------------------------------------------------------------------
-
-
-class TestPipelineEntityGraphIntegration:
-    """Tests that the pipeline populates entity graph during ingestion."""
-
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ensure_schema")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.RawFileStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SymbolStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ImportGraphStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SectionStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TableStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.PythonCodeIngestStrategy")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TechnicalDocIngestStrategy")
-    def test_calls_add_chunk_entities_during_ingestion(
-        self,
-        mock_doc_strat,
-        mock_py_strat,
-        mock_table_store,
-        mock_section_store,
-        mock_import_store,
-        mock_symbol_store,
-        mock_raw_store,
-        mock_ensure_schema,
-    ):
-        """Pipeline calls entity_graph_store.add_chunk_entities for enriched items."""
-        from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-        from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
-
-        config = FitzKragConfig(collection="test_col", enable_enrichment=False)
-        chat = MagicMock()
-        embedder = MagicMock()
-        embedder.dimensions = 1024
-        cm = MagicMock()
-        entity_store = MagicMock()
-
-        pipeline = KragIngestPipeline(
-            config=config,
-            chat=chat,
-            connection_manager=cm,
-            collection="test_col",
-            entity_graph_store=entity_store,
-        )
-
-        # Call _populate_entity_graph directly
-        item_dicts = [
-            {
-                "id": "sym-001",
-                "entities": [
-                    {"name": "PostgreSQL", "type": "technology"},
-                    {"name": "auth_handler", "type": "function"},
-                ],
-            },
-            {
-                "id": "sym-002",
-                "entities": [
-                    {"name": "Redis", "type": "technology"},
-                ],
-            },
-            {
-                "id": "sym-003",
-                "entities": [],  # No entities — should be skipped
-            },
-        ]
-        pipeline._populate_entity_graph(item_dicts, "symbol_id")
-
-        # Called for sym-001 and sym-002, NOT sym-003
-        assert entity_store.add_chunk_entities.call_count == 2
-
-        # Verify first call
-        first_call = entity_store.add_chunk_entities.call_args_list[0]
-        assert first_call[0][0] == "sym-001"
-        assert first_call[0][1] == [
-            ("PostgreSQL", "technology"),
-            ("auth_handler", "function"),
-        ]
-
-        # Verify second call
-        second_call = entity_store.add_chunk_entities.call_args_list[1]
-        assert second_call[0][0] == "sym-002"
-        assert second_call[0][1] == [("Redis", "technology")]
-
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ensure_schema")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.RawFileStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SymbolStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ImportGraphStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SectionStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TableStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.PythonCodeIngestStrategy")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TechnicalDocIngestStrategy")
-    def test_graceful_failure_on_entity_graph_errors(
-        self,
-        mock_doc_strat,
-        mock_py_strat,
-        mock_table_store,
-        mock_section_store,
-        mock_import_store,
-        mock_symbol_store,
-        mock_raw_store,
-        mock_ensure_schema,
-    ):
-        """Pipeline catches entity graph errors without crashing."""
-        from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-        from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
-
-        config = FitzKragConfig(collection="test_col", enable_enrichment=False)
-        chat = MagicMock()
-        embedder = MagicMock()
-        embedder.dimensions = 1024
-        cm = MagicMock()
-        entity_store = MagicMock()
-        entity_store.add_chunk_entities.side_effect = RuntimeError("DB connection lost")
-
-        pipeline = KragIngestPipeline(
-            config=config,
-            chat=chat,
-            connection_manager=cm,
-            collection="test_col",
-            entity_graph_store=entity_store,
-        )
-
-        item_dicts = [
-            {
-                "id": "sym-001",
-                "entities": [{"name": "PostgreSQL", "type": "technology"}],
-            },
-        ]
-
-        # Should not raise
-        pipeline._populate_entity_graph(item_dicts, "symbol_id")
 
 
 # ---------------------------------------------------------------------------

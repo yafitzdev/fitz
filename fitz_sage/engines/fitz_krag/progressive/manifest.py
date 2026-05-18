@@ -25,7 +25,8 @@ class FileState(str, Enum):
 
     REGISTERED = "registered"  # In manifest only, no DB data
     PARSED = "parsed"  # Raw content + symbols/sections stored
-    SUMMARIZED = "summarized"  # LLM summaries exist, BM25 works (terminal state)
+    SUMMARIZED = "summarized"  # LLM summaries exist, BM25 works
+    ENRICHED = "enriched"  # Keywords/entities extracted (terminal state)
 
 
 @dataclass

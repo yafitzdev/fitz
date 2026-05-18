@@ -1,81 +1,56 @@
 # fitz_sage/engines/fitz_krag/progressive/worker.py
 """
-BackgroundIngestWorker — daemon thread that indexes files progressively.
+BackgroundIngestWorker — daemon thread that schedules ingestion progressively.
+
+The worker is a *scheduler*: it owns the manifest, the priority queue, the
+state machine, the daemon thread, and query-pausing. The actual ingestion
+work is delegated to the shared ``KragIngestPipeline`` core — the worker
+never reimplements parse/summarize/enrich.
 
 State machine per file:
-    REGISTERED → PARSED     (store raw content, extract symbols/sections — no LLM)
-    PARSED     → SUMMARIZED (generate LLM summaries, pause during active queries)
-    SUMMARIZED is terminal.
+    REGISTERED → PARSED      (core.parse_file — store raw, extract symbols/sections)
+    PARSED     → SUMMARIZED  (core.summarize_file — LLM summaries)
+    SUMMARIZED → ENRICHED    (core.enrich_file — keywords/entities, vocabulary,
+                              entity graph, L1 hierarchy)
+    ENRICHED is terminal.
+Once every file is ENRICHED, the worker runs ``core.finalize`` (import graph
++ L2 hierarchy summary).
 
-Priority queue (stdlib PriorityQueue):
-    P1: Files user just queried about
-    P2: Files in same directory as queried files
-    P3: Small files (<10KB, quick wins)
+Priority queue:
+    P1: Files the user just queried about
+    P2: Files in the same directory as queried files
     P4: Remaining files by size ascending
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import threading
 import time
-import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from fitz_sage.engines.fitz_krag.ingestion.symbol_store import symbol_entry_to_dict
 from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
 
 if TYPE_CHECKING:
-    from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+    from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
     from fitz_sage.engines.fitz_krag.progressive.manifest import FileManifest, ManifestEntry
-    from fitz_sage.llm.providers.base import ChatProvider
-    from fitz_sage.storage.sqlite import SqliteConnectionManager
 
 logger = logging.getLogger(__name__)
 
-_CODE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".go"}
-_TABLE_EXTENSIONS = {".csv", ".tsv"}
-
 
 class BackgroundIngestWorker:
-    """Daemon thread that indexes files: REGISTERED → PARSED → SUMMARIZED."""
+    """Daemon thread that schedules the ingestion core: REGISTERED → ENRICHED."""
 
     def __init__(
         self,
         manifest: "FileManifest",
         source_dir: Path,
-        config: "FitzKragConfig",
-        chat: "ChatProvider",
-        connection_manager: "SqliteConnectionManager",
-        collection: str,
-        stores: dict[str, Any],
-        vocabulary_store: Any = None,
-        entity_graph_store: Any = None,
-        sqlite_table_store: Any = None,
-        enricher: Any = None,
+        core: "KragIngestPipeline",
     ) -> None:
         self._manifest = manifest
         self._source_dir = source_dir
-        self._config = config
-        self._chat = chat
-        self._cm = connection_manager
-        self._collection = collection
-        self._raw_store = stores["raw"]
-        self._symbol_store = stores["symbol"]
-        self._import_store = stores["import"]
-        self._section_store = stores["section"]
-        self._table_store = stores["table"]
-        self._vocabulary_store = vocabulary_store
-        self._entity_graph_store = entity_graph_store
-        self._sqlite_table_store = sqlite_table_store
-        self._enricher = enricher
-
-        # Parsed text cache dir — same location builder uses
-        # Access manifest's private _path (same package, internal use)
-        self._cache_dir = manifest._path.parent / "parsed" if hasattr(manifest, "_path") else None
+        self._core = core
 
         self._stop_event = threading.Event()
         self._query_active = threading.Event()  # Set = query is running
@@ -109,9 +84,8 @@ class BackgroundIngestWorker:
         # Find directory siblings and bump to P2
         dirs = {str(Path(rp).parent) for rp in rel_paths}
         siblings: list[str] = []
-        entries = self._manifest.entries()
-        for rp, entry in entries.items():
-            if entry.state == FileState.SUMMARIZED:
+        for rp, entry in self._manifest.entries().items():
+            if entry.state == FileState.ENRICHED:
                 continue
             parent = str(Path(rp).parent)
             if parent in dirs and rp not in rel_paths:
@@ -119,29 +93,30 @@ class BackgroundIngestWorker:
         if siblings:
             self._manifest.bump_priority_level(siblings, level=2)
 
+    # ------------------------------------------------------------------
+    # Worker loop
+    # ------------------------------------------------------------------
+
     def _run(self) -> None:
-        """Main worker loop."""
+        """Main worker loop — schedule the core's ops phase by phase."""
         try:
             t0 = time.perf_counter()
-            # Phase 1: REGISTERED → PARSED (fast, no LLM)
-            self._process_registered_files()
-
-            # Phase 2: PARSED → SUMMARIZED (LLM, pauses during queries)
+            self._parse_phase()  # REGISTERED → PARSED (no LLM)
             t1 = time.perf_counter()
-            self._process_parsed_files()
-
-            # Phase 2.5: Enrich SUMMARIZED files with keywords + entities (LLM)
+            self._summarize_phase()  # PARSED → SUMMARIZED (LLM)
             t2 = time.perf_counter()
-            self._enrich_summarized_files()
-
+            self._enrich_phase()  # SUMMARIZED → ENRICHED (LLM)
             t3 = time.perf_counter()
+            self._finalize_phase()  # corpus finalize
+            t4 = time.perf_counter()
             logger.info(
                 "Background indexing complete in %.1fs "
-                "(parse=%.1fs, summarize=%.1fs, enrich=%.1fs)",
-                t3 - t0,
+                "(parse=%.1fs, summarize=%.1fs, enrich=%.1fs, finalize=%.1fs)",
+                t4 - t0,
                 t1 - t0,
                 t2 - t1,
                 t3 - t2,
+                t4 - t3,
             )
         except Exception as e:
             logger.error(f"Background worker failed: {e}")
@@ -156,453 +131,64 @@ class BackgroundIngestWorker:
         files.sort(key=lambda entry: (entry.priority, entry.size_bytes))
         return files
 
-    def _process_registered_files(self) -> None:
-        """REGISTERED → PARSED: Store raw content + extract symbols/sections."""
-        from fitz_sage.engines.fitz_krag.ingestion.strategies.python_code import (
-            PythonCodeIngestStrategy,
-        )
-        from fitz_sage.engines.fitz_krag.ingestion.strategies.technical_doc import (
-            DOC_EXTENSIONS,
-            TechnicalDocIngestStrategy,
-        )
+    def _wait_if_query_active(self) -> None:
+        """Block while a query is running so the LLM stays free for it."""
+        while self._query_active.is_set() and not self._stop_event.is_set():
+            self._stop_event.wait(timeout=0.5)
 
-        py_strategy = PythonCodeIngestStrategy()
-        doc_strategy = TechnicalDocIngestStrategy()
-
-        # Lazy-init non-Python strategies (tree-sitter may not be installed)
-        ts_strategy = None
-        java_strategy = None
-        go_strategy = None
-
+    def _parse_phase(self) -> None:
+        """REGISTERED → PARSED: store raw content + extract symbols/sections."""
         for entry in self._get_ordered_files(FileState.REGISTERED):
             if self._stop_event.is_set():
                 return
-
             try:
-                content = self._read_file(entry)
-                if content is None:
-                    continue
-
-                content_hash = hashlib.sha256(content.encode()).hexdigest()
-                ext = entry.file_type
-
-                # Store raw file
-                self._raw_store.upsert(
-                    file_id=entry.file_id,
-                    path=entry.rel_path,
-                    content=content,
-                    content_hash=content_hash,
-                    file_type=ext,
-                    size_bytes=entry.size_bytes,
-                )
-
-                # Extract symbols for code files
-                result = None
-
-                if ext == ".py":
-                    result = py_strategy.extract(content, entry.rel_path)
-
-                elif ext in {".ts", ".tsx", ".js", ".jsx"}:
-                    try:
-                        if ts_strategy is None:
-                            from fitz_sage.engines.fitz_krag.ingestion.strategies.typescript import (
-                                TypeScriptIngestStrategy,
-                            )
-
-                            ts_strategy = TypeScriptIngestStrategy()
-                        result = ts_strategy.extract(content, entry.rel_path)
-                    except Exception as e:
-                        logger.warning(f"TypeScript strategy unavailable: {e}")
-
-                elif ext == ".java":
-                    try:
-                        if java_strategy is None:
-                            from fitz_sage.engines.fitz_krag.ingestion.strategies.java import (
-                                JavaIngestStrategy,
-                            )
-
-                            java_strategy = JavaIngestStrategy()
-                        result = java_strategy.extract(content, entry.rel_path)
-                    except Exception as e:
-                        logger.warning(f"Java strategy unavailable: {e}")
-
-                elif ext == ".go":
-                    try:
-                        if go_strategy is None:
-                            from fitz_sage.engines.fitz_krag.ingestion.strategies.go import (
-                                GoIngestStrategy,
-                            )
-
-                            go_strategy = GoIngestStrategy()
-                        result = go_strategy.extract(content, entry.rel_path)
-                    except Exception as e:
-                        logger.warning(f"Go strategy unavailable: {e}")
-
-                elif ext in _TABLE_EXTENSIONS:
-                    self._process_table_file(entry, content, content_hash)
-
-                elif ext in DOC_EXTENSIONS or ext == "":
-                    self._process_doc_sections(entry, content, doc_strategy)
-
-                # Store symbols and imports from code extraction
-                if result is not None:
-                    if result.symbols:
-                        symbol_dicts = [
-                            symbol_entry_to_dict(sym, entry.file_id) for sym in result.symbols
-                        ]
-                        self._symbol_store.upsert_batch(symbol_dicts)
-
-                    if result.imports:
-                        import_edges = [
-                            {
-                                "source_file_id": entry.file_id,
-                                "target_module": imp.target_module,
-                                "target_file_id": None,
-                                "import_names": imp.import_names,
-                            }
-                            for imp in result.imports
-                        ]
-                        self._import_store.upsert_batch(import_edges)
-
+                abs_path = Path(entry.abs_path)
+                if not abs_path.exists():
+                    abs_path = self._source_dir / entry.rel_path
+                self._core.parse_file(entry.rel_path, abs_path, entry.file_id)
                 self._manifest.update_state(entry.rel_path, FileState.PARSED)
-
             except Exception as e:
                 logger.warning(f"Background parse failed for {entry.rel_path}: {e}")
-
         self._manifest.save()
 
-    def _process_doc_sections(
-        self, entry: "ManifestEntry", content: str, doc_strategy: Any
-    ) -> None:
-        """Extract and store document sections for a parsed doc file."""
-        try:
-            from fitz_sage.ingestion.parser.router import ParserRouter
-            from fitz_sage.ingestion.source.base import SourceFile
-
-            abs_path = Path(entry.abs_path)
-            router = ParserRouter(docling_parser=self._config.parser)
-            source_file = SourceFile(uri=f"file://{abs_path}", local_path=abs_path)
-            parsed_doc = router.parse(source_file)
-            if not parsed_doc:
-                return
-
-            result = doc_strategy.extract(parsed_doc, entry.rel_path)
-            if not result.sections:
-                return
-
-            section_dicts = []
-            for sec in result.sections:
-                section_dicts.append(
-                    {
-                        "id": str(uuid.uuid4()),
-                        "raw_file_id": entry.file_id,
-                        "title": sec.title,
-                        "level": sec.level,
-                        "page_start": sec.page_start,
-                        "page_end": sec.page_end,
-                        "content": sec.content,
-                        "summary": None,
-                        "parent_section_id": None,
-                        "position": sec.position,
-                        "keywords": [],
-                        "entities": [],
-                        "metadata": sec.metadata,
-                    }
-                )
-            self._section_store.upsert_batch(section_dicts)
-
-        except Exception as e:
-            logger.debug(f"Doc section extraction failed for {entry.rel_path}: {e}")
-
-    def _process_table_file(self, entry: "ManifestEntry", content: str, content_hash: str) -> None:
-        """Parse CSV, store rows in SqliteTableStore, store metadata in TableStore."""
-        from fitz_sage.tabular.parser.csv_parser import get_sample_rows, parse_csv
-
-        abs_path = Path(entry.abs_path)
-        try:
-            parsed = parse_csv(abs_path)
-        except Exception as e:
-            logger.warning(f"CSV parsing failed for {entry.rel_path}: {e}")
-            return
-
-        # Store raw preview (first 50 lines) for ContentReader
-        preview_lines = content.splitlines()[:50]
-        self._raw_store.upsert(
-            file_id=entry.file_id,
-            path=entry.rel_path,
-            content="\n".join(preview_lines),
-            content_hash=content_hash,
-            file_type=entry.file_type,
-            size_bytes=entry.size_bytes,
-        )
-
-        # Store all rows in SqliteTableStore for SQL queries
-        if self._sqlite_table_store:
-            try:
-                self._sqlite_table_store.store(
-                    table_id=parsed.table_id,
-                    columns=parsed.columns,
-                    rows=parsed.rows,
-                    source_file=entry.rel_path,
-                    file_hash=content_hash,
-                )
-            except Exception as e:
-                logger.warning(f"SqliteTableStore.store failed for {entry.rel_path}: {e}")
-                return
-
-        # Delete old table metadata for this file
-        self._table_store.delete_by_file(entry.file_id)
-
-        # Build human-readable name from filename
-        name = Path(entry.rel_path).stem.replace("_", " ").replace("-", " ").title()
-
-        # Get sample rows for summarization prompt
-        try:
-            samples = get_sample_rows(parsed, n=3)
-        except Exception:
-            samples = []
-
-        # Store metadata in krag_table_index
-        self._table_store.upsert_batch(
-            [
-                {
-                    "id": str(uuid.uuid4()),
-                    "raw_file_id": entry.file_id,
-                    "table_id": parsed.table_id,
-                    "name": name,
-                    "columns": parsed.columns,
-                    "row_count": parsed.row_count,
-                    "summary": None,
-                    "metadata": {"source_file": entry.rel_path, "sample_rows": samples},
-                }
-            ]
-        )
-
-    def _summarize_table(self, entry: "ManifestEntry") -> None:
-        """Generate LLM summary for table schema."""
-        records = self._table_store.get_by_file(entry.file_id)
-        if not records:
-            return
-
-        for record in records:
-            cols = ", ".join(record["columns"][:20])
-            samples = record.get("metadata", {}).get("sample_rows", [])
-            sample_str = ""
-            if samples:
-                sample_lines = []
-                for row in samples[:2]:
-                    pairs = [f"{col}={val}" for col, val in zip(record["columns"], row) if val]
-                    sample_lines.append(" | ".join(pairs[:8]))
-                sample_str = "\nSample rows:\n" + "\n".join(sample_lines)
-
-            prompt = (
-                f"Table: '{record['name']}'\n"
-                f"Columns: {cols}\n"
-                f"Row count: {record['row_count']}"
-                f"{sample_str}"
-            )
-
-            try:
-                response = self._chat.chat(
-                    [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You describe table schemas. Write a concise 1-2 sentence "
-                                "description of what data this table contains and what "
-                                "questions it could answer. Return ONLY the description text."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                )
-                summary = response.strip()
-            except Exception as e:
-                logger.warning(f"Table summary generation failed for {entry.rel_path}: {e}")
-                summary = f"Table {record['name']} with columns: {cols}"
-
-            self._table_store.update_summary(record["id"], summary)
-
-    def _process_parsed_files(self) -> None:
-        """PARSED → SUMMARIZED: summarize tables and document sections.
-
-        Code symbols carry no summary and advance straight to SUMMARIZED.
-        """
+    def _summarize_phase(self) -> None:
+        """PARSED → SUMMARIZED: generate LLM summaries (pauses during queries)."""
         for entry in self._get_ordered_files(FileState.PARSED):
             if self._stop_event.is_set():
                 return
-
-            # Wait while query is active (LLM priority)
-            while self._query_active.is_set() and not self._stop_event.is_set():
-                self._stop_event.wait(timeout=0.5)
+            self._wait_if_query_active()
             if self._stop_event.is_set():
                 return
-
             try:
-                ext = entry.file_type
-                if ext in _TABLE_EXTENSIONS:
-                    self._summarize_table(entry)
-                elif ext not in _CODE_EXTENSIONS:
-                    self._summarize_file_sections(entry)
+                self._core.summarize_file(entry.file_id, entry.file_type)
                 self._manifest.update_state(entry.rel_path, FileState.SUMMARIZED)
-
             except Exception as e:
                 logger.warning(f"Background summarize failed for {entry.rel_path}: {e}")
-
         self._manifest.save()
 
-    def _summarize_file_sections(self, entry: "ManifestEntry") -> None:
-        """Generate summaries for all sections in a file."""
-        sections = self._section_store.get_by_file(entry.file_id)
-        if not sections:
-            return
-
-        # Build section summaries
-        batch: list[dict[str, str]] = []
-        for sec in sections:
-            content_preview = (sec.get("content") or "")[:800]
-            batch.append(
-                {
-                    "title": sec.get("title", ""),
-                    "level": sec.get("level", 1),
-                    "content": content_preview,
-                }
-            )
-
-        summaries = self._batch_summarize_sections(batch)
-
-        # Update section store with summaries
-        self._section_store.update_summaries_by_file(entry.file_id, summaries)
-
-    def _batch_summarize_sections(self, sections: list[dict]) -> list[str]:
-        """Generate summaries for a batch of sections."""
-        parts = []
-        for i, sec in enumerate(sections):
-            content = sec.get("content", "")[:800]
-            parts.append(
-                f"Section {i + 1}: '{sec['title']}' (level {sec['level']})\n" f"Content:\n{content}"
-            )
-        prompt = "\n\n".join(parts)
-
-        try:
-            response = self._chat.chat(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You summarize document sections. For each section, write a "
-                            "concise 1-2 sentence description of its content. Return a "
-                            "JSON array of strings, one per section, in the same order."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ]
-            )
-            return self._parse_summary_response(response, len(sections))
-        except Exception as e:
-            logger.warning(f"Section summary generation failed: {e}")
-            return [sec.get("title", "(untitled)") for sec in sections]
-
-    def _parse_summary_response(self, response: str, expected_count: int) -> list[str]:
-        """Parse LLM response into list of summary strings."""
-        text = response.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            text = text.rsplit("```", 1)[0]
-        try:
-            parsed = json.loads(text)
-            if isinstance(parsed, list) and len(parsed) >= expected_count:
-                return [str(s) for s in parsed[:expected_count]]
-        except (json.JSONDecodeError, IndexError):
-            pass
-
-        # Fallback: split by lines
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        return (lines + ["(no summary)"] * expected_count)[:expected_count]
-
-    # ------------------------------------------------------------------
-    # Enrichment (after summarize)
-    # ------------------------------------------------------------------
-
-    def _enrich_summarized_files(self) -> None:
-        """Enrich SUMMARIZED files with keywords + entities via LLM."""
-        if not self._enricher:
-            return
-
+    def _enrich_phase(self) -> None:
+        """SUMMARIZED → ENRICHED: extract keywords/entities (pauses during queries)."""
         for entry in self._get_ordered_files(FileState.SUMMARIZED):
             if self._stop_event.is_set():
                 return
-
-            # Pause during active queries (LLM priority)
-            while self._query_active.is_set() and not self._stop_event.is_set():
-                self._stop_event.wait(timeout=0.5)
+            self._wait_if_query_active()
             if self._stop_event.is_set():
                 return
-
             try:
-                ext = entry.file_type
-                if ext in _CODE_EXTENSIONS:
-                    self._enrich_file_symbols(entry)
-                elif ext not in _TABLE_EXTENSIONS:
-                    self._enrich_file_sections(entry)
+                self._core.enrich_file(entry.file_id, entry.file_type)
+                self._manifest.update_state(entry.rel_path, FileState.ENRICHED)
             except Exception as e:
                 logger.warning(f"Background enrichment failed for {entry.rel_path}: {e}")
+        self._manifest.save()
 
-    def _enrich_file_symbols(self, entry: "ManifestEntry") -> None:
-        """Enrich symbols with keywords + entities."""
-        symbols = self._symbol_store.get_by_file(entry.file_id)
-        if not symbols:
+    def _finalize_phase(self) -> None:
+        """Corpus finalize — import graph + L2 hierarchy summary."""
+        if self._stop_event.is_set():
             return
-        self._enricher.enrich_symbols(symbols)
-        self._symbol_store.update_enrichment_by_file(entry.file_id, symbols)
-
-    def _enrich_file_sections(self, entry: "ManifestEntry") -> None:
-        """Enrich sections with keywords + entities."""
-        sections = self._section_store.get_by_file(entry.file_id)
-        if not sections:
+        self._wait_if_query_active()
+        if self._stop_event.is_set():
             return
-        self._enricher.enrich_sections(sections)
-        self._section_store.update_enrichment_by_file(entry.file_id, sections)
-
-    # ------------------------------------------------------------------
-    # File reading
-    # ------------------------------------------------------------------
-
-    def _read_file(self, entry: "ManifestEntry") -> str | None:
-        """Read file content from disk, using parsed cache for rich docs."""
         try:
-            path = Path(entry.abs_path)
-            if not path.exists():
-                path = self._source_dir / entry.rel_path
-            if not path.exists():
-                return None
-
-            ext = path.suffix.lower()
-            if ext in {".pdf", ".docx", ".pptx", ".html", ".htm"}:
-                # Use parsed cache — builder already populated it during point()
-                if self._cache_dir and entry.content_hash:
-                    from fitz_sage.engines.fitz_krag.progressive.parsed_cache import (
-                        get_parsed_text,
-                    )
-
-                    text = get_parsed_text(path, entry.content_hash, self._cache_dir)
-                    if text:
-                        return text.replace("\x00", "")
-                    return None
-                # No cache available — fall through to direct parse
-                from fitz_sage.ingestion.parser import ParserRouter
-                from fitz_sage.ingestion.source.base import SourceFile
-
-                source_file = SourceFile(uri=path.as_uri(), local_path=path)
-                parsed = ParserRouter().parse(source_file)
-                text = parsed.full_text
-                if text:
-                    return text.replace("\x00", "")
-                return None
-
-            content = path.read_text(encoding="utf-8", errors="replace")
-            # Strip NUL bytes for SQLite text compatibility
-            return content.replace("\x00", "")
+            self._core.finalize()
         except Exception as e:
-            logger.debug(f"Cannot read {entry.rel_path}: {e}")
-            return None
+            logger.warning(f"Background finalize failed: {e}")

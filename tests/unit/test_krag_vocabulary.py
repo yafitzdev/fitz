@@ -1,17 +1,21 @@
 # tests/unit/test_krag_vocabulary.py
 """
-Unit tests for vocabulary integration in the KRAG pipeline and router.
+Unit tests for vocabulary integration in the KRAG ingestion core and router.
+
+The ingestion tests exercise the *live* path: the background worker schedules
+``core.enrich_file``, which extracts keywords and merges them into the
+VocabularyStore. This is what ``engine.point()`` runs in production.
 
 Tests that:
-- Pipeline saves keywords to VocabularyStore after enrichment
+- enrich_file saves extracted keywords to the VocabularyStore
+- keywords are deduplicated case-insensitively before saving
+- enrich_file is safe when no VocabularyStore is wired
 - Router's _apply_keyword_boost boosts matching addresses
-- Boost is proportional to number of matched keywords
-- No boost when no keywords match
 """
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -21,6 +25,99 @@ from fitz_sage.retrieval.vocabulary.models import Keyword
 
 # ---------------------------------------------------------------------------
 # Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_core(*, vocabulary_store: MagicMock | None = None):
+    """Create a KragIngestPipeline core with a mocked connection manager."""
+    from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+    from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
+
+    config = FitzKragConfig(collection="test_col", enable_enrichment=True)
+    return KragIngestPipeline(
+        config=config,
+        chat=MagicMock(),
+        connection_manager=MagicMock(),
+        collection="test_col",
+        vocabulary_store=vocabulary_store,
+    )
+
+
+def _enricher_stamping(keyword_sets: list[list[str]]) -> MagicMock:
+    """Enricher stub: stamps the i-th keyword set onto the i-th symbol dict."""
+    enricher = MagicMock()
+
+    def _stamp(dicts):
+        for i, d in enumerate(dicts):
+            d["keywords"] = list(keyword_sets[i % len(keyword_sets)])
+            d["entities"] = []
+
+    enricher.enrich_symbols.side_effect = _stamp
+    enricher.enrich_sections.side_effect = _stamp
+    return enricher
+
+
+# ---------------------------------------------------------------------------
+# TestEnrichVocabularyIntegration — produced by core.enrich_file
+# ---------------------------------------------------------------------------
+
+
+class TestEnrichVocabularyIntegration:
+    """Tests that enrich_file feeds extracted keywords into the VocabularyStore."""
+
+    def test_enrich_file_saves_keywords_to_vocabulary(self):
+        """enrich_file on a code file merges its extracted keywords into the store."""
+        vocab_store = MagicMock()
+        core = _make_core(vocabulary_store=vocab_store)
+        core._enricher = _enricher_stamping([["auth", "login"], ["hash"]])
+        core._symbol_store = MagicMock()
+        core._symbol_store.get_by_file.return_value = [
+            {"id": "s1", "keywords": [], "entities": []},
+            {"id": "s2", "keywords": [], "entities": []},
+        ]
+
+        core.enrich_file("file-1", ".py")
+
+        vocab_store.merge_and_save.assert_called_once()
+        keywords = vocab_store.merge_and_save.call_args[0][0]
+        # 3 unique keywords: auth, login, hash
+        assert {kw.id for kw in keywords} == {"auth", "login", "hash"}
+
+    def test_deduplicates_keywords_case_insensitively(self):
+        """Duplicate keywords (case-insensitive) collapse to one before saving."""
+        vocab_store = MagicMock()
+        core = _make_core(vocabulary_store=vocab_store)
+        core._enricher = _enricher_stamping([["Auth", "login"], ["auth", "Login"]])
+        core._symbol_store = MagicMock()
+        core._symbol_store.get_by_file.return_value = [
+            {"id": "s1", "keywords": [], "entities": []},
+            {"id": "s2", "keywords": [], "entities": []},
+        ]
+
+        core.enrich_file("file-1", ".py")
+
+        keywords = vocab_store.merge_and_save.call_args[0][0]
+        # "auth"/"Auth" and "login"/"Login" each collapse to one
+        assert len(keywords) == 2
+
+    def test_enrich_file_safe_without_vocabulary_store(self):
+        """No VocabularyStore wired: enrich_file still enriches, no save attempted."""
+        core = _make_core(vocabulary_store=None)
+        core._enricher = _enricher_stamping([["auth"]])
+        core._symbol_store = MagicMock()
+        core._symbol_store.get_by_file.return_value = [
+            {"id": "s1", "keywords": [], "entities": []},
+        ]
+
+        # Should not raise
+        core.enrich_file("file-1", ".py")
+
+        # Enrichment was persisted even though vocabulary is not wired
+        core._symbol_store.update_enrichment_by_file.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TestRouterKeywordBoost
 # ---------------------------------------------------------------------------
 
 
@@ -60,7 +157,6 @@ def _make_keyword_matcher(matched_keywords: list[str] | None = None) -> MagicMoc
     matcher = MagicMock()
     if matched_keywords is None:
         matched_keywords = []
-    # Return Keyword objects, matching what the real KeywordMatcher.find_in_query returns
     matcher.find_in_query.return_value = [_make_keyword(kw) for kw in matched_keywords]
     return matcher
 
@@ -81,162 +177,6 @@ def _make_router(
     if keyword_matcher:
         router._keyword_matcher = keyword_matcher
     return router
-
-
-# ---------------------------------------------------------------------------
-# TestPipelineVocabularyIntegration
-# ---------------------------------------------------------------------------
-
-
-class TestPipelineVocabularyIntegration:
-    """Tests that the pipeline saves keywords to VocabularyStore."""
-
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ensure_schema")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.RawFileStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SymbolStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ImportGraphStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SectionStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TableStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.PythonCodeIngestStrategy")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TechnicalDocIngestStrategy")
-    def test_saves_keywords_after_enrichment(
-        self,
-        mock_doc_strat,
-        mock_py_strat,
-        mock_table_store,
-        mock_section_store,
-        mock_import_store,
-        mock_symbol_store,
-        mock_raw_store,
-        mock_ensure_schema,
-    ):
-        """Pipeline calls vocabulary_store.merge_and_save with extracted keywords."""
-        from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-        from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
-
-        config = FitzKragConfig(collection="test_col", enable_enrichment=False)
-        chat = MagicMock()
-        embedder = MagicMock()
-        embedder.dimensions = 1024
-        embedder.embed_batch.return_value = [[0.1] * 1024]
-        cm = MagicMock()
-        vocab_store = MagicMock()
-
-        pipeline = KragIngestPipeline(
-            config=config,
-            chat=chat,
-            connection_manager=cm,
-            collection="test_col",
-            vocabulary_store=vocab_store,
-        )
-
-        # Simulate that _save_keywords_to_vocabulary is called with symbol dicts
-        # containing keywords
-        symbol_dicts = [
-            {"keywords": ["auth", "login"], "entities": []},
-            {"keywords": ["hash"], "entities": []},
-        ]
-        pipeline._save_keywords_to_vocabulary(symbol_dicts, [])
-
-        vocab_store.merge_and_save.assert_called_once()
-        call_args = vocab_store.merge_and_save.call_args
-        keywords = call_args[0][0]  # First positional arg
-        # 3 unique keywords: auth, login, hash
-        assert len(keywords) == 3
-
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ensure_schema")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.RawFileStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SymbolStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ImportGraphStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SectionStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TableStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.PythonCodeIngestStrategy")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TechnicalDocIngestStrategy")
-    def test_no_save_without_vocabulary_store(
-        self,
-        mock_doc_strat,
-        mock_py_strat,
-        mock_table_store,
-        mock_section_store,
-        mock_import_store,
-        mock_symbol_store,
-        mock_raw_store,
-        mock_ensure_schema,
-    ):
-        """Pipeline does not attempt vocabulary save when vocabulary_store is None."""
-        from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-        from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
-
-        config = FitzKragConfig(collection="test_col", enable_enrichment=False)
-        chat = MagicMock()
-        embedder = MagicMock()
-        embedder.dimensions = 1024
-        cm = MagicMock()
-
-        pipeline = KragIngestPipeline(
-            config=config,
-            chat=chat,
-            connection_manager=cm,
-            collection="test_col",
-            vocabulary_store=None,
-        )
-
-        # Confirm _vocabulary_store is None
-        assert pipeline._vocabulary_store is None
-
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ensure_schema")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.RawFileStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SymbolStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.ImportGraphStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.SectionStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TableStore")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.PythonCodeIngestStrategy")
-    @patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.TechnicalDocIngestStrategy")
-    def test_deduplicates_keywords(
-        self,
-        mock_doc_strat,
-        mock_py_strat,
-        mock_table_store,
-        mock_section_store,
-        mock_import_store,
-        mock_symbol_store,
-        mock_raw_store,
-        mock_ensure_schema,
-    ):
-        """Duplicate keywords (case-insensitive) are deduplicated before saving."""
-        from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-        from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
-
-        config = FitzKragConfig(collection="test_col", enable_enrichment=False)
-        chat = MagicMock()
-        embedder = MagicMock()
-        embedder.dimensions = 1024
-        cm = MagicMock()
-        vocab_store = MagicMock()
-
-        pipeline = KragIngestPipeline(
-            config=config,
-            chat=chat,
-            connection_manager=cm,
-            collection="test_col",
-            vocabulary_store=vocab_store,
-        )
-
-        symbol_dicts = [
-            {"keywords": ["Auth", "login"], "entities": []},
-            {"keywords": ["auth", "Login"], "entities": []},
-        ]
-        pipeline._save_keywords_to_vocabulary(symbol_dicts, [])
-
-        call_args = vocab_store.merge_and_save.call_args
-        keywords = call_args[0][0]
-        # "auth" and "Auth" are same (case-insensitive); "login" and "Login" too
-        assert len(keywords) == 2
-
-
-# ---------------------------------------------------------------------------
-# TestRouterKeywordBoost
-# ---------------------------------------------------------------------------
 
 
 class TestRouterKeywordBoost:

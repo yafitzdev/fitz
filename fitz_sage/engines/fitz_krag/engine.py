@@ -1075,41 +1075,37 @@ class FitzKragEngine:
         # 4. Set source_dir on ContentReader for disk fallback
         self._reader._source_dir = source_dir
 
-        # 4.5. Fast synchronous symbol indexing (AST only, no LLM)
-        # Populates symbol_store + import_store so LLM code search works
-        # immediately on the first query. Background worker skips these
-        # files (already PARSED) and starts with Phase 2 (summaries).
-        self._fast_index_code_files(manifest, source_dir, progress)
+        # 4.5. Build the ingestion core — the single parse/summarize/enrich
+        # implementation shared by the synchronous bootstrap below and the
+        # background worker. Bound to the engine's collection so it writes
+        # the same stores retrieval reads.
+        from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
+
+        core = KragIngestPipeline(
+            config=self._config,
+            chat=self._chat,
+            connection_manager=self._connection_manager,
+            collection=self._config.collection,
+            table_store=self._table_store,
+            sqlite_table_store=self._sqlite_table_store,
+            vocabulary_store=self._vocabulary_store,
+            entity_graph_store=self._entity_graph_store,
+        )
+
+        # Fast synchronous symbol indexing (AST only, no LLM) via the core's
+        # parse op. Populates symbol_store + import_store so LLM code search
+        # works on the first query. The background worker skips these files
+        # (already PARSED) and starts with summaries.
+        self._fast_index_code_files(manifest, source_dir, core, progress)
 
         # 5. Start background worker (skip for short-lived CLI processes)
         if start_worker:
             from fitz_sage.engines.fitz_krag.progressive.worker import BackgroundIngestWorker
 
-            # Create enricher for background worker if enabled
-            enricher = None
-            if self._config.enable_enrichment:
-                from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
-
-                enricher = KragEnricher(self._chat)
-
             self._bg_worker = BackgroundIngestWorker(
                 manifest=manifest,
                 source_dir=source_dir,
-                config=self._config,
-                chat=self._chat,
-                connection_manager=self._connection_manager,
-                collection=col,
-                stores={
-                    "raw": self._raw_store,
-                    "symbol": self._symbol_store,
-                    "import": self._import_store,
-                    "section": self._section_store,
-                    "table": self._table_store,
-                },
-                vocabulary_store=self._vocabulary_store,
-                entity_graph_store=self._entity_graph_store,
-                sqlite_table_store=self._sqlite_table_store,
-                enricher=enricher,
+                core=core,
             )
             self._bg_worker.start()
 
@@ -1119,42 +1115,31 @@ class FitzKragEngine:
         self,
         manifest: Any,
         source_dir: Path,
+        core: Any,
         progress: Callable[[str], None] | None = None,
     ) -> None:
         """Fast synchronous AST symbol extraction for code files.
 
-        Populates raw_store, symbol_store, and import_store so that LLM code
-        search and hybrid code search work on the very first query. Symbol
-        signatures are indexed immediately so symbol/BM25 search works before
-        LLM summaries are generated.
+        Calls the ingestion core's ``parse_file`` op for each code file so
+        LLM and hybrid code search work on the very first query — symbol
+        signatures are indexed before LLM summaries exist.
 
-        Files are transitioned to PARSED state so the background worker skips
-        Phase 1 and starts with Phase 2 (LLM summaries).
+        Files transition to PARSED so the background worker skips them and
+        starts with the summarize phase.
         """
-        import hashlib
-
-        from fitz_sage.engines.fitz_krag.ingestion.strategies.python_code import (
-            PythonCodeIngestStrategy,
-        )
-        from fitz_sage.engines.fitz_krag.ingestion.symbol_store import symbol_entry_to_dict
+        from fitz_sage.engines.fitz_krag.ingestion.pipeline import EXTENSION_MAP
         from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
 
         _progress = progress or (lambda _: None)
-        _CODE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".go"}
 
         entries = manifest.entries()
-        code_entries = [e for e in entries.values() if e.file_type in _CODE_EXTENSIONS]
+        code_entries = [e for e in entries.values() if e.file_type in EXTENSION_MAP]
         if not code_entries:
             return
 
         _progress(f"Indexing {len(code_entries)} code files...")
 
-        py_strategy = PythonCodeIngestStrategy()
-        ts_strategy = None
-        java_strategy = None
-        go_strategy = None
         indexed = 0
-
         for entry in code_entries:
             try:
                 path = Path(entry.abs_path)
@@ -1163,95 +1148,18 @@ class FitzKragEngine:
                 if not path.exists():
                     continue
 
-                content = path.read_text(encoding="utf-8", errors="replace").replace("\x00", "")
-                content_hash = hashlib.sha256(content.encode()).hexdigest()
-
-                # Store raw file (needed as FK for symbol_index)
-                self._raw_store.upsert(
-                    file_id=entry.file_id,
-                    path=entry.rel_path,
-                    content=content,
-                    content_hash=content_hash,
-                    file_type=entry.file_type,
-                    size_bytes=entry.size_bytes,
-                )
-
-                # AST extraction
-                result = None
-                ext = entry.file_type
-
-                if ext == ".py":
-                    result = py_strategy.extract(content, entry.rel_path)
-                elif ext in {".ts", ".tsx", ".js", ".jsx"}:
-                    try:
-                        if ts_strategy is None:
-                            from fitz_sage.engines.fitz_krag.ingestion.strategies.typescript import (
-                                TypeScriptIngestStrategy,
-                            )
-
-                            ts_strategy = TypeScriptIngestStrategy()
-                        result = ts_strategy.extract(content, entry.rel_path)
-                    except Exception:
-                        pass
-                elif ext == ".java":
-                    try:
-                        if java_strategy is None:
-                            from fitz_sage.engines.fitz_krag.ingestion.strategies.java import (
-                                JavaIngestStrategy,
-                            )
-
-                            java_strategy = JavaIngestStrategy()
-                        result = java_strategy.extract(content, entry.rel_path)
-                    except Exception:
-                        pass
-                elif ext == ".go":
-                    try:
-                        if go_strategy is None:
-                            from fitz_sage.engines.fitz_krag.ingestion.strategies.go import (
-                                GoIngestStrategy,
-                            )
-
-                            go_strategy = GoIngestStrategy()
-                        result = go_strategy.extract(content, entry.rel_path)
-                    except Exception:
-                        pass
-
-                if result is not None:
-                    if result.symbols:
-                        symbol_dicts = [
-                            symbol_entry_to_dict(sym, entry.file_id) for sym in result.symbols
-                        ]
-                        self._symbol_store.upsert_batch(symbol_dicts)
-
-                    if result.imports:
-                        self._import_store.upsert_batch(
-                            [
-                                {
-                                    "source_file_id": entry.file_id,
-                                    "target_module": imp.target_module,
-                                    "target_file_id": None,
-                                    "import_names": imp.import_names,
-                                }
-                                for imp in result.imports
-                            ]
-                        )
-
+                core.parse_file(entry.rel_path, path, entry.file_id)
                 manifest.update_state(entry.rel_path, FileState.PARSED)
                 indexed += 1
 
             except Exception as e:
                 logger.debug(f"Fast index skipped {entry.rel_path}: {e}")
 
-        # Resolve import graph targets
+        # Resolve import graph targets now that all code files are stored
         if indexed > 0:
-            try:
-                path_to_id = {e.rel_path: e.file_id for e in code_entries}
-                self._import_store.resolve_targets(path_to_id)
-            except Exception as e:
-                logger.debug(f"Import target resolution failed: {e}")
-
+            core.resolve_imports()
             manifest.save()
-            _progress(f"Indexed {indexed} code files ({indexed} symbols ready)")
+            _progress(f"Indexed {indexed} code files")
 
     @property
     def config(self) -> FitzKragConfig:

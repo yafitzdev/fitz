@@ -1,13 +1,18 @@
 # tests/unit/test_progressive_worker.py
-"""Unit tests for BackgroundIngestWorker."""
+"""Unit tests for BackgroundIngestWorker — the progressive ingestion scheduler.
+
+The worker is a scheduler over the KragIngestPipeline core: it owns the
+manifest, priority queue, state machine, and query-pausing, and delegates all
+ingestion work to ``core.parse_file`` / ``summarize_file`` / ``enrich_file`` /
+``finalize``.
+"""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from fitz_sage.engines.fitz_krag.progressive.manifest import FileState, ManifestEntry
+from fitz_sage.engines.fitz_krag.progressive.manifest import FileManifest, FileState, ManifestEntry
 from fitz_sage.engines.fitz_krag.progressive.worker import BackgroundIngestWorker
 
 
@@ -35,36 +40,17 @@ def _make_entry(
 
 
 def _build_worker(
-    manifest: MagicMock | None = None,
-    enricher: MagicMock | None = MagicMock(),
-    symbol_store: MagicMock | None = None,
-    section_store: MagicMock | None = None,
+    manifest: object | None = None,
+    core: MagicMock | None = None,
+    source_dir: Path = Path("/fake"),
 ) -> BackgroundIngestWorker:
-    """Construct a BackgroundIngestWorker with fully mocked dependencies."""
+    """Construct a BackgroundIngestWorker with a mocked core."""
     if manifest is None:
         manifest = MagicMock()
-        manifest._path = Path("/fake/manifest.json")
-
-    if symbol_store is None:
-        symbol_store = MagicMock()
-    if section_store is None:
-        section_store = MagicMock()
-
     return BackgroundIngestWorker(
         manifest=manifest,
-        source_dir=Path("/fake"),
-        config=MagicMock(),
-        chat=MagicMock(),
-        connection_manager=MagicMock(),
-        collection="test",
-        stores={
-            "raw": MagicMock(),
-            "symbol": symbol_store,
-            "import": MagicMock(),
-            "section": section_store,
-            "table": MagicMock(),
-        },
-        enricher=enricher,
+        source_dir=source_dir,
+        core=core or MagicMock(),
     )
 
 
@@ -81,7 +67,6 @@ class TestGetOrderedFiles:
         p2_med = _make_entry("c/sibling.py", priority=2, size_bytes=3000)
 
         manifest = MagicMock()
-        manifest._path = Path("/fake/manifest.json")
         manifest.files_in_state.return_value = [p4_big, p1_small, p2_med]
 
         worker = _build_worker(manifest=manifest)
@@ -97,7 +82,6 @@ class TestGetOrderedFiles:
         small = _make_entry("small.py", priority=4, size_bytes=100)
 
         manifest = MagicMock()
-        manifest._path = Path("/fake/manifest.json")
         manifest.files_in_state.return_value = [big, small]
 
         worker = _build_worker(manifest=manifest)
@@ -108,136 +92,99 @@ class TestGetOrderedFiles:
 
 
 # -------------------------------------------------------------------------
-# 2. _enrich_summarized_files calls enricher for code files
+# 2. _run drives the core through every phase
 # -------------------------------------------------------------------------
 
 
-class TestEnrichPhase:
-    def test_enrich_phase_calls_enricher(self) -> None:
-        """enricher.enrich_symbols is called for a .py file in SUMMARIZED state."""
-        py_entry = _make_entry("src/main.py", state=FileState.SUMMARIZED, file_type=".py")
+class TestScheduling:
+    def test_run_drives_core_through_all_phases(self, tmp_path: Path) -> None:
+        """Every REGISTERED file is parsed, summarized, enriched; finalize runs once."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("src/main.py", file_type=".py"))
+        manifest.add(_make_entry("docs/readme.md", file_type=".md"))
 
-        manifest = MagicMock()
-        manifest._path = Path("/fake/manifest.json")
-        manifest.files_in_state.return_value = [py_entry]
+        core = MagicMock()
+        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+        worker._run()
 
-        mock_symbol_store = MagicMock()
-        mock_symbol_store.get_by_file.return_value = [{"name": "foo", "kind": "function"}]
+        # Both files reached the terminal ENRICHED state
+        assert manifest.get("src/main.py").state == FileState.ENRICHED
+        assert manifest.get("docs/readme.md").state == FileState.ENRICHED
 
-        mock_enricher = MagicMock()
+        # Core ops called once per file, finalize once for the corpus
+        assert core.parse_file.call_count == 2
+        assert core.summarize_file.call_count == 2
+        assert core.enrich_file.call_count == 2
+        core.finalize.assert_called_once()
 
-        worker = _build_worker(
-            manifest=manifest,
-            enricher=mock_enricher,
-            symbol_store=mock_symbol_store,
-        )
-        worker._enrich_summarized_files()
+    def test_parse_phase_passes_file_identity_to_core(self, tmp_path: Path) -> None:
+        """The worker hands the core (rel_path, abs_path, file_id) for each file."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("src/main.py", file_type=".py"))
 
-        mock_symbol_store.get_by_file.assert_called_once_with(py_entry.file_id)
-        mock_enricher.enrich_symbols.assert_called_once()
-        mock_symbol_store.update_enrichment_by_file.assert_called_once()
+        core = MagicMock()
+        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+        worker._parse_phase()
 
+        core.parse_file.assert_called_once()
+        rel_path, _abs_path, file_id = core.parse_file.call_args[0]
+        assert rel_path == "src/main.py"
+        assert file_id == "id-src/main.py"
+        assert manifest.get("src/main.py").state == FileState.PARSED
 
-# -------------------------------------------------------------------------
-# 3. _enrich_summarized_files does not crash when enricher is None
-# -------------------------------------------------------------------------
+    def test_summarize_and_enrich_route_by_file_type(self, tmp_path: Path) -> None:
+        """summarize_file / enrich_file receive the file's id and type."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("a.py", file_type=".py", state=FileState.PARSED))
 
+        core = MagicMock()
+        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+        worker._summarize_phase()
+        core.summarize_file.assert_called_once_with("id-a.py", ".py")
+        assert manifest.get("a.py").state == FileState.SUMMARIZED
 
-class TestEnrichSkipsWhenNoEnricher:
-    def test_enrich_skips_when_no_enricher(self) -> None:
-        """When enricher=None, _enrich_summarized_files returns without error."""
-        manifest = MagicMock()
-        manifest._path = Path("/fake/manifest.json")
-        manifest.files_in_state.return_value = [
-            _make_entry("src/app.py", state=FileState.SUMMARIZED),
-        ]
+        worker._enrich_phase()
+        core.enrich_file.assert_called_once_with("id-a.py", ".py")
+        assert manifest.get("a.py").state == FileState.ENRICHED
 
-        worker = _build_worker(manifest=manifest, enricher=None)
+    def test_parse_failure_does_not_block_other_files(self, tmp_path: Path) -> None:
+        """One file failing to parse leaves it behind but does not stop the rest."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("bad.py", file_type=".py"))
+        manifest.add(_make_entry("good.py", file_type=".py"))
 
-        # Should not raise and should not call manifest.files_in_state
-        worker._enrich_summarized_files()
-        manifest.files_in_state.assert_not_called()
+        core = MagicMock()
 
+        def _parse(rel_path, _abs_path, _file_id):
+            if rel_path == "bad.py":
+                raise RuntimeError("parse blew up")
 
-# -------------------------------------------------------------------------
-# 4. Code vs doc routing: .py -> enrich_symbols, .md -> enrich_sections
-# -------------------------------------------------------------------------
+        core.parse_file.side_effect = _parse
 
+        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+        worker._parse_phase()
 
-class TestEnrichCodeVsDocRouting:
-    def test_enrich_code_vs_doc_routing(self) -> None:
-        """.py routes to _enrich_file_symbols, .md routes to _enrich_file_sections."""
-        py_entry = _make_entry("src/lib.py", state=FileState.SUMMARIZED, file_type=".py")
-        md_entry = _make_entry("docs/readme.md", state=FileState.SUMMARIZED, file_type=".md")
+        assert manifest.get("bad.py").state == FileState.REGISTERED
+        assert manifest.get("good.py").state == FileState.PARSED
 
-        manifest = MagicMock()
-        manifest._path = Path("/fake/manifest.json")
-        manifest.files_in_state.return_value = [py_entry, md_entry]
+    def test_stop_event_halts_processing(self, tmp_path: Path) -> None:
+        """A set stop event prevents any core work."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("src/app.py", file_type=".py"))
 
-        mock_symbol_store = MagicMock()
-        mock_symbol_store.get_by_file.return_value = [{"name": "bar"}]
+        core = MagicMock()
+        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+        worker._stop_event.set()
 
-        mock_section_store = MagicMock()
-        mock_section_store.get_by_file.return_value = [{"title": "Intro"}]
+        worker._run()
 
-        mock_enricher = MagicMock()
-
-        worker = _build_worker(
-            manifest=manifest,
-            enricher=mock_enricher,
-            symbol_store=mock_symbol_store,
-            section_store=mock_section_store,
-        )
-        worker._enrich_summarized_files()
-
-        # .py -> enrich_symbols
-        mock_enricher.enrich_symbols.assert_called_once()
-        mock_symbol_store.update_enrichment_by_file.assert_called_once_with(
-            py_entry.file_id, [{"name": "bar"}]
-        )
-
-        # .md -> enrich_sections
-        mock_enricher.enrich_sections.assert_called_once()
-        mock_section_store.update_enrichment_by_file.assert_called_once_with(
-            md_entry.file_id, [{"title": "Intro"}]
-        )
+        core.parse_file.assert_not_called()
+        core.finalize.assert_not_called()
+        assert manifest.get("src/app.py").state == FileState.REGISTERED
 
 
 # -------------------------------------------------------------------------
-# 5. .csv/.tsv files are skipped entirely in enrichment
-# -------------------------------------------------------------------------
-
-
-class TestEnrichSkipsTableFiles:
-    def test_enrich_skips_table_files(self) -> None:
-        """.csv and .tsv files are never enriched."""
-        csv_entry = _make_entry("data/sales.csv", state=FileState.SUMMARIZED, file_type=".csv")
-        tsv_entry = _make_entry("data/logs.tsv", state=FileState.SUMMARIZED, file_type=".tsv")
-
-        manifest = MagicMock()
-        manifest._path = Path("/fake/manifest.json")
-        manifest.files_in_state.return_value = [csv_entry, tsv_entry]
-
-        mock_enricher = MagicMock()
-        mock_symbol_store = MagicMock()
-        mock_section_store = MagicMock()
-
-        worker = _build_worker(
-            manifest=manifest,
-            enricher=mock_enricher,
-            symbol_store=mock_symbol_store,
-            section_store=mock_section_store,
-        )
-        worker._enrich_summarized_files()
-
-        mock_enricher.enrich_symbols.assert_not_called()
-        mock_enricher.enrich_sections.assert_not_called()
-        mock_symbol_store.get_by_file.assert_not_called()
-        mock_section_store.get_by_file.assert_not_called()
-
-
-# -------------------------------------------------------------------------
-# 6. boost_files sets P1 on queried files, P2 on directory siblings
+# 3. boost_files sets P1 on queried files, P2 on directory siblings
 # -------------------------------------------------------------------------
 
 
@@ -247,10 +194,9 @@ class TestBoostFiles:
         queried = _make_entry("src/main.py", state=FileState.PARSED, priority=4)
         sibling = _make_entry("src/utils.py", state=FileState.PARSED, priority=4)
         unrelated = _make_entry("docs/readme.md", state=FileState.PARSED, priority=4)
-        already_done = _make_entry("src/done.py", state=FileState.SUMMARIZED, priority=4)
+        already_done = _make_entry("src/done.py", state=FileState.ENRICHED, priority=4)
 
         manifest = MagicMock()
-        manifest._path = Path("/fake/manifest.json")
         manifest.entries.return_value = {
             "src/main.py": queried,
             "src/utils.py": sibling,
@@ -264,8 +210,8 @@ class TestBoostFiles:
         # Queried file bumped to P1
         manifest.bump_priority.assert_called_once_with(["src/main.py"])
 
-        # Sibling in same dir (src/) bumped to P2, but NOT the queried file itself,
-        # NOT unrelated dir, NOT already-EMBEDDED file
+        # Sibling in same dir (src/) bumped to P2 — but NOT the queried file
+        # itself, NOT an unrelated dir, NOT an already-ENRICHED file
         manifest.bump_priority_level.assert_called_once()
         call_args = manifest.bump_priority_level.call_args
         siblings_arg = call_args[0][0]
@@ -274,102 +220,5 @@ class TestBoostFiles:
         assert "src/utils.py" in siblings_arg
         assert "src/main.py" not in siblings_arg, "queried file should not be in siblings"
         assert "docs/readme.md" not in siblings_arg, "unrelated dir should not be in siblings"
-        assert "src/done.py" not in siblings_arg, "EMBEDDED files should be excluded"
+        assert "src/done.py" not in siblings_arg, "ENRICHED files should be excluded"
         assert level_arg == 2
-
-
-# -------------------------------------------------------------------------
-# 7. _parse_summary_response: valid JSON array
-# -------------------------------------------------------------------------
-
-
-class TestParseSummaryResponse:
-    def test_parse_summary_response_json(self) -> None:
-        """Valid JSON array is parsed correctly."""
-        worker = _build_worker()
-        response = json.dumps(["Summary A", "Summary B", "Summary C"])
-
-        result = worker._parse_summary_response(response, 3)
-
-        assert result == ["Summary A", "Summary B", "Summary C"]
-
-    # ---------------------------------------------------------------------
-    # 8. Invalid JSON falls back to line splitting
-    # ---------------------------------------------------------------------
-
-    def test_parse_summary_response_text_fallback(self) -> None:
-        """Non-JSON text falls back to line splitting."""
-        worker = _build_worker()
-        response = "First summary line\nSecond summary line"
-
-        result = worker._parse_summary_response(response, 2)
-
-        assert result == ["First summary line", "Second summary line"]
-
-    # ---------------------------------------------------------------------
-    # 9. Code fence (```json ... ```) is stripped before parsing
-    # ---------------------------------------------------------------------
-
-    def test_parse_summary_response_code_fence(self) -> None:
-        """Response wrapped in ```json fences is stripped and parsed as JSON."""
-        worker = _build_worker()
-        inner = json.dumps(["Alpha", "Beta"])
-        response = f"```json\n{inner}\n```"
-
-        result = worker._parse_summary_response(response, 2)
-
-        assert result == ["Alpha", "Beta"]
-
-    def test_parse_summary_response_pads_missing(self) -> None:
-        """If fewer lines than expected, pad with '(no summary)'."""
-        worker = _build_worker()
-        response = "Only one line"
-
-        result = worker._parse_summary_response(response, 3)
-
-        assert len(result) == 3
-        assert result[0] == "Only one line"
-        assert result[1] == "(no summary)"
-        assert result[2] == "(no summary)"
-
-    def test_parse_summary_response_truncates_excess(self) -> None:
-        """JSON array longer than expected_count is truncated."""
-        worker = _build_worker()
-        response = json.dumps(["A", "B", "C", "D", "E"])
-
-        result = worker._parse_summary_response(response, 3)
-
-        assert result == ["A", "B", "C"]
-
-
-# -------------------------------------------------------------------------
-# 10. _stop_event causes immediate return from enrichment
-# -------------------------------------------------------------------------
-
-
-class TestStopEvent:
-    def test_stop_event_skips_enrichment(self) -> None:
-        """When _stop_event is set, _enrich_summarized_files returns immediately."""
-        py_entry = _make_entry("src/app.py", state=FileState.SUMMARIZED, file_type=".py")
-
-        manifest = MagicMock()
-        manifest._path = Path("/fake/manifest.json")
-        manifest.files_in_state.return_value = [py_entry]
-
-        mock_enricher = MagicMock()
-        mock_symbol_store = MagicMock()
-
-        worker = _build_worker(
-            manifest=manifest,
-            enricher=mock_enricher,
-            symbol_store=mock_symbol_store,
-        )
-
-        # Set stop before calling
-        worker._stop_event.set()
-
-        worker._enrich_summarized_files()
-
-        # The enricher should never be called because stop_event triggers early return
-        mock_enricher.enrich_symbols.assert_not_called()
-        mock_symbol_store.get_by_file.assert_not_called()

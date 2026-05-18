@@ -242,6 +242,22 @@ class SectionStore:
             rows = conn.execute(sql).fetchall()
         return [_row_to_dict(row) for row in rows]
 
+    def get_hierarchy_summaries(self) -> list[str]:
+        """Distinct L1 hierarchy summaries across all sections.
+
+        Each document file contributes one L1 group summary, repeated on the
+        metadata of every section in that file. The corpus ``finalize`` step
+        rolls these up into the L2 summary.
+        """
+        sql = f"""
+            SELECT DISTINCT json_extract(metadata, '$.hierarchy_summary')
+            FROM {TABLE}
+            WHERE json_extract(metadata, '$.hierarchy_summary') IS NOT NULL
+        """
+        with self._cm.connection(self._collection) as conn:
+            rows = conn.execute(sql).fetchall()
+        return [row[0] for row in rows if row[0]]
+
     def delete_by_file(self, raw_file_id: str) -> None:
         sql = f"DELETE FROM {TABLE} WHERE raw_file_id = ?"
         with self._cm.connection(self._collection) as conn:
