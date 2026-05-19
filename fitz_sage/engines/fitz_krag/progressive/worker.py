@@ -33,6 +33,8 @@ from typing import TYPE_CHECKING
 from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
     from fitz_sage.engines.fitz_krag.progressive.manifest import FileManifest, ManifestEntry
 
@@ -68,6 +70,34 @@ class BackgroundIngestWorker:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5.0)
         logger.info("Background ingestion worker stopped")
+
+    def wait(self, progress: "Callable[[str], None] | None" = None) -> None:
+        """Block until the worker has finished indexing the whole corpus.
+
+        Reports coarse progress (files enriched / total) at ~10s intervals.
+        A no-op when the worker was never started.
+        """
+        if self._thread is None:
+            return
+        last_emit = 0.0
+        while self._thread.is_alive():
+            if progress and time.monotonic() - last_emit >= 10.0:
+                line = self._status_line()
+                if line:
+                    progress(line)
+                last_emit = time.monotonic()
+            self._thread.join(timeout=1.0)
+        if progress:
+            progress("Indexing complete.")
+
+    def _status_line(self) -> str:
+        """Coarse indexing-progress line from manifest file states."""
+        entries = self._manifest.entries()
+        total = len(entries)
+        if total == 0:
+            return ""
+        done = sum(1 for e in entries.values() if e.state == FileState.ENRICHED)
+        return f"Indexing documents... {done}/{total}"
 
     def signal_query_start(self) -> None:
         """Pause LLM calls (let query have priority)."""

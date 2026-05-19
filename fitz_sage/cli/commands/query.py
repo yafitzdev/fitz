@@ -311,9 +311,7 @@ def _run_persistent_ingest_query(
         if source is not None:
             t0 = time.perf_counter()
             ui.info(f"Registering {source}...")
-            manifest = engine_instance.point(
-                source, collection, start_worker=False, progress=ui.info
-            )
+            manifest = engine_instance.point(source, collection, progress=ui.info)
             t_point = time.perf_counter() - t0
             ui.info(f"Registered {len(manifest.entries())} files")
         else:
@@ -324,6 +322,7 @@ def _run_persistent_ingest_query(
 
         if chat:
             _chat_loop(engine_instance, collection)
+            engine_instance.wait_for_indexing(progress=ui.info)
         else:
             from fitz_sage.core import Query
 
@@ -335,6 +334,7 @@ def _run_persistent_ingest_query(
                 f"(engine={t_engine:.1f}s, register={t_point:.1f}s)"
             )
             display_answer(answer)
+            engine_instance.wait_for_indexing(progress=ui.info)
     except Exception as e:
         # Show clean error message, full traceback only at debug level
         ui.error(f"Query failed: {_get_root_cause(e)}")

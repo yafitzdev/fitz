@@ -1128,6 +1128,22 @@ class FitzKragEngine:
             manifest.save()
             _progress(f"Indexed {indexed} code files")
 
+    def wait_for_indexing(self, progress: Callable[[str], None] | None = None) -> None:
+        """Block until background indexing finishes.
+
+        No-op when no background worker is running (e.g. querying an
+        already-loaded collection). Ctrl-C pauses indexing gracefully —
+        progress is persisted and resumes on the next run.
+        """
+        if not self._bg_worker:
+            return
+        try:
+            self._bg_worker.wait(progress=progress)
+        except KeyboardInterrupt:
+            self._bg_worker.stop()
+            if progress:
+                progress("Indexing paused — it resumes on the next query.")
+
     @property
     def config(self) -> FitzKragConfig:
         """Get the engine's configuration."""

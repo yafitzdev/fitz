@@ -222,3 +222,49 @@ class TestBoostFiles:
         assert "docs/readme.md" not in siblings_arg, "unrelated dir should not be in siblings"
         assert "src/done.py" not in siblings_arg, "ENRICHED files should be excluded"
         assert level_arg == 2
+
+
+# -------------------------------------------------------------------------
+# 4. wait() — block until indexing finishes, report coarse progress
+# -------------------------------------------------------------------------
+
+
+class TestWait:
+    def test_wait_is_noop_when_never_started(self) -> None:
+        """wait() returns immediately when the worker thread was never started."""
+        worker = _build_worker()
+        progress = MagicMock()
+        worker.wait(progress=progress)
+        progress.assert_not_called()
+
+    def test_status_line_counts_enriched_files(self, tmp_path: Path) -> None:
+        """_status_line reports enriched / total from manifest file states."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("a.py", state=FileState.ENRICHED))
+        manifest.add(_make_entry("b.py", state=FileState.SUMMARIZED))
+        manifest.add(_make_entry("c.md", state=FileState.REGISTERED))
+
+        worker = _build_worker(manifest=manifest, source_dir=tmp_path)
+
+        assert worker._status_line() == "Indexing documents... 1/3"
+
+    def test_status_line_empty_when_no_files(self, tmp_path: Path) -> None:
+        """_status_line is empty for an empty manifest."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        worker = _build_worker(manifest=manifest, source_dir=tmp_path)
+
+        assert worker._status_line() == ""
+
+    def test_wait_blocks_until_worker_finishes(self, tmp_path: Path) -> None:
+        """wait() joins the worker thread and reports completion."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("a.py", file_type=".py"))
+
+        worker = _build_worker(manifest=manifest, core=MagicMock(), source_dir=tmp_path)
+        progress = MagicMock()
+
+        worker.start()
+        worker.wait(progress=progress)
+
+        assert not worker._thread.is_alive()
+        progress.assert_any_call("Indexing complete.")
