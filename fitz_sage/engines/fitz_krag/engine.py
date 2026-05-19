@@ -683,15 +683,8 @@ class FitzKragEngine:
                 # Report timing breakdown
                 _report_timings(_progress, timings, pipeline_start)
 
-                # 7.5. Boost queried files for background worker priority
-                if self._bg_worker:
-                    queried_paths = [
-                        a.metadata.get("disk_path")
-                        for a in outcome.addresses
-                        if a.metadata.get("disk_path")
-                    ]
-                    if queried_paths:
-                        self._bg_worker.boost_files(queried_paths)
+                # 7.5. Flag queried files for background-worker priority + warming
+                self._boost_queried_files(outcome)
 
                 return answer
 
@@ -731,11 +724,33 @@ class FitzKragEngine:
             logger.info("Starting retrieval", query_length=len(query.text))
             try:
                 outcome = self._retrieve_core(query, progress=progress)
+                self._boost_queried_files(outcome)
                 if not outcome.expanded:
                     return []
                 return compress_results(outcome.expanded)
             except Exception as e:
                 raise KnowledgeError(f"Retrieval failed: {e}") from e
+
+    def _boost_queried_files(self, outcome: "_RetrievalOutcome") -> None:
+        """Flag the files this query surfaced for the background worker.
+
+        Bumps them to P1 so the worker prioritizes their eager indexing and,
+        after the eager phases, summarizes them on demand (the warm loop).
+        Agentic results carry the rel_path in metadata; section/code/table
+        results carry the file id in ``source_id``, resolved via the manifest.
+        """
+        if not self._bg_worker or not self._manifest:
+            return
+        rel_by_id = {e.file_id: rp for rp, e in self._manifest.entries().items()}
+        rel_paths: set[str] = set()
+        for addr in outcome.addresses:
+            disk_path = addr.metadata.get("disk_path")
+            if disk_path:
+                rel_paths.add(disk_path)
+            elif addr.source_id in rel_by_id:
+                rel_paths.add(rel_by_id[addr.source_id])
+        if rel_paths:
+            self._bg_worker.boost_files(list(rel_paths))
 
     @contextmanager
     def _query_scope(self) -> Any:

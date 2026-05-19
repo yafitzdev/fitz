@@ -36,7 +36,6 @@ K_VALUES = (5, 10, 20)
 PRIMARY_K = 10
 DEFAULT_TOLERANCE = 0.03
 DEFAULT_REPEATS = 3
-INDEXING_TIMEOUT = 3600.0
 
 
 # ---------------------------------------------------------------------------
@@ -58,18 +57,20 @@ def _clean_collection(collection: str) -> None:
             db.unlink()
 
 
-def _wait_for_indexing(engine, timeout: float = INDEXING_TIMEOUT) -> bool:
-    """Block until background indexing finishes. Returns False if it timed out."""
+def _wait_for_indexing(engine) -> bool:
+    """Block until *eager* indexing finishes (parse/enrich/finalize).
+
+    The worker thread does not exit afterwards — it keeps running the
+    demand-driven warm loop — so this waits on the worker's eager-done
+    signal (``worker.wait()``), not thread death.
+    """
     worker = getattr(engine, "_bg_worker", None)
     thread = getattr(worker, "_thread", None) if worker else None
     if not thread or not thread.is_alive():
         return True
     print("  indexing in background...")
     t0 = time.monotonic()
-    thread.join(timeout=timeout)
-    if thread.is_alive():
-        print(f"  WARNING: indexing still running after {timeout:.0f}s — index incomplete")
-        return False
+    worker.wait()
     print(f"  indexed in {time.monotonic() - t0:.1f}s")
     return True
 
