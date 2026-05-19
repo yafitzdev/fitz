@@ -92,10 +92,10 @@ Results from all sub-queries are merged using RRF:
 ## Files
 
 - **Detection module:** `fitz_sage/retrieval/detection/modules/temporal.py`
-- **Orchestrator:** `fitz_sage/retrieval/detection/registry.py`
+- **Query intelligence:** `fitz_sage/engines/fitz_krag/query_batcher.py` (`QueryBatcher`)
 - **Integration:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
 
-Detection is now LLM-based via the unified `DetectionOrchestrator`. The `TemporalModule` contributes its prompt fragment and parses `TemporalIntent` (COMPARISON, TREND, POINT_IN_TIME, RANGE, SEQUENCE) from the combined LLM response.
+Detection is LLM-based. The `TemporalModule` contributes its prompt fragment to the single batched `QueryBatcher` call and parses `TemporalIntent` (COMPARISON, TREND, POINT_IN_TIME, RANGE, SEQUENCE) from the combined LLM response.
 
 ## Benefits
 
@@ -124,7 +124,7 @@ Detection is now LLM-based via the unified `DetectionOrchestrator`. The `Tempora
 
 ## Dependencies
 
-- Requires chat LLM client for detection (unified `DetectionOrchestrator`)
+- Requires a chat LLM client for detection (the batched `QueryBatcher` call)
 - Part of the combined LLM classification call (no additional latency)
 
 ## Related Features

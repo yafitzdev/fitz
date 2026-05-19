@@ -1,114 +1,103 @@
-# Keyword Vocabulary (Exact Match)
+# Exact Identifier Matching
 
 ## Problem
 
-BM25 token matching is forgiving — `TC-1001` and `TC-1002` share the
-prefix `TC` and are tokenised similarly. For most queries that's
-fine, but for identifier lookups it's exactly wrong:
+Identifier lookups need exact matching, not soft semantic similarity:
 
-- **Q:** "What happened with `TC-1001`?"
-- **Pure BM25:** also returns `TC-1002`, `TC-1003`, `TC-999` —
-  the FTS5 tokeniser treats them as similar terms.
-- **Expected:** only `TC-1001`.
+- **Q:** "What happened with `TC_1000`?"
+- **Embedding search:** treats `TC_1000` ≈ `TC_2000` — they are
+  semantically near-identical, so the wrong test case comes back.
+- **Expected:** only `TC_1000`.
 
-Test case IDs, ticket numbers, version strings, function names, and
-similar tokens need **exact matching with controlled variation**, not
-soft token overlap.
+Test case IDs, ticket numbers, version strings, error codes, function
+names, and similar tokens need **exact lexical matching**, not vector
+similarity.
 
-## Solution: keyword vocabulary pre-filter
+## Solution: SQLite FTS5 + native bm25()
 
-fitz-sage auto-detects identifiers during ingestion, stores them in a
-per-collection vocabulary table, and uses that vocabulary to
-pre-filter candidates before BM25.
+fitz-sage runs no embedding model. All text search is lexical: typed
+units (code symbols, document sections) are indexed in SQLite FTS5, and
+ranking uses SQLite's native `bm25()` function. Because FTS5 matches on
+literal tokens, an identifier like `TC_1000` or `E_AUTH_401` matches
+the unit that actually contains that token — not a vaguely similar one.
 
 ```
-Q: "What happened with TC-1001?"
+Q: "error code E_AUTH_401"
      │
      ▼
-Vocabulary lookup → matches { TC-1001 }
+FTS5 query over krag_section_fts / krag_symbol_fts
      │
      ▼
-BM25 search restricted to addresses
-that mention TC-1001 (or a variation)
+bm25() ranks units containing the literal token E_AUTH_401
      │
      ▼
-Result: only TC-1001 content, never TC-1002
+Result: the section that defines E_AUTH_401, not E_AUTH_403
 ```
+
+This is the **sparse-search** feature — see
+[Sparse Search (FTS5 + bm25)](sparse-search.md) for the full mechanics.
+There is no separate vocabulary store and no identifier pre-filter
+stage.
 
 ## How it works
 
 ### At ingestion
 
-1. **Pattern detection.** Regex patterns surface candidate identifiers:
-   - Test cases: `TC-\d+`, `testcase_\d+`, `TEST_\w+`
-   - Tickets: `JIRA-\d+`, `BUG-\d+`, `ISSUE-\d+`
-   - Versions: `v?\d+\.\d+\.\d+`, `\d+\.\d+-beta`
-   - Code identifiers: `[A-Z][a-zA-Z]+Service`, `\w+Controller`
+1. **Typed-unit extraction.** Code files are parsed into symbols,
+   documents into sections. The raw text — including every identifier
+   it contains — is stored verbatim.
 
-2. **Vocabulary storage (SQLite).**
+2. **FTS5 indexing.** Symbol and section text is indexed into FTS5
+   virtual tables (`krag_symbol_fts`, `krag_section_fts`). The FTS5
+   tokenizer keeps identifier tokens intact.
 
-   ```sql
-   -- per-collection .db
-   CREATE TABLE IF NOT EXISTS keywords (
-       id            TEXT PRIMARY KEY,
-       category      TEXT NOT NULL,
-       match         TEXT NOT NULL DEFAULT '[]',  -- JSON array of variations
-       occurrences   INTEGER NOT NULL DEFAULT 1,
-       first_seen    TEXT,
-       user_defined  INTEGER NOT NULL DEFAULT 0,
-       auto_generated TEXT NOT NULL DEFAULT '[]'
-   );
-   ```
-
-3. **Variation normalisation.** A single keyword gets a JSON array
-   of normalised variations (`TC-1001` ↔ `tc-1001` ↔ `TC_1001` ↔
-   `TC 1001`) so the runtime can match across surface differences.
+3. **Keyword enrichment (optional).** When `enable_enrichment` is set,
+   `KragEnricher` additionally extracts exact-match identifiers as
+   `keywords` on each unit (function names, class names, IDs,
+   abbreviations). These keywords are stored on the unit and are
+   themselves searchable text.
 
 ### At query time
 
-1. **Detect identifiers in the question.** Same regex set runs over
-   the query.
-2. **Pre-filter.** If any identifier matches the vocabulary, restrict
-   the BM25 candidate pool to addresses that reference at least one
-   matching variation.
-3. **Soft fallback.** If no identifier is detected (or no matches in
-   the vocabulary), the pipeline runs unfiltered BM25 — no behaviour
-   change for ordinary questions.
-4. **Case- and delimiter-insensitive matching.**
+1. **FTS5 match.** The query runs as an FTS5 MATCH over the symbol and
+   section indexes.
+2. **bm25() ranking.** SQLite's native `bm25()` scores the matches —
+   units containing the literal identifier rank highest.
+3. **No special-casing.** Identifier queries and ordinary keyword
+   queries take the exact same path; there is no separate detector or
+   pre-filter.
 
 ## Key design decisions
 
-1. **Always-on.** Baked into ingestion and retrieval. No configuration.
-2. **Pre-filter, not post-filter.** Filtering happens before BM25 so
-   the candidate pool stays small.
-3. **Graceful degradation.** No identifier → unfiltered pipeline.
-4. **SQLite-native.** Vocabulary lives in the same `.db` file as the
-   rest of the collection. Deleted automatically when the collection
-   file is removed.
+1. **No embeddings at all.** fitz-sage is lexical-only, so exact
+   identifier matching is the default behavior, not an add-on.
+2. **One search path.** Identifiers and ordinary terms share the FTS5 +
+   `bm25()` path — no vocabulary table, no pre-filter, no fallback
+   branch.
+3. **SQLite-native.** The FTS5 index lives in the same per-collection
+   `.db` file as everything else. Deleting the collection file deletes
+   the index.
 
 ## Configuration
 
-None. Internal knobs in `KeywordExtractor`:
-
-- Pattern regex set
-- Minimum keyword length (default 3)
-- Maximum keywords per chunk (default 50)
+None. FTS5 + `bm25()` are always active. Optional keyword enrichment is
+controlled by the `enable_enrichment` engine-config flag.
 
 ## Files
 
 | Component             | Path                                                        |
 | --------------------- | ----------------------------------------------------------- |
-| Vocabulary module     | `fitz_sage/retrieval/vocabulary/`                           |
-| SQLite store          | `fitz_sage/retrieval/vocabulary/store.py` (`VocabularyStore`) |
-| Query-time filter     | KRAG retrieval router (`fitz_sage/engines/fitz_krag/retrieval/router.py`) |
-| Ingestion hook        | `fitz_sage/ingestion/enrichment/modules/chunk/keywords.py`  |
+| FTS5 / bm25 search    | `fitz_sage/engines/fitz_krag/retrieval/` (section + symbol search strategies) |
+| Symbol / section FTS5 indexes | `fitz_sage/engines/fitz_krag/ingestion/schema.py`   |
+| Keyword enrichment    | `fitz_sage/engines/fitz_krag/ingestion/enricher.py` (`KragEnricher`) |
 
-## Detected identifier types
+## Identifier types matched exactly
 
 | Type            | Examples                                          |
 | --------------- | ------------------------------------------------- |
 | Test cases      | `TC-1001`, `testcase_42`, `TEST_AUTH`             |
 | Tickets         | `JIRA-4521`, `BUG-789`, `ISSUE-123`               |
+| Error codes     | `E_AUTH_401`, `ERR_TIMEOUT`                       |
 | Versions        | `v2.0.1`, `1.0.0-beta`, `3.5`                     |
 | Code classes    | `AuthService`, `UserController`, `PaymentHandler` |
 | Code functions  | `handle_login()`, `process_payment()`             |
@@ -118,30 +107,26 @@ None. Internal knobs in `KeywordExtractor`:
 
 **Query:** "What tests failed in TC-1001?"
 
-**Pure BM25:**
-1. `TC-1002 test results: PASS`
-2. `TC-1003 failure log: timeout error`
-3. `TC-1001 status: FAIL (assertion error)`
+FTS5 + `bm25()` ranks units containing the literal token `TC-1001`
+above units mentioning `TC-1002` or `TC-1003`:
 
-**With keyword vocabulary pre-filter:**
 1. `TC-1001 status: FAIL (assertion error)`
 2. `TC-1001 detailed logs: line 42 failed`
 3. `TC-1001 reproduction steps`
 
-Only addresses containing `TC-1001` (or a recognised variation) make
-it to the BM25 stage.
+Because the match is lexical, the wrong test case is not retrieved
+just because it looks similar.
 
 ## Dependencies
 
 - SQLite + FTS5 (already required by the rest of fitz-sage).
-- `VocabularyStore` lives in the per-collection `.db`; deleting the
-  collection file deletes the vocabulary too.
+- No embedding model, no vocabulary store.
 
 ## Related
 
-- [Sparse Search (FTS5 + bm25)](sparse-search.md) — handles soft
-  token matching once the vocabulary has restricted the candidate pool
-- [Query Expansion](query-expansion.md) — handles synonyms; vocabulary
-  handles exact identifiers
+- [Sparse Search (FTS5 + bm25)](sparse-search.md) — the FTS5 + native
+  `bm25()` retrieval that delivers exact-identifier matching
+- [Query Expansion](query-expansion.md) — handles synonyms and acronym
+  expansion (the soft-matching counterpart)
 - [Multi-Query RAG](multi-query-rag.md) — long queries may contain
-  multiple keywords to filter on
+  multiple identifiers to match

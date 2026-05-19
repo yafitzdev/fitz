@@ -30,7 +30,7 @@ Both entity sets merged → complete comparison data
 
 ### LLM-Based Comparison Detection
 
-Detection uses a unified LLM classifier (one call for all detection types). The `ComparisonModule` identifies comparison queries and extracts entities:
+Detection rides the single batched `QueryBatcher` LLM call (one call for analysis + all detection types + rewriting + keywords). The `ComparisonModule` identifies comparison queries and extracts entities:
 
 ```python
 # ComparisonModule identifies:
@@ -85,10 +85,10 @@ Internal parameters:
 ## Files
 
 - **Detection module:** `fitz_sage/retrieval/detection/modules/comparison.py`
-- **Orchestrator:** `fitz_sage/retrieval/detection/registry.py`
+- **Query intelligence:** `fitz_sage/engines/fitz_krag/query_batcher.py` (`QueryBatcher`)
 - **Integration:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
 
-Detection is now LLM-based via the unified `DetectionOrchestrator`. The `ComparisonModule` extracts entities and generates entity-specific sub-queries.
+Detection is LLM-based. The `ComparisonModule` contributes its prompt fragment to the batched `QueryBatcher` call, then extracts entities and generates entity-specific sub-queries.
 
 ## Benefits
 
@@ -157,7 +157,7 @@ Detection is now LLM-based via the unified `DetectionOrchestrator`. The `Compari
 
 ## Dependencies
 
-- Requires chat LLM client for detection (unified `DetectionOrchestrator`)
+- Requires a chat LLM client for detection (the batched `QueryBatcher` call)
 - Part of the combined LLM classification call (no additional latency)
 
 ## Performance Considerations

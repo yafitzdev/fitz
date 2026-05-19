@@ -135,7 +135,7 @@ Sweep: Q1 ∈ [0.40, 0.80), Q2 ∈ [0.20, 0.55), Q3 ∈ [0.20, 0.72), Q4 ∈ [0.
 
 ### 1. Improved DetectionClassifier (ML + Keyword)
 
-v3.0 detection flags (`detection_temporal`, `detection_comparison`) came from keyword/regex rules inside `DetectionOrchestrator`. v5.0 replaced this with an ML+keyword hybrid `DetectionClassifier`:
+v3.0 detection flags (`detection_temporal`, `detection_comparison`) came from keyword/regex rules in the detection layer. v5.0 replaced this with an ML+keyword hybrid `DetectionClassifier`:
 
 | Detection Type | Recall |
 |----------------|--------|
@@ -222,7 +222,7 @@ python -m tools.governance.calibrate_cascade
 | `fitz_sage/governance/data/model_v6_cascade.joblib` | Production cascade artifact |
 | `fitz_sage/governance/decider.py` | GovernanceDecider (production inference) |
 | `fitz_sage/governance/constraints/feature_extractor.py` | Runtime feature extraction (108 features) |
-| `retrieval/detection/registry.py` | DetectionOrchestrator with ML DetectionClassifier |
+| `retrieval/detection/classifier.py` | ML+keyword `DetectionClassifier` |
 
 ---
 

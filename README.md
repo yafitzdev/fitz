@@ -295,7 +295,7 @@ Across those tiers, [built-in intelligence](docs/features/retrieval) handles the
 | [**entity-graph**](docs/features/retrieval/entity-graph.md) | "What else mentions AuthService?" | ❌ Isolated chunks — No awareness of shared entities across docs | ✅ Entity-based linking across sources |
 | [**temporal-queries**](docs/features/retrieval/temporal-queries.md) | "What changed between Q1 and Q2?" | ❌ Random chunks — No awareness of time periods in query | ✅ Temporal query handling |
 | [**aggregation-queries**](docs/features/retrieval/aggregation-queries.md) | "List all the test cases that failed" | ❌ Partial list — No mechanism for comprehensive retrieval | ✅ Aggregation query handling |
-| [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What does the official spec say?" | ❌ Returns notes — Can't distinguish authoritative vs informal sources | ✅ Freshness/authority boosting |
+| [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What's the latest status on feature X?" | ❌ Old docs rank equally — No awareness of how recent a document is | ✅ Recency boosting |
 | [**query-expansion**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | ❌ No matches — User says "fetch", docs say "retrieve"; "db" vs "database" | ✅ LLM-driven synonym expansion (no embeddings) |
 | [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | ❌ Lost context — Pronouns like "it" reference nothing, retrieval fails | ✅ Conversational context resolution |
 | [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ❌ Imprecise ranking — BM25 ≠ true relevance; best answer buried | ✅ ONNX cross-encoder reranker, ~30 ms on CPU |
@@ -534,7 +534,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 │  pyrrho (governance)  |  gte-reranker-modernbert-base         │
 ├───────────────────────────────────────────────────────────────┤
 │  Storage (SQLite + FTS5, one .db per collection)              │
-│  metadata | tables | keywords | full-text search (bm25)       │
+│  symbols | sections | tables | full-text search (bm25)        │
 ├───────────────────────────────────────────────────────────────┤
 │  Retrieval (address-based, baked-in intelligence)             │
 │  symbols | sections | tables | import graphs | reranking      │

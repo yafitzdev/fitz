@@ -17,7 +17,6 @@ This guide covers what's pluggable and how to add a new one.
 | Parser          | Python | `fitz_sage/ingestion/parser/plugins/`          | `parser:`                        |
 | Chunker         | Python | `fitz_sage/ingestion/chunking/plugins/`        | `chunker:` / format auto-routing |
 | Source          | Python | `fitz_sage/ingestion/source/plugins/`          | source spec at ingest time       |
-| Enrichment artifact | Python | `fitz_sage/ingestion/enrichment/artifacts/plugins/` | always-on; presence-controlled |
 
 There is **no embedding plugin, no vector-DB plugin, no rerank plugin**.
 The reranker that does run (`OnnxReranker`) is an INT8 ONNX cross-encoder
@@ -170,16 +169,14 @@ preserve (e.g. a custom XML dialect).
 
 ---
 
-## Adding an Enrichment Artifact
+## Enrichment Is Not a Plugin
 
-Enrichment artifacts are LLM-generated supplementary content
-(architecture narrative, dependency summary, etc.) attached to a
-collection. They live under
-`fitz_sage/ingestion/enrichment/artifacts/plugins/` and implement the
-`ArtifactBuilder` protocol.
-
-These are presence-controlled: include the plugin in the list and it
-runs once per collection during ingestion.
+Ingestion enrichment (keyword / entity / temporal extraction and the
+L1/L2 hierarchy summaries) is built into the KRAG ingestion pipeline,
+not a plugin surface. It is controlled by the `enable_enrichment` and
+`enable_hierarchy` engine-config flags. See [ENRICHMENT.md](ENRICHMENT.md)
+for the architecture and [`features/ingestion/hierarchical-rag.md`](features/ingestion/hierarchical-rag.md)
+for the hierarchy details.
 
 ---
 

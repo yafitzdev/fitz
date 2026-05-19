@@ -194,67 +194,69 @@ database server — each collection is a single `.db` file.
 
 ---
 
-## Enrichment Pipeline (Always On)
+## Enrichment (KragIngestPipeline)
 
-The enrichment pipeline adds LLM-generated enhancements. **All chunk-level enrichment is baked in** - no configuration needed.
+KRAG ingestion is driven by `KragIngestPipeline` — per-file operations
+**parse → summarize → enrich**, then a corpus **finalize**. The
+summarize and enrich steps add LLM-generated metadata.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Enrichment Pipeline (always on, runs after chunking)           │
+│  KragIngestPipeline                                             │
+│  per file:  parse → summarize → enrich      corpus:  finalize   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
+│  summarize  →  1-2 sentence LLM summaries for sections / tables  │
+│                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │            ChunkEnricher (Enrichment Bus)                │   │
-│  │         One LLM call per batch (~15 chunks)              │   │
+│  │                     KragEnricher                         │   │
+│  │       One LLM call per batch (~15 symbols/sections)       │   │
 │  ├──────────────────────────────────────────────────────────┤   │
-│  │  Summary    │  Keywords     │  Entities   │ ContentType  │   │
-│  │  Module     │  Module       │  Module     │ Module       │   │
-│  │  (per-chunk │  (exact-match │  (classes,  │ (narrative/  │   │
-│  │  summaries) │  identifiers) │  people)    │ structured)  │   │
+│  │  Keywords         │  Entities          │  Temporal        │   │
+│  │  (exact-match     │  (classes, people, │  (dates,         │   │
+│  │  identifiers)     │  technologies)     │  versions, refs) │   │
 │  └──────────────────────────────────────────────────────────┘   │
-│                              │                                  │
-│  ┌───────────────────────────┴───────────────────────────┐      │
-│  │                Hierarchy Enricher                      │      │
-│  │  Level 0: Chunks (with enrichments from above)         │      │
-│  │  Level 1: Group summaries (per source file)            │      │
-│  │  Level 2: Corpus summary (all documents)               │      │
-│  └────────────────────────────────────────────────────────┘      │
+│                                                                 │
+│  hierarchy summaries (pipeline-built, gated by enable_hierarchy) │
+│    L1: one group summary per document file (on section metadata) │
+│    L2: corpus summary rolled up from L1 (built during finalize)  │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### ChunkEnricher (Baked In)
+### KragEnricher
 
-The `ChunkEnricher` bus extracts **summary + keywords + entities + content type** in a single LLM call per batch of ~15 chunks. This makes enrichment nearly free (~$0.13-0.74 for 1000 chunks).
+`KragEnricher` extracts **keywords + entities + temporal metadata** in a
+single LLM call per batch of ~15 symbols or sections. This makes
+enrichment nearly free (~$0.13-0.74 for 1000 units). Gated by the
+`enable_enrichment` config flag.
 
 **What it extracts:**
-- **Summaries** - Natural language descriptions for each chunk
 - **Keywords** - Exact-match identifiers (TC-1001, JIRA-123, `AuthService`)
 - **Entities** - Named entities (classes, people, technologies)
-- **Content Type** - Classification (`narrative`/`structured`/`technical`/`mixed`)
+- **Temporal metadata** - Dates, version numbers, time references
 
 **Results:**
-- Summaries stored in `chunk.metadata["summary"]`
-- Keywords saved to `VocabularyStore` for exact-match retrieval
-- Entities stored in `chunk.metadata["entities"]`
-- Content type stored in `chunk.metadata["content_type"]`
+- Keywords / entities stored on each symbol's / section's
+  `keywords` and `entities` fields
+- Temporal references stored on `metadata["temporal"]`
+- Entities also fed into the `EntityGraphStore` for related-unit lookup
 
 ### Hierarchy
 
-Multi-level summaries for analytical queries. **Always on by default.**
-
-```yaml
-enrichment:
-  hierarchy:
-    group_by: source_file
-```
+L1 and L2 summaries for analytical queries, built by the pipeline
+itself. Gated by the `enable_hierarchy` config flag (independent of
+`enable_enrichment`).
 
 **Levels:**
-- **Level 0:** Original chunks (with summary, keywords, entities)
-- **Level 1:** Group summaries (e.g., per-file)
-- **Level 2:** Corpus summary (all groups)
+- **Level 1:** Per-file group summary — stored on each document
+  section's `metadata["hierarchy_summary"]`
+- **Level 2:** Corpus summary — rolled up from the L1 summaries during
+  `finalize`, stored as a synthetic retrievable section ("Corpus
+  Overview")
 
-**Use case:** "What are the main themes?" retrieves L1/L2 summaries instead of random chunks.
+**Use case:** "What are the main themes?" retrieves the L2 corpus
+summary instead of random sections.
 
 ---
 
@@ -370,11 +372,10 @@ pass `force=True`. Incremental state is tracked in
 
 | File | Purpose |
 |------|---------|
-| `fitz_sage/ingestion/diff/executor.py` | Main orchestrator |
+| `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | `KragIngestPipeline` — ingestion core (parse/summarize/enrich/finalize) |
+| `fitz_sage/engines/fitz_krag/ingestion/enricher.py` | `KragEnricher` — keyword/entity/temporal extraction |
 | `fitz_sage/ingestion/parser/router.py` | Parser selection |
 | `fitz_sage/ingestion/chunking/router.py` | Chunker selection |
-| `fitz_sage/ingestion/state/manager.py` | State persistence |
-| `fitz_sage/ingestion/enrichment/pipeline.py` | Enrichment orchestrator |
 | `fitz_sage/cli/commands/query.py` | CLI command (--source triggers ingestion) |
 
 ---

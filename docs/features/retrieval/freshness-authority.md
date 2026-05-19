@@ -1,22 +1,28 @@
-# Freshness & Authority Boosting
+# Freshness Boosting
 
 ## Problem
 
 Standard RAG treats all documents equally. This fails when:
 
-- "What's the latest status on feature X?" - Can't distinguish old vs new docs
-- "What does the official spec say?" - Can't distinguish spec vs notes
+- "What's the latest status on feature X?" — Can't distinguish old vs new docs
 
-## Solution: Intent-Triggered Freshness
+Recency-sensitive questions need the retrieval ranking to favor
+recently-modified content.
 
-Detect query intent from keywords and boost documents accordingly:
+## Solution: Intent-Triggered Recency Boosting
 
-- **Recency keywords** ("latest", "recent", "current") → Boost newer documents
-- **Authority keywords** ("official", "spec", "authoritative") → Boost authoritative sources
+Detect recency intent from the query and boost recently-modified files
+accordingly:
+
+- **Recency keywords** ("latest", "recent", "current", "new",
+  "updated", "newest") → boost newer files
 
 ## How It Works
 
-Detection is **LLM-based** via the unified `DetectionOrchestrator`. The `FreshnessModule` analyzes query intent and determines whether to apply recency or authority boosting:
+Detection is **LLM-based**. The `FreshnessModule` contributes a prompt
+fragment to the single batched query-intelligence call made by
+`QueryBatcher`; the LLM sets a `boost_recency` flag from the query
+intent.
 
 ```
 Query comes in
@@ -24,82 +30,62 @@ Query comes in
     ├─ LLM detects recency intent? (asks about "latest", "recent", "current")
     │       │
     │       ▼
-    │   Boost by modified_at (exponential decay, half-life 90 days)
+    │   Multiplicative score boost for recently-modified files
     │
-    ├─ LLM detects authority intent? (asks about "official", "spec", "authoritative")
-    │       │
-    │       ▼
-    │   Boost by source_type (spec > design > document > notes)
-    │
-    └─ No freshness/authority intent? → Pass through unchanged
+    └─ No recency intent? → Pass through unchanged
 ```
 
 ## Key Design Decisions
 
-1. **Always-on, intent-triggered** - Baked into every pipeline. Only activates when query signals intent.
+1. **On by default, intent-triggered** — part of every query pass. Only
+   activates when the query signals recency intent.
 
-2. **Metadata captured at ingestion** - File timestamps (`modified_at`) and source type (`source_type`) inferred from paths.
+2. **Metadata captured at ingestion** — file modification timestamps
+   are recorded during ingestion.
 
-3. **Additive score adjustment** - Doesn't override relevance, just adds recency/authority boost.
+3. **Multiplicative score boost** — recently-modified files get their
+   relevance score scaled up; it does not override relevance ordering
+   for non-recency queries.
 
-4. **Graceful degradation** - If metadata missing, chunks pass through unchanged.
-
-## Source Type Inference
-
-During ingestion, source authority is inferred from file paths:
-
-| Path Pattern | Source Type | Authority Score |
-|--------------|-------------|-----------------|
-| `/spec/`, `/specs/`, `/requirements/` | spec | 1.0 |
-| `/design/`, `/architecture/`, `/adr/` | design | 0.8 |
-| (default) | document | 0.6 |
-| `/notes/`, `/drafts/`, `/scratch/` | notes | 0.4 |
+4. **Graceful degradation** — if timestamp metadata is missing, units
+   pass through unchanged.
 
 ## Example
 
-**Query:** "What does the official spec say about battery warranty?"
+**Query:** "What's the latest status on the battery warranty change?"
 
-**Before freshness boost:**
-1. notes/meeting_notes.md (score: 0.85) - "discussed battery warranty..."
-2. spec/requirements.md (score: 0.82) - "Battery warranty: 8 years..."
-3. products.md (score: 0.80) - "8-year warranty included"
+**Before recency boost:**
+1. notes/old_review_2023.md (score: 0.85)
+2. status/warranty_update_2026.md (score: 0.82)
 
-**After freshness boost:** (authority keyword "official" detected)
-1. spec/requirements.md (score: 0.97) - boosted by +0.15 (spec authority)
-2. notes/meeting_notes.md (score: 0.91) - boosted by +0.06 (notes authority)
-3. products.md (score: 0.89) - boosted by +0.09 (document authority)
+**After recency boost:** (recency keyword "latest" detected)
+1. status/warranty_update_2026.md (score: boosted — recently modified)
+2. notes/old_review_2023.md (score: 0.85)
 
 ## Configuration
 
-No configuration required. Feature is baked into the retrieval pipeline.
-
-Default weights:
-- `recency_weight`: 0.15 (max boost for very recent docs)
-- `authority_weight`: 0.15 (max boost for spec docs)
-- `recency_half_life_days`: 90 (days until recency score halves)
+No configuration required. The feature is built into the retrieval
+pipeline.
 
 ## Intent Keywords
 
 **Recency triggers:**
-- "latest", "recent", "current", "new", "updated", "newest", "now", "today"
-
-**Authority triggers:**
-- "official", "spec", "specification", "requirement", "authoritative", "canonical", "standard", "definitive"
+- "latest", "recent", "current", "new", "updated", "newest"
 
 ## Implementation
 
 - **Detection module:** `fitz_sage/retrieval/detection/modules/freshness.py`
-- **Metadata ingestion:** `fitz_sage/ingestion/source/plugins/filesystem.py`
-- **Orchestrator:** `fitz_sage/retrieval/detection/registry.py`
+- **Query intelligence:** `fitz_sage/engines/fitz_krag/query_batcher.py` (`QueryBatcher`)
 
-Detection is now LLM-based via the unified `DetectionOrchestrator`. The `FreshnessModule` determines `boost_recency` and `boost_authority` flags from query intent.
+Detection is LLM-based. The `FreshnessModule` contributes a prompt
+fragment to the batched `QueryBatcher` call and parses a `boost_recency`
+flag from the combined response.
 
 ## Benefits
 
 | Without Freshness | With Freshness |
 |-------------------|----------------|
 | Old docs rank equally | Recent docs boosted when asked |
-| Notes = Specs | Specs prioritized when "official" |
 | User filters manually | Intent-based automatic boosting |
 
 ## Related Features

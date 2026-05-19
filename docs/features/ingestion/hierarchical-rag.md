@@ -19,33 +19,44 @@ Level 2: Corpus summary (all documents)
          ↓
 Level 1: Group summaries (per source file)
          ↓
-Level 0: Original chunks (granular content)
+Level 0: Original sections (granular content)
 ```
 
 Query routing is automatic — summaries match analytical queries via the BM25 + ONNX cross-encoder reranker pipeline because the summary text matches the broader phrasing those queries use.
 
 ## How It Works
 
+The `KragIngestPipeline` builds the hierarchy itself — there is no
+separate hierarchy enricher. L1 summaries are produced during the
+per-file `enrich` step; the L2 summary during the corpus `finalize`
+step. Both are gated by the `enable_hierarchy` config flag.
+
 ### At Ingestion
 
-1. **Level 0: Original chunks** - Documents are chunked normally (500-1000 tokens)
-   - Tagged with `hierarchy_level: 0`
-   - Enriched with `hierarchy_summary` metadata containing their group's L1 summary
+1. **Level 0: Original sections** - Documents are parsed into sections
+   normally, with 1-2 sentence per-section LLM summaries.
 
-2. **Level 1: Group summaries** - Each source file gets a summary:
-   - Aggregates all chunks from that file
-   - LLM generates a ~200-word summary
-   - **NOT stored as separate chunks** - only as metadata on L0 chunks
+2. **Level 1: Group summaries** - During `enrich_file`, each document
+   file gets one group summary:
+   - The pipeline summarizes the file's sections into a 2-3 sentence
+     overview of what the document covers.
+   - **NOT stored as a separate section** - written to each section's
+     `metadata["hierarchy_summary"]`.
+   - Code symbols carry their own machine-readable structure (imports,
+     AST), so they get no hierarchy summary.
 
-3. **Level 2: Corpus summary** - Entire collection gets a summary:
-   - Aggregates all Level 1 summaries
-   - LLM generates a ~500-word summary
-   - **The ONLY separate chunk created** - stored with `hierarchy_level: 2`
+3. **Level 2: Corpus summary** - During `finalize`, the entire
+   collection gets a summary:
+   - The pipeline rolls all L1 summaries up into a 3-5 sentence corpus
+     summary describing the overall system.
+   - **Stored as a synthetic retrievable section** titled "Corpus
+     Overview" under a fixed synthetic raw file, so re-ingest upserts
+     it in place.
 
 ### At Query Time
 
-Only L0 and L2 are indexed in FTS5 (L1 lives as metadata on each L0
-row). BM25 returns:
+Only L0 sections and the L2 corpus section are indexed in FTS5 (L1
+lives as metadata on each L0 row). BM25 returns:
 
 ```
 Q: "What are the overall trends?"
@@ -54,46 +65,48 @@ Q: "What are the overall trends?"
 → Result: High-level answer spanning all documents
 
 Q: "What did users say about the async tutorial?"
-→ L0 chunks from async_tutorial.md score high on the specific tokens
-→ L1 summary available via hierarchy_summary metadata for context
-→ Result: Specific, granular content with file-level context
+→ L0 sections from async_tutorial.md score high on the specific tokens
+→ Result: Specific, granular content from the matching file
 ```
 
 ## Key Design Decisions
 
-1. **Always-on** — summaries are generated automatically during ingestion. No configuration needed.
+1. **On by default** — summaries are generated automatically during
+   ingestion, gated by the `enable_hierarchy` config flag.
 
 2. **Automatic routing** — abstract queries lexically match the L2
    summary; specific queries match L0 token-for-token. The LLM
    reranker resolves edge cases.
 
-3. **Incremental updates** - When a file changes, only its L1 summary regenerates. L2 regenerates if significant change.
+3. **Wholesale rebuild** - `finalize` re-runs the L2 summary on every
+   re-ingest. Incremental hierarchy is a v2 concern.
 
-4. **Tagged indexing** - Summaries are stored as special chunks with `hierarchy_level` metadata.
+4. **Two storage shapes** - L1 lives as `hierarchy_summary` metadata on
+   each L0 section; L2 is a single synthetic retrievable section.
 
 5. **LLM-generated** - Uses the same chat LLM to generate summaries (no separate model).
 
 ## Configuration
 
-Minimal configuration required. Feature is baked into the ingestion pipeline.
-
-Optional configuration in `enrichment.yaml`:
+The feature is built into the KRAG ingestion pipeline and controlled by
+one engine-config flag:
 
 ```yaml
-hierarchy:
-  group_by: source_file   # metadata key to group L1 summaries by
+enable_hierarchy: true   # build L1/L2 summaries during ingestion (default)
 ```
 
-Internal parameters:
-- Group size limits for L1 summaries
-- Epistemic assessment for detecting conflicts
+`enable_hierarchy` is independent of `enable_enrichment` — a document
+file still gets an L1 summary when keyword/entity enrichment is off.
 
 ## Files
 
-- **Hierarchical enricher:** `fitz_sage/ingestion/enrichment/hierarchy/enricher.py`
-- **Chunk grouper (by metadata key):** `fitz_sage/ingestion/enrichment/hierarchy/grouper.py`
-- **Summary storage:** L2 indexed in SQLite FTS5 (tagged `hierarchy_level: 2`), L1 as metadata on L0
-- **Ingestion hook:** `fitz_sage/ingestion/enrichment/pipeline.py` (calls hierarchy enrichment)
+- **Ingestion pipeline:** `fitz_sage/engines/fitz_krag/ingestion/pipeline.py`
+  — `KragIngestPipeline` builds L1 (`_generate_l1_summary`) during
+  `enrich_file` and L2 (`_build_corpus_summary`) during `finalize`
+- **Summary storage:** L2 stored as a synthetic "Corpus Overview"
+  section indexed in SQLite FTS5; L1 as `hierarchy_summary` metadata on
+  each L0 section
+- **Config flag:** `enable_hierarchy` in `fitz_sage/engines/fitz_krag/config/schema.py`
 
 ## Benefits
 
@@ -115,7 +128,7 @@ Internal parameters:
 - Result: Fragmented, incomplete
 
 **Hierarchical RAG:**
-- Returns: L2 corpus summary + top L1 file summaries
+- Returns: L2 corpus summary
 - Result:
 
 ```
@@ -130,8 +143,7 @@ The corpus shows three major architectural trends:
 3. Observability focus: 75% emphasize logging, metrics, and distributed tracing
    as first-class architectural concerns.
 
-Sources: architecture_overview.md (L1), microservices_guide.md (L1),
-observability_patterns.md (L1), corpus_summary (L2)
+Sources: Corpus Overview (L2 corpus summary)
 ```
 
 ### Query: "How do I implement authentication in microservices?"
@@ -150,11 +162,11 @@ Hierarchy only activates when BM25 + the ONNX cross-encoder reranker promote a s
 
 | Query Type | Retrieved Level | Reason |
 |------------|----------------|--------|
-| "What are the trends?" | L2 + L1 | Analytical, corpus-level |
-| "Summarize the main points" | L2 + L1 | Analytical, corpus-level |
-| "What topics are covered?" | L2 + L1 | Meta-question about corpus |
+| "What are the trends?" | L2 | Analytical, corpus-level |
+| "Summarize the main points" | L2 | Analytical, corpus-level |
+| "What topics are covered?" | L2 | Meta-question about corpus |
 | "How do I authenticate?" | L0 | Specific, granular |
-| "What does file X say?" | L1 (X) + L0 (X) | File-specific |
+| "What does file X say?" | L0 (X) | File-specific |
 
 ## Dependencies
 

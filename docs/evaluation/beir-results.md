@@ -195,10 +195,10 @@ print(f"nDCG@10: {result.ndcg_at_10:.4f}")
 
 ## Detection Classifier (Shipped in v0.10.1)
 
-BEIR exposed that the real retrieval risk is not document recall but **query misclassification**: the `DetectionOrchestrator` uses the fast-tier LLM (qwen2.5:3b) to detect temporal, comparison, causal, aggregation, and freshness signals. If it misses, all downstream routing is wrong — silently.
+BEIR exposed that the real retrieval risk is not document recall but **query misclassification**: the batched `QueryBatcher` call uses the fast-tier LLM (qwen2.5:3b) to detect temporal, comparison, causal, aggregation, and freshness signals. If it misses, all downstream routing is wrong — silently.
 
 **Implemented:** `DetectionClassifier` (`retrieval/detection/classifier.py`) — an ML + keyword classifier that gates LLM detection calls:
 - **ML model** (logistic regression + TF-IDF): temporal 90.6% recall, comparison 90.2% recall
-- **Keyword regex**: aggregation, freshness, rewriter (no ML needed)
+- **Keyword regex**: aggregation, freshness (no ML needed)
 - **Fail-open**: if the model artifact is missing or prediction fails, all LLM modules run as before
 - Queries flagged by the classifier trigger only the relevant LLM modules; unflagged queries skip LLM detection entirely

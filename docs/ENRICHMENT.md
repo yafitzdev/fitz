@@ -1,189 +1,111 @@
-# Enrichment Pipeline
+# Enrichment
 
-LLM-powered enhancements for ingested content. **Always on, nearly free.**
+LLM-powered enhancements added to ingested content. **Always on when a chat client is available, nearly free.**
 
 ---
 
 ## Overview
 
-The enrichment pipeline adds AI-generated metadata to chunks during ingestion. All enrichment is **baked in** - no configuration needed.
+Enrichment adds AI-generated metadata to typed retrieval units (code symbols, document sections) during ingestion. It runs as part of the KRAG ingestion pipeline — no separate orchestrator, no configuration beyond two toggles.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Standard Pipeline                                              │
-│  Files → Parse → Chunk → Index (SQLite + FTS5)                  │
+│  KRAG Ingestion Pipeline (KragIngestPipeline)                   │
+│  per file:  parse → summarize → enrich      corpus:  finalize   │
 └─────────────────────────────────────────────────────────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Enrichment Pipeline (always on)                                │
+│  enrich step                                                    │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │              ChunkEnricher (Enrichment Bus)             │    │
-│  │         One LLM call per batch (~15 chunks)             │    │
+│  │                    KragEnricher                         │    │
+│  │      One LLM call per batch (~15 symbols/sections)       │    │
 │  ├─────────────────────────────────────────────────────────┤    │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐  │    │
-│  │  │ Summary  │ │ Keywords │ │ Entities │ │ContentType  │  │    │
-│  │  │ Module   │ │  Module  │ │  Module  │ │  Module     │  │    │
-│  │  │          │ │          │ │          │ │             │  │    │
-│  │  │Per-chunk │ │ Exact-   │ │ Named    │ │ narrative/  │  │    │
-│  │  │ search   │ │ match IDs│ │ entities │ │ structured/ │  │    │
-│  │  │summaries │ │ for vocab│ │          │ │ technical   │  │    │
-│  │  └──────────┘ └──────────┘ └──────────┘ └─────────────┘  │    │
+│  │  Keywords          │  Entities          │  Temporal      │    │
+│  │  exact-match IDs   │  named entities    │  dates /       │    │
+│  │  (TC-1001, class   │  with types        │  versions /    │    │
+│  │  names, ...)       │  ({name, type})    │  refs          │    │
 │  └─────────────────────────────────────────────────────────┘    │
-│                              │                                  │
-│  ┌───────────────────────────┴───────────────────────────┐      │
-│  │                   Hierarchy Enricher                   │      │
-│  │                                                        │      │
-│  │  Level 0: Chunks (with enrichments from above)         │      │
-│  │  Level 1: Group summaries (per source file)            │      │
-│  │  Level 2: Corpus summary (all documents)               │      │
-│  └────────────────────────────────────────────────────────┘      │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │       Hierarchy summaries (pipeline-built)               │    │
+│  │  L1: one group summary per document file                 │    │
+│  │  L2: one corpus summary rolled up from the L1 summaries  │    │
+│  └─────────────────────────────────────────────────────────┘    │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **Key features:**
-- **Summaries** - Natural language descriptions for better semantic search
-- **Keywords** - Exact-match identifiers (TC-1001, JIRA-123, `AuthService`)
-- **Entities** - Named entity extraction (classes, people, technologies)
-- **Content Type** - Classification (`narrative`/`structured`/`technical`/`mixed`)
-- **Hierarchy** - Multi-level summaries for analytical queries
+- **Keywords** — exact-match identifiers (TC-1001, JIRA-123, `AuthService`)
+- **Entities** — named entity extraction (classes, people, technologies)
+- **Temporal metadata** — dates, version numbers, time references found in the text
+- **Hierarchy** — L1 (per-file) and L2 (corpus) summaries for analytical queries
 
-All features run automatically when a chat client is available.
+Keyword/entity/temporal extraction runs when `enable_enrichment` is set; L1/L2 hierarchy summaries run when `enable_hierarchy` is set. The two toggles are independent — a document file is still given an L1 summary when enrichment is off.
 
 ---
 
-## Architecture: ChunkEnricher
+## Architecture: KragEnricher
 
-The `ChunkEnricher` is the unified enrichment bus that extracts multiple enrichments in a single LLM call per batch of chunks.
+`KragEnricher` (`fitz_sage/engines/fitz_krag/ingestion/enricher.py`) extracts keywords, entities, and temporal metadata in a single LLM call per batch of symbols or sections.
 
 ### How it works
 
-1. **Batching**: Chunks are processed in batches of ~15
-2. **Single LLM call**: One call extracts summary + keywords + entities for the entire batch
-3. **JSON response**: LLM returns structured JSON with all enrichments
-4. **Module parsing**: Each module parses its portion and applies to chunks
+1. **Batching** — symbols and sections are processed in batches (`summary_batch_size`, default 15)
+2. **Single LLM call** — one call extracts keywords + entities + temporal references for the whole batch
+3. **JSON response** — the LLM returns a JSON array, one object per item
+4. **In-place enrichment** — each item dict is updated with `keywords`, `entities`, and (when present) `metadata["temporal"]`
 
 ```python
-# One LLM call returns:
+# One LLM call returns one object per symbol/section:
 [
   {
-    "summary": "Authentication module handling OAuth2 flows...",
     "keywords": ["AuthService", "OAuth2", "JWT_TOKEN"],
-    "entities": [{"name": "AuthService", "type": "class"}, ...]
+    "entities": [{"name": "AuthService", "type": "class"}, ...],
+    "temporal": {"dates": ["2024-03"], "versions": ["v2.3"], "refs": ["latest"]}
   },
-  # ... for each chunk in batch
+  # ... for each item in the batch
 ]
 ```
 
-### Extensibility
-
-Adding new enrichment types is simple - implement `EnrichmentModule`:
-
-```python
-class EnrichmentModule(ABC):
-    @property
-    @abstractmethod
-    def name(self) -> str: ...
-
-    @property
-    @abstractmethod
-    def json_key(self) -> str: ...
-
-    @abstractmethod
-    def prompt_instruction(self) -> str: ...
-
-    @abstractmethod
-    def parse_result(self, data: Any) -> Any: ...
-
-    def apply_to_chunk(self, chunk: Chunk, result: Any) -> None:
-        pass  # Override to attach to chunks
-```
-
-New modules ride the same LLM call at zero additional cost.
+`KragEnricher.enrich_symbols()` enriches code symbols; `enrich_sections()` enriches document sections. Code symbols are described to the LLM by name + kind; sections by title + summary/content.
 
 ---
 
-## Built-in Modules
+## What it extracts
 
-### Summary Module
+### Keywords
 
-Generates searchable descriptions for each chunk.
+Exact-match identifiers — function names, class names, technical terms, IDs, abbreviations. These back exact-identifier matching at query time.
 
-**Input:**
-```python
-def calculate_refund(order_id, amount):
-    """Calculate refund based on return policy."""
-    if days_since_purchase(order_id) > 30:
-        return 0
-    return amount * 0.9  # 10% restocking fee
-```
+**Examples:** `TC-1001`, `JIRA-4521`, `v2.0.1`, `AuthService`, `MAX_RETRIES`, `/api/v2/users`
 
-**Output:**
-```
-"Refund calculation function that applies a 10% restocking fee
- for returns within 30 days, and denies refunds after 30 days."
-```
+**Stored on:** each symbol's / section's `keywords` field (persisted to the symbol / section store).
 
-**Stored in:** `chunk.metadata["summary"]`
+Exact-identifier lookup at query time is delivered by SQLite FTS5 + native `bm25()` — see [Sparse Search](features/retrieval/sparse-search.md). There is no separate vocabulary store.
 
----
+### Entities
 
-### Keyword Module
+Named entities and domain concepts, each tagged with a type.
 
-Extracts exact-match identifiers for vocabulary-based retrieval.
+**Entity types:** `class`, `function`, `person`, `organization`, `technology`, `concept`
 
-**What it extracts:**
-- Test cases: `TC-1001`, `testcase_42`
-- Tickets: `JIRA-4521`, `BUG-789`
-- Versions: `v2.0.1`, `1.0.0-beta`
-- Code identifiers: `AuthService`, `handle_login()`
-- Constants: `MAX_RETRIES`, `API_KEY`
-- API endpoints: `/api/v2/users`
+**Stored on:** each unit's `entities` field. During the enrich step the pipeline also feeds these into the [Entity Graph](features/retrieval/entity-graph.md) (`EntityGraphStore`) for related-unit discovery at query time.
 
-**Stored in:** SQLite `keywords` table (via `VocabularyStore`) for exact-match retrieval at query time.
+### Temporal metadata
 
----
+Dates, version numbers, and relative time references found in the unit text.
 
-### Entity Module
-
-Extracts named entities and domain concepts.
-
-**Entity types:**
-- `class` - Code classes
-- `function` - Functions/methods
-- `person` - People mentioned
-- `organization` - Companies, teams
-- `technology` - Tools, frameworks, protocols
-- `concept` - Domain concepts
-
-**Stored in:** `chunk.metadata["entities"]`
-
-**Used by:** [Entity Graph](features/retrieval/entity-graph.md) for discovering related chunks via shared entities at query time.
-
----
-
-### Content Type Module
-
-Classifies each chunk's content type for retrieval boosting.
-
-**Content types:**
-- `narrative` - Prose, documentation, explanations
-- `structured` - Lists, tables, structured data
-- `technical` - Code, configurations, specifications
-- `mixed` - Combination of types
-
-**Stored in:** `chunk.metadata["content_type"]`
-
-**Used by:** the KRAG retrieval router for document type boosting at query time (narrative vs structured queries).
+**Stored on:** `metadata["temporal"]` — `{dates, versions, refs}`.
 
 ---
 
 ## Hierarchy
 
-Multi-level summaries for analytical queries. **Always on by default.**
+L1 and L2 summaries for analytical queries. Built by `KragIngestPipeline` itself, gated by `enable_hierarchy`.
 
 ### The problem
 
@@ -191,60 +113,43 @@ Standard RAG struggles with analytical questions:
 
 ```
 Q: "What are the main themes in these documents?"
-Standard RAG: Returns random individual chunks (not useful)
+Standard RAG: Returns random individual sections (not useful)
 ```
 
 ### The solution
 
-Hierarchy creates summary layers:
+The pipeline builds two summary layers for document content:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Level 2: Corpus Summary                                        │
-│  "Across 50 documents, the main themes are: API design,         │
+│  "Across these documents, the main themes are: API design,      │
 │   security best practices, and deployment patterns."            │
+│  Stored as a synthetic retrievable section ("Corpus Overview")  │
 └─────────────────────────────────────────────────────────────────┘
-                              ▲
+                              ▲   rolled up from L1
          ┌────────────────────┼────────────────────┐
-         ▼                    ▼                    ▼
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│ Level 1: Group  │  │ Level 1: Group  │  │ Level 1: Group  │
-│ "auth/*.py:     │  │ "api/*.py:      │  │ "deploy/*.py:   │
-│  OAuth2 impl,   │  │  REST endpoints,│  │  Docker config, │
-│  JWT handling"  │  │  validation"    │  │  K8s manifests" │
+│ Level 1: file   │  │ Level 1: file   │  │ Level 1: file   │
+│ group summary   │  │ group summary   │  │ group summary   │
+│ stored on each  │  │ stored on each  │  │ stored on each  │
+│ section's       │  │ section's       │  │ section's       │
+│ metadata        │  │ metadata        │  │ metadata        │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
-         ▲                    ▲                    ▲
-    ┌────┴────┐          ┌────┴────┐          ┌────┴────┐
-    │ Level 0 │          │ Level 0 │          │ Level 0 │
-    │ Chunks  │          │ Chunks  │          │ Chunks  │
-    │ (with   │          │ (with   │          │ (with   │
-    │summary, │          │summary, │          │summary, │
-    │keywords,│          │keywords,│          │keywords,│
-    │entities)│          │entities)│          │entities)│
-    └─────────┘          └─────────┘          └─────────┘
 ```
+
+- **L1 — per-file group summary.** During `enrich_file`, the pipeline summarizes a document file's sections into one 2-3 sentence group summary, stored on each section's `metadata["hierarchy_summary"]`. Code symbols carry their own machine-readable structure (imports, AST), so they get no hierarchy summary.
+- **L2 — corpus summary.** During the corpus `finalize` step, the pipeline rolls all L1 summaries up into a single 3-5 sentence corpus summary, stored as a synthetic retrievable section titled "Corpus Overview".
 
 ### Query behavior
 
 | Query Type | Retrieved |
 |------------|-----------|
-| "What are the trends?" | L2 corpus + L1 group summaries |
-| "Explain the auth module" | L1 auth summary + L0 chunks |
-| "How does validateToken work?" | L0 original chunks |
+| "What are the trends?" | L2 corpus summary scores high on abstract phrasing |
+| "Explain the auth module" | the module's sections (L0), matched on their text |
+| "How does validateToken work?" | the granular L0 sections |
 
-No special query syntax needed - summaries match analytical queries via FTS5/BM25 retrieval.
-
-### Configuration
-
-Hierarchy configuration is the only enrichment setting available. Enrichment runs automatically when a chat client is available -- no `enabled` flag needed (provider presence is the toggle).
-
-```yaml
-enrichment:
-  hierarchy:
-    group_by: source_file         # metadata key for grouping
-    # group_prompt: "..."         # custom group summary prompt
-    # corpus_prompt: "..."        # custom corpus summary prompt
-```
+No special query syntax needed — the L2 summary is an ordinary retrievable section, matched via FTS5/BM25 like any other.
 
 ---
 
@@ -256,63 +161,45 @@ Enrichment runs automatically when you point at a folder. No flags needed:
 fitz query "your question" --source ./docs
 ```
 
-The background worker handles enrichment automatically during indexing.
+The background worker schedules parse → summarize → enrich per file during indexing.
 
 ---
 
 ## Cost Analysis
 
-The ChunkEnricher's batching makes enrichment **nearly free**.
+Batching makes enrichment **nearly free**. `KragEnricher` extracts keywords + entities + temporal for ~15 symbols/sections per LLM call.
 
-### Per batch (~15 chunks)
+### Per batch (~15 units)
 
 | Component | Tokens |
 |-----------|--------|
 | Prompt overhead | ~500 |
-| Chunk content (15 × ~400) | ~6,000 |
+| Unit content (15 × ~400) | ~6,000 |
 | **Total input** | **~6,500** |
 | Response (15 × ~100) | ~1,500 |
 | **Total output** | **~1,500** |
 
 ### Cost per model
 
-| Model | Per Batch | Per Chunk | 1000 Chunks |
-|-------|-----------|-----------|-------------|
+| Model | Per Batch | Per Unit | 1000 Units |
+|-------|-----------|----------|------------|
 | Claude 3.5 Haiku | $0.011 | $0.0007 | **$0.74** |
 | GPT-4o-mini | $0.002 | $0.0001 | **$0.13** |
 
-**For under $1, you get summary + keywords + entities for your entire codebase.**
-
-Adding new enrichment modules costs nothing extra - they ride the same LLM call.
-
-### Comparison with old architecture
-
-| Architecture | LLM Calls (1000 chunks) | Cost |
-|--------------|-------------------------|------|
-| Old: 1 call per chunk | 1,000 | $1-5 |
-| **New: Batched ChunkEnricher** | **67** | **$0.13-0.74** |
+**For under $1, you get keywords + entities + temporal metadata for your entire codebase.** L1/L2 hierarchy summaries add a small number of additional calls (one per document file plus one corpus call).
 
 ---
 
-## Advanced: Custom Rules
+## Configuration
 
-Power users can define custom hierarchy rules:
+Two engine-config toggles control enrichment, both on by default:
 
-```yaml
-enrichment:
-  hierarchy:
-    rules:
-      - name: video_comments
-        paths: ["comments/**/*.txt"]
-        group_by: video_id
-        prompt: "Summarize the sentiment and key themes in these comments."
-        corpus_prompt: "What are the overall trends across all videos?"
+| Flag | Controls |
+|------|----------|
+| `enable_enrichment` | Keyword / entity / temporal extraction (`KragEnricher`) |
+| `enable_hierarchy` | L1 (per-file) and L2 (corpus) hierarchy summaries |
 
-      - name: support_tickets
-        paths: ["tickets/**/*.json"]
-        group_by: category
-        prompt: "Summarize the main issues in this category."
-```
+`summary_batch_size` (default 15) sets the LLM batch size for both summarization and enrichment.
 
 ---
 
@@ -320,11 +207,10 @@ enrichment:
 
 | File | Purpose |
 |------|---------|
-| `fitz_sage/ingestion/enrichment/bus.py` | ChunkEnricher bus and modules |
-| `fitz_sage/ingestion/enrichment/pipeline.py` | Main orchestrator |
-| `fitz_sage/ingestion/enrichment/config.py` | Configuration schema |
-| `fitz_sage/ingestion/enrichment/hierarchy/enricher.py` | Hierarchy generation |
-| `fitz_sage/retrieval/vocabulary/store.py` | Keyword vocabulary storage (SQLite) |
+| `fitz_sage/engines/fitz_krag/ingestion/enricher.py` | `KragEnricher` — batched keyword/entity/temporal extraction |
+| `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | `KragIngestPipeline` — drives enrich + builds L1/L2 summaries |
+| `fitz_sage/engines/fitz_krag/config/schema.py` | `enable_enrichment` / `enable_hierarchy` flags |
+| `fitz_sage/retrieval/entity_graph/` | `EntityGraphStore` — populated from extracted entities |
 
 ---
 

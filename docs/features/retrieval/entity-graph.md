@@ -41,10 +41,13 @@ Expanded set:   [Section A, Section B (AuthService), Section C (OAuth2)]
 
 ### At ingestion time
 
-1. **Entity extraction.** The `EntityModule` of `ChunkEnricher`
-   extracts named entities from each chunk via the chat-tier LLM.
-2. **Graph population.** Entities + address associations are stored
-   in two SQLite tables alongside the rest of the collection:
+1. **Entity extraction.** `KragEnricher` extracts named entities from
+   each typed unit (symbol / section) via the chat-tier LLM, as part of
+   its batched keyword + entity + temporal extraction.
+2. **Graph population.** During the pipeline's `enrich` step, the
+   extracted entities + unit associations are written to the
+   `EntityGraphStore` — two SQLite tables alongside the rest of the
+   collection:
 
    ```
    entities         : (id, name, type, mention_count)
@@ -87,7 +90,7 @@ final   = dedupe(initial + related)
 
 ## Entity types
 
-The `EntityModule` extracts these types (tunable via prompt):
+`KragEnricher` extracts these entity types (tunable via prompt):
 
 | Type           | Examples                                          |
 | -------------- | ------------------------------------------------- |
@@ -110,8 +113,9 @@ None for the user. Tunable via constructor / engine config:
 
 | Component             | Path                                                              |
 | --------------------- | ----------------------------------------------------------------- |
-| Graph store           | `fitz_sage/retrieval/entity_graph/store.py`                       |
-| Entity extraction     | `fitz_sage/ingestion/enrichment/modules/chunk/entities.py`        |
+| Graph store           | `fitz_sage/retrieval/entity_graph/store.py` (`EntityGraphStore`)  |
+| Entity extraction     | `fitz_sage/engines/fitz_krag/ingestion/enricher.py` (`KragEnricher`) |
+| Graph population      | `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` (`_populate_entity_graph`) |
 | KRAG integration      | `fitz_sage/engines/fitz_krag/retrieval/expander.py`               |
 
 ## Example
@@ -136,7 +140,8 @@ behaviour *and* OAuth2 configuration.
 
 ## Dependencies
 
-- `EntityModule` in the enrichment pipeline (always on by default).
+- `KragEnricher` entity extraction during ingestion (runs when
+  `enable_enrichment` is set).
 - Same SQLite `.db` as the rest of the collection (no separate store).
 - Runs inside the KRAG expander; no extra LLM calls at query time.
 
