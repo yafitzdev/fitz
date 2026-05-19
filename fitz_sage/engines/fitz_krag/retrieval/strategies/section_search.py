@@ -166,11 +166,20 @@ class SectionSearchStrategy:
         parent_title = section.get("parent_title")
         location = f"{parent_title} > {title}" if parent_title else title
 
+        # Demand-driven cold path: when no LLM summary exists yet, give the
+        # cross-encoder reranker a content snippet (not just the title) so it
+        # has real text to score against. Once the warm loop summarizes the
+        # file, the real summary replaces this.
+        summary = section.get("summary")
+        if not summary:
+            content = (section.get("content") or "").strip()
+            summary = f"{title}: {content[:300]}" if content else title
+
         return Address(
             kind=AddressKind.SECTION,
             source_id=section["raw_file_id"],
             location=location,
-            summary=section.get("summary") or section["title"],
+            summary=summary,
             score=section.get("combined_score", 0.0),
             metadata={
                 "section_id": section["id"],

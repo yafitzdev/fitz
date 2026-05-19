@@ -113,8 +113,20 @@ class TestToAddress:
         addr = strategy._to_address(section)
         assert addr.summary == "Good summary."
 
-    def test_summary_falls_back_to_title(self, strategy):
-        section = _make_section_result(summary=None, title="Fallback Title")
+    def test_summary_falls_back_to_title_plus_content_snippet(self, strategy):
+        """Demand-driven cold path: with no LLM summary yet, the Address
+        summary is the title + a content snippet so the cross-encoder reranker
+        has real text to score, not just the bare title."""
+        section = _make_section_result(
+            summary=None, title="Fallback Title", content="Real content here."
+        )
         section["combined_score"] = 0.5
         addr = strategy._to_address(section)
-        assert addr.summary == "Fallback Title"
+        assert addr.summary == "Fallback Title: Real content here."
+
+    def test_summary_falls_back_to_title_when_no_content(self, strategy):
+        """If neither summary nor content exists, fall back to the title alone."""
+        section = _make_section_result(summary=None, title="Bare Title", content="")
+        section["combined_score"] = 0.5
+        addr = strategy._to_address(section)
+        assert addr.summary == "Bare Title"
