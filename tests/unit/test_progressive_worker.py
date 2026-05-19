@@ -97,25 +97,32 @@ class TestGetOrderedFiles:
 
 
 class TestScheduling:
-    def test_run_drives_core_through_all_phases(self, tmp_path: Path) -> None:
-        """Every REGISTERED file is parsed, summarized, enriched; finalize runs once."""
+    def test_run_drives_core_through_eager_phases(self, tmp_path: Path) -> None:
+        """Every REGISTERED file is parsed and enriched; finalize runs once.
+
+        Per-section summarization is demand-driven, so ``_run`` does not call
+        ``summarize_file`` during the eager phases — the warm loop does, and
+        only for files a query has surfaced.
+        """
         manifest = FileManifest(tmp_path / "manifest.json")
         manifest.add(_make_entry("src/main.py", file_type=".py"))
         manifest.add(_make_entry("docs/readme.md", file_type=".md"))
 
         core = MagicMock()
         worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-        worker._run()
+        worker.start()
+        worker.wait()  # returns once eager indexing is done
+        worker.stop()  # ends the demand-driven warm loop
 
-        # Both files reached the terminal ENRICHED state
+        # Both files reached the terminal eager state
         assert manifest.get("src/main.py").state == FileState.ENRICHED
         assert manifest.get("docs/readme.md").state == FileState.ENRICHED
 
-        # Core ops called once per file, finalize once for the corpus
+        # Core eager ops called once per file, finalize once for the corpus
         assert core.parse_file.call_count == 2
-        assert core.summarize_file.call_count == 2
         assert core.enrich_file.call_count == 2
         core.finalize.assert_called_once()
+        core.summarize_file.assert_not_called()  # demand-driven — no query yet
 
     def test_parse_phase_passes_file_identity_to_core(self, tmp_path: Path) -> None:
         """The worker hands the core (rel_path, abs_path, file_id) for each file."""
@@ -132,18 +139,15 @@ class TestScheduling:
         assert file_id == "id-src/main.py"
         assert manifest.get("src/main.py").state == FileState.PARSED
 
-    def test_summarize_and_enrich_route_by_file_type(self, tmp_path: Path) -> None:
-        """summarize_file / enrich_file receive the file's id and type."""
+    def test_enrich_phase_routes_by_file_type(self, tmp_path: Path) -> None:
+        """enrich_file receives the file's id and type; PARSED -> ENRICHED."""
         manifest = FileManifest(tmp_path / "manifest.json")
         manifest.add(_make_entry("a.py", file_type=".py", state=FileState.PARSED))
 
         core = MagicMock()
         worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-        worker._summarize_phase()
-        core.summarize_file.assert_called_once_with("id-a.py", ".py")
-        assert manifest.get("a.py").state == FileState.SUMMARIZED
-
         worker._enrich_phase()
+
         core.enrich_file.assert_called_once_with("id-a.py", ".py")
         assert manifest.get("a.py").state == FileState.ENRICHED
 
@@ -237,8 +241,8 @@ class TestWait:
         worker.wait(progress=progress)
         progress.assert_not_called()
 
-    def test_status_line_counts_enriched_files(self, tmp_path: Path) -> None:
-        """_status_line reports enriched / total from manifest file states."""
+    def test_status_line_counts_indexed_files(self, tmp_path: Path) -> None:
+        """_status_line counts indexed (ENRICHED or SUMMARIZED) / total."""
         manifest = FileManifest(tmp_path / "manifest.json")
         manifest.add(_make_entry("a.py", state=FileState.ENRICHED))
         manifest.add(_make_entry("b.py", state=FileState.SUMMARIZED))
@@ -246,7 +250,7 @@ class TestWait:
 
         worker = _build_worker(manifest=manifest, source_dir=tmp_path)
 
-        assert worker._status_line() == "Indexing documents... 1/3"
+        assert worker._status_line() == "Indexing documents... 2/3"
 
     def test_status_line_empty_when_no_files(self, tmp_path: Path) -> None:
         """_status_line is empty for an empty manifest."""
@@ -255,8 +259,13 @@ class TestWait:
 
         assert worker._status_line() == ""
 
-    def test_wait_blocks_until_worker_finishes(self, tmp_path: Path) -> None:
-        """wait() joins the worker thread and reports completion."""
+    def test_wait_returns_when_eager_indexing_done(self, tmp_path: Path) -> None:
+        """wait() returns once eager indexing finishes and reports completion.
+
+        The worker thread stays alive afterwards — it keeps running the
+        demand-driven warm loop — so wait() keys off the eager-done event,
+        not thread exit.
+        """
         manifest = FileManifest(tmp_path / "manifest.json")
         manifest.add(_make_entry("a.py", file_type=".py"))
 
@@ -266,5 +275,45 @@ class TestWait:
         worker.start()
         worker.wait(progress=progress)
 
-        assert not worker._thread.is_alive()
+        assert worker._eager_done.is_set()
         progress.assert_any_call("Indexing complete.")
+        worker.stop()
+
+
+# -------------------------------------------------------------------------
+# 5. Demand-driven warm loop — summarize only query-flagged files
+# -------------------------------------------------------------------------
+
+
+class TestWarmLoop:
+    def test_next_warm_target_picks_queried_enriched_file(self, tmp_path: Path) -> None:
+        """A query-flagged ENRICHED file is the warm loop's next target."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("hot.md", file_type=".md", state=FileState.ENRICHED))
+        manifest.add(_make_entry("cold.md", file_type=".md", state=FileState.ENRICHED))
+        manifest.bump_priority(["hot.md"])  # records last_queried_at
+
+        worker = _build_worker(manifest=manifest, core=MagicMock(), source_dir=tmp_path)
+        target = worker._next_warm_target()
+
+        assert target is not None
+        assert target.rel_path == "hot.md"
+
+    def test_next_warm_target_ignores_unqueried_files(self, tmp_path: Path) -> None:
+        """Files no query has surfaced are never summarized."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("cold.md", file_type=".md", state=FileState.ENRICHED))
+
+        worker = _build_worker(manifest=manifest, core=MagicMock(), source_dir=tmp_path)
+
+        assert worker._next_warm_target() is None
+
+    def test_next_warm_target_skips_already_summarized(self, tmp_path: Path) -> None:
+        """A queried file already SUMMARIZED is not picked again."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("done.md", file_type=".md", state=FileState.SUMMARIZED))
+        manifest.bump_priority(["done.md"])
+
+        worker = _build_worker(manifest=manifest, core=MagicMock(), source_dir=tmp_path)
+
+        assert worker._next_warm_target() is None

@@ -685,8 +685,11 @@ class KragIngestPipeline:
         structure (imports, AST), so symbol-level hierarchy summaries are
         redundant for code.
         """
+        # L1 reads raw section content, not summaries: summarization is demand-driven
         content = "\n".join(
-            f"- {s.get('title', '')}: {s.get('summary')}" for s in sections[:10] if s.get("summary")
+            f"- {s.get('title', '')}: {(s.get('content') or '')[:300]}"
+            for s in sections[:10]
+            if s.get("content")
         )
         if not content:
             return
