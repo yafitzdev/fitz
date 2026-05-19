@@ -9,15 +9,15 @@
         "ndcg@10": null
       },
       "scores": {
-        "recall@5": 0.4278,
-        "ndcg@5": 0.3413,
-        "recall@10": 0.5133,
-        "ndcg@10": 0.3644,
-        "recall@20": 0.5556,
-        "ndcg@20": 0.3728,
-        "recall@5_critical": 0.4667,
-        "recall@10_critical": 0.5067,
-        "recall@20_critical": 0.52
+        "recall@5": 0.4289,
+        "ndcg@5": 0.396,
+        "recall@10": 0.4767,
+        "ndcg@10": 0.4092,
+        "recall@20": 0.56,
+        "ndcg@20": 0.4241,
+        "recall@5_critical": 0.5067,
+        "recall@10_critical": 0.5333,
+        "recall@20_critical": 0.5333
       },
       "updated": "2026-05-19",
       "repeats": 3
@@ -28,12 +28,12 @@
         "ndcg@10": null
       },
       "scores": {
-        "recall@5": 0.8722,
-        "ndcg@5": 0.8767,
-        "recall@10": 0.8722,
-        "ndcg@10": 0.8767,
-        "recall@20": 0.8722,
-        "ndcg@20": 0.8767,
+        "recall@5": 0.8833,
+        "ndcg@5": 0.8833,
+        "recall@10": 0.8833,
+        "ndcg@10": 0.8833,
+        "recall@20": 0.8833,
+        "ndcg@20": 0.8833,
         "recall@5_critical": 0.8833,
         "recall@10_critical": 0.8833,
         "recall@20_critical": 0.8833
@@ -47,15 +47,15 @@
         "ndcg@10": null
       },
       "scores": {
-        "recall@5": 0.6538,
-        "ndcg@5": 0.5526,
-        "recall@10": 0.859,
-        "ndcg@10": 0.6174,
-        "recall@20": 0.859,
-        "ndcg@20": 0.6174,
-        "recall@5_critical": 0.7436,
-        "recall@10_critical": 0.9231,
-        "recall@20_critical": 0.9231
+        "recall@5": 0.7179,
+        "ndcg@5": 0.561,
+        "recall@10": 0.7564,
+        "ndcg@10": 0.5746,
+        "recall@20": 0.7564,
+        "ndcg@20": 0.5746,
+        "recall@5_critical": 0.7949,
+        "recall@10_critical": 0.8462,
+        "recall@20_critical": 0.8462
       },
       "updated": "2026-05-19",
       "repeats": 3
