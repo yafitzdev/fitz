@@ -10,6 +10,7 @@ Usage:
     python -m tools.retrieval_eval.benchmark                  # every mode
     python -m tools.retrieval_eval.benchmark --mode section
     python -m tools.retrieval_eval.benchmark --mode section --skip-ingest
+    python -m tools.retrieval_eval.benchmark --repeats 5      # average 5 runs/query
     python -m tools.retrieval_eval.benchmark --update-baseline
 """
 
@@ -24,7 +25,7 @@ from pathlib import Path
 
 from .dataset import MODES, Dataset, load_dataset
 from .matchers import rank_units
-from .metrics import ndcg_at_k, recall_at_k
+from .metrics import Unit, ndcg_at_k, recall_at_k
 
 HERE = Path(__file__).resolve().parent
 DATASETS_DIR = HERE / "datasets"
@@ -34,6 +35,7 @@ BASELINE_PATH = HERE / "baseline.json"
 K_VALUES = (5, 10, 20)
 PRIMARY_K = 10
 DEFAULT_TOLERANCE = 0.03
+DEFAULT_REPEATS = 3
 INDEXING_TIMEOUT = 3600.0
 
 
@@ -91,12 +93,12 @@ def ingest(engine, dataset: Dataset) -> bool:
 # ---------------------------------------------------------------------------
 
 # Enrichment features the progressive worker should *reliably* produce, per
-# mode — used to flag a silent-absence regression. Code mode omits entity_graph:
+# mode — used to flag a silent-absence regression. Code mode expects nothing:
 # bare code symbols rarely carry NER-style named entities, so an empty entity
 # graph there is content-driven, not a regression. Tables are not enriched.
 _EXPECTED_FEATURES = {
-    "code": ("vocabulary",),
-    "section": ("vocabulary", "entity_graph", "hierarchy_l1", "hierarchy_l2"),
+    "code": (),
+    "section": ("entity_graph", "hierarchy_l1", "hierarchy_l2"),
     "table": (),
 }
 
@@ -104,14 +106,13 @@ _EXPECTED_FEATURES = {
 def check_features(dataset: Dataset) -> dict:
     """Report whether the worker actually produced its corpus enrichment features.
 
-    keyword-vocabulary, entity-graph, and L1/L2 hierarchy are populated by the
-    background worker during ``point()``. If the worker stops producing them,
-    their retrieval consumers silently no-op on empty stores — a regression
-    invisible to recall/nDCG alone. This makes that absence loud and explicit.
+    entity-graph and L1/L2 hierarchy are populated by the background worker
+    during ``point()``. If the worker stops producing them, their retrieval
+    consumers silently no-op on empty stores — a regression invisible to
+    recall/nDCG alone. This makes that absence loud and explicit.
     """
     from fitz_sage.engines.fitz_krag.ingestion.section_store import SectionStore
     from fitz_sage.retrieval.entity_graph.store import EntityGraphStore
-    from fitz_sage.retrieval.vocabulary.store import VocabularyStore
     from fitz_sage.storage.sqlite import SqliteConnectionManager
 
     col = dataset.collection
@@ -123,7 +124,6 @@ def check_features(dataset: Dataset) -> dict:
         except Exception as e:  # noqa: BLE001 — a store error must not abort the run
             counts[label] = f"error: {e}"
 
-    _safe("vocabulary", lambda: len(VocabularyStore(collection=col).load()))
     _safe("entity_graph", lambda: EntityGraphStore(collection=col).stats().get("entities", 0))
     if dataset.mode == "section":
         store = SectionStore(SqliteConnectionManager.get_instance(), col)
@@ -149,40 +149,63 @@ def check_features(dataset: Dataset) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def evaluate(engine, dataset: Dataset, verbose: bool) -> list[dict]:
-    """Run every query through ``engine.retrieve()`` and rank the ground truth."""
+def evaluate(engine, dataset: Dataset, verbose: bool, repeats: int) -> list[dict]:
+    """Run every query through ``engine.retrieve()`` ``repeats`` times and score it.
+
+    Retrieval runs an LLM somewhere on every path (query prep, and the whole
+    ranking for code mode), so one run is one sample of a distribution. Each
+    query is retrieved ``repeats`` times and its metrics averaged, so the
+    reported number is a stable mean rather than a single jittery draw.
+    """
     from fitz_sage.core import Query
 
+    repeats = max(1, repeats)
     records: list[dict] = []
     for q in dataset.queries:
         t0 = time.monotonic()
-        try:
-            results = engine.retrieve(Query(text=q.query))
-        except Exception as e:  # noqa: BLE001 — one bad query must not abort the run
-            print(f"  [{q.id}] ERROR: {e}")
-            records.append({"id": q.id, "query": q.query, "error": str(e)})
+        runs: list[list[Unit]] = []
+        result_counts: list[int] = []
+        error: str | None = None
+        for _ in range(repeats):
+            try:
+                results = engine.retrieve(Query(text=q.query))
+            except Exception as e:  # noqa: BLE001 — one bad query must not abort the run
+                error = str(e)
+                break
+            runs.append(rank_units(dataset.mode, results, q.relevant))
+            result_counts.append(len(results))
+
+        if error is not None:
+            print(f"  [{q.id}] ERROR: {error}")
+            records.append({"id": q.id, "query": q.query, "error": error})
             continue
 
-        units = rank_units(dataset.mode, results, q.relevant)
+        metrics = _query_metrics(runs)
         record = {
             "id": q.id,
             "query": q.query,
             "vocab_mismatch": q.vocab_mismatch,
-            "units": units,
-            "n_results": len(results),
+            "metrics": metrics,
+            "has_critical": any(u.grade >= 2 for u in runs[0]),
+            "units": runs[-1],
+            "n_runs": len(runs),
+            "n_results": round(_mean(result_counts)),
             "elapsed_s": round(time.monotonic() - t0, 1),
         }
         records.append(record)
 
         print(
-            f"  [{q.id}] recall@{PRIMARY_K}={recall_at_k(units, PRIMARY_K):.0%} "
-            f"ndcg@{PRIMARY_K}={ndcg_at_k(units, PRIMARY_K):.2f} "
-            f"({record['elapsed_s']}s) {q.query[:48]}"
+            f"  [{q.id}] recall@{PRIMARY_K}={metrics[f'recall@{PRIMARY_K}']:.0%} "
+            f"ndcg@{PRIMARY_K}={metrics[f'ndcg@{PRIMARY_K}']:.2f} "
+            f"({record['elapsed_s']}s, {len(runs)}x) {q.query[:48]}"
         )
         if verbose:
-            for unit, gt in zip(units, q.relevant):
-                if unit.grade >= 2 and (unit.rank is None or unit.rank > PRIMARY_K):
-                    print(f"        missed critical: {_unit_label(gt)}")
+            for i, gt in enumerate(q.relevant):
+                if gt["grade"] < 2:
+                    continue
+                ranks = [run[i].rank for run in runs]
+                if all(r is None or r > PRIMARY_K for r in ranks):
+                    print(f"        missed critical (every run): {_unit_label(gt)}")
     return records
 
 
@@ -195,21 +218,38 @@ def _mean(values) -> float:
     return round(sum(values) / len(values), 4) if values else 0.0
 
 
+def _query_metrics(runs: list[list[Unit]]) -> dict[str, float]:
+    """Per-query recall@k / nDCG@k, averaged over the repeated retrieval runs.
+
+    Averaging happens at the metric level, not the rank level: a unit found at
+    rank 2 in one run and missed in the next has no meaningful "mean rank", but
+    its recall and nDCG contributions do average. ``recall@k_critical`` is
+    computed for every query; ``aggregate`` only folds it in for queries that
+    actually have critical units.
+    """
+    m: dict[str, float] = {}
+    for k in K_VALUES:
+        m[f"recall@{k}"] = _mean(recall_at_k(u, k) for u in runs)
+        m[f"ndcg@{k}"] = _mean(ndcg_at_k(u, k) for u in runs)
+        m[f"recall@{k}_critical"] = _mean(recall_at_k(u, k, min_grade=2) for u in runs)
+    return m
+
+
 def aggregate(records: list[dict]) -> dict:
-    """Mean recall@k / nDCG@k across the scored (non-error) records."""
-    scored = [r for r in records if "units" in r]
+    """Mean recall@k / nDCG@k across the scored records' per-query metrics."""
+    scored = [r for r in records if "metrics" in r]
     if not scored:
         return {}
     out: dict[str, float] = {}
     for k in K_VALUES:
-        out[f"recall@{k}"] = _mean(recall_at_k(r["units"], k) for r in scored)
-        out[f"ndcg@{k}"] = _mean(ndcg_at_k(r["units"], k) for r in scored)
+        out[f"recall@{k}"] = _mean(r["metrics"][f"recall@{k}"] for r in scored)
+        out[f"ndcg@{k}"] = _mean(r["metrics"][f"ndcg@{k}"] for r in scored)
     # Critical recall is averaged only over queries that have critical units.
-    crit = [r for r in scored if any(u.grade >= 2 for u in r["units"])]
-    for k in K_VALUES:
-        if crit:
+    crit = [r for r in scored if r["has_critical"]]
+    if crit:
+        for k in K_VALUES:
             out[f"recall@{k}_critical"] = _mean(
-                recall_at_k(r["units"], k, min_grade=2) for r in crit
+                r["metrics"][f"recall@{k}_critical"] for r in crit
             )
     return out
 
@@ -238,10 +278,15 @@ def _fmt_row(label: str, metrics: dict, *, suffix: str = "", with_ndcg: bool = T
 
 
 def report(
-    dataset: Dataset, records: list[dict], baseline: dict, *, indexing_ok: bool = True
+    dataset: Dataset,
+    records: list[dict],
+    baseline: dict,
+    *,
+    indexing_ok: bool = True,
+    repeats: int = DEFAULT_REPEATS,
 ) -> str:
     """Print the per-mode report; return "ok", "regression", "below-threshold" or "error"."""
-    scored = [r for r in records if "units" in r]
+    scored = [r for r in records if "metrics" in r]
     errors = [r for r in records if "error" in r]
     n_vocab = sum(1 for q in dataset.queries if q.vocab_mismatch)
 
@@ -250,6 +295,7 @@ def report(
     print(f"RETRIEVAL BENCHMARK — {dataset.mode}")
     print("=" * 64)
     print(f"queries        : {len(dataset.queries)}  ({n_vocab} vocab-mismatch)")
+    print(f"runs per query : {repeats}  (metrics averaged)")
     print(f"scored / errors: {len(scored)} / {len(errors)}")
     if not scored:
         print("no queries scored — cannot report")
@@ -334,8 +380,10 @@ def save_results(mode: str, records: list[dict]) -> Path:
                 "id": r["id"],
                 "query": r["query"],
                 "vocab_mismatch": r["vocab_mismatch"],
+                "n_runs": r["n_runs"],
                 "n_results": r["n_results"],
                 "elapsed_s": r["elapsed_s"],
+                "metrics": r["metrics"],
                 "units": [{"grade": u.grade, "rank": u.rank} for u in r["units"]],
             }
         )
@@ -344,13 +392,14 @@ def save_results(mode: str, records: list[dict]) -> Path:
     return path
 
 
-def update_baseline(baseline: dict, mode: str, overall: dict) -> None:
+def update_baseline(baseline: dict, mode: str, overall: dict, repeats: int) -> None:
     """Store this run's scores as the new baseline for ``mode``."""
     modes = baseline.setdefault("modes", {})
     mode_bl = modes.setdefault(
         mode, {"thresholds": {f"recall@{PRIMARY_K}": None, f"ndcg@{PRIMARY_K}": None}}
     )
     mode_bl["scores"] = overall
+    mode_bl["repeats"] = repeats
     mode_bl["updated"] = time.strftime("%Y-%m-%d")
     baseline["primary_k"] = PRIMARY_K
     baseline.setdefault("regression_tolerance", DEFAULT_TOLERANCE)
@@ -368,6 +417,7 @@ def run(
     skip_ingest: bool = False,
     update: bool = False,
     verbose: bool = False,
+    repeats: int = DEFAULT_REPEATS,
 ) -> int:
     """Run the benchmark for the given modes. Returns a process exit code."""
     from fitz_sage.runtime import create_engine
@@ -395,8 +445,8 @@ def run(
             indexing_ok = ingest(engine, dataset)
 
         check_features(dataset)
-        records = evaluate(engine, dataset, verbose)
-        status = report(dataset, records, baseline, indexing_ok=indexing_ok)
+        records = evaluate(engine, dataset, verbose, repeats)
+        status = report(dataset, records, baseline, indexing_ok=indexing_ok, repeats=repeats)
         out_path = save_results(mode, records)
         print(f"results        {out_path.relative_to(HERE.parents[1])}")
 
@@ -406,7 +456,7 @@ def run(
             if update:
                 overall = aggregate(records)
                 if overall:
-                    update_baseline(baseline, mode, overall)
+                    update_baseline(baseline, mode, overall, repeats)
                     print(f"baseline       updated for {mode}")
             if status in ("regression", "below-threshold"):
                 exit_code = 1
@@ -423,6 +473,12 @@ def main() -> None:
     parser.add_argument(
         "--update-baseline", action="store_true", help="store this run as the baseline"
     )
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=DEFAULT_REPEATS,
+        help=f"retrieval runs per query, metrics averaged (default {DEFAULT_REPEATS})",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="list missed critical units")
     args = parser.parse_args()
     sys.exit(
@@ -431,6 +487,7 @@ def main() -> None:
             skip_ingest=args.skip_ingest,
             update=args.update_baseline,
             verbose=args.verbose,
+            repeats=args.repeats,
         )
     )
 

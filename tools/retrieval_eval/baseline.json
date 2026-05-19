@@ -1,5 +1,5 @@
 {
-  "_comment": "Per-mode retrieval baseline. 'scores' is set by --update-baseline and drives the regression alarm. 'thresholds' is the not-junk floor: leave null until a trusted first measurement, then hand-set recall@10/ndcg@10 a few points below it.",
+  "_comment": "Per-mode retrieval baseline. 'scores' is set by --update-baseline and drives the regression alarm; each score is a mean over 'repeats' retrieval runs per query (multi-run averaging dampens LLM jitter). 'thresholds' is the not-junk floor: leave null until a trusted first measurement, then hand-set recall@10/ndcg@10 a few points below it.",
   "primary_k": 10,
   "regression_tolerance": 0.03,
   "modes": {
@@ -9,17 +9,18 @@
         "ndcg@10": null
       },
       "scores": {
-        "recall@5": 0.0,
-        "ndcg@5": 0.0,
-        "recall@10": 0.0,
-        "ndcg@10": 0.0,
-        "recall@20": 0.0,
-        "ndcg@20": 0.0,
-        "recall@5_critical": 0.0,
-        "recall@10_critical": 0.0,
-        "recall@20_critical": 0.0
+        "recall@5": 0.4278,
+        "ndcg@5": 0.3413,
+        "recall@10": 0.5133,
+        "ndcg@10": 0.3644,
+        "recall@20": 0.5556,
+        "ndcg@20": 0.3728,
+        "recall@5_critical": 0.4667,
+        "recall@10_critical": 0.5067,
+        "recall@20_critical": 0.52
       },
-      "updated": "2026-05-17"
+      "updated": "2026-05-19",
+      "repeats": 3
     },
     "table": {
       "thresholds": {
@@ -27,17 +28,18 @@
         "ndcg@10": null
       },
       "scores": {
-        "recall@5": 0.8167,
-        "ndcg@5": 0.83,
-        "recall@10": 0.8167,
-        "ndcg@10": 0.83,
-        "recall@20": 0.8167,
-        "ndcg@20": 0.83,
-        "recall@5_critical": 0.85,
-        "recall@10_critical": 0.85,
-        "recall@20_critical": 0.85
+        "recall@5": 0.8722,
+        "ndcg@5": 0.8767,
+        "recall@10": 0.8722,
+        "ndcg@10": 0.8767,
+        "recall@20": 0.8722,
+        "ndcg@20": 0.8767,
+        "recall@5_critical": 0.8833,
+        "recall@10_critical": 0.8833,
+        "recall@20_critical": 0.8833
       },
-      "updated": "2026-05-17"
+      "updated": "2026-05-19",
+      "repeats": 3
     },
     "code": {
       "thresholds": {
@@ -45,17 +47,18 @@
         "ndcg@10": null
       },
       "scores": {
-        "recall@5": 0.9615,
-        "ndcg@5": 0.8084,
-        "recall@10": 1.0,
-        "ndcg@10": 0.8159,
-        "recall@20": 1.0,
-        "ndcg@20": 0.8159,
-        "recall@5_critical": 1.0,
-        "recall@10_critical": 1.0,
-        "recall@20_critical": 1.0
+        "recall@5": 0.6538,
+        "ndcg@5": 0.5526,
+        "recall@10": 0.859,
+        "ndcg@10": 0.6174,
+        "recall@20": 0.859,
+        "ndcg@20": 0.6174,
+        "recall@5_critical": 0.7436,
+        "recall@10_critical": 0.9231,
+        "recall@20_critical": 0.9231
       },
-      "updated": "2026-05-17"
+      "updated": "2026-05-19",
+      "repeats": 3
     }
   }
 }

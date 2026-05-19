@@ -5,6 +5,7 @@
 MODES = None  # e.g. ["section"], ["section", "table"], or None for all
 SKIP_INGEST = False  # True reuses the existing collection (skips re-indexing)
 UPDATE_BASELINE = False  # True stores this run's scores as the new baseline
+REPEATS = 3  # retrieval runs per query, metrics averaged — dampens LLM jitter
 VERBOSE = True  # list missed critical units per query
 # -----------------
 
@@ -18,5 +19,6 @@ if __name__ == "__main__":
             skip_ingest=SKIP_INGEST,
             update=UPDATE_BASELINE,
             verbose=VERBOSE,
+            repeats=REPEATS,
         )
     )
