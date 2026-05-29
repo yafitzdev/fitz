@@ -132,7 +132,6 @@ class FitzService:
         question: str,
         collection: str,
         *,
-        top_k: int | None = None,
         conversation_context: "ConversationContext | None" = None,
         engine: str | None = None,
     ) -> Answer:
@@ -142,7 +141,6 @@ class FitzService:
         Args:
             question: The question to ask
             collection: Collection to query
-            top_k: Number of results to retrieve (uses config default if None)
             conversation_context: For query rewriting (pronoun resolution)
             engine: Engine to use (None = user's default engine)
 

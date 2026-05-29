@@ -48,7 +48,6 @@ async def query(request: QueryRequest) -> QueryResponse:
     answer = service.query(
         question=request.question,
         collection=request.collection or "default",
-        top_k=request.top_k,
         conversation_context=context,
     )
 
@@ -86,7 +85,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
     answer = service.query(
         question=request.message,
         collection=request.collection or "default",
-        top_k=request.top_k,
         conversation_context=context,
     )
 

@@ -15,7 +15,6 @@ Public API:
         - Query: Input to engines
         - Answer: Output from engines
         - Provenance: Source attribution
-        - Constraints: Query-time constraints
 
     Runtime:
         - run: Universal entry point (any engine)
@@ -43,11 +42,6 @@ Examples:
     >>> from fitz import run
     >>> answer = run("What is quantum computing?")
 
-    With constraints:
-    >>> from fitz import run, Constraints
-    >>> constraints = Constraints(max_sources=5)
-    >>> answer = run("Explain entanglement", constraints=constraints)
-
     Specific engine:
     >>> answer = run("What is X?", engine="fitz_krag")
 
@@ -73,7 +67,6 @@ def __getattr__(name: str):
     if name in (
         "Answer",
         "ConfigurationError",
-        "Constraints",
         "EngineError",
         "GenerationError",
         "KnowledgeEngine",
@@ -126,7 +119,7 @@ def _get_default_fitz():
     return _default_fitz
 
 
-def query(question: str, source=None, collection: str = None, top_k: int = None):
+def query(question: str, source=None, collection: str = None):
     """
     Query the knowledge base.
 
@@ -137,7 +130,6 @@ def query(question: str, source=None, collection: str = None, top_k: int = None)
         source: Path to file or directory. If provided, registers documents
             before querying (equivalent to CLI --source flag).
         collection: Collection name (uses default if not specified).
-        top_k: Number of chunks to retrieve (uses config default if not specified).
 
     Returns:
         Answer with text and provenance.
@@ -153,7 +145,7 @@ def query(question: str, source=None, collection: str = None, top_k: int = None)
 
         _default_fitz = fitz(collection=collection)
     f = _get_default_fitz()
-    return f.query(question, source=source, top_k=top_k)
+    return f.query(question, source=source)
 
 
 # =============================================================================
@@ -169,7 +161,6 @@ __all__ = [
     "Query",
     "Answer",
     "Provenance",
-    "Constraints",
     # Core Exceptions
     "EngineError",
     "QueryError",

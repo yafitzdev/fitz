@@ -14,7 +14,7 @@ Philosophy:
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-from fitz_sage.core import Answer, ConfigurationError, Constraints, Query
+from fitz_sage.core import Answer, ConfigurationError, Query
 from fitz_sage.runtime.registry import get_engine_registry
 
 
@@ -23,7 +23,6 @@ def run(
     engine: str | None = None,
     config: Optional[Any] = None,
     config_path: Optional[Union[str, Path]] = None,
-    constraints: Optional[Constraints] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Answer:
     """
@@ -41,7 +40,6 @@ def run(
         engine: Engine name to use (None = user's default engine)
         config: Pre-loaded config object (engine-specific type)
         config_path: Path to config file (ignored if config provided)
-        constraints: Optional query-time constraints
         metadata: Optional engine-specific hints
 
     Returns:
@@ -60,11 +58,6 @@ def run(
 
         Specific engine:
         >>> answer = run("Explain X", engine="custom")
-
-        With constraints:
-        >>> from fitz_sage.core import Constraints
-        >>> constraints = Constraints(max_sources=5)
-        >>> answer = run("What is Y?", constraints=constraints)
 
         With config:
         >>> from fitz_sage.config.loader import load_engine_config
@@ -101,7 +94,7 @@ def run(
 
     # Build Query object if string was provided
     if isinstance(query, str):
-        query_obj = Query(text=query, constraints=constraints, metadata=metadata or {})
+        query_obj = Query(text=query, metadata=metadata or {})
     else:
         query_obj = query
 

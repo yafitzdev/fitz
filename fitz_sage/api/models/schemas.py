@@ -25,7 +25,6 @@ class QueryRequest(BaseModel):
         description="Path to file or directory. If provided, registers documents before querying.",
     )
     collection: str = Field("default", description="Collection to query")
-    top_k: Optional[int] = Field(None, description="Number of results to retrieve", ge=1)
     conversation_history: List["ChatMessage"] = Field(
         default_factory=list,
         description="Optional conversation history for query rewriting (resolves pronouns like 'their' → 'TechCorp')",
@@ -57,7 +56,6 @@ class ChatRequest(BaseModel):
         default_factory=list, description="Previous conversation messages"
     )
     collection: str = Field("default", description="Collection to query")
-    top_k: Optional[int] = Field(None, description="Number of results to retrieve", ge=1)
 
 
 class ChatResponse(BaseModel):

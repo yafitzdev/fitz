@@ -119,9 +119,8 @@ class TimeoutError(EngineError):
     - Constraint timeout_seconds exceeded
 
     Examples:
-        >>> constraints = Constraints(metadata={"timeout_seconds": 5})
         >>> try:
-        ...     answer = engine.answer(Query("complex query", constraints=constraints))
+        ...     answer = engine.answer(Query("complex query"))
         ... except TimeoutError as e:
         ...     print(f"Query timed out: {e}")
     """

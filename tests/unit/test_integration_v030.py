@@ -16,7 +16,6 @@ import pytest
 # Core imports
 from fitz_sage.core import (
     Answer,
-    Constraints,
     GenerationError,
     KnowledgeEngine,
     KnowledgeError,
@@ -44,13 +43,7 @@ class TestCoreContracts:
         # Simple query
         query = Query(text="What is quantum computing?")
         assert query.text == "What is quantum computing?"
-        assert query.constraints is None
         assert query.metadata == {}
-
-        # Query with constraints
-        constraints = Constraints(max_sources=5)
-        query = Query(text="Test", constraints=constraints)
-        assert query.constraints.max_sources == 5
 
         # Query with metadata
         query = Query(text="Test", metadata={"temp": 0.3})
@@ -84,23 +77,6 @@ class TestCoreContracts:
         assert prov.source_id == "doc_123"
         assert prov.excerpt == "Some text"
         assert prov.metadata["title"] == "Paper"
-
-    def test_constraints_creation(self):
-        """Test Constraints object creation."""
-        constraints = Constraints(
-            max_sources=10, filters={"topic": "physics"}, metadata={"timeout": 30}
-        )
-        assert constraints.max_sources == 10
-        assert constraints.filters["topic"] == "physics"
-        assert constraints.metadata["timeout"] == 30
-
-    def test_constraints_validation(self):
-        """Test that invalid constraints are rejected."""
-        with pytest.raises(ValueError, match="at least 1"):
-            Constraints(max_sources=0)
-
-        with pytest.raises(ValueError, match="at least 1"):
-            Constraints(max_sources=-5)
 
 
 class TestEngineRegistry:
@@ -271,18 +247,6 @@ class TestUniversalRunner:
         """Test universal run() with Query object."""
         query = Query(text="What is Y?")
         answer = run(query=query, engine="mock_engine", config=None)
-
-        assert answer.text == "Mock answer"
-
-    def test_run_with_constraints(self):
-        """Test run() with constraints."""
-        constraints = Constraints(max_sources=5)
-        answer = run(
-            query="What is Z?",
-            engine="mock_engine",
-            config=None,
-            constraints=constraints,
-        )
 
         assert answer.text == "Mock answer"
 

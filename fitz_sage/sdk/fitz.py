@@ -93,7 +93,6 @@ class fitz:
         self,
         question: str,
         source: Optional[Union[str, Path]] = None,
-        top_k: Optional[int] = None,
         conversation_context: Optional["ConversationContext"] = None,
     ) -> Answer:
         """
@@ -103,7 +102,6 @@ class fitz:
             question: The question to ask.
             source: Path to a file or directory. If provided, registers documents
                 before querying (equivalent to CLI --source flag).
-            top_k: Override the number of results to retrieve.
             conversation_context: Optional ConversationContext for query rewriting.
                 Enables conversational pronoun resolution (e.g., "their" → "TechCorp's").
 
@@ -122,7 +120,6 @@ class fitz:
         return self._service.query(
             question=question,
             collection=self._collection,
-            top_k=top_k,
             conversation_context=conversation_context,
         )
 

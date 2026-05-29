@@ -10,24 +10,20 @@ Public API:
     - Query: Input to engines
     - Answer: Output from engines
     - Provenance: Source attribution
-    - Constraints: Query-time constraints
     - FitzPaths: Central path management
     - Exceptions: Standard error hierarchy
     - Utils: extract_path, set_nested_path
 
 Examples:
     Using the core abstractions:
-    >>> from fitz_sage.core import Query, Constraints
+    >>> from fitz_sage.core import Query
     >>> from fitz_sage.engines.fitz_krag import FitzKragEngine
     >>>
     >>> # Create an engine (engine-specific)
     >>> engine = FitzKragEngine(config)
     >>>
     >>> # Use core abstractions (paradigm-agnostic)
-    >>> query = Query(
-    ...     text="What is quantum computing?",
-    ...     constraints=Constraints(max_sources=5)
-    ... )
+    >>> query = Query(text="What is quantum computing?")
     >>> answer = engine.answer(query)
     >>>
     >>> # Access results (paradigm-agnostic)
@@ -50,9 +46,6 @@ from .answer import Answer
 
 # Core data models
 from .chunk import Chunk
-
-# Query constraints
-from .constraints import Constraints
 
 # Core protocol
 from .engine import KnowledgeEngine
@@ -85,7 +78,6 @@ __all__ = [
     "Query",
     "Answer",
     "Provenance",
-    "Constraints",
     "Chunk",
     # Path Management
     "FitzPaths",
