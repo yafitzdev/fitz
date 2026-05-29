@@ -20,6 +20,8 @@ import csv
 import hashlib
 import json
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -69,15 +71,13 @@ def compute_file_hash(file_path: Path) -> str:
     return hasher.hexdigest()[:16]
 
 
-def read_headers(file_path: Path) -> list[str]:
-    """
-    Read only the headers from a table file (fast).
+@contextmanager
+def _open_table(file_path: Path) -> Iterator[tuple[list[str], Iterator[list[str]]]]:
+    """Open a CSV/TSV/Excel file, yielding ``(headers, row_iterator)``.
 
-    Args:
-        file_path: Path to CSV/TSV/Excel file.
-
-    Returns:
-        List of column headers.
+    Rows are yielded as lists of strings (Excel cells are stringified). Raises
+    ValueError for unsupported file types and ImportError if openpyxl is needed
+    for Excel but not installed. The single place that knows the file formats.
     """
     suffix = file_path.suffix.lower()
 
@@ -86,24 +86,41 @@ def read_headers(file_path: Path) -> list[str]:
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             reader = csv.reader(f, delimiter=delimiter)
             headers = next(reader, [])
-        return headers
+            yield headers, reader
 
     elif suffix in {".xlsx", ".xls"}:
         try:
             import openpyxl
-
-            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
-            ws = wb.active
-            headers = [
-                str(cell.value) if cell.value else f"col_{i}"
-                for i, cell in enumerate(next(ws.iter_rows(max_row=1)))
-            ]
-            wb.close()
-            return headers
         except ImportError:
             raise ImportError("openpyxl required for Excel files: pip install openpyxl")
 
-    raise ValueError(f"Unsupported file type: {suffix}")
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        try:
+            ws = wb.active
+            row_iter = ws.iter_rows()
+            first = next(row_iter, None)
+            headers = (
+                [str(c.value) if c.value else f"col_{i}" for i, c in enumerate(first)]
+                if first is not None
+                else []
+            )
+
+            def _str_rows() -> Iterator[list[str]]:
+                for row in row_iter:
+                    yield [str(c.value) if c.value is not None else "" for c in row]
+
+            yield headers, _str_rows()
+        finally:
+            wb.close()
+
+    else:
+        raise ValueError(f"Unsupported file type: {suffix}")
+
+
+def read_headers(file_path: Path) -> list[str]:
+    """Read only the headers from a table file (fast)."""
+    with _open_table(file_path) as (headers, _rows):
+        return headers
 
 
 def parse_columns(
@@ -122,84 +139,23 @@ def parse_columns(
     Returns:
         Tuple of (headers, rows) for selected columns only.
     """
-    suffix = file_path.suffix.lower()
+    with _open_table(file_path) as (headers, rows):
+        # Find column indices
+        col_indices = []
+        for col in columns:
+            try:
+                col_indices.append(headers.index(col))
+            except ValueError:
+                logger.warning(f"Column '{col}' not found in headers")
 
-    if suffix in {".csv", ".tsv"}:
-        delimiter = "\t" if suffix == ".tsv" else ","
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            reader = csv.reader(f, delimiter=delimiter)
-            headers = next(reader, [])
+        if not col_indices:
+            return [], []
 
-            # Find column indices
-            col_indices = []
-            for col in columns:
-                try:
-                    col_indices.append(headers.index(col))
-                except ValueError:
-                    logger.warning(f"Column '{col}' not found in headers")
+        # Extract only needed columns
+        selected_headers = [headers[i] for i in col_indices]
+        selected_rows = [[row[i] if i < len(row) else "" for i in col_indices] for row in rows]
 
-            if not col_indices:
-                return [], []
-
-            # Extract only needed columns
-            selected_headers = [headers[i] for i in col_indices]
-            rows = []
-            for row in reader:
-                selected_row = []
-                for i in col_indices:
-                    if i < len(row):
-                        selected_row.append(row[i])
-                    else:
-                        selected_row.append("")
-                rows.append(selected_row)
-
-        return selected_headers, rows
-
-    elif suffix in {".xlsx", ".xls"}:
-        try:
-            import openpyxl
-
-            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
-            ws = wb.active
-
-            # Get headers
-            header_row = next(ws.iter_rows(max_row=1))
-            headers = [
-                str(cell.value) if cell.value else f"col_{i}" for i, cell in enumerate(header_row)
-            ]
-
-            # Find column indices
-            col_indices = []
-            for col in columns:
-                try:
-                    col_indices.append(headers.index(col))
-                except ValueError:
-                    logger.warning(f"Column '{col}' not found in headers")
-
-            if not col_indices:
-                wb.close()
-                return [], []
-
-            # Extract only needed columns
-            selected_headers = [headers[i] for i in col_indices]
-            rows = []
-            for row in ws.iter_rows(min_row=2):
-                selected_row = []
-                for i in col_indices:
-                    if i < len(row):
-                        val = row[i].value
-                        selected_row.append(str(val) if val is not None else "")
-                    else:
-                        selected_row.append("")
-                rows.append(selected_row)
-
-            wb.close()
-            return selected_headers, rows
-
-        except ImportError:
-            raise ImportError("openpyxl required for Excel files: pip install openpyxl")
-
-    raise ValueError(f"Unsupported file type: {suffix}")
+    return selected_headers, selected_rows
 
 
 def read_sample_values(file_path: Path, num_rows: int = 20) -> dict[str, list[str]]:
@@ -213,50 +169,20 @@ def read_sample_values(file_path: Path, num_rows: int = 20) -> dict[str, list[st
     Returns:
         Dict mapping column name to list of unique sample values.
     """
-    suffix = file_path.suffix.lower()
-
-    if suffix in {".csv", ".tsv"}:
-        delimiter = "\t" if suffix == ".tsv" else ","
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            reader = csv.reader(f, delimiter=delimiter)
-            headers = next(reader, [])
-
-            # Collect values per column
+    try:
+        with _open_table(file_path) as (headers, rows):
+            # Collect unique values per column from the first num_rows rows
             col_values: dict[str, set[str]] = {h: set() for h in headers}
-            for i, row in enumerate(reader):
+            for i, row in enumerate(rows):
                 if i >= num_rows:
                     break
                 for j, val in enumerate(row):
                     if j < len(headers) and val:
                         col_values[headers[j]].add(val)
+    except (ValueError, ImportError):
+        return {}
 
-        return {h: list(v)[:3] for h, v in col_values.items()}  # Max 3 unique values
-
-    elif suffix in {".xlsx", ".xls"}:
-        try:
-            import openpyxl
-
-            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
-            ws = wb.active
-
-            header_row = next(ws.iter_rows(max_row=1))
-            headers = [
-                str(cell.value) if cell.value else f"col_{i}" for i, cell in enumerate(header_row)
-            ]
-
-            col_values: dict[str, set[str]] = {h: set() for h in headers}
-            for i, row in enumerate(ws.iter_rows(min_row=2, max_row=num_rows + 1)):
-                for j, cell in enumerate(row):
-                    if j < len(headers) and cell.value:
-                        col_values[headers[j]].add(str(cell.value))
-
-            wb.close()
-            return {h: list(v)[:3] for h, v in col_values.items()}
-
-        except ImportError:
-            return {}
-
-    return {}
+    return {h: list(v)[:3] for h, v in col_values.items()}  # Max 3 unique values
 
 
 @dataclass
