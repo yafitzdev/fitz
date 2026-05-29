@@ -14,10 +14,11 @@ NOTE: Commands use lazy loading - heavy imports only happen when a command is in
 
 from __future__ import annotations
 
-import logging
+from fitz_sage.logging import configure_logging
 
-# Suppress noisy third-party and internal INFO logs in CLI
-logging.basicConfig(level=logging.WARNING)
+# Install the root log handler early (WARNING keeps CLI output clean; set
+# FITZ_LOG_LEVEL via the embedding app for more). Must precede HF imports.
+configure_logging()
 
 # Platform configuration - must run before any HuggingFace imports
 from fitz_sage.core.platform import configure_huggingface_windows  # noqa: E402

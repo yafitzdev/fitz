@@ -1,82 +1,64 @@
 # fitz_sage/logging/logger.py
-"""
-Unified logging setup for the entire Fitz project.
+"""Logging for fitz-sage.
 
-All modules in fitz_sage use:
-    from fitz_sage.logging import get_logger
-    logger = get_logger(__name__)
+One entry point — ``get_logger`` returns a standard-library ``logging.Logger``.
+``configure_logging`` installs a single root handler; call it once at an
+application entrypoint (the CLI does). Libraries (the SDK) leave configuration
+to the embedding application.
 
-Why this works:
-- ONE place for configuration (format, level, handlers)
-- Log namespaces follow module paths automatically
-- No duplicate setup between packages
-- Structured context automatically added to all messages
-
-For legacy compatibility, this module re-exports the structured logger.
+Per-query correlation: ``set_query_context`` stashes a query id in a contextvar
+that ``_QueryContextFilter`` injects into every record as ``query_id``, so the
+formatter can show which query a log line belongs to.
 """
 
+from __future__ import annotations
+
+import contextvars
 import logging
 import sys
 
-# Import our new structured logging
-from fitz_sage.utils.logging import (
-    StructuredLogger,
-    clear_query_context,
-)
-from fitz_sage.utils.logging import get_logger as get_structured_logger
-from fitz_sage.utils.logging import (
-    set_query_context,
-)
+DEFAULT_FORMAT = "[%(levelname)s] %(name)s%(query_id)s — %(message)s"
 
-DEFAULT_FORMAT = "[%(levelname)s] %(name)s — %(message)s"
+_query_id: contextvars.ContextVar[str] = contextvars.ContextVar("fitz_query_id", default="")
+
+
+def get_logger(name: str) -> logging.Logger:
+    """Return a standard-library logger. The single fitz-sage logging entry point."""
+    return logging.getLogger(name)
+
+
+class _QueryContextFilter(logging.Filter):
+    """Inject the current query id (if any) into each record for the formatter."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        qid = _query_id.get()
+        record.query_id = f" [q={qid}]" if qid else ""
+        return True
 
 
 def configure_logging(
-    level: int = logging.INFO,
+    level: int = logging.WARNING,
     fmt: str = DEFAULT_FORMAT,
-    stream=sys.stdout,
-):
-    """
-    Configure root logging handler.
+    stream=sys.stderr,
+) -> None:
+    """Install the root logging handler. Idempotent — safe to call repeatedly.
 
-    Called once early in the application lifecycle (e.g., CLI entrypoint).
-    Safe to call multiple times — handler duplication is prevented.
+    Call once early at an application entrypoint (CLI / API server).
     """
     root = logging.getLogger()
     if not root.handlers:
         handler = logging.StreamHandler(stream)
         handler.setFormatter(logging.Formatter(fmt))
+        handler.addFilter(_QueryContextFilter())
         root.addHandler(handler)
-
     root.setLevel(level)
 
 
-def get_logger(name: str) -> StructuredLogger:
-    """
-    Get a structured logger instance.
-
-    Example:
-        logger = get_logger(__name__)
-
-        # Use structured context
-        with logger.context(query_id="q123"):
-            logger.info("Processing query")  # Includes query_id
-
-        # Track operations
-        with logger.operation("bm25_search"):
-            results = search()  # Logs timing automatically
-
-    Returns:
-        StructuredLogger with context capabilities
-    """
-    return get_structured_logger(name)
+def set_query_context(query_id: str, collection: str | None = None, **kwargs) -> None:
+    """Set the query id used to correlate log records emitted during a query."""
+    _query_id.set(query_id)
 
 
-# Re-export for convenience
-__all__ = [
-    "configure_logging",
-    "get_logger",
-    "set_query_context",
-    "clear_query_context",
-    "StructuredLogger",
-]
+def clear_query_context() -> None:
+    """Clear the query id after a query completes."""
+    _query_id.set("")

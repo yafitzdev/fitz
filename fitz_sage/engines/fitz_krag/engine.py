@@ -601,7 +601,7 @@ class FitzKragEngine:
             raise QueryError("Query text cannot be empty")
 
         with self._query_scope():
-            logger.info("Starting query processing", query_length=len(query.text))
+            logger.info(f"Starting query processing (query_length={len(query.text)})")
             try:
                 _progress = progress or (lambda _: None)
                 pipeline_start = time.perf_counter()
@@ -721,7 +721,7 @@ class FitzKragEngine:
             raise QueryError("Query text cannot be empty")
 
         with self._query_scope():
-            logger.info("Starting retrieval", query_length=len(query.text))
+            logger.info(f"Starting retrieval (query_length={len(query.text)})")
             try:
                 outcome = self._retrieve_core(query, progress=progress)
                 self._boost_queried_files(outcome)
@@ -986,7 +986,7 @@ class FitzKragEngine:
             gap["corpus_document_count"] = stats.get("entities", 0)
 
         except Exception as e:
-            logger.debug("Gap analysis failed", error=str(e))
+            logger.debug(f"Gap analysis failed: {e}")
 
         return gap
 

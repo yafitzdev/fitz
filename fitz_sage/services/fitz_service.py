@@ -171,7 +171,7 @@ class FitzService:
             return engine_instance.answer(query_obj)
 
         except Exception as e:
-            logger.error("Query failed", error=str(e), collection=collection, exc_info=True)
+            logger.error(f"Query failed (collection={collection}): {e}", exc_info=True)
             raise QueryError(f"Query failed: {e}") from e
 
     # =========================================================================
@@ -249,7 +249,7 @@ class FitzService:
         cm = self._connection_manager()
         deleted = cm.delete_collection(name)
         if deleted:
-            logger.info("Deleted collection", collection=name)
+            logger.info(f"Deleted collection: {name}")
         return deleted
 
     @staticmethod
