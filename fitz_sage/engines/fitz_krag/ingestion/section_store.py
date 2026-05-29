@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.engines.fitz_krag.ingestion import store_utils
 from fitz_sage.engines.fitz_krag.ingestion.schema import TABLE_PREFIX
 
 if TYPE_CHECKING:
@@ -17,19 +17,6 @@ logger = logging.getLogger(__name__)
 
 TABLE = f"{TABLE_PREFIX}section_index"
 FTS = f"{TABLE_PREFIX}section_fts"
-
-
-def _build_fts_query(query: str) -> str | None:
-    """Convert a free-form query into FTS5 OR-of-tokens.
-
-    FTS5 MATCH has its own syntax; user text needs sanitizing. We
-    extract alphanumeric words and OR-join them. Empty input returns
-    None so the caller can short-circuit.
-    """
-    words = [w for w in re.findall(r"\w+", query) if w]
-    if not words:
-        return None
-    return " OR ".join(words)
 
 
 class SectionStore:
@@ -94,7 +81,7 @@ class SectionStore:
         applies RRF on the returned order, and parent-title breadcrumbs
         are pulled in by ``SectionSearchStrategy._enrich_with_parent_titles``.
         """
-        fts_query = _build_fts_query(query)
+        fts_query = store_utils.build_fts_query(query)
         if fts_query is None:
             return []
 
@@ -197,19 +184,7 @@ class SectionStore:
     def update_enrichment_by_file(
         self, raw_file_id: str, enriched_dicts: list[dict[str, Any]]
     ) -> None:
-        sql = f"UPDATE {TABLE} SET keywords = ?, entities = ?, metadata = ? WHERE id = ?"
-        with self._cm.connection(self._collection) as conn:
-            for item in enriched_dicts:
-                conn.execute(
-                    sql,
-                    (
-                        json.dumps(item.get("keywords", [])),
-                        json.dumps(item.get("entities", [])),
-                        json.dumps(item.get("metadata", {})),
-                        item["id"],
-                    ),
-                )
-            conn.commit()
+        store_utils.update_enrichment_by_file(self._cm, self._collection, TABLE, enriched_dicts)
 
     def get_corpus_summaries(self) -> list[dict[str, Any]]:
         """Fetch all L2 corpus-level summary chunks for this collection."""
@@ -241,21 +216,11 @@ class SectionStore:
         return [row[0] for row in rows if row[0]]
 
     def delete_by_file(self, raw_file_id: str) -> None:
-        sql = f"DELETE FROM {TABLE} WHERE raw_file_id = ?"
-        with self._cm.connection(self._collection) as conn:
-            conn.execute(sql, (raw_file_id,))
-            conn.commit()
+        store_utils.delete_by_file(self._cm, self._collection, TABLE, raw_file_id)
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:
-    meta = row[10]
-    if isinstance(meta, str):
-        try:
-            meta = json.loads(meta)
-        except (json.JSONDecodeError, TypeError):
-            meta = {}
-    elif meta is None:
-        meta = {}
+    meta = store_utils.decode_json(row[10], {})
     return {
         "id": row[0],
         "raw_file_id": row[1],

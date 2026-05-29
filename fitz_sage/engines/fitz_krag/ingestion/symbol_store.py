@@ -9,6 +9,7 @@ import re
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.engines.fitz_krag.ingestion import store_utils
 from fitz_sage.engines.fitz_krag.ingestion.schema import TABLE_PREFIX
 
 if TYPE_CHECKING:
@@ -19,14 +20,6 @@ logger = logging.getLogger(__name__)
 
 TABLE = f"{TABLE_PREFIX}symbol_index"
 FTS = f"{TABLE_PREFIX}symbol_fts"
-
-
-def _build_fts_query(query: str) -> str | None:
-    """OR-join alphanumeric words into FTS5 query syntax."""
-    words = [w for w in re.findall(r"\w+", query) if w]
-    if not words:
-        return None
-    return " OR ".join(words)
 
 
 _IDENT_SPLIT = re.compile(
@@ -140,7 +133,7 @@ class SymbolStore:
 
     def search_bm25(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
         """FTS5 BM25 search over the derived symbol index_text."""
-        fts_query = _build_fts_query(query)
+        fts_query = store_utils.build_fts_query(query)
         if fts_query is None:
             return []
 
@@ -179,10 +172,7 @@ class SymbolStore:
         return [_row_to_dict(row) for row in rows]
 
     def delete_by_file(self, raw_file_id: str) -> None:
-        sql = f"DELETE FROM {TABLE} WHERE raw_file_id = ?"
-        with self._cm.connection(self._collection) as conn:
-            conn.execute(sql, (raw_file_id,))
-            conn.commit()
+        store_utils.delete_by_file(self._cm, self._collection, TABLE, raw_file_id)
 
     def get(self, symbol_id: str) -> dict[str, Any] | None:
         sql = f"""
@@ -268,42 +258,16 @@ class SymbolStore:
     def update_enrichment_by_file(
         self, raw_file_id: str, enriched_dicts: list[dict[str, Any]]
     ) -> None:
-        sql = f"UPDATE {TABLE} SET keywords = ?, entities = ?, metadata = ? WHERE id = ?"
-        with self._cm.connection(self._collection) as conn:
-            for item in enriched_dicts:
-                conn.execute(
-                    sql,
-                    (
-                        json.dumps(item.get("keywords", [])),
-                        json.dumps(item.get("entities", [])),
-                        json.dumps(item.get("metadata", {})),
-                        item["id"],
-                    ),
-                )
-            conn.commit()
+        store_utils.update_enrichment_by_file(self._cm, self._collection, TABLE, enriched_dicts)
 
 
 def _decode_json_list(value: Any) -> list:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return list(value)
-    try:
-        decoded = json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return []
+    decoded = store_utils.decode_json(value, [])
     return decoded if isinstance(decoded, list) else []
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:
-    meta = row[8]
-    if isinstance(meta, str):
-        try:
-            meta = json.loads(meta)
-        except (json.JSONDecodeError, TypeError):
-            meta = {}
-    elif meta is None:
-        meta = {}
+    meta = store_utils.decode_json(row[8], {})
     return {
         "id": row[0],
         "name": row[1],

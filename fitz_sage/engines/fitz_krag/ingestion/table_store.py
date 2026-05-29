@@ -7,6 +7,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.engines.fitz_krag.ingestion import store_utils
 from fitz_sage.engines.fitz_krag.ingestion.schema import TABLE_PREFIX
 
 if TYPE_CHECKING:
@@ -129,28 +130,14 @@ class TableStore:
             conn.commit()
 
     def delete_by_file(self, raw_file_id: str) -> None:
-        sql = f"DELETE FROM {TABLE} WHERE raw_file_id = ?"
-        with self._cm.connection(self._collection) as conn:
-            conn.execute(sql, (raw_file_id,))
-            conn.commit()
-
-
-def _decode_json(value: Any, default: Any) -> Any:
-    if value is None:
-        return default
-    if isinstance(value, (list, dict)):
-        return value
-    try:
-        return json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return default
+        store_utils.delete_by_file(self._cm, self._collection, TABLE, raw_file_id)
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:
-    columns = _decode_json(row[4], [])
+    columns = store_utils.decode_json(row[4], [])
     if not isinstance(columns, list):
         columns = []
-    meta = _decode_json(row[7], {})
+    meta = store_utils.decode_json(row[7], {})
     if not isinstance(meta, dict):
         meta = {}
     return {
