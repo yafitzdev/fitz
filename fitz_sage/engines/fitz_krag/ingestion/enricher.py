@@ -8,9 +8,10 @@ adapted for KRAG's data model (symbol dicts + section dicts instead of Chunks).
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING, Any
+
+from fitz_sage.core.json_utils import parse_llm_json
 
 if TYPE_CHECKING:
     from fitz_sage.llm.providers.base import ChatProvider
@@ -103,18 +104,7 @@ class KragEnricher:
 
     def _parse_response(self, response: str, expected_count: int) -> list[dict[str, Any]]:
         """Parse LLM response into list of enrichment dicts."""
-        try:
-            text = response.strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-                text = text.rsplit("```", 1)[0]
-            start = text.find("[")
-            end = text.rfind("]") + 1
-            if start >= 0 and end > start:
-                parsed = json.loads(text[start:end])
-                if isinstance(parsed, list) and len(parsed) >= expected_count:
-                    return parsed[:expected_count]
-        except (json.JSONDecodeError, IndexError):
-            pass
-
+        parsed = parse_llm_json(response, as_array=True)
+        if isinstance(parsed, list) and len(parsed) >= expected_count:
+            return parsed[:expected_count]
         return [{"keywords": [], "entities": []} for _ in range(expected_count)]

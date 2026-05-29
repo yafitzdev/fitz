@@ -19,13 +19,13 @@ schedules the same ops file-by-file on a background thread.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.ingestion.import_graph_store import ImportGraphStore
 from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
 from fitz_sage.engines.fitz_krag.ingestion.schema import ensure_schema
@@ -832,17 +832,9 @@ class KragIngestPipeline:
     def _parse_summary_response(self, response: str, expected_count: int) -> list[str]:
         """Parse an LLM response into a list of summary strings."""
         # Try JSON array first
-        try:
-            # Extract JSON from possible markdown code block
-            text = response.strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-                text = text.rsplit("```", 1)[0]
-            parsed = json.loads(text)
-            if isinstance(parsed, list) and len(parsed) >= expected_count:
-                return [str(s) for s in parsed[:expected_count]]
-        except (json.JSONDecodeError, IndexError):
-            pass
+        parsed = parse_llm_json(response, as_array=True)
+        if isinstance(parsed, list) and len(parsed) >= expected_count:
+            return [str(s) for s in parsed[:expected_count]]
 
         # Fallback: split by numbered lines
         lines = [

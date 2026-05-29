@@ -15,6 +15,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core.answer_mode import AnswerMode
+from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.types import ReadResult
 
 if TYPE_CHECKING:
@@ -116,17 +117,10 @@ class KragHopController:
         )
 
         try:
-            import json
-
             chat = self._chat_factory("fast")
             response = chat.chat([{"role": "user", "content": prompt}])
-            text = response.strip()
-            start = text.find("[")
-            end = text.rfind("]") + 1
-            if start >= 0 and end > start:
-                parsed = json.loads(text[start:end])
-                if isinstance(parsed, list):
-                    return [str(q) for q in parsed[:2] if isinstance(q, str) and q.strip()]
+            parsed = parse_llm_json(response, as_array=True)
+            return [str(q) for q in parsed[:2] if isinstance(q, str) and q.strip()]
         except Exception as e:
             logger.warning(f"Bridge extraction failed: {e}")
 

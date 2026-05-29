@@ -21,13 +21,13 @@ Table storage:
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core.chunk import Chunk
+from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.llm.factory import ChatFactory, ModelTier
 
 from .store.sqlite import SqliteTableStore
@@ -599,20 +599,9 @@ Note: These results are computed from all {total_rows} rows in the table. Use th
 
     def _parse_json_list(self, response: str, fallback: list[str]) -> list[str]:
         """Parse JSON list from LLM response."""
-        try:
-            text = response.strip()
-            if text.startswith("```"):
-                parts = text.split("```")
-                if len(parts) >= 2:
-                    text = parts[1].strip()
-                    if text.startswith("json"):
-                        text = text[4:].strip()
-
-            result = json.loads(text)
-            if isinstance(result, list):
-                return [str(item) for item in result]
-        except (json.JSONDecodeError, ValueError):
-            pass
+        parsed = parse_llm_json(response, as_array=True)
+        if parsed:
+            return [str(item) for item in parsed]
 
         logger.warning("Failed to parse column selection, using all columns")
         return fallback
