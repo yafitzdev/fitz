@@ -12,7 +12,7 @@ Examples: "openai/gpt-4o" (BMW), "gpt-4o" (generic), "my-deployment" (Azure)
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterator
+from typing import Any
 
 import httpx
 
@@ -72,36 +72,6 @@ class EnterpriseChat:
         if "choices" in data and data["choices"]:
             return data["choices"][0].get("message", {}).get("content", "")
         return ""
-
-    def chat_stream(self, messages: list[dict[str, Any]], **kwargs: Any) -> Iterator[str]:
-        """Generate a streaming chat completion."""
-        params = {**self._defaults, **kwargs}
-
-        body = {
-            "model": params.pop("model", self._model),
-            "messages": messages,
-            "stream": True,
-            **params,
-        }
-
-        with self._client.stream("POST", "/chat/completions", json=body) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if line.startswith("data: "):
-                    chunk = line[6:]
-                    if chunk == "[DONE]":
-                        break
-                    try:
-                        import json
-
-                        data = json.loads(chunk)
-                        if "choices" in data and data["choices"]:
-                            delta = data["choices"][0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                yield content
-                    except (json.JSONDecodeError, KeyError):
-                        continue
 
 
 __all__ = [

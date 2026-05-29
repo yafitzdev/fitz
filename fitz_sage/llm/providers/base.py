@@ -8,7 +8,7 @@ All providers implement these protocols for type-safe usage.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterator, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 ModelTier = Literal["fast", "balanced", "smart"]
 
@@ -35,24 +35,6 @@ class ChatProvider(Protocol):
 
         Returns:
             Generated text response.
-        """
-        ...
-
-
-@runtime_checkable
-class StreamingChatProvider(Protocol):
-    """Protocol for chat providers that support streaming."""
-
-    def chat_stream(self, messages: list[dict[str, Any]], **kwargs: Any) -> Iterator[str]:
-        """
-        Generate a streaming chat completion.
-
-        Args:
-            messages: List of messages with 'role' and 'content' keys.
-            **kwargs: Provider-specific options.
-
-        Yields:
-            Text chunks as they are generated.
         """
         ...
 
@@ -103,7 +85,6 @@ __all__ = [
     "ModelTier",
     "RerankResult",
     "ChatProvider",
-    "StreamingChatProvider",
     "RerankProvider",
     "VisionProvider",
 ]

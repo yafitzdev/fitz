@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Iterator
+from typing import Any
 
 from fitz_sage.llm.auth import AuthProvider
 from fitz_sage.llm.auth.httpx_auth import DynamicHttpxAuth
@@ -134,23 +134,6 @@ class OpenAICompatChat:
         if response.choices and response.choices[0].message:
             return _strip_thinking(response.choices[0].message.content or "")
         return ""
-
-    def chat_stream(self, messages: list[dict[str, Any]], **kwargs: Any) -> Iterator[str]:
-        """Generate a streaming chat completion."""
-        params = {**self._defaults, **kwargs}
-
-        stream = self._client.chat.completions.create(
-            model=params.pop("model", self._model),
-            messages=messages,
-            stream=True,
-            **params,
-        )
-
-        for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta:
-                content = chunk.choices[0].delta.content
-                if content:
-                    yield content
 
 
 class OpenAICompatVision:

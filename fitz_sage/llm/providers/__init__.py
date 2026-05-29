@@ -17,14 +17,12 @@ from fitz_sage.llm.providers.base import (
     ModelTier,
     RerankProvider,
     RerankResult,
-    StreamingChatProvider,
     VisionProvider,
 )
 
 __all__ = [
     # Protocols
     "ChatProvider",
-    "StreamingChatProvider",
     "RerankProvider",
     "VisionProvider",
     # Types
