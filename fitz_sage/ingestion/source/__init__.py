@@ -1,16 +1,8 @@
 # fitz_sage/ingestion/source/__init__.py
-"""
-Source plugins for file discovery and access.
+"""SourceFile: the unit of input to a parser."""
 
-Sources handle the "where" of ingestion - finding files regardless of
-storage backend (filesystem, S3, MongoDB, etc.)
-"""
-
-from fitz_sage.ingestion.source.base import Source, SourceFile
-from fitz_sage.ingestion.source.plugins.filesystem import FileSystemSource
+from fitz_sage.ingestion.source.base import SourceFile
 
 __all__ = [
-    "Source",
     "SourceFile",
-    "FileSystemSource",
 ]
