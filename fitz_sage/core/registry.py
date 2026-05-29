@@ -50,12 +50,6 @@ class DuplicatePluginError(PluginRegistryError):
     pass
 
 
-class LLMRegistryError(PluginNotFoundError):
-    """Error from LLM registry."""
-
-    pass
-
-
 # =============================================================================
 # PluginRegistry Class
 # =============================================================================
@@ -291,18 +285,6 @@ TYPED_CHUNKING_REGISTRY = PluginRegistry(
     user_plugin_paths=_get_plugin_paths("chunking"),
 )
 
-RETRIEVER_REGISTRY = PluginRegistry(
-    name="retriever",
-    scan_packages=["fitz_sage.engines.fitz_krag.retrieval.strategies"],
-    required_method="retrieve",
-)
-
-PIPELINE_REGISTRY = PluginRegistry(
-    name="pipeline",
-    scan_packages=["fitz_sage.engines.fitz_krag"],
-    required_method="build",
-)
-
 # =============================================================================
 # Convenience Functions for Python-based Registries
 # =============================================================================
@@ -322,36 +304,6 @@ def get_chunking_plugin(plugin_name: str) -> Type[Any]:
 def available_chunking_plugins() -> List[str]:
     """List available default chunking plugins (for fitz init)."""
     return CHUNKING_REGISTRY.list_available()
-
-
-def get_typed_chunking_plugin(plugin_name: str) -> Type[Any]:
-    """Get a typed chunking plugin by name."""
-    return TYPED_CHUNKING_REGISTRY.get(plugin_name)
-
-
-def available_typed_chunking_plugins() -> List[str]:
-    """List available typed chunking plugins (for by_extension config)."""
-    return TYPED_CHUNKING_REGISTRY.list_available()
-
-
-def get_retriever_plugin(plugin_name: str) -> Type[Any]:
-    """Get a retriever plugin by name."""
-    return RETRIEVER_REGISTRY.get(plugin_name)
-
-
-def available_retrieval_plugins() -> List[str]:
-    """List available retriever plugins."""
-    return RETRIEVER_REGISTRY.list_available()
-
-
-def get_pipeline_plugin(plugin_name: str) -> Type[Any]:
-    """Get a pipeline plugin by name."""
-    return PIPELINE_REGISTRY.get(plugin_name)
-
-
-def available_pipeline_plugins() -> List[str]:
-    """List available pipeline plugins."""
-    return PIPELINE_REGISTRY.list_available()
 
 
 # =============================================================================
@@ -399,17 +351,9 @@ __all__ = [
     # Pre-configured registries
     "CHUNKING_REGISTRY",
     "TYPED_CHUNKING_REGISTRY",
-    "RETRIEVER_REGISTRY",
-    "PIPELINE_REGISTRY",
     # Python-based plugin accessors
     "get_chunking_plugin",
     "available_chunking_plugins",
-    "get_typed_chunking_plugin",
-    "available_typed_chunking_plugins",
-    "get_retriever_plugin",
-    "available_retrieval_plugins",
-    "get_pipeline_plugin",
-    "available_pipeline_plugins",
     # LLM plugin accessors
     "available_llm_plugins",
 ]

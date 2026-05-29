@@ -265,7 +265,6 @@ def compute_invariants(cm: ContractMap) -> List[str]:
     for r in cm.registries:
         if r.name in {
             "LLM_REGISTRY",
-            "RETRIEVER_REGISTRY",
             "CHUNKER_REGISTRY",
             "REGISTRY",
         }:
