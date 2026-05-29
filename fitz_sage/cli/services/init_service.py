@@ -18,15 +18,6 @@ class SystemStatus:
     llm_endpoint: Any
 
 
-@dataclass
-class ConfigResult:
-    """Result of config generation."""
-
-    global_config: str
-    engine_config: str | None
-    engine_name: str
-
-
 class InitService:
     """
     Business logic for init command.

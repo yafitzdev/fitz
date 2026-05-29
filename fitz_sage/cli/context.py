@@ -104,13 +104,6 @@ class CLIContext:
         return self.chat_plugin or "?"
 
     @property
-    def chat_display_fast(self) -> str:
-        """Chat fast model info for display."""
-        if self.chat_model_fast:
-            return f"{self.chat_plugin} ({self.chat_model_fast})"
-        return self.chat_plugin or "?"
-
-    @property
     def rerank_display(self) -> Optional[str]:
         """Rerank info for display, or None if disabled."""
         if not self.rerank_enabled:
@@ -118,11 +111,6 @@ class CLIContext:
         if self.rerank_model:
             return f"{self.rerank_plugin} ({self.rerank_model})"
         return self.rerank_plugin or "?"
-
-    @property
-    def retrieval_display(self) -> str:
-        """Retrieval info for display."""
-        return f"{self.retrieval_plugin} (collection={self.retrieval_collection}, top_k={self.retrieval_top_k})"
 
     # -------------------------------------------------------------------------
     # Factory Methods
@@ -165,17 +153,6 @@ class CLIContext:
             source=source,
             has_user=has_user,
         )
-
-    @classmethod
-    def _load_typed_config(cls, config: dict, engine: str) -> Any:
-        """Load typed config from raw config dict."""
-        try:
-            from fitz_sage.config.loader import load_engine_config
-
-            return load_engine_config(engine)
-        except Exception as e:
-            logger.debug(f"Could not load typed config for {engine}: {e}")
-            return None
 
     @classmethod
     def _from_config(
@@ -242,18 +219,6 @@ class CLIContext:
             # Tier specs
             chat_tier_specs=chat_tier_specs,
         )
-
-    @staticmethod
-    def _to_dict(obj: Any) -> dict:
-        """Convert PluginKwargs or dict to plain dict."""
-        if obj is None:
-            return {}
-        if hasattr(obj, "model_dump"):
-            # Pydantic model - convert and filter None values
-            return {k: v for k, v in obj.model_dump().items() if v is not None}
-        if isinstance(obj, dict):
-            return obj
-        return {}
 
     @staticmethod
     def _parse_plugin_string(plugin: str | None) -> str:
