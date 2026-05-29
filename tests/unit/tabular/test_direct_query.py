@@ -15,6 +15,7 @@ from fitz_sage.tabular.direct_query import (
     parse_columns,
     read_headers,
 )
+from fitz_sage.tabular.sql_gen import extract_sql
 
 
 class TestIsTableFile:
@@ -211,21 +212,15 @@ class TestDirectTableQuery:
 
         assert result == ["fallback"]
 
-    def test_extracts_sql_from_response(self, mock_chat_factory):
+    def test_extracts_sql_from_response(self):
         """Test SQL extraction."""
-        factory, _ = mock_chat_factory
-        query = DirectTableQuery(chat_factory=factory)
-
-        sql = query._extract_sql("```sql\nSELECT * FROM tbl\n```")
+        sql = extract_sql("```sql\nSELECT * FROM tbl\n```")
 
         assert sql == "SELECT * FROM tbl"
 
-    def test_extracts_sql_without_code_block(self, mock_chat_factory):
+    def test_extracts_sql_without_code_block(self):
         """Test SQL extraction from plain response."""
-        factory, _ = mock_chat_factory
-        query = DirectTableQuery(chat_factory=factory)
-
-        sql = query._extract_sql('SELECT "name" FROM "people" LIMIT 10')
+        sql = extract_sql('SELECT "name" FROM "people" LIMIT 10')
 
         assert sql == 'SELECT "name" FROM "people" LIMIT 10'
 

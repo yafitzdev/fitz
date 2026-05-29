@@ -8,6 +8,7 @@ import pytest
 from fitz_sage.core.chunk import Chunk
 from fitz_sage.tabular.models import ParsedTable, create_schema_chunk
 from fitz_sage.tabular.query import TableQueryStep
+from fitz_sage.tabular.sql_gen import extract_sql
 
 
 def create_mock_chat_factory():
@@ -273,44 +274,33 @@ class TestColumnSelection:
 class TestSQLExtraction:
     """Tests for SQL extraction logic."""
 
-    @pytest.fixture
-    def step(self):
-        factory, mock_chat = create_mock_chat_factory()
-        return TableQueryStep(chat_factory=factory), mock_chat
-
-    def test_extracts_sql_from_plain_response(self, step):
+    def test_extracts_sql_from_plain_response(self):
         """Test extracting SQL from plain response."""
-        step_instance, _ = step
-
         response = "SELECT Country FROM data WHERE Population > 1000000"
-        sql = step_instance._extract_sql(response)
+        sql = extract_sql(response)
 
         assert sql.upper().startswith("SELECT")
 
-    def test_extracts_sql_from_code_block(self, step):
+    def test_extracts_sql_from_code_block(self):
         """Test extracting SQL from markdown code block."""
-        step_instance, _ = step
-
         response = """Here's the query:
 ```sql
 SELECT Country, Population FROM data WHERE Population > 1000000
 ```
 This will return countries with large populations."""
 
-        sql = step_instance._extract_sql(response)
+        sql = extract_sql(response)
 
         assert "SELECT" in sql.upper()
         assert "Population" in sql
 
-    def test_extracts_sql_from_code_block_no_lang(self, step):
+    def test_extracts_sql_from_code_block_no_lang(self):
         """Test extracting SQL from code block without language tag."""
-        step_instance, _ = step
-
         response = """```
 SELECT * FROM data
 ```"""
 
-        sql = step_instance._extract_sql(response)
+        sql = extract_sql(response)
 
         assert "SELECT" in sql.upper()
 

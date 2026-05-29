@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from fitz_sage.llm.factory import ChatFactory, ModelTier
 from fitz_sage.logging.logger import get_logger
+from fitz_sage.tabular.sql_gen import extract_sql
 from fitz_sage.tabular.store.sqlite import (
     SqliteTableStore,
     _sanitize_column_name,
@@ -532,7 +533,7 @@ Provide a clear, direct answer based on the data. If the results are empty, say 
 
         chat = self.chat_factory(self.TIER_SQL_GENERATE)
         response = chat.chat([{"role": "user", "content": prompt}])
-        return self._extract_sql(response)
+        return extract_sql(response)
 
     def _generate_answer(
         self,
@@ -580,7 +581,6 @@ Provide a clear, direct answer based on the data. If the results are empty, say 
 
     def _parse_json_list(self, response: str, fallback: list[str]) -> list[str]:
         """Parse JSON list from LLM response."""
-        import re
 
         text = response.strip()
 
@@ -638,24 +638,6 @@ Provide a clear, direct answer based on the data. If the results are empty, say 
 
         logger.warning("Failed to parse column selection, using fallback")
         return fallback
-
-    def _extract_sql(self, response: str) -> str:
-        """Extract SQL from LLM response."""
-        text = response.strip()
-
-        if "```" in text:
-            match = re.search(r"```(?:sql)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
-            if match:
-                text = match.group(1).strip()
-            else:
-                text = text.replace("```sql", "").replace("```", "").strip()
-
-        if not text.upper().startswith("SELECT"):
-            match = re.search(r"(SELECT\s+.+)", text, re.DOTALL | re.IGNORECASE)
-            if match:
-                text = match.group(1)
-
-        return text
 
     def _find_missing_columns(
         self,
