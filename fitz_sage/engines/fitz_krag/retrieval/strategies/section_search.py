@@ -10,16 +10,18 @@ downstream.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import (
+    apply_keyword_enrichment_boost,
+    apply_recency_boost,
+    rrf_score,
+)
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.ingestion.section_store import SectionStore
-
-logger = logging.getLogger(__name__)
 
 
 class SectionSearchStrategy:
@@ -58,14 +60,14 @@ class SectionSearchStrategy:
         bm25_results = self._section_store.search_bm25(query, limit=fetch_limit)
 
         # 2. Score BM25 hits via Reciprocal Rank Fusion for stable scaling.
-        merged = self._score_results(bm25_results)
+        merged = rrf_score(bm25_results)
 
         # 3. Keyword enrichment boost (from stored keywords, domain-scaled)
-        merged = self._apply_keyword_enrichment_boost(query, merged, detection)
+        merged = apply_keyword_enrichment_boost(query, merged, self._section_store, detection)
 
         # 4. Freshness boost (when detection signals boost_recency)
         if detection and getattr(detection, "boost_recency", False) and self._raw_store:
-            merged = self._apply_recency_boost(merged)
+            merged = apply_recency_boost(merged, self._raw_store)
 
         # 5. Enrich with parent titles for breadcrumb location
         top_results = merged[:limit]
@@ -73,70 +75,6 @@ class SectionSearchStrategy:
 
         # 6. Convert to Address objects
         return [self._to_address(r) for r in top_results]
-
-    @staticmethod
-    def _score_results(bm25_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """RRF-score BM25 results so combined_score is on a consistent scale."""
-        _RRF_K = 60
-        result = []
-        for rank, r in enumerate(bm25_results):
-            entry = r.copy()
-            entry["combined_score"] = 1.0 / (_RRF_K + rank)
-            result.append(entry)
-        return result
-
-    def _apply_recency_boost(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Boost results from recently updated files."""
-        if not results:
-            return results
-        file_ids = list({r["raw_file_id"] for r in results})
-        try:
-            timestamps = self._raw_store.get_updated_timestamps(file_ids)
-            if not timestamps:
-                return results
-            sorted_files = sorted(timestamps, key=lambda fid: timestamps[fid] or "", reverse=True)
-            top_quarter = set(sorted_files[: max(1, len(sorted_files) // 4)])
-            top_half = set(sorted_files[: max(1, len(sorted_files) // 2)])
-            for r in results:
-                fid = r["raw_file_id"]
-                # Multiplicative boost — proportionate to each strategy's score scale.
-                if fid in top_quarter:
-                    r["combined_score"] = r.get("combined_score", 0) * 1.5
-                elif fid in top_half:
-                    r["combined_score"] = r.get("combined_score", 0) * 1.2
-            results.sort(key=lambda x: x.get("combined_score", 0), reverse=True)
-        except Exception as e:
-            logger.debug(f"Recency boost skipped: {e}")
-        return results
-
-    def _apply_keyword_enrichment_boost(
-        self, query: str, results: list[dict[str, Any]], detection: Any = None
-    ) -> list[dict[str, Any]]:
-        """Boost results that have matching enriched keywords.
-
-        Domain-specific queries get a stronger keyword boost since terminology
-        matches are more meaningful in specialized fields.
-        """
-        query_terms = [w.lower().strip("?.,!;:()") for w in query.split() if len(w) >= 3]
-        if not query_terms:
-            return results
-        # Domain signal: amplify keyword importance for specialized domains
-        domain = getattr(detection, "domain", "general")
-        boost = {"technical": 0.15, "legal": 0.12, "medical": 0.12, "financial": 0.12}.get(
-            domain, 0.1
-        )
-        try:
-            keyword_hits = self._section_store.search_by_keywords(query_terms, limit=50)
-            keyword_ids = {r["id"] for r in keyword_hits}
-            if keyword_ids:
-                for r in results:
-                    if r["id"] in keyword_ids:
-                        r["combined_score"] = r.get("combined_score", 0) + boost
-                # Re-sort after boost
-                results.sort(key=lambda x: x.get("combined_score", 0), reverse=True)
-        except Exception as e:
-            logger.debug(f"Keyword enrichment boost skipped: {e}")
-        return results
 
     def _enrich_with_parent_titles(self, results: list[dict[str, Any]]) -> None:
         """Batch-fetch parent section titles and attach to results.

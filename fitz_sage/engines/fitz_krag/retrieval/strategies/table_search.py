@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import rrf_score
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
 if TYPE_CHECKING:
@@ -45,12 +46,7 @@ class TableSearchStrategy:
         keyword_results = self._table_store.search_by_name(query, limit=fetch_limit)
 
         # RRF-score the single retrieval leg for consistent combined_score scaling.
-        _RRF_K = 60
-        scored: list[dict[str, Any]] = []
-        for rank, r in enumerate(keyword_results[:limit]):
-            entry = r.copy()
-            entry["combined_score"] = 1.0 / (_RRF_K + rank)
-            scored.append(entry)
+        scored = rrf_score(keyword_results[:limit])
 
         return [self._to_address(r) for r in scored]
 
