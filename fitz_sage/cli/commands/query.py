@@ -218,7 +218,7 @@ def _show_documents_required_message(engine_name: str, caps) -> None:
     print("  from fitz_sage.core import Query")
     print()
     print(f"  engine = create_engine('{engine_name}')")
-    print("  engine.add_documents(['doc1...', 'doc2...'])")
+    print("  engine.point('path/to/docs')  # register documents")
     print("  answer = engine.answer(Query(text='your question'))")
     print()
 

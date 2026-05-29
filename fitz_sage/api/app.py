@@ -32,11 +32,13 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
-    # Add CORS middleware for browser clients
+    # Add CORS middleware for browser clients. allow_credentials must be False
+    # when origins is "*" — browsers reject the wildcard+credentials combination,
+    # and this API is unauthenticated (no cookies/credentials to send).
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
