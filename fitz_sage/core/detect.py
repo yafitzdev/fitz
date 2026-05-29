@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 import os
-import socket
 from dataclasses import dataclass
 from typing import Optional
 
@@ -59,54 +58,6 @@ class SystemStatus:
 
     llm_endpoint: ServiceStatus
     api_keys: dict[str, ApiKeyStatus]
-
-    @property
-    def best_llm_spec(self) -> str:
-        """
-        Recommend a chat spec given what's available.
-
-        Priority:
-          1. A local OpenAI-compatible server → ``endpoint/<placeholder>``.
-          2. ``OPENAI_API_KEY`` set → ``openai/gpt-4o``.
-          3. Fallback → ``endpoint/qwen2.5-7b-instruct`` (won't work
-             until user starts a llama-server, but the error message
-             from the endpoint provider is actionable).
-        """
-        if self.llm_endpoint.available:
-            return "endpoint/qwen2.5-7b-instruct"
-        if self.api_keys.get("openai", ApiKeyStatus(name="OpenAI", available=False)).available:
-            return "openai/gpt-4o"
-        return "endpoint/qwen2.5-7b-instruct"
-
-    @property
-    def best_chat_base_url(self) -> Optional[str]:
-        """Recommend a chat base_url for the ``endpoint`` provider."""
-        if self.llm_endpoint.available and self.llm_endpoint.base_url:
-            return self.llm_endpoint.base_url
-        return "http://localhost:8080/v1"
-
-    @property
-    def best_rerank(self) -> Optional[str]:
-        """No first-class rerank backend exists; rerank is moving to LLM-rerank."""
-        return None
-
-
-# =============================================================================
-# Network helpers
-# =============================================================================
-
-
-def _get_local_ip() -> Optional[str]:
-    """Get the local machine's IP address on the LAN."""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0.1)
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
-        s.close()
-        return local_ip
-    except Exception:
-        return None
 
 
 # =============================================================================
