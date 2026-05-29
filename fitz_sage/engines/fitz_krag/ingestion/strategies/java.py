@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import node_text, path_to_module
 from fitz_sage.engines.fitz_krag.ingestion.strategies.base import (
     ImportEdge,
     IngestResult,
@@ -69,7 +70,7 @@ class JavaIngestStrategy:
 
         lines = source.splitlines()
         package = _extract_package(tree.root_node)
-        module_name = package or _path_to_module(file_path)
+        module_name = package or path_to_module(file_path, (".java",))
         symbols: list[SymbolEntry] = []
         imports: list[ImportEdge] = []
 
@@ -89,7 +90,7 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
 
     # Detect package for qualified names
     pkg_match = _PACKAGE_RE.search(source)
-    module_name = pkg_match.group(1) if pkg_match else _path_to_module(file_path)
+    module_name = pkg_match.group(1) if pkg_match else path_to_module(file_path, (".java",))
 
     symbols: list[SymbolEntry] = []
     imports: list[ImportEdge] = []
@@ -239,7 +240,7 @@ def _extract_class(node, lines, module_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
@@ -247,9 +248,9 @@ def _extract_class(node, lines, module_name):
     interfaces = node.child_by_field_name("interfaces")
     sig_parts = [f"class {name}"]
     if superclass:
-        sig_parts.append(f"extends {_node_text(superclass)}")
+        sig_parts.append(f"extends {node_text(superclass)}")
     if interfaces:
-        sig_parts.append(f"implements {_node_text(interfaces)}")
+        sig_parts.append(f"implements {node_text(interfaces)}")
 
     return SymbolEntry(
         name=name,
@@ -266,7 +267,7 @@ def _extract_interface(node, lines, module_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
@@ -285,7 +286,7 @@ def _extract_enum(node, lines, module_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
@@ -304,7 +305,7 @@ def _extract_record(node, lines, module_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
@@ -323,14 +324,14 @@ def _extract_method(node, lines, module_name, class_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
     return_type = node.child_by_field_name("type")
     params = node.child_by_field_name("parameters")
-    ret_str = f"{_node_text(return_type)} " if return_type else ""
-    sig = f"{ret_str}{name}{_node_text(params) if params else '()'}"
+    ret_str = f"{node_text(return_type)} " if return_type else ""
+    sig = f"{ret_str}{name}{node_text(params) if params else '()'}"
 
     return SymbolEntry(
         name=name,
@@ -345,12 +346,12 @@ def _extract_method(node, lines, module_name, class_name):
 def _extract_constructor(node, lines, module_name, class_name):
     """Extract a constructor declaration."""
     name_node = node.child_by_field_name("name")
-    name = _node_text(name_node) if name_node else class_name
+    name = node_text(name_node) if name_node else class_name
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
     params = node.child_by_field_name("parameters")
-    sig = f"{name}{_node_text(params) if params else '()'}"
+    sig = f"{name}{node_text(params) if params else '()'}"
 
     return SymbolEntry(
         name=name,
@@ -373,7 +374,7 @@ def _extract_field(node, lines, module_name, class_name):
         if child.type == "variable_declarator":
             name_node = child.child_by_field_name("name")
             if name_node:
-                name = _node_text(name_node)
+                name = node_text(name_node)
                 fields.append(
                     SymbolEntry(
                         name=name,
@@ -389,7 +390,7 @@ def _extract_field(node, lines, module_name, class_name):
 
 def _extract_import(node):
     """Extract import edge from an import declaration."""
-    text = _node_text(node).strip().rstrip(";")
+    text = node_text(node).strip().rstrip(";")
     if text.startswith("import "):
         text = text[7:].strip()
         if text.startswith("static "):
@@ -410,26 +411,7 @@ def _extract_package(root_node):
     """Extract package name from root node."""
     for child in root_node.children:
         if child.type == "package_declaration":
-            text = _node_text(child).strip().rstrip(";")
+            text = node_text(child).strip().rstrip(";")
             if text.startswith("package "):
                 return text[8:].strip()
     return None
-
-
-def _node_text(node) -> str:
-    """Get text content of a tree-sitter node."""
-    if node is None:
-        return ""
-    if isinstance(node.text, bytes):
-        return node.text.decode("utf-8")
-    return str(node.text)
-
-
-def _path_to_module(file_path: str) -> str:
-    """Convert file path to package-like name."""
-    path = file_path.replace("\\", "/")
-    if path.startswith("./"):
-        path = path[2:]
-    if path.endswith(".java"):
-        path = path[:-5]
-    return path.replace("/", ".")

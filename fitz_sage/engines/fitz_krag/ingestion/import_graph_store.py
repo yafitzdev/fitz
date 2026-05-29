@@ -7,6 +7,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import path_to_module
 from fitz_sage.engines.fitz_krag.ingestion.schema import TABLE_PREFIX
 
 if TYPE_CHECKING:
@@ -88,7 +89,7 @@ class ImportGraphStore:
         """Resolve target_file_id for edges whose target_file_id is NULL."""
         module_to_id: dict[str, str] = {}
         for path, file_id in path_to_id.items():
-            module = _path_to_module(path)
+            module = path_to_module(path, (".py",), "/__init__")
             module_to_id[module] = file_id
 
         select_sql = f"""
@@ -131,14 +132,3 @@ def _row_to_dict(row: tuple) -> dict[str, Any]:
         "target_file_id": row[2],
         "import_names": names,
     }
-
-
-def _path_to_module(file_path: str) -> str:
-    path = file_path.replace("\\", "/")
-    if path.startswith("./"):
-        path = path[2:]
-    if path.endswith(".py"):
-        path = path[:-3]
-    if path.endswith("/__init__"):
-        path = path[: -len("/__init__")]
-    return path.replace("/", ".")

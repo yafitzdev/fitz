@@ -15,12 +15,14 @@ sys.modules.setdefault("tree_sitter", _mock_ts)
 sys.modules.setdefault("tree_sitter_java", _mock_ts_java)
 
 import fitz_sage.engines.fitz_krag.ingestion.strategies.java as _java_mod  # noqa: E402
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import (  # noqa: E402
+    node_text,
+    path_to_module,
+)
 from fitz_sage.engines.fitz_krag.ingestion.strategies.java import (  # noqa: E402
     JavaIngestStrategy,
     _extract_import,
     _extract_package,
-    _node_text,
-    _path_to_module,
     _walk_node,
 )
 
@@ -56,16 +58,16 @@ def _make_tree(root_children):
 # ---------------------------------------------------------------------------
 class TestHelpers:
     def test_path_to_module(self):
-        assert _path_to_module("com/example/App.java") == "com.example.App"
+        assert path_to_module("com/example/App.java", (".java",)) == "com.example.App"
 
     def test_path_to_module_backslash(self):
-        assert _path_to_module("com\\example\\App.java") == "com.example.App"
+        assert path_to_module("com\\example\\App.java", (".java",)) == "com.example.App"
 
     def test_node_text_bytes(self):
-        assert _node_text(MockNode("id", b"hello")) == "hello"
+        assert node_text(MockNode("id", b"hello")) == "hello"
 
     def test_node_text_none(self):
-        assert _node_text(None) == ""
+        assert node_text(None) == ""
 
     def test_extract_package(self):
         pkg_text = MockNode("package_declaration", "package com.example;", (0, 0), (0, 20))

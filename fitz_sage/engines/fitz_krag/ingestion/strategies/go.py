@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import node_text, path_to_module
 from fitz_sage.engines.fitz_krag.ingestion.strategies.base import (
     ImportEdge,
     IngestResult,
@@ -63,7 +64,7 @@ class GoIngestStrategy:
 
         lines = source.splitlines()
         package = _extract_package(tree.root_node)
-        module_name = package or _path_to_module(file_path)
+        module_name = package or path_to_module(file_path, (".go",))
         symbols: list[SymbolEntry] = []
         imports: list[ImportEdge] = []
 
@@ -139,7 +140,7 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
         _warned_no_tree_sitter = True
 
     pkg_match = _PACKAGE_RE.search(source)
-    module_name = pkg_match.group(1) if pkg_match else _path_to_module(file_path)
+    module_name = pkg_match.group(1) if pkg_match else path_to_module(file_path, (".go",))
     lines = source.splitlines()
 
     symbols: list[SymbolEntry] = []
@@ -248,15 +249,15 @@ def _extract_function(node, lines, module_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
     params = node.child_by_field_name("parameters")
     result = node.child_by_field_name("result")
-    sig = f"func {name}{_node_text(params) if params else '()'}"
+    sig = f"func {name}{node_text(params) if params else '()'}"
     if result:
-        sig += f" {_node_text(result)}"
+        sig += f" {node_text(result)}"
 
     return SymbolEntry(
         name=name,
@@ -275,7 +276,7 @@ def _extract_method(node, lines, module_name):
     if not name_node:
         return None
 
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
@@ -283,10 +284,10 @@ def _extract_method(node, lines, module_name):
     params = node.child_by_field_name("parameters")
     result = node.child_by_field_name("result")
 
-    receiver_str = f"({_node_text(receiver_node)})" if receiver_node else "()"
-    sig = f"func {receiver_str} {name}{_node_text(params) if params else '()'}"
+    receiver_str = f"({node_text(receiver_node)})" if receiver_node else "()"
+    sig = f"func {receiver_str} {name}{node_text(params) if params else '()'}"
     if result:
-        sig += f" {_node_text(result)}"
+        sig += f" {node_text(result)}"
 
     qualified = (
         f"{module_name}.{receiver_type}.{name}" if receiver_type else f"{module_name}.{name}"
@@ -312,7 +313,7 @@ def _extract_type_decl(node, lines, module_name):
             if not name_node:
                 continue
 
-            name = _node_text(name_node)
+            name = node_text(name_node)
             start = node.start_point[0] + 1
             end = node.end_point[0] + 1
 
@@ -349,7 +350,7 @@ def _extract_const_var(node, lines, module_name, kind):
         if child.type in ("const_spec", "var_spec"):
             name_node = child.child_by_field_name("name")
             if name_node:
-                name = _node_text(name_node)
+                name = node_text(name_node)
                 symbols.append(
                     SymbolEntry(
                         name=name,
@@ -370,7 +371,7 @@ def _extract_imports(node):
         if child.type == "import_spec":
             path_node = child.child_by_field_name("path")
             if path_node:
-                path = _node_text(path_node).strip('"')
+                path = node_text(path_node).strip('"')
                 name = path.rsplit("/", 1)[-1]
                 edges.append(ImportEdge(target_module=path, import_names=[name]))
         elif child.type == "import_spec_list":
@@ -378,7 +379,7 @@ def _extract_imports(node):
                 if spec.type == "import_spec":
                     path_node = spec.child_by_field_name("path")
                     if path_node:
-                        path = _node_text(path_node).strip('"')
+                        path = node_text(path_node).strip('"')
                         name = path.rsplit("/", 1)[-1]
                         edges.append(ImportEdge(target_module=path, import_names=[name]))
     return edges
@@ -390,7 +391,7 @@ def _extract_package(root_node):
         if child.type == "package_clause":
             for sub in child.children:
                 if sub.type == "package_identifier":
-                    return _node_text(sub)
+                    return node_text(sub)
     return None
 
 
@@ -398,7 +399,7 @@ def _extract_receiver_type(receiver_node):
     """Extract the type name from a method receiver."""
     if not receiver_node:
         return None
-    text = _node_text(receiver_node)
+    text = node_text(receiver_node)
     text = text.strip("()")
     parts = text.split()
     for part in reversed(parts):
@@ -406,22 +407,3 @@ def _extract_receiver_type(receiver_node):
         if clean and clean[0].isupper():
             return clean
     return None
-
-
-def _node_text(node) -> str:
-    """Get text content of a tree-sitter node."""
-    if node is None:
-        return ""
-    if isinstance(node.text, bytes):
-        return node.text.decode("utf-8")
-    return str(node.text)
-
-
-def _path_to_module(file_path: str) -> str:
-    """Convert file path to package-like name."""
-    path = file_path.replace("\\", "/")
-    if path.startswith("./"):
-        path = path[2:]
-    if path.endswith(".go"):
-        path = path[:-3]
-    return path.replace("/", ".")

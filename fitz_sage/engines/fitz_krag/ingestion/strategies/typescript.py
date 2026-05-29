@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import re
 
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import node_text, path_to_module
 from fitz_sage.engines.fitz_krag.ingestion.strategies.base import (
     ImportEdge,
     IngestResult,
@@ -73,7 +74,7 @@ class TypeScriptIngestStrategy:
             return _regex_fallback(source, file_path)
 
         lines = source.splitlines()
-        module_name = _path_to_module(file_path)
+        module_name = path_to_module(file_path, (".ts", ".tsx", ".js", ".jsx"), "/index")
         symbols: list[SymbolEntry] = []
         imports: list[ImportEdge] = []
 
@@ -91,7 +92,7 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
         )
         _warned_no_tree_sitter = True
 
-    module_name = _path_to_module(file_path)
+    module_name = path_to_module(file_path, (".ts", ".tsx", ".js", ".jsx"), "/index")
     symbols: list[SymbolEntry] = []
     imports: list[ImportEdge] = []
 
@@ -224,11 +225,11 @@ def _extract_function(node, lines, module_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
     params = node.child_by_field_name("parameters")
-    sig = f"function {name}{_node_text(params) if params else '()'}"
+    sig = f"function {name}{node_text(params) if params else '()'}"
 
     return SymbolEntry(
         name=name,
@@ -245,7 +246,7 @@ def _extract_class(node, lines, module_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
@@ -267,7 +268,7 @@ def _extract_interface(node, lines, module_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
@@ -286,7 +287,7 @@ def _extract_type_alias(node, lines, module_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
 
@@ -305,11 +306,11 @@ def _extract_method(node, lines, module_name, class_name):
     name_node = node.child_by_field_name("name")
     if not name_node:
         return None
-    name = _node_text(name_node)
+    name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
     params = node.child_by_field_name("parameters")
-    sig = f"{name}{_node_text(params) if params else '()'}"
+    sig = f"{name}{node_text(params) if params else '()'}"
 
     return SymbolEntry(
         name=name,
@@ -331,13 +332,13 @@ def _extract_lexical(node, lines, module_name):
             if not name_node:
                 continue
 
-            name = _node_text(name_node)
+            name = node_text(name_node)
             start = node.start_point[0] + 1
             end = node.end_point[0] + 1
 
             if value_node and value_node.type == "arrow_function":
                 params = value_node.child_by_field_name("parameters")
-                sig = f"const {name} = {_node_text(params) if params else '()'} => ..."
+                sig = f"const {name} = {node_text(params) if params else '()'} => ..."
                 kind = "function"
             else:
                 sig = f"const {name}"
@@ -362,20 +363,20 @@ def _extract_import(node):
     if not source_node:
         return None
 
-    module_path = _node_text(source_node).strip("'\"")
+    module_path = node_text(source_node).strip("'\"")
     import_names = []
 
     for child in node.children:
         if child.type == "import_clause":
             for sub in child.children:
                 if sub.type == "identifier":
-                    import_names.append(_node_text(sub))
+                    import_names.append(node_text(sub))
                 elif sub.type == "named_imports":
                     for spec in sub.children:
                         if spec.type == "import_specifier":
                             name_node = spec.child_by_field_name("name")
                             if name_node:
-                                import_names.append(_node_text(name_node))
+                                import_names.append(node_text(name_node))
 
     return ImportEdge(target_module=module_path, import_names=import_names)
 
@@ -384,28 +385,5 @@ def _get_heritage(node):
     """Get heritage clause (extends/implements) text."""
     for child in node.children:
         if child.type == "class_heritage":
-            return f" {_node_text(child)}"
+            return f" {node_text(child)}"
     return ""
-
-
-def _node_text(node) -> str:
-    """Get text content of a tree-sitter node."""
-    if node is None:
-        return ""
-    if isinstance(node.text, bytes):
-        return node.text.decode("utf-8")
-    return str(node.text)
-
-
-def _path_to_module(file_path: str) -> str:
-    """Convert file path to module-like name."""
-    path = file_path.replace("\\", "/")
-    if path.startswith("./"):
-        path = path[2:]
-    for ext in (".ts", ".tsx", ".js", ".jsx"):
-        if path.endswith(ext):
-            path = path[: -len(ext)]
-            break
-    if path.endswith("/index"):
-        path = path[: -len("/index")]
-    return path.replace("/", ".")

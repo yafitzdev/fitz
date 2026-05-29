@@ -12,6 +12,7 @@ import ast
 import logging
 import re
 
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import path_to_module
 from fitz_sage.engines.fitz_krag.ingestion.strategies.base import (
     ImportEdge,
     IngestResult,
@@ -35,7 +36,7 @@ class PythonCodeIngestStrategy:
             logger.warning(f"Syntax error in {file_path}: {e}, using regex fallback")
             return _regex_fallback(source, file_path)
 
-        module_name = _path_to_module(file_path)
+        module_name = path_to_module(file_path, (".py",), "/__init__")
         symbols: list[SymbolEntry] = [_extract_module(tree, module_name)]
         imports: list[ImportEdge] = []
 
@@ -95,7 +96,7 @@ _RX_IMPORT = re.compile(r"^(?:from\s+([\w.]+)\s+)?import\s+(\w+)", re.MULTILINE)
 
 def _regex_fallback(source: str, file_path: str) -> IngestResult:
     """Extract symbols via regex when ast.parse() fails due to syntax errors."""
-    module_name = _path_to_module(file_path)
+    module_name = path_to_module(file_path, (".py",), "/__init__")
     symbols: list[SymbolEntry] = []
     imports: list[ImportEdge] = []
 
@@ -352,16 +353,3 @@ def _resolve_relative_import(
         parts.append(import_module)
 
     return ".".join(parts) if parts else None
-
-
-def _path_to_module(file_path: str) -> str:
-    """Convert file path to a Python module-like name."""
-    # Strip leading ./ and trailing .py, replace / with .
-    path = file_path.replace("\\", "/")
-    if path.startswith("./"):
-        path = path[2:]
-    if path.endswith(".py"):
-        path = path[:-3]
-    if path.endswith("/__init__"):
-        path = path[: -len("/__init__")]
-    return path.replace("/", ".")

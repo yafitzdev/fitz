@@ -17,13 +17,21 @@ sys.modules["tree_sitter"] = _mock_ts
 sys.modules["tree_sitter_typescript"] = _mock_ts_lang
 
 import fitz_sage.engines.fitz_krag.ingestion.strategies.typescript as _ts_mod  # noqa: E402
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import (  # noqa: E402
+    node_text,
+    path_to_module,
+)
 from fitz_sage.engines.fitz_krag.ingestion.strategies.typescript import (  # noqa: E402
     TypeScriptIngestStrategy,
     _extract_import,
-    _node_text,
-    _path_to_module,
     _walk_node,
 )
+
+_TS_EXTS = (".ts", ".tsx", ".js", ".jsx")
+
+
+def _ts_path_to_module(path: str) -> str:
+    return path_to_module(path, _TS_EXTS, "/index")
 
 
 # ---------------------------------------------------------------------------
@@ -63,23 +71,23 @@ def _make_tree(root_children):
 # ---------------------------------------------------------------------------
 class TestHelpers:
     def test_path_to_module_ts(self):
-        assert _path_to_module("src/utils.ts") == "src.utils"
+        assert _ts_path_to_module("src/utils.ts") == "src.utils"
 
     def test_path_to_module_tsx(self):
-        assert _path_to_module("components/App.tsx") == "components.App"
+        assert _ts_path_to_module("components/App.tsx") == "components.App"
 
     def test_path_to_module_js(self):
-        assert _path_to_module("lib/index.js") == "lib"
+        assert _ts_path_to_module("lib/index.js") == "lib"
 
     def test_path_to_module_backslash(self):
-        assert _path_to_module("src\\utils.ts") == "src.utils"
+        assert _ts_path_to_module("src\\utils.ts") == "src.utils"
 
     def test_node_text_bytes(self):
         node = MockNode("id", b"hello")
-        assert _node_text(node) == "hello"
+        assert node_text(node) == "hello"
 
     def test_node_text_none(self):
-        assert _node_text(None) == ""
+        assert node_text(None) == ""
 
 
 # ---------------------------------------------------------------------------

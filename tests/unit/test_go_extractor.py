@@ -15,13 +15,15 @@ sys.modules.setdefault("tree_sitter", _mock_ts)
 sys.modules.setdefault("tree_sitter_go", _mock_ts_go)
 
 import fitz_sage.engines.fitz_krag.ingestion.strategies.go as _go_mod  # noqa: E402
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import (  # noqa: E402
+    node_text,
+    path_to_module,
+)
 from fitz_sage.engines.fitz_krag.ingestion.strategies.go import (  # noqa: E402
     GoIngestStrategy,
     _extract_imports,
     _extract_package,
     _extract_receiver_type,
-    _node_text,
-    _path_to_module,
 )
 
 
@@ -56,16 +58,16 @@ def _make_tree(root_children):
 # ---------------------------------------------------------------------------
 class TestHelpers:
     def test_path_to_module(self):
-        assert _path_to_module("cmd/server/main.go") == "cmd.server.main"
+        assert path_to_module("cmd/server/main.go", (".go",)) == "cmd.server.main"
 
     def test_path_to_module_backslash(self):
-        assert _path_to_module("pkg\\handler.go") == "pkg.handler"
+        assert path_to_module("pkg\\handler.go", (".go",)) == "pkg.handler"
 
     def test_node_text_bytes(self):
-        assert _node_text(MockNode("id", b"hello")) == "hello"
+        assert node_text(MockNode("id", b"hello")) == "hello"
 
     def test_node_text_none(self):
-        assert _node_text(None) == ""
+        assert node_text(None) == ""
 
     def test_extract_package(self):
         pkg_id = MockNode("package_identifier", "main", (0, 8), (0, 12))
