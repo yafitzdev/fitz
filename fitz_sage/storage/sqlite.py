@@ -27,7 +27,6 @@ from fitz_sage.storage.config import StorageConfig
 logger = get_logger(__name__)
 
 
-COLLECTION_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 _DB_PREFIX = "fitz_"
 
 
@@ -168,24 +167,6 @@ class SqliteConnectionManager:
             cur = conn.execute(sql, params)
             conn.commit()
             return cur
-
-    def is_healthy(self) -> tuple[bool, str]:
-        if not self._started:
-            return False, "Not started"
-        if self._storage_dir is None or not self._storage_dir.exists():
-            return False, f"Storage dir missing: {self._storage_dir}"
-        return True, f"SQLite storage at {self._storage_dir}"
-
-    def get_stats(self) -> dict[str, Any]:
-        stats: dict[str, Any] = {
-            "started": self._started,
-            "storage_dir": str(self._storage_dir) if self._storage_dir else None,
-        }
-        if self._storage_dir and self._storage_dir.exists():
-            stats["collections"] = len(self.list_collections())
-        else:
-            stats["collections"] = 0
-        return stats
 
     def stop(self) -> None:
         """Mark stopped. No persistent state to release (no pool, no server)."""

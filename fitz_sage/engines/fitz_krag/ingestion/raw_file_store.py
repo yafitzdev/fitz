@@ -65,17 +65,6 @@ class RawFileStore:
             return None
         return _row_to_dict(row)
 
-    def get_by_path(self, path: str) -> dict[str, Any] | None:
-        sql = f"""
-            SELECT id, path, content, content_hash, file_type, size_bytes, metadata
-            FROM {TABLE} WHERE path = ?
-        """
-        with self._cm.connection(self._collection) as conn:
-            row = conn.execute(sql, (path,)).fetchone()
-        if not row:
-            return None
-        return _row_to_dict(row)
-
     def delete(self, file_id: str) -> None:
         """Delete a raw file (cascades to symbols + imports via FK)."""
         sql = f"DELETE FROM {TABLE} WHERE id = ?"

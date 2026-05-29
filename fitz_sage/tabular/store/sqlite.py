@@ -255,15 +255,6 @@ class SqliteTableStore:
                 logger.warning(f"{STORAGE} Multi-table query failed: {e}")
                 return None
 
-    def get_hash(self, table_id: str) -> str | None:
-        self._ensure_schema()
-        with self._manager.connection(self.collection) as conn:
-            result = conn.execute(
-                "SELECT hash FROM _table_metadata WHERE table_id = ?",
-                (table_id,),
-            ).fetchone()
-            return result[0] if result else None
-
     def get_row_count(self, table_id: str) -> int | None:
         self._ensure_schema()
         with self._manager.connection(self.collection) as conn:
@@ -368,12 +359,6 @@ class SqliteTableStore:
             existing = [c for c in columns if c in existing_original]
             missing = [c for c in columns if c not in existing_original]
             return existing, missing
-
-    def list_tables(self) -> list[str]:
-        self._ensure_schema()
-        with self._manager.connection(self.collection) as conn:
-            cursor = conn.execute("SELECT table_id FROM _table_metadata ORDER BY table_id")
-            return [row[0] for row in cursor]
 
     def delete(self, table_id: str) -> None:
         self._ensure_schema()

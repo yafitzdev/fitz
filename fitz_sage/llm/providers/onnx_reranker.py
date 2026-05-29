@@ -28,8 +28,6 @@ Public surface — implements `RerankProvider`:
 
 from __future__ import annotations
 
-from typing import Iterable
-
 from fitz_sage.encoders.onnx import OnnxEncoderBackend
 from fitz_sage.llm.providers.base import RerankResult
 
@@ -125,17 +123,6 @@ class OnnxReranker(OnnxEncoderBackend):
             for i, s in enumerate(batch_scores.tolist()):
                 scores[start + i] = float(s)
         return scores
-
-    @classmethod
-    def from_iterable(
-        cls,
-        documents: Iterable[str],
-        query: str,
-        top_n: int | None = None,
-        **kwargs,
-    ) -> list[RerankResult]:
-        """Convenience: instantiate + rerank in one call (for tests / one-shots)."""
-        return cls(**kwargs).rerank(query, list(documents), top_n=top_n)
 
 
 __all__ = ["OnnxReranker", "DEFAULT_MODEL_ID"]

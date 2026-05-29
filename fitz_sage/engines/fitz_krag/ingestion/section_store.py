@@ -180,24 +180,6 @@ class SectionStore:
             rows = conn.execute(sql, (section_id,)).fetchall()
         return [_row_to_dict(row) for row in rows]
 
-    def get_siblings(self, section_id: str) -> list[dict[str, Any]]:
-        section = self.get(section_id)
-        if not section:
-            return []
-        parent_id = section.get("parent_section_id")
-        if parent_id:
-            return self.get_children(parent_id)
-        sql = f"""
-            SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, metadata
-            FROM {TABLE}
-            WHERE raw_file_id = ? AND parent_section_id IS NULL
-            ORDER BY position
-        """
-        with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, (section["raw_file_id"],)).fetchall()
-        return [_row_to_dict(row) for row in rows]
-
     def update_summaries_by_file(self, raw_file_id: str, summaries: list[str]) -> None:
         ids_sql = f"""
             SELECT id FROM {TABLE}

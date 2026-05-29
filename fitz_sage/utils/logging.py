@@ -133,21 +133,6 @@ class StructuredLogger:
         finally:
             _operation_context.reset(token)
 
-    @contextmanager
-    def suppress(self, *exceptions, message: str = None):
-        """
-        Suppress and log exceptions.
-
-        Example:
-            with logger.suppress(ValueError, message="Invalid config"):
-                parse_config()  # Logs but doesn't raise ValueError
-        """
-        try:
-            yield
-        except exceptions as e:
-            msg = message or f"Suppressed {type(e).__name__}"
-            self.warning(msg, error=str(e), error_type=type(e).__name__)
-
 
 def get_logger(name: str) -> StructuredLogger:
     """

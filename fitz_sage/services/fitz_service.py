@@ -313,32 +313,6 @@ class FitzService:
             warnings=warnings,
         )
 
-    def get_config_summary(self) -> dict[str, Any]:
-        """
-        Get a summary of current configuration.
-
-        Returns:
-            Dict with plugin names, models, and settings
-        """
-        try:
-            from fitz_sage.cli.context import CLIContext
-
-            ctx = CLIContext.load()
-
-            return {
-                "chat": ctx.chat_plugin,
-                "chat_model_smart": ctx.chat_model_smart,
-                "chat_model_fast": ctx.chat_model_fast,
-                "rerank": ctx.rerank_plugin,
-                "retrieval_plugin": ctx.retrieval_plugin,
-                "collection": ctx.retrieval_collection,
-                "chunk_size": ctx.chunk_size,
-                "chunk_overlap": ctx.chunk_overlap,
-            }
-        except Exception as e:
-            logger.error(f"Failed to get config summary: {e}", exc_info=True)
-            return {"error": str(e)}
-
     # =========================================================================
     # Health & Diagnostics
     # =========================================================================

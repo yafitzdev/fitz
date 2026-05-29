@@ -103,20 +103,6 @@ class EntityGraphStore:
             conn.execute("DELETE FROM entity_chunks WHERE chunk_id = ?", (chunk_id,))
             conn.commit()
 
-    def remove_chunks(self, chunk_ids: list[str]) -> None:
-        if not chunk_ids:
-            return
-
-        self._ensure_schema()
-
-        placeholders = ",".join(["?"] * len(chunk_ids))
-        with self._manager.connection(self.collection) as conn:
-            conn.execute(
-                f"DELETE FROM entity_chunks WHERE chunk_id IN ({placeholders})",
-                tuple(chunk_ids),
-            )
-            conn.commit()
-
     # =========================================================================
     # Read Operations
     # =========================================================================
@@ -206,46 +192,6 @@ class EntityGraphStore:
                 (*normalized, limit),
             )
             return [row[0] for row in cursor.fetchall()]
-
-    def get_entities_for_chunk(self, chunk_id: str) -> list[dict]:
-        self._ensure_schema()
-        with self._manager.connection(self.collection) as conn:
-            cursor = conn.execute(
-                """
-                SELECT e.name, e.display_name, e.entity_type
-                FROM entity_chunks ec
-                JOIN entities e ON ec.entity_name = e.name
-                WHERE ec.chunk_id = ?
-                """,
-                (chunk_id,),
-            )
-            return [
-                {"name": row[0], "display_name": row[1], "type": row[2]}
-                for row in cursor.fetchall()
-            ]
-
-    def get_entities_for_chunks(self, chunk_ids: list[str]) -> dict[str, list[str]]:
-        if not chunk_ids:
-            return {}
-
-        self._ensure_schema()
-
-        placeholders = ",".join(["?"] * len(chunk_ids))
-        with self._manager.connection(self.collection) as conn:
-            cursor = conn.execute(
-                f"""
-                SELECT ec.chunk_id, e.display_name
-                FROM entity_chunks ec
-                JOIN entities e ON ec.entity_name = e.name
-                WHERE ec.chunk_id IN ({placeholders})
-                """,
-                tuple(chunk_ids),
-            )
-
-            result: dict[str, list[str]] = {cid: [] for cid in chunk_ids}
-            for row in cursor.fetchall():
-                result[row[0]].append(row[1])
-            return result
 
     def find_related_topics(
         self,

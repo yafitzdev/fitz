@@ -60,22 +60,6 @@ class TableStore(Protocol):
         """
         ...
 
-    def get_hash(self, table_id: str) -> str | None:
-        """
-        Get hash without retrieving full data (for cache check).
-
-        Args:
-            table_id: Table identifier
-
-        Returns:
-            Hash string if table exists, None otherwise
-        """
-        ...
-
-    def list_tables(self) -> list[str]:
-        """List all table IDs."""
-        ...
-
     def delete(self, table_id: str) -> None:
         """Delete a table."""
         ...

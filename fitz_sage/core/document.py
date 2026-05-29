@@ -55,7 +55,6 @@ class ElementType(Enum):
     CODE_BLOCK = "code_block"  # Source code
     LIST_ITEM = "list_item"  # Bulleted or numbered list item
     QUOTE = "quote"  # Block quote
-    PAGE_BREAK = "page_break"  # Page boundary marker
 
 
 @dataclass
@@ -107,10 +106,6 @@ class ParsedDocument:
     def page_count(self) -> Optional[int]:
         """Number of pages (if available from metadata)."""
         return self.metadata.get("page_count")
-
-    def elements_by_type(self, element_type: ElementType) -> List[DocumentElement]:
-        """Get all elements of a specific type."""
-        return [el for el in self.elements if el.type == element_type]
 
     def __repr__(self) -> str:
         return f"ParsedDocument({self.source!r}, {self.element_count} elements)"
