@@ -106,7 +106,7 @@ class EngineRegistration:
     Function that returns the path to the engine's default config file.
 
     Signature: () -> Path
-    Used by fitz init to copy default config to user config directory.
+    Used to copy the engine's default config to the user config directory.
     """
 
     list_collections: Optional[Callable[[], List[str]]] = None

@@ -26,7 +26,7 @@ def display_answer(answer, show_sources: bool = True) -> None:
     """
     Display an answer with optional sources.
 
-    Used by both `fitz query` and `fitz quickstart` for consistent output.
+    Used by `fitz query` for consistent output.
     Supports both core Answer (.text, .provenance) and RGSAnswer (.answer, .sources).
 
     Args:

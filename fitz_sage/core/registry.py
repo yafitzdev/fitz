@@ -267,7 +267,7 @@ def _get_plugin_paths(plugin_type: str) -> list[Path]:
     return paths
 
 
-# Default chunkers (simple, recursive) - shown in fitz init
+# Default chunkers (simple, recursive) — the general-purpose set.
 CHUNKING_REGISTRY = PluginRegistry(
     name="chunking",
     scan_packages=["fitz_sage.ingestion.chunking.plugins.default"],
@@ -275,8 +275,8 @@ CHUNKING_REGISTRY = PluginRegistry(
     user_plugin_paths=_get_plugin_paths("chunking"),
 )
 
-# Type-specific chunkers (markdown, python_code, pdf_sections)
-# These are in the top-level plugins/ folder but NOT shown in fitz init.
+# Type-specific chunkers (markdown, python_code, pdf_sections).
+# These live in the top-level plugins/ folder (not part of the default set).
 # Used via by_extension config for file-type-specific chunking.
 TYPED_CHUNKING_REGISTRY = PluginRegistry(
     name="typed_chunking",
@@ -302,7 +302,7 @@ def get_chunking_plugin(plugin_name: str) -> Type[Any]:
 
 
 def available_chunking_plugins() -> List[str]:
-    """List available default chunking plugins (for fitz init)."""
+    """List available default chunking plugins."""
     return CHUNKING_REGISTRY.list_available()
 
 
