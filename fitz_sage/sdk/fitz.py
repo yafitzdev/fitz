@@ -1,11 +1,10 @@
 # fitz_sage/sdk/fitz.py
 """
-Fitz class - Stateful SDK for the Fitz KRAG framework.
+Fitz class - stateful SDK for the Fitz KRAG framework.
 
-This is a thin wrapper around FitzService that adds:
-- Stateful collection management (remembers collection across calls)
-- Auto-initialization of config
-- Simplified API for common use cases
+A thin, stateful wrapper around a single engine instance bound to one
+collection. It is the complete programmatic front door — point, query,
+retrieve, and wait — so consumers never need to drop down to create_engine.
 """
 
 from __future__ import annotations
@@ -13,11 +12,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
-from fitz_sage.core import Answer, ConfigurationError
+from fitz_sage.core import Answer, ConfigurationError, Query, QueryError
 from fitz_sage.logging.logger import get_logger
-from fitz_sage.services import FitzService
 
 if TYPE_CHECKING:
+    from fitz_sage.core import RetrievalEngine
     from fitz_sage.retrieval.rewriter.types import ConversationContext
 
 logger = get_logger(__name__)
@@ -27,26 +26,20 @@ class fitz:
     """
     Stateful SDK for the Fitz RAG framework.
 
-    Provides a single-call workflow:
-        answer = fitz.query("question?", source="./docs")
+    Holds one engine bound to a collection and exposes the full lifecycle::
 
-    Queries work immediately via agentic LLM-driven search.
-    Background indexing runs silently — queries get progressively faster.
+        f = fitz(collection="docs")
+        f.point("./docs")                  # register documents (indexes in bg)
+        answer = f.query("What is X?")     # synthesized answer
+        sources = f.retrieve("What is X?") # raw sources, no synthesis
+
+    Queries work immediately via agentic search and get better as background
+    indexing completes; call ``f.wait_for_indexing()`` to block until it finishes.
 
     Examples:
-        Simple usage:
         >>> f = fitz()
         >>> answer = f.query("What is the refund policy?", source="./docs")
         >>> print(answer.text)
-
-        With collection name:
-        >>> f = fitz(collection="physics")
-        >>> answer = f.query("Explain entanglement", source="./physics_papers")
-
-        With custom config:
-        >>> f = fitz(config_path="my_config.yaml")
-
-        Access provenance:
         >>> for source in answer.provenance:
         ...     print(source.excerpt)
     """
@@ -61,19 +54,17 @@ class fitz:
         Initialize the Fitz SDK.
 
         Args:
-            collection: Name for the collection. Documents ingested
-                       with this Fitz instance will be stored in this collection.
-            config_path: Path to a YAML config file. If not provided, uses
-                        the default config at .fitz/config.yaml or creates one.
-            auto_init: If True and no config exists, create a default one.
-                      If False, raise ConfigurationError when config missing.
+            collection: Collection name. Documents pointed at with this instance
+                are stored here and queries run against it.
+            config_path: Path to a YAML config. Defaults to ``.fitz/config.yaml``,
+                created automatically on first use if missing.
+            auto_init: If True, auto-create a default config when none exists;
+                if False, raise ConfigurationError.
         """
         self._collection = collection
         self._config_path = Path(config_path) if config_path else None
         self._auto_init = auto_init
-
-        # Service layer - does all the real work
-        self._service = FitzService()
+        self._engine: Optional["RetrievalEngine"] = None
 
     @property
     def collection(self) -> str:
@@ -89,6 +80,14 @@ class fitz:
 
         return FitzPaths.config()
 
+    def point(self, source: Union[str, Path]) -> None:
+        """Register a source file or directory for querying.
+
+        Indexing runs in the background; queries work immediately and improve as
+        it completes. Call ``wait_for_indexing()`` to block until it finishes.
+        """
+        self._get_engine().point(self._resolve_source(source), self._collection)
+
     def query(
         self,
         question: str,
@@ -96,48 +95,88 @@ class fitz:
         conversation_context: Optional["ConversationContext"] = None,
     ) -> Answer:
         """
-        Query the knowledge base. Optionally point at a source directory first.
+        Query the knowledge base. Optionally point at a source first.
 
         Args:
             question: The question to ask.
-            source: Path to a file or directory. If provided, registers documents
-                before querying (equivalent to CLI --source flag).
-            conversation_context: Optional ConversationContext for query rewriting.
-                Enables conversational pronoun resolution (e.g., "their" → "TechCorp's").
+            source: Optional file/directory to register before querying.
+            conversation_context: Optional context for query rewriting
+                (conversational pronoun resolution).
 
         Returns:
-            Answer object with text and provenance.
+            Answer with text, provenance, and epistemic mode.
 
         Raises:
-            ConfigurationError: If not configured.
-            QueryError: If query fails or question is empty.
+            ConfigurationError: If not configured and auto_init is False.
+            QueryError: If the question is empty.
         """
-        self._ensure_config()
-
+        if not question or not question.strip():
+            raise QueryError("Question cannot be empty")
+        engine = self._get_engine()
         if source is not None:
-            self._service.point(source=source, collection=self._collection)
+            engine.point(self._resolve_source(source), self._collection)
+        return engine.answer(Query(text=question, metadata=self._metadata(conversation_context)))
 
-        return self._service.query(
-            question=question,
-            collection=self._collection,
-            conversation_context=conversation_context,
+    def retrieve(
+        self,
+        question: str,
+        conversation_context: Optional["ConversationContext"] = None,
+    ) -> list:
+        """Retrieve the raw sources behind an answer, without synthesis.
+
+        Returns the engine's retrieved sources (for KRAG, ``ReadResult`` objects
+        with content, file_path, and line_range) — useful for building your own
+        synthesis or citations.
+        """
+        if not question or not question.strip():
+            raise QueryError("Question cannot be empty")
+        return self._get_engine().retrieve(
+            Query(text=question, metadata=self._metadata(conversation_context))
         )
 
+    def wait_for_indexing(self) -> None:
+        """Block until background indexing of pointed sources completes."""
+        self._get_engine().wait_for_indexing()
+
+    # -- internals ---------------------------------------------------------
+
+    @staticmethod
+    def _metadata(conversation_context: "ConversationContext | None") -> dict:
+        if conversation_context is None:
+            return {}
+        return {"conversation_context": conversation_context}
+
+    @staticmethod
+    def _resolve_source(source: Union[str, Path]) -> Path:
+        """Resolve and validate a source path (guards against traversal)."""
+        try:
+            return Path(source).resolve(strict=True)
+        except (OSError, RuntimeError) as e:
+            raise ValueError(f"Source path does not exist: {source}") from e
+
+    def _get_engine(self) -> "RetrievalEngine":
+        """Lazily create the collection-bound engine, reused across calls."""
+        if self._engine is None:
+            self._ensure_config()
+            from fitz_sage.runtime import create_engine
+
+            engine = create_engine(
+                config_path=str(self._config_path) if self._config_path else None
+            )
+            engine.load(self._collection)
+            self._engine = engine
+        return self._engine
+
     def _ensure_config(self) -> None:
-        """Ensure configuration file exists, creating if needed."""
-        config_path = self.config_path
-
-        if config_path.exists():
+        """Ensure a configuration file exists, creating it if needed."""
+        if self.config_path.exists():
             return
-
         if not self._auto_init:
             raise ConfigurationError(
-                f"Config file not found: {config_path}. "
+                f"Config file not found: {self.config_path}. "
                 f"Create it manually or pass auto_init=True."
             )
-
-        # Auto-detect providers and write config (same logic as CLI first-run)
         from fitz_sage.core.firstrun import run_firstrun_setup
 
         if not run_firstrun_setup():
-            raise ConfigurationError(f"No LLM provider available. Config: {config_path}")
+            raise ConfigurationError(f"No LLM provider available. Config: {self.config_path}")

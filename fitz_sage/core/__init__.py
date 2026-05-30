@@ -48,7 +48,7 @@ from .answer import Answer
 from .chunk import Chunk
 
 # Core protocol
-from .engine import KnowledgeEngine
+from .engine import KnowledgeEngine, RetrievalEngine
 
 # Core exceptions
 from .exceptions import (
@@ -74,6 +74,7 @@ from .utils import extract_path, set_nested_path
 __all__ = [
     # Protocol
     "KnowledgeEngine",
+    "RetrievalEngine",
     # Types
     "Query",
     "Answer",

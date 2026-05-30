@@ -89,8 +89,8 @@ class TestFitzQuery:
 
     def test_raises_on_empty_question(self, tmp_path):
         """Test that QueryError is raised for empty question."""
+        from fitz_sage.core import QueryError
         from fitz_sage.sdk import fitz
-        from fitz_sage.services.fitz_service import QueryError
 
         config_path = tmp_path / "config.yaml"
         _write_test_config(config_path)
@@ -101,8 +101,8 @@ class TestFitzQuery:
 
     def test_raises_on_whitespace_question(self, tmp_path):
         """Test that QueryError is raised for whitespace-only question."""
+        from fitz_sage.core import QueryError
         from fitz_sage.sdk import fitz
-        from fitz_sage.services.fitz_service import QueryError
 
         config_path = tmp_path / "config.yaml"
         _write_test_config(config_path)

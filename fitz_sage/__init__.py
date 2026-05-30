@@ -74,6 +74,7 @@ def __getattr__(name: str):
         "Provenance",
         "Query",
         "QueryError",
+        "RetrievalEngine",
         "TimeoutError",
         "UnsupportedOperationError",
     ):
@@ -157,6 +158,7 @@ __all__ = [
     "__version__",
     # Core Protocol
     "KnowledgeEngine",
+    "RetrievalEngine",
     # Core Types
     "Query",
     "Answer",
