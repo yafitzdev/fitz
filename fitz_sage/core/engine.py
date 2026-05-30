@@ -49,6 +49,10 @@ class RetrievalEngine(KnowledgeEngine, Protocol):
         """Block until background indexing of pointed sources completes."""
         ...
 
+    def indexing_status(self) -> dict:
+        """Report background-indexing progress (file counts by state)."""
+        ...
+
     def retrieve(self, query: Query) -> list:
         """Return the raw retrieved sources behind answer(), without synthesis."""
         ...

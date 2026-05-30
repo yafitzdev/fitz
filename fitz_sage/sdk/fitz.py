@@ -138,6 +138,14 @@ class fitz:
         """Block until background indexing of pointed sources completes."""
         self._get_engine().wait_for_indexing()
 
+    def indexing_status(self) -> dict:
+        """Background-indexing progress for this collection.
+
+        Returns counts (total, indexed, pending, by_state) and a ``complete``
+        flag. Queries work before completion and improve as it progresses.
+        """
+        return self._get_engine().indexing_status()
+
     # -- internals ---------------------------------------------------------
 
     @staticmethod

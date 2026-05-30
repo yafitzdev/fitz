@@ -216,6 +216,18 @@ class FitzService:
         engine.load(collection)
         return engine.point(source_path, collection, start_worker=start_worker)
 
+    def indexing_status(self, collection: str) -> dict:
+        """Report background-indexing progress for a collection.
+
+        Loads the persisted manifest (via a fresh engine), so it reflects
+        progress made by the background worker across processes.
+        """
+        from fitz_sage.runtime import create_engine
+
+        engine = create_engine()
+        engine.load(collection)
+        return engine.indexing_status()
+
     # =========================================================================
     # Collection Operations
     # =========================================================================

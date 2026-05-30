@@ -39,6 +39,10 @@ class QueryResponse(BaseModel):
     sources: List[SourceInfo] = Field(
         default_factory=list, description="Sources used in the answer"
     )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Extra answer metadata, e.g. gap_context (what's missing / what to add) on ABSTAIN",
+    )
 
 
 class ChatMessage(BaseModel):
@@ -65,6 +69,28 @@ class ChatResponse(BaseModel):
     mode: Optional[str] = Field(None, description="Answer mode: trustworthy, disputed, or abstain")
     sources: List[SourceInfo] = Field(
         default_factory=list, description="Sources used in the response"
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Extra answer metadata, e.g. gap_context (what's missing / what to add) on ABSTAIN",
+    )
+
+
+class IngestRequest(BaseModel):
+    """Request to register documents into a collection."""
+
+    source: str = Field(..., description="Path to a file or directory to ingest", min_length=1)
+
+
+class IndexingStatus(BaseModel):
+    """Background-indexing progress for a collection."""
+
+    total: int = Field(..., description="Total files registered")
+    indexed: int = Field(..., description="Files indexed (enriched or summarized)")
+    pending: int = Field(..., description="Files still pending (registered or parsed)")
+    complete: bool = Field(..., description="True when no files remain pending")
+    by_state: Dict[str, int] = Field(
+        default_factory=dict, description="File counts per indexing state"
     )
 
 

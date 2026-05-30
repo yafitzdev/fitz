@@ -1143,6 +1143,18 @@ class FitzKragEngine:
             manifest.save()
             _progress(f"Indexed {indexed} code files")
 
+    def indexing_status(self) -> dict[str, Any]:
+        """Report background-indexing progress for the loaded collection.
+
+        Reads the disk-persisted manifest, so it reflects progress made by the
+        background worker (shared across engine instances via disk).
+        """
+        from fitz_sage.engines.fitz_krag.progressive.manifest import (
+            indexing_status as _manifest_status,
+        )
+
+        return _manifest_status(self._manifest)
+
     def wait_for_indexing(self, progress: Callable[[str], None] | None = None) -> None:
         """Block until background indexing finishes.
 

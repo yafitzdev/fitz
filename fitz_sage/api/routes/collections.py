@@ -7,7 +7,12 @@ from fastapi import APIRouter
 
 from fitz_sage.api.dependencies import get_service
 from fitz_sage.api.error_handlers import handle_api_errors
-from fitz_sage.api.models.schemas import CollectionInfo, CollectionStats
+from fitz_sage.api.models.schemas import (
+    CollectionInfo,
+    CollectionStats,
+    IndexingStatus,
+    IngestRequest,
+)
 
 router = APIRouter(prefix="/collections", tags=["collections"])
 
@@ -50,3 +55,25 @@ async def delete_collection(name: str) -> dict:
     deleted = service.delete_collection(name)
 
     return {"deleted": deleted, "collection": name}
+
+
+@router.post("/{name}/documents", response_model=IndexingStatus, status_code=202)
+@handle_api_errors
+async def ingest_documents(name: str, request: IngestRequest) -> IndexingStatus:
+    """
+    Register documents into a collection.
+
+    Indexing runs in the background — queries work immediately and improve as it
+    completes. Poll ``GET /collections/{name}/status`` for progress.
+    """
+    service = get_service()
+    service.point(source=request.source, collection=name)
+    return IndexingStatus(**service.indexing_status(name))
+
+
+@router.get("/{name}/status", response_model=IndexingStatus)
+@handle_api_errors
+async def collection_status(name: str) -> IndexingStatus:
+    """Report background-indexing progress for a collection."""
+    service = get_service()
+    return IndexingStatus(**service.indexing_status(name))

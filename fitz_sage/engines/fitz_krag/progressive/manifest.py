@@ -219,6 +219,31 @@ class FileManifest:
                 self._entries = {}
 
 
+def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
+    """Summarize a manifest's background-indexing progress.
+
+    Returns ``total`` / ``indexed`` / ``pending`` counts, a per-state breakdown,
+    and a ``complete`` flag (no files still REGISTERED or PARSED). Reflects
+    whatever the background worker has persisted, since manifests load from disk.
+    """
+    if manifest is None:
+        return {"total": 0, "indexed": 0, "pending": 0, "complete": True, "by_state": {}}
+
+    by_state: dict[str, int] = {}
+    for entry in manifest.entries().values():
+        by_state[entry.state.value] = by_state.get(entry.state.value, 0) + 1
+
+    total = sum(by_state.values())
+    pending = by_state.get(FileState.REGISTERED.value, 0) + by_state.get(FileState.PARSED.value, 0)
+    return {
+        "total": total,
+        "indexed": total - pending,
+        "pending": pending,
+        "complete": pending == 0,
+        "by_state": by_state,
+    }
+
+
 def _entry_to_dict(entry: ManifestEntry) -> dict[str, Any]:
     """Serialize ManifestEntry to JSON-compatible dict."""
     d = asdict(entry)

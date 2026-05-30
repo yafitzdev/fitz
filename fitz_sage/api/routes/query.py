@@ -64,6 +64,7 @@ async def query(request: QueryRequest) -> QueryResponse:
         text=answer.text,
         mode=answer.mode.value if answer.mode else None,
         sources=sources,
+        metadata=answer.metadata,
     )
 
 
@@ -101,4 +102,5 @@ async def chat(request: ChatRequest) -> ChatResponse:
         text=answer.text,
         mode=answer.mode.value if answer.mode else None,
         sources=sources,
+        metadata=answer.metadata,
     )

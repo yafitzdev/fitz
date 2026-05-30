@@ -12,6 +12,7 @@ from fitz_sage.engines.fitz_krag.progressive.manifest import (
     ManifestEntry,
     ManifestHeading,
     ManifestSymbol,
+    indexing_status,
 )
 
 
@@ -42,6 +43,47 @@ def _make_entry(
         priority=priority,
         last_queried_at=last_queried_at,
     )
+
+
+def test_indexing_status_counts_by_state(tmp_path: Path) -> None:
+    """indexing_status() reports totals, pending, and a per-state breakdown."""
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_make_entry("a.py", file_id="a", state=FileState.REGISTERED))
+    manifest.add(_make_entry("b.py", file_id="b", state=FileState.PARSED))
+    manifest.add(_make_entry("c.py", file_id="c", state=FileState.ENRICHED))
+    manifest.add(_make_entry("d.py", file_id="d", state=FileState.SUMMARIZED))
+
+    status = indexing_status(manifest)
+
+    assert status["total"] == 4
+    assert status["pending"] == 2  # registered + parsed
+    assert status["indexed"] == 2  # enriched + summarized
+    assert status["complete"] is False
+    assert status["by_state"] == {"registered": 1, "parsed": 1, "enriched": 1, "summarized": 1}
+
+
+def test_indexing_status_complete_when_none_pending(tmp_path: Path) -> None:
+    """complete=True once no files remain registered/parsed."""
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_make_entry("a.py", file_id="a", state=FileState.ENRICHED))
+    manifest.add(_make_entry("b.py", file_id="b", state=FileState.SUMMARIZED))
+
+    status = indexing_status(manifest)
+
+    assert status["total"] == 2
+    assert status["pending"] == 0
+    assert status["complete"] is True
+
+
+def test_indexing_status_none_manifest() -> None:
+    """A None manifest reports an empty, complete status."""
+    assert indexing_status(None) == {
+        "total": 0,
+        "indexed": 0,
+        "pending": 0,
+        "complete": True,
+        "by_state": {},
+    }
 
 
 class TestFileManifest:
