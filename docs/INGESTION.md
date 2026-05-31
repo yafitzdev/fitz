@@ -25,23 +25,22 @@ The ingestion pipeline transforms your documents into searchable knowledge:
 
 ## Pipeline Stages
 
-### 1. Source (File Discovery)
+### 1. File Discovery
 
 Finds files to ingest and provides local access.
 
 ```
-Source.discover(path) → [SourceFile, SourceFile, ...]
+point(path) → recursive scan → [SourceFile, SourceFile, ...]
 ```
 
 | Component | Purpose |
 |-----------|---------|
-| `FileSystemSource` | Local filesystem discovery |
-| `SourceFile` | Abstraction for file access (URI, local path, metadata) |
+| `SourceFile` | The unit of input to a parser (URI, local path, MIME type, metadata) |
 
 **What happens:**
-1. Recursively scans the input path
+1. Recursively scans the input directory (`pathlib.rglob`)
 2. Filters by supported extensions
-3. Returns `SourceFile` objects with metadata
+3. Constructs a `SourceFile` for each discovered file
 
 ---
 
@@ -345,6 +344,9 @@ answer = fitz_sage.query("What is quantum computing?", source="./docs")
 Drive ingestion directly through the engine for fine-grained control:
 
 ```python
+from pathlib import Path
+
+from fitz_sage.core import Query
 from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
 
 cfg = FitzKragConfig(
@@ -356,15 +358,18 @@ cfg = FitzKragConfig(
     collection="my_collection",
 )
 engine = FitzKragEngine(cfg)
+engine.load("my_collection")
 
-# Ingest a directory; incremental by default (skips unchanged files).
-summary = engine.ingest("./docs")
-print(f"Ingested {summary.documents} documents, {summary.symbols} symbols")
+# Register a directory for progressive querying and background indexing.
+manifest = engine.point(Path("./docs"), collection="my_collection")
+answer = engine.answer(Query(text="What is in these docs?"))
+print(f"Registered {len(manifest.entries())} files")
+print(answer.text)
 ```
 
-For one-off ingest of a single file, pass the path; for force-reingest,
-pass `force=True`. Incremental state is tracked in
-`.fitz/ingest_state.json` (per-file mtime + content hash).
+For one-off use of a single file, pass that file path to `point()`.
+Per-collection manifest and parsed caches live under the fitz workspace
+collection directory.
 
 ---
 

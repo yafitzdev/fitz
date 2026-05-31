@@ -28,7 +28,6 @@ fitz_sage.query(
     question: str,                 # The question to ask
     source: str | Path = None,     # If provided, registers documents before querying
     collection: str = None,        # Collection name (uses default if not specified)
-    top_k: int = None              # Override chunk count
 ) -> Answer
 ```
 
@@ -81,8 +80,33 @@ f = fitz(
 f.query(
     question: str,
     source: str | Path = None,  # If provided, registers documents before querying
-    top_k: int = None,
-) -> Answer
+) -> Answer  # synthesized answer: text, provenance, mode
+```
+
+#### point()
+
+Register a source file or directory. Indexing runs in the background — queries
+work immediately and improve as it completes.
+
+```python
+f.point(source: str | Path) -> None
+```
+
+#### retrieve()
+
+The raw sources behind an answer, without synthesis (useful for building your
+own citations or synthesis). For KRAG, returns `ReadResult` objects with
+`content`, `file_path`, and `line_range`.
+
+```python
+f.retrieve(question: str) -> list
+```
+
+#### wait_for_indexing() / indexing_status()
+
+```python
+f.wait_for_indexing() -> None   # block until background indexing completes
+f.indexing_status() -> dict     # {total, indexed, pending, complete, by_state}
 ```
 
 ### Properties
@@ -159,22 +183,7 @@ from fitz_sage import Query
 
 query = Query(
     text="What is X?",
-    constraints=Constraints(max_sources=5),
     metadata={"user_id": "123"}
-)
-```
-
-### Constraints
-
-Query-time constraints (for advanced usage).
-
-```python
-from fitz_sage import Constraints
-
-constraints = Constraints(
-    max_sources: int = None,     # Limit source count
-    require_grounding: bool = True,  # Must be grounded
-    metadata: dict = None        # Additional constraints
 )
 ```
 
@@ -184,17 +193,19 @@ constraints = Constraints(
 
 ### Direct Engine Access
 
+`create_engine()` returns an engine implementing the `RetrievalEngine` protocol —
+`answer()` plus the full ingest/retrieve lifecycle:
+
 ```python
+from pathlib import Path
 from fitz_sage import create_engine, Query
 
-# Create engine instance
 engine = create_engine("fitz_krag")
+engine.load("default")                  # bind to a collection
+engine.point(Path("./docs"))            # register a source (indexes in background)
 
-# Build query
-query = Query(text="What is X?")
-
-# Get answer
-answer = engine.answer(query)
+answer = engine.answer(Query(text="What is X?"))     # synthesized answer
+sources = engine.retrieve(Query(text="What is X?"))  # raw sources, no synthesis
 ```
 
 ### Engine Selection
@@ -263,7 +274,7 @@ The SDK uses the same config as CLI. See [CONFIG.md](CONFIG.md) for details.
 
 **Config search order:**
 1. `config_path` parameter (if provided)
-2. `.fitz/config.yaml` (project config)
+2. `~/.fitz/config/fitz_krag.yaml` (user config)
 3. Auto-created default config (if `auto_init=True`)
 
 ---

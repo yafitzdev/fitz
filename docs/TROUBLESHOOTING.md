@@ -7,7 +7,7 @@ HTTP protocol, SQLite + FTS5 storage, no embeddings, no vector DB).
 
 ## Quick Diagnostics
 
-Open the config file directly at `.fitz/config.yaml` and verify the
+Open the config file directly at `~/.fitz/config/fitz_krag.yaml` and verify the
 chat endpoint URL, API-key environment variable, and collection name
 are correct.
 
@@ -19,7 +19,7 @@ are correct.
 
 **Error:**
 ```
-ConfigNotFoundError: Config file not found
+No LLM provider found
 ```
 
 **Solution:**
@@ -171,7 +171,7 @@ ValueError: No chunks created from documents
 
 1. Check document contents manually.
 2. Enable DEBUG logging by setting `log_level: DEBUG` in
-   `.fitz/config.yaml`, then re-run the query.
+   `~/.fitz/config/fitz_krag.yaml`, then re-run the query.
 3. Check supported formats in [INGESTION.md](INGESTION.md).
 
 ---
@@ -269,11 +269,6 @@ APIError
 ├── AuthenticationError      # Bad API key
 ├── RateLimitError           # Rate limited
 └── ModelNotFoundError       # Invalid model
-
-ConfigError
-├── ConfigNotFoundError      # Missing config
-├── ConfigParseError         # Invalid YAML
-└── ConfigValidationError    # Schema error
 ```
 
 ### HTTP Status Codes (REST API)
@@ -291,7 +286,7 @@ ConfigError
 
 ## Getting Help
 
-1. **Check config:** inspect `.fitz/config.yaml` directly
+1. **Check config:** inspect `~/.fitz/config/fitz_krag.yaml` directly
 2. **Check logs:** enable DEBUG level
 3. **Report issues:** [GitHub Issues](https://github.com/yafitzdev/fitz-sage/issues)
 
@@ -300,7 +295,7 @@ When reporting, include:
 - Python version: `python --version`
 - OS
 - Full traceback
-- Effective config (the contents of `.fitz/config.yaml`, with secrets redacted)
+- Effective config (the contents of `~/.fitz/config/fitz_krag.yaml`, with secrets redacted)
 
 ---
 
