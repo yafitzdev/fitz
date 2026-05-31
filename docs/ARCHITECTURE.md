@@ -195,7 +195,6 @@ chat_base_url: http://localhost:8080/v1
 @dataclass
 class Query:
     text: str
-    constraints: Constraints | None = None
     metadata: dict | None = None
 
 

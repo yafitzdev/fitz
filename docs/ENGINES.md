@@ -29,7 +29,6 @@ class KnowledgeEngine(Protocol):
 @dataclass
 class Query:
     text: str
-    constraints: Constraints | None = None
     metadata: dict | None = None
 ```
 

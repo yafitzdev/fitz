@@ -54,6 +54,8 @@ fitz serve --reload
 | POST | `/chat` | Multi-turn chat |
 | GET | `/collections` | List collections |
 | GET | `/collections/{name}` | Get collection stats |
+| POST | `/collections/{name}/documents` | Ingest documents (background indexing) |
+| GET | `/collections/{name}/status` | Indexing progress |
 | DELETE | `/collections/{name}` | Delete collection |
 | GET | `/health` | Health check |
 
@@ -69,8 +71,7 @@ Query the knowledge base with a single question.
 {
   "question": "What is the refund policy?",
   "source": "./docs",
-  "collection": "default",
-  "top_k": 5
+  "collection": "default"
 }
 ```
 
@@ -79,7 +80,6 @@ Query the knowledge base with a single question.
 | `question` | string | Yes | - | The question to ask |
 | `source` | string | No | null | Path to file or directory. If provided, registers documents before querying. |
 | `collection` | string | No | `"default"` | Collection to query |
-| `top_k` | integer | No | config value | Chunks to retrieve |
 
 ### Response
 
@@ -96,7 +96,8 @@ Query the knowledge base with a single question.
         "page": 1
       }
     }
-  ]
+  ],
+  "metadata": {}
 }
 ```
 
@@ -105,6 +106,7 @@ Query the knowledge base with a single question.
 | `text` | string | The answer text |
 | `mode` | string | `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN` |
 | `sources` | array | Source attribution for the answer |
+| `metadata` | object | Extra answer metadata; on `ABSTAIN`, includes `gap_context` (what's missing and what to add) |
 
 ### Example
 
@@ -131,8 +133,7 @@ The server is **stateless** - the client must manage and send conversation histo
     {"role": "user", "content": "What is the refund policy?"},
     {"role": "assistant", "content": "The refund policy allows returns within 30 days..."}
   ],
-  "collection": "default",
-  "top_k": 5
+  "collection": "default"
 }
 ```
 
@@ -141,7 +142,6 @@ The server is **stateless** - the client must manage and send conversation histo
 | `message` | string | Yes | - | Current user message |
 | `history` | array | No | `[]` | Previous messages |
 | `collection` | string | No | `"default"` | Collection to query |
-| `top_k` | integer | No | config value | Chunks to retrieve |
 
 **History message format:**
 
@@ -219,6 +219,64 @@ Get statistics for a specific collection.
 
 ```bash
 curl http://localhost:8000/collections/default
+```
+
+---
+
+## POST /collections/{name}/documents
+
+Register documents into a collection. Indexing runs in the background — queries
+work immediately and improve as it completes. Returns `202 Accepted` with the
+current indexing status; poll `GET /collections/{name}/status` for progress.
+
+### Request
+
+```json
+{"source": "./docs"}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `source` | string | Yes | Path to a file or directory to ingest |
+
+### Response (`202 Accepted`)
+
+```json
+{"total": 42, "indexed": 0, "pending": 42, "complete": false, "by_state": {"registered": 42}}
+```
+
+### Example
+
+```bash
+curl -X POST http://localhost:8000/collections/default/documents \
+  -H "Content-Type: application/json" \
+  -d '{"source": "./docs"}'
+```
+
+---
+
+## GET /collections/{name}/status
+
+Background-indexing progress for a collection.
+
+### Response
+
+```json
+{"total": 42, "indexed": 30, "pending": 12, "complete": false, "by_state": {"enriched": 30, "parsed": 12}}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total` | integer | Files registered |
+| `indexed` | integer | Files indexed (enriched or summarized) |
+| `pending` | integer | Files still pending (registered or parsed) |
+| `complete` | boolean | True when no files remain pending |
+| `by_state` | object | File counts per indexing state |
+
+### Example
+
+```bash
+curl http://localhost:8000/collections/default/status
 ```
 
 ---

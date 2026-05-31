@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🚀 Added
+
+- **`RetrievalEngine` protocol** (`fitz_sage.RetrievalEngine`) — extends
+  `KnowledgeEngine` with the ingest/retrieve lifecycle (`load`, `point`,
+  `wait_for_indexing`, `retrieve`, `indexing_status`). External consumers can now
+  type `create_engine()` results against a contract that advertises retrieval, not
+  just `answer()`.
+- **Complete `fitz` SDK** — the SDK holds one collection-bound engine and exposes
+  the full lifecycle: `point()`, `query()`, `retrieve()`, `wait_for_indexing()`,
+  `indexing_status()`. No need to drop to `create_engine` for raw retrieval.
+- **REST ingestion + status** — `POST /collections/{name}/documents` registers
+  documents (background indexing; `202` + status) and `GET /collections/{name}/status`
+  reports progress, instead of ingestion being a side-effect of `/query`.
+- **`metadata` on REST query/chat responses** — surfaces `Answer.metadata`
+  (notably `gap_context` on `ABSTAIN`) at the HTTP boundary.
+
+### 🗑 Removed
+
+- **`top_k` query parameter** and the **`Constraints` type** — both were accepted
+  across the SDK/REST surface but ignored by the engine (it derives the retrieval
+  limit from the retrieval profile and never read `query.constraints`). Removed
+  rather than wired, for a smaller user surface; the internal retrieval-profile
+  `top_k` is unchanged.
+- **Dead `init`/`config` CLI modules** — `fitz init`/`fitz config` were already
+  gone from the public CLI; this deletes the orphaned modules plus the old
+  `core/detect.py` they used (first-run config lives in `core/firstrun.py`).
+- **`StructuredLogger`** — logging unified onto the standard library. `get_logger`
+  now returns a `logging.Logger`; per-query correlation moved to a stdlib `Filter`
+  (`set_query_context`), and the CLI now actually calls `configure_logging()`.
+- **Dead code + duplication sweep** — orphaned plugin registries, pre-v0.12
+  config/timeout scaffolding, the unused `Source` discovery layer, the dead
+  streaming-chat path, and ~25 unreferenced methods. Deduplicated LLM-JSON parsing,
+  retrieval scoring, KRAG store helpers, the tree-sitter scaffold, and the tabular
+  SQL/file-reader paths. Net ~2,950 lines removed; tests + `contract_map` green.
+
+### 🔧 Fixed
+
+- **CORS** — `allow_credentials=False` with the `*` origin (browsers reject the
+  wildcard+credentials combination; the API is unauthenticated).
+- **Stale CLI guidance** — the "documents required" hint printed a nonexistent
+  `engine.add_documents(...)`; it now shows the real `engine.point(...)`.
+
 ## [0.14.0] - 2026-05-17
 
 ### 🎉 Highlights

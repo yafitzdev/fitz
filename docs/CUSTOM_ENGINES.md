@@ -287,9 +287,6 @@ class MyEngine:
         try:
             # Retrieve relevant documents
             top_k = self._config.retrieval.top_k
-            if query.constraints and query.constraints.max_sources:
-                top_k = min(top_k, query.constraints.max_sources)
-            
             retrieved = self._retrieve(query.text, top_k)
             
             # Generate answer
@@ -369,7 +366,7 @@ class MyEngine:
 from typing import Optional, Union, List
 from pathlib import Path
 
-from fitz_sage.core import Query, Answer, Constraints
+from fitz_sage.core import Query, Answer
 from fitz_sage.engines.my_engine.config.schema import (
     MyEngineConfig,
     load_my_engine_config,
@@ -385,7 +382,6 @@ def run_my_engine(
     documents: Optional[List[str]] = None,
     config: Optional[MyEngineConfig] = None,
     config_path: Optional[Union[str, Path]] = None,
-    constraints: Optional[Constraints] = None,
 ) -> Answer:
     """
     Run a query through MyEngine.

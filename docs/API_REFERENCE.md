@@ -41,7 +41,6 @@ Paradigm-agnostic query representation containing everything needed to ask a que
 @dataclass
 class Query:
     text: str                          # The question being asked
-    constraints: Constraints | None    # Optional filters, limits, etc.
     metadata: dict[str, Any]           # Engine-specific hints
 ```
 
@@ -50,12 +49,6 @@ class Query:
 Simple query:
 ```python
 query = Query(text="What is quantum computing?")
-```
-
-Query with constraints:
-```python
-constraints = Constraints(max_sources=5, filters={"topic": "physics"})
-query = Query(text="Explain entanglement", constraints=constraints)
 ```
 
 Query with engine hints:
@@ -69,7 +62,7 @@ query = Query(
 **Metadata Usage:**
 
 The `metadata` field allows passing engine-specific parameters without breaking the paradigm-agnostic interface:
-- **Fitz RAG** might use: `{"rerank": True, "top_k": 10}`
+- **Fitz KRAG** reads: `{"conversation_context": ...}` (for query rewriting / pronoun resolution)
 - Custom engines can define their own metadata keys
 
 Engines should ignore unknown metadata keys gracefully.
