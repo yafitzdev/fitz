@@ -133,6 +133,27 @@ jobs:
           python -c "from importlib.metadata import entry_points; eps = entry_points(); print('Entry points OK')"
 
   # ===========================================================================
+  # Built Wheel Smoke (Packaging Boundary)
+  # ===========================================================================
+  wheel-smoke:
+    name: Built Wheel Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build backend
+        run: python -m pip install --upgrade pip build
+
+      - name: Build, install, and import-smoke wheel
+        run: python -m tools.wheel_smoke --smoke import
+
+  # ===========================================================================
   # Coverage Report (Optional - on main branch only)
   # ===========================================================================
   coverage:
