@@ -332,7 +332,8 @@ class FitzKragEngine:
                 pass
             logger.debug("LLM warmup complete")
 
-        threading.Thread(target=_warmup_chat, daemon=True).start()
+        if self._should_warm_chat():
+            threading.Thread(target=_warmup_chat, daemon=True).start()
 
         # Context + Generation
         from fitz_sage.engines.fitz_krag.context.assembler import ContextAssembler
@@ -494,6 +495,17 @@ class FitzKragEngine:
         logger.debug(f"[init] schema: {(_t5-_t4)*1000:.0f}ms, " f"total: {(_t5-_t0)*1000:.0f}ms")
 
         # Chat models already warming up from init (background threads above).
+
+    def _should_warm_chat(self) -> bool:
+        """Return True when an optional chat-backed feature is configured."""
+        return any(
+            (
+                self._config.query_intelligence,
+                self._config.synthesizer,
+                self._config.enricher,
+                self._config.summarizer,
+            )
+        )
 
     # Keywords that signal the query may have temporal/comparison/aggregation intent.
     # If none match, the detection LLM call can be skipped safely.

@@ -173,6 +173,20 @@ class TestEngineInit:
         assert _patches["get_chat"].call_count == 2
         _patches["CodeSynthesizer"].assert_called_once()
 
+    def test_default_config_does_not_warm_chat(self):
+        """Retrieval-only defaults should not warm a chat model."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config()
+
+        assert engine._should_warm_chat() is False
+
+    def test_configured_optional_chat_stage_warms_chat(self):
+        """Optional chat-backed stages can still warm their provider."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config(synthesizer="endpoint/qwen2.5-7b-instruct")
+
+        assert engine._should_warm_chat() is True
+
     def test_init_failure_raises_configuration_error(self):
         """
         If _init_components raises, __init__ wraps it as
