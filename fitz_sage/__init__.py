@@ -69,6 +69,8 @@ def __getattr__(name: str):
         "ConfigurationError",
         "EngineError",
         "GenerationError",
+        "EvidenceItem",
+        "EvidencePack",
         "KnowledgeEngine",
         "KnowledgeError",
         "Provenance",
@@ -149,6 +151,35 @@ def query(question: str, source=None, collection: str = None):
     return f.query(question, source=source)
 
 
+def evidence(question: str, source=None, collection: str = None):
+    """
+    Retrieve governed evidence without answer synthesis.
+
+    Module-level convenience function matching `fitz retrieve` CLI.
+
+    Args:
+        question: The question to retrieve evidence for.
+        source: Path to file or directory. If provided, registers documents
+            before retrieving evidence (equivalent to CLI --source flag).
+        collection: Collection name (uses default if not specified).
+
+    Returns:
+        EvidencePack with ranked source units, provenance, and governance mode.
+
+    Examples:
+        >>> import fitz_sage
+        >>> pack = fitz_sage.evidence("What is the refund policy?", source="./docs")
+        >>> print(pack.mode)
+    """
+    global _default_fitz
+    if collection is not None:
+        from fitz_sage.sdk import fitz
+
+        _default_fitz = fitz(collection=collection)
+    f = _get_default_fitz()
+    return f.evidence(question, source=source)
+
+
 # =============================================================================
 # PUBLIC API
 # =============================================================================
@@ -162,6 +193,8 @@ __all__ = [
     # Core Types
     "Query",
     "Answer",
+    "EvidenceItem",
+    "EvidencePack",
     "Provenance",
     # Core Exceptions
     "EngineError",
@@ -179,5 +212,6 @@ __all__ = [
     "get_engine_registry",
     # SDK
     "fitz",
+    "evidence",
     "query",
 ]

@@ -1,4 +1,4 @@
-# tests/test_sdk_fitz.py
+# tests/unit/test_sdk_fitz.py
 """
 Tests for the Fitz SDK.
 """
@@ -162,3 +162,32 @@ class TestFitzExports:
 
         assert hasattr(fitz_sage, "query")
         assert callable(fitz_sage.query)
+
+    def test_module_level_evidence_exported(self):
+        """Test module-level evidence() is exported."""
+        import fitz_sage
+
+        assert hasattr(fitz_sage, "evidence")
+        assert callable(fitz_sage.evidence)
+
+    def test_evidence_types_exported_from_top_level(self):
+        """Test evidence contracts are exported from fitz_sage."""
+        from fitz_sage import EvidenceItem, EvidencePack
+
+        assert EvidenceItem is not None
+        assert EvidencePack is not None
+
+    def test_module_level_evidence_delegates_to_default_fitz(self, monkeypatch):
+        """Module-level evidence delegates to the default SDK instance."""
+        import fitz_sage
+        from fitz_sage.core import EvidencePack
+
+        expected = EvidencePack(query="question", mode=None)
+        sdk = MagicMock()
+        sdk.evidence.return_value = expected
+        monkeypatch.setattr(fitz_sage, "_get_default_fitz", lambda: sdk)
+
+        result = fitz_sage.evidence("question", source="./docs")
+
+        assert result is expected
+        sdk.evidence.assert_called_once_with("question", source="./docs")
