@@ -138,6 +138,7 @@ class TestFitzEvidence:
 
         assert result is expected
         engine.point.assert_called_once_with(source.resolve(), "default")
+        engine.wait_for_indexing.assert_called_once()
         engine.evidence.assert_called_once()
 
 

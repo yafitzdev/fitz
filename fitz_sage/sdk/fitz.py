@@ -29,12 +29,14 @@ class fitz:
     Holds one engine bound to a collection and exposes the full lifecycle::
 
         f = fitz(collection="docs")
-        f.point("./docs")                  # register documents (indexes in bg)
+        f.point("./docs")                  # register documents
+        f.wait_for_indexing()              # block for required enrichment
         pack = f.evidence("What is X?")    # governed evidence
         answer = f.query("What is X?")     # optional synthesized answer
 
-    Queries work immediately via agentic search and get better as background
-    indexing completes; call ``f.wait_for_indexing()`` to block until it finishes.
+    Pointing starts indexing; call ``f.wait_for_indexing()`` before querying when
+    using separate ``point`` / ``query`` calls. Convenience methods that receive
+    ``source=`` block until required enrichment finishes.
 
     Examples:
         >>> f = fitz()
@@ -83,8 +85,8 @@ class fitz:
     def point(self, source: Union[str, Path]) -> None:
         """Register a source file or directory for querying.
 
-        Indexing runs in the background; queries work immediately and improve as
-        it completes. Call ``wait_for_indexing()`` to block until it finishes.
+        Indexing runs in the background; call ``wait_for_indexing()`` to block
+        until required enrichment finishes before querying.
         """
         self._get_engine().point(self._resolve_source(source), self._collection)
 
@@ -115,6 +117,7 @@ class fitz:
         engine = self._get_engine()
         if source is not None:
             engine.point(self._resolve_source(source), self._collection)
+            engine.wait_for_indexing()
         return engine.answer(Query(text=question, metadata=self._metadata(conversation_context)))
 
     def retrieve(
@@ -146,6 +149,7 @@ class fitz:
         engine = self._get_engine()
         if source is not None:
             engine.point(self._resolve_source(source), self._collection)
+            engine.wait_for_indexing()
         return engine.evidence(Query(text=question, metadata=self._metadata(conversation_context)))
 
     def wait_for_indexing(self) -> None:
@@ -156,7 +160,7 @@ class fitz:
         """Background-indexing progress for this collection.
 
         Returns counts (total, indexed, pending, by_state) and a ``complete``
-        flag. Queries work before completion and improve as it progresses.
+        flag. ``complete`` means the required enrichment pass has finished.
         """
         return self._get_engine().indexing_status()
 
