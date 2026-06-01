@@ -1,3 +1,4 @@
+<!-- docs/features/retrieval/query-rewriting.md -->
 # Query Rewriting (Conversational Context Resolution)
 
 ## Problem
@@ -43,7 +44,7 @@ Rewritten query:       "What products does TechCorp make?"
 
 ### At Query Time
 
-1. Query is sent to fast-tier LLM with conversation history
+1. Query is sent to the `query_intelligence` provider with conversation history
 2. LLM performs transformations:
    - Resolves pronouns (it, they, this, that, their)
    - Fixes typos and removes filler words
@@ -70,7 +71,7 @@ All interpretations are searched and results are merged.
 
 ## Key Design Decisions
 
-1. **LLM-based** - Uses fast-tier chat model for intelligent rewriting.
+1. **LLM-based** - Uses the `query_intelligence` chat provider for intelligent rewriting.
 
 2. **Batched** - Rewriting is one section of the single query-prep LLM call (alongside analysis, detection, keywords) — no call of its own.
 
@@ -112,13 +113,13 @@ User: "How does it handle expired sessions?"
 
 ## Performance
 
-- Runs inside the shared query-prep call (fast chat tier) — no chat
+- Runs inside the shared query-prep call (`query_intelligence`) — no chat
   call of its own.
 - On failure or an empty rewrite, the original query is used unchanged.
 
 ## Dependencies
 
-- A fast chat tier wired up via `chat_fast:`.
+- A query-prep provider wired up via `query_intelligence:`.
 - No additional dependencies beyond the existing chat infrastructure.
 
 ## Related

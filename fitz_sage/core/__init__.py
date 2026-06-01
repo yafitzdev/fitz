@@ -49,6 +49,7 @@ from .chunk import Chunk
 
 # Core protocol
 from .engine import KnowledgeEngine, RetrievalEngine
+from .evidence import EvidenceItem, EvidencePack
 
 # Core exceptions
 from .exceptions import (
@@ -78,6 +79,8 @@ __all__ = [
     # Types
     "Query",
     "Answer",
+    "EvidenceItem",
+    "EvidencePack",
     "Provenance",
     "Chunk",
     # Path Management

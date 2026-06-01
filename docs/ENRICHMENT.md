@@ -1,12 +1,17 @@
+<!-- docs/ENRICHMENT.md -->
 # Enrichment
 
-LLM-powered enhancements added to ingested content. **Always on when a chat client is available, nearly free.**
+Required LLM-powered metadata added to ingested content. Enrichment is part of
+the KRAG index contract: ingestion should produce keywords, entities, temporal
+metadata, and hierarchy summaries before the collection is treated as ready.
 
 ---
 
 ## Overview
 
-Enrichment adds AI-generated metadata to typed retrieval units (code symbols, document sections) during ingestion. It runs as part of the KRAG ingestion pipeline — no separate orchestrator, no configuration beyond two toggles.
+Enrichment adds AI-generated metadata to typed retrieval units (code symbols,
+document sections) during ingestion. It runs as part of the KRAG ingestion
+pipeline — no separate orchestrator, and no foreground query dependency.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -44,7 +49,11 @@ Enrichment adds AI-generated metadata to typed retrieval units (code symbols, do
 - **Temporal metadata** — dates, version numbers, time references found in the text
 - **Hierarchy** — L1 (per-file) and L2 (corpus) summaries for analytical queries
 
-Keyword/entity/temporal extraction runs when `enable_enrichment` is set; L1/L2 hierarchy summaries run when `enable_hierarchy` is set. The two toggles are independent — a document file is still given an L1 summary when enrichment is off.
+Keyword/entity/temporal extraction and L1/L2 hierarchy summaries use Fitz's
+managed Qwen3.5 0.8B ONNX runtime. The model is downloaded on first ingest if
+missing and runs in-process with raw ONNX Runtime on CPU. If the runtime cannot
+load, ingestion fails closed instead of silently storing an under-enriched
+index.
 
 ---
 
@@ -105,7 +114,8 @@ Dates, version numbers, and relative time references found in the unit text.
 
 ## Hierarchy
 
-L1 and L2 summaries for analytical queries. Built by `KragIngestPipeline` itself, gated by `enable_hierarchy`.
+L1 and L2 summaries for analytical queries. Built by `KragIngestPipeline`
+itself with the managed Qwen ONNX runtime.
 
 ### The problem
 
@@ -155,19 +165,22 @@ No special query syntax needed — the L2 summary is an ordinary retrievable sec
 
 ## CLI Usage
 
-Enrichment runs automatically when you point at a folder. No flags needed:
+Source-backed retrieval waits for required indexing and enrichment before
+retrieving evidence:
 
 ```bash
-fitz query "your question" --source ./docs
+fitz retrieve "your question" --source ./docs
 ```
 
-The background worker schedules parse → summarize → enrich per file during indexing.
+The first ingest downloads the managed Qwen3.5 0.8B ONNX weights into the
+Hugging Face cache when missing and then runs enrichment locally.
 
 ---
 
 ## Cost Analysis
 
-Batching makes enrichment **nearly free**. `KragEnricher` extracts keywords + entities + temporal for ~15 symbols/sections per LLM call.
+Batching keeps enrichment cheap. `KragEnricher`
+extracts keywords + entities + temporal for ~15 symbols/sections per LLM call.
 
 ### Per batch (~15 units)
 
@@ -183,23 +196,39 @@ Batching makes enrichment **nearly free**. `KragEnricher` extracts keywords + en
 
 | Model | Per Batch | Per Unit | 1000 Units |
 |-------|-----------|----------|------------|
+| Managed Qwen3.5 0.8B ONNX | $0 | $0 | **$0** |
 | Claude 3.5 Haiku | $0.011 | $0.0007 | **$0.74** |
 | GPT-4o-mini | $0.002 | $0.0001 | **$0.13** |
 
-**For under $1, you get keywords + entities + temporal metadata for your entire codebase.** L1/L2 hierarchy summaries add a small number of additional calls (one per document file plus one corpus call).
+L1/L2 hierarchy summaries add a small number of additional calls (one per
+document file plus one corpus call).
 
 ---
 
 ## Configuration
 
-Two engine-config toggles control enrichment, both on by default:
+The enrichment model is internal and required. The only public tuning knob in
+this area is batch size:
 
-| Flag | Controls |
-|------|----------|
-| `enable_enrichment` | Keyword / entity / temporal extraction (`KragEnricher`) |
-| `enable_hierarchy` | L1 (per-file) and L2 (corpus) hierarchy summaries |
+Small CPU-local profile:
+
+```yaml
+summary_batch_size: 15
+```
 
 `summary_batch_size` (default 15) sets the LLM batch size for both summarization and enrichment.
+
+To inspect the exact managed model snapshot:
+
+```python
+from fitz_sage.llm.providers.onnx_chat import OnnxChat
+
+info = OnnxChat().model_info()
+print(info.repo_id, info.revision, info.onnx_path)
+```
+
+`model_info(include_checksum=True)` also computes a bundle SHA256 over the ONNX
+graph and external data files.
 
 ---
 
@@ -209,7 +238,7 @@ Two engine-config toggles control enrichment, both on by default:
 |------|---------|
 | `fitz_sage/engines/fitz_krag/ingestion/enricher.py` | `KragEnricher` — batched keyword/entity/temporal extraction |
 | `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | `KragIngestPipeline` — drives enrich + builds L1/L2 summaries |
-| `fitz_sage/engines/fitz_krag/config/schema.py` | `enable_enrichment` / `enable_hierarchy` flags |
+| `fitz_sage/llm/providers/onnx_chat.py` | Managed Qwen3.5 0.8B ONNX runtime |
 | `fitz_sage/retrieval/entity_graph/` | `EntityGraphStore` — populated from extracted entities |
 
 ---

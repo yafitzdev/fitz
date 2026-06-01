@@ -1,24 +1,25 @@
-# fitz_sage/core/firstrun.py
+# fitz_sage/config/firstrun.py
 """
 First-run experience for fitz-sage.
 
-Auto-detects an OpenAI-compatible LLM endpoint and writes
-``.fitz/config.yaml`` so the CLI can answer queries on first invocation.
+Writes ``.fitz/config.yaml`` for user-configurable providers. Required
+enrichment always uses the managed Qwen ONNX runtime and is not written as
+configuration. If an OpenAI-compatible LLM endpoint is already available,
+optional synthesis providers are configured too.
 
 Detection order:
 
-1. **Local OpenAI-compatible HTTP server** — probes ports 8080, 8000,
-   1234, 11434 for ``GET /v1/models``. The first responsive server
-   wins; we read its ``/models`` listing to choose a chat model.
-   Recommended setup is llama.cpp's ``llama-server`` on port 8080.
+1. **Local OpenAI-compatible HTTP server** — optional synthesis only. Probes
+   ports 8080, 8000, 1234, 11434 for ``GET /v1/models``. The first responsive
+   server wins; we read its ``/models`` listing to choose a chat model.
 2. **OpenAI cloud** — falls back to ``openai/gpt-4o-mini`` if
-   ``OPENAI_API_KEY`` is set.
-3. **No provider** — prints actionable setup instructions and aborts.
+   ``OPENAI_API_KEY`` is set, again for optional synthesis only.
+3. **No provider** — writes a minimal config. The first ingest downloads
+   Qwen3.5 0.8B ONNX into the Hugging Face cache and runs it locally.
 
-There is no Ollama-specific code path; Ollama users run it in
-``/v1/`` mode and it's just another OpenAI-compatible server on
-port 11434. fitz-sage uses no embeddings — chat is the only model
-written to the generated config.
+There is no Ollama-specific enrichment path; Ollama is only an optional
+OpenAI-compatible endpoint for synthesis. fitz-sage uses no embeddings;
+ingestion enrichment is mandatory.
 """
 
 from __future__ import annotations
@@ -28,14 +29,15 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from fitz_sage.config.defaults import DEFAULT_ENRICHMENT_MODEL, DEFAULT_LOCAL_LLM_BASE_URL
 from fitz_sage.core.paths import FitzPaths
 
 logger = logging.getLogger(__name__)
 
 
-# Common ports for OpenAI-compatible servers, ordered by preference:
-# 8080 = llama-server, 8000 = vLLM/LM Studio, 1234 = LM Studio (older),
-# 11434 = Ollama in /v1/ mode.
+# Common ports for optional OpenAI-compatible synthesis servers, ordered by
+# preference: 8080, 8000 = vLLM/LM Studio, 1234 = LM Studio (older), 11434 =
+# Ollama in /v1/ mode.
 _PROBE_PORTS: tuple[int, ...] = (8080, 8000, 1234, 11434)
 _PROBE_TIMEOUT_SECONDS = 0.5
 
@@ -119,9 +121,10 @@ def write_config(
         f"chat_fast: {chat_fast}",
         f"chat_balanced: {chat_balanced}",
         f"chat_smart: {chat_smart}",
+        f"synthesizer: {chat_smart}",
         "",
-        "# HTTP endpoint (used by the 'endpoint' provider)",
-        f"chat_base_url: {chat_base_url if chat_base_url else 'null'}",
+        "# HTTP endpoint (used only by endpoint/* providers)",
+        f"chat_base_url: {chat_base_url if chat_base_url else DEFAULT_LOCAL_LLM_BASE_URL}",
         "vision_base_url: null",
         "",
         "# Optional API key environment variable",
@@ -133,6 +136,34 @@ def write_config(
         "vision: null",
         "",
         "collection: default",
+        "",
+    ]
+    config_path.write_text("\n".join(lines), encoding="utf-8")
+    return config_path
+
+
+def write_local_enrichment_config(
+    *,
+    chat_base_url: str = DEFAULT_LOCAL_LLM_BASE_URL,
+) -> Path:
+    """Write a default config; enrichment is managed internally."""
+    config_path = FitzPaths.config()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines: list[str] = [
+        "# Fitz Configuration",
+        "# Docs: https://github.com/yafitzdev/fitz-sage/blob/main/docs/CONFIG.md",
+        "",
+        "# Ingestion uses Fitz-managed ONNX Qwen automatically.",
+        "collection: default",
+        "parser: cpu",
+        "rerank: onnx",
+        "governance: pyrrho",
+        "# Optional endpoint providers use chat_base_url; managed Qwen ignores it.",
+        f"chat_base_url: {chat_base_url}",
+        "",
+        "query_intelligence: null",
+        "synthesizer: null",
         "",
     ]
     config_path.write_text("\n".join(lines), encoding="utf-8")
@@ -156,11 +187,14 @@ def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
 
     chat_model = _pick_chat_model(endpoint)
     if chat_model is None:
+        config_path = write_local_enrichment_config(chat_base_url=endpoint.base_url)
         print(
-            f"\n  Detected an OpenAI-compatible server at {endpoint.base_url} but "
-            f"it lists no models. Load a chat model and run fitz again.\n"
+            f"\n  Detected an OpenAI-compatible server at {endpoint.base_url}, "
+            f"but it lists no chat models."
         )
-        return False
+        print(f"  Wrote minimal config; enrichment uses managed {DEFAULT_ENRICHMENT_MODEL}.")
+        print(f"\n  Config: {config_path}\n")
+        return True
 
     chat_spec = f"endpoint/{chat_model}"
     write_config(
@@ -171,7 +205,8 @@ def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
     )
 
     print(f"\n  Auto-configured from {endpoint.base_url}:")
-    print(f"    chat: {chat_model}")
+    print(f"    chat:       {chat_model}")
+    print(f"    enrichment: {DEFAULT_ENRICHMENT_MODEL} (managed ONNX)")
     print(f"\n  Config: {config_path}\n")
     return True
 
@@ -184,29 +219,24 @@ def _configure_from_openai_key() -> bool:
         chat_fast="openai/gpt-4o-mini",
         chat_balanced="openai/gpt-4o-mini",
         chat_smart="openai/gpt-4o",
-        chat_base_url=None,
+        chat_base_url=DEFAULT_LOCAL_LLM_BASE_URL,
     )
     print("\n  Configured from OPENAI_API_KEY:")
     print("    chat (smart):    gpt-4o")
     print("    chat (fast/bal): gpt-4o-mini")
+    print(f"    enrichment:      {DEFAULT_ENRICHMENT_MODEL} (managed ONNX)")
     print(f"\n  Config: {config_path}\n")
     return True
 
 
-def _print_setup_instructions() -> None:
-    """Print actionable setup instructions when no provider is reachable."""
-    print("\n  No LLM provider found. Pick one of these:\n")
-    print("  Option 1 — local llama.cpp (recommended):")
-    print("    1. Install llama.cpp (https://github.com/ggerganov/llama.cpp)")
-    print("    2. Download a chat model (.gguf) and start the server:")
-    print("       llama-server -m chat-model.gguf --port 8080")
-    print("    3. Re-run `fitz query ...`\n")
-    print("  Option 2 — OpenAI cloud:")
-    print("    export OPENAI_API_KEY=sk-...")
-    print("    Re-run `fitz query ...`\n")
-    print("  Option 3 — any OpenAI-compatible cloud (Together, Groq, …):")
-    print('    fitz query "..." --endpoint https://api.together.xyz/v1 \\')
-    print("        --model meta-llama-3.1-70b --api-key-env TOGETHER_API_KEY\n")
+def _configure_local_enrichment_required() -> bool:
+    """Write config when no optional chat endpoint is available."""
+    config_path = write_local_enrichment_config()
+    print("\n  No optional chat endpoint found.")
+    print(f"  Wrote minimal config; enrichment uses managed {DEFAULT_ENRICHMENT_MODEL}.")
+    print("  First ingest will download the managed Qwen3.5 0.8B ONNX weights locally.")
+    print(f"\n  Config: {config_path}\n")
+    return True
 
 
 def run_firstrun_setup() -> bool:
@@ -225,6 +255,6 @@ def run_firstrun_setup() -> bool:
     if os.getenv("OPENAI_API_KEY"):
         return _configure_from_openai_key()
 
-    # 3. Nothing reachable — print actionable instructions.
-    _print_setup_instructions()
-    return False
+    # 3. Nothing reachable — write the required local runtime config and
+    # tell the user how to satisfy it before ingestion.
+    return _configure_local_enrichment_required()

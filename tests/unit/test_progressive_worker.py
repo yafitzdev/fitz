@@ -12,6 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from fitz_sage.engines.fitz_krag.progressive.manifest import FileManifest, FileState, ManifestEntry
 from fitz_sage.engines.fitz_krag.progressive.worker import BackgroundIngestWorker
 
@@ -150,6 +152,20 @@ class TestScheduling:
 
         core.enrich_file.assert_called_once_with("id-a.py", ".py")
         assert manifest.get("a.py").state == FileState.ENRICHED
+
+    def test_enrich_failure_stops_before_finalize(self, tmp_path: Path) -> None:
+        """Required enrichment failure leaves the file PARSED and stops indexing."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("a.py", file_type=".py", state=FileState.PARSED))
+
+        core = MagicMock()
+        core.enrich_file.side_effect = RuntimeError("llm unavailable")
+        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+
+        with pytest.raises(RuntimeError, match="Required enrichment failed"):
+            worker._enrich_phase()
+
+        assert manifest.get("a.py").state == FileState.PARSED
 
     def test_parse_failure_does_not_block_other_files(self, tmp_path: Path) -> None:
         """One file failing to parse leaves it behind but does not stop the rest."""

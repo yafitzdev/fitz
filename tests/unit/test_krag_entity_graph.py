@@ -25,12 +25,15 @@ from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 # ---------------------------------------------------------------------------
 
 
-def _make_core(*, entity_graph_store: MagicMock | None = None):
+def _make_core(
+    *,
+    entity_graph_store: MagicMock | None = None,
+):
     """Create a KragIngestPipeline core with a mocked connection manager."""
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
 
-    config = FitzKragConfig(collection="test_col", enable_enrichment=True)
+    config = FitzKragConfig(collection="test_col")
     return KragIngestPipeline(
         config=config,
         chat=MagicMock(),

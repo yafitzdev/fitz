@@ -308,11 +308,12 @@ class FitzService:
             issues.append(f"Config parse error: {e}")
             return ConfigValidationResult(valid=False, issues=issues)
 
-        # Check plugins
+        # Check optional tiered chat providers.
         try:
             from fitz_sage.llm import get_chat_factory
 
-            get_chat_factory(ctx.chat_tier_specs)
+            if ctx.chat_tier_specs:
+                get_chat_factory(ctx.chat_tier_specs)
         except Exception as e:
             logger.warning(f"Chat plugin '{ctx.chat_plugin}' validation failed: {e}")
             issues.append(f"Chat plugin '{ctx.chat_plugin}' not available: {e}")
@@ -348,14 +349,15 @@ class FitzService:
             components["sqlite"] = False
             issues.append(f"SQLite: {e}")
 
-        # Check chat provider
+        # Check optional chat provider
         try:
             from fitz_sage.cli.context import CLIContext
             from fitz_sage.llm import get_chat_factory
 
             ctx = CLIContext.load()
-            get_chat_factory(ctx.chat_tier_specs)  # Verify factory works
-            components["chat"] = True
+            if ctx.chat_tier_specs:
+                get_chat_factory(ctx.chat_tier_specs)  # Verify factory works
+                components["chat"] = True
         except Exception as e:
             logger.warning(f"Chat provider health check failed: {e}")
             components["chat"] = False

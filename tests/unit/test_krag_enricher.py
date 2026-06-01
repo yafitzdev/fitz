@@ -11,6 +11,9 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
+from fitz_sage.core import KnowledgeError
 from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
 # ---------------------------------------------------------------------------
@@ -135,6 +138,23 @@ class TestEnrichSections:
         assert sections[1]["keywords"] == ["setup", "config"]
         assert sections[1]["entities"] == []
 
+    def test_preserves_exact_identifiers_when_model_misses_them(self):
+        """Ticket-like IDs are added deterministically even if the model omits them."""
+        enrichments = [{"keywords": ["timeout"], "entities": []}]
+        chat = _make_chat(response=_make_enrichment_response(enrichments))
+        enricher = KragEnricher(chat, batch_size=15)
+        sections = [
+            {
+                "title": "Sprint 47 Incident Notes",
+                "content": "Sprint 47 failed because test case TC-4812 timed out.",
+                "summary": None,
+            }
+        ]
+
+        enricher.enrich_sections(sections)
+
+        assert sections[0]["keywords"] == ["timeout", "TC-4812"]
+
 
 # ---------------------------------------------------------------------------
 # TestBatchProcessing
@@ -191,35 +211,33 @@ class TestBatchProcessing:
 # ---------------------------------------------------------------------------
 
 
-class TestGracefulFallback:
-    """Tests for graceful degradation when LLM fails."""
+class TestRequiredEnrichmentFailures:
+    """Tests for fail-closed behavior when required enrichment fails."""
 
-    def test_llm_exception_yields_empty_lists(self):
-        """When LLM raises, symbols get empty keywords and entities."""
+    def test_llm_exception_raises(self):
+        """When LLM raises, enrichment fails instead of storing empty metadata."""
         chat = _make_chat(side_effect=RuntimeError("LLM unreachable"))
         enricher = KragEnricher(chat, batch_size=15)
         symbols = _symbol_dicts(2)
 
-        enricher.enrich_symbols(symbols)
+        with pytest.raises(KnowledgeError, match="Required enrichment batch failed"):
+            enricher.enrich_symbols(symbols)
 
         for s in symbols:
-            assert s["keywords"] == []
-            assert s["entities"] == []
+            assert "keywords" not in s
+            assert "entities" not in s
 
-    def test_malformed_json_yields_empty_lists(self):
-        """When LLM returns unparseable JSON, fallback to empty lists."""
+    def test_malformed_json_raises(self):
+        """When LLM returns unparseable JSON, enrichment fails closed."""
         chat = _make_chat(response="This is not JSON at all")
         enricher = KragEnricher(chat, batch_size=15)
         symbols = _symbol_dicts(2)
 
-        enricher.enrich_symbols(symbols)
-
-        for s in symbols:
-            assert s["keywords"] == []
-            assert s["entities"] == []
+        with pytest.raises(KnowledgeError, match="invalid JSON"):
+            enricher.enrich_symbols(symbols)
 
     def test_partial_batch_failure(self):
-        """First batch succeeds, second fails; first symbols enriched, second fallback."""
+        """First batch succeeds, second fails; ingestion raises before completion."""
         good_response = _make_enrichment_response([{"keywords": ["good"], "entities": []}])
         chat = _make_chat()
         chat.chat.side_effect = [
@@ -229,23 +247,21 @@ class TestGracefulFallback:
         enricher = KragEnricher(chat, batch_size=1)
         symbols = _symbol_dicts(2)
 
-        enricher.enrich_symbols(symbols)
+        with pytest.raises(KnowledgeError, match="Required enrichment batch failed"):
+            enricher.enrich_symbols(symbols)
 
         assert symbols[0]["keywords"] == ["good"]
-        assert symbols[1]["keywords"] == []
-        assert symbols[1]["entities"] == []
+        assert "keywords" not in symbols[1]
+        assert "entities" not in symbols[1]
 
-    def test_sections_fallback_on_failure(self):
-        """Sections also get empty lists when LLM fails."""
+    def test_sections_raise_on_failure(self):
+        """Sections also fail closed when LLM enrichment fails."""
         chat = _make_chat(side_effect=RuntimeError("API error"))
         enricher = KragEnricher(chat, batch_size=15)
         sections = _section_dicts(2)
 
-        enricher.enrich_sections(sections)
-
-        for s in sections:
-            assert s["keywords"] == []
-            assert s["entities"] == []
+        with pytest.raises(KnowledgeError, match="Required enrichment batch failed"):
+            enricher.enrich_sections(sections)
 
     def test_response_with_code_fence(self):
         """LLM response wrapped in markdown code fence is parsed correctly."""

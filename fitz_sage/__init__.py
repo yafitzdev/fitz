@@ -1,19 +1,20 @@
 # fitz_sage/__init__.py
 """
-Fitz - Local-First RAG Framework & Engine Platform
+Fitz - Local-First Governed Retrieval & Engine Platform
 
 Fitz is a paradigm-agnostic knowledge engine platform that supports multiple
-approaches to knowledge retrieval and synthesis.
+approaches to knowledge retrieval, evidence packaging, and optional synthesis.
 
 Quick Start:
-    >>> from fitz import run
-    >>> answer = run("What is quantum computing?")
-    >>> print(answer.text)
+    >>> from fitz_sage import evidence
+    >>> pack = evidence("What is quantum computing?")
+    >>> print(pack.mode)
 
 Public API:
     Core Types:
         - Query: Input to engines
-        - Answer: Output from engines
+        - EvidencePack: Retrieval-first output from engines
+        - Answer: Optional synthesized output from engines
         - Provenance: Source attribution
 
     Runtime:
@@ -32,15 +33,15 @@ Architecture:
     └── ingestion/         # Document ingestion
 
 Philosophy:
-    Knowledge → Engine → Answer
+    Knowledge → Engine → EvidencePack → optional Answer
 
-    Engines are black boxes that transform queries into answers.
+    Engines are black boxes that transform queries into governed evidence.
     The platform only cares about the interface, not the implementation.
 
 Examples:
     Simple query:
-    >>> from fitz import run
-    >>> answer = run("What is quantum computing?")
+    >>> from fitz_sage import evidence
+    >>> pack = evidence("What is quantum computing?")
 
     Specific engine:
     >>> answer = run("What is X?", engine="fitz_krag")
@@ -49,7 +50,7 @@ Examples:
     >>> from fitz import create_engine, Query
     >>> engine = create_engine("fitz_krag")
     >>> query = Query(text="What is Y?")
-    >>> answer = engine.answer(query)
+    >>> pack = engine.evidence(query)
 """
 
 __version__ = "0.14.1"
@@ -69,6 +70,8 @@ def __getattr__(name: str):
         "ConfigurationError",
         "EngineError",
         "GenerationError",
+        "EvidenceItem",
+        "EvidencePack",
         "KnowledgeEngine",
         "KnowledgeError",
         "Provenance",
@@ -137,8 +140,8 @@ def query(question: str, source=None, collection: str = None):
 
     Examples:
         >>> import fitz_sage
-        >>> answer = fitz_sage.query("What is the refund policy?", source="./docs")
-        >>> print(answer.text)
+        >>> pack = fitz_sage.evidence("What is the refund policy?", source="./docs")
+        >>> print(pack.mode)
     """
     global _default_fitz
     if collection is not None:
@@ -147,6 +150,35 @@ def query(question: str, source=None, collection: str = None):
         _default_fitz = fitz(collection=collection)
     f = _get_default_fitz()
     return f.query(question, source=source)
+
+
+def evidence(question: str, source=None, collection: str = None):
+    """
+    Retrieve governed evidence without answer synthesis.
+
+    Module-level convenience function matching `fitz retrieve` CLI.
+
+    Args:
+        question: The question to retrieve evidence for.
+        source: Path to file or directory. If provided, registers documents
+            before retrieving evidence (equivalent to CLI --source flag).
+        collection: Collection name (uses default if not specified).
+
+    Returns:
+        EvidencePack with ranked source units, provenance, and governance mode.
+
+    Examples:
+        >>> import fitz_sage
+        >>> pack = fitz_sage.evidence("What is the refund policy?", source="./docs")
+        >>> print(pack.mode)
+    """
+    global _default_fitz
+    if collection is not None:
+        from fitz_sage.sdk import fitz
+
+        _default_fitz = fitz(collection=collection)
+    f = _get_default_fitz()
+    return f.evidence(question, source=source)
 
 
 # =============================================================================
@@ -162,6 +194,8 @@ __all__ = [
     # Core Types
     "Query",
     "Answer",
+    "EvidenceItem",
+    "EvidencePack",
     "Provenance",
     # Core Exceptions
     "EngineError",
@@ -179,5 +213,6 @@ __all__ = [
     "get_engine_registry",
     # SDK
     "fitz",
+    "evidence",
     "query",
 ]

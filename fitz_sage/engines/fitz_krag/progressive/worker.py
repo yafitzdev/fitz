@@ -9,14 +9,14 @@ never reimplements parse/summarize/enrich.
 
 State machine per file:
     REGISTERED → PARSED    (core.parse_file — store raw, extract symbols/sections)
-    PARSED     → ENRICHED  (core.enrich_file — keywords/entities, entity graph,
-                            L1 hierarchy summary)
+    PARSED     → ENRICHED  (core.enrich_file — required keywords/entities,
+                            entity graph, L1 hierarchy summary)
 Once every file is ENRICHED the worker runs ``core.finalize`` (import graph +
 L2 hierarchy summary): eager indexing is then complete.
 
-ENRICHED → SUMMARIZED (core.summarize_file) is demand-driven — LLM summaries
-are generated, in the warm loop, only for files a query has surfaced.
-Un-queried files are never summarized.
+ENRICHED → SUMMARIZED (core.summarize_file) is demand-driven. Summaries are
+generated only for files a query has surfaced. Un-queried files are never
+summarized.
 
 Priority queue:
     P1: Files the user just queried about
@@ -60,6 +60,7 @@ class BackgroundIngestWorker:
         self._query_active = threading.Event()  # Set = query is running
         self._eager_done = threading.Event()  # Set = parse/enrich/finalize done
         self._thread: threading.Thread | None = None
+        self._failure: Exception | None = None
 
     def start(self) -> None:
         """Start daemon thread (daemon=True, won't block process exit)."""
@@ -92,6 +93,10 @@ class BackgroundIngestWorker:
                     progress(line)
                 last_emit = time.monotonic()
             self._eager_done.wait(timeout=1.0)
+        if self._failure is not None:
+            if progress:
+                progress(f"Indexing failed: {self._failure}")
+            raise RuntimeError(f"Indexing failed: {self._failure}") from self._failure
         if progress:
             progress("Indexing complete.")
 
@@ -152,11 +157,13 @@ class BackgroundIngestWorker:
                 t3 - t2,
             )
         except Exception as e:
+            self._failure = e
             logger.error(f"Background worker failed: {e}")
         finally:
             self._eager_done.set()
-        # Demand-driven summarization runs until the worker is stopped.
-        self._warm_loop()
+        # Demand-driven summarization runs only after required enrichment succeeds.
+        if self._failure is None:
+            self._warm_loop()
 
     def _get_ordered_files(self, state: FileState) -> list["ManifestEntry"]:
         """Get files in priority order for a given state.
@@ -190,6 +197,7 @@ class BackgroundIngestWorker:
 
     def _enrich_phase(self) -> None:
         """PARSED → ENRICHED: extract keywords/entities + L1 (pauses during queries)."""
+        failures: list[str] = []
         for entry in self._get_ordered_files(FileState.PARSED):
             if self._stop_event.is_set():
                 return
@@ -200,8 +208,14 @@ class BackgroundIngestWorker:
                 self._core.enrich_file(entry.file_id, entry.file_type)
                 self._manifest.update_state(entry.rel_path, FileState.ENRICHED)
             except Exception as e:
-                logger.warning(f"Background enrichment failed for {entry.rel_path}: {e}")
+                failures.append(f"{entry.rel_path}: {e}")
+                logger.error(f"Background enrichment failed for {entry.rel_path}: {e}")
+                break
         self._manifest.save()
+        if failures:
+            raise RuntimeError(
+                "Required enrichment failed; indexing stopped before finalize. " + failures[0]
+            )
 
     def _finalize_phase(self) -> None:
         """Corpus finalize — import graph + L2 hierarchy summary."""

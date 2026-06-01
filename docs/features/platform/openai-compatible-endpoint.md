@@ -1,21 +1,21 @@
+<!-- docs/features/platform/openai-compatible-endpoint.md -->
 # OpenAI-Compatible Endpoint Architecture
 
-**Status:** the canonical chat-protocol path. As of **v0.12.0** this is
-the *only* chat path — embeddings, per-provider SDKs, and the
-`retrieval_mode` toggle are gone.
+**Status:** the optional endpoint/cloud chat path. Required enrichment uses
+managed Qwen3.5 0.8B ONNX; endpoint chat is for optional synthesis, query
+intelligence, and vision.
 
 ## TL;DR
 
-There is **one** chat implementation in fitz-sage: `OpenAICompatChat`
-in `fitz_sage/llm/providers/openai_compat.py`. It speaks the OpenAI
-HTTP protocol against any compliant server.
+There is one HTTP chat implementation in fitz-sage: `OpenAICompatChat` in
+`fitz_sage/llm/providers/openai_compat.py`. It speaks the OpenAI HTTP protocol
+against any compliant server.
 
-Provider names are *configuration presets* on top of that one
-implementation — not separate code paths:
+Provider names are configuration presets on top of that implementation:
 
 | Spec                          | base_url                          | Auth                       | Use case                                            |
 |-------------------------------|-----------------------------------|----------------------------|-----------------------------------------------------|
-| `endpoint` / `endpoint/<m>`   | required (user-supplied)          | `NoAuth` or `ApiKeyAuth`   | local llama.cpp / vLLM / LM Studio / any cloud      |
+| `endpoint` / `endpoint/<m>`   | required (user-supplied)          | `NoAuth` or `ApiKeyAuth`   | local endpoint / vLLM / LM Studio / any cloud       |
 | `openai` / `openai/<m>`       | `https://api.openai.com/v1`       | `OPENAI_API_KEY`           | OpenAI public API                                   |
 | `azure_openai/<deployment>`   | required (tenant-specific)        | `AZURE_OPENAI_API_KEY`     | Azure OpenAI                                        |
 | `enterprise/<provider>/<m>`   | required                          | OAuth2 + downstream key    | Internal corporate gateway                          |
@@ -33,11 +33,10 @@ choices on every user:
 2. Locally, swap models mid-query (Ollama unloads/reloads between chat
    and embedding) or run two SDK clients side by side.
 
-Both were friction. The single-protocol architecture removes them by
+Both were friction. The endpoint architecture removes them by
 speaking the OpenAI HTTP protocol — which virtually every modern
 serving stack already exposes:
 
-- `llama-server` (llama.cpp) — recommended local
 - vLLM, LM Studio, TabbyAPI, Aphrodite, text-generation-webui
 - Ollama (`/v1/` mode at `:11434/v1`)
 - OpenAI, Together, Fireworks, Groq, DeepInfra, OpenRouter, Mistral La Plateforme
@@ -59,8 +58,7 @@ The auth layer (`fitz_sage.llm.auth`) is shared across all presets:
 For `endpoint`, opt in to `ApiKeyAuth` via:
 
 ```yaml
-chat_smart: endpoint
-chat_smart_model: meta-llama-3.1-70b-instruct
+synthesizer: endpoint/meta-llama-3.1-70b-instruct
 chat_base_url: https://api.together.xyz/v1
 chat_api_key_env: TOGETHER_API_KEY
 ```
@@ -69,13 +67,7 @@ chat_api_key_env: TOGETHER_API_KEY
 
 ```yaml
 fitz_krag:
-  chat_fast: endpoint
-  chat_balanced: endpoint
-  chat_smart: endpoint
-  chat_fast_model: qwen2.5-3b-instruct
-  chat_balanced_model: qwen2.5-7b-instruct
-  chat_smart_model: qwen2.5-7b-instruct
-
+  synthesizer: endpoint/qwen2.5-7b-instruct
   chat_base_url: http://localhost:8080/v1
   chat_api_key_env: null         # unauthenticated local server
 
@@ -83,36 +75,24 @@ fitz_krag:
   collection: default
 ```
 
-Per-tier overrides (`chat_smart_base_url`, `chat_smart_api_key_env`,
-`chat_smart_model`) let you mix local and cloud if you want — cheap
-local model for fast/balanced, cloud smart model for synthesis.
-
-## Recommended local setup (llama.cpp)
-
-```bash
-# Chat server on port 8080
-llama-server -m qwen2.5-7b-instruct-q4_k_m.gguf --port 8080 -c 8192
-```
-
-That's it. No second server for embeddings — embeddings are gone in
-v0.12.0. One process, one model, hot the whole time.
+Use role-specific provider fields (`query_intelligence`, `vision`, and
+`synthesizer`) to mix local and cloud models. Required enrichment is internal
+and does not need an endpoint.
 
 ## Cloud quick reference
 
 ```yaml
 # OpenAI (preset; no base_url needed)
-chat_smart: openai/gpt-4o
+synthesizer: openai/gpt-4o
 # OPENAI_API_KEY in env
 
 # Together (endpoint with API key)
-chat_smart: endpoint
-chat_smart_model: meta-llama-3.1-70b-instruct
+synthesizer: endpoint/meta-llama-3.1-70b-instruct
 chat_base_url: https://api.together.xyz/v1
 chat_api_key_env: TOGETHER_API_KEY
 
 # OpenRouter (gateway over many vendors)
-chat_smart: endpoint
-chat_smart_model: anthropic/claude-sonnet-4
+synthesizer: endpoint/anthropic/claude-sonnet-4
 chat_base_url: https://openrouter.ai/api/v1
 chat_api_key_env: OPENROUTER_API_KEY
 ```
@@ -121,9 +101,9 @@ chat_api_key_env: OPENROUTER_API_KEY
 
 | Old spec                        | New spec                                                                               |
 |---------------------------------|----------------------------------------------------------------------------------------|
-| `ollama/qwen2.5:14b`            | `endpoint` + `chat_smart_model: qwen2.5:14b` + `chat_base_url: http://localhost:11434/v1` |
+| `ollama/qwen2.5:14b`            | `synthesizer: endpoint/qwen2.5:14b` + `chat_base_url: http://localhost:11434/v1` |
 | `cohere/command-a-03-2025`      | not directly supported — Cohere's chat endpoint isn't OpenAI-compatible. Use OpenRouter or another OpenAI-compatible gateway. |
-| `anthropic/claude-sonnet-4`     | `endpoint` + `chat_smart_model: anthropic/claude-sonnet-4` via OpenRouter + `OPENROUTER_API_KEY` |
+| `anthropic/claude-sonnet-4`     | `synthesizer: endpoint/anthropic/claude-sonnet-4` via OpenRouter + `OPENROUTER_API_KEY` |
 
 These migrations are surfaced in the `ValueError` raised when the
 legacy spec is loaded at runtime.

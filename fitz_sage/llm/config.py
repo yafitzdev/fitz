@@ -2,17 +2,23 @@
 """
 Configuration parser for LLM providers.
 
-There is exactly one chat-protocol implementation in fitz-sage:
-``OpenAICompatChat`` / ``OpenAICompatVision``, which speaks the
-OpenAI HTTP protocol against any compliant server
-(OpenAI, Azure, llama.cpp's ``llama-server``, vLLM, LM Studio, Together,
-Fireworks, Groq, OpenRouter, …).
+There are two chat paths in fitz-sage:
 
-Provider names are *configuration presets* on top of that single
-implementation, not separate code paths:
+``OnnxChat``
+              the managed in-process Qwen3.5 0.8B enrichment runtime.
+              This is the default for ingestion enrichment and needs no
+              external inference server.
+``OpenAICompatChat`` / ``OpenAICompatVision``
+              the optional OpenAI HTTP protocol path for user-supplied
+              synthesis, query intelligence, and vision endpoints
+              (OpenAI, Azure, vLLM, LM Studio, Together, Fireworks, Groq,
+              OpenRouter, Ollama in /v1 mode, …).
+
+Provider names are configuration knobs over those implementations:
 
     endpoint  — bring your own URL + model. Default (and only) auth is
                 NoAuth; opt-in to ApiKeyAuth via ``auth.api_key_env``.
+    onnx      — managed local Qwen3.5 0.8B ONNX generation on CPU.
     openai    — preset for ``https://api.openai.com/v1`` + OPENAI_API_KEY,
                 with default models from OPENAI_CHAT_MODELS.
     azure_openai
@@ -61,33 +67,30 @@ HEADER_FORMAT_MAP: dict[str, str] = {
 _REMOVED_PROVIDERS: dict[str, str] = {
     "ollama": (
         "The 'ollama' provider has been removed. "
-        "Use the 'endpoint' provider with Ollama's OpenAI-compatible URL:\n\n"
-        "  chat_smart: endpoint/qwen2.5:14b\n"
-        "  base_url: http://localhost:11434/v1\n\n"
-        "For better local performance, prefer llama.cpp's llama-server:\n"
-        "  llama-server -m model.gguf --port 8080\n"
-        "  chat_smart: endpoint/<model-name>\n"
-        "  base_url: http://localhost:8080/v1"
+        "Required enrichment is managed in-process with Qwen3.5 0.8B ONNX "
+        "and is not user-configurable.\n\n"
+        "For optional Ollama answer synthesis, use the 'endpoint' provider with "
+        "Ollama's OpenAI-compatible URL:\n\n"
+        "  synthesizer: endpoint/qwen2.5:14b\n"
+        "  chat_base_url: http://localhost:11434/v1"
     ),
     "cohere": (
         "The 'cohere' provider has been removed. "
         "If you need Cohere's chat models, use the 'endpoint' provider with "
         "Cohere's OpenAI-compatible API or via OpenRouter:\n\n"
-        "  chat_smart: endpoint/command-a-03-2025\n"
-        "  base_url: https://api.cohere.com/compatibility/v1\n"
-        "  auth:\n"
-        "    api_key_env: COHERE_API_KEY\n\n"
-        "Cohere /rerank is no longer wired in fitz-sage; rerank is moving to "
-        "an LLM-rerank step using the chat model."
+        "  synthesizer: endpoint/command-a-03-2025\n"
+        "  chat_base_url: https://api.cohere.com/compatibility/v1\n"
+        "  chat_api_key_env: COHERE_API_KEY\n\n"
+        "Cohere /rerank is no longer wired in fitz-sage; use `rerank: onnx` "
+        "for the local cross-encoder reranker."
     ),
     "anthropic": (
         "The 'anthropic' provider has been removed. "
         "Use the 'endpoint' provider via OpenRouter or Anthropic's "
         "OpenAI-compatible compatibility layer:\n\n"
-        "  chat_smart: endpoint/anthropic/claude-sonnet-4\n"
-        "  base_url: https://openrouter.ai/api/v1\n"
-        "  auth:\n"
-        "    api_key_env: OPENROUTER_API_KEY"
+        "  synthesizer: endpoint/anthropic/claude-sonnet-4\n"
+        "  chat_base_url: https://openrouter.ai/api/v1\n"
+        "  chat_api_key_env: OPENROUTER_API_KEY"
     ),
 }
 
@@ -193,6 +196,7 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
 
     config = config or {}
     auth_config = config.get("auth", {})
+    cert_path = config.get("cert_path") or auth_config.get("cert_path")
 
     # Enterprise composite auth (M2M + API key)
     if auth_config.get("type") == "enterprise":
@@ -202,7 +206,7 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
             token_url=auth_config["token_url"],
             client_id=auth_config["client_id"],
             client_secret=auth_config["client_secret"],
-            cert_path=config.get("cert_path"),
+            cert_path=cert_path,
             scope=auth_config.get("scope"),
             client_cert_path=auth_config.get("client_cert_path"),
             client_key_path=auth_config.get("client_key_path"),
@@ -224,7 +228,7 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
             token_url=auth_config["token_url"],
             client_id=auth_config["client_id"],
             client_secret=auth_config["client_secret"],
-            cert_path=config.get("cert_path"),
+            cert_path=cert_path,
             scope=auth_config.get("scope"),
         )
 
@@ -233,7 +237,7 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
         raise ValueError(
             "The 'enterprise' provider requires an 'auth' block in config.\n"
             "Example:\n"
-            "  chat_smart: enterprise/gpt-4o\n"
+            "  synthesizer: enterprise/gpt-4o\n"
             "  base_url: https://corp.gateway/openai/v1\n"
             "  auth:\n"
             "    type: enterprise\n"
@@ -355,7 +359,7 @@ def _resolve_openai_preset_kwargs(
             raise ValueError(
                 "azure_openai requires 'base_url' (Azure endpoints are "
                 "tenant-specific).\nExample:\n"
-                "  chat_smart: azure_openai/gpt-4o\n"
+                "  synthesizer: azure_openai/gpt-4o\n"
                 "  base_url: https://my-tenant.openai.azure.com/openai/deployments/my-deployment"
             )
         kwargs["base_url"] = _OPENAI_DEFAULT_BASE_URL
@@ -372,17 +376,23 @@ def create_chat_provider(
     Create a chat provider from a spec string.
 
     Args:
-        spec: ``provider`` or ``provider/model`` (e.g. ``endpoint/qwen2.5-7b``,
-            ``openai/gpt-4o``, ``azure_openai/my-deployment``).
+        spec: ``provider`` or ``provider/model`` (e.g. ``onnx/qwen3.5-0.8b``,
+            ``endpoint/qwen2.5-7b``, ``openai/gpt-4o``,
+            ``azure_openai/my-deployment``).
         config: Optional config dict (auth, base_url, etc.).
         tier: Tier hint when no model is supplied.
 
     Returns:
-        A ChatProvider instance — always an OpenAICompatChat (or
-        EnterpriseChat for the enterprise path).
+        A ChatProvider instance.
     """
     provider, _ = parse_provider_string(spec)
     _check_removed(provider)
+
+    if provider == "onnx":
+        from fitz_sage.llm.providers.onnx_chat import DEFAULT_QWEN_MODEL_ALIAS, OnnxChat
+
+        _, model = parse_provider_string(spec)
+        return OnnxChat(model_id=model or DEFAULT_QWEN_MODEL_ALIAS)
 
     if provider == "enterprise":
         from fitz_sage.llm.providers.enterprise import EnterpriseChat
@@ -399,21 +409,23 @@ def create_chat_provider(
             raise ValueError(
                 "enterprise provider requires 'base_url' in config.\n"
                 "Example:\n"
-                "  chat_smart: enterprise/gpt-4o\n"
+                "  synthesizer: enterprise/gpt-4o\n"
                 "  base_url: https://corp.gateway/openai/v1"
             )
         if not model_name:
             raise ValueError(
                 "enterprise provider requires a model in the spec.\n"
                 "Example:\n"
-                "  chat_smart: enterprise/gpt-4o"
+                "  synthesizer: enterprise/gpt-4o"
             )
         return EnterpriseChat(auth, base_url=base_url, model=model_name, **kwargs)  # type: ignore[arg-type]
 
     if provider == "endpoint":
         from fitz_sage.llm.providers.openai_compat import OpenAICompatChat
 
-        auth, kwargs = _resolve_endpoint_kwargs(spec, config, require_model=True, role="chat_smart")
+        auth, kwargs = _resolve_endpoint_kwargs(
+            spec, config, require_model=True, role="synthesizer"
+        )
         base_url = kwargs.pop("base_url")
         model_name = kwargs.pop("model")
         return OpenAICompatChat(auth, model=model_name, base_url=base_url, tier=tier, **kwargs)
@@ -428,7 +440,7 @@ def create_chat_provider(
 
     raise ValueError(
         f"Unknown chat provider: {provider}. "
-        f"Supported: 'endpoint', 'openai', 'azure_openai', 'enterprise'."
+        f"Supported: 'onnx', 'endpoint', 'openai', 'azure_openai', 'enterprise'."
     )
 
 

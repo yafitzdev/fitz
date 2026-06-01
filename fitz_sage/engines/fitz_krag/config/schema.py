@@ -9,8 +9,11 @@ to code symbol / document section), then reads content on demand.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import Field
 
+from fitz_sage.config.defaults import DEFAULT_LOCAL_LLM_BASE_URL
 from fitz_sage.core.config import BasePluginConfig
 
 
@@ -18,49 +21,42 @@ class FitzKragConfig(BasePluginConfig):
     """
     Fitz KRAG configuration.
 
-    Minimal local config (default — assumes one llama-server with
-    a chat model on localhost:8080):
+    Minimal local config:
     ```yaml
-    chat_fast: endpoint/qwen2.5-7b-instruct
-    chat_balanced: endpoint/qwen2.5-7b-instruct
-    chat_smart: endpoint/qwen2.5-7b-instruct
-    chat_base_url: http://localhost:8080/v1
     collection: my_project
+    synthesizer: null
     ```
 
-    Cloud config (OpenAI):
+    Optional synthesis config (OpenAI):
     ```yaml
-    chat_smart: openai/gpt-4o
-    chat_balanced: openai/gpt-4o-mini
-    chat_fast: openai/gpt-4o-mini
+    synthesizer: openai/gpt-4o
     collection: my_project
     # OPENAI_API_KEY in env
     ```
 
     Note: fitz-sage uses no embedding model. Retrieval is BM25 + KRAG
-    typed-unit routing (code symbols, sections, tables) + LLM rerank.
-    The ``retrieval intelligence stack`` does the semantic work that
-    dense retrieval traditionally provides — without the failure mode
-    of surface-similar-but-wrong dense candidates.
+    typed-unit routing (code symbols, sections, tables) + optional ONNX
+    rerank. The ``retrieval intelligence stack`` does the semantic work that
+    dense retrieval traditionally provides without requiring a chat model.
     """
 
     # ==========================================================================
     # Core Plugins (shared infrastructure)
     # ==========================================================================
 
-    chat_fast: str = Field(
-        default="endpoint/qwen2.5-7b-instruct",
-        description="Chat model for detection and query analysis (provider/model)",
+    chat_fast: str | None = Field(
+        default=None,
+        description="Optional fast-tier chat model for legacy tiered LLM work",
     )
 
-    chat_balanced: str = Field(
-        default="endpoint/qwen2.5-7b-instruct",
-        description="Chat model for general queries (provider/model)",
+    chat_balanced: str | None = Field(
+        default=None,
+        description="Optional balanced-tier chat model for legacy tiered LLM work",
     )
 
-    chat_smart: str = Field(
-        default="endpoint/qwen2.5-7b-instruct",
-        description="Chat model for complex generation (provider/model)",
+    chat_smart: str | None = Field(
+        default=None,
+        description="Optional smart-tier chat model for legacy tiered LLM work",
     )
 
     # Per-role base URLs — used by the ``endpoint`` and ``enterprise``
@@ -68,10 +64,10 @@ class FitzKragConfig(BasePluginConfig):
     # default URL) and ``azure_openai`` (which always requires its
     # own base_url at the spec level).
     chat_base_url: str | None = Field(
-        default="http://localhost:8080/v1",
+        default=DEFAULT_LOCAL_LLM_BASE_URL,
         description=(
             "HTTP endpoint for chat — used by the ``endpoint`` provider. "
-            "Default is a local llama-server on port 8080."
+            "Ignored by the managed ONNX enrichment provider."
         ),
     )
 
@@ -88,6 +84,19 @@ class FitzKragConfig(BasePluginConfig):
     chat_api_key_env: str | None = Field(
         default=None,
         description="Env var name for chat-endpoint API key (None = no auth).",
+    )
+
+    auth: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional auth block passed to chat providers. Use for endpoint API "
+            "keys with custom headers, M2M OAuth2, or enterprise composite auth."
+        ),
+    )
+
+    cert_path: str | None = Field(
+        default=None,
+        description="Optional CA certificate bundle path for enterprise/M2M auth.",
     )
 
     vision_api_key_env: str | None = Field(
@@ -201,7 +210,7 @@ class FitzKragConfig(BasePluginConfig):
         ge=1,
         description=(
             "Max retrieval strategies run concurrently. Set to 1 to serialize "
-            "LLM calls for single-model local servers (LM Studio, llama-server)."
+            "LLM calls for single-model endpoint servers."
         ),
     )
 
@@ -265,6 +274,29 @@ class FitzKragConfig(BasePluginConfig):
     # Generation
     # ==========================================================================
 
+    synthesizer: str | None = Field(
+        default=None,
+        description=(
+            "Optional chat provider/model spec for answer synthesis. "
+            "None leaves retrieval/evidence as the default surface."
+        ),
+    )
+
+    max_answer_tokens: int = Field(
+        default=512,
+        ge=1,
+        description="Maximum tokens requested from the optional answer synthesizer.",
+    )
+
+    short_answer_tokens: int = Field(
+        default=192,
+        ge=1,
+        description=(
+            "Maximum tokens for specific factual synthesis questions. "
+            "The effective cap is min(short_answer_tokens, max_answer_tokens)."
+        ),
+    )
+
     enable_citations: bool = Field(
         default=True,
         description="Enable [S1], [S2] citation markers in answers",
@@ -276,21 +308,15 @@ class FitzKragConfig(BasePluginConfig):
     )
 
     # ==========================================================================
-    # Detection
-    # ==========================================================================
-
-    enable_detection: bool = Field(
-        default=True,
-        description="Enable shared detection (temporal, comparison, expansion awareness)",
-    )
-
-    # ==========================================================================
     # Query Intelligence
     # ==========================================================================
 
-    enable_query_rewriting: bool = Field(
-        default=True,
-        description="Enable LLM-based query rewriting for retrieval optimization",
+    query_intelligence: str | None = Field(
+        default=None,
+        description=(
+            "Optional chat provider/model spec for LLM query prep. "
+            "None uses the deterministic no-chat planner."
+        ),
     )
 
     # ==========================================================================
@@ -321,15 +347,6 @@ class FitzKragConfig(BasePluginConfig):
     )
 
     # ==========================================================================
-    # Enrichment
-    # ==========================================================================
-
-    enable_enrichment: bool = Field(
-        default=True,
-        description="Enable keyword/entity extraction during ingestion",
-    )
-
-    # ==========================================================================
     # Multi-Hop
     # ==========================================================================
 
@@ -347,15 +364,6 @@ class FitzKragConfig(BasePluginConfig):
         ge=1,
         le=5,
         description="Maximum retrieval hops for multi-hop reasoning",
-    )
-
-    # ==========================================================================
-    # Hierarchy
-    # ==========================================================================
-
-    enable_hierarchy: bool = Field(
-        default=True,
-        description="Enable L1/L2 hierarchical summaries during ingestion",
     )
 
     # ==========================================================================

@@ -2,10 +2,11 @@
 """
 LLM provider implementations.
 
-There is one chat-protocol implementation: ``OpenAICompatChat`` /
-``OpenAICompatVision`` — an OpenAI HTTP client that talks to OpenAI
-itself, Azure OpenAI, llama.cpp, vLLM, LM Studio, Together, Fireworks,
-Groq, OpenRouter, and any other server speaking the protocol.
+``OnnxChat`` is the managed local Qwen3.5 0.8B enrichment runtime.
+``OpenAICompatChat`` / ``OpenAICompatVision`` are optional OpenAI HTTP
+clients for user-supplied endpoints such as OpenAI itself, Azure OpenAI,
+vLLM, LM Studio, Together, Fireworks, Groq, OpenRouter, and any other
+server speaking the protocol.
 
 The ``enterprise`` path is kept separately because its OAuth2 +
 API-key composite auth and certificate handling do not fit cleanly
@@ -30,7 +31,16 @@ __all__ = [
     "RerankResult",
 ]
 
-# OpenAI-compatible HTTP provider (the only chat path).
+# Managed ONNX chat provider for required enrichment.
+from fitz_sage.llm.providers.onnx_chat import (  # noqa: E402,F401
+    OnnxChat,
+    OnnxChatModelError,
+    OnnxChatModelInfo,
+)
+
+__all__.extend(["OnnxChat", "OnnxChatModelError", "OnnxChatModelInfo"])
+
+# OpenAI-compatible HTTP provider for optional endpoint/cloud chat paths.
 try:
     from fitz_sage.llm.providers.openai_compat import (  # noqa: F401
         OpenAICompatChat,

@@ -28,8 +28,11 @@ SYNONYMS: dict[str, list[str]] = {
     "fetch": ["get", "retrieve"],
     # Status/state
     "error": ["failure", "exception", "issue"],
+    "errors": ["failure", "exception", "issue"],
     "failure": ["error", "exception"],
+    "failures": ["error", "exception"],
     "issue": ["problem", "error", "bug"],
+    "issues": ["problem", "error", "bug"],
     "bug": ["issue", "defect", "problem"],
     # Actions
     "start": ["begin", "launch", "initiate"],

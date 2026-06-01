@@ -1,9 +1,11 @@
+<!-- docs/PLUGINS.md -->
 # Plugin Development Guide
 
 fitz-sage **v0.14.1+** has a much smaller plugin surface than earlier
-versions: chat is mono-protocol (one OpenAI-compatible provider with
-sugar presets), embedding/vector-db are gone, and the remaining plugin
-types are Python modules wired by config.
+versions: required enrichment is managed by the built-in ONNX provider,
+endpoint/cloud chat uses one OpenAI-compatible provider with sugar presets,
+embedding/vector-db are gone, and the remaining plugin types are Python modules
+wired by config.
 
 This guide covers what's pluggable and how to add a new one.
 
@@ -13,7 +15,7 @@ This guide covers what's pluggable and how to add a new one.
 
 | Type            | Format | Location                                       | Selected by config              |
 | --------------- | ------ | ---------------------------------------------- | -------------------------------- |
-| Chat provider   | Python | `fitz_sage/llm/providers/`                     | `chat_fast` / `chat_smart` / ... |
+| Chat provider   | Python | `fitz_sage/llm/providers/`                     | `query_intelligence` / `synthesizer` / ... |
 | Parser          | Python | `fitz_sage/ingestion/parser/plugins/`          | `parser:`                        |
 | Chunker         | Python | `fitz_sage/ingestion/chunking/plugins/`        | `chunker:` / format auto-routing |
 | Source          | Python | `fitz_sage/ingestion/source/plugins/`          | source spec at ingest time       |
@@ -49,12 +51,13 @@ Governance is selected by the engine config's `governance:` field
 
 ## Chat Provider Model
 
-The LLM layer has exactly one canonical provider — **`endpoint`** —
-that speaks OpenAI-compatible `/chat/completions`. The other names are
-URL+auth presets over it:
+The LLM layer has a managed Qwen3.5 0.8B ONNX runtime for required enrichment
+and a canonical **`endpoint`** provider for optional OpenAI-compatible chat. The
+other names are URL+auth presets over `endpoint`:
 
 | Spec form                              | Resolves to                                              |
 | -------------------------------------- | -------------------------------------------------------- |
+| `onnx/qwen3.5-0.8b`                    | managed local Qwen3.5 0.8B ONNX runtime                  |
 | `endpoint` + `chat_base_url`           | the canonical form                                       |
 | `openai/<model>`                       | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |
@@ -69,22 +72,20 @@ OpenAI-compatible endpoint instead — e.g. Ollama exposes one at
 
 | Provider     | Purpose                                                    |
 | ------------ | ---------------------------------------------------------- |
+| `onnx`       | Managed local Qwen3.5 0.8B chat provider                   |
 | `endpoint`   | Canonical OpenAI-compatible chat (any URL)                 |
 | `enterprise` | Same protocol + enterprise auth (M2M OAuth2, mTLS, CA bundle) |
 | `onnx_reranker` | Internal — INT8 ONNX cross-encoder (gte-reranker-modernbert-base) |
 
-### Model tiers
+### Role Providers
 
-`chat_fast`, `chat_balanced`, `chat_smart` are cost-tier slots. Wire
-them to different models or to the same model with different sampling:
+Role-specific provider fields are the primary control surface for optional chat
+paths. `chat_fast`, `chat_balanced`, and `chat_smart` tiers are optional slots
+for advanced integrations that request a tiered chat factory directly:
 
 ```yaml
-chat_fast: endpoint            # cheap for enrichment / classification
-chat_balanced: endpoint        # default synthesizer
-chat_smart: endpoint           # heavy reasoning paths
-chat_fast_model: qwen2.5-3b-instruct
-chat_balanced_model: qwen2.5-7b-instruct
-chat_smart_model: qwen2.5-32b-instruct
+query_intelligence: endpoint/qwen2.5-3b-instruct
+synthesizer: endpoint/qwen2.5-32b-instruct
 chat_base_url: http://localhost:8080/v1
 chat_api_key_env: OPENAI_API_KEY    # omit for unauthenticated local servers
 ```
@@ -93,7 +94,7 @@ chat_api_key_env: OPENAI_API_KEY    # omit for unauthenticated local servers
 
 | Auth type     | Class            | Use case                                                |
 | ------------- | ---------------- | ------------------------------------------------------- |
-| None          | n/a              | Unauthenticated local server (llama.cpp, Ollama, LM Studio) |
+| None          | n/a              | Managed ONNX or unauthenticated local endpoint server       |
 | API key       | `ApiKeyAuth`     | OpenAI, Together, Groq, Anthropic-via-compat, ...       |
 | M2M OAuth2    | `M2MAuth`        | Enterprise gateways using client-credentials flow       |
 | Composite     | `CompositeAuth`  | Gateway with M2M bearer + downstream LLM API key        |
@@ -173,8 +174,8 @@ preserve (e.g. a custom XML dialect).
 
 Ingestion enrichment (keyword / entity / temporal extraction and the
 L1/L2 hierarchy summaries) is built into the KRAG ingestion pipeline,
-not a plugin surface. It is controlled by the `enable_enrichment` and
-`enable_hierarchy` engine-config flags. See [ENRICHMENT.md](ENRICHMENT.md)
+not a plugin surface and not user-configurable. It always uses the managed
+Qwen3.5 0.8B ONNX runtime. See [ENRICHMENT.md](ENRICHMENT.md)
 for the architecture and [`features/ingestion/hierarchical-rag.md`](features/ingestion/hierarchical-rag.md)
 for the hierarchy details.
 

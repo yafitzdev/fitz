@@ -1,4 +1,4 @@
-# tests/test_cli_query.py
+# tests/unit/test_cli_query.py
 """
 Tests for the query command.
 """
@@ -19,7 +19,7 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def _skip_firstrun():
     """Skip first-run detection in all query CLI tests."""
-    with patch("fitz_sage.core.firstrun.needs_firstrun", return_value=False):
+    with patch("fitz_sage.config.firstrun.needs_firstrun", return_value=False):
         yield
 
 
@@ -32,6 +32,13 @@ class TestQueryCommand:
 
         assert result.exit_code == 0
         assert "Query your knowledge base" in result.output or "query" in result.output.lower()
+
+    def test_answer_shows_help(self):
+        """Test that answer --help works."""
+        result = runner.invoke(app, ["answer", "--help"])
+
+        assert result.exit_code == 0
+        assert "synthesis" in result.output.lower() or "answer" in result.output.lower()
 
     def test_query_no_collections_exits(self):
         """Test that query exits when no collections found."""
@@ -81,6 +88,32 @@ class TestQueryHelpers:
 
         assert ctx.raw_config["chat_smart"] == "openai/gpt-4o"
         assert ctx.typed_config.collection == "test"
+
+    def test_cli_context_loads_retrieval_only_config(self, tmp_path):
+        """Retrieval-only configs do not expose tiered chat providers."""
+        import yaml
+
+        from fitz_sage.cli.context import CLIContext
+
+        config_path = tmp_path / "config.yaml"
+        config = {
+            "collection": "test",
+            "chat_fast": None,
+            "chat_balanced": None,
+            "chat_smart": None,
+            "synthesizer": None,
+            "query_intelligence": None,
+        }
+        config_path.write_text(yaml.dump(config))
+
+        with patch(
+            "fitz_sage.cli.context.FitzPaths.config",
+            return_value=config_path,
+        ):
+            ctx = CLIContext.load(engine="fitz_krag")
+
+        assert ctx.chat_display == "none"
+        assert ctx.chat_tier_specs == {}
 
     def test_get_collections_returns_list(self):
         """Test get_collections returns collection list."""

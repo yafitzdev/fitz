@@ -1,3 +1,4 @@
+<!-- docs/INGESTION.md -->
 # Ingestion Pipeline
 
 How documents flow through Fitz from files to searchable chunks.
@@ -19,7 +20,7 @@ The ingestion pipeline transforms your documents into searchable knowledge:
 **Key features:**
 - **Incremental** - Only processes new/changed files
 - **Format-aware** - PDFs, code, markdown handled differently
-- **Enrichable** - Optional LLM enhancement (summaries, hierarchies)
+- **Enriched** - Required LLM metadata (keywords, entities, summaries, hierarchies)
 
 ---
 
@@ -216,7 +217,7 @@ summarize and enrich steps add LLM-generated metadata.
 │  │  identifiers)     │  technologies)     │  versions, refs) │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                 │
-│  hierarchy summaries (pipeline-built, gated by enable_hierarchy) │
+│  hierarchy summaries (pipeline-built with managed Qwen ONNX)          │
 │    L1: one group summary per document file (on section metadata) │
 │    L2: corpus summary rolled up from L1 (built during finalize)  │
 │                                                                 │
@@ -226,9 +227,8 @@ summarize and enrich steps add LLM-generated metadata.
 ### KragEnricher
 
 `KragEnricher` extracts **keywords + entities + temporal metadata** in a
-single LLM call per batch of ~15 symbols or sections. This makes
-enrichment nearly free (~$0.13-0.74 for 1000 units). Gated by the
-`enable_enrichment` config flag.
+single LLM call per batch of ~15 symbols or sections. This makes enrichment
+cheap and local with the managed Qwen3.5 0.8B ONNX runtime.
 
 **What it extracts:**
 - **Keywords** - Exact-match identifiers (TC-1001, JIRA-123, `AuthService`)
@@ -243,9 +243,9 @@ enrichment nearly free (~$0.13-0.74 for 1000 units). Gated by the
 
 ### Hierarchy
 
-L1 and L2 summaries for analytical queries, built by the pipeline
-itself. Gated by the `enable_hierarchy` config flag (independent of
-`enable_enrichment`).
+L1 and L2 summaries for analytical queries, built by the pipeline itself. They
+are required for document collections and use the same managed Qwen ONNX
+runtime as keyword/entity enrichment.
 
 **Levels:**
 - **Level 1:** Per-file group summary — stored on each document
@@ -321,7 +321,7 @@ Answer: Quantum computing uses qubits...
 Ingestion is triggered automatically when you point Fitz at a source directory. There is no separate `ingest` command.
 
 ```bash
-# Point at docs and query (ingestion happens in background)
+# Point at docs and query (CLI waits for required enrichment before retrieval)
 fitz query --source ./docs "What is quantum computing?"
 
 # Subsequent queries reuse the already-ingested data
@@ -335,7 +335,7 @@ fitz query "Explain entanglement"
 ```python
 import fitz_sage
 
-# Query with source (ingestion happens in background)
+# Query with source (blocks until required enrichment finishes)
 answer = fitz_sage.query("What is quantum computing?", source="./docs")
 ```
 
@@ -350,11 +350,8 @@ from fitz_sage.core import Query
 from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
 
 cfg = FitzKragConfig(
-    chat_fast="endpoint",
-    chat_balanced="endpoint",
-    chat_smart="endpoint",
+    synthesizer="endpoint/qwen2.5-7b-instruct",
     chat_base_url="http://localhost:8080/v1",
-    chat_smart_model="qwen2.5-7b-instruct",
     collection="my_collection",
 )
 engine = FitzKragEngine(cfg)

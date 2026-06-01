@@ -1,3 +1,4 @@
+<!-- docs/features/ingestion/hierarchical-rag.md -->
 # Hierarchical RAG
 
 ## Problem
@@ -29,7 +30,7 @@ Query routing is automatic — summaries match analytical queries via the BM25 +
 The `KragIngestPipeline` builds the hierarchy itself — there is no
 separate hierarchy enricher. L1 summaries are produced during the
 per-file `enrich` step; the L2 summary during the corpus `finalize`
-step. Both are gated by the `enable_hierarchy` config flag.
+step. Both use the managed Qwen3.5 0.8B ONNX runtime.
 
 ### At Ingestion
 
@@ -71,8 +72,8 @@ Q: "What did users say about the async tutorial?"
 
 ## Key Design Decisions
 
-1. **On by default** — summaries are generated automatically during
-   ingestion, gated by the `enable_hierarchy` config flag.
+1. **Required managed runtime** — summaries are generated during ingestion
+   through Fitz's standard Qwen ONNX runtime.
 
 2. **Automatic routing** — abstract queries lexically match the L2
    summary; specific queries match L0 token-for-token. The LLM
@@ -84,19 +85,13 @@ Q: "What did users say about the async tutorial?"
 4. **Two storage shapes** - L1 lives as `hierarchy_summary` metadata on
    each L0 section; L2 is a single synthetic retrievable section.
 
-5. **LLM-generated** - Uses the same chat LLM to generate summaries (no separate model).
+5. **LLM-generated** - Uses the same managed local LLM as enrichment (no separate model).
 
 ## Configuration
 
-The feature is built into the KRAG ingestion pipeline and controlled by
-one engine-config flag:
-
-```yaml
-enable_hierarchy: true   # build L1/L2 summaries during ingestion (default)
-```
-
-`enable_hierarchy` is independent of `enable_enrichment` — a document
-file still gets an L1 summary when keyword/entity enrichment is off.
+The feature is built into the KRAG ingestion pipeline and is not
+user-configurable. If the managed Qwen ONNX runtime cannot load, ingestion
+fails closed before the collection is treated as ready.
 
 ## Files
 
@@ -106,7 +101,7 @@ file still gets an L1 summary when keyword/entity enrichment is off.
 - **Summary storage:** L2 stored as a synthetic "Corpus Overview"
   section indexed in SQLite FTS5; L1 as `hierarchy_summary` metadata on
   each L0 section
-- **Config flag:** `enable_hierarchy` in `fitz_sage/engines/fitz_krag/config/schema.py`
+- **Runtime:** `fitz_sage/llm/providers/onnx_chat.py`
 
 ## Benefits
 

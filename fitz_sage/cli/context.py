@@ -16,8 +16,8 @@ Usage:
 
     # Load merged config (defaults + user overrides) - always succeeds
     ctx = CLIContext.load()
-    print(ctx.chat_plugin)        # always exists
-    print(ctx.chat_display)       # "cohere (command-r-plus)"
+    print(ctx.chat_plugin)        # "" when no tiered chat is configured
+    print(ctx.chat_display)       # "none" or "endpoint (qwen...)"
     print(ctx.retrieval_top_k)    # always exists
 
     # Check if user has customized config
@@ -98,10 +98,10 @@ class CLIContext:
 
     @property
     def chat_display(self) -> str:
-        """Chat info for display: 'plugin (model)' or just 'plugin'."""
+        """Chat info for display: 'plugin (model)', 'plugin', or 'none'."""
         if self.chat_model_smart:
             return f"{self.chat_plugin} ({self.chat_model_smart})"
-        return self.chat_plugin or "?"
+        return self.chat_plugin or "none"
 
     @property
     def rerank_display(self) -> Optional[str]:
@@ -167,13 +167,14 @@ class CLIContext:
         """
         Extract all values from merged config.
 
-        Flat config: chat_fast/chat_balanced/chat_smart as top-level provider/model specs.
+        Flat config: chat_fast/chat_balanced/chat_smart as optional top-level specs.
         """
         # Extract provider names from flat tier specs
-        chat_smart_spec = config.get("chat_smart", "")
-        chat_fast_spec = config.get("chat_fast", "")
-        chat_balanced_spec = config.get("chat_balanced", "")
-        chat_plugin_name = cls._parse_plugin_string(chat_smart_spec)
+        chat_smart_spec = config.get("chat_smart") or ""
+        chat_fast_spec = config.get("chat_fast") or ""
+        chat_balanced_spec = config.get("chat_balanced") or ""
+        chat_display_spec = chat_smart_spec or chat_balanced_spec or chat_fast_spec
+        chat_plugin_name = cls._parse_plugin_string(chat_display_spec)
 
         rerank_spec = config.get("rerank")
         rerank_plugin_name = cls._parse_plugin_string(rerank_spec)
@@ -184,11 +185,25 @@ class CLIContext:
         chat_model_fast = chat_fast_spec.split("/", 1)[1] if "/" in chat_fast_spec else ""
 
         # Build tier specs dict for factory
-        chat_tier_specs = {
+        configured_tiers = {
             "fast": chat_fast_spec,
             "balanced": chat_balanced_spec,
             "smart": chat_smart_spec,
         }
+        configured_tiers = {tier: spec for tier, spec in configured_tiers.items() if spec}
+        if configured_tiers:
+            fallback_spec = (
+                configured_tiers.get("smart")
+                or configured_tiers.get("balanced")
+                or configured_tiers["fast"]
+            )
+            chat_tier_specs = {
+                "fast": configured_tiers.get("fast", fallback_spec),
+                "balanced": configured_tiers.get("balanced", fallback_spec),
+                "smart": configured_tiers.get("smart", fallback_spec),
+            }
+        else:
+            chat_tier_specs = {}
 
         return cls(
             engine_name=engine,
@@ -239,6 +254,9 @@ class CLIContext:
 
     def get_chat_factory(self):
         """Get chat factory for per-task tier selection."""
+        if not self.chat_tier_specs:
+            raise ValueError("No tiered chat provider is configured.")
+
         from fitz_sage.llm import get_chat_factory
 
         return get_chat_factory(self.chat_tier_specs)

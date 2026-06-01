@@ -1,60 +1,71 @@
+<!-- docs/CONFIG_EXAMPLES.md -->
 # Configuration Examples
 
-Working configs for the v0.12.0+ single-protocol / SQLite world. The
-schema rules:
+Working configs for the managed-ONNX / SQLite world. The schema rules:
 
-- **String specs** instead of nested dicts (`chat_smart: endpoint`, not
-  a provider block).
-- **Provider presence** controls features (omit `rerank:` to disable
-  the reranker; there's no `enabled` flag).
+- **String specs** instead of nested dicts (`synthesizer: endpoint/gpt-4o`,
+  not a provider block).
+- **Provider presence** controls features (`synthesizer: null` disables
+  answer generation; `rerank: null` disables the reranker; enrichment uses the
+  internal managed Qwen ONNX runtime and is always required for ingestion).
 - **Sensible defaults** — `collection` is the only thing every config
   must set; the rest can be overridden per-invocation via CLI flags.
 
 ---
 
-## Minimal: local llama.cpp / LM Studio
+## Minimal: local enrichment required
 
 ```yaml
 # ~/.fitz/config/fitz_krag.yaml
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
-chat_base_url: http://localhost:8080/v1
-chat_smart_model: qwen2.5-7b-instruct
 collection: my_docs
+parser: cpu
+rerank: onnx
+governance: pyrrho
+query_intelligence: null
+synthesizer: null
+chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-No API key needed — the local server is unauthenticated by default.
-Storage is SQLite + FTS5, auto-managed under `~/.fitz/sqlite/`.
+No hosted API key or external inference server is needed. On first ingestion,
+fitz-sage downloads the managed Qwen3.5 0.8B ONNX weights into the Hugging Face
+cache and runs them locally on CPU.
 
 ---
 
-## Minimal: Ollama (OpenAI-compatible mode)
+## Optional synthesis: local OpenAI-compatible endpoint
+
+```yaml
+collection: my_docs
+synthesizer: endpoint/qwen2.5-7b-instruct
+chat_base_url: http://localhost:8080/v1
+max_answer_tokens: 512
+short_answer_tokens: 192
+```
+
+No API key needed — local servers are usually unauthenticated by default.
+The shorter factual-question cap keeps small local models from writing long
+answers for simple lookup questions.
+
+---
+
+## Optional synthesis: Ollama (OpenAI-compatible mode)
 
 Ollama exposes the OpenAI protocol at `:11434/v1`:
 
 ```yaml
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
+synthesizer: endpoint/qwen2.5:7b-instruct
 chat_base_url: http://localhost:11434/v1
-chat_smart_model: qwen2.5:7b-instruct
 collection: my_docs
 ```
 
 ---
 
-## Minimal: OpenAI cloud
+## Optional synthesis: OpenAI cloud
 
 ```yaml
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
+synthesizer: endpoint/gpt-4o
 chat_base_url: https://api.openai.com/v1
 chat_api_key_env: OPENAI_API_KEY
-chat_smart_model: gpt-4o
-chat_balanced_model: gpt-4o-mini
-chat_fast_model: gpt-4o-mini
 collection: my_docs
 ```
 
@@ -68,60 +79,41 @@ Any OpenAI-compatible cloud works with the same shape:
 
 ```yaml
 # Together
-chat_smart: endpoint
+synthesizer: endpoint/meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo
 chat_base_url: https://api.together.xyz/v1
 chat_api_key_env: TOGETHER_API_KEY
-chat_smart_model: meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo
 
 # Groq
-chat_smart: endpoint
+synthesizer: endpoint/llama-3.1-70b-versatile
 chat_base_url: https://api.groq.com/openai/v1
 chat_api_key_env: GROQ_API_KEY
-chat_smart_model: llama-3.1-70b-versatile
 
 # Mistral
-chat_smart: endpoint
+synthesizer: endpoint/mistral-large-latest
 chat_base_url: https://api.mistral.ai/v1
 chat_api_key_env: MISTRAL_API_KEY
-chat_smart_model: mistral-large-latest
 ```
 
 ---
 
-## Mixed local + cloud (cost-optimised)
+## Mixed local + cloud (cost-optimized)
 
-Cheap local model for the bulk of the work, smart cloud model for
-synthesis:
+Required internal Qwen enrichment, optional local query intelligence, and smart
+cloud model for optional synthesis:
 
 ```yaml
-chat_fast: endpoint
-chat_fast_base_url: http://localhost:8080/v1
-chat_fast_model: qwen2.5-3b-instruct
-
-chat_balanced: endpoint
-chat_balanced_base_url: http://localhost:8080/v1
-chat_balanced_model: qwen2.5-7b-instruct
-
-chat_smart: endpoint
-chat_smart_base_url: https://api.openai.com/v1
-chat_smart_api_key_env: OPENAI_API_KEY
-chat_smart_model: gpt-4o
-
 collection: my_docs
-```
+chat_base_url: http://localhost:8080/v1
 
-(Per-tier `*_base_url`, `*_model`, `*_api_key_env` keys override the
-shared top-level ones for that tier only.)
+query_intelligence: endpoint/qwen2.5-7b-instruct
+synthesizer: openai/gpt-4o
+```
 
 ---
 
 ## With ONNX cross-encoder reranker
 
 ```yaml
-chat_smart: endpoint
-chat_base_url: http://localhost:8080/v1
-chat_smart_model: qwen2.5-7b-instruct
-
 # Default — INT8 ONNX cross-encoder (gte-reranker-modernbert-base, 149M)
 rerank: onnx
 # Or pick a different cross-encoder:
@@ -138,14 +130,9 @@ does not consume the chat endpoint.
 ## With VLM in the parser
 
 ```yaml
-chat_smart: endpoint
-chat_base_url: http://localhost:8080/v1
-chat_smart_model: qwen2.5-7b-instruct
-
-vision: endpoint                  # any OpenAI-compatible vision model
+vision: endpoint/gpt-4o           # any OpenAI-compatible vision model
 vision_base_url: https://api.openai.com/v1
 vision_api_key_env: OPENAI_API_KEY
-vision_model: gpt-4o
 
 parser: docling_vision            # the parser that consults `vision:`
 collection: my_docs
@@ -156,13 +143,26 @@ to skip the VLM and avoid the cost.
 
 ---
 
+## Standard Qwen 0.8B enrichment
+
+```yaml
+collection: my_docs
+summary_batch_size: 15
+```
+
+Qwen3.5 0.8B ONNX is the standard local enrichment model. Fitz downloads it on
+first ingest if missing and runs it on CPU. Ingestion fails closed if the
+managed runtime cannot load, so the collection is not treated as ready with
+missing metadata.
+
+---
+
 ## Production: enterprise gateway with M2M + custom CA
 
 ```yaml
-chat_smart: enterprise/openai/gpt-4o
-chat_balanced: enterprise/openai/gpt-4o-mini
-chat_fast: enterprise/openai/gpt-4o-mini
 collection: production_docs
+synthesizer: enterprise/openai/gpt-4o
+query_intelligence: enterprise/openai/gpt-4o-mini
 
 auth:
   type: enterprise
@@ -189,16 +189,16 @@ Set env vars: `CORP_CLIENT_ID`, `CORP_CLIENT_SECRET`,
 ## Per-invocation overrides (no config edit)
 
 ```bash
-# Override the smart endpoint just for this query
-fitz query "What is X?" \
+# Configure synthesis just for this answer
+fitz answer "What is X?" \
   --endpoint https://api.together.xyz/v1 \
-  --model meta-llama-3.1-70b \
+  --synthesizer endpoint/meta-llama-3.1-70b \
   --api-key-env TOGETHER_API_KEY \
   --source ./docs
 ```
 
-`--endpoint` overrides `chat_base_url`, `--model` overrides the smart
-tier's model, `--api-key-env` overrides `chat_api_key_env`.
+`--synthesizer`, `--endpoint`, and `--api-key-env` configure the synthesizer
+for that invocation.
 
 ---
 
@@ -209,20 +209,17 @@ from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
 from fitz_sage.core import Query
 
 cfg = FitzKragConfig(
-    chat_fast="endpoint",
-    chat_balanced="endpoint",
-    chat_smart="endpoint",
-    chat_base_url="http://localhost:8080/v1",
-    chat_smart_model="qwen2.5-7b-instruct",
     collection="my_docs",
+    synthesizer=None,
+    query_intelligence=None,
 )
 engine = FitzKragEngine(cfg)
-answer = engine.answer(Query(text="What is quantum computing?"))
-print(answer.text, answer.mode, [p.address for p in answer.provenance])
+pack = engine.evidence(Query(text="What is quantum computing?"))
+print(pack.mode, [item.file_path for item in pack.items])
 ```
 
-Only `collection` is strictly required; everything else can come from
-defaults or CLI flags.
+Only `collection` is strictly required by the schema. Enrichment and
+summarization use the managed Qwen3.5 0.8B ONNX runtime automatically.
 
 ---
 
@@ -236,8 +233,8 @@ If you're migrating from v0.11.x:
 | `vector_db: pgvector`          | (deleted — SQLite + FTS5 is the only storage)            |
 | `vector_db_kwargs: ...`        | (deleted — no DB knobs)                                  |
 | `cloud: {enabled: true, ...}`  | (deleted — Fitz Cloud cache removed)                     |
-| `chat_smart: cohere/...`       | `chat_smart: endpoint`, point `chat_base_url` at the API |
-| `chat_smart: ollama/...`       | `chat_smart: endpoint`, `chat_base_url: http://localhost:11434/v1` |
+| `chat_smart: cohere/...`       | `synthesizer: endpoint/...`, point `chat_base_url` at the API |
+| `chat_smart: ollama/...`       | `synthesizer: endpoint/...`, `chat_base_url: http://localhost:11434/v1` |
 | `chat_smart: anthropic/...`    | not directly available — pick an OpenAI-compatible model |
 
 Loading a config with any of the deleted keys raises a `ValueError`

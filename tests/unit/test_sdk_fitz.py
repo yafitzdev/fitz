@@ -1,9 +1,11 @@
-# tests/test_sdk_fitz.py
+# tests/unit/test_sdk_fitz.py
 """
 Tests for the Fitz SDK.
 """
 
 from __future__ import annotations
+
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -12,11 +14,7 @@ def _write_test_config(path, collection="default"):
     """Write a minimal valid config file for testing."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f"chat_fast: ollama/test\n"
-        f"chat_balanced: ollama/test\n"
-        f"chat_smart: ollama/test\n"
-        f"embedding: ollama/test\n"
-        f"collection: {collection}\n"
+        "synthesizer: null\n" "query_intelligence: null\n" f"collection: {collection}\n"
     )
 
 
@@ -112,6 +110,34 @@ class TestFitzQuery:
             f.query("   ")
 
 
+class TestFitzEvidence:
+    """Tests for fitz.evidence() method."""
+
+    def test_evidence_points_source_and_returns_pack(self, tmp_path):
+        """Evidence mode points an optional source before retrieval."""
+        from fitz_sage.core import EvidencePack
+        from fitz_sage.sdk import fitz
+
+        config_path = tmp_path / "config.yaml"
+        source = tmp_path / "docs"
+        source.mkdir()
+        _write_test_config(config_path)
+
+        expected = EvidencePack(query="question", mode=None)
+        engine = MagicMock()
+        engine.evidence.return_value = expected
+
+        f = fitz(config_path=config_path)
+        f._engine = engine
+
+        result = f.evidence("question", source=source)
+
+        assert result is expected
+        engine.point.assert_called_once_with(source.resolve(), "default")
+        engine.wait_for_indexing.assert_called_once()
+        engine.evidence.assert_called_once()
+
+
 class TestFitzExports:
     """Tests for SDK exports."""
 
@@ -133,3 +159,32 @@ class TestFitzExports:
 
         assert hasattr(fitz_sage, "query")
         assert callable(fitz_sage.query)
+
+    def test_module_level_evidence_exported(self):
+        """Test module-level evidence() is exported."""
+        import fitz_sage
+
+        assert hasattr(fitz_sage, "evidence")
+        assert callable(fitz_sage.evidence)
+
+    def test_evidence_types_exported_from_top_level(self):
+        """Test evidence contracts are exported from fitz_sage."""
+        from fitz_sage import EvidenceItem, EvidencePack
+
+        assert EvidenceItem is not None
+        assert EvidencePack is not None
+
+    def test_module_level_evidence_delegates_to_default_fitz(self, monkeypatch):
+        """Module-level evidence delegates to the default SDK instance."""
+        import fitz_sage
+        from fitz_sage.core import EvidencePack
+
+        expected = EvidencePack(query="question", mode=None)
+        sdk = MagicMock()
+        sdk.evidence.return_value = expected
+        monkeypatch.setattr(fitz_sage, "_get_default_fitz", lambda: sdk)
+
+        result = fitz_sage.evidence("question", source="./docs")
+
+        assert result is expected
+        sdk.evidence.assert_called_once_with("question", source="./docs")

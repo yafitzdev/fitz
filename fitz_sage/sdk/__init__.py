@@ -1,14 +1,15 @@
 # fitz_sage/sdk/__init__.py
 """
-Fitz SDK - Stateful Python interface for the Fitz RAG framework.
+Fitz SDK - Stateful Python interface for Fitz retrieval.
 
-Provides a simple two-step API for pointing at documents and asking questions.
+Provides a simple API for pointing at documents, retrieving governed evidence,
+and optionally asking for synthesized answers.
 
 Examples:
     >>> from fitz_sage import fitz
     >>> f = fitz()
-    >>> answer = f.query("What is quantum computing?", source="./docs")
-    >>> print(answer.text)
+    >>> pack = f.evidence("What is quantum computing?", source="./docs")
+    >>> print(pack.mode)
 """
 
 from .fitz import fitz

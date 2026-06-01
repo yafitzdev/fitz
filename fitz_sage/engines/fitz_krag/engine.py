@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any, Callable
 from fitz_sage.core import (
     Answer,
     ConfigurationError,
+    EvidenceItem,
+    EvidencePack,
     GenerationError,
     KnowledgeError,
     Query,
@@ -51,16 +53,18 @@ def _build_provider_config(
     api_key_env: str | None,
     *,
     spec: str | None = None,
+    auth: dict[str, Any] | None = None,
+    cert_path: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Build a config dict for ``get_chat`` / ``get_vision``.
 
-    Only includes ``base_url`` and ``auth.api_key_env`` when the provider
-    spec actually consumes them. The ``openai`` preset has its own
-    default URL — overriding it from the engine schema's local-default
-    base_url would silently route cloud calls to localhost. So for
-    non-endpoint specs we omit base_url unless the user explicitly
-    overrides it.
+    Only includes ``base_url`` when the provider spec consumes it. The
+    ``openai`` preset has its own default URL — overriding it from the
+    engine schema's local-default base_url would silently route cloud
+    calls to localhost. Auth is forwarded for every provider because it
+    may contain endpoint API keys, M2M OAuth2, or enterprise composite
+    credentials.
     """
     if spec is None:
         # Caller doesn't know the spec — be permissive (used by callers
@@ -78,7 +82,14 @@ def _build_provider_config(
     cfg: dict[str, Any] = {}
     if consumes_base_url and base_url is not None:
         cfg["base_url"] = base_url
-    if api_key_env is not None:
+    if cert_path is not None:
+        cfg["cert_path"] = cert_path
+    if auth is not None:
+        auth_cfg = dict(auth)
+        if api_key_env is not None and "type" not in auth_cfg:
+            auth_cfg.setdefault("api_key_env", api_key_env)
+        cfg["auth"] = auth_cfg
+    elif api_key_env is not None:
         cfg["auth"] = {"api_key_env": api_key_env}
 
     return cfg or None
@@ -122,8 +133,9 @@ class FitzKragEngine:
             msg = str(e)
             if "ConnectError" in type(e).__name__ or "10061" in msg or "Connection refused" in msg:
                 raise ConfigurationError(
-                    "Cannot connect to Ollama. Start it with: ollama serve\n"
-                    "Config: .fitz/config.yaml"
+                    "Cannot connect to the configured endpoint chat provider.\n"
+                    "Required enrichment uses Fitz's managed local Qwen ONNX runtime; "
+                    "check chat_base_url only for optional endpoint synthesis."
                 ) from e
             raise ConfigurationError(f"Failed to initialize Fitz KRAG engine: {e}") from e
 
@@ -162,6 +174,7 @@ class FitzKragEngine:
             cache_dir=col_dir / "parsed",
         )
         self._retrieval_router._agentic_strategy = agentic
+        self._retrieval_router._allow_llm_agentic = self._chat_factory is not None
         self._reader._source_dir = self._source_dir
 
     def _try_load_persisted_manifest(self, collection: str) -> None:
@@ -194,37 +207,24 @@ class FitzKragEngine:
 
     def _init_components(self) -> None:
         """Initialize engine components lazily."""
-        import threading
         import time as _t
-        from concurrent.futures import ThreadPoolExecutor
 
-        from fitz_sage.llm.client import get_chat
         from fitz_sage.storage.sqlite import SqliteConnectionManager
 
         _t0 = _t.perf_counter()
 
-        # The SQLite store and the LLM provider init independently, so run
-        # them in parallel. LLM provider init creates one HTTP client;
-        # overlapping with store startup saves the slower of the two.
         chat_config = _build_provider_config(
             self._config.chat_base_url,
             self._config.chat_api_key_env,
             spec=self._config.chat_smart,
+            auth=self._config.auth,
+            cert_path=self._config.cert_path,
         )
 
-        print("  Starting database and connecting to LLM provider...", end="", flush=True)
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            chat_future = pool.submit(
-                get_chat,
-                self._config.chat_smart,
-                "smart",
-                chat_config,
-            )
-            pg_future = pool.submit(SqliteConnectionManager.get_instance)
-
-            self._chat = chat_future.result()
-            self._connection_manager = pg_future.result()
-        print(" done.", flush=True)
+        logger.debug("Starting database")
+        self._chat = None
+        self._connection_manager = SqliteConnectionManager.get_instance()
+        logger.debug("Database initialized")
 
         _t1 = _t.perf_counter()
         logger.debug(f"[init] providers+pg: {(_t1-_t0)*1000:.0f}ms")
@@ -291,53 +291,37 @@ class FitzKragEngine:
         _t3 = _t.perf_counter()
         logger.debug(f"[init] strategies: {(_t3-_ts1)*1000:.0f}ms")
 
-        # Chat factory (shared by detection, rewriter, HyDE, multi-hop, enrichment)
+        # Chat factory for legacy tiered LLM paths. Retrieval-first defaults
+        # leave chat tiers unset, so this stays None unless the user opts in.
         from fitz_sage.llm.factory import get_chat_factory
 
-        # The factory uses whatever specs the user configured per tier.
-        # If a user wants a single model across tiers (typical for local
-        # llama-server with one model loaded), they set the same spec
-        # for chat_fast / chat_balanced / chat_smart — no special-casing
-        # at this layer.
-        #
-        # The factory currently accepts a single config dict for all
-        # tiers, so per-tier base URLs aren't supported. In practice all
-        # three tiers share the same chat_base_url, so this is fine.
-        self._chat_factory = get_chat_factory(
-            {
-                "fast": self._config.chat_fast,
-                "balanced": self._config.chat_balanced,
-                "smart": self._config.chat_smart,
-            },
-            chat_config,
+        tier_specs = self._chat_tier_specs()
+        self._chat_factory = (
+            get_chat_factory(tier_specs, chat_config) if tier_specs is not None else None
         )
-
-        def _warmup_chat():
-            print("  Loading LLM models (first run may take a moment)...", end="", flush=True)
-            try:
-                self._chat_factory("fast").chat(
-                    [{"role": "user", "content": "hi"}],
-                    max_tokens=1,
-                )
-            except Exception:
-                pass
-            try:
-                self._chat.chat(
-                    [{"role": "user", "content": "hi"}],
-                    max_tokens=1,
-                )
-            except Exception:
-                pass
-            print(" done.", flush=True)
-
-        threading.Thread(target=_warmup_chat, daemon=True).start()
 
         # Context + Generation
         from fitz_sage.engines.fitz_krag.context.assembler import ContextAssembler
         from fitz_sage.engines.fitz_krag.generation.synthesizer import CodeSynthesizer
+        from fitz_sage.llm.client import get_chat
+        from fitz_sage.llm.providers.onnx_chat import OnnxChat
 
         self._assembler = ContextAssembler(self._config)
-        self._synthesizer = CodeSynthesizer(self._chat, self._config)
+        self._synthesizer = None
+        if self._config.synthesizer:
+            synth_config = _build_provider_config(
+                self._config.chat_base_url,
+                self._config.chat_api_key_env,
+                spec=self._config.synthesizer,
+                auth=self._config.auth,
+                cert_path=self._config.cert_path,
+            )
+            synth_chat = get_chat(self._config.synthesizer, "smart", synth_config)
+            self._synthesizer = CodeSynthesizer(synth_chat, self._config)
+
+        standard_chat = OnnxChat()
+        self._enricher_chat = standard_chat
+        self._summarizer_chat = standard_chat
 
         # Governance — pyrrho classifier (single INT8 ONNX forward pass).
         # Provider-presence: the `governance:` config key builds the
@@ -350,17 +334,40 @@ class FitzKragEngine:
         # Table query handler
         from fitz_sage.engines.fitz_krag.retrieval.table_handler import TableQueryHandler
 
+        table_chat = self._chat_factory("balanced") if self._chat_factory else None
         self._table_handler = TableQueryHandler(
-            self._chat_factory("balanced"), self._sqlite_table_store, self._config
+            table_chat,
+            self._sqlite_table_store,
+            self._config,
         )
 
-        # Batched query intelligence: rewrite + analysis + detection +
-        # keywords in one LLM call (the only query-prep call).
+        # Query prep defaults to the deterministic planner. If
+        # query_intelligence is configured, the batcher uses that provider as
+        # an optional LLM enhancer.
         from fitz_sage.engines.fitz_krag.query_batcher import QueryBatcher
+        from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
         from fitz_sage.retrieval.detection.modules import DEFAULT_MODULES
 
+        query_chat_factory = self._chat_factory or self._missing_chat_factory
+        if self._config.query_intelligence:
+            query_chat_config = _build_provider_config(
+                self._config.chat_base_url,
+                self._config.chat_api_key_env,
+                spec=self._config.query_intelligence,
+                auth=self._config.auth,
+                cert_path=self._config.cert_path,
+            )
+            query_chat_factory = get_chat_factory(
+                {
+                    "fast": self._config.query_intelligence,
+                    "balanced": self._config.query_intelligence,
+                    "smart": self._config.query_intelligence,
+                },
+                query_chat_config,
+            )
+        self._query_planner = DeterministicQueryPlanner()
         self._query_batcher = QueryBatcher(
-            chat_factory=self._chat_factory,
+            chat_factory=query_chat_factory,
             detection_modules=list(DEFAULT_MODULES),
         )
 
@@ -404,14 +411,13 @@ class FitzKragEngine:
 
         # Entity graph store
         self._entity_graph_store: Any = None
-        if self._config.enable_enrichment:
-            try:
-                from fitz_sage.retrieval.entity_graph.store import EntityGraphStore
+        try:
+            from fitz_sage.retrieval.entity_graph.store import EntityGraphStore
 
-                self._entity_graph_store = EntityGraphStore(collection=self._config.collection)
-                self._expander._entity_graph_store = self._entity_graph_store
-            except Exception as e:
-                logger.debug(f"Entity graph store init: {e}")
+            self._entity_graph_store = EntityGraphStore(collection=self._config.collection)
+            self._expander._entity_graph_store = self._entity_graph_store
+        except Exception as e:
+            logger.debug(f"Entity graph store init: {e}")
 
         # Retrieval pass — Tiers 1-4 (retrieve -> rerank -> read) as one unit.
         from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
@@ -425,7 +431,7 @@ class FitzKragEngine:
 
         # Multi-hop controller — loops the retrieval pass, pyrrho-gated.
         self._hop_controller: Any = None
-        if self._config.enable_multi_hop:
+        if self._config.enable_multi_hop and self._chat_factory:
             from fitz_sage.engines.fitz_krag.retrieval.multihop import KragHopController
 
             self._hop_controller = KragHopController(
@@ -443,7 +449,36 @@ class FitzKragEngine:
         _t5 = _t.perf_counter()
         logger.debug(f"[init] schema: {(_t5-_t4)*1000:.0f}ms, " f"total: {(_t5-_t0)*1000:.0f}ms")
 
-        # Chat models already warming up from init (background threads above).
+        # Retrieval-first init intentionally does not create or warm chat clients.
+
+    def _chat_tier_specs(self) -> dict[str, str] | None:
+        """Return complete tier specs when the legacy chat tiers are configured."""
+        configured = [
+            spec
+            for spec in (
+                self._config.chat_fast,
+                self._config.chat_balanced,
+                self._config.chat_smart,
+            )
+            if spec
+        ]
+        if not configured:
+            return None
+
+        fallback = configured[0]
+        return {
+            "fast": self._config.chat_fast or fallback,
+            "balanced": self._config.chat_balanced or fallback,
+            "smart": self._config.chat_smart or fallback,
+        }
+
+    @staticmethod
+    def _missing_chat_factory(tier: str = "fast") -> Any:
+        """Raise when an LLM enhancement is requested without a provider."""
+        raise ConfigurationError(
+            f"No chat provider configured for tier '{tier}'. Configure the specific "
+            "feature provider, or set chat_fast/chat_balanced/chat_smart."
+        )
 
     # Keywords that signal the query may have temporal/comparison/aggregation intent.
     # If none match, the detection LLM call can be skipped safely.
@@ -599,6 +634,11 @@ class FitzKragEngine:
 
         if not query.text or not query.text.strip():
             raise QueryError("Query text cannot be empty")
+        if self._synthesizer is None:
+            raise GenerationError(
+                "No synthesizer configured. Run `fitz retrieve ...` for evidence, "
+                "or configure a synthesizer provider."
+            )
 
         with self._query_scope():
             logger.info(f"Starting query processing (query_length={len(query.text)})")
@@ -731,6 +771,98 @@ class FitzKragEngine:
             except Exception as e:
                 raise KnowledgeError(f"Retrieval failed: {e}") from e
 
+    def evidence(
+        self,
+        query: Query,
+        *,
+        progress: Callable[[str], None] | None = None,
+        top_k: int | None = None,
+    ) -> EvidencePack:
+        """Return a governed evidence pack for a query, without synthesis or chat prep."""
+        import time
+
+        from fitz_sage.engines.fitz_krag.context.compressor import compress_results
+
+        if not query.text or not query.text.strip():
+            raise QueryError("Query text cannot be empty")
+
+        with self._query_scope():
+            logger.info(f"Starting evidence retrieval (query_length={len(query.text)})")
+            try:
+                outcome = self._retrieve_core(
+                    query,
+                    progress=progress,
+                    use_query_intelligence=False,
+                    allow_llm_strategies=False,
+                    execute_table_queries=False,
+                )
+                expanded = compress_results(outcome.expanded) if outcome.expanded else []
+                timings = list(outcome.timings)
+
+                mode: AnswerMode | None = None
+                reasons: list[str] = []
+                if not expanded:
+                    mode = AnswerMode.ABSTAIN
+                    reasons = ["No relevant evidence retrieved."]
+                elif self._governance is not None:
+                    t0 = time.perf_counter()
+                    governance = self._governance.decide(outcome.sanitized, expanded)
+                    timings.append(("Governance", time.perf_counter() - t0))
+                    mode = governance.mode
+                    reasons = list(governance.reasons)
+
+                requested_top_k = top_k or query.metadata.get("top_k")
+                items = self._build_evidence_items(expanded)
+                if requested_top_k is not None:
+                    items = items[: int(requested_top_k)]
+
+                self._boost_queried_files(outcome)
+
+                return EvidencePack(
+                    query=outcome.sanitized,
+                    mode=mode,
+                    items=items,
+                    reasons=reasons,
+                    timings={name: duration for name, duration in timings},
+                    indexing_status=self.indexing_status(),
+                    metadata={"engine": "fitz_krag", "source_query": query.text},
+                )
+            except Exception as e:
+                raise KnowledgeError(f"Evidence retrieval failed: {e}") from e
+
+    def _build_evidence_items(self, results: list["ReadResult"]) -> list[EvidenceItem]:
+        """Convert KRAG read results into stable core evidence items."""
+        items: list[EvidenceItem] = []
+        for rank, result in enumerate(results, start=1):
+            address = result.address
+            kind = getattr(address.kind, "value", str(address.kind))
+            metadata = {**address.metadata, **result.metadata}
+            items.append(
+                EvidenceItem(
+                    rank=rank,
+                    source_id=address.source_id,
+                    file_path=result.file_path,
+                    address_kind=kind,
+                    address_location=address.location,
+                    line_range=result.line_range,
+                    score=address.score,
+                    excerpt=self._excerpt(result.content),
+                    content=result.content,
+                    metadata=metadata,
+                )
+            )
+        return items
+
+    @staticmethod
+    def _excerpt(content: str, max_chars: int = 320) -> str:
+        """Build a compact one-line excerpt."""
+        import re
+
+        text = re.sub(r"\s+", " ", content).strip()
+        if len(text) <= max_chars:
+            return text
+        return text[: max_chars - 3].rstrip() + "..."
+
     def _boost_queried_files(self, outcome: "_RetrievalOutcome") -> None:
         """Flag the files this query surfaced for the background worker.
 
@@ -773,8 +905,39 @@ class FitzKragEngine:
                 self._bg_worker.signal_query_end()
             clear_query_context()
 
+    @contextmanager
+    def _retrieval_strategy_scope(self, allow_llm_strategies: bool) -> Any:
+        """Temporarily force deterministic retrieval strategies for evidence mode."""
+        if allow_llm_strategies:
+            yield
+            return
+
+        router = self._retrieval_router
+        original_code_strategy = getattr(router, "_code_strategy", None)
+        original_allow_agentic = getattr(router, "_allow_llm_agentic", True)
+
+        fallback = getattr(original_code_strategy, "_fallback", None)
+        if fallback is not None:
+            router._code_strategy = fallback
+        if hasattr(router, "_allow_llm_agentic"):
+            router._allow_llm_agentic = False
+
+        try:
+            yield
+        finally:
+            if original_code_strategy is not None:
+                router._code_strategy = original_code_strategy
+            if hasattr(router, "_allow_llm_agentic"):
+                router._allow_llm_agentic = original_allow_agentic
+
     def _retrieve_core(
-        self, query: Query, *, progress: Callable[[str], None] | None = None
+        self,
+        query: Query,
+        *,
+        progress: Callable[[str], None] | None = None,
+        use_query_intelligence: bool | None = None,
+        allow_llm_strategies: bool = True,
+        execute_table_queries: bool = True,
     ) -> _RetrievalOutcome:
         """Run the retrieval half of the KRAG pipeline.
 
@@ -785,7 +948,10 @@ class FitzKragEngine:
         import re
         import time
 
-        from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
+        from fitz_sage.engines.fitz_krag.query_planner import (
+            DeterministicQueryPlanner,
+            plan_from_batch_result,
+        )
         from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
 
         # 0. Sanitize and normalize query
@@ -806,78 +972,80 @@ class FitzKragEngine:
         _progress = progress or (lambda _: None)
         timings: list[tuple[str, float]] = []
 
-        # 1. Query prep — one batched LLM call: rewrite + analysis +
-        #    detection + keywords. Always runs; the keyword section is
-        #    wanted on every query.
         _progress("Analyzing query...")
         t0 = time.perf_counter()
 
-        # fast-analyze gates the analysis section, _needs_detection gates the
-        # detection section; rewriting and keywords are always included.
-        fast_analysis = self._fast_analyze(sanitized)
-        need_llm_analysis = fast_analysis is None
-        need_detection = bool(self._config.enable_detection and self._needs_detection(sanitized))
+        if use_query_intelligence is None:
+            use_query_intelligence = self._config.query_intelligence is not None
 
-        retrieval_query = sanitized
-        rewrite_result = None
-        try:
-            batch_result = self._query_batcher.batch_classify(
-                sanitized,
-                include_analysis=need_llm_analysis,
-                include_detection=need_detection,
-                include_rewriting=self._config.enable_query_rewriting,
-                include_extended=True,
-                include_keywords=True,
-                conversation_context=query.metadata.get("conversation_context"),
-            )
-            analysis = batch_result.analysis if batch_result.analysis else fast_analysis
-            detection = (
-                self._build_detection_summary(batch_result.detection_results)
-                if need_detection and batch_result.detection_results is not None
-                else None
-            )
-            rewrite_result = batch_result.rewrite_result
-            if rewrite_result and rewrite_result.rewritten_query != sanitized:
-                retrieval_query = rewrite_result.rewritten_query
-                logger.debug(
-                    "Query rewritten",
-                    original_preview=sanitized[:50],
-                    rewritten_preview=retrieval_query[:50],
+        planner = getattr(self, "_query_planner", None) or DeterministicQueryPlanner()
+        plan = planner.plan(sanitized, detection_enabled=True)
+
+        if use_query_intelligence:
+            # Query prep — one batched LLM call: rewrite + analysis +
+            # detection + keywords. Optional enhancement over the no-chat plan.
+            fast_analysis = self._fast_analyze(sanitized)
+            need_llm_analysis = fast_analysis is None
+            need_detection = self._needs_detection(sanitized)
+
+            try:
+                batch_result = self._query_batcher.batch_classify(
+                    sanitized,
+                    include_analysis=need_llm_analysis,
+                    include_detection=need_detection,
+                    include_rewriting=True,
+                    include_extended=True,
+                    include_keywords=True,
+                    conversation_context=query.metadata.get("conversation_context"),
                 )
-        except Exception as e:
-            logger.warning(f"Batched query intelligence failed: {e}")
-            analysis = fast_analysis or QueryAnalysis(
-                primary_type=QueryType.GENERAL,
-                confidence=0.3,
-                refined_query=sanitized,
-            )
-            detection = None
-            batch_result = None
+                llm_detection = (
+                    self._build_detection_summary(batch_result.detection_results)
+                    if need_detection and batch_result.detection_results is not None
+                    else plan.detection
+                )
+                plan = plan_from_batch_result(
+                    sanitized,
+                    batch_result,
+                    fallback_analysis=fast_analysis or plan.analysis,
+                    detection=llm_detection,
+                    fallback_plan=plan,
+                )
+                if plan.rewrite_result and plan.retrieval_query != sanitized:
+                    logger.debug(
+                        "Query rewritten",
+                        original_preview=sanitized[:50],
+                        rewritten_preview=plan.retrieval_query[:50],
+                    )
+            except Exception as e:
+                logger.warning(f"Batched query intelligence failed: {e}")
         timings.append(("Query prep", time.perf_counter() - t0))
 
         # Build retrieval profile — single object with all gates and signals
         profile = build_retrieval_profile(
-            analysis,
-            detection,
+            plan.analysis,
+            plan.detection,
             self._config,
-            extended_signals=(batch_result.extended_signals if batch_result else None),
-            keywords=(batch_result.keywords if batch_result else None),
+            extended_signals=plan.extended_signals,
+            keywords=plan.keywords,
         )
 
         # 2. Retrieve — one retrieval pass, or a multi-hop loop of passes.
         #    A pass is Tiers 1-4: retrieve -> fuse -> rerank -> read.
         _progress("Retrieving relevant sources...")
         t0 = time.perf_counter()
-        use_multi_hop = self._hop_controller and self._config.enable_multi_hop
-        if use_multi_hop:
-            read_results = self._hop_controller.execute(retrieval_query, profile)
-        else:
-            read_results = self._retrieval_pass.run(
-                retrieval_query,
-                profile,
-                rewrite_result=rewrite_result,
-                progress=progress,
-            )
+        use_multi_hop = (
+            allow_llm_strategies and self._hop_controller and self._config.enable_multi_hop
+        )
+        with self._retrieval_strategy_scope(allow_llm_strategies):
+            if use_multi_hop:
+                read_results = self._hop_controller.execute(plan.retrieval_query, profile)
+            else:
+                read_results = self._retrieval_pass.run(
+                    plan.retrieval_query,
+                    profile,
+                    rewrite_result=plan.rewrite_result,
+                    progress=progress,
+                )
         addresses = [r.address for r in read_results]
         timings.append(("Retrieval", time.perf_counter() - t0))
 
@@ -894,7 +1062,8 @@ class FitzKragEngine:
         timings.append(("Expand context", time.perf_counter() - t0))
 
         # 4.5. Execute table queries (SQL generation + execution)
-        expanded = self._table_handler.process(sanitized, expanded)
+        if execute_table_queries:
+            expanded = self._table_handler.process(sanitized, expanded)
 
         return _RetrievalOutcome(
             sanitized=sanitized, expanded=expanded, addresses=addresses, timings=timings
@@ -1025,6 +1194,9 @@ class FitzKragEngine:
         col = collection or self._config.collection
         source = Path(source).resolve()
 
+        if col != self._config.collection:
+            self.load(col)
+
         # When source is a single file, use its parent as the source directory
         source_dir = source.parent if source.is_file() else source
 
@@ -1040,6 +1212,8 @@ class FitzKragEngine:
         manifest = builder.build(source, manifest_path, progress=progress)
         self._manifest = manifest
         self._source_dir = source_dir
+        if manifest.entries():
+            self._ensure_standard_llm_available(progress)
 
         # 2. Persist source_dir so `fitz query` can find it across processes
         col_dir.mkdir(parents=True, exist_ok=True)
@@ -1054,6 +1228,7 @@ class FitzKragEngine:
             cache_dir=col_dir / "parsed",
         )
         self._retrieval_router._agentic_strategy = agentic
+        self._retrieval_router._allow_llm_agentic = self._chat_factory is not None
 
         # 4. Set source_dir on ContentReader for disk fallback
         self._reader._source_dir = source_dir
@@ -1072,6 +1247,8 @@ class FitzKragEngine:
             table_store=self._table_store,
             sqlite_table_store=self._sqlite_table_store,
             entity_graph_store=self._entity_graph_store,
+            enricher_chat=self._enricher_chat,
+            summarizer_chat=self._summarizer_chat,
         )
 
         # Fast synchronous symbol indexing (AST only, no LLM) via the core's
@@ -1092,6 +1269,22 @@ class FitzKragEngine:
             self._bg_worker.start()
 
         return manifest
+
+    def _ensure_standard_llm_available(
+        self,
+        progress: Callable[[str], None] | None = None,
+    ) -> None:
+        """Download and validate the managed Qwen runtime before enrichment starts."""
+        ensure_available = getattr(self._enricher_chat, "ensure_available", None)
+        if not callable(ensure_available):
+            return
+
+        _progress = progress or (lambda _: None)
+        _progress("Preparing managed Qwen3.5 0.8B ONNX enrichment model...")
+        info = ensure_available()
+        revision = getattr(info, "revision", "")
+        short_revision = revision[:12] if revision else "unknown"
+        _progress(f"Managed Qwen ready ({short_revision}).")
 
     def _fast_index_code_files(
         self,

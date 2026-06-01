@@ -10,7 +10,6 @@ for the worker → core scheduling, and these tests for what each op produces.
 Tests that:
 - enrich_file adds an L1 hierarchy_summary to each section's metadata
 - finalize generates and stores the L2 corpus summary as a section
-- hierarchy is skipped when enable_hierarchy=False
 - LLM errors fail gracefully
 
 Code symbols deliberately have no hierarchy stage — they already carry
@@ -29,19 +28,13 @@ from unittest.mock import MagicMock
 
 def _make_core(
     *,
-    enable_hierarchy: bool = True,
-    enable_enrichment: bool = True,
     chat: MagicMock | None = None,
 ):
     """Create a KragIngestPipeline core with a mocked connection manager."""
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
 
-    config = FitzKragConfig(
-        collection="test_col",
-        enable_enrichment=enable_enrichment,
-        enable_hierarchy=enable_hierarchy,
-    )
+    config = FitzKragConfig(collection="test_col")
     return KragIngestPipeline(
         config=config,
         chat=chat or MagicMock(),
@@ -94,7 +87,7 @@ class TestL1SectionHierarchy:
         """enrich_file on a doc generates one L1 summary, stamped on every section."""
         chat = MagicMock()
         chat.chat.return_value = "Document covers setup instructions."
-        core = _make_core(enable_hierarchy=True, chat=chat)
+        core = _make_core(chat=chat)
         core._enricher = _fake_enricher()
         core._section_store = MagicMock()
         core._section_store.get_by_file.return_value = _section_dicts(3)
@@ -107,26 +100,11 @@ class TestL1SectionHierarchy:
         for sec in persisted:
             assert sec["metadata"]["hierarchy_summary"] == "Document covers setup instructions."
 
-    def test_enrich_file_skips_l1_when_hierarchy_disabled(self):
-        """enable_hierarchy=False means no hierarchy_summary on section metadata."""
-        chat = MagicMock()
-        chat.chat.return_value = "unused"
-        core = _make_core(enable_hierarchy=False, chat=chat)
-        core._enricher = _fake_enricher()
-        core._section_store = MagicMock()
-        core._section_store.get_by_file.return_value = _section_dicts(2)
-
-        core.enrich_file("file-1", ".md")
-
-        persisted = core._section_store.update_enrichment_by_file.call_args[0][1]
-        for sec in persisted:
-            assert "hierarchy_summary" not in sec["metadata"]
-
     def test_l1_failure_does_not_crash(self):
         """An LLM failure during L1 generation is caught; enrichment still persists."""
         chat = MagicMock()
         chat.chat.side_effect = RuntimeError("Timeout")
-        core = _make_core(enable_hierarchy=True, chat=chat)
+        core = _make_core(chat=chat)
         core._enricher = _fake_enricher()
         core._section_store = MagicMock()
         core._section_store.get_by_file.return_value = _section_dicts(3)
@@ -137,25 +115,6 @@ class TestL1SectionHierarchy:
         persisted = core._section_store.update_enrichment_by_file.call_args[0][1]
         for sec in persisted:
             assert "hierarchy_summary" not in sec["metadata"]
-
-    def test_l1_runs_without_enricher(self):
-        """L1 hierarchy is produced even when keyword/entity enrichment is disabled.
-
-        enable_hierarchy and enable_enrichment are independent flags.
-        """
-        chat = MagicMock()
-        chat.chat.return_value = "Document overview."
-        core = _make_core(enable_hierarchy=True, enable_enrichment=False, chat=chat)
-        assert core._enricher is None
-        core._section_store = MagicMock()
-        core._section_store.get_by_file.return_value = _section_dicts(2)
-
-        core.enrich_file("file-1", ".md")
-
-        core._section_store.update_enrichment_by_file.assert_called_once()
-        persisted = core._section_store.update_enrichment_by_file.call_args[0][1]
-        for sec in persisted:
-            assert sec["metadata"]["hierarchy_summary"] == "Document overview."
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +129,7 @@ class TestL2CorpusSummary:
         """finalize rolls L1 summaries into an L2 summary stored as a section."""
         chat = MagicMock()
         chat.chat.return_value = "This corpus documents the system architecture."
-        core = _make_core(enable_hierarchy=True, chat=chat)
+        core = _make_core(chat=chat)
         core._section_store = MagicMock()
         core._section_store.get_hierarchy_summaries.return_value = ["L1 of doc A", "L1 of doc B"]
         core._raw_store = MagicMock()
@@ -188,7 +147,7 @@ class TestL2CorpusSummary:
 
     def test_finalize_skips_l2_without_l1_summaries(self):
         """No L1 summaries means no L2 corpus summary is stored."""
-        core = _make_core(enable_hierarchy=True, chat=MagicMock())
+        core = _make_core(chat=MagicMock())
         core._section_store = MagicMock()
         core._section_store.get_hierarchy_summaries.return_value = []
         core._raw_store = MagicMock()
@@ -198,25 +157,11 @@ class TestL2CorpusSummary:
 
         core._section_store.upsert_batch.assert_not_called()
 
-    def test_finalize_skips_l2_when_hierarchy_disabled(self):
-        """enable_hierarchy=False: finalize resolves imports but builds no L2."""
-        core = _make_core(enable_hierarchy=False, chat=MagicMock())
-        core._section_store = MagicMock()
-        core._raw_store = MagicMock()
-        core._import_store = MagicMock()
-
-        core.finalize()
-
-        core._section_store.get_hierarchy_summaries.assert_not_called()
-        core._section_store.upsert_batch.assert_not_called()
-        # Import resolution still runs regardless of hierarchy config
-        core._import_store.resolve_targets.assert_called_once()
-
     def test_l2_failure_does_not_crash(self):
         """An LLM failure during L2 generation is caught; nothing is stored."""
         chat = MagicMock()
         chat.chat.side_effect = RuntimeError("Timeout")
-        core = _make_core(enable_hierarchy=True, chat=chat)
+        core = _make_core(chat=chat)
         core._section_store = MagicMock()
         core._section_store.get_hierarchy_summaries.return_value = ["L1 of doc A"]
         core._raw_store = MagicMock()

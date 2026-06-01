@@ -1,3 +1,4 @@
+<!-- docs/features/platform/enterprise-gateway.md -->
 # Enterprise LLM Gateway
 
 ## Problem
@@ -47,11 +48,11 @@ Fitz includes a lightweight, SDK-free enterprise provider that supports:
 
 ```yaml
 # ~/.fitz/config/fitz_krag.yaml
-chat_smart: enterprise/openai/gpt-4o
+synthesizer: enterprise/openai/gpt-4o
+chat_base_url: https://llm.corp.internal/v1
 
 auth:
   type: m2m
-  base_url: https://llm.corp.internal/v1
   token_url: https://auth.corp.internal/oauth/token
   client_id: ${CLIENT_ID}
   client_secret: ${CLIENT_SECRET}
@@ -63,11 +64,11 @@ auth:
 Some gateways require both OAuth2 bearer token AND an LLM API key:
 
 ```yaml
-chat_smart: enterprise/openai/gpt-4o
+synthesizer: enterprise/openai/gpt-4o
+chat_base_url: https://llm.corp.internal/v1
 
 auth:
   type: enterprise
-  base_url: https://llm.corp.internal/v1
   # OAuth2 M2M for gateway authentication
   token_url: https://auth.corp.internal/oauth/token
   client_id: ${CLIENT_ID}
@@ -87,11 +88,11 @@ This sends two headers:
 For internal PKI (non-public certificate authorities):
 
 ```yaml
-chat_smart: enterprise/openai/gpt-4o
+synthesizer: enterprise/openai/gpt-4o
+chat_base_url: https://llm.corp.internal/v1
 
 auth:
   type: m2m
-  base_url: https://llm.corp.internal/v1
   token_url: https://auth.corp.internal/oauth/token
   client_id: ${CLIENT_ID}
   client_secret: ${CLIENT_SECRET}
@@ -103,11 +104,11 @@ auth:
 For gateways requiring client certificate authentication:
 
 ```yaml
-chat_smart: enterprise/openai/gpt-4o
+synthesizer: enterprise/openai/gpt-4o
+chat_base_url: https://llm.corp.internal/v1
 
 auth:
   type: m2m
-  base_url: https://llm.corp.internal/v1
   token_url: https://auth.corp.internal/oauth/token
   client_id: ${CLIENT_ID}
   client_secret: ${CLIENT_SECRET}
@@ -214,12 +215,12 @@ Model strings are passed verbatim to the gateway. Common formats:
 
 ```yaml
 # ~/.fitz/config/fitz_krag.yaml
-chat_smart: enterprise/openai/gpt-4o
+synthesizer: enterprise/openai/gpt-4o
+chat_base_url: https://llm.corp.internal/v1
 collection: default
 
 auth:
   type: enterprise
-  base_url: https://llm.corp.internal/v1
   token_url: https://auth.corp.internal/oauth/token
   client_id: ${CORP_CLIENT_ID}
   client_secret: ${CORP_CLIENT_SECRET}

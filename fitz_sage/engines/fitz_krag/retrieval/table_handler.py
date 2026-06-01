@@ -52,7 +52,7 @@ class TableQueryHandler:
 
     def __init__(
         self,
-        chat: "ChatProvider",
+        chat: "ChatProvider | None",
         sqlite_table_store: "SqliteTableStore",
         config: "FitzKragConfig",
     ):
@@ -66,6 +66,9 @@ class TableQueryHandler:
         non_table_results = [r for r in read_results if r.address.kind != AddressKind.TABLE]
 
         if not table_results:
+            return read_results
+        if self._chat is None:
+            logger.debug("Table SQL generation skipped: no chat provider configured")
             return read_results
 
         augmented: list[ReadResult] = []

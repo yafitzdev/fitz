@@ -25,7 +25,7 @@ from .console import (
     Table,
     console,
 )
-from .display import display_answer, display_sources
+from .display import display_answer, display_evidence_pack, display_sources
 from .engine_selection import EngineSelectionMixin
 from .output import OutputMixin
 from .progress import ProgressMixin
@@ -72,6 +72,7 @@ __all__ = [
     "RICH",
     # Display functions
     "display_answer",
+    "display_evidence_pack",
     "display_sources",
     # Utilities
     "get_first_available",

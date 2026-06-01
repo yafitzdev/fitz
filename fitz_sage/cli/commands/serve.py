@@ -66,7 +66,7 @@ def command(
         raise typer.Exit(1)
 
     # Require config before starting server (no interactive prompt in server mode)
-    from fitz_sage.core.firstrun import needs_firstrun
+    from fitz_sage.config.firstrun import needs_firstrun
     from fitz_sage.core.paths import FitzPaths
 
     if needs_firstrun():

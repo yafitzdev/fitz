@@ -102,6 +102,24 @@ class TestResolveAuth:
         assert auth.cert_path == cert_path
         assert auth.scope == "read write"
 
+    def test_m2m_auth_accepts_cert_path_inside_auth(self, temp_certificate) -> None:
+        """KRAG YAML can keep enterprise certificate settings in auth."""
+        cert_path, _ = temp_certificate
+        config = {
+            "auth": {
+                "type": "m2m",
+                "token_url": "https://auth.example.com/token",
+                "client_id": "my-client",
+                "client_secret": "my-secret",
+                "cert_path": cert_path,
+            },
+        }
+
+        auth = resolve_auth("openai", config)
+
+        assert isinstance(auth, M2MAuth)
+        assert auth.cert_path == cert_path
+
     def test_m2m_auth_minimal(self) -> None:
         """M2M auth works with minimal config."""
         config = {
@@ -125,6 +143,14 @@ class TestUnknownProvider:
         """Unknown provider raises ValueError with supported list."""
         with pytest.raises(ValueError, match="Unknown chat provider: unknown"):
             create_chat_provider("unknown")
+
+    def test_onnx_chat_provider_builds(self) -> None:
+        """`onnx` dispatches the managed Qwen ONNX chat provider."""
+        from fitz_sage.llm.providers.onnx_chat import DEFAULT_QWEN_MODEL_ID, OnnxChat
+
+        chat = create_chat_provider("onnx/qwen3.5-0.8b")
+        assert isinstance(chat, OnnxChat)
+        assert chat._model_id == DEFAULT_QWEN_MODEL_ID
 
     def test_unknown_rerank_provider_raises(self) -> None:
         """Unknown rerank provider raises with the supported list."""

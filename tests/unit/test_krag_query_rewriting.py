@@ -61,7 +61,7 @@ class TestQueryRewriting:
 
     def test_rewrite_called_and_rewritten_query_used(self):
         """batch_classify returns a rewrite_result; rewritten query is used for retrieval."""
-        engine = _make_engine()
+        engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
         query = _make_query(
             "How does the authentication system handle user login sessions securely?"
         )
@@ -105,7 +105,7 @@ class TestQueryRewriting:
 
     def test_original_query_used_when_rewrite_returns_same_text(self):
         """When batch_classify returns rewrite_result with same text, original flows through."""
-        engine = _make_engine()
+        engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
         query = _make_query("What is the login function and how does it validate user credentials?")
 
         from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
@@ -140,7 +140,7 @@ class TestQueryRewriting:
 
     def test_fallback_to_original_on_batch_error(self):
         """When batcher raises, the original query is used with fallback analysis."""
-        engine = _make_engine()
+        engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
         query = _make_query(
             "How does the authentication system work when handling multiple sessions?"
         )

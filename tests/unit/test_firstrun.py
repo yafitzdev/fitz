@@ -2,18 +2,17 @@
 """
 Unit tests for first-run auto-configuration.
 
-The new behavior probes common ports for an OpenAI-compatible server
-(/v1/models), then falls back to OpenAI cloud if OPENAI_API_KEY is
-set. There is no Ollama-specific path — Ollama users speak /v1/
-just like everyone else. fitz-sage uses no embeddings, so the
-generated config only writes a chat model.
+The behavior probes common ports for an OpenAI-compatible server
+(/v1/models), falls back to OpenAI cloud if OPENAI_API_KEY is set,
+and otherwise writes a minimal config. There is no
+Ollama-specific enrichment path. fitz-sage uses no embeddings.
 """
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from fitz_sage.core.firstrun import (
+from fitz_sage.config.firstrun import (
     DetectedEndpoint,
     EndpointModel,
     detect_endpoint,
@@ -94,9 +93,9 @@ class TestRunFirstrunSetup:
             chat_models=[EndpointModel(id="qwen2.5-7b-instruct")],
         )
         with (
-            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint),
+            patch("fitz_sage.config.firstrun.detect_endpoint", return_value=endpoint),
             patch(
-                "fitz_sage.core.firstrun.FitzPaths.config",
+                "fitz_sage.config.firstrun.FitzPaths.config",
                 return_value=tmp_path / "config.yaml",
             ),
         ):
@@ -105,15 +104,16 @@ class TestRunFirstrunSetup:
         assert ok is True
         config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
         assert "endpoint/qwen2.5-7b-instruct" in config
+        assert "synthesizer: endpoint/qwen2.5-7b-instruct" in config
         assert "chat_base_url: http://localhost:8080/v1" in config
 
     def test_openai_key_fallback(self, tmp_path, monkeypatch) -> None:
         """No local endpoint + OPENAI_API_KEY -> openai preset config."""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         with (
-            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=None),
+            patch("fitz_sage.config.firstrun.detect_endpoint", return_value=None),
             patch(
-                "fitz_sage.core.firstrun.FitzPaths.config",
+                "fitz_sage.config.firstrun.FitzPaths.config",
                 return_value=tmp_path / "config.yaml",
             ),
         ):
@@ -122,36 +122,45 @@ class TestRunFirstrunSetup:
         assert ok is True
         config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
         assert "openai/gpt-4o" in config
+        assert "synthesizer: openai/gpt-4o" in config
 
-    def test_no_provider_aborts(self, tmp_path, monkeypatch) -> None:
-        """No endpoint, no key -> setup fails with instructions."""
+    def test_no_provider_writes_minimal_config(self, tmp_path, monkeypatch) -> None:
+        """No endpoint, no key -> minimal config; Qwen is internal."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         with (
-            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=None),
+            patch("fitz_sage.config.firstrun.detect_endpoint", return_value=None),
             patch(
-                "fitz_sage.core.firstrun.FitzPaths.config",
+                "fitz_sage.config.firstrun.FitzPaths.config",
                 return_value=tmp_path / "config.yaml",
             ),
         ):
             ok = run_firstrun_setup()
 
-        assert ok is False
-        assert not (tmp_path / "config.yaml").exists()
+        assert ok is True
+        config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+        assert "collection: default" in config
+        assert "synthesizer: null" in config
+        assert "query_intelligence: null" in config
+        assert "enricher:" not in config
+        assert "summarizer:" not in config
 
-    def test_endpoint_with_no_chat_models_aborts(self, tmp_path) -> None:
-        """A reachable server with no models is a configuration error."""
+    def test_endpoint_with_no_chat_models_writes_minimal_config(self, tmp_path) -> None:
+        """A reachable server with no models still writes internal-Qwen config."""
         endpoint = DetectedEndpoint(
             base_url="http://localhost:8080/v1",
             chat_models=[],
         )
         with (
-            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint),
+            patch("fitz_sage.config.firstrun.detect_endpoint", return_value=endpoint),
             patch(
-                "fitz_sage.core.firstrun.FitzPaths.config",
+                "fitz_sage.config.firstrun.FitzPaths.config",
                 return_value=tmp_path / "config.yaml",
             ),
         ):
             ok = run_firstrun_setup()
 
-        assert ok is False
-        assert not (tmp_path / "config.yaml").exists()
+        assert ok is True
+        config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+        assert "synthesizer: null" in config
+        assert "enricher:" not in config
+        assert "summarizer:" not in config

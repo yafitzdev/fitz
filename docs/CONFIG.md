@@ -1,3 +1,4 @@
+<!-- docs/CONFIG.md -->
 # Configuration Reference
 
 fitz-sage **v0.14.1+**. Engine config lives at
@@ -10,63 +11,75 @@ on first ingest).
 ## Minimal config
 
 ```yaml
-# ~/.fitz/config/fitz_krag.yaml — local llama.cpp / Ollama / LM Studio
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
-chat_base_url: http://localhost:8080/v1
-chat_smart_model: qwen2.5-7b-instruct
+# ~/.fitz/config/fitz_krag.yaml
 collection: default
+parser: cpu
+rerank: onnx
+governance: pyrrho
+query_intelligence: null
+synthesizer: null
+chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-To talk to a hosted endpoint:
+This is enough for `fitz retrieve` and `fitz_sage.evidence(...)` with local
+enrichment: no hosted API key and no external inference server are required.
+On first ingestion, fitz-sage downloads the managed Qwen3.5 0.8B ONNX weights
+into the Hugging Face cache and runs them on CPU.
+
+To enable synthesized answers through a hosted endpoint:
 
 ```yaml
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
+synthesizer: endpoint/gpt-4o
 chat_base_url: https://api.openai.com/v1
 chat_api_key_env: OPENAI_API_KEY
-chat_smart_model: gpt-4o
-chat_balanced_model: gpt-4o-mini
-chat_fast_model: gpt-4o-mini
 collection: default
 ```
 
-Or override the entire chat stack per-invocation with CLI flags
-(`--endpoint`, `--model`, `--api-key-env`) — no config file needed.
+Or pass the provider per invocation:
+
+```bash
+fitz answer "What is X?" --synthesizer openai/gpt-4o
+```
 
 ---
 
-## LLM tiers
+## LLM Providers
 
-| Key             | Purpose                          | Typical use                                   |
-| --------------- | -------------------------------- | --------------------------------------------- |
-| `chat_fast`     | Cheap/fast                       | Classification, detection, query rewriting    |
-| `chat_balanced` | Middle tier                      | SQL generation, table queries, enrichment     |
-| `chat_smart`    | Best reasoning                   | Answer synthesis                              |
+Role-specific provider fields bind LLM-backed stages:
 
-Each tier takes a provider spec (almost always `endpoint`). Pair it
-with a model name via the per-tier `*_model` key, or with a
-provider-prefixed model in the spec itself:
+| Key                  | Typical use                                      |
+| -------------------- | ------------------------------------------------ |
+| `query_intelligence` | Optional query-prep enhancement                  |
+| `synthesizer`        | Optional answer generation                       |
+
+Required keyword/entity enrichment and hierarchy summaries always use Fitz's
+managed Qwen3.5 0.8B ONNX runtime. There is no config key for that internal
+model. Optional LLM-backed roles take a provider/model spec. For `endpoint`,
+the model name is the part after the slash and `chat_base_url` supplies the
+OpenAI-compatible URL:
 
 ```yaml
-chat_smart: endpoint            # provider only
-chat_smart_model: qwen2.5-32b   # model name passed to the endpoint
+synthesizer: endpoint/qwen2.5-32b
+chat_base_url: http://localhost:8080/v1
 ```
 
-If `chat_base_url` is shared across tiers (the common case), set it
-once at the top level.
+If `chat_base_url` is shared across roles (the common case), set it once at
+the top level. `chat_fast`, `chat_balanced`, and `chat_smart` are optional
+low-level tier slots for advanced integrations that request a tiered chat
+factory directly.
 
 ---
 
 ## Chat provider model
 
-The canonical provider is **`endpoint`** — OpenAI-compatible HTTP.
-Everything else is a preset:
+Required enrichment uses Qwen3.5 0.8B through an in-process CPU ONNX runtime
+managed by fitz-sage. The model is downloaded on first ingest if missing.
+Optional synthesis, query intelligence, and vision can use **`endpoint`** or
+the cloud/enterprise presets:
 
 | Spec form                       | Resolves to                                              |
 | ------------------------------- | -------------------------------------------------------- |
+| `onnx/qwen3.5-0.8b`             | managed local Qwen3.5 0.8B ONNX runtime                  |
 | `endpoint` + `chat_base_url`    | the canonical form                                       |
 | `openai/<model>`                | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`     | endpoint with Azure deployment URL                       |
@@ -81,14 +94,17 @@ for those backends instead (Ollama exposes one at
 
 ## Feature control
 
-Features are switched on by **provider presence**, not boolean flags:
+Features are switched on by **provider presence**, not boolean flags. Enrichment
+and hierarchy summaries are standard engine behavior and are required for
+ingestion:
 
-| Feature       | Enabled when                                | Disabled when                       |
-| ------------- | ------------------------------------------- | ----------------------------------- |
-| ONNX reranker | `rerank: onnx` (default)                    | `rerank: null` (or omitted)         |
-| Governance    | `governance: pyrrho` (default)              | `governance: null`                  |
-| VLM in parser | `parser: docling_vision` + `vision:` set    | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
-| Enrichment    | `chat_*` configured (always-on otherwise)   | no chat provider                    |
+| Feature            | Enabled when                             | Disabled when                       |
+| ------------------ | ---------------------------------------- | ----------------------------------- |
+| ONNX reranker      | `rerank: onnx` (default)                 | `rerank: null`                      |
+| Governance         | `governance: pyrrho` (default)           | `governance: null`                  |
+| Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |
+| Answer synthesis   | `synthesizer: <provider/model>`          | `synthesizer: null`                 |
+| VLM in parser      | `parser: docling_vision` + `vision:` set | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
 
 ---
 
@@ -133,8 +149,9 @@ built-in plugins — they are not `parser:` options.
 
 ## Authentication
 
-API keys are read from environment variables — never put them in the
-config file. Name the env var with `chat_api_key_env`:
+API keys are needed only for hosted providers. They are read from
+environment variables — never put them in the config file. Name the env var with
+`chat_api_key_env`:
 
 ```yaml
 chat_api_key_env: OPENAI_API_KEY
@@ -146,7 +163,8 @@ chat_api_key_env: OPENAI_API_KEY
 | Together         | `TOGETHER_API_KEY`   |
 | Groq             | `GROQ_API_KEY`       |
 | Mistral La Plateforme | `MISTRAL_API_KEY` |
-| Local llama.cpp / LM Studio / Ollama | (no key) |
+| Managed ONNX enrichment | (no key) |
+| Local endpoint server / LM Studio / Ollama | (no key) |
 
 For enterprise (M2M / mTLS) deployments see
 [features/platform/enterprise-gateway.md](features/platform/enterprise-gateway.md).
@@ -158,7 +176,7 @@ For enterprise (M2M / mTLS) deployments see
 ```yaml
 top_addresses: 50      # how many candidates to fetch from FTS5 (default 50)
 top_read: 50           # how many to read into context after rerank (default 50)
-retrieval_workers: 4   # max retrieval strategies run concurrently; set to 1 to serialize LLM calls for single-model local servers (LM Studio, llama-server)
+retrieval_workers: 4   # max retrieval strategies run concurrently; set to 1 to serialize LLM calls for single-model endpoint servers
 governance: pyrrho
 strict_grounding: false
 ```
@@ -169,19 +187,34 @@ baseline.
 
 ---
 
+## Synthesis Knobs
+
+```yaml
+synthesizer: openai/gpt-4o
+max_answer_tokens: 512       # general answer cap
+short_answer_tokens: 192     # factual-question cap
+strict_grounding: true
+```
+
+The optional synthesizer prompt is concise by default. For narrow factual
+questions, fitz-sage uses the smaller `short_answer_tokens` cap so small local
+models do not spend most of the query time writing long prose.
+
+---
+
 ## Per-invocation overrides
 
 The CLI accepts overrides without editing the config file:
 
 ```bash
-fitz query "What is X?" \
+fitz answer "What is X?" \
   --endpoint https://api.together.xyz/v1 \
-  --model meta-llama-3.1-70b \
+  --synthesizer endpoint/meta-llama-3.1-70b \
   --api-key-env TOGETHER_API_KEY
 ```
 
-`--endpoint` overrides `chat_base_url`, `--model` overrides the smart
-tier's model, `--api-key-env` overrides `chat_api_key_env`.
+`fitz answer` uses these flags to configure the synthesizer for that invocation.
+`fitz retrieve` ignores synthesis override flags because it does not synthesize.
 
 ---
 

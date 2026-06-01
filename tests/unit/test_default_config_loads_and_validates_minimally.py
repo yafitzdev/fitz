@@ -1,4 +1,4 @@
-# tests/test_default_config_loads_and_validates_minimally.py
+# tests/unit/test_default_config_loads_and_validates_minimally.py
 """
 Test that the default config can be loaded and validated.
 """
@@ -23,10 +23,10 @@ def test_default_config_loads_and_validates_base_schema():
 
     assert isinstance(cfg, FitzKragConfig)
 
-    # Core plugins (string specs)
-    assert cfg.chat_fast
-    assert cfg.chat_balanced
-    assert cfg.chat_smart
+    # Retrieval-first defaults do not require chat tier specs.
+    assert cfg.chat_fast is None
+    assert cfg.chat_balanced is None
+    assert cfg.chat_smart is None
 
     # Collection is required
     assert cfg.collection

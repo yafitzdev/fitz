@@ -53,7 +53,7 @@ class AgenticSearchStrategy:
         self._config = config
         self._cache_dir = cache_dir
 
-    def retrieve(self, query: str, limit: int) -> list[Address]:
+    def retrieve(self, query: str, limit: int, *, allow_llm: bool = True) -> list[Address]:
         """Retrieve addresses for unindexed files via LLM file selection.
 
         1. Get files NOT at SUMMARIZED state from manifest
@@ -68,6 +68,9 @@ class AgenticSearchStrategy:
         unindexed = self._manifest.files_not_in_state(FileState.SUMMARIZED)
         if not unindexed:
             return []
+
+        if self._chat_factory is None:
+            allow_llm = False
 
         # Single file: always use it — user pointed at exactly this file
         if len(unindexed) == 1:
@@ -91,26 +94,46 @@ class AgenticSearchStrategy:
             selected_entries = top[:_LLM_MAX_FILES]
         else:
             # BM25 pre-filter if too many files
-            if len(unindexed) > _BM25_PREFILTER_THRESHOLD:
+            if not allow_llm:
+                selected_entries = self._bm25_prefilter(unindexed, query)[:_LLM_MAX_FILES]
+            elif len(unindexed) > _BM25_PREFILTER_THRESHOLD:
                 unindexed = self._bm25_prefilter(unindexed, query)
 
-            # Build manifest text for LLM
-            manifest_text = self._manifest.to_manifest_text(unindexed)
+                # Build manifest text for LLM
+                manifest_text = self._manifest.to_manifest_text(unindexed)
 
-            # LLM selects files
-            selected_paths = self._llm_select_files(manifest_text, query)
+                # LLM selects files
+                selected_paths = self._llm_select_files(manifest_text, query)
 
-            # Path-match fallback: always include files whose path contains query terms
-            entries_map = {e.rel_path: e for e in unindexed}
-            path_matched = self._path_match_files(unindexed, query)
-            for pm in path_matched:
-                if pm not in selected_paths:
-                    selected_paths.append(pm)
+                # Path-match fallback: always include files whose path contains query terms
+                entries_map = {e.rel_path: e for e in unindexed}
+                path_matched = self._path_match_files(unindexed, query)
+                for pm in path_matched:
+                    if pm not in selected_paths:
+                        selected_paths.append(pm)
 
-            if not selected_paths:
-                return []
+                if not selected_paths:
+                    return []
 
-            selected_entries = [entries_map[p] for p in selected_paths if p in entries_map]
+                selected_entries = [entries_map[p] for p in selected_paths if p in entries_map]
+            else:
+                # Build manifest text for LLM
+                manifest_text = self._manifest.to_manifest_text(unindexed)
+
+                # LLM selects files
+                selected_paths = self._llm_select_files(manifest_text, query)
+
+                # Path-match fallback: always include files whose path contains query terms
+                entries_map = {e.rel_path: e for e in unindexed}
+                path_matched = self._path_match_files(unindexed, query)
+                for pm in path_matched:
+                    if pm not in selected_paths:
+                        selected_paths.append(pm)
+
+                if not selected_paths:
+                    return []
+
+                selected_entries = [entries_map[p] for p in selected_paths if p in entries_map]
 
         # Create addresses from selected files
         addresses: list[Address] = []

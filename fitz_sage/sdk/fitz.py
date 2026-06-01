@@ -1,6 +1,6 @@
 # fitz_sage/sdk/fitz.py
 """
-Fitz class - stateful SDK for the Fitz KRAG framework.
+Fitz class - stateful SDK for the Fitz KRAG retrieval engine.
 
 A thin, stateful wrapper around a single engine instance bound to one
 collection. It is the complete programmatic front door — point, query,
@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
-from fitz_sage.core import Answer, ConfigurationError, Query, QueryError
+from fitz_sage.core import Answer, ConfigurationError, EvidencePack, Query, QueryError
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -24,24 +24,26 @@ logger = get_logger(__name__)
 
 class fitz:
     """
-    Stateful SDK for the Fitz RAG framework.
+    Stateful SDK for governed Fitz retrieval.
 
     Holds one engine bound to a collection and exposes the full lifecycle::
 
         f = fitz(collection="docs")
-        f.point("./docs")                  # register documents (indexes in bg)
-        answer = f.query("What is X?")     # synthesized answer
-        sources = f.retrieve("What is X?") # raw sources, no synthesis
+        f.point("./docs")                  # register documents
+        f.wait_for_indexing()              # block for required enrichment
+        pack = f.evidence("What is X?")    # governed evidence
+        answer = f.query("What is X?")     # optional synthesized answer
 
-    Queries work immediately via agentic search and get better as background
-    indexing completes; call ``f.wait_for_indexing()`` to block until it finishes.
+    Pointing starts indexing; call ``f.wait_for_indexing()`` before querying when
+    using separate ``point`` / ``query`` calls. Convenience methods that receive
+    ``source=`` block until required enrichment finishes.
 
     Examples:
         >>> f = fitz()
-        >>> answer = f.query("What is the refund policy?", source="./docs")
-        >>> print(answer.text)
-        >>> for source in answer.provenance:
-        ...     print(source.excerpt)
+        >>> pack = f.evidence("What is the refund policy?", source="./docs")
+        >>> print(pack.mode)
+        >>> for item in pack.items:
+        ...     print(item.excerpt)
     """
 
     def __init__(
@@ -83,8 +85,8 @@ class fitz:
     def point(self, source: Union[str, Path]) -> None:
         """Register a source file or directory for querying.
 
-        Indexing runs in the background; queries work immediately and improve as
-        it completes. Call ``wait_for_indexing()`` to block until it finishes.
+        Indexing runs in the background; call ``wait_for_indexing()`` to block
+        until required enrichment finishes before querying.
         """
         self._get_engine().point(self._resolve_source(source), self._collection)
 
@@ -115,6 +117,7 @@ class fitz:
         engine = self._get_engine()
         if source is not None:
             engine.point(self._resolve_source(source), self._collection)
+            engine.wait_for_indexing()
         return engine.answer(Query(text=question, metadata=self._metadata(conversation_context)))
 
     def retrieve(
@@ -134,6 +137,21 @@ class fitz:
             Query(text=question, metadata=self._metadata(conversation_context))
         )
 
+    def evidence(
+        self,
+        question: str,
+        source: Optional[Union[str, Path]] = None,
+        conversation_context: Optional["ConversationContext"] = None,
+    ) -> EvidencePack:
+        """Retrieve a governed EvidencePack without answer synthesis."""
+        if not question or not question.strip():
+            raise QueryError("Question cannot be empty")
+        engine = self._get_engine()
+        if source is not None:
+            engine.point(self._resolve_source(source), self._collection)
+            engine.wait_for_indexing()
+        return engine.evidence(Query(text=question, metadata=self._metadata(conversation_context)))
+
     def wait_for_indexing(self) -> None:
         """Block until background indexing of pointed sources completes."""
         self._get_engine().wait_for_indexing()
@@ -142,7 +160,7 @@ class fitz:
         """Background-indexing progress for this collection.
 
         Returns counts (total, indexed, pending, by_state) and a ``complete``
-        flag. Queries work before completion and improve as it progresses.
+        flag. ``complete`` means the required enrichment pass has finished.
         """
         return self._get_engine().indexing_status()
 
@@ -184,7 +202,7 @@ class fitz:
                 f"Config file not found: {self.config_path}. "
                 f"Create it manually or pass auto_init=True."
             )
-        from fitz_sage.core.firstrun import run_firstrun_setup
+        from fitz_sage.config.firstrun import run_firstrun_setup
 
         if not run_firstrun_setup():
-            raise ConfigurationError(f"No LLM provider available. Config: {self.config_path}")
+            raise ConfigurationError(f"Could not initialize config: {self.config_path}")

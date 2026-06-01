@@ -1,4 +1,4 @@
-
+<!-- README.md -->
 
 <div align="center">
 
@@ -64,21 +64,24 @@ A: "I don't have enough information
 ### Where to start 🚀
 
 > [!IMPORTANT]
-> Requires **any OpenAI-compatible LLM endpoint** — local ([llama.cpp](https://github.com/ggerganov/llama.cpp), 
-> [vLLM](https://github.com/vllm-project/vllm), LM Studio, Ollama) or cloud (OpenAI, Together, Groq, Fireworks, OpenRouter, …). 
-> `fitz-sage` auto-detects a local server on the standard ports on first run, or falls back to `OPENAI_API_KEY`.
+> Retrieval works with **no API key and no external inference server**. Required enrichment runs through managed
+> Qwen3.5 0.8B ONNX on CPU. Synthesis is optional through any OpenAI-compatible endpoint — local
+> ([vLLM](https://github.com/vllm-project/vllm), LM Studio, Ollama)
+> or cloud (OpenAI, Together, Groq, Fireworks, OpenRouter, …).
 
 ```bash
 pip install fitz-sage
 
-# Local (recommended): start llama-server with any GGUF chat model
-llama-server -m gpt-oss-20b.gguf --port 8080 &
+# Start with governed evidence
+fitz retrieve "What is our refund policy?" --source ./docs
 
-# Then point fitz-sage at it — same syntax for cloud:
-fitz query "What is our refund policy?" --source ./docs
+# Optional: synthesize an answer from that evidence
+fitz answer "What is our refund policy?" --source ./docs \
+  --endpoint http://localhost:8080/v1 \
+  --synthesizer endpoint/gpt-oss-20b
 ```
 
-That's it. Your documents are now searchable with AI.
+That's it. Your documents are now searchable with governed provenance first.
 
 
 ![fitz-sage quickstart demo](https://raw.githubusercontent.com/yafitzdev/fitz-sage/main/docs/assets/quickstart_demo.gif)
@@ -218,7 +221,7 @@ SQL, and epistemic honesty out of the box — without configuration.
 > schema and runs real SQL. Ask "What's the average price by region?" and get an actual computed answer, not fragmented rows.
 
 **Fully local execution possible 🏠** → [OpenAI-Compatible Endpoint](docs/features/platform/openai-compatible-endpoint.md)
-> Embedded SQLite + any local OpenAI-compatible server (llama.cpp, vLLM, LM Studio, Ollama). One protocol, one URL, no API keys required to start.
+> Embedded SQLite + managed ONNX enrichment. Optional synthesis can use any local OpenAI-compatible server (vLLM, LM Studio, Ollama) with no API key.
 
 ####
 
@@ -226,7 +229,7 @@ SQL, and epistemic honesty out of the box — without configuration.
 > Any questions left? Try fitz on itself:
 >
 > ```bash
-> fitz query "How does the retrieval pipeline work?" --source ./fitz_sage
+> fitz retrieve "How does the retrieval pipeline work?" --source ./fitz_sage
 > ```
 >
 > The codebase speaks for itself.
@@ -330,7 +333,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
   Calibrated threshold (TAU = 0.50 on P(TRUSTWORTHY))
                │
                ▼
-  TRUSTWORTHY  /  DISPUTED  /  ABSTAIN  →  synthesizer prompt
+  TRUSTWORTHY  /  DISPUTED  /  ABSTAIN  →  EvidencePack / optional synthesis
 ```
 
 <br>
@@ -371,20 +374,21 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >```bash
 >pip install fitz-sage
 >
->fitz query "Your question here" --source ./docs
+>fitz retrieve "Your question here" --source ./docs
 >```
 >
->`fitz-sage` auto-detects your LLM provider on first run:
+>`fitz-sage` creates a retrieval-first config on first run:
 >1. **Local OpenAI-compatible server running?** → Uses it automatically (probes ports 8080 / 8000 / 1234 / 11434 for `/v1/models`)
 >2. **`OPENAI_API_KEY` set?** → Uses it automatically
->3. **Neither?** → Prints actionable setup instructions (start `llama-server`, set `OPENAI_API_KEY`, or use `--endpoint`)
+>3. **Neither?** → Retrieval still works; synthesis stays disabled until you configure a provider
 >
->For one-off queries against any OpenAI-compatible URL, skip the config:
+>For one-off synthesized answers against any OpenAI-compatible URL, skip the config:
 >
 >```bash
->fitz query "..." --endpoint http://localhost:8080/v1 --model gpt-oss-20b
->fitz query "..." --endpoint https://api.together.xyz/v1 \
->                 --model meta-llama-3.1-70b \
+>fitz answer "..." --endpoint http://localhost:8080/v1 \
+>                 --synthesizer endpoint/gpt-oss-20b
+>fitz answer "..." --endpoint https://api.together.xyz/v1 \
+>                 --synthesizer endpoint/meta-llama-3.1-70b \
 >                 --api-key-env TOGETHER_API_KEY
 >```
 
@@ -395,16 +399,17 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >```python
 >import fitz_sage
 >
->answer = fitz_sage.query("Your question here", source="./docs")
+>pack = fitz_sage.evidence("Your question here", source="./docs")
 >
->print(answer.text)
->for source in answer.provenance:
->    print(f"  - {source.source_id}: {source.excerpt[:50]}...")
+>print(pack.mode)
+>for item in pack.items:
+>    print(f"  - {item.file_path}: {item.excerpt[:50]}...")
 >```
 >
 >The SDK provides:
->- Module-level `query()` matching CLI
->- Auto-config creation (no setup required)
+>- Module-level `evidence()` matching `fitz retrieve`
+>- Module-level `query()` for optional synthesis
+>- Retrieval-only auto-config creation
 >- Full provenance tracking
 >- Same honest retrieval as the CLI
 >
@@ -413,24 +418,20 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >from fitz_sage import fitz
 >
 >physics = fitz(collection="physics")
->answer = physics.query("Explain entanglement", source="./physics_papers")
+>pack = physics.evidence("Explain entanglement", source="./physics_papers")
 >```
 
 <br>
 
-#### Fully Local (llama.cpp recommended)
+#### Fully Local (Managed ONNX)
 >
 >```bash
 >pip install fitz-sage
 >
-># Chat server on port 8080 — fitz-sage's default chat endpoint
->llama-server -m gpt-oss-20b-q4_k_m.gguf --port 8080 -c 8192
->
->fitz query "Your question here" --source ./docs
+>fitz retrieve "Your question here" --source ./docs
 >```
 >
->One process, one model, hot the whole time. Auto-detection picks up the server on the standard port.
->Reranking and governance run as local INT8 ONNX encoders on CPU — no separate embedding server, no second API key.
+>Reranking, governance, and required enrichment run as local ONNX models on CPU — no separate embedding server, no second API key.
 >No data leaves your machine.
 >
 >Other compatible servers: [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.ai) 
@@ -518,8 +519,8 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 │                         fitz-sage                             │
 ├───────────────────────────────────────────────────────────────┤
 │  User Interfaces                                              │
-│  CLI: query (--source) | collections | serve                  │
-│  SDK: fitz_sage.query(source=...)                             │
+│  CLI: retrieve | answer | collections | serve                 │
+│  SDK: fitz_sage.evidence(source=...)                          │
 │  API: /query | /chat | /collections | /health                 │
 ├───────────────────────────────────────────────────────────────┤
 │  Engines                                                      │
@@ -527,8 +528,8 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 │  │  FitzKRAG  │  │  Custom... │  (extensible registry)        │
 │  └────────────┘  └────────────┘                               │
 ├───────────────────────────────────────────────────────────────┤
-│  LLM Provider (single OpenAI-compatible HTTP protocol)        │
-│  Chat: endpoint/<URL> | openai | azure_openai | enterprise    │
+│  Optional LLM Provider (single OpenAI-compatible HTTP protocol)│
+│  synthesis | enrichment | query-intelligence add-ons          │
 ├───────────────────────────────────────────────────────────────┤
 │  Local CPU encoders (INT8 ONNX, no external calls)            │
 │  pyrrho (governance)  |  gte-reranker-modernbert-base         │
@@ -539,7 +540,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 │  Retrieval (address-based, baked-in intelligence)             │
 │  symbols | sections | tables | import graphs | reranking      │
 ├───────────────────────────────────────────────────────────────┤
-│  Enrichment (baked in)                                        │
+│  Optional enrichment                                          │
 │  summaries | keywords | entities | hierarchical summaries     │
 ├───────────────────────────────────────────────────────────────┤
 │  Governance (epistemic safety)                                │
@@ -558,14 +559,15 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 <br>
 
 ```bash
-fitz query "question" --source ./docs  # Point at docs and query (start here)
-fitz query "question"                  # Query existing collection
-fitz query --chat                      # Multi-turn conversation mode
+fitz retrieve "question" --source ./docs  # Point at docs and retrieve evidence
+fitz retrieve "question"                  # Retrieve from existing collection
+fitz answer "question" --synthesizer ...  # Optional synthesized answer
+fitz query --chat                         # Compatibility interactive mode
 fitz collections                       # List and delete knowledge collections
 fitz serve                             # Start REST API server
 ```
 
-Config: `~/.fitz/config/fitz_krag.yaml` — auto-created on first run, edit to change models.
+Config: `~/.fitz/config/fitz_krag.yaml` — auto-created on first run, edit to opt into synthesis or enrichment providers.
 
 </details>
 
@@ -581,8 +583,8 @@ Config: `~/.fitz/config/fitz_krag.yaml` — auto-created on first run, edit to c
 ```python
 import fitz_sage
 
-answer = fitz_sage.query("What is the refund policy?", source="./docs")
-print(answer.text)
+pack = fitz_sage.evidence("What is the refund policy?", source="./docs")
+print(pack.mode)
 ```
 
 <br>
@@ -595,23 +597,22 @@ from fitz_sage import fitz
 physics = fitz(collection="physics")
 legal = fitz(collection="legal")
 
-# Query each collection
-physics_answer = physics.query("Explain entanglement", source="./physics_papers")
-legal_answer = legal.query("What are the payment terms?", source="./contracts")
+# Retrieve evidence from each collection
+physics_pack = physics.evidence("Explain entanglement", source="./physics_papers")
+legal_pack = legal.evidence("What are the payment terms?", source="./contracts")
 ```
 
 <br>
 
-**Working with answers:**
+**Working with evidence:**
 ```python
-answer = fitz_sage.query("What is the refund policy?")
+pack = fitz_sage.evidence("What is the refund policy?")
 
-print(answer.text)
-print(answer.mode)  # TRUSTWORTHY, DISPUTED, or ABSTAIN
+print(pack.mode)  # TRUSTWORTHY, DISPUTED, or ABSTAIN
 
-for source in answer.provenance:
-    print(f"Source: {source.source_id}")
-    print(f"Excerpt: {source.excerpt}")
+for item in pack.items:
+    print(f"Source: {item.source_id}")
+    print(f"Excerpt: {item.excerpt}")
 ```
 
 </details>
@@ -677,38 +678,37 @@ curl -X POST http://localhost:8000/query \
 > `pip install fitz-sage[docs]`
 
 **"Connection refused at localhost:8080" error**
-> No OpenAI-compatible server is running. Start one — for example with llama.cpp:
-> `llama-server -m model.gguf --port 8080 -c 8192`. Or override the URL at the CLI:
-> `fitz query "..." --endpoint https://api.openai.com/v1 --api-key-env OPENAI_API_KEY`.
+> This only applies to optional endpoint-backed synthesis or query intelligence. Use `fitz retrieve "..."` for evidence without an endpoint server. For a one-off synthesized answer:
+> `fitz answer "..." --synthesizer openai/gpt-4o`.
 
 **"Model not found" error**
 > The model name in your config doesn't match what your server has loaded. Check `/v1/models` on your server:
-> `curl http://localhost:8080/v1/models`. Then update `chat_smart` in `~/.fitz/config/fitz_krag.yaml` to match.
+> `curl http://localhost:8080/v1/models`. Then update `synthesizer` in `~/.fitz/config/fitz_krag.yaml` to match.
 
 **First query is slow**
-> First run initializes the database and warms up the LLM. Subsequent queries are much faster. Local models load
-> on first use, you may run llama-server in advance to mitigate cold start.
+> First run initializes the database, downloads local ONNX models if needed, and indexes source files. Subsequent retrievals
+> are much faster. Optional synthesis can still be slow if a local chat model is cold.
 
 **How do I change my LLM endpoint or model?**
 > Edit `~/.fitz/config/fitz_krag.yaml`:
 > ```yaml
-> chat_smart: endpoint/gpt-oss-20b
+> synthesizer: endpoint/gpt-oss-20b
 > chat_base_url: http://localhost:8080/v1
 > ```
 > Or override at the CLI without editing YAML:
 > ```bash
-> fitz query "..." --endpoint http://localhost:8080/v1 --model gpt-oss-20b
+> fitz answer "..." --endpoint http://localhost:8080/v1 --synthesizer endpoint/gpt-oss-20b
 > ```
 
 **How do I use a cloud provider?**
 > Either use the `openai` preset (built-in OpenAI URL):
 > ```yaml
-> chat_smart: openai/gpt-4o
+> synthesizer: openai/gpt-4o
 > # OPENAI_API_KEY in env
 > ```
 > Or any OpenAI-compatible cloud via the `endpoint` provider:
 > ```yaml
-> chat_smart: endpoint/meta-llama-3.1-70b
+> synthesizer: endpoint/meta-llama-3.1-70b
 > chat_base_url: https://api.together.xyz/v1
 > chat_api_key_env: TOGETHER_API_KEY
 > ```

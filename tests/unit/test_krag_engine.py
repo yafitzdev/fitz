@@ -9,7 +9,7 @@ exercise the real __init__ with patched imports.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -19,11 +19,13 @@ from fitz_sage.core import (
     GenerationError,
     KnowledgeError,
     Provenance,
+    Query,
     QueryError,
 )
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
+from fitz_sage.engines.fitz_krag.engine import FitzKragEngine, _build_provider_config
+from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from tests.unit.mock_engine import build_mock_engine
 
 # Tests in this file @patch SqliteConnectionManager. Without resetting the
@@ -139,8 +141,9 @@ class TestEngineInit:
         config = _make_config()
         engine = FitzKragEngine(config)
 
-        # Core clients called
-        _patches["get_chat"].assert_called_once()
+        # Required enrichment uses the managed ONNX provider directly.
+        _patches["get_chat"].assert_not_called()
+        assert engine._enricher_chat is engine._summarizer_chat
         _patches["SqliteConnectionManager"].get_instance.assert_called()
 
         # Schema ensured
@@ -152,15 +155,92 @@ class TestEngineInit:
         _patches["TableSearchStrategy"].assert_called_once()
         _patches["RetrievalRouter"].assert_called_once()
 
-        # Reader, expander, assembler, synthesizer, table handler created
+        # Reader, expander, assembler, table handler created
         _patches["ContentReader"].assert_called_once()
         _patches["CodeExpander"].assert_called_once()
         _patches["TableQueryHandler"].assert_called_once()
         _patches["ContextAssembler"].assert_called_once()
-        _patches["CodeSynthesizer"].assert_called_once()
+        _patches["CodeSynthesizer"].assert_not_called()
 
         # Config stored correctly
         assert engine.config is config
+
+    def test_init_creates_synthesizer_when_configured(self, _patches):
+        """A synthesizer provider creates the answer generator explicitly."""
+        config = _make_config(synthesizer="endpoint/qwen2.5-7b-instruct")
+
+        FitzKragEngine(config)
+
+        _patches["get_chat"].assert_has_calls(
+            [
+                call(
+                    "endpoint/qwen2.5-7b-instruct",
+                    "smart",
+                    {"base_url": "http://127.0.0.1:8080/v1"},
+                ),
+            ]
+        )
+        assert _patches["get_chat"].call_count == 1
+        _patches["CodeSynthesizer"].assert_called_once()
+
+    def test_provider_config_forwards_auth_block(self):
+        """Role providers receive auth config without needing chat tiers."""
+        auth = {
+            "type": "enterprise",
+            "token_url": "https://auth.example.com/token",
+            "client_id": "${CLIENT_ID}",
+            "client_secret": "${CLIENT_SECRET}",
+            "llm_api_key_env": "CORP_LLM_API_KEY",
+        }
+
+        config = _build_provider_config(
+            "https://llm.corp.internal/v1",
+            None,
+            spec="enterprise/openai/gpt-4o",
+            auth=auth,
+            cert_path="/etc/ssl/corp-ca-bundle.crt",
+        )
+
+        assert config == {
+            "base_url": "https://llm.corp.internal/v1",
+            "cert_path": "/etc/ssl/corp-ca-bundle.crt",
+            "auth": auth,
+        }
+
+    def test_provider_config_merges_api_key_env_into_auth_block(self):
+        """Endpoint auth can keep custom header options from YAML."""
+        config = _build_provider_config(
+            "https://api.together.xyz/v1",
+            "TOGETHER_API_KEY",
+            spec="endpoint/meta-llama-3.1-70b",
+            auth={"header_format": "bearer"},
+        )
+
+        assert config == {
+            "base_url": "https://api.together.xyz/v1",
+            "auth": {
+                "header_format": "bearer",
+                "api_key_env": "TOGETHER_API_KEY",
+            },
+        }
+
+    def test_default_config_has_no_chat_tier_factory(self):
+        """Retrieval-only defaults should not build a tiered chat factory."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config()
+
+        assert engine._chat_tier_specs() is None
+
+    def test_configured_chat_tiers_build_factory_specs(self):
+        """Configured chat tiers still build complete factory specs."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config(chat_fast="endpoint/qwen2.5-7b")
+
+        assert engine._chat_tier_specs() == {
+            "fast": "endpoint/qwen2.5-7b",
+            "balanced": "endpoint/qwen2.5-7b",
+            "smart": "endpoint/qwen2.5-7b",
+        }
 
     def test_init_failure_raises_configuration_error(self):
         """
@@ -251,6 +331,30 @@ class TestAnswer:
 
         assert result is expected_answer
 
+    def test_answer_uses_no_chat_query_planner_by_default(self):
+        """Default query prep is deterministic unless query_intelligence is configured."""
+        engine = _make_engine()
+        query = _make_query("Compare Q1 2024 vs Q2 2024 API failures")
+        engine._query_batcher.batch_classify.side_effect = AssertionError("chat prep called")
+
+        address = MagicMock(name="addr")
+        engine._retrieval_router.retrieve.return_value = [address]
+        read_result = MagicMock(name="read")
+        engine._reader.read.return_value = [read_result]
+        engine._expander.expand.return_value = [read_result]
+        engine._assembler.assemble.return_value = MagicMock()
+        expected = Answer(text="Answer.", provenance=[], metadata={})
+        engine._synthesizer.generate.return_value = expected
+
+        result = engine.answer(query)
+
+        assert result is expected
+        engine._query_batcher.batch_classify.assert_not_called()
+        call_args = engine._retrieval_router.retrieve.call_args
+        profile = call_args[0][1]
+        assert profile.comparison_queries
+        assert profile.temporal_references
+
     def test_answer_empty_query_raises(self):
         """Empty or whitespace-only query text raises QueryError."""
         engine = _make_engine()
@@ -259,6 +363,14 @@ class TestAnswer:
             q = _make_query(blank)
             with pytest.raises(QueryError, match="empty"):
                 engine.answer(q)
+
+    def test_answer_without_synthesizer_raises_actionable_error(self):
+        """Answer mode requires explicit synthesis configuration."""
+        engine = _make_engine()
+        engine._synthesizer = None
+
+        with pytest.raises(GenerationError, match="No synthesizer configured"):
+            engine.answer(_make_query("What is RAG?"))
 
     def test_answer_no_addresses_returns_fallback(self):
         """Router returning [] yields an actionable ABSTAIN answer."""
@@ -407,6 +519,161 @@ class TestAnswer:
 
         engine._table_handler.process.assert_called_once_with(query.text, expanded)
         engine._assembler.assemble.assert_called_once_with(query.text, augmented)
+
+
+# ---------------------------------------------------------------------------
+# TestEvidence
+# ---------------------------------------------------------------------------
+
+
+class TestEvidence:
+    """Tests for retrieval-first evidence packs."""
+
+    def test_evidence_skips_chat_prep_synthesis_and_table_sql(self):
+        """Evidence mode uses deterministic retrieval prep and does not synthesize."""
+        engine = _make_engine()
+        engine._query_batcher.batch_classify.side_effect = AssertionError("chat prep called")
+        engine._synthesizer.generate.side_effect = AssertionError("synthesis called")
+        engine._table_handler.process.side_effect = AssertionError("table SQL called")
+
+        address = Address(
+            kind=AddressKind.SECTION,
+            source_id="doc-1",
+            location="Sprint 47",
+            summary="Sprint 47 test results",
+            score=0.91,
+        )
+        result = ReadResult(
+            address=address,
+            content="Sprint 47 failed because the payment retry test timed out.",
+            file_path="docs/sprint.md",
+            line_range=(10, 12),
+        )
+        engine._retrieval_router.retrieve.return_value = [address]
+        engine._reader.read.return_value = [result]
+        engine._expander.expand.return_value = [result]
+
+        decision = MagicMock()
+        decision.mode = AnswerMode.TRUSTWORTHY
+        decision.reasons = ("Sources support a confident answer.",)
+        engine._governance = MagicMock()
+        engine._governance.decide.return_value = decision
+
+        pack = engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
+
+        assert pack.mode == AnswerMode.TRUSTWORTHY
+        assert pack.reasons == ["Sources support a confident answer."]
+        assert len(pack.items) == 1
+        assert pack.items[0].file_path == "docs/sprint.md"
+        assert pack.items[0].address_kind == "section"
+        engine._query_batcher.batch_classify.assert_not_called()
+        engine._synthesizer.generate.assert_not_called()
+        engine._table_handler.process.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestPoint
+# ---------------------------------------------------------------------------
+
+
+class TestPoint:
+    """Tests for source registration and collection routing."""
+
+    def test_point_collection_override_rebinds_collection_components(self, tmp_path):
+        """point(..., collection=...) binds background ingestion to that collection."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config(collection="default")
+        engine._bg_worker = None
+        engine._manifest = None
+        engine._source_dir = None
+        engine._retrieval_router = MagicMock()
+        engine._reader = MagicMock()
+        engine._chat_factory = None
+        engine._chat = None
+        engine._connection_manager = MagicMock()
+        engine._table_store = MagicMock()
+        engine._sqlite_table_store = MagicMock()
+        engine._entity_graph_store = None
+        engine._enricher_chat = None
+        engine._summarizer_chat = None
+        engine._fast_index_code_files = MagicMock()
+
+        source = tmp_path / "docs"
+        source.mkdir()
+        workspace = tmp_path / ".fitz"
+        manifest = MagicMock()
+
+        def _load(collection: str) -> None:
+            engine._config.collection = collection
+
+        with (
+            patch.object(engine, "load", side_effect=_load) as load,
+            patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
+            patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
+            patch(
+                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
+                ".AgenticSearchStrategy"
+            ),
+            patch(
+                "fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline"
+            ) as pipeline_cls,
+        ):
+            builder_cls.return_value.build.return_value = manifest
+
+            engine.point(source, "custom", start_worker=False)
+
+        load.assert_called_once_with("custom")
+        pipeline_cls.assert_called_once()
+        assert pipeline_cls.call_args.kwargs["collection"] == "custom"
+        build_manifest_path = builder_cls.return_value.build.call_args.args[1]
+        assert build_manifest_path == workspace / "collections" / "custom" / "manifest.json"
+
+    def test_point_prepares_managed_qwen_for_sources(self, tmp_path):
+        """Source registration validates the mandatory managed Qwen runtime early."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config(collection="default")
+        engine._bg_worker = None
+        engine._manifest = None
+        engine._source_dir = None
+        engine._retrieval_router = MagicMock()
+        engine._reader = MagicMock()
+        engine._chat_factory = None
+        engine._chat = None
+        engine._connection_manager = MagicMock()
+        engine._table_store = MagicMock()
+        engine._sqlite_table_store = MagicMock()
+        engine._entity_graph_store = None
+        engine._summarizer_chat = MagicMock()
+        engine._fast_index_code_files = MagicMock()
+
+        model_info = MagicMock()
+        model_info.revision = "abc123456789def"
+        engine._enricher_chat = MagicMock()
+        engine._enricher_chat.ensure_available.return_value = model_info
+
+        source = tmp_path / "docs"
+        source.mkdir()
+        workspace = tmp_path / ".fitz"
+        manifest = MagicMock()
+        manifest.entries.return_value = {"release_notes.md": MagicMock()}
+        progress = MagicMock()
+
+        with (
+            patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
+            patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
+            patch(
+                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
+                ".AgenticSearchStrategy"
+            ),
+            patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline"),
+        ):
+            builder_cls.return_value.build.return_value = manifest
+
+            engine.point(source, start_worker=False, progress=progress)
+
+        engine._enricher_chat.ensure_available.assert_called_once()
+        progress.assert_any_call("Preparing managed Qwen3.5 0.8B ONNX enrichment model...")
+        progress.assert_any_call("Managed Qwen ready (abc123456789).")
 
 
 # ---------------------------------------------------------------------------

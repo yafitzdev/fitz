@@ -11,18 +11,21 @@
 
 fitz_krag:
 
-  # Chat models by tier — single chat protocol (OpenAI-compatible HTTP).
-  # Provider name 'endpoint' = bring your own URL (set via chat_base_url
-  # below). 'openai' / 'azure_openai' / 'enterprise' are presets.
-  chat_fast: endpoint/qwen2.5-7b-instruct
-  chat_balanced: endpoint/qwen2.5-7b-instruct
-  chat_smart: endpoint/qwen2.5-7b-instruct
+  # Optional chat models by tier. Query intelligence and answer synthesis stay
+  # provider-driven; ingestion enrichment always uses Fitz's managed Qwen ONNX
+  # runtime and is not user-configurable.
+  chat_fast: null
+  chat_balanced: null
+  chat_smart: null
+  query_intelligence: null
 
-  # HTTP endpoint for chat (and vision, when vision_base_url is null).
-  # Default assumes a local llama-server on port 8080.
-  chat_base_url: http://localhost:8080/v1
+  # HTTP endpoint for optional endpoint providers. Managed Qwen ONNX ignores
+  # this field.
+  chat_base_url: http://127.0.0.1:8080/v1
   vision_base_url: null
   chat_api_key_env: null
+  auth: null
+  cert_path: null
   vision_api_key_env: null
 
   # Reranker. 'onnx' = INT8 ONNX cross-encoder (Alibaba-NLP/gte-reranker-
@@ -63,6 +66,9 @@ fitz_krag:
   include_file_header: true
 
   # Generation
+  synthesizer: null
+  max_answer_tokens: 512
+  short_answer_tokens: 192
   enable_citations: true
   strict_grounding: true
 

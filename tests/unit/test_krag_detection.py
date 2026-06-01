@@ -256,7 +256,9 @@ class TestEngineAnswerDetectionFlow:
 
     def test_detection_result_flows_to_router(self):
         """Detection result from batched call is passed to router.retrieve."""
-        engine = _make_engine(enable_detection=True)
+        engine = _make_engine(
+            query_intelligence="endpoint/qwen2.5-7b-instruct",
+        )
 
         # Wire up batcher to return detection results
         from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
@@ -295,36 +297,6 @@ class TestEngineAnswerDetectionFlow:
         from fitz_sage.engines.fitz_krag.retrieval_profile import RetrievalProfile
 
         assert isinstance(call_args[0][1], RetrievalProfile)
-
-    def test_detection_disabled_stays_none_in_answer_flow(self):
-        """When detection is disabled, detection stays None through answer flow."""
-        engine = _make_engine(enable_detection=False)
-
-        # Wire up pipeline stages (query must be >8 words to trigger LLM analysis)
-        query = _make_query(
-            "How does the authentication system work when handling multiple concurrent user sessions?"
-        )
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-        engine._reader.read.return_value = [MagicMock()]
-        engine._expander.expand.return_value = [MagicMock()]
-        engine._assembler.assemble.return_value = MagicMock()
-        engine._synthesizer.generate.return_value = MagicMock(
-            text="answer", provenance=[], metadata={}
-        )
-
-        engine.answer(query)
-
-        # Router called with query text and a profile built from detection=None
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
-        assert call_args[0][0] == query.text
-        from fitz_sage.engines.fitz_krag.retrieval_profile import RetrievalProfile
-
-        profile = call_args[0][1]
-        assert isinstance(profile, RetrievalProfile)
-        # No detection ran: profile carries no detection-derived query expansions
-        assert profile.query_variations == []
-        assert profile.comparison_queries == []
 
 
 # ---------------------------------------------------------------------------

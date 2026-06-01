@@ -3,7 +3,9 @@
 Fitz CLI - Main application.
 
 Commands:
-    fitz query         Query knowledge base (--source to register, --chat for interactive)
+    fitz retrieve      Retrieve governed evidence (--source to register)
+    fitz answer        Generate an optional synthesized answer
+    fitz query         Compatibility synthesized-answer command
     fitz collections   Manage collections (list, info, delete)
     fitz serve         Start the REST API server
 
@@ -32,7 +34,7 @@ import typer  # noqa: E402
 
 app = typer.Typer(
     name="fitz",
-    help='Fitz - local-first RAG framework. Start with: fitz query "your question" --source ./docs',
+    help='Fitz - local-first retrieval. Start with: fitz retrieve "your question" --source ./docs',
     no_args_is_help=True,
     add_completion=False,
 )
@@ -60,7 +62,14 @@ def query(
         help=(
             "OpenAI-compatible chat endpoint URL "
             "(e.g. http://localhost:8080/v1, https://api.openai.com/v1). "
-            "Overrides chat_base_url; pairs with --model."
+            "Overrides chat_base_url; pairs with --model or --synthesizer endpoint/<model>."
+        ),
+    ),
+    synthesizer: Optional[str] = typer.Option(
+        None,
+        "--synthesizer",
+        help=(
+            "Provider/model spec for answer synthesis " "(e.g. endpoint/qwen2.5-7b, openai/gpt-4o)."
         ),
     ),
     model: Optional[str] = typer.Option(
@@ -70,7 +79,7 @@ def query(
         help=(
             "Chat model name to send to --endpoint. "
             "If --endpoint is set without --model, the engine's "
-            "configured chat_smart model is used."
+            "configured synthesizer model is used when present."
         ),
     ),
     api_key_env: Optional[str] = typer.Option(
@@ -93,6 +102,87 @@ def query(
         engine=engine,
         chat=chat,
         endpoint=endpoint,
+        synthesizer=synthesizer,
+        model=model,
+        api_key_env=api_key_env,
+    )
+
+
+@app.command("retrieve")
+def retrieve(
+    question: Optional[str] = typer.Argument(None, help="Question to retrieve evidence for."),
+    source: Optional[Path] = typer.Option(
+        None, "--source", "-s", help="Path to documents (registers before retrieval)."
+    ),
+    collection: Optional[str] = typer.Option(None, "--collection", "-c", help="Collection name."),
+    engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
+    output_format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json.",
+    ),
+    top_k: Optional[int] = typer.Option(None, "--top-k", help="Maximum evidence items to show."),
+) -> None:
+    """Retrieve governed evidence without answer synthesis."""
+    from fitz_sage.cli.commands import retrieve as mod
+
+    mod.command(
+        question=question,
+        source=source,
+        collection=collection,
+        engine=engine,
+        output_format=output_format,
+        top_k=top_k,
+    )
+
+
+@app.command("answer")
+def answer(
+    question: Optional[str] = typer.Argument(None, help="Question to answer."),
+    source: Optional[Path] = typer.Option(
+        None, "--source", "-s", help="Path to documents (registers before answering)."
+    ),
+    collection: Optional[str] = typer.Option(None, "--collection", "-c", help="Collection name."),
+    engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
+    endpoint: Optional[str] = typer.Option(
+        None,
+        "--endpoint",
+        help=(
+            "OpenAI-compatible chat endpoint URL "
+            "(e.g. http://localhost:8080/v1, https://api.openai.com/v1). "
+            "Overrides chat_base_url; pairs with --model or --synthesizer endpoint/<model>."
+        ),
+    ),
+    synthesizer: Optional[str] = typer.Option(
+        None,
+        "--synthesizer",
+        help=(
+            "Provider/model spec for answer synthesis " "(e.g. endpoint/qwen2.5-7b, openai/gpt-4o)."
+        ),
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Chat model name to send to --endpoint.",
+    ),
+    api_key_env: Optional[str] = typer.Option(
+        None,
+        "--api-key-env",
+        help="Environment variable name holding an API key for --endpoint.",
+    ),
+) -> None:
+    """Answer with optional synthesis; use retrieve for evidence-only output."""
+    from fitz_sage.cli.commands import query as mod
+
+    mod.command(
+        question=question,
+        source=source,
+        collection=collection,
+        engine=engine,
+        chat=False,
+        endpoint=endpoint,
+        synthesizer=synthesizer,
         model=model,
         api_key_env=api_key_env,
     )

@@ -63,6 +63,14 @@ class TestUnknownProvider:
         with pytest.raises(ValueError, match="Unknown chat provider"):
             get_chat("unknown_provider")
 
+    def test_onnx_chat_provider_builds(self) -> None:
+        """The managed ONNX Qwen provider is available through get_chat."""
+        from fitz_sage.llm.providers.onnx_chat import DEFAULT_QWEN_MODEL_ID, OnnxChat
+
+        chat = get_chat("onnx/qwen3.5-0.8b")
+        assert isinstance(chat, OnnxChat)
+        assert chat._model_id == DEFAULT_QWEN_MODEL_ID
+
     def test_unknown_vision_provider_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown vision provider"):
             get_vision("unknown_provider")
@@ -110,7 +118,7 @@ class TestEndpointProvider:
     """The canonical 'endpoint' provider — bring your own URL."""
 
     def test_endpoint_chat_local(self) -> None:
-        """Local llama-server with no auth."""
+        """Local endpoint server with no auth."""
         with patch("openai.OpenAI"):
             chat = get_chat(
                 "endpoint/qwen2.5-7b",

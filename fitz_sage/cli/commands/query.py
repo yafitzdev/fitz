@@ -65,26 +65,27 @@ def _apply_chat_overrides(
     endpoint: Optional[str],
     model: Optional[str],
     api_key_env: Optional[str],
+    synthesizer: Optional[str] = None,
 ):
     """
-    Build a config object with CLI chat overrides applied.
+    Build a config object with CLI synthesis overrides applied.
 
     Returns ``None`` when no overrides are set (the engine then loads
     its own config via the registry). Returns an engine-specific
-    config when ``--endpoint`` / ``--model`` / ``--api-key-env`` are
-    supplied so the engine binds chat to the user's endpoint without
-    needing a YAML edit.
+    config when ``--endpoint`` / ``--synthesizer`` / ``--model`` /
+    ``--api-key-env`` are supplied so the engine binds synthesis to the
+    user's provider without needing a YAML edit.
 
     Currently supports the ``fitz_krag`` engine; other engines fall
     through to the unmodified default config and the flags are a
     no-op (with a UI warning).
     """
-    if endpoint is None and model is None and api_key_env is None:
+    if endpoint is None and model is None and api_key_env is None and synthesizer is None:
         return None
 
     if engine_name != "fitz_krag":
         ui.warning(
-            f"--endpoint / --model / --api-key-env are not supported "
+            f"--endpoint / --model / --synthesizer / --api-key-env are not supported "
             f"for engine '{engine_name}'. Ignoring."
         )
         return None
@@ -100,6 +101,20 @@ def _apply_chat_overrides(
     if endpoint is not None:
         overrides["chat_base_url"] = endpoint
 
+    if synthesizer is not None and model is not None:
+        ui.error("--synthesizer and --model both set a synthesis model; choose one.")
+        raise typer.Exit(1)
+
+    if synthesizer is not None:
+        overrides["synthesizer"] = synthesizer
+        if (
+            synthesizer.startswith("endpoint/")
+            and endpoint is None
+            and not base_config.chat_base_url
+        ):
+            ui.error("--synthesizer endpoint/<model> requires --endpoint or chat_base_url.")
+            raise typer.Exit(1)
+
     if model is not None:
         # Apply spec to all three tiers — typical for a single
         # llama-server with one loaded model.
@@ -107,11 +122,15 @@ def _apply_chat_overrides(
         overrides["chat_fast"] = spec
         overrides["chat_balanced"] = spec
         overrides["chat_smart"] = spec
-    elif endpoint is not None:
+        overrides["synthesizer"] = spec
+    elif endpoint is not None and synthesizer is None:
         # User gave --endpoint but no --model. Reuse the configured
-        # chat_smart model name, but route it via the new endpoint.
+        # synthesizer model name, but route it via the new endpoint.
         # If the existing spec isn't endpoint/<model>, switch it.
-        existing = base_config.chat_smart
+        existing = base_config.synthesizer
+        if not existing:
+            ui.error("--endpoint requires --model when no synthesizer model is configured.")
+            raise typer.Exit(1)
         if "/" in existing:
             _, model_name = existing.split("/", 1)
         else:
@@ -120,6 +139,7 @@ def _apply_chat_overrides(
         overrides["chat_fast"] = spec
         overrides["chat_balanced"] = spec
         overrides["chat_smart"] = spec
+        overrides["synthesizer"] = spec
 
     if api_key_env is not None:
         overrides["chat_api_key_env"] = api_key_env
@@ -139,6 +159,7 @@ def command(
     engine: Optional[str] = None,
     chat: bool = False,
     endpoint: Optional[str] = None,
+    synthesizer: Optional[str] = None,
     model: Optional[str] = None,
     api_key_env: Optional[str] = None,
 ) -> None:
@@ -147,11 +168,11 @@ def command(
     # First-run setup (auto-detect providers if no config exists)
     # =========================================================================
 
-    from fitz_sage.core.firstrun import needs_firstrun, run_firstrun_setup
+    from fitz_sage.config.firstrun import needs_firstrun, run_firstrun_setup
 
-    # Skip first-run if user supplied --endpoint — they're explicitly
-    # configuring at the CLI, no detection needed.
-    if needs_firstrun() and endpoint is None:
+    # Skip first-run if user supplied provider flags — they're explicitly
+    # configuring synthesis at the CLI, no detection needed.
+    if needs_firstrun() and endpoint is None and synthesizer is None:
         if not run_firstrun_setup():
             raise typer.Exit(1)
 
@@ -184,7 +205,13 @@ def command(
         raise typer.Exit(1)
 
     # Build CLI override config (None if no flags set).
-    override_config = _apply_chat_overrides(engine, endpoint, model, api_key_env)
+    override_config = _apply_chat_overrides(
+        engine,
+        endpoint,
+        model,
+        api_key_env,
+        synthesizer=synthesizer,
+    )
 
     # Engines with persistent ingest support
     if caps.supports_persistent_ingest:
@@ -312,6 +339,7 @@ def _run_persistent_ingest_query(
             t0 = time.perf_counter()
             ui.info(f"Registering {source}...")
             manifest = engine_instance.point(source, collection, progress=ui.info)
+            engine_instance.wait_for_indexing(progress=ui.info)
             t_point = time.perf_counter() - t0
             ui.info(f"Registered {len(manifest.entries())} files")
         else:
@@ -322,7 +350,6 @@ def _run_persistent_ingest_query(
 
         if chat:
             _chat_loop(engine_instance, collection)
-            engine_instance.wait_for_indexing(progress=ui.info)
         else:
             from fitz_sage.core import Query
 
@@ -334,7 +361,6 @@ def _run_persistent_ingest_query(
                 f"(engine={t_engine:.1f}s, register={t_point:.1f}s)"
             )
             display_answer(answer)
-            engine_instance.wait_for_indexing(progress=ui.info)
     except Exception as e:
         # Show clean error message, full traceback only at debug level
         ui.error(f"Query failed: {_get_root_cause(e)}")
@@ -352,7 +378,7 @@ def _run_collection_query(
     """Run query using FitzService for fitz_krag engine."""
     if override_config is not None:
         ui.warning(
-            "--endpoint / --model overrides are not yet plumbed through "
+            "--endpoint / --synthesizer / --model overrides are not yet plumbed through "
             "FitzService; ignoring. Use --source to use overrides via "
             "the persistent-ingest path."
         )

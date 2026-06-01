@@ -1,3 +1,5 @@
+# .github/workflows/release.yml
+
 name: Release
 
 # Publishes fitz-sage to PyPI via trusted publishing (OIDC).
@@ -51,6 +53,9 @@ jobs:
 
       - name: Sanity-check the artifacts
         run: python -m twine check dist/*
+
+      - name: Smoke-test wheel first-run retrieval
+        run: python -m tools.wheel_smoke --wheel dist/*.whl --smoke retrieve
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

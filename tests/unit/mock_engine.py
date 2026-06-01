@@ -16,6 +16,7 @@ from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
 from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
+from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
 from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
 
 
@@ -59,6 +60,7 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     engine._bg_worker = None
     engine._manifest = None
     engine._source_dir = None
+    engine._query_planner = DeterministicQueryPlanner()
 
     def _default_batch_classify(query, **kwargs):
         return BatchResult(

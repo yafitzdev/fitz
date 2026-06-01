@@ -193,7 +193,10 @@ class DirectTableQuery:
     Usage:
         from fitz_sage.llm import get_chat_factory
 
-        factory = get_chat_factory("cohere")
+        factory = get_chat_factory(
+            {"fast": "endpoint/qwen2.5-3b", "balanced": "endpoint/qwen2.5-7b"},
+            {"base_url": "http://localhost:8080/v1"},
+        )
         query = DirectTableQuery(chat_factory=factory)
         result = query.query(Path("sales.csv"), "how many cars sold in 2005?")
         print(result.answer)

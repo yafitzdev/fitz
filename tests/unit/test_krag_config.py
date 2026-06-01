@@ -5,16 +5,21 @@ import pytest
 import yaml
 
 from fitz_sage.engines.fitz_krag.config import FitzKragConfig, get_default_config_path
+from fitz_sage.engines.fitz_krag.config.schema import DEFAULT_LOCAL_LLM_BASE_URL
 
 
 class TestFitzKragConfig:
     def test_minimal_config(self):
         config = FitzKragConfig(collection="test")
         assert config.collection == "test"
-        assert config.chat_fast == "endpoint/qwen2.5-7b-instruct"
-        assert config.chat_balanced == "endpoint/qwen2.5-7b-instruct"
-        assert config.chat_smart == "endpoint/qwen2.5-7b-instruct"
-        assert config.chat_base_url == "http://localhost:8080/v1"
+        assert config.chat_fast is None
+        assert config.chat_balanced is None
+        assert config.chat_smart is None
+        assert config.chat_base_url == DEFAULT_LOCAL_LLM_BASE_URL
+        assert not hasattr(config, "enricher")
+        assert not hasattr(config, "summarizer")
+        assert config.auth is None
+        assert config.cert_path is None
 
     def test_defaults(self):
         config = FitzKragConfig(collection="test")
@@ -26,6 +31,8 @@ class TestFitzKragConfig:
         assert config.enable_citations is True
         assert config.strict_grounding is True
         assert config.max_context_tokens == 48000
+        assert config.max_answer_tokens == 512
+        assert config.short_answer_tokens == 192
 
     def test_custom_values(self):
         """Cloud config: openai preset with API key in env."""
@@ -43,6 +50,26 @@ class TestFitzKragConfig:
         assert config.top_addresses == 20
         assert config.keyword_weight == 0.3
 
+    def test_auth_config_allowed(self):
+        """KRAG configs can pass auth blocks through to role providers."""
+        config = FitzKragConfig(
+            collection="enterprise_project",
+            synthesizer="enterprise/openai/gpt-4o",
+            chat_base_url="https://llm.corp.internal/v1",
+            auth={
+                "type": "enterprise",
+                "token_url": "https://auth.corp.internal/oauth/token",
+                "client_id": "${CLIENT_ID}",
+                "client_secret": "${CLIENT_SECRET}",
+                "llm_api_key_env": "CORP_LLM_API_KEY",
+            },
+            cert_path="/etc/ssl/corp-ca-bundle.crt",
+        )
+
+        assert config.auth is not None
+        assert config.auth["type"] == "enterprise"
+        assert config.cert_path == "/etc/ssl/corp-ca-bundle.crt"
+
     def test_collection_required(self):
         with pytest.raises(Exception):
             FitzKragConfig()  # type: ignore[call-arg]
@@ -58,6 +85,14 @@ class TestFitzKragConfig:
     def test_extra_fields_forbidden(self):
         with pytest.raises(Exception):
             FitzKragConfig(collection="test", nonexistent_field=True)
+
+    def test_enrichment_provider_fields_are_removed(self):
+        """Qwen enrichment is internal; legacy provider knobs are invalid."""
+        with pytest.raises(Exception):
+            FitzKragConfig(collection="test", enricher="onnx/qwen3.5-0.8b")
+
+        with pytest.raises(Exception):
+            FitzKragConfig(collection="test", summarizer="onnx/qwen3.5-0.8b")
 
     def test_no_chat_kwargs_field(self):
         """chat_kwargs, embedding_kwargs, rerank_kwargs, vision_kwargs are deleted."""
@@ -79,10 +114,15 @@ class TestDefaultYaml:
         with path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         assert "fitz_krag" in raw
-        assert raw["fitz_krag"]["chat_fast"] == "endpoint/qwen2.5-7b-instruct"
-        assert raw["fitz_krag"]["chat_balanced"] == "endpoint/qwen2.5-7b-instruct"
-        assert raw["fitz_krag"]["chat_smart"] == "endpoint/qwen2.5-7b-instruct"
-        assert raw["fitz_krag"]["chat_base_url"] == "http://localhost:8080/v1"
+        assert raw["fitz_krag"]["chat_fast"] is None
+        assert raw["fitz_krag"]["chat_balanced"] is None
+        assert raw["fitz_krag"]["chat_smart"] is None
+        assert raw["fitz_krag"]["chat_base_url"] == DEFAULT_LOCAL_LLM_BASE_URL
+        assert "enricher" not in raw["fitz_krag"]
+        assert "summarizer" not in raw["fitz_krag"]
+        assert raw["fitz_krag"]["auth"] is None
+        assert raw["fitz_krag"]["cert_path"] is None
+        assert raw["fitz_krag"]["short_answer_tokens"] == 192
         assert raw["fitz_krag"]["collection"] == "default"
         # Embedding fields are gone — fitz-sage no longer uses dense vectors.
         assert "embedding" not in raw["fitz_krag"]

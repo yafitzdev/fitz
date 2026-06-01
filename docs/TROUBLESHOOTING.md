@@ -1,15 +1,19 @@
+<!-- docs/TROUBLESHOOTING.md -->
 # Troubleshooting Guide
 
-Common issues and solutions for fitz-sage **v0.14.1+** (single OpenAI-compatible
-HTTP protocol, SQLite + FTS5 storage, no embeddings, no vector DB).
+Common issues and solutions for fitz-sage **v0.14.1+** (managed ONNX
+enrichment, optional OpenAI-compatible HTTP endpoints, SQLite + FTS5 storage,
+no embeddings, no vector DB).
 
 ---
 
 ## Quick Diagnostics
 
-Open the config file directly at `~/.fitz/config/fitz_krag.yaml` and verify the
-chat endpoint URL, API-key environment variable, and collection name
-are correct.
+Open the config file directly at `~/.fitz/config/fitz_krag.yaml`. For
+`fitz retrieve`, verify the collection and storage settings. For
+`fitz answer` / `fitz query`, also verify `synthesizer`,
+`chat_base_url`, and the API-key environment variable if your endpoint
+requires one.
 
 ---
 
@@ -25,13 +29,13 @@ No LLM provider found
 **Solution:**
 
 The config is created automatically on first run — edit it, or pass
-`--endpoint`, `--model`, and `--api-key-env` directly on the
-`fitz query` command:
+`--synthesizer`, `--endpoint`, and `--api-key-env` directly on the
+`fitz answer` command:
 
 ```bash
-fitz query "What is X?" \
+fitz answer "What is X?" \
   --endpoint https://api.openai.com/v1 \
-  --model gpt-4o-mini \
+  --synthesizer endpoint/gpt-4o-mini \
   --api-key-env OPENAI_API_KEY \
   --source ./docs
 ```
@@ -48,12 +52,11 @@ LLMError: Cannot connect to http://localhost:8080/v1
 **Solution:**
 
 1. Confirm an OpenAI-compatible server is running and reachable at the
-   configured `chat_base_url`. Common local options:
+   configured `chat_base_url`. This applies only when you configured an
+   endpoint-backed role such as `synthesizer:` or `query_intelligence:`.
+   Common local options:
 
    ```bash
-   # llama.cpp
-   llama-server -m model.gguf --port 8080
-
    # vLLM
    python -m vllm.entrypoints.openai.api_server --model my-model --port 8080
 
@@ -146,11 +149,10 @@ RateLimitError: Rate limit exceeded
 
 1. Wait and retry (the chat provider applies exponential backoff
    automatically — see `fitz_sage/llm/auth/`).
-2. Point `chat_fast` at a cheaper model for the bulk of the work:
+2. Use cheaper optional role providers:
    ```yaml
-   chat_fast: gpt-4o-mini
-   chat_balanced: gpt-4o-mini
-   chat_smart: gpt-4o
+   query_intelligence: openai/gpt-4o-mini
+   synthesizer: openai/gpt-4o
    ```
 
 ---
