@@ -249,9 +249,7 @@ def aggregate(records: list[dict]) -> dict:
     crit = [r for r in scored if r["has_critical"]]
     if crit:
         for k in K_VALUES:
-            out[f"recall@{k}_critical"] = _mean(
-                r["metrics"][f"recall@{k}_critical"] for r in crit
-            )
+            out[f"recall@{k}_critical"] = _mean(r["metrics"][f"recall@{k}_critical"] for r in crit)
     return out
 
 
@@ -428,7 +426,7 @@ def run(
         engine = create_engine("fitz_krag")
     except Exception as e:  # noqa: BLE001
         print(f"could not create engine: {e}")
-        print("the benchmark needs ~/.fitz/config.yaml and a reachable chat model.")
+        print("the benchmark needs ~/.fitz/config/fitz_krag.yaml and a reachable chat model.")
         return 1
 
     exit_code = 0

@@ -49,9 +49,9 @@ Every answer includes a **mode** indicating confidence level:
 
 ## Key Design Decisions
 
-1. **Always-on** - The pyrrho classifier runs automatically on every answer. No configuration needed.
+1. **Provider-controlled default** - `governance: pyrrho` is the default. Set `governance: null` only for smoke tests or raw retrieval timing.
 
-2. **Post-generation filtering** - The governance classifier evaluates the LLM's answer and retrieved chunks, not the raw query.
+2. **Pre-generation evidence classification** - The governance classifier evaluates the query and retrieved contexts before synthesis, then the LLM receives the matching answer posture.
 
 3. **Explicit modes** - The mode field is first-class in the Answer dataclass, not a hidden flag.
 
@@ -61,7 +61,12 @@ Every answer includes a **mode** indicating confidence level:
 
 ## Configuration
 
-No configuration required. The pyrrho classifier is baked into the answer generation pipeline. Governance is selected by the `governance:` field (`pyrrho` or `null`).
+Governance is selected by the `governance:` field:
+
+```yaml
+governance: pyrrho  # default INT8 ONNX classifier
+# governance: null  # disable governance
+```
 
 ## Files
 
@@ -100,9 +105,9 @@ Mode: TRUSTWORTHY
 
 ## Dependencies
 
-- No external dependencies
-- Pure Python implementation
-- Works with any LLM provider
+- Runs locally with `onnxruntime`, `transformers`, `huggingface-hub`, and `numpy`
+- Uses no external LLM call for the governance decision
+- Works with any chat provider because it runs before answer synthesis
 
 ## Related Features
 

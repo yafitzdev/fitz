@@ -39,8 +39,8 @@ rerank: onnx
 ```
 
 The same pattern applies to vision (VLM): set `parser: docling_vision`
-to bake the VLM into ingestion, or set `parser: docling` / `parser: glm_ocr`
-to skip it.
+to bake the VLM into ingestion, or set `parser: cpu` / `parser: docling` /
+`parser: glm_ocr` to skip it.
 
 Governance is selected by the engine config's `governance:` field
 (`pyrrho` or `null`) — it is not a plugin.

@@ -151,7 +151,8 @@ parser: docling_vision            # the parser that consults `vision:`
 collection: my_docs
 ```
 
-Use `parser: docling` or `parser: glm_ocr` to skip the VLM and avoid the cost.
+Use `parser: cpu` (the default), `parser: docling`, or `parser: glm_ocr`
+to skip the VLM and avoid the cost.
 
 ---
 

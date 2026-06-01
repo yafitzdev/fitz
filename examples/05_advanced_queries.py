@@ -1,16 +1,16 @@
 # examples/05_advanced_queries.py
 """
-Advanced Queries - Keyword matching, constraints, and query patterns.
+Advanced Queries - Keyword matching, governance, and query patterns.
 
 Fitz has built-in intelligence for different query types:
 - Exact keyword matching (IDs, tickets, versions)
-- Hybrid search (semantic + lexical)
+- Hybrid retrieval (structural + lexical)
 - Aggregation queries (trends, summaries)
 - Comparison queries (A vs B)
 
 Requirements:
     pip install fitz-sage
-    export COHERE_API_KEY="your-key"
+    export OPENAI_API_KEY="your-key"  # if using a hosted OpenAI-compatible endpoint
 
 Run:
     python examples/05_advanced_queries.py
@@ -100,13 +100,11 @@ Fix: Implemented real-time notification queue.
 )
 
 # =============================================================================
-# Step 1: Ingest documents
+# Step 1: Point Fitz at documents
 # =============================================================================
 
 f = fitz(collection="advanced_demo")
-print("Ingesting documents...")
-stats = f.ingest(str(temp_dir))
-print(f"Ingested {stats.chunks} chunks\n")
+print("Pointing at documents...\n")
 
 # =============================================================================
 # Step 2: Exact keyword matching
@@ -123,9 +121,9 @@ keyword_queries = [
     "Tell me about BUG-1003",
 ]
 
-for q in keyword_queries:
+for i, q in enumerate(keyword_queries):
     print(f"Q: {q}")
-    answer = f.ask(q)
+    answer = f.query(q, source=str(temp_dir) if i == 0 else None)
     # Truncate long answers for demo
     text = answer.text[:200] + "..." if len(answer.text) > 200 else answer.text
     print(f"A: {text}\n")
@@ -147,7 +145,7 @@ comparison_queries = [
 
 for q in comparison_queries:
     print(f"Q: {q}")
-    answer = f.ask(q)
+    answer = f.query(q)
     text = answer.text[:300] + "..." if len(answer.text) > 300 else answer.text
     print(f"A: {text}\n")
 
@@ -168,7 +166,7 @@ aggregation_queries = [
 
 for q in aggregation_queries:
     print(f"Q: {q}")
-    answer = f.ask(q)
+    answer = f.query(q)
     text = answer.text[:300] + "..." if len(answer.text) > 300 else answer.text
     print(f"A: {text}\n")
 
@@ -189,7 +187,7 @@ unknown_queries = [
 
 for q in unknown_queries:
     print(f"Q: {q}")
-    answer = f.ask(q)
+    answer = f.query(q)
     print(f"A: {answer.text}\n")
 
 # =============================================================================
@@ -200,7 +198,7 @@ print("=" * 60)
 print("ANSWER OBJECT DETAILS")
 print("=" * 60)
 
-answer = f.ask("What bugs were fixed in v2.3.2?")
+answer = f.query("What bugs were fixed in v2.3.2?")
 
 print(f"Answer text: {answer.text[:100]}...")
 print(f"\nProvenance ({len(answer.provenance)} sources):")

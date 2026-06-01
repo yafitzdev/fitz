@@ -87,6 +87,10 @@ DEFAULT_LAYOUT_EXCLUDES = {
     "node_modules",
 }
 
+OPTIONAL_IMPORT_DEPENDENCIES = {
+    f"{PKG.name}.api": {"fastapi"},
+}
+
 
 # ============================================================================
 # Data Structures
@@ -164,12 +168,16 @@ class ImportGraph:
 
     Attributes:
         edges: All import edges (both module-level and lazy)
+        module_edges: Imports executed at module import time
+        lazy_edges: Imports executed inside functions or methods
         violations: Module-level imports that violate architecture rules
         lazy_ok: Lazy imports (inside functions) that would violate rules
                  if they were at module level, but are OK because they're lazy
     """
 
     edges: List[ImportEdge] = field(default_factory=list)
+    module_edges: List[ImportEdge] = field(default_factory=list)
+    lazy_edges: List[ImportEdge] = field(default_factory=list)
     violations: List[str] = field(default_factory=list)
     lazy_ok: List[str] = field(default_factory=list)
 
@@ -302,11 +310,29 @@ def safe_import(cm: ContractMap, module: str, *, verbose: bool) -> object | None
     try:
         return importlib.import_module(module)
     except Exception as exc:
+        if is_optional_import_failure(module, exc):
+            return None
         tb = traceback.format_exc() if verbose else None
         cm.import_failures.append(
             ImportFailure(module=module, error=f"{type(exc).__name__}: {exc}", traceback=tb)
         )
         return None
+
+
+def is_optional_import_failure(module: str, exc: Exception) -> bool:
+    """Return True when a missing optional extra caused an import failure."""
+    if not isinstance(exc, ModuleNotFoundError):
+        return False
+
+    missing = exc.name
+    if not missing:
+        return False
+
+    for prefix, dependencies in OPTIONAL_IMPORT_DEPENDENCIES.items():
+        if module == prefix or module.startswith(prefix + "."):
+            return missing in dependencies
+
+    return False
 
 
 def should_exclude_path(rel: Path, excludes: set[str]) -> bool:

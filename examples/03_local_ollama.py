@@ -79,22 +79,19 @@ Answers are generated using local Ollama models.
 )
 
 # =============================================================================
-# Step 3: Ingest and query locally
+# Step 3: Point at docs and query locally
 # =============================================================================
 
-print("Ingesting documents locally...\n")
+print("Pointing at documents locally...\n")
 
 try:
-    stats = f.ingest(str(docs_dir))
-    print(f"Ingested {stats.chunks} chunks\n")
-
     # Ask questions - everything runs locally
     print("Q: How is my data protected?")
-    answer = f.ask("How is my data protected?")
+    answer = f.query("How is my data protected?", source=str(docs_dir))
     print(f"A: {answer.text}\n")
 
     print("Q: What do I need to set up for local usage?")
-    answer = f.ask("What do I need to set up for local usage?")
+    answer = f.query("What do I need to set up for local usage?")
     print(f"A: {answer.text}\n")
 
     print("=" * 60)

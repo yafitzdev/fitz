@@ -87,7 +87,7 @@ Features are switched on by **provider presence**, not boolean flags:
 | ------------- | ------------------------------------------- | ----------------------------------- |
 | ONNX reranker | `rerank: onnx` (default)                    | `rerank: null` (or omitted)         |
 | Governance    | `governance: pyrrho` (default)              | `governance: null`                  |
-| VLM in parser | `parser: docling_vision` + `vision:` set    | `parser: docling` or `parser: glm_ocr` |
+| VLM in parser | `parser: docling_vision` + `vision:` set    | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
 | Enrichment    | `chat_*` configured (always-on otherwise)   | no chat provider                    |
 
 ---
@@ -111,19 +111,21 @@ for the schema and pragmas.
 ## Parser
 
 ```yaml
-parser: docling            # Docling structure extraction (default)
+parser: cpu                # CPU pypdfium2 text-layer parser (default)
+# parser: docling          # Docling structure extraction
 # parser: docling_vision   # Docling + VLM for figure descriptions
 # parser: glm_ocr          # hybrid pypdfium2 + GLM-OCR, handles scanned pages
 ```
 
 | Parser           | Speed (100pg PDF) | Scanned pages | Install                            |
 | ---------------- | ----------------- | ------------- | ---------------------------------- |
+| `cpu`            | seconds to minutes | no            | base install                       |
 | `docling`        | ~21 min           | no            | `pip install fitz-sage[docs]`      |
 | `docling_vision` | ~21 min + VLM     | VLM figures   | `[docs]` + `vision:` set           |
 | `glm_ocr`        | ~28 s             | yes (GLM-OCR) | base install                       |
 
-Only `docling`, `docling_vision`, and `glm_ocr` are selectable `parser:`
-values. `lightweight` is an automatic ImportError fallback (not
+Only `cpu`, `docling`, `docling_vision`, and `glm_ocr` are selectable
+`parser:` values. `lightweight` is an automatic ImportError fallback (not
 selectable), and plain-text / CSV files are routed by extension to
 built-in plugins — they are not `parser:` options.
 

@@ -46,7 +46,7 @@ Fitz includes a lightweight, SDK-free enterprise provider that supports:
 ### Basic M2M Authentication
 
 ```yaml
-# .fitz/config.yaml
+# ~/.fitz/config/fitz_krag.yaml
 chat_smart: enterprise/openai/gpt-4o
 
 auth:
@@ -213,7 +213,7 @@ Model strings are passed verbatim to the gateway. Common formats:
 ## Example: Full Enterprise Setup
 
 ```yaml
-# .fitz/config.yaml
+# ~/.fitz/config/fitz_krag.yaml
 chat_smart: enterprise/openai/gpt-4o
 collection: default
 

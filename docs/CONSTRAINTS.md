@@ -72,9 +72,10 @@ What remains in `fitz_sage/governance/`:
 ## Public API
 
 ```python
-from fitz_sage.governance import decide, GovernanceDecision
+from fitz_sage.governance import GovernanceDecision, create_governance
 
-decision = decide(query, retrieved_contexts)
+governance = create_governance("pyrrho")
+decision = governance.decide(query, retrieved_contexts)
 # decision.mode    → AnswerMode (TRUSTWORTHY / DISPUTED / ABSTAIN)
 # decision.probs   → (p_abstain, p_disputed, p_trustworthy)
 # decision.reason  → one-line human-readable explanation
@@ -84,9 +85,11 @@ decision = decide(query, retrieved_contexts)
 `EvidenceItem` protocol — both `Chunk` and KRAG's `ReadResult`
 qualify.
 
-`decide()` lazy-loads the model on first call and caches it for the
-process lifetime. First call costs the ONNX-load latency (~1–2 s on
-CPU); subsequent calls are ~30 ms.
+`create_governance("pyrrho")` returns a `Pyrrho` classifier instance.
+The engine owns this instance and calls `.decide()` after retrieval and
+before answer synthesis. The model is lazy-loaded on first decision;
+that first call costs the ONNX-load latency (~1–2 s on CPU), and
+subsequent calls are ~30 ms.
 
 ---
 

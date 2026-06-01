@@ -1,5 +1,9 @@
 # tools/retrieval_eval/run.py
-"""Run the retrieval benchmark from PyCharm's Run button. Edit settings below."""
+"""Run retrieval benchmarks from PyCharm settings or benchmark CLI arguments."""
+
+from __future__ import annotations
+
+import sys
 
 # --- SETTINGS ---
 MODES = None  # e.g. ["section"], ["section", "table"], or None for all
@@ -10,15 +14,20 @@ VERBOSE = True  # list missed critical units per query
 # -----------------
 
 if __name__ == "__main__":
-    from tools.retrieval_eval.benchmark import MODES as ALL_MODES
-    from tools.retrieval_eval.benchmark import run
+    if len(sys.argv) > 1:
+        from tools.retrieval_eval.benchmark import main
 
-    raise SystemExit(
-        run(
-            MODES or list(ALL_MODES),
-            skip_ingest=SKIP_INGEST,
-            update=UPDATE_BASELINE,
-            verbose=VERBOSE,
-            repeats=REPEATS,
+        main()
+    else:
+        from tools.retrieval_eval.benchmark import MODES as ALL_MODES
+        from tools.retrieval_eval.benchmark import run
+
+        raise SystemExit(
+            run(
+                MODES or list(ALL_MODES),
+                skip_ingest=SKIP_INGEST,
+                update=UPDATE_BASELINE,
+                verbose=VERBOSE,
+                repeats=REPEATS,
+            )
         )
-    )

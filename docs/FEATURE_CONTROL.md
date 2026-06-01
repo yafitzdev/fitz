@@ -38,9 +38,10 @@ can drift out of sync with the actual provider config.
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  VLM (controlled by parser plugin):                             │
+│    parser: cpu              → No VLM (fast default parser)      │
 │    parser: docling          → No VLM (figures become "[Figure]")│
 │    parser: docling_vision   → Uses vision provider              │
-│    parser: glm_ocr          → No VLM (fast, default)            │
+│    parser: glm_ocr          → No VLM (GLM-OCR for scans)        │
 │                                                                 │
 │  ONNX Reranker (controlled by `rerank:` presence):               │
 │    rerank: (omitted / null) → No reranker step                  │
@@ -60,9 +61,10 @@ images in PDFs during ingestion.
 
 1. Set a vision provider in `~/.fitz/config/fitz_krag.yaml`.
 2. Choose the parser:
+   - `parser: cpu`             → fast default, no VLM
    - `parser: docling`         → figures replaced by `[Figure]`
    - `parser: docling_vision`  → figures get VLM-generated descriptions
-   - `parser: glm_ocr`         → fast default; no VLM, GLM-OCR for scans
+   - `parser: glm_ocr`         → no VLM, GLM-OCR for scans
 
 ### Config example
 
@@ -181,7 +183,7 @@ summarizer: endpoint/summarizer
 
 | Feature        | Config key   | Enable                          | Disable                       |
 | -------------- | ------------ | ------------------------------- | ----------------------------- |
-| VLM in parser  | `parser:` + `vision:` | `parser: docling_vision` + `vision:` set | `parser: docling` / `parser: glm_ocr` |
+| VLM in parser  | `parser:` + `vision:` | `parser: docling_vision` + `vision:` set | `parser: cpu` / `parser: docling` / `parser: glm_ocr` |
 | ONNX reranker  | `rerank:`    | `rerank: onnx` (default)        | `rerank: null` (or omit)      |
 | Governance     | `governance:`         | `governance: pyrrho` (default)  | `governance: null`            |
 

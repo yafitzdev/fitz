@@ -33,13 +33,13 @@ from tools.contract_map.analysis import (
     render_invariants_section,
     render_stats_section,
 )
-from tools.contract_map.architecture import RoleResolver
+from tools.contract_map.architecture import ROLE_RULES, RoleResolver, load_architecture_mapping
 from tools.contract_map.common import (
     DEFAULT_LAYOUT_EXCLUDES,
-    PKG,
     REPO_ROOT,
     ContractMap,
     HealthIssue,
+    ImportEdge,
 )
 from tools.contract_map.discovery import render_discovery_section, scan_all_discoveries
 from tools.contract_map.imports import build_import_graph, render_import_graph_section
@@ -123,7 +123,8 @@ def detect_architecture_violations(cm: ContractMap) -> List[ArchitectureViolatio
     """
     violations: List[ArchitectureViolation] = []
 
-    if not cm.import_graph or not cm.import_graph.edges:
+    edges = architecture_edges(cm)
+    if not edges:
         return violations
 
     try:
@@ -132,8 +133,9 @@ def detect_architecture_violations(cm: ContractMap) -> List[ArchitectureViolatio
         # If we can't load architecture contracts, return empty
         return violations
 
-    # Check each import edge
-    for edge in cm.import_graph.edges:
+    # Check each module-level import edge. Lazy imports are reported separately
+    # by the import graph because they do not create import-time coupling.
+    for edge in edges:
         importer_role = resolver.resolve_role(edge.src)
         imported_role = resolver.resolve_role(edge.dst)
 
@@ -169,7 +171,8 @@ def validate_architecture_contracts(cm: ContractMap) -> List[str]:
     """
     violations: List[str] = []
 
-    if not cm.import_graph or not cm.import_graph.edges:
+    edges = architecture_edges(cm)
+    if not edges:
         return violations
 
     try:
@@ -178,8 +181,8 @@ def validate_architecture_contracts(cm: ContractMap) -> List[str]:
         violations.append(f"Failed to load architecture contracts: {e}")
         return violations
 
-    # Check each import edge
-    for edge in cm.import_graph.edges:
+    # Check each module-level import edge.
+    for edge in edges:
         importer_role = resolver.resolve_role(edge.src)
         imported_role = resolver.resolve_role(edge.dst)
 
@@ -195,6 +198,23 @@ def validate_architecture_contracts(cm: ContractMap) -> List[str]:
             )
 
     return violations
+
+
+def architecture_edges(cm: ContractMap) -> List[ImportEdge]:
+    """Return module-level import edges used for architecture validation."""
+    if not cm.import_graph:
+        return []
+    if cm.import_graph.module_edges:
+        return cm.import_graph.module_edges
+    return cm.import_graph.edges
+
+
+def has_contract_failures(cm: ContractMap) -> bool:
+    """Return True when --fail-on-errors should exit non-zero."""
+    import_violations = bool(cm.import_graph and cm.import_graph.violations)
+    arch_violations = bool(validate_architecture_contracts(cm))
+    health_errors = any(issue.level == "ERROR" for issue in cm.health)
+    return import_violations or arch_violations or health_errors
 
 
 def build_contract_map(*, verbose: bool, layout_depth: int | None) -> ContractMap:
@@ -271,54 +291,42 @@ def render_architecture_section() -> str:
     Render the Architecture Contracts section.
 
     Shows:
-    - Role mappings (from architecture.yaml)
-    - Import rules (from roles.py)
-    - Validation results (if violations found)
+    - Role mappings
+    - Import rules
+    - Validation behavior
     """
     lines = ["## Architecture Contracts"]
     lines.append("")
     lines.append("Architectural boundaries are enforced via role-based import rules.")
     lines.append("")
 
-    try:
-        import importlib
+    # Show role mappings
+    lines.append("### Role Mappings")
+    lines.append("")
+    mapping = load_architecture_mapping()
+    package_mappings = {k: v for k, v in mapping.items() if "." in k}
+    for package in sorted(package_mappings.keys()):
+        role = package_mappings[package]
+        lines.append(f"- `{package}` → **{role}**")
+    lines.append("")
 
-        arch_module = importlib.import_module(f"{PKG.name}.engines.fitz_krag.config.architecture")
-        load_architecture_mapping = getattr(arch_module, "load_architecture_mapping")
+    # Show role rules
+    lines.append("### Role Import Rules")
+    lines.append("")
+    for role in sorted(ROLE_RULES.values(), key=lambda r: r.name):
+        if role.may_import is None:
+            lines.append(f"- **{role.name}**: may compose any project layer")
+            continue
+        allowed = ", ".join(f"`{r}`" for r in sorted(role.may_import))
+        lines.append(f"- **{role.name}**: may import {allowed}")
+    lines.append("")
 
-        roles_module = importlib.import_module(f"{PKG.name}.engines.fitz_krag.contracts.roles")
-        ROLES = getattr(roles_module, "ROLES")
-
-        # Show role mappings
-        lines.append("### Role Mappings")
-        lines.append("")
-        mapping = load_architecture_mapping()
-        for package in sorted(mapping.keys()):
-            role = mapping[package]
-            lines.append(f"- `{package}` → **{role}**")
-        lines.append("")
-
-        # Show role rules
-        lines.append("### Role Import Rules")
-        lines.append("")
-        for role in sorted(ROLES, key=lambda r: r.name):
-            if role.may_be_imported_by:
-                allowed = ", ".join(f"`{r}`" for r in sorted(role.may_be_imported_by))
-                lines.append(f"- **{role.name}**: may be imported by {allowed}")
-            else:
-                lines.append(f"- **{role.name}**: may not be imported (leaf role)")
-        lines.append("")
-
-        # Validation results
-        lines.append("### Validation")
-        lines.append("")
-        lines.append("Architecture validation runs on the import graph.")
-        lines.append("Violations are reported as warnings (see Health section).")
-        lines.append("")
-
-    except Exception as e:
-        lines.append(f"- **ERROR**: Failed to load architecture contracts: {e}")
-        lines.append("")
+    # Validation results
+    lines.append("### Validation")
+    lines.append("")
+    lines.append("Architecture validation runs on module-level import graph edges.")
+    lines.append("Lazy imports are reported by the import graph but do not fail the contract.")
+    lines.append("")
 
     return "\n".join(lines)
 
@@ -444,6 +452,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Max depth for project layout (default: unlimited)",
     )
+    parser.add_argument(
+        "--fail-on-errors",
+        action="store_true",
+        help="Exit non-zero on architecture violations or ERROR health issues",
+    )
 
     args = parser.parse_args(argv)
 
@@ -458,6 +471,9 @@ def main(argv: list[str] | None = None) -> int:
     text = render_markdown(cm, verbose=args.verbose, layout_depth=args.layout_depth)
 
     print(text)
+
+    if args.fail_on_errors and has_contract_failures(cm):
+        return 1
 
     return 0
 

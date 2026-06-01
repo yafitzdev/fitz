@@ -26,6 +26,36 @@ from .common import (
 )
 
 
+def _sorted_edges(counts: Dict[Tuple[str, str], int]) -> List[ImportEdge]:
+    edges = [ImportEdge(src=k[0], dst=k[1], count=v) for k, v in counts.items()]
+    edges.sort(key=lambda e: (-e.count, e.src, e.dst))
+    return edges
+
+
+def _architecture_violations(
+    counts: Dict[Tuple[str, str], int],
+    *,
+    lazy: bool,
+) -> List[str]:
+    from tools.contract_map.architecture import RoleResolver
+
+    resolver = RoleResolver()
+    violations: List[str] = []
+    for (src, dst), count in sorted(counts.items()):
+        src_role = resolver.resolve_role(src)
+        dst_role = resolver.resolve_role(dst)
+        if src_role == "unknown" or dst_role == "unknown":
+            continue
+        if resolver.is_allowed(src_role, dst_role):
+            continue
+
+        location = "inside functions" if lazy else "at module level"
+        prefix = "(lazy/OK) " if lazy else "VIOLATION: "
+        violations.append(f"{prefix}{src_role} imports {dst_role} {location} ({count}x)")
+
+    return violations
+
+
 def resolve_from_import(*, current_module: str, module: str | None, level: int) -> str | None:
     """Resolve a relative import to an absolute module name."""
     if level <= 0:
@@ -168,30 +198,25 @@ def build_import_graph(root: Path, *, excludes: set[str]) -> ImportGraph:
     for key, count in lazy_counts.items():
         all_counts[key] = all_counts.get(key, 0) + count
 
-    edges = [ImportEdge(src=k[0], dst=k[1], count=v) for k, v in all_counts.items()]
-    edges.sort(key=lambda e: (-e.count, e.src, e.dst))
+    edges = _sorted_edges(all_counts)
+    module_edges = _sorted_edges(module_level_counts)
+    lazy_edges = _sorted_edges(lazy_counts)
 
     # Only check MODULE-LEVEL imports for violations
     # Lazy imports (inside functions) are allowed and don't create architectural coupling
-    violations: List[str] = []
-    for (src, dst), count in module_level_counts.items():
-        if src == "core" and dst in {"pipeline", "ingest"}:
-            violations.append(f"VIOLATION: core imports {dst} at module level ({count}x)")
-        if src == "ingest" and dst == "pipeline":
-            violations.append(f"VIOLATION: ingest imports pipeline at module level ({count}x)")
-
-    # Add info about lazy imports that would have been violations
-    lazy_would_violate: List[str] = []
-    for (src, dst), count in lazy_counts.items():
-        if src == "core" and dst in {"pipeline", "ingest"}:
-            lazy_would_violate.append(f"(lazy/OK) core imports {dst} inside functions ({count}x)")
-        if src == "ingest" and dst == "pipeline":
-            lazy_would_violate.append(
-                f"(lazy/OK) ingest imports pipeline inside functions ({count}x)"
-            )
+    try:
+        violations = _architecture_violations(module_level_counts, lazy=False)
+        lazy_would_violate = _architecture_violations(lazy_counts, lazy=True)
+    except Exception as exc:  # noqa: BLE001
+        violations = [f"VIOLATION: failed to load architecture contracts: {exc}"]
+        lazy_would_violate = []
 
     return ImportGraph(
-        edges=edges, violations=sorted(violations), lazy_ok=sorted(lazy_would_violate)
+        edges=edges,
+        module_edges=module_edges,
+        lazy_edges=lazy_edges,
+        violations=sorted(violations),
+        lazy_ok=sorted(lazy_would_violate),
     )
 
 

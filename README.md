@@ -565,7 +565,7 @@ fitz collections                       # List and delete knowledge collections
 fitz serve                             # Start REST API server
 ```
 
-Config: `.fitz/config.yaml` — auto-created on first run, edit to change models.
+Config: `~/.fitz/config/fitz_krag.yaml` — auto-created on first run, edit to change models.
 
 </details>
 
@@ -683,14 +683,14 @@ curl -X POST http://localhost:8000/query \
 
 **"Model not found" error**
 > The model name in your config doesn't match what your server has loaded. Check `/v1/models` on your server:
-> `curl http://localhost:8080/v1/models`. Then update `chat_smart` in `.fitz/config.yaml` to match.
+> `curl http://localhost:8080/v1/models`. Then update `chat_smart` in `~/.fitz/config/fitz_krag.yaml` to match.
 
 **First query is slow**
 > First run initializes the database and warms up the LLM. Subsequent queries are much faster. Local models load
 > on first use, you may run llama-server in advance to mitigate cold start.
 
 **How do I change my LLM endpoint or model?**
-> Edit `.fitz/config.yaml`:
+> Edit `~/.fitz/config/fitz_krag.yaml`:
 > ```yaml
 > chat_smart: endpoint/gpt-oss-20b
 > chat_base_url: http://localhost:8080/v1

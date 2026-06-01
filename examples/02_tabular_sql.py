@@ -7,12 +7,13 @@ natively in SQLite. You can run real SQL queries and get computed answers.
 
 Requirements:
     pip install fitz-sage
-    export COHERE_API_KEY="your-key"
+    export OPENAI_API_KEY="your-key"  # if using a hosted OpenAI-compatible endpoint
 
 Run:
     python examples/02_tabular_sql.py
 """
 
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -45,14 +46,12 @@ csv_path.write_text(sample_csv)
 print(f"Created sample CSV at: {csv_path}\n")
 
 # =============================================================================
-# Step 1: Ingest the CSV
+# Step 1: Point Fitz at the CSV
 # =============================================================================
 
 f = fitz(collection="tabular_demo")
 
-print("Ingesting CSV...")
-stats = f.ingest(str(temp_dir))
-print(f"Ingested {stats.documents} file(s)\n")
+print("Pointing at CSV data...\n")
 
 # =============================================================================
 # Step 2: Ask natural language questions about the data
@@ -71,9 +70,9 @@ print("=" * 60)
 print("TABULAR QUERIES")
 print("=" * 60)
 
-for question in questions:
+for i, question in enumerate(questions):
     print(f"\nQ: {question}")
-    answer = f.ask(question)
+    answer = f.query(question, source=str(temp_dir) if i == 0 else None)
     print(f"A: {answer.text}")
 
 # =============================================================================
@@ -100,9 +99,6 @@ Target 15% growth over Q1 in both regions.
 """
 )
 
-# Re-ingest to include the markdown
-f.ingest(str(temp_dir))
-
 print("\n" + "=" * 60)
 print("HYBRID QUERIES (Data + Documents)")
 print("=" * 60)
@@ -113,13 +109,11 @@ hybrid_questions = [
     "What's the revenue breakdown for the budget product line?",
 ]
 
-for question in hybrid_questions:
+for i, question in enumerate(hybrid_questions):
     print(f"\nQ: {question}")
-    answer = f.ask(question)
+    answer = f.query(question, source=str(temp_dir) if i == 0 else None)
     print(f"A: {answer.text}")
 
 # Cleanup
-import shutil
-
 shutil.rmtree(temp_dir)
 print("\n\nDemo complete! Temp files cleaned up.")
