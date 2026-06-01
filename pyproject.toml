@@ -59,6 +59,10 @@ dependencies = [
     "jinja2>=3.1",
     # X.509 cert parsing for enterprise mTLS auth (fitz_sage/llm/auth/certificates.py)
     "cryptography>=41.0",
+    # Enterprise M2M auth is imported through fitz_sage.llm.auth and needs
+    # retry + circuit-breaker primitives even when configured later.
+    "tenacity>=8.2",
+    "circuitbreaker>=2.0",
     # SQLite is bundled with Python's stdlib (sqlite3 module) — no server,
     # no driver dep. Each collection is a single .db file with FTS5.
     # Lightweight document parsing (PDF, DOCX, PPTX — no ML)
