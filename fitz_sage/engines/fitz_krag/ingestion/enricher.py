@@ -9,6 +9,7 @@ adapted for KRAG's data model (symbol dicts + section dicts instead of Chunks).
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core import KnowledgeError
@@ -18,6 +19,14 @@ if TYPE_CHECKING:
     from fitz_sage.llm.providers.base import ChatProvider
 
 logger = logging.getLogger(__name__)
+
+_IDENTIFIER_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b[A-Z][A-Z0-9]{1,12}-[A-Z0-9-]*\d[A-Z0-9-]*\b"),
+    re.compile(r"\bv?\d+\.\d+(?:\.\d+){0,2}\b", re.IGNORECASE),
+    re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b"),
+    re.compile(r"\b[A-Z][a-z]+(?:[A-Z][A-Za-z0-9]*)+\b"),
+    re.compile(r"(?:/[A-Za-z0-9._{}:-]+){2,}"),
+)
 
 
 class KragEnricher:
@@ -40,7 +49,10 @@ class KragEnricher:
             ]
             enriched = self._enrich_batch(items)
             for j, enrichment in enumerate(enriched):
-                batch[j]["keywords"] = enrichment.get("keywords", [])
+                batch[j]["keywords"] = _merge_keywords(
+                    enrichment.get("keywords", []),
+                    _deterministic_keywords(items[j]),
+                )
                 batch[j]["entities"] = enrichment.get("entities", [])
                 temporal = enrichment.get("temporal")
                 if temporal and isinstance(temporal, dict):
@@ -61,7 +73,10 @@ class KragEnricher:
             ]
             enriched = self._enrich_batch(items)
             for j, enrichment in enumerate(enriched):
-                batch[j]["keywords"] = enrichment.get("keywords", [])
+                batch[j]["keywords"] = _merge_keywords(
+                    enrichment.get("keywords", []),
+                    _deterministic_keywords(items[j]),
+                )
                 batch[j]["entities"] = enrichment.get("entities", [])
                 temporal = enrichment.get("temporal")
                 if temporal and isinstance(temporal, dict):
@@ -112,3 +127,36 @@ class KragEnricher:
             "enrichment model returned invalid JSON; expected a JSON array "
             f"with {expected_count} item(s)"
         )
+
+
+def _deterministic_keywords(item: dict[str, str]) -> list[str]:
+    """Extract exact identifiers that should never depend on model recall."""
+    text = f"{item.get('name', '')}\n{item.get('content', '')}"
+    keywords: list[str] = []
+    seen: set[str] = set()
+    for pattern in _IDENTIFIER_PATTERNS:
+        for match in pattern.finditer(text):
+            value = match.group(0).strip(".,;:()[]{}")
+            if value and value not in seen:
+                seen.add(value)
+                keywords.append(value)
+    return keywords
+
+
+def _merge_keywords(model_keywords: Any, deterministic: list[str]) -> list[str]:
+    """Merge model and deterministic keywords while preserving first occurrence."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    if isinstance(model_keywords, list):
+        for keyword in model_keywords:
+            if not isinstance(keyword, str):
+                continue
+            value = keyword.strip()
+            if value and value not in seen:
+                seen.add(value)
+                merged.append(value)
+    for keyword in deterministic:
+        if keyword not in seen:
+            seen.add(keyword)
+            merged.append(keyword)
+    return merged

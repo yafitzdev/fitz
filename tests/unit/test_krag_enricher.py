@@ -138,6 +138,23 @@ class TestEnrichSections:
         assert sections[1]["keywords"] == ["setup", "config"]
         assert sections[1]["entities"] == []
 
+    def test_preserves_exact_identifiers_when_model_misses_them(self):
+        """Ticket-like IDs are added deterministically even if the model omits them."""
+        enrichments = [{"keywords": ["timeout"], "entities": []}]
+        chat = _make_chat(response=_make_enrichment_response(enrichments))
+        enricher = KragEnricher(chat, batch_size=15)
+        sections = [
+            {
+                "title": "Sprint 47 Incident Notes",
+                "content": "Sprint 47 failed because test case TC-4812 timed out.",
+                "summary": None,
+            }
+        ]
+
+        enricher.enrich_sections(sections)
+
+        assert sections[0]["keywords"] == ["timeout", "TC-4812"]
+
 
 # ---------------------------------------------------------------------------
 # TestBatchProcessing
