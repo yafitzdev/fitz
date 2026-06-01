@@ -2,11 +2,11 @@
 """
 Unit tests for first-run auto-configuration.
 
-The new behavior probes common ports for an OpenAI-compatible server
-(/v1/models), then falls back to OpenAI cloud if OPENAI_API_KEY is
-set. There is no Ollama-specific path — Ollama users speak /v1/
-just like everyone else. fitz-sage uses no embeddings, so the
-generated config only writes a chat model.
+The behavior probes common ports for an OpenAI-compatible server
+(/v1/models), falls back to OpenAI cloud if OPENAI_API_KEY is set,
+and otherwise writes a retrieval-only config. There is no
+Ollama-specific path — Ollama users speak /v1/ just like everyone
+else. fitz-sage uses no embeddings.
 """
 
 from __future__ import annotations
@@ -123,8 +123,8 @@ class TestRunFirstrunSetup:
         config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
         assert "openai/gpt-4o" in config
 
-    def test_no_provider_aborts(self, tmp_path, monkeypatch) -> None:
-        """No endpoint, no key -> setup fails with instructions."""
+    def test_no_provider_writes_retrieval_only_config(self, tmp_path, monkeypatch) -> None:
+        """No endpoint, no key -> retrieval-only config."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         with (
             patch("fitz_sage.core.firstrun.detect_endpoint", return_value=None),
@@ -135,11 +135,14 @@ class TestRunFirstrunSetup:
         ):
             ok = run_firstrun_setup()
 
-        assert ok is False
-        assert not (tmp_path / "config.yaml").exists()
+        assert ok is True
+        config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+        assert "collection: default" in config
+        assert "synthesizer: null" in config
+        assert "query_intelligence: null" in config
 
-    def test_endpoint_with_no_chat_models_aborts(self, tmp_path) -> None:
-        """A reachable server with no models is a configuration error."""
+    def test_endpoint_with_no_chat_models_writes_retrieval_only_config(self, tmp_path) -> None:
+        """A reachable server with no models still permits retrieval."""
         endpoint = DetectedEndpoint(
             base_url="http://localhost:8080/v1",
             chat_models=[],
@@ -153,5 +156,6 @@ class TestRunFirstrunSetup:
         ):
             ok = run_firstrun_setup()
 
-        assert ok is False
-        assert not (tmp_path / "config.yaml").exists()
+        assert ok is True
+        config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+        assert "synthesizer: null" in config

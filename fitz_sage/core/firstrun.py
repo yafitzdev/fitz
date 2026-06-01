@@ -2,8 +2,9 @@
 """
 First-run experience for fitz-sage.
 
-Auto-detects an OpenAI-compatible LLM endpoint and writes
-``.fitz/config.yaml`` so the CLI can answer queries on first invocation.
+Writes ``.fitz/config.yaml`` so retrieval works on first invocation. If an
+OpenAI-compatible LLM endpoint is available, optional synthesis providers are
+configured too.
 
 Detection order:
 
@@ -13,12 +14,11 @@ Detection order:
    Recommended setup is llama.cpp's ``llama-server`` on port 8080.
 2. **OpenAI cloud** — falls back to ``openai/gpt-4o-mini`` if
    ``OPENAI_API_KEY`` is set.
-3. **No provider** — prints actionable setup instructions and aborts.
+3. **No provider** — writes a retrieval-only config with synthesis disabled.
 
 There is no Ollama-specific code path; Ollama users run it in
 ``/v1/`` mode and it's just another OpenAI-compatible server on
-port 11434. fitz-sage uses no embeddings — chat is the only model
-written to the generated config.
+port 11434. fitz-sage uses no embeddings; chat providers are optional.
 """
 
 from __future__ import annotations
@@ -139,6 +139,32 @@ def write_config(
     return config_path
 
 
+def write_retrieval_config() -> Path:
+    """Write a default retrieval-only config with optional LLM stages disabled."""
+    config_path = FitzPaths.config()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines: list[str] = [
+        "# Fitz Configuration",
+        "# Docs: https://github.com/yafitzdev/fitz-sage/blob/main/docs/CONFIG.md",
+        "",
+        "# Retrieval-first default: no chat endpoint or API key required.",
+        "collection: default",
+        "parser: cpu",
+        "rerank: onnx",
+        "governance: pyrrho",
+        "",
+        "# Optional LLM stages stay disabled until a provider is configured.",
+        "query_intelligence: null",
+        "synthesizer: null",
+        "enricher: null",
+        "summarizer: null",
+        "",
+    ]
+    config_path.write_text("\n".join(lines), encoding="utf-8")
+    return config_path
+
+
 def _pick_chat_model(endpoint: DetectedEndpoint) -> str | None:
     """Choose a single chat model id from the listing.
 
@@ -156,11 +182,14 @@ def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
 
     chat_model = _pick_chat_model(endpoint)
     if chat_model is None:
+        config_path = write_retrieval_config()
         print(
-            f"\n  Detected an OpenAI-compatible server at {endpoint.base_url} but "
-            f"it lists no models. Load a chat model and run fitz again.\n"
+            f"\n  Detected an OpenAI-compatible server at {endpoint.base_url}, "
+            f"but it lists no chat models."
         )
-        return False
+        print("  Wrote retrieval-only config; synthesis is disabled.")
+        print(f"\n  Config: {config_path}\n")
+        return True
 
     chat_spec = f"endpoint/{chat_model}"
     write_config(
@@ -193,20 +222,14 @@ def _configure_from_openai_key() -> bool:
     return True
 
 
-def _print_setup_instructions() -> None:
-    """Print actionable setup instructions when no provider is reachable."""
-    print("\n  No LLM provider found. Pick one of these:\n")
-    print("  Option 1 — local llama.cpp (recommended):")
-    print("    1. Install llama.cpp (https://github.com/ggerganov/llama.cpp)")
-    print("    2. Download a chat model (.gguf) and start the server:")
-    print("       llama-server -m chat-model.gguf --port 8080")
-    print("    3. Re-run `fitz query ...`\n")
-    print("  Option 2 — OpenAI cloud:")
-    print("    export OPENAI_API_KEY=sk-...")
-    print("    Re-run `fitz query ...`\n")
-    print("  Option 3 — any OpenAI-compatible cloud (Together, Groq, …):")
-    print('    fitz query "..." --endpoint https://api.together.xyz/v1 \\')
-    print("        --model meta-llama-3.1-70b --api-key-env TOGETHER_API_KEY\n")
+def _configure_retrieval_only() -> bool:
+    """Write retrieval-only config when no chat provider is available."""
+    config_path = write_retrieval_config()
+    print("\n  No LLM provider found.")
+    print("  Wrote retrieval-only config; use `fitz retrieve ...` for evidence.")
+    print("  To synthesize answers later, configure `synthesizer:` or pass --endpoint/--model.")
+    print(f"\n  Config: {config_path}\n")
+    return True
 
 
 def run_firstrun_setup() -> bool:
@@ -225,6 +248,5 @@ def run_firstrun_setup() -> bool:
     if os.getenv("OPENAI_API_KEY"):
         return _configure_from_openai_key()
 
-    # 3. Nothing reachable — print actionable instructions.
-    _print_setup_instructions()
-    return False
+    # 3. Nothing reachable — retrieval still works without a chat provider.
+    return _configure_retrieval_only()

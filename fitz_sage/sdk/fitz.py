@@ -201,4 +201,4 @@ class fitz:
         from fitz_sage.core.firstrun import run_firstrun_setup
 
         if not run_firstrun_setup():
-            raise ConfigurationError(f"No LLM provider available. Config: {self.config_path}")
+            raise ConfigurationError(f"Could not initialize config: {self.config_path}")
