@@ -78,6 +78,8 @@ jobs:
           python -m pip install --upgrade pip
           # Minimal deps for unit tests (skip heavy ML deps like docling/torch).
           pip install pydantic pyyaml httpx typing-extensions typer jinja2
+          # Lightweight document parser deps from the base install.
+          pip install pypdfium2 python-docx python-pptx
           pip install pytest pytest-cov pytest-xdist psutil
           # Scientific computing (semantic matching helpers in unit tests).
           pip install numpy
@@ -149,6 +151,7 @@ jobs:
         run: |
           # Minimal deps for unit tests (skip heavy ML deps).
           pip install pydantic pyyaml httpx typing-extensions typer jinja2
+          pip install pypdfium2 python-docx python-pptx
           pip install pytest pytest-cov pytest-xdist psutil
           pip install numpy
           pip install cryptography
