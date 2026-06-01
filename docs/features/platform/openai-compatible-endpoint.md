@@ -1,22 +1,21 @@
 <!-- docs/features/platform/openai-compatible-endpoint.md -->
 # OpenAI-Compatible Endpoint Architecture
 
-**Status:** the canonical chat-protocol path. As of **v0.12.0** this is
-the *only* chat path — embeddings, per-provider SDKs, and the
-`retrieval_mode` toggle are gone.
+**Status:** the optional endpoint/cloud chat path. Required enrichment uses the
+managed `onnx/qwen3.5-0.8b` provider; endpoint chat is for optional synthesis,
+query intelligence, and vision.
 
 ## TL;DR
 
-There is **one** chat implementation in fitz-sage: `OpenAICompatChat`
-in `fitz_sage/llm/providers/openai_compat.py`. It speaks the OpenAI
-HTTP protocol against any compliant server.
+There is one HTTP chat implementation in fitz-sage: `OpenAICompatChat` in
+`fitz_sage/llm/providers/openai_compat.py`. It speaks the OpenAI HTTP protocol
+against any compliant server.
 
-Provider names are *configuration presets* on top of that one
-implementation — not separate code paths:
+Provider names are configuration presets on top of that implementation:
 
 | Spec                          | base_url                          | Auth                       | Use case                                            |
 |-------------------------------|-----------------------------------|----------------------------|-----------------------------------------------------|
-| `endpoint` / `endpoint/<m>`   | required (user-supplied)          | `NoAuth` or `ApiKeyAuth`   | local llama.cpp / vLLM / LM Studio / any cloud      |
+| `endpoint` / `endpoint/<m>`   | required (user-supplied)          | `NoAuth` or `ApiKeyAuth`   | local endpoint / vLLM / LM Studio / any cloud       |
 | `openai` / `openai/<m>`       | `https://api.openai.com/v1`       | `OPENAI_API_KEY`           | OpenAI public API                                   |
 | `azure_openai/<deployment>`   | required (tenant-specific)        | `AZURE_OPENAI_API_KEY`     | Azure OpenAI                                        |
 | `enterprise/<provider>/<m>`   | required                          | OAuth2 + downstream key    | Internal corporate gateway                          |
@@ -34,11 +33,10 @@ choices on every user:
 2. Locally, swap models mid-query (Ollama unloads/reloads between chat
    and embedding) or run two SDK clients side by side.
 
-Both were friction. The single-protocol architecture removes them by
+Both were friction. The endpoint architecture removes them by
 speaking the OpenAI HTTP protocol — which virtually every modern
 serving stack already exposes:
 
-- `llama-server` (llama.cpp) — recommended local
 - vLLM, LM Studio, TabbyAPI, Aphrodite, text-generation-webui
 - Ollama (`/v1/` mode at `:11434/v1`)
 - OpenAI, Together, Fireworks, Groq, DeepInfra, OpenRouter, Mistral La Plateforme
@@ -77,18 +75,9 @@ fitz_krag:
   collection: default
 ```
 
-Use role-specific provider fields (`query_intelligence`, `enricher`,
-`summarizer`, `synthesizer`) to mix local and cloud models.
-
-## Recommended local setup (llama.cpp)
-
-```bash
-# Chat server on port 8080
-llama-server -m qwen2.5-7b-instruct-q4_k_m.gguf --port 8080 -c 8192
-```
-
-That's it. No second server for embeddings — embeddings are gone in
-v0.12.0. One process, one model, hot the whole time.
+Use role-specific provider fields (`query_intelligence`, `vision`, and
+`synthesizer`) to mix local and cloud models. Required `enricher:` and
+`summarizer:` default to managed ONNX and do not need an endpoint.
 
 ## Cloud quick reference
 

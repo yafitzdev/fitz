@@ -228,7 +228,7 @@ summarize and enrich steps add LLM-generated metadata.
 
 `KragEnricher` extracts **keywords + entities + temporal metadata** in a
 single LLM call per batch of ~15 symbols or sections. This makes enrichment
-cheap and local with `qwen3.5-0.8b@Q4_K_M`.
+cheap and local with the managed `onnx/qwen3.5-0.8b` provider.
 
 **What it extracts:**
 - **Keywords** - Exact-match identifiers (TC-1001, JIRA-123, `AuthService`)
@@ -351,8 +351,8 @@ from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
 cfg = FitzKragConfig(
     synthesizer="endpoint/qwen2.5-7b-instruct",
     chat_base_url="http://localhost:8080/v1",
-    enricher="endpoint/qwen3.5-0.8b@Q4_K_M",
-    summarizer="endpoint/qwen3.5-0.8b@Q4_K_M",
+    enricher="onnx/qwen3.5-0.8b",
+    summarizer="onnx/qwen3.5-0.8b",
     collection="my_collection",
 )
 engine = FitzKragEngine(cfg)

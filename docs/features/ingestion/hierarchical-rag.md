@@ -93,12 +93,12 @@ The feature is built into the KRAG ingestion pipeline and uses the required
 summarizer provider:
 
 ```yaml
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
-chat_base_url: http://localhost:8080/v1
+summarizer: onnx/qwen3.5-0.8b
+enricher: onnx/qwen3.5-0.8b
 ```
 
 `summarizer:` and `enricher:` are both required for document ingestion. If
-either provider is missing or offline, ingestion fails closed before the
+either provider is missing or cannot load, ingestion fails closed before the
 collection is treated as ready.
 
 ## Files

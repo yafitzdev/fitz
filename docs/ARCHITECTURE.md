@@ -5,10 +5,10 @@ High-level system design of fitz-sage **v0.14.1+**.
 
 The architecture has three load-bearing decisions:
 
-1. **One protocol.** OpenAI-compatible HTTP. No SDK dependencies, no
-   provider-specific code paths. Role providers such as `query_intelligence`,
-   `synthesizer`, `enricher`, and `summarizer` all speak the same
-   `/chat/completions` endpoint. Enrichment roles are required by ingestion.
+1. **Managed enrichment, optional endpoints.** Required enrichment runs through
+   the in-process `onnx/qwen3.5-0.8b` provider on CPU. Optional synthesis,
+   query intelligence, and vision use OpenAI-compatible HTTP endpoints or
+   cloud/enterprise presets.
 2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
    typed-unit routing (symbols, sections, tables) + an ONNX cross-encoder
    reranker that scores candidates in a single local forward pass — no
@@ -50,18 +50,18 @@ The architecture has three load-bearing decisions:
           ┌─────────────────────────┼─────────────────────────┐
           ▼                         ▼                         ▼
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────────┐
-│  LLM (chat only)    │  │  Storage (SQLite)   │  │  Ingestion Pipeline     │
+│  LLM / ONNX         │  │  Storage (SQLite)   │  │  Ingestion Pipeline     │
 ├─────────────────────┤  ├─────────────────────┤  ├─────────────────────────┤
-│  endpoint provider  │  │  WAL + FTS5         │  │  Parse (Docling / OCR)  │
-│  (any OpenAI-       │  │  one .db per        │  │  Chunk (semantic +      │
-│  compatible URL)    │  │  collection         │  │   structured)           │
-│  + enterprise auth  │  │  bm25() ranking     │  │  Required enrich        │
-│  (M2M, mTLS, CA)    │  │  json_each, json1   │  │   keywords, entities)   │
+│  onnx/qwen3.5-0.8b  │  │  WAL + FTS5         │  │  Parse (Docling / OCR)  │
+│  for enrichment     │  │  one .db per        │  │  Chunk (semantic +      │
+│  endpoint/cloud     │  │  collection         │  │   structured)           │
+│  for optional chat  │  │  bm25() ranking     │  │  Required enrich        │
+│  + enterprise auth  │  │  json_each, json1   │  │   keywords, entities)   │
 └─────────────────────┘  └─────────────────────┘  └─────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  External: llama.cpp · vLLM · Ollama · LM Studio · OpenAI · Together · ...  │
+│  External optional endpoints: vLLM · Ollama · LM Studio · OpenAI · ...     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -120,11 +120,12 @@ Files → Parse (Docling for PDF/DOCX, GLM-OCR for scans, tree-sitter
 
 ## Chat Provider Model
 
-The LLM layer has exactly one canonical provider — **`endpoint`** — that
-speaks OpenAI-compatible HTTP. Everything else is sugar over it:
+The LLM layer has one managed local enrichment provider — **`onnx`** — and one
+canonical optional endpoint provider — **`endpoint`**:
 
 | Spec                                   | Resolves to                                              |
 | -------------------------------------- | -------------------------------------------------------- |
+| `onnx/qwen3.5-0.8b`                    | managed Qwen3.5 0.8B ONNX generation on CPU             |
 | `endpoint/<URL>/<model>` or YAML triple | `chat_base_url` + `model` + optional `chat_api_key_env` |
 | `openai/<model>`                       | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |
@@ -183,9 +184,9 @@ providers are present by default and are required for ingestion:
 # ENABLED — a provider is named
 rerank: onnx
 governance: pyrrho
-synthesizer: endpoint/qwen3.5-0.8b@Q4_K_M
-enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+synthesizer: endpoint/qwen2.5-7b-instruct
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 chat_base_url: http://localhost:8080/v1
 
 # DISABLED — omit the key (or set null)
@@ -242,8 +243,8 @@ governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
-enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 ```
 
 Override per-invocation:
@@ -269,8 +270,8 @@ fitz_sage/
 │   ├── entity_graph/    # Entity-based linking
 │   ├── vocabulary/      # Keyword storage + matching
 │   └── rewriter/        # LLM-based query rewriting
-├── llm/                 # Chat layer (single OpenAI-compatible protocol)
-│   ├── providers/       # endpoint, enterprise, onnx_reranker
+├── llm/                 # Managed ONNX enrichment + optional chat endpoints
+│   ├── providers/       # onnx_chat, endpoint, enterprise, onnx_reranker
 │   ├── auth/            # ApiKeyAuth, M2MAuth, CompositeAuth
 │   ├── config.py        # provider-spec → instance factory
 │   └── client.py        # get_chat, ...
@@ -289,7 +290,8 @@ fitz_sage/
 ## Design Principles
 
 1. **Explicit over clever.** No magic. Read the config; know what happens.
-2. **One protocol.** Every chat call goes through `endpoint` (or its presets).
+2. **Managed enrichment.** Required metadata generation uses local Qwen ONNX;
+   optional chat calls go through `endpoint` or its presets.
 3. **Structure-first retrieval.** Parse code/docs into typed units at
    ingest; route to the right strategy at query time.
 4. **No embeddings.** BM25 + KRAG routing + ONNX rerank covers the
@@ -297,8 +299,8 @@ fitz_sage/
 5. **Honest over helpful.** Say `ABSTAIN` instead of hallucinating.
 6. **Files over frameworks.** Plugins are Python modules wired by config,
    not framework abstractions.
-7. **Local-first.** llama.cpp / Ollama / LM Studio on localhost gives
-   you everything offline.
+7. **Local-first.** SQLite + ONNX enrichment works offline after the model is
+   cached; endpoint servers are optional.
 8. **Provenance always.** Every answer traces back to source addresses.
 
 ---

@@ -1,8 +1,7 @@
 <!-- docs/CONFIG_EXAMPLES.md -->
 # Configuration Examples
 
-Working configs for the v0.12.0+ single-protocol / SQLite world. The
-schema rules:
+Working configs for the managed-ONNX / SQLite world. The schema rules:
 
 - **String specs** instead of nested dicts (`synthesizer: endpoint/gpt-4o`,
   not a provider block).
@@ -25,26 +24,21 @@ governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
-enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 ```
 
-No hosted API key is needed. Start a local OpenAI-compatible server before the
-first source-backed retrieval:
-
-```bash
-llama-server -hf bartowski/Qwen_Qwen3.5-0.8B-GGUF:Q4_K_M \
-  --alias qwen3.5-0.8b@Q4_K_M \
-  --host 127.0.0.1 --port 8080
-```
+No hosted API key or external inference server is needed. On first ingestion,
+fitz-sage downloads the managed Qwen3.5 0.8B ONNX weights into the Hugging Face
+cache and runs them locally on CPU.
 
 ---
 
-## Optional synthesis: local llama.cpp / LM Studio
+## Optional synthesis: local OpenAI-compatible endpoint
 
 ```yaml
 collection: my_docs
-synthesizer: endpoint/qwen3.5-0.8b@Q4_K_M
+synthesizer: endpoint/qwen2.5-7b-instruct
 chat_base_url: http://localhost:8080/v1
 max_answer_tokens: 512
 short_answer_tokens: 192
@@ -112,11 +106,10 @@ model for optional synthesis:
 ```yaml
 collection: my_docs
 chat_base_url: http://localhost:8080/v1
-chat_api_key_env: OPENAI_API_KEY
 
-query_intelligence: endpoint/qwen3.5-0.8b@Q4_K_M
-enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+query_intelligence: endpoint/qwen2.5-7b-instruct
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 synthesizer: openai/gpt-4o
 ```
 
@@ -158,15 +151,14 @@ to skip the VLM and avoid the cost.
 
 ```yaml
 collection: my_docs
-chat_base_url: http://127.0.0.1:8080/v1
-enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 summary_batch_size: 15
 ```
 
-Use the Q4_K_M quantized small model for CPU-local enrichment. Ingestion fails
-closed if this provider is omitted or offline, so the collection is not treated
-as ready with missing metadata.
+Use the managed ONNX Q4 small model for CPU-local enrichment. Ingestion fails
+closed if this provider is omitted or cannot load, so the collection is not
+treated as ready with missing metadata.
 
 ---
 
@@ -227,9 +219,8 @@ cfg = FitzKragConfig(
     collection="my_docs",
     synthesizer=None,
     query_intelligence=None,
-    chat_base_url="http://127.0.0.1:8080/v1",
-    enricher="endpoint/qwen3.5-0.8b@Q4_K_M",
-    summarizer="endpoint/qwen3.5-0.8b@Q4_K_M",
+    enricher="onnx/qwen3.5-0.8b",
+    summarizer="onnx/qwen3.5-0.8b",
 )
 engine = FitzKragEngine(cfg)
 pack = engine.evidence(Query(text="What is quantum computing?"))
@@ -238,7 +229,7 @@ print(pack.mode, [item.file_path for item in pack.items])
 
 Only `collection` is strictly required by the schema because the local
 enrichment profile is the default. If you override it, keep enrichment and
-summarization bound to `qwen3.5-0.8b@Q4_K_M`.
+summarization bound to `onnx/qwen3.5-0.8b`.
 
 ---
 

@@ -14,11 +14,6 @@ fitz <command> --help
 ## Quick Start
 
 ```bash
-# Start the required local enrichment runtime once before source-backed retrieval
-llama-server -hf bartowski/Qwen_Qwen3.5-0.8B-GGUF:Q4_K_M \
-  --alias qwen3.5-0.8b@Q4_K_M \
-  --host 127.0.0.1 --port 8080
-
 # One-shot: register docs + retrieve governed evidence
 fitz retrieve "What is X?" --source ./docs
 
@@ -82,7 +77,7 @@ fitz answer "Your question" --source ./docs \
 
 fitz answer "Your question" --source ./docs \
   --endpoint http://localhost:8080/v1 \
-  --synthesizer endpoint/qwen3.5-0.8b@Q4_K_M
+  --synthesizer endpoint/qwen2.5-7b-instruct
 
 fitz answer "Your question" -c my_collection \
   --synthesizer openai/gpt-4o
@@ -108,7 +103,7 @@ explicit synthesis.
 
 ```bash
 fitz query "Your question" --synthesizer openai/gpt-4o
-fitz query "Your question" --endpoint http://localhost:8080/v1 --synthesizer endpoint/qwen3.5-0.8b@Q4_K_M
+fitz query "Your question" --endpoint http://localhost:8080/v1 --synthesizer endpoint/qwen2.5-7b-instruct
 fitz query --chat -c my_collection
 ```
 
@@ -168,8 +163,8 @@ governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
-enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 ```
 
 This file is auto-created on first run. See [CONFIG.md](CONFIG.md) for
@@ -191,8 +186,7 @@ export OPENAI_API_KEY="..."
 # Together / Groq / Mistral
 export TOGETHER_API_KEY="..."
 
-# Local servers (no key)
-# llama-server --port 8080
+# Optional local endpoint servers (no key)
 # ollama serve
 # LM Studio (Settings → Developer → Local Server)
 ```
@@ -209,7 +203,7 @@ storage.
 ### Local-first setup
 
 ```bash
-# Ingest + retrieve governed evidence with the required local Qwen server running
+# Ingest + retrieve governed evidence with managed ONNX enrichment
 fitz retrieve "What's in my docs?" --source ./docs
 ```
 

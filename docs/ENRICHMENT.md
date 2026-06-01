@@ -50,9 +50,10 @@ pipeline — no separate orchestrator, and no foreground query dependency.
 - **Hierarchy** — L1 (per-file) and L2 (corpus) summaries for analytical queries
 
 Keyword/entity/temporal extraction uses `enricher:`. L1/L2 hierarchy summaries
-use `summarizer:`. The default profile is `qwen3.5-0.8b@Q4_K_M` behind a local
-OpenAI-compatible endpoint. If either provider is missing or unreachable,
-ingestion fails closed instead of silently storing an under-enriched index.
+use `summarizer:`. The default profile is `onnx/qwen3.5-0.8b`, managed
+in-process by fitz-sage with raw ONNX Runtime on CPU. If either provider is
+missing or cannot load, ingestion fails closed instead of silently storing an
+under-enriched index.
 
 ---
 
@@ -164,31 +165,23 @@ No special query syntax needed — the L2 summary is an ordinary retrievable sec
 
 ## CLI Usage
 
-Source-backed retrieval waits for required indexing before retrieving evidence:
+Source-backed retrieval waits for required indexing and enrichment before
+retrieving evidence:
 
 ```bash
 fitz retrieve "your question" --source ./docs
 ```
 
-The default local enrichment runtime is llama.cpp's `llama-server`:
-
-```bash
-llama-server -hf bartowski/Qwen_Qwen3.5-0.8B-GGUF:Q4_K_M \
-  --alias qwen3.5-0.8b@Q4_K_M \
-  --host 127.0.0.1 --port 8080
-```
-
 Config:
 
 ```yaml
-enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
-chat_base_url: http://127.0.0.1:8080/v1
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 ```
 
-If no inference engine is running, first-run setup writes this config and shows
-the `llama-server` command. A source-backed retrieval then stops at indexing
-with an actionable error until the local runtime is started.
+First-run setup writes this config. The first ingest downloads the managed
+Qwen3.5 0.8B ONNX weights into the Hugging Face cache and then runs enrichment
+locally.
 
 ---
 
@@ -211,6 +204,7 @@ extracts keywords + entities + temporal for ~15 symbols/sections per LLM call.
 
 | Model | Per Batch | Per Unit | 1000 Units |
 |-------|-----------|----------|------------|
+| Managed Qwen3.5 0.8B ONNX | $0 | $0 | **$0** |
 | Claude 3.5 Haiku | $0.011 | $0.0007 | **$0.74** |
 | GPT-4o-mini | $0.002 | $0.0001 | **$0.13** |
 
@@ -231,9 +225,8 @@ Provider specs bind the required enrichment stages:
 Small CPU-local profile:
 
 ```yaml
-chat_base_url: http://127.0.0.1:8080/v1
-enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 summary_batch_size: 15
 ```
 

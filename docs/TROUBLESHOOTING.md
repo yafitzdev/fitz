@@ -1,8 +1,9 @@
 <!-- docs/TROUBLESHOOTING.md -->
 # Troubleshooting Guide
 
-Common issues and solutions for fitz-sage **v0.14.1+** (single OpenAI-compatible
-HTTP protocol, SQLite + FTS5 storage, no embeddings, no vector DB).
+Common issues and solutions for fitz-sage **v0.14.1+** (managed ONNX
+enrichment, optional OpenAI-compatible HTTP endpoints, SQLite + FTS5 storage,
+no embeddings, no vector DB).
 
 ---
 
@@ -51,12 +52,11 @@ LLMError: Cannot connect to http://localhost:8080/v1
 **Solution:**
 
 1. Confirm an OpenAI-compatible server is running and reachable at the
-   configured `chat_base_url`. Common local options:
+   configured `chat_base_url`. This applies only when you configured an
+   endpoint-backed role such as `synthesizer:` or `query_intelligence:`.
+   Common local options:
 
    ```bash
-   # llama.cpp
-   llama-server -m model.gguf --port 8080
-
    # vLLM
    python -m vllm.entrypoints.openai.api_server --model my-model --port 8080
 

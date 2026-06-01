@@ -64,8 +64,9 @@ A: "I don't have enough information
 ### Where to start 🚀
 
 > [!IMPORTANT]
-> Retrieval works with **no API key and no chat model**. Synthesis is optional through any OpenAI-compatible endpoint — local
-> ([llama.cpp](https://github.com/ggerganov/llama.cpp), [vLLM](https://github.com/vllm-project/vllm), LM Studio, Ollama)
+> Retrieval works with **no API key and no external inference server**. Required enrichment runs through managed
+> Qwen3.5 0.8B ONNX on CPU. Synthesis is optional through any OpenAI-compatible endpoint — local
+> ([vLLM](https://github.com/vllm-project/vllm), LM Studio, Ollama)
 > or cloud (OpenAI, Together, Groq, Fireworks, OpenRouter, …).
 
 ```bash
@@ -220,7 +221,7 @@ SQL, and epistemic honesty out of the box — without configuration.
 > schema and runs real SQL. Ask "What's the average price by region?" and get an actual computed answer, not fragmented rows.
 
 **Fully local execution possible 🏠** → [OpenAI-Compatible Endpoint](docs/features/platform/openai-compatible-endpoint.md)
-> Embedded SQLite + any local OpenAI-compatible server (llama.cpp, vLLM, LM Studio, Ollama). One protocol, one URL, no API keys required to start.
+> Embedded SQLite + managed ONNX enrichment. Optional synthesis can use any local OpenAI-compatible server (vLLM, LM Studio, Ollama) with no API key.
 
 ####
 
@@ -422,7 +423,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 
 <br>
 
-#### Fully Local (llama.cpp recommended)
+#### Fully Local (Managed ONNX)
 >
 >```bash
 >pip install fitz-sage
@@ -430,7 +431,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >fitz retrieve "Your question here" --source ./docs
 >```
 >
->Reranking and governance run as local INT8 ONNX encoders on CPU — no separate embedding server, no second API key.
+>Reranking, governance, and required enrichment run as local ONNX models on CPU — no separate embedding server, no second API key.
 >No data leaves your machine.
 >
 >Other compatible servers: [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.ai) 
@@ -677,8 +678,7 @@ curl -X POST http://localhost:8000/query \
 > `pip install fitz-sage[docs]`
 
 **"Connection refused at localhost:8080" error**
-> This only applies to optional synthesis or enrichment. Use `fitz retrieve "..."` for evidence without a server, or start one
-> with llama.cpp: `llama-server -m model.gguf --port 8080 -c 8192`. For a one-off synthesized answer:
+> This only applies to optional endpoint-backed synthesis or query intelligence. Use `fitz retrieve "..."` for evidence without an endpoint server. For a one-off synthesized answer:
 > `fitz answer "..." --synthesizer openai/gpt-4o`.
 
 **"Model not found" error**

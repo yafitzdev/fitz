@@ -19,13 +19,14 @@ governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
-enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 ```
 
 This is enough for `fitz retrieve` and `fitz_sage.evidence(...)` with local
-enrichment: no hosted API key is required, but a local OpenAI-compatible server
-must serve `qwen3.5-0.8b@Q4_K_M` before ingesting a source.
+enrichment: no hosted API key and no external inference server are required.
+On first ingestion, fitz-sage downloads the managed Qwen3.5 0.8B ONNX weights
+into the Hugging Face cache and runs them on CPU.
 
 To enable synthesized answers through a hosted endpoint:
 
@@ -73,11 +74,13 @@ factory directly.
 
 ## Chat provider model
 
-The canonical provider is **`endpoint`** — OpenAI-compatible HTTP.
-Everything else is a preset:
+Required enrichment uses **`onnx/qwen3.5-0.8b`** — an in-process CPU ONNX
+runtime managed by fitz-sage. Optional synthesis, query intelligence, and
+vision can use **`endpoint`** or the cloud/enterprise presets:
 
 | Spec form                       | Resolves to                                              |
 | ------------------------------- | -------------------------------------------------------- |
+| `onnx/qwen3.5-0.8b`             | managed local Qwen3.5 0.8B ONNX runtime                  |
 | `endpoint` + `chat_base_url`    | the canonical form                                       |
 | `openai/<model>`                | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`     | endpoint with Azure deployment URL                       |
@@ -162,7 +165,8 @@ chat_api_key_env: OPENAI_API_KEY
 | Together         | `TOGETHER_API_KEY`   |
 | Groq             | `GROQ_API_KEY`       |
 | Mistral La Plateforme | `MISTRAL_API_KEY` |
-| Local llama.cpp / LM Studio / Ollama | (no key) |
+| Managed ONNX enrichment | (no key) |
+| Local endpoint server / LM Studio / Ollama | (no key) |
 
 For enterprise (M2M / mTLS) deployments see
 [features/platform/enterprise-gateway.md](features/platform/enterprise-gateway.md).
@@ -174,7 +178,7 @@ For enterprise (M2M / mTLS) deployments see
 ```yaml
 top_addresses: 50      # how many candidates to fetch from FTS5 (default 50)
 top_read: 50           # how many to read into context after rerank (default 50)
-retrieval_workers: 4   # max retrieval strategies run concurrently; set to 1 to serialize LLM calls for single-model local servers (LM Studio, llama-server)
+retrieval_workers: 4   # max retrieval strategies run concurrently; set to 1 to serialize LLM calls for single-model endpoint servers
 governance: pyrrho
 strict_grounding: false
 ```
@@ -188,8 +192,7 @@ baseline.
 ## Synthesis Knobs
 
 ```yaml
-synthesizer: endpoint/qwen3.5-0.8b@Q4_K_M
-chat_base_url: http://localhost:8080/v1
+synthesizer: openai/gpt-4o
 max_answer_tokens: 512       # general answer cap
 short_answer_tokens: 192     # factual-question cap
 strict_grounding: true

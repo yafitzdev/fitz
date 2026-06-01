@@ -2,9 +2,10 @@
 # Plugin Development Guide
 
 fitz-sage **v0.14.1+** has a much smaller plugin surface than earlier
-versions: chat is mono-protocol (one OpenAI-compatible provider with
-sugar presets), embedding/vector-db are gone, and the remaining plugin
-types are Python modules wired by config.
+versions: required enrichment is managed by the built-in ONNX provider,
+endpoint/cloud chat uses one OpenAI-compatible provider with sugar presets,
+embedding/vector-db are gone, and the remaining plugin types are Python modules
+wired by config.
 
 This guide covers what's pluggable and how to add a new one.
 
@@ -50,12 +51,13 @@ Governance is selected by the engine config's `governance:` field
 
 ## Chat Provider Model
 
-The LLM layer has exactly one canonical provider — **`endpoint`** —
-that speaks OpenAI-compatible `/chat/completions`. The other names are
-URL+auth presets over it:
+The LLM layer has a managed **`onnx`** provider for required enrichment and a
+canonical **`endpoint`** provider for optional OpenAI-compatible chat. The other
+names are URL+auth presets over `endpoint`:
 
 | Spec form                              | Resolves to                                              |
 | -------------------------------------- | -------------------------------------------------------- |
+| `onnx/qwen3.5-0.8b`                    | managed local Qwen3.5 0.8B ONNX runtime                  |
 | `endpoint` + `chat_base_url`           | the canonical form                                       |
 | `openai/<model>`                       | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |
@@ -70,6 +72,7 @@ OpenAI-compatible endpoint instead — e.g. Ollama exposes one at
 
 | Provider     | Purpose                                                    |
 | ------------ | ---------------------------------------------------------- |
+| `onnx`       | Managed local Qwen3.5 0.8B chat for enrichment/summaries   |
 | `endpoint`   | Canonical OpenAI-compatible chat (any URL)                 |
 | `enterprise` | Same protocol + enterprise auth (M2M OAuth2, mTLS, CA bundle) |
 | `onnx_reranker` | Internal — INT8 ONNX cross-encoder (gte-reranker-modernbert-base) |
@@ -82,8 +85,8 @@ advanced integrations that request a tiered chat factory directly:
 
 ```yaml
 query_intelligence: endpoint/qwen2.5-3b-instruct
-enricher: endpoint/qwen2.5-3b-instruct
-summarizer: endpoint/qwen2.5-7b-instruct
+enricher: onnx/qwen3.5-0.8b
+summarizer: onnx/qwen3.5-0.8b
 synthesizer: endpoint/qwen2.5-32b-instruct
 chat_base_url: http://localhost:8080/v1
 chat_api_key_env: OPENAI_API_KEY    # omit for unauthenticated local servers
@@ -93,7 +96,7 @@ chat_api_key_env: OPENAI_API_KEY    # omit for unauthenticated local servers
 
 | Auth type     | Class            | Use case                                                |
 | ------------- | ---------------- | ------------------------------------------------------- |
-| None          | n/a              | Unauthenticated local server (llama.cpp, Ollama, LM Studio) |
+| None          | n/a              | Managed ONNX or unauthenticated local endpoint server       |
 | API key       | `ApiKeyAuth`     | OpenAI, Together, Groq, Anthropic-via-compat, ...       |
 | M2M OAuth2    | `M2MAuth`        | Enterprise gateways using client-credentials flow       |
 | Composite     | `CompositeAuth`  | Gateway with M2M bearer + downstream LLM API key        |
