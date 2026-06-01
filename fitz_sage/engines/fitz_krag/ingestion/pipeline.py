@@ -117,9 +117,12 @@ class KragIngestPipeline:
         # Enricher
         from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
+        # The managed 0.8B Qwen path is most reliable when each enrichment
+        # response contains one compact JSON object. Summary batching remains
+        # controlled by config.summary_batch_size.
         self._enricher: Any = KragEnricher(
             self._enricher_chat,
-            batch_size=config.summary_batch_size,
+            batch_size=1,
         )
 
         # Code strategies

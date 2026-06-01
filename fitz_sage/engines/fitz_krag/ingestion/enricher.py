@@ -8,6 +8,7 @@ adapted for KRAG's data model (symbol dicts + section dicts instead of Chunks).
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import TYPE_CHECKING, Any
@@ -27,6 +28,10 @@ _IDENTIFIER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b[A-Z][a-z]+(?:[A-Z][A-Za-z0-9]*)+\b"),
     re.compile(r"(?:/[A-Za-z0-9._{}:-]+){2,}"),
 )
+_MIN_ENRICHMENT_TOKENS = 256
+_ENRICHMENT_TOKENS_PER_ITEM = 128
+_MAX_ENRICHMENT_TOKENS = 2048
+_RETRY_ENRICHMENT_TOKENS = 2048
 
 
 class KragEnricher:
@@ -88,32 +93,67 @@ class KragEnricher:
         """Run a single LLM call to extract keywords + entities for a batch."""
         parts = []
         for i, item in enumerate(items):
-            parts.append(f"Item {i + 1}: '{item['name']}'\n{item['content']}")
+            parts.append(
+                f'<item index="{i + 1}">\n'
+                f"name: {item['name']}\n"
+                "content:\n"
+                f"{item['content']}\n"
+                "</item>"
+            )
         prompt = "\n\n".join(parts)
 
         try:
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        f"The user message contains exactly {len(items)} item block(s). "
+                        "Each <item> block is one item, even when its content contains "
+                        "multiple lines, bullets, sentences, or questions.\n"
+                        "Extract keywords, entities, and temporal references from each item.\n"
+                        "Keywords: exact-match identifiers (function names, class names, "
+                        "technical terms, IDs, abbreviations).\n"
+                        "Entities: named entities with types "
+                        '(shape: {"name": "<entity>", "type": "<type>"}).\n'
+                        "Temporal: dates, version numbers, and time references found in the text "
+                        '(shape: {"dates": [], "versions": [], "refs": []}). '
+                        "Use only values found in the item text. Return empty arrays if none found.\n\n"
+                        "Limits per object: at most 8 keywords, at most 6 entities, at most "
+                        "5 temporal values per temporal array. Never repeat a keyword or "
+                        "entity name. If uncertain, omit it.\n\n"
+                        f"Return ONLY a valid JSON array with exactly {len(items)} object(s), "
+                        "one object per <item> block. Do not return markdown fences or prose:\n"
+                        '[{"keywords": ["<exact term>"], '
+                        '"entities": [{"name": "<entity>", "type": "<type>"}], '
+                        '"temporal": {"dates": [], "versions": [], "refs": []}}, ...]'
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ]
             response = self._chat.chat(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Extract keywords, entities, and temporal references from each item.\n"
-                            "Keywords: exact-match identifiers (function names, class names, "
-                            "technical terms, IDs, abbreviations).\n"
-                            "Entities: named entities with types "
-                            '(e.g., {"name": "PostgreSQL", "type": "technology"}).\n'
-                            "Temporal: dates, version numbers, and time references found in the text "
-                            '(e.g., {"dates": ["2024-03"], "versions": ["v2.3"], "refs": ["latest"]}).'
-                            " Return empty object if none found.\n\n"
-                            "Return a JSON array with one object per item:\n"
-                            '[{"keywords": ["kw1"], "entities": [{"name": "X", "type": "T"}], '
-                            '"temporal": {"dates": [], "versions": [], "refs": []}}, ...]'
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ]
+                messages,
+                max_tokens=_enrichment_max_tokens(len(items)),
+                temperature=0,
             )
-            return self._parse_response(response, len(items))
+            try:
+                return self._parse_response(response, len(items))
+            except ValueError:
+                retry_response = self._chat.chat(
+                    [
+                        *messages,
+                        {
+                            "role": "user",
+                            "content": (
+                                "Retry the same enrichment. The previous response was not valid "
+                                f"JSON for exactly {len(items)} item block(s). Return only the "
+                                "JSON array, with no markdown and no extra objects."
+                            ),
+                        },
+                    ],
+                    max_tokens=_RETRY_ENRICHMENT_TOKENS,
+                    temperature=0,
+                )
+                return self._parse_response(retry_response, len(items))
         except Exception as e:
             logger.error(f"Required enrichment batch failed: {e}")
             raise KnowledgeError(f"Required enrichment batch failed: {e}") from e
@@ -121,8 +161,24 @@ class KragEnricher:
     def _parse_response(self, response: str, expected_count: int) -> list[dict[str, Any]]:
         """Parse LLM response into list of enrichment dicts."""
         parsed = parse_llm_json(response, as_array=True)
-        if isinstance(parsed, list) and len(parsed) >= expected_count:
-            return parsed[:expected_count]
+        enrichments = _valid_enrichment_list(parsed, expected_count)
+        if enrichments is not None:
+            return enrichments
+
+        parsed_object = parse_llm_json(response, as_array=False)
+        if expected_count == 1 and _looks_like_enrichment(parsed_object):
+            return [_normalize_enrichment(parsed_object)]
+        if isinstance(parsed_object, dict):
+            for key in ("items", "results", "enrichments", "data"):
+                enrichments = _valid_enrichment_list(parsed_object.get(key), expected_count)
+                if enrichments is not None:
+                    return enrichments
+
+        if expected_count == 1:
+            salvaged = _salvage_single_enrichment(response)
+            if salvaged is not None:
+                return [salvaged]
+
         raise ValueError(
             "enrichment model returned invalid JSON; expected a JSON array "
             f"with {expected_count} item(s)"
@@ -160,3 +216,226 @@ def _merge_keywords(model_keywords: Any, deterministic: list[str]) -> list[str]:
             seen.add(keyword)
             merged.append(keyword)
     return merged
+
+
+def _enrichment_max_tokens(item_count: int) -> int:
+    """Return a bounded generation cap sized for JSON enrichment batches."""
+    return min(
+        _MAX_ENRICHMENT_TOKENS,
+        max(_MIN_ENRICHMENT_TOKENS, item_count * _ENRICHMENT_TOKENS_PER_ITEM),
+    )
+
+
+def _valid_enrichment_list(value: Any, expected_count: int) -> list[dict[str, Any]] | None:
+    """Return the first expected enrichment objects when the JSON list is usable."""
+    if not isinstance(value, list) or len(value) < expected_count:
+        return None
+    enrichments = value[:expected_count]
+    if all(_looks_like_enrichment(item) for item in enrichments):
+        return [_normalize_enrichment(item) for item in enrichments]
+    return None
+
+
+def _looks_like_enrichment(value: Any) -> bool:
+    """Return whether a parsed JSON object has the enrichment shape."""
+    if not isinstance(value, dict):
+        return False
+    return any(key in value for key in ("keywords", "entities", "temporal"))
+
+
+def _normalize_enrichment(value: dict[str, Any]) -> dict[str, Any]:
+    """Normalize model enrichment into bounded keyword/entity/temporal fields."""
+    return {
+        "keywords": _coerce_string_list(value.get("keywords"), limit=8),
+        "entities": _coerce_entities(value.get("entities"), limit=6),
+        "temporal": _coerce_temporal(value.get("temporal")),
+    }
+
+
+def _salvage_single_enrichment(response: str) -> dict[str, Any] | None:
+    """Recover usable single-item enrichment from a truncated JSON prefix."""
+    keywords = _extract_json_value_after_key(response, "keywords", "[", "]")
+    if not isinstance(keywords, list):
+        keywords = _extract_complete_strings_from_array(response, "keywords")
+    entities = _extract_json_value_after_key(response, "entities", "[", "]")
+    if not isinstance(entities, list):
+        entities = _extract_complete_entity_objects(response)
+    temporal = _extract_json_value_after_key(response, "temporal", "{", "}")
+
+    normalized = _normalize_enrichment(
+        {
+            "keywords": keywords,
+            "entities": entities,
+            "temporal": temporal,
+        }
+    )
+    if normalized["keywords"] or normalized["entities"]:
+        return normalized
+    return None
+
+
+def _extract_complete_strings_from_array(text: str, key: str) -> list[str]:
+    """Extract complete JSON strings from a truncated string array."""
+    key_index = text.find(f'"{key}"')
+    if key_index < 0:
+        return []
+    array_start = text.find("[", key_index)
+    if array_start < 0:
+        return []
+
+    values: list[str] = []
+    index = array_start + 1
+    while index < len(text):
+        if text[index] == "]":
+            break
+        if text[index] != '"':
+            index += 1
+            continue
+
+        end = index + 1
+        escaped = False
+        while end < len(text):
+            char = text[end]
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                break
+            end += 1
+        if end >= len(text) or text[end] != '"':
+            break
+        try:
+            value = json.loads(text[index : end + 1])
+        except json.JSONDecodeError:
+            break
+        if isinstance(value, str):
+            values.append(value)
+        index = end + 1
+    return values
+
+
+def _extract_json_value_after_key(
+    text: str,
+    key: str,
+    opener: str,
+    closer: str,
+) -> Any:
+    """Extract a complete JSON value following a top-level response key."""
+    key_index = text.find(f'"{key}"')
+    if key_index < 0:
+        return None
+    colon_index = text.find(":", key_index)
+    start = text.find(opener, colon_index)
+    if colon_index < 0 or start < 0:
+        return None
+    end = _find_balanced_end(text, start, opener, closer)
+    if end is None:
+        return None
+    try:
+        return json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+
+
+def _extract_complete_entity_objects(text: str) -> list[dict[str, Any]]:
+    """Extract complete entity dicts from an otherwise truncated entities array."""
+    key_index = text.find('"entities"')
+    if key_index < 0:
+        return []
+    array_start = text.find("[", key_index)
+    if array_start < 0:
+        return []
+
+    entities: list[dict[str, Any]] = []
+    index = array_start + 1
+    while index < len(text):
+        if text[index] != "{":
+            index += 1
+            continue
+        end = _find_balanced_end(text, index, "{", "}")
+        if end is None:
+            break
+        try:
+            entity = json.loads(text[index : end + 1])
+        except json.JSONDecodeError:
+            break
+        if isinstance(entity, dict):
+            entities.append(entity)
+        index = end + 1
+    return entities
+
+
+def _find_balanced_end(text: str, start: int, opener: str, closer: str) -> int | None:
+    """Return the matching closer index for a JSON array/object prefix."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _coerce_string_list(value: Any, *, limit: int) -> list[str]:
+    """Coerce a model value into a bounded unique string list."""
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        normalized = item.strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            result.append(normalized)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _coerce_entities(value: Any, *, limit: int) -> list[dict[str, str]]:
+    """Coerce model entities into bounded unique name/type dicts."""
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        entity_type = str(item.get("type", "unknown")).strip() or "unknown"
+        key = name.lower()
+        if name and key not in seen:
+            seen.add(key)
+            result.append({"name": name, "type": entity_type})
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _coerce_temporal(value: Any) -> dict[str, list[str]]:
+    """Coerce temporal metadata into stable bounded arrays."""
+    temporal = value if isinstance(value, dict) else {}
+    return {
+        "dates": _coerce_string_list(temporal.get("dates"), limit=5),
+        "versions": _coerce_string_list(temporal.get("versions"), limit=5),
+        "refs": _coerce_string_list(temporal.get("refs"), limit=5),
+    }

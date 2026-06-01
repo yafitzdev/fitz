@@ -196,6 +196,33 @@ class TestBatchProcessing:
 
         chat.chat.assert_called_once()
 
+    def test_prompt_treats_multiline_content_as_one_item(self):
+        """Multiline content is explicitly fenced so Qwen does not split it into items."""
+        chat = _make_chat(response=_make_enrichment_response([{"keywords": ["queries"]}]))
+        enricher = KragEnricher(chat, batch_size=15)
+        sections = [
+            {
+                "title": "Queries",
+                "content": '"Question one?"\n"Question two?"\n"Question three?"',
+                "summary": None,
+            }
+        ]
+
+        enricher.enrich_sections(sections)
+
+        messages = chat.chat.call_args.args[0]
+        kwargs = chat.chat.call_args.kwargs
+        assert "exactly 1 item block(s)" in messages[0]["content"]
+        assert "multiple lines, bullets, sentences, or questions" in messages[0]["content"]
+        assert "at most 8 keywords" in messages[0]["content"]
+        assert "Never repeat a keyword or entity name" in messages[0]["content"]
+        assert "v2.3" not in messages[0]["content"]
+        assert "latest" not in messages[0]["content"]
+        assert '<item index="1">' in messages[1]["content"]
+        assert "</item>" in messages[1]["content"]
+        assert kwargs["max_tokens"] >= 256
+        assert kwargs["temperature"] == 0
+
     def test_empty_list_no_llm_call(self):
         """Empty symbol list makes no LLM calls."""
         chat = _make_chat()
@@ -236,6 +263,21 @@ class TestRequiredEnrichmentFailures:
         with pytest.raises(KnowledgeError, match="invalid JSON"):
             enricher.enrich_symbols(symbols)
 
+    def test_retries_once_when_first_response_is_invalid_json(self):
+        """A malformed first response gets one strict retry before failing closed."""
+        good_response = _make_enrichment_response([{"keywords": ["retry"], "entities": []}])
+        chat = _make_chat()
+        chat.chat.side_effect = ["truncated json", good_response]
+        enricher = KragEnricher(chat, batch_size=15)
+        symbols = _symbol_dicts(1)
+
+        enricher.enrich_symbols(symbols)
+
+        assert symbols[0]["keywords"] == ["retry"]
+        assert chat.chat.call_count == 2
+        retry_messages = chat.chat.call_args.args[0]
+        assert "Retry the same enrichment" in retry_messages[-1]["content"]
+
     def test_partial_batch_failure(self):
         """First batch succeeds, second fails; ingestion raises before completion."""
         good_response = _make_enrichment_response([{"keywords": ["good"], "entities": []}])
@@ -274,3 +316,58 @@ class TestRequiredEnrichmentFailures:
         enricher.enrich_symbols(symbols)
 
         assert symbols[0]["keywords"] == ["fenced"]
+
+    def test_single_object_response_for_single_item(self):
+        """Single-item batches accept a JSON object when the shape is valid."""
+        response = json.dumps({"keywords": ["single"], "entities": []})
+        chat = _make_chat(response=response)
+        enricher = KragEnricher(chat, batch_size=15)
+        symbols = _symbol_dicts(1)
+
+        enricher.enrich_symbols(symbols)
+
+        assert symbols[0]["keywords"] == ["single"]
+
+    def test_truncated_single_item_response_is_salvaged(self):
+        """A runaway single-item response still contributes complete model fields."""
+        response = (
+            '[{"keywords": ["Name", "Name", "Geburtsdatum"], "entities": ['
+            '{"name": "Yan Isa Fitzner", "type": "Person"}, '
+            '{"name": "Kainzenbadstraße", "type": "Address"}, '
+            '{"name": "Yan Isa Fitzner", "type": "Person"}, '
+            '{"name": "unterminated", "type": '
+        )
+        chat = _make_chat(response=response)
+        enricher = KragEnricher(chat, batch_size=15)
+        symbols = _symbol_dicts(1)
+
+        enricher.enrich_symbols(symbols)
+
+        assert symbols[0]["keywords"] == ["Name", "Geburtsdatum"]
+        assert symbols[0]["entities"] == [
+            {"name": "Yan Isa Fitzner", "type": "Person"},
+            {"name": "Kainzenbadstraße", "type": "Address"},
+        ]
+
+    def test_truncated_keywords_array_is_salvaged(self):
+        """A runaway keywords array still contributes complete model strings."""
+        response = '[{"keywords": ["Energiepreis", "Energiepreis", "Stromtarif", ' '"unterminated'
+        chat = _make_chat(response=response)
+        enricher = KragEnricher(chat, batch_size=15)
+        symbols = _symbol_dicts(1)
+
+        enricher.enrich_symbols(symbols)
+
+        assert symbols[0]["keywords"] == ["Energiepreis", "Stromtarif"]
+        assert symbols[0]["entities"] == []
+
+    def test_wrapped_array_response(self):
+        """Provider wrappers that return an object containing results are parsed."""
+        response = json.dumps({"results": [{"keywords": ["wrapped"], "entities": []}]})
+        chat = _make_chat(response=response)
+        enricher = KragEnricher(chat, batch_size=15)
+        symbols = _symbol_dicts(1)
+
+        enricher.enrich_symbols(symbols)
+
+        assert symbols[0]["keywords"] == ["wrapped"]
