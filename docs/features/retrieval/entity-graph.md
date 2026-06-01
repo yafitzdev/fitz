@@ -141,8 +141,8 @@ behaviour *and* OAuth2 configuration.
 
 ## Dependencies
 
-- `KragEnricher` entity extraction during ingestion through the required
-  `enricher:` provider.
+- `KragEnricher` entity extraction during ingestion through the managed Qwen
+  ONNX runtime.
 - Same SQLite `.db` as the rest of the collection (no separate store).
 - Runs inside the KRAG expander; no extra LLM calls at query time.
 

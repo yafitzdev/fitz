@@ -30,7 +30,7 @@ Query routing is automatic — summaries match analytical queries via the BM25 +
 The `KragIngestPipeline` builds the hierarchy itself — there is no
 separate hierarchy enricher. L1 summaries are produced during the
 per-file `enrich` step; the L2 summary during the corpus `finalize`
-step. Both use the required `summarizer:` provider.
+step. Both use the managed Qwen3.5 0.8B ONNX runtime.
 
 ### At Ingestion
 
@@ -72,8 +72,8 @@ Q: "What did users say about the async tutorial?"
 
 ## Key Design Decisions
 
-1. **Required provider** — summaries are generated during ingestion through
-   `summarizer:`.
+1. **Required managed runtime** — summaries are generated during ingestion
+   through Fitz's standard Qwen ONNX runtime.
 
 2. **Automatic routing** — abstract queries lexically match the L2
    summary; specific queries match L0 token-for-token. The LLM
@@ -85,21 +85,13 @@ Q: "What did users say about the async tutorial?"
 4. **Two storage shapes** - L1 lives as `hierarchy_summary` metadata on
    each L0 section; L2 is a single synthetic retrievable section.
 
-5. **LLM-generated** - Uses the same chat LLM to generate summaries (no separate model).
+5. **LLM-generated** - Uses the same managed local LLM as enrichment (no separate model).
 
 ## Configuration
 
-The feature is built into the KRAG ingestion pipeline and uses the required
-summarizer provider:
-
-```yaml
-summarizer: onnx/qwen3.5-0.8b
-enricher: onnx/qwen3.5-0.8b
-```
-
-`summarizer:` and `enricher:` are both required for document ingestion. If
-either provider is missing or cannot load, ingestion fails closed before the
-collection is treated as ready.
+The feature is built into the KRAG ingestion pipeline and is not
+user-configurable. If the managed Qwen ONNX runtime cannot load, ingestion
+fails closed before the collection is treated as ready.
 
 ## Files
 
@@ -109,7 +101,7 @@ collection is treated as ready.
 - **Summary storage:** L2 stored as a synthetic "Corpus Overview"
   section indexed in SQLite FTS5; L1 as `hierarchy_summary` metadata on
   each L0 section
-- **Config key:** `summarizer` in `fitz_sage/engines/fitz_krag/config/schema.py`
+- **Runtime:** `fitz_sage/llm/providers/onnx_chat.py`
 
 ## Benefits
 

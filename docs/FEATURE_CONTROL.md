@@ -159,22 +159,22 @@ Pattern:
 
 1. **Ingestion-time** (like VLM): create two parser plugins, let
    `parser:` pick.
-2. **Query-time**: add a config dependency (e.g. `summarizer:`) and
+2. **Query-time**: add a config dependency (e.g. `answer_expander:`) and
    skip the pipeline step when the dependency is absent.
 
-Sketch for a hypothetical query-time summarizer:
+Sketch for a hypothetical query-time answer expander:
 
 ```python
 # In the pipeline step
-if config.summarizer is None:
+if config.answer_expander is None:
     return inputs   # passthrough — feature disabled
-summarizer = build_summarizer(config.summarizer)
-return summarizer.run(inputs)
+expander = build_answer_expander(config.answer_expander)
+return expander.run(inputs)
 ```
 
 ```yaml
 # Config to switch it on
-summarizer: endpoint/summarizer
+answer_expander: endpoint/expander
 ```
 
 ---

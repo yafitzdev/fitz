@@ -1,9 +1,9 @@
 <!-- docs/features/platform/openai-compatible-endpoint.md -->
 # OpenAI-Compatible Endpoint Architecture
 
-**Status:** the optional endpoint/cloud chat path. Required enrichment uses the
-managed `onnx/qwen3.5-0.8b` provider; endpoint chat is for optional synthesis,
-query intelligence, and vision.
+**Status:** the optional endpoint/cloud chat path. Required enrichment uses
+managed Qwen3.5 0.8B ONNX; endpoint chat is for optional synthesis, query
+intelligence, and vision.
 
 ## TL;DR
 
@@ -76,8 +76,8 @@ fitz_krag:
 ```
 
 Use role-specific provider fields (`query_intelligence`, `vision`, and
-`synthesizer`) to mix local and cloud models. Required `enricher:` and
-`summarizer:` default to managed ONNX and do not need an endpoint.
+`synthesizer`) to mix local and cloud models. Required enrichment is internal
+and does not need an endpoint.
 
 ## Cloud quick reference
 

@@ -19,8 +19,6 @@ governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
 ```
 
 This is enough for `fitz retrieve` and `fitz_sage.evidence(...)` with local
@@ -53,11 +51,11 @@ Role-specific provider fields bind LLM-backed stages:
 | -------------------- | ------------------------------------------------ |
 | `query_intelligence` | Optional query-prep enhancement                  |
 | `synthesizer`        | Optional answer generation                       |
-| `enricher`           | Required keyword/entity enrichment               |
-| `summarizer`         | Required section/table/hierarchy summaries       |
 
-Each LLM-backed role takes a provider/model spec. For `endpoint`, the model
-name is the part after the slash and `chat_base_url` supplies the
+Required keyword/entity enrichment and hierarchy summaries always use Fitz's
+managed Qwen3.5 0.8B ONNX runtime. There is no config key for that internal
+model. Optional LLM-backed roles take a provider/model spec. For `endpoint`,
+the model name is the part after the slash and `chat_base_url` supplies the
 OpenAI-compatible URL:
 
 ```yaml
@@ -74,9 +72,10 @@ factory directly.
 
 ## Chat provider model
 
-Required enrichment uses **`onnx/qwen3.5-0.8b`** — an in-process CPU ONNX
-runtime managed by fitz-sage. Optional synthesis, query intelligence, and
-vision can use **`endpoint`** or the cloud/enterprise presets:
+Required enrichment uses Qwen3.5 0.8B through an in-process CPU ONNX runtime
+managed by fitz-sage. The model is downloaded on first ingest if missing.
+Optional synthesis, query intelligence, and vision can use **`endpoint`** or
+the cloud/enterprise presets:
 
 | Spec form                       | Resolves to                                              |
 | ------------------------------- | -------------------------------------------------------- |
@@ -96,7 +95,8 @@ for those backends instead (Ollama exposes one at
 ## Feature control
 
 Features are switched on by **provider presence**, not boolean flags. Enrichment
-and hierarchy summaries are present by default and are required for ingestion:
+and hierarchy summaries are standard engine behavior and are required for
+ingestion:
 
 | Feature            | Enabled when                             | Disabled when                       |
 | ------------------ | ---------------------------------------- | ----------------------------------- |
@@ -104,8 +104,6 @@ and hierarchy summaries are present by default and are required for ingestion:
 | Governance         | `governance: pyrrho` (default)           | `governance: null`                  |
 | Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |
 | Answer synthesis   | `synthesizer: <provider/model>`          | `synthesizer: null`                 |
-| Enrichment         | `enricher: <provider/model>`             | `enricher: null` makes ingestion fail |
-| Hierarchy summaries | `summarizer: <provider/model>`          | `summarizer: null` makes ingestion fail |
 | VLM in parser      | `parser: docling_vision` + `vision:` set | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
 
 ---

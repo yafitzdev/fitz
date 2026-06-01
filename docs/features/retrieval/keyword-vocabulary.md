@@ -81,7 +81,7 @@ stage.
 ## Configuration
 
 None for search. FTS5 + `bm25()` are always active. Keyword enrichment is part
-of the required ingestion contract and uses `enricher:`.
+of the required ingestion contract and uses the managed Qwen ONNX runtime.
 
 ## Files
 

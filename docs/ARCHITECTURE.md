@@ -6,9 +6,9 @@ High-level system design of fitz-sage **v0.14.1+**.
 The architecture has three load-bearing decisions:
 
 1. **Managed enrichment, optional endpoints.** Required enrichment runs through
-   the in-process `onnx/qwen3.5-0.8b` provider on CPU. Optional synthesis,
-   query intelligence, and vision use OpenAI-compatible HTTP endpoints or
-   cloud/enterprise presets.
+   the in-process Qwen3.5 0.8B ONNX runtime on CPU. Fitz downloads the model on
+   first ingest if missing. Optional synthesis, query intelligence, and vision
+   use OpenAI-compatible HTTP endpoints or cloud/enterprise presets.
 2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
    typed-unit routing (symbols, sections, tables) + an ONNX cross-encoder
    reranker that scores candidates in a single local forward pass — no
@@ -52,7 +52,7 @@ The architecture has three load-bearing decisions:
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────────┐
 │  LLM / ONNX         │  │  Storage (SQLite)   │  │  Ingestion Pipeline     │
 ├─────────────────────┤  ├─────────────────────┤  ├─────────────────────────┤
-│  onnx/qwen3.5-0.8b  │  │  WAL + FTS5         │  │  Parse (Docling / OCR)  │
+│  Qwen3.5 0.8B ONNX  │  │  WAL + FTS5         │  │  Parse (Docling / OCR)  │
 │  for enrichment     │  │  one .db per        │  │  Chunk (semantic +      │
 │  endpoint/cloud     │  │  collection         │  │   structured)           │
 │  for optional chat  │  │  bm25() ranking     │  │  Required enrich        │
@@ -120,8 +120,8 @@ Files → Parse (Docling for PDF/DOCX, GLM-OCR for scans, tree-sitter
 
 ## Chat Provider Model
 
-The LLM layer has one managed local enrichment provider — **`onnx`** — and one
-canonical optional endpoint provider — **`endpoint`**:
+The LLM layer has one managed local enrichment runtime — Qwen3.5 0.8B ONNX —
+and one canonical optional endpoint provider — **`endpoint`**:
 
 | Spec                                   | Resolves to                                              |
 | -------------------------------------- | -------------------------------------------------------- |
@@ -178,22 +178,19 @@ for the full schema-port notes (PostgreSQL → SQLite).
 ## Feature Control
 
 Features are controlled by **provider presence**, not boolean flags. Enrichment
-providers are present by default and are required for ingestion:
+is standard engine behavior and is required for ingestion:
 
 ```yaml
 # ENABLED — a provider is named
 rerank: onnx
 governance: pyrrho
 synthesizer: endpoint/qwen2.5-7b-instruct
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
 chat_base_url: http://localhost:8080/v1
 
 # DISABLED — omit the key (or set null)
 # synthesizer: null → no answer generation
 # rerank: null → no reranking step
 # governance: null → no governance
-# enricher/summarizer: null → source ingestion fails closed
 ```
 
 ---
@@ -233,7 +230,7 @@ metadata, not fixed-size text windows.
 └── ingest_state.json        # incremental ingest manifest
 ```
 
-Minimal local enrichment config:
+Minimal local config:
 
 ```yaml
 collection: default
@@ -243,8 +240,6 @@ governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
 ```
 
 Override per-invocation:

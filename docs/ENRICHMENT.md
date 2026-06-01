@@ -49,11 +49,11 @@ pipeline — no separate orchestrator, and no foreground query dependency.
 - **Temporal metadata** — dates, version numbers, time references found in the text
 - **Hierarchy** — L1 (per-file) and L2 (corpus) summaries for analytical queries
 
-Keyword/entity/temporal extraction uses `enricher:`. L1/L2 hierarchy summaries
-use `summarizer:`. The default profile is `onnx/qwen3.5-0.8b`, managed
-in-process by fitz-sage with raw ONNX Runtime on CPU. If either provider is
-missing or cannot load, ingestion fails closed instead of silently storing an
-under-enriched index.
+Keyword/entity/temporal extraction and L1/L2 hierarchy summaries use Fitz's
+managed Qwen3.5 0.8B ONNX runtime. The model is downloaded on first ingest if
+missing and runs in-process with raw ONNX Runtime on CPU. If the runtime cannot
+load, ingestion fails closed instead of silently storing an under-enriched
+index.
 
 ---
 
@@ -115,7 +115,7 @@ Dates, version numbers, and relative time references found in the unit text.
 ## Hierarchy
 
 L1 and L2 summaries for analytical queries. Built by `KragIngestPipeline`
-itself when `summarizer:` is configured.
+itself with the managed Qwen ONNX runtime.
 
 ### The problem
 
@@ -172,16 +172,8 @@ retrieving evidence:
 fitz retrieve "your question" --source ./docs
 ```
 
-Config:
-
-```yaml
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
-```
-
-First-run setup writes this config. The first ingest downloads the managed
-Qwen3.5 0.8B ONNX weights into the Hugging Face cache and then runs enrichment
-locally.
+The first ingest downloads the managed Qwen3.5 0.8B ONNX weights into the
+Hugging Face cache when missing and then runs enrichment locally.
 
 ---
 
@@ -215,18 +207,12 @@ document file plus one corpus call).
 
 ## Configuration
 
-Provider specs bind the required enrichment stages:
-
-| Key | Controls |
-|------|----------|
-| `enricher: <provider/model>` | Keyword / entity / temporal extraction (`KragEnricher`) |
-| `summarizer: <provider/model>` | L1 (per-file) and L2 (corpus) hierarchy summaries |
+The enrichment model is internal and required. The only public tuning knob in
+this area is batch size:
 
 Small CPU-local profile:
 
 ```yaml
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
 summary_batch_size: 15
 ```
 
@@ -240,7 +226,7 @@ summary_batch_size: 15
 |------|---------|
 | `fitz_sage/engines/fitz_krag/ingestion/enricher.py` | `KragEnricher` — batched keyword/entity/temporal extraction |
 | `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | `KragIngestPipeline` — drives enrich + builds L1/L2 summaries |
-| `fitz_sage/engines/fitz_krag/config/schema.py` | `enricher` / `summarizer` provider specs |
+| `fitz_sage/llm/providers/onnx_chat.py` | Managed Qwen3.5 0.8B ONNX runtime |
 | `fitz_sage/retrieval/entity_graph/` | `EntityGraphStore` — populated from extracted entities |
 
 ---

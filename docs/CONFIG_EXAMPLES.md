@@ -6,8 +6,8 @@ Working configs for the managed-ONNX / SQLite world. The schema rules:
 - **String specs** instead of nested dicts (`synthesizer: endpoint/gpt-4o`,
   not a provider block).
 - **Provider presence** controls features (`synthesizer: null` disables
-  answer generation; `rerank: null` disables the reranker; enrichment providers
-  are present by default and required for ingestion).
+  answer generation; `rerank: null` disables the reranker; enrichment uses the
+  internal managed Qwen ONNX runtime and is always required for ingestion).
 - **Sensible defaults** — `collection` is the only thing every config
   must set; the rest can be overridden per-invocation via CLI flags.
 
@@ -24,8 +24,6 @@ governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
 ```
 
 No hosted API key or external inference server is needed. On first ingestion,
@@ -100,16 +98,14 @@ chat_api_key_env: MISTRAL_API_KEY
 
 ## Mixed local + cloud (cost-optimized)
 
-Required local enrichment, optional local query intelligence, and smart cloud
-model for optional synthesis:
+Required internal Qwen enrichment, optional local query intelligence, and smart
+cloud model for optional synthesis:
 
 ```yaml
 collection: my_docs
 chat_base_url: http://localhost:8080/v1
 
 query_intelligence: endpoint/qwen2.5-7b-instruct
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
 synthesizer: openai/gpt-4o
 ```
 
@@ -147,18 +143,17 @@ to skip the VLM and avoid the cost.
 
 ---
 
-## Required Qwen 0.8B enrichment
+## Standard Qwen 0.8B enrichment
 
 ```yaml
 collection: my_docs
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
 summary_batch_size: 15
 ```
 
-Use the managed ONNX Q4 small model for CPU-local enrichment. Ingestion fails
-closed if this provider is omitted or cannot load, so the collection is not
-treated as ready with missing metadata.
+Qwen3.5 0.8B ONNX is the standard local enrichment model. Fitz downloads it on
+first ingest if missing and runs it on CPU. Ingestion fails closed if the
+managed runtime cannot load, so the collection is not treated as ready with
+missing metadata.
 
 ---
 
@@ -168,8 +163,6 @@ treated as ready with missing metadata.
 collection: production_docs
 synthesizer: enterprise/openai/gpt-4o
 query_intelligence: enterprise/openai/gpt-4o-mini
-enricher: enterprise/openai/gpt-4o-mini
-summarizer: enterprise/openai/gpt-4o-mini
 
 auth:
   type: enterprise
@@ -219,17 +212,14 @@ cfg = FitzKragConfig(
     collection="my_docs",
     synthesizer=None,
     query_intelligence=None,
-    enricher="onnx/qwen3.5-0.8b",
-    summarizer="onnx/qwen3.5-0.8b",
 )
 engine = FitzKragEngine(cfg)
 pack = engine.evidence(Query(text="What is quantum computing?"))
 print(pack.mode, [item.file_path for item in pack.items])
 ```
 
-Only `collection` is strictly required by the schema because the local
-enrichment profile is the default. If you override it, keep enrichment and
-summarization bound to `onnx/qwen3.5-0.8b`.
+Only `collection` is strictly required by the schema. Enrichment and
+summarization use the managed Qwen3.5 0.8B ONNX runtime automatically.
 
 ---
 

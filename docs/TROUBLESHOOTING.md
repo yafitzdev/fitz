@@ -149,11 +149,9 @@ RateLimitError: Rate limit exceeded
 
 1. Wait and retry (the chat provider applies exponential backoff
    automatically — see `fitz_sage/llm/auth/`).
-2. Use cheaper role providers for LLM-backed stages:
+2. Use cheaper optional role providers:
    ```yaml
    query_intelligence: openai/gpt-4o-mini
-   enricher: openai/gpt-4o-mini
-   summarizer: openai/gpt-4o-mini
    synthesizer: openai/gpt-4o
    ```
 

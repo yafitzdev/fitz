@@ -51,9 +51,9 @@ Governance is selected by the engine config's `governance:` field
 
 ## Chat Provider Model
 
-The LLM layer has a managed **`onnx`** provider for required enrichment and a
-canonical **`endpoint`** provider for optional OpenAI-compatible chat. The other
-names are URL+auth presets over `endpoint`:
+The LLM layer has a managed Qwen3.5 0.8B ONNX runtime for required enrichment
+and a canonical **`endpoint`** provider for optional OpenAI-compatible chat. The
+other names are URL+auth presets over `endpoint`:
 
 | Spec form                              | Resolves to                                              |
 | -------------------------------------- | -------------------------------------------------------- |
@@ -72,21 +72,19 @@ OpenAI-compatible endpoint instead — e.g. Ollama exposes one at
 
 | Provider     | Purpose                                                    |
 | ------------ | ---------------------------------------------------------- |
-| `onnx`       | Managed local Qwen3.5 0.8B chat for enrichment/summaries   |
+| `onnx`       | Managed local Qwen3.5 0.8B chat provider                   |
 | `endpoint`   | Canonical OpenAI-compatible chat (any URL)                 |
 | `enterprise` | Same protocol + enterprise auth (M2M OAuth2, mTLS, CA bundle) |
 | `onnx_reranker` | Internal — INT8 ONNX cross-encoder (gte-reranker-modernbert-base) |
 
 ### Role Providers
 
-Role-specific provider fields are the primary control surface.
-`chat_fast`, `chat_balanced`, and `chat_smart` tiers are optional slots for
-advanced integrations that request a tiered chat factory directly:
+Role-specific provider fields are the primary control surface for optional chat
+paths. `chat_fast`, `chat_balanced`, and `chat_smart` tiers are optional slots
+for advanced integrations that request a tiered chat factory directly:
 
 ```yaml
 query_intelligence: endpoint/qwen2.5-3b-instruct
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
 synthesizer: endpoint/qwen2.5-32b-instruct
 chat_base_url: http://localhost:8080/v1
 chat_api_key_env: OPENAI_API_KEY    # omit for unauthenticated local servers
@@ -176,8 +174,8 @@ preserve (e.g. a custom XML dialect).
 
 Ingestion enrichment (keyword / entity / temporal extraction and the
 L1/L2 hierarchy summaries) is built into the KRAG ingestion pipeline,
-not a plugin surface. It is controlled by provider presence: `enricher:`
-and `summarizer:`. See [ENRICHMENT.md](ENRICHMENT.md)
+not a plugin surface and not user-configurable. It always uses the managed
+Qwen3.5 0.8B ONNX runtime. See [ENRICHMENT.md](ENRICHMENT.md)
 for the architecture and [`features/ingestion/hierarchical-rag.md`](features/ingestion/hierarchical-rag.md)
 for the hierarchy details.
 

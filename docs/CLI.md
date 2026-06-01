@@ -163,13 +163,12 @@ governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
-enricher: onnx/qwen3.5-0.8b
-summarizer: onnx/qwen3.5-0.8b
 ```
 
-This file is auto-created on first run. See [CONFIG.md](CONFIG.md) for
-every key and [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) for
-ready-to-paste configurations.
+This file is auto-created on first run. Required enrichment uses managed
+Qwen3.5 0.8B ONNX and is downloaded automatically on first ingest. See
+[CONFIG.md](CONFIG.md) for every key and [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md)
+for ready-to-paste configurations.
 
 ---
 

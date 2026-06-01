@@ -217,7 +217,7 @@ summarize and enrich steps add LLM-generated metadata.
 │  │  identifiers)     │  technologies)     │  versions, refs) │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                 │
-│  hierarchy summaries (pipeline-built by the required summarizer)     │
+│  hierarchy summaries (pipeline-built with managed Qwen ONNX)          │
 │    L1: one group summary per document file (on section metadata) │
 │    L2: corpus summary rolled up from L1 (built during finalize)  │
 │                                                                 │
@@ -228,7 +228,7 @@ summarize and enrich steps add LLM-generated metadata.
 
 `KragEnricher` extracts **keywords + entities + temporal metadata** in a
 single LLM call per batch of ~15 symbols or sections. This makes enrichment
-cheap and local with the managed `onnx/qwen3.5-0.8b` provider.
+cheap and local with the managed Qwen3.5 0.8B ONNX runtime.
 
 **What it extracts:**
 - **Keywords** - Exact-match identifiers (TC-1001, JIRA-123, `AuthService`)
@@ -244,7 +244,8 @@ cheap and local with the managed `onnx/qwen3.5-0.8b` provider.
 ### Hierarchy
 
 L1 and L2 summaries for analytical queries, built by the pipeline itself. They
-are required for document collections and use `summarizer:`.
+are required for document collections and use the same managed Qwen ONNX
+runtime as keyword/entity enrichment.
 
 **Levels:**
 - **Level 1:** Per-file group summary — stored on each document
@@ -351,8 +352,6 @@ from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
 cfg = FitzKragConfig(
     synthesizer="endpoint/qwen2.5-7b-instruct",
     chat_base_url="http://localhost:8080/v1",
-    enricher="onnx/qwen3.5-0.8b",
-    summarizer="onnx/qwen3.5-0.8b",
     collection="my_collection",
 )
 engine = FitzKragEngine(cfg)
