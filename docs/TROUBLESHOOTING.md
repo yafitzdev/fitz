@@ -1,3 +1,4 @@
+<!-- docs/TROUBLESHOOTING.md -->
 # Troubleshooting Guide
 
 Common issues and solutions for fitz-sage **v0.14.1+** (single OpenAI-compatible
@@ -7,9 +8,11 @@ HTTP protocol, SQLite + FTS5 storage, no embeddings, no vector DB).
 
 ## Quick Diagnostics
 
-Open the config file directly at `~/.fitz/config/fitz_krag.yaml` and verify the
-chat endpoint URL, API-key environment variable, and collection name
-are correct.
+Open the config file directly at `~/.fitz/config/fitz_krag.yaml`. For
+`fitz retrieve`, verify the collection and storage settings. For
+`fitz answer` / `fitz query`, also verify `synthesizer`,
+`chat_base_url`, and the API-key environment variable if your endpoint
+requires one.
 
 ---
 
@@ -146,11 +149,12 @@ RateLimitError: Rate limit exceeded
 
 1. Wait and retry (the chat provider applies exponential backoff
    automatically — see `fitz_sage/llm/auth/`).
-2. Point `chat_fast` at a cheaper model for the bulk of the work:
+2. Use cheaper role providers for LLM-backed stages:
    ```yaml
-   chat_fast: gpt-4o-mini
-   chat_balanced: gpt-4o-mini
-   chat_smart: gpt-4o
+   query_intelligence: openai/gpt-4o-mini
+   enricher: openai/gpt-4o-mini
+   summarizer: openai/gpt-4o-mini
+   synthesizer: openai/gpt-4o
    ```
 
 ---

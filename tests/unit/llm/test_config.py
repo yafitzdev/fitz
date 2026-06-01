@@ -102,6 +102,24 @@ class TestResolveAuth:
         assert auth.cert_path == cert_path
         assert auth.scope == "read write"
 
+    def test_m2m_auth_accepts_cert_path_inside_auth(self, temp_certificate) -> None:
+        """KRAG YAML can keep enterprise certificate settings in auth."""
+        cert_path, _ = temp_certificate
+        config = {
+            "auth": {
+                "type": "m2m",
+                "token_url": "https://auth.example.com/token",
+                "client_id": "my-client",
+                "client_secret": "my-secret",
+                "cert_path": cert_path,
+            },
+        }
+
+        auth = resolve_auth("openai", config)
+
+        assert isinstance(auth, M2MAuth)
+        assert auth.cert_path == cert_path
+
     def test_m2m_auth_minimal(self) -> None:
         """M2M auth works with minimal config."""
         config = {

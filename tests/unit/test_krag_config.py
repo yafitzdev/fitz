@@ -15,6 +15,8 @@ class TestFitzKragConfig:
         assert config.chat_balanced is None
         assert config.chat_smart is None
         assert config.chat_base_url is None
+        assert config.auth is None
+        assert config.cert_path is None
 
     def test_defaults(self):
         config = FitzKragConfig(collection="test")
@@ -44,6 +46,26 @@ class TestFitzKragConfig:
         assert config.chat_fast == "openai/gpt-4o-mini"
         assert config.top_addresses == 20
         assert config.keyword_weight == 0.3
+
+    def test_auth_config_allowed(self):
+        """KRAG configs can pass auth blocks through to role providers."""
+        config = FitzKragConfig(
+            collection="enterprise_project",
+            synthesizer="enterprise/openai/gpt-4o",
+            chat_base_url="https://llm.corp.internal/v1",
+            auth={
+                "type": "enterprise",
+                "token_url": "https://auth.corp.internal/oauth/token",
+                "client_id": "${CLIENT_ID}",
+                "client_secret": "${CLIENT_SECRET}",
+                "llm_api_key_env": "CORP_LLM_API_KEY",
+            },
+            cert_path="/etc/ssl/corp-ca-bundle.crt",
+        )
+
+        assert config.auth is not None
+        assert config.auth["type"] == "enterprise"
+        assert config.cert_path == "/etc/ssl/corp-ca-bundle.crt"
 
     def test_collection_required(self):
         with pytest.raises(Exception):
@@ -85,6 +107,8 @@ class TestDefaultYaml:
         assert raw["fitz_krag"]["chat_balanced"] is None
         assert raw["fitz_krag"]["chat_smart"] is None
         assert raw["fitz_krag"]["chat_base_url"] is None
+        assert raw["fitz_krag"]["auth"] is None
+        assert raw["fitz_krag"]["cert_path"] is None
         assert raw["fitz_krag"]["short_answer_tokens"] == 192
         assert raw["fitz_krag"]["collection"] == "default"
         # Embedding fields are gone — fitz-sage no longer uses dense vectors.

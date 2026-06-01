@@ -72,11 +72,11 @@ class TestApplyChatOverrides:
             }
         )
 
-    def test_endpoint_without_model_reuses_existing_model(self) -> None:
+    def test_endpoint_without_model_reuses_existing_synthesizer_model(self) -> None:
         """--endpoint alone keeps the existing model name, swaps the URL."""
         mock_registry = MagicMock()
         mock_config = MagicMock()
-        mock_config.chat_smart = "endpoint/qwen2.5-14b-instruct"
+        mock_config.synthesizer = "endpoint/qwen2.5-14b-instruct"
         mock_config.model_copy.return_value = MagicMock()
         mock_registry.load_config.return_value = mock_config
 
@@ -97,10 +97,10 @@ class TestApplyChatOverrides:
         assert update["synthesizer"] == "endpoint/qwen2.5-14b-instruct"
 
     def test_endpoint_without_model_existing_no_slash(self) -> None:
-        """If existing chat_smart has no slash, use it as the bare model name."""
+        """If existing synthesizer has no slash, use it as the bare model name."""
         mock_registry = MagicMock()
         mock_config = MagicMock()
-        mock_config.chat_smart = "qwen2.5-14b-instruct"
+        mock_config.synthesizer = "qwen2.5-14b-instruct"
         mock_config.model_copy.return_value = MagicMock()
         mock_registry.load_config.return_value = mock_config
 
@@ -120,10 +120,10 @@ class TestApplyChatOverrides:
         assert update["synthesizer"] == "endpoint/qwen2.5-14b-instruct"
 
     def test_endpoint_without_model_and_no_configured_model_exits(self) -> None:
-        """--endpoint alone needs a model when config has no chat_smart."""
+        """--endpoint alone needs a model when config has no synthesizer."""
         mock_registry = MagicMock()
         mock_config = MagicMock()
-        mock_config.chat_smart = None
+        mock_config.synthesizer = None
         mock_registry.load_config.return_value = mock_config
 
         with (

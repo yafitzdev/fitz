@@ -24,7 +24,7 @@ from fitz_sage.core import (
 )
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
+from fitz_sage.engines.fitz_krag.engine import FitzKragEngine, _build_provider_config
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from tests.unit.mock_engine import build_mock_engine
 
@@ -172,6 +172,47 @@ class TestEngineInit:
 
         _patches["get_chat"].assert_called_once()
         _patches["CodeSynthesizer"].assert_called_once()
+
+    def test_provider_config_forwards_auth_block(self):
+        """Role providers receive auth config without needing chat tiers."""
+        auth = {
+            "type": "enterprise",
+            "token_url": "https://auth.example.com/token",
+            "client_id": "${CLIENT_ID}",
+            "client_secret": "${CLIENT_SECRET}",
+            "llm_api_key_env": "CORP_LLM_API_KEY",
+        }
+
+        config = _build_provider_config(
+            "https://llm.corp.internal/v1",
+            None,
+            spec="enterprise/openai/gpt-4o",
+            auth=auth,
+            cert_path="/etc/ssl/corp-ca-bundle.crt",
+        )
+
+        assert config == {
+            "base_url": "https://llm.corp.internal/v1",
+            "cert_path": "/etc/ssl/corp-ca-bundle.crt",
+            "auth": auth,
+        }
+
+    def test_provider_config_merges_api_key_env_into_auth_block(self):
+        """Endpoint auth can keep custom header options from YAML."""
+        config = _build_provider_config(
+            "https://api.together.xyz/v1",
+            "TOGETHER_API_KEY",
+            spec="endpoint/meta-llama-3.1-70b",
+            auth={"header_format": "bearer"},
+        )
+
+        assert config == {
+            "base_url": "https://api.together.xyz/v1",
+            "auth": {
+                "header_format": "bearer",
+                "api_key_env": "TOGETHER_API_KEY",
+            },
+        }
 
     def test_default_config_has_no_chat_tier_factory(self):
         """Retrieval-only defaults should not build a tiered chat factory."""

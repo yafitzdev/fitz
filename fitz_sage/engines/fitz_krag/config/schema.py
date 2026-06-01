@@ -9,6 +9,8 @@ to code symbol / document section), then reads content on demand.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import Field
 
 from fitz_sage.core.config import BasePluginConfig
@@ -81,6 +83,19 @@ class FitzKragConfig(BasePluginConfig):
     chat_api_key_env: str | None = Field(
         default=None,
         description="Env var name for chat-endpoint API key (None = no auth).",
+    )
+
+    auth: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional auth block passed to chat providers. Use for endpoint API "
+            "keys with custom headers, M2M OAuth2, or enterprise composite auth."
+        ),
+    )
+
+    cert_path: str | None = Field(
+        default=None,
+        description="Optional CA certificate bundle path for enterprise/M2M auth.",
     )
 
     vision_api_key_env: str | None = Field(

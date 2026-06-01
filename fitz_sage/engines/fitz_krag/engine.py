@@ -53,16 +53,18 @@ def _build_provider_config(
     api_key_env: str | None,
     *,
     spec: str | None = None,
+    auth: dict[str, Any] | None = None,
+    cert_path: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Build a config dict for ``get_chat`` / ``get_vision``.
 
-    Only includes ``base_url`` and ``auth.api_key_env`` when the provider
-    spec actually consumes them. The ``openai`` preset has its own
-    default URL — overriding it from the engine schema's local-default
-    base_url would silently route cloud calls to localhost. So for
-    non-endpoint specs we omit base_url unless the user explicitly
-    overrides it.
+    Only includes ``base_url`` when the provider spec consumes it. The
+    ``openai`` preset has its own default URL — overriding it from the
+    engine schema's local-default base_url would silently route cloud
+    calls to localhost. Auth is forwarded for every provider because it
+    may contain endpoint API keys, M2M OAuth2, or enterprise composite
+    credentials.
     """
     if spec is None:
         # Caller doesn't know the spec — be permissive (used by callers
@@ -80,7 +82,14 @@ def _build_provider_config(
     cfg: dict[str, Any] = {}
     if consumes_base_url and base_url is not None:
         cfg["base_url"] = base_url
-    if api_key_env is not None:
+    if cert_path is not None:
+        cfg["cert_path"] = cert_path
+    if auth is not None:
+        auth_cfg = dict(auth)
+        if api_key_env is not None and "type" not in auth_cfg:
+            auth_cfg.setdefault("api_key_env", api_key_env)
+        cfg["auth"] = auth_cfg
+    elif api_key_env is not None:
         cfg["auth"] = {"api_key_env": api_key_env}
 
     return cfg or None
@@ -207,6 +216,8 @@ class FitzKragEngine:
             self._config.chat_base_url,
             self._config.chat_api_key_env,
             spec=self._config.chat_smart,
+            auth=self._config.auth,
+            cert_path=self._config.cert_path,
         )
 
         logger.debug("Starting database")
@@ -300,6 +311,8 @@ class FitzKragEngine:
                 self._config.chat_base_url,
                 self._config.chat_api_key_env,
                 spec=self._config.synthesizer,
+                auth=self._config.auth,
+                cert_path=self._config.cert_path,
             )
             synth_chat = get_chat(self._config.synthesizer, "smart", synth_config)
             self._synthesizer = CodeSynthesizer(synth_chat, self._config)
@@ -310,6 +323,8 @@ class FitzKragEngine:
                 self._config.chat_base_url,
                 self._config.chat_api_key_env,
                 spec=self._config.enricher,
+                auth=self._config.auth,
+                cert_path=self._config.cert_path,
             )
             self._enricher_chat = get_chat(self._config.enricher, "fast", enricher_config)
 
@@ -319,6 +334,8 @@ class FitzKragEngine:
                 self._config.chat_base_url,
                 self._config.chat_api_key_env,
                 spec=self._config.summarizer,
+                auth=self._config.auth,
+                cert_path=self._config.cert_path,
             )
             self._summarizer_chat = get_chat(
                 self._config.summarizer,
@@ -357,6 +374,8 @@ class FitzKragEngine:
                 self._config.chat_base_url,
                 self._config.chat_api_key_env,
                 spec=self._config.query_intelligence,
+                auth=self._config.auth,
+                cert_path=self._config.cert_path,
             )
             query_chat_factory = get_chat_factory(
                 {

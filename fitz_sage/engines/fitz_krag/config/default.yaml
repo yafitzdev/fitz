@@ -24,6 +24,8 @@ fitz_krag:
   chat_base_url: null
   vision_base_url: null
   chat_api_key_env: null
+  auth: null
+  cert_path: null
   vision_api_key_env: null
 
   # Reranker. 'onnx' = INT8 ONNX cross-encoder (Alibaba-NLP/gte-reranker-

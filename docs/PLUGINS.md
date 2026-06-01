@@ -74,11 +74,11 @@ OpenAI-compatible endpoint instead — e.g. Ollama exposes one at
 | `enterprise` | Same protocol + enterprise auth (M2M OAuth2, mTLS, CA bundle) |
 | `onnx_reranker` | Internal — INT8 ONNX cross-encoder (gte-reranker-modernbert-base) |
 
-### Model tiers
+### Role Providers
 
-Role-specific provider fields are the primary control surface. Legacy
+Role-specific provider fields are the primary control surface.
 `chat_fast`, `chat_balanced`, and `chat_smart` tiers are optional slots for
-code paths that still need a tiered chat factory:
+advanced integrations that request a tiered chat factory directly:
 
 ```yaml
 query_intelligence: endpoint/qwen2.5-3b-instruct

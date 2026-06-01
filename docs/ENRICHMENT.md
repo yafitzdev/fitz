@@ -238,7 +238,7 @@ summary_batch_size: 15
 |------|---------|
 | `fitz_sage/engines/fitz_krag/ingestion/enricher.py` | `KragEnricher` — batched keyword/entity/temporal extraction |
 | `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | `KragIngestPipeline` — drives enrich + builds L1/L2 summaries |
-| `fitz_sage/engines/fitz_krag/config/schema.py` | `enricher` / `summarizer` provider specs and secondary gates |
+| `fitz_sage/engines/fitz_krag/config/schema.py` | `enricher` / `summarizer` provider specs |
 | `fitz_sage/retrieval/entity_graph/` | `EntityGraphStore` — populated from extracted entities |
 
 ---

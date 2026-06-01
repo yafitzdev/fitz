@@ -191,6 +191,7 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
 
     config = config or {}
     auth_config = config.get("auth", {})
+    cert_path = config.get("cert_path") or auth_config.get("cert_path")
 
     # Enterprise composite auth (M2M + API key)
     if auth_config.get("type") == "enterprise":
@@ -200,7 +201,7 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
             token_url=auth_config["token_url"],
             client_id=auth_config["client_id"],
             client_secret=auth_config["client_secret"],
-            cert_path=config.get("cert_path"),
+            cert_path=cert_path,
             scope=auth_config.get("scope"),
             client_cert_path=auth_config.get("client_cert_path"),
             client_key_path=auth_config.get("client_key_path"),
@@ -222,7 +223,7 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
             token_url=auth_config["token_url"],
             client_id=auth_config["client_id"],
             client_secret=auth_config["client_secret"],
-            cert_path=config.get("cert_path"),
+            cert_path=cert_path,
             scope=auth_config.get("scope"),
         )
 

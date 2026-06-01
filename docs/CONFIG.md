@@ -47,14 +47,15 @@ fitz answer "What is X?" \
 
 ## Optional LLM Providers
 
-The retrieval path does not require chat. Chat tiers are provider definitions
-used only when another config key opts into an LLM-backed stage.
+The retrieval path does not require chat. Role-specific provider fields opt
+individual LLM-backed stages in:
 
-| Key             | Typical use when referenced by a feature provider |
-| --------------- | -------------------------------------------------- |
-| `chat_fast`     | Query-intelligence enhancement, enrichment         |
-| `chat_balanced` | Summaries, table query helpers                     |
-| `chat_smart`    | Synthesis-oriented defaults                        |
+| Key                  | Typical use                                      |
+| -------------------- | ------------------------------------------------ |
+| `query_intelligence` | Optional query-prep enhancement                  |
+| `synthesizer`        | Optional answer generation                       |
+| `enricher`           | Optional keyword/entity enrichment               |
+| `summarizer`         | Optional section/table/hierarchy summaries       |
 
 Each optional LLM-backed role takes a provider/model spec. For `endpoint`,
 the model name is the part after the slash and `chat_base_url` supplies the
@@ -66,8 +67,9 @@ chat_base_url: http://localhost:8080/v1
 ```
 
 If `chat_base_url` is shared across roles (the common case), set it once at
-the top level. Legacy `chat_fast`, `chat_balanced`, and `chat_smart` tiers are
-only needed for code paths that still request a tiered chat factory.
+the top level. `chat_fast`, `chat_balanced`, and `chat_smart` are optional
+low-level tier slots for advanced integrations that request a tiered chat
+factory directly.
 
 ---
 

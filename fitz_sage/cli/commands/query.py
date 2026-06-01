@@ -110,11 +110,11 @@ def _apply_chat_overrides(
         overrides["synthesizer"] = spec
     elif endpoint is not None:
         # User gave --endpoint but no --model. Reuse the configured
-        # chat_smart model name, but route it via the new endpoint.
+        # synthesizer model name, but route it via the new endpoint.
         # If the existing spec isn't endpoint/<model>, switch it.
-        existing = base_config.chat_smart
+        existing = base_config.synthesizer
         if not existing:
-            ui.error("--endpoint requires --model when no chat_smart model is configured.")
+            ui.error("--endpoint requires --model when no synthesizer model is configured.")
             raise typer.Exit(1)
         if "/" in existing:
             _, model_name = existing.split("/", 1)

@@ -6,8 +6,9 @@ High-level system design of fitz-sage **v0.14.1+**.
 The architecture has three load-bearing decisions:
 
 1. **One protocol.** OpenAI-compatible HTTP. No SDK dependencies, no
-   provider-specific code paths. `chat_smart`, `chat_balanced`,
-   `chat_fast` all speak the same `/chat/completions` endpoint.
+   provider-specific code paths. Optional role providers such as
+   `query_intelligence`, `synthesizer`, `enricher`, and `summarizer`
+   all speak the same `/chat/completions` endpoint.
 2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
    typed-unit routing (symbols, sections, tables) + an ONNX cross-encoder
    reranker that scores candidates in a single local forward pass — no
@@ -38,11 +39,11 @@ The architecture has three load-bearing decisions:
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  Engine: FitzKRAG                                                           │
-│  - Query rewriter → analyzer → detection (LLM-classified intent)            │
+│  - Deterministic planner + optional query-intelligence provider             │
 │  - Router: symbol search · section search · table SQL                       │
 │  - Expander (import graph, entity links, same-file refs, hierarchy)         │
 │  - ONNX cross-encoder reranker (gte-reranker-modernbert-base)               │
-│  - Synthesizer (chat call that writes the answer)                           │
+│  - Optional synthesizer (chat call that writes the answer)                  │
 │  - Governance (pyrrho → TRUSTWORTHY / DISPUTED / ABSTAIN)                   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -54,7 +55,7 @@ The architecture has three load-bearing decisions:
 │  endpoint provider  │  │  WAL + FTS5         │  │  Parse (Docling / OCR)  │
 │  (any OpenAI-       │  │  one .db per        │  │  Chunk (semantic +      │
 │  compatible URL)    │  │  collection         │  │   structured)           │
-│  + enterprise auth  │  │  bm25() ranking     │  │  Enrich (summaries,     │
+│  + enterprise auth  │  │  bm25() ranking     │  │  Optional enrich        │
 │  (M2M, mTLS, CA)    │  │  json_each, json1   │  │   keywords, entities)   │
 └─────────────────────┘  └─────────────────────┘  └─────────────────────────┘
           │
@@ -93,14 +94,14 @@ Retrieval runs as a tiered pipeline. Tiers 2-5 form one `RetrievalPass`
 when pyrrho judges the evidence insufficient.
 
 ```
-Tier 1  Transform   rewrite (pronouns / context) → analyze → detect intent
+Tier 1  Transform   deterministic plan → optional rewrite/analyze/detect intent
 Tier 2  Generate    route to symbol / section / table search over FTS5 bm25
 Tier 3  Fuse        merge across strategies, dedup, keyword-boost
 Tier 4  Rerank      ONNX cross-encoder (gte-reranker-modernbert-base, ~30 ms CPU)
 Tier 5  Read        fetch content for the surviving addresses
         expand      import graph, entity links, hierarchical context
 Tier 6  Govern      pyrrho → AnswerMode ∈ {TRUSTWORTHY, DISPUTED, ABSTAIN}
-        synthesize  chat call writes the answer + provenance
+        synthesize  optional chat call writes the answer + provenance
 ```
 
 ### Ingestion
@@ -110,8 +111,8 @@ Files → Parse (Docling for PDF/DOCX, GLM-OCR for scans, tree-sitter
         for code, native parsers for CSV/XLSX/SQL/JSON)
       → Chunk (sections, symbols, table rows — typed units, not
         fixed-size windows)
-      → Enrich (LLM-generated summaries, keywords, named entities;
-        hierarchical L1/L2 summaries)
+      → Optional enrich (LLM-generated summaries, keywords, named entities;
+        hierarchical L1/L2 summaries when providers are configured)
       → Index into per-collection SQLite + FTS5 external-content tables
 ```
 
@@ -220,7 +221,7 @@ metadata, not fixed-size text windows.
 ```
 ~/.fitz/
 ├── config/
-│   └── fitz_krag.yaml       # engine config (chat tiers, retrieval knobs)
+│   └── fitz_krag.yaml       # engine config (role providers, retrieval knobs)
 ├── sqlite/                  # one .db per collection
 │   ├── fitz_default.db
 │   └── ...
