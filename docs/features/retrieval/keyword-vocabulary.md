@@ -52,11 +52,10 @@ stage.
    virtual tables (`krag_symbol_fts`, `krag_section_fts`). The FTS5
    tokenizer keeps identifier tokens intact.
 
-3. **Keyword enrichment (optional).** When `enricher:` is configured,
-   `KragEnricher` additionally extracts exact-match identifiers as
-   `keywords` on each unit (function names, class names, IDs,
-   abbreviations). These keywords are stored on the unit and are
-   themselves searchable text.
+3. **Keyword enrichment.** `KragEnricher` extracts exact-match
+   identifiers as `keywords` on each unit (function names, class
+   names, IDs, abbreviations). These keywords are stored on the unit
+   and are themselves searchable text.
 
 ### At query time
 
@@ -81,8 +80,8 @@ stage.
 
 ## Configuration
 
-None. FTS5 + `bm25()` are always active. Optional keyword enrichment runs when
-`enricher:` is configured.
+None for search. FTS5 + `bm25()` are always active. Keyword enrichment is part
+of the required ingestion contract and uses `enricher:`.
 
 ## Files
 

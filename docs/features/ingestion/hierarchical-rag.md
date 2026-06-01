@@ -30,7 +30,7 @@ Query routing is automatic — summaries match analytical queries via the BM25 +
 The `KragIngestPipeline` builds the hierarchy itself — there is no
 separate hierarchy enricher. L1 summaries are produced during the
 per-file `enrich` step; the L2 summary during the corpus `finalize`
-step. Both run when `summarizer:` is configured.
+step. Both use the required `summarizer:` provider.
 
 ### At Ingestion
 
@@ -72,8 +72,8 @@ Q: "What did users say about the async tutorial?"
 
 ## Key Design Decisions
 
-1. **Provider controlled** — summaries are generated during ingestion when
-   `summarizer:` is configured.
+1. **Required provider** — summaries are generated during ingestion through
+   `summarizer:`.
 
 2. **Automatic routing** — abstract queries lexically match the L2
    summary; specific queries match L0 token-for-token. The LLM
@@ -89,16 +89,17 @@ Q: "What did users say about the async tutorial?"
 
 ## Configuration
 
-The feature is built into the KRAG ingestion pipeline and controlled by
-provider presence:
+The feature is built into the KRAG ingestion pipeline and uses the required
+summarizer provider:
 
 ```yaml
-summarizer: endpoint/qwen3.5-0.8b
+summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
 chat_base_url: http://localhost:8080/v1
 ```
 
-`summarizer:` is independent of `enricher:` — a document file still gets an L1
-summary when keyword/entity enrichment is off.
+`summarizer:` and `enricher:` are both required for document ingestion. If
+either provider is missing or offline, ingestion fails closed before the
+collection is treated as ready.
 
 ## Files
 

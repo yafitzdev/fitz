@@ -18,12 +18,14 @@ rerank: onnx
 governance: pyrrho
 query_intelligence: null
 synthesizer: null
-enricher: null
-summarizer: null
+chat_base_url: http://127.0.0.1:8080/v1
+enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
 ```
 
-This is enough for `fitz retrieve` and `fitz_sage.evidence(...)`: no API key and
-no local chat server are required.
+This is enough for `fitz retrieve` and `fitz_sage.evidence(...)` with local
+enrichment: no hosted API key is required, but a local OpenAI-compatible server
+must serve `qwen3.5-0.8b@Q4_K_M` before ingesting a source.
 
 To enable synthesized answers through a hosted endpoint:
 
@@ -42,20 +44,19 @@ fitz answer "What is X?" --synthesizer openai/gpt-4o
 
 ---
 
-## Optional LLM Providers
+## LLM Providers
 
-The retrieval path does not require chat. Role-specific provider fields opt
-individual LLM-backed stages in:
+Role-specific provider fields bind LLM-backed stages:
 
 | Key                  | Typical use                                      |
 | -------------------- | ------------------------------------------------ |
 | `query_intelligence` | Optional query-prep enhancement                  |
 | `synthesizer`        | Optional answer generation                       |
-| `enricher`           | Optional keyword/entity enrichment               |
-| `summarizer`         | Optional section/table/hierarchy summaries       |
+| `enricher`           | Required keyword/entity enrichment               |
+| `summarizer`         | Required section/table/hierarchy summaries       |
 
-Each optional LLM-backed role takes a provider/model spec. For `endpoint`,
-the model name is the part after the slash and `chat_base_url` supplies the
+Each LLM-backed role takes a provider/model spec. For `endpoint`, the model
+name is the part after the slash and `chat_base_url` supplies the
 OpenAI-compatible URL:
 
 ```yaml
@@ -91,7 +92,8 @@ for those backends instead (Ollama exposes one at
 
 ## Feature control
 
-Features are switched on by **provider presence**, not boolean flags:
+Features are switched on by **provider presence**, not boolean flags. Enrichment
+and hierarchy summaries are present by default and are required for ingestion:
 
 | Feature            | Enabled when                             | Disabled when                       |
 | ------------------ | ---------------------------------------- | ----------------------------------- |
@@ -99,8 +101,8 @@ Features are switched on by **provider presence**, not boolean flags:
 | Governance         | `governance: pyrrho` (default)           | `governance: null`                  |
 | Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |
 | Answer synthesis   | `synthesizer: <provider/model>`          | `synthesizer: null`                 |
-| Enrichment         | `enricher: <provider/model>`             | `enricher: null`                    |
-| Hierarchy summaries | `summarizer: <provider/model>`          | `summarizer: null`                  |
+| Enrichment         | `enricher: <provider/model>`             | `enricher: null` makes ingestion fail |
+| Hierarchy summaries | `summarizer: <provider/model>`          | `summarizer: null` makes ingestion fail |
 | VLM in parser      | `parser: docling_vision` + `vision:` set | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
 
 ---
@@ -146,7 +148,7 @@ built-in plugins — they are not `parser:` options.
 
 ## Authentication
 
-API keys are needed only for optional hosted providers. They are read from
+API keys are needed only for hosted providers. They are read from
 environment variables — never put them in the config file. Name the env var with
 `chat_api_key_env`:
 
@@ -186,7 +188,7 @@ baseline.
 ## Synthesis Knobs
 
 ```yaml
-synthesizer: endpoint/qwen3.5-0.8b
+synthesizer: endpoint/qwen3.5-0.8b@Q4_K_M
 chat_base_url: http://localhost:8080/v1
 max_answer_tokens: 512       # general answer cap
 short_answer_tokens: 192     # factual-question cap

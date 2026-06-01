@@ -1,9 +1,9 @@
 <!-- docs/ENRICHMENT.md -->
 # Enrichment
 
-Optional LLM-powered enhancements added to ingested content. Retrieval works
-without enrichment; these stages improve future ranking and analytical queries
-when provider specs are configured.
+Required LLM-powered metadata added to ingested content. Enrichment is part of
+the KRAG index contract: ingestion should produce keywords, entities, temporal
+metadata, and hierarchy summaries before the collection is treated as ready.
 
 ---
 
@@ -49,9 +49,10 @@ pipeline — no separate orchestrator, and no foreground query dependency.
 - **Temporal metadata** — dates, version numbers, time references found in the text
 - **Hierarchy** — L1 (per-file) and L2 (corpus) summaries for analytical queries
 
-Keyword/entity/temporal extraction runs when `enricher:` is configured. L1/L2
-hierarchy summaries run when `summarizer:` is configured. If the provider
-fields are `null`, ingestion skips those LLM stages and retrieval still works.
+Keyword/entity/temporal extraction uses `enricher:`. L1/L2 hierarchy summaries
+use `summarizer:`. The default profile is `qwen3.5-0.8b@Q4_K_M` behind a local
+OpenAI-compatible endpoint. If either provider is missing or unreachable,
+ingestion fails closed instead of silently storing an under-enriched index.
 
 ---
 
@@ -163,29 +164,37 @@ No special query syntax needed — the L2 summary is an ordinary retrievable sec
 
 ## CLI Usage
 
-The default retrieval path does not run enrichment:
+Source-backed retrieval waits for required indexing before retrieving evidence:
 
 ```bash
 fitz retrieve "your question" --source ./docs
 ```
 
-To enable optional background enrichment, configure provider specs:
+The default local enrichment runtime is llama.cpp's `llama-server`:
 
-```yaml
-enricher: endpoint/qwen3.5-0.8b
-summarizer: endpoint/qwen3.5-0.8b
-chat_base_url: http://localhost:1234/v1
+```bash
+llama-server -hf bartowski/Qwen_Qwen3.5-0.8B-GGUF:Q4_K_M \
+  --alias qwen3.5-0.8b@Q4_K_M \
+  --host 127.0.0.1 --port 8080
 ```
 
-The background worker schedules parse → optional summarize → optional enrich per
-file during indexing. `fitz retrieve` reports indexing status without blocking
-on those optional stages.
+Config:
+
+```yaml
+enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+chat_base_url: http://127.0.0.1:8080/v1
+```
+
+If no inference engine is running, first-run setup writes this config and shows
+the `llama-server` command. A source-backed retrieval then stops at indexing
+with an actionable error until the local runtime is started.
 
 ---
 
 ## Cost Analysis
 
-Batching keeps enrichment cheap when a provider is configured. `KragEnricher`
+Batching keeps enrichment cheap. `KragEnricher`
 extracts keywords + entities + temporal for ~15 symbols/sections per LLM call.
 
 ### Per batch (~15 units)
@@ -212,7 +221,7 @@ document file plus one corpus call).
 
 ## Configuration
 
-Provider specs control whether the optional stages run:
+Provider specs bind the required enrichment stages:
 
 | Key | Controls |
 |------|----------|
@@ -222,9 +231,9 @@ Provider specs control whether the optional stages run:
 Small CPU-local profile:
 
 ```yaml
-chat_base_url: http://localhost:1234/v1
-enricher: endpoint/qwen3.5-0.8b
-summarizer: endpoint/qwen3.5-0.8b
+chat_base_url: http://127.0.0.1:8080/v1
+enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
 summary_batch_size: 15
 ```
 

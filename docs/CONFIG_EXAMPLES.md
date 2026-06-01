@@ -7,13 +7,14 @@ schema rules:
 - **String specs** instead of nested dicts (`synthesizer: endpoint/gpt-4o`,
   not a provider block).
 - **Provider presence** controls features (`synthesizer: null` disables
-  answer generation; `rerank: null` disables the reranker).
+  answer generation; `rerank: null` disables the reranker; enrichment providers
+  are present by default and required for ingestion).
 - **Sensible defaults** — `collection` is the only thing every config
   must set; the rest can be overridden per-invocation via CLI flags.
 
 ---
 
-## Minimal: retrieval-only
+## Minimal: local enrichment required
 
 ```yaml
 # ~/.fitz/config/fitz_krag.yaml
@@ -23,12 +24,19 @@ rerank: onnx
 governance: pyrrho
 query_intelligence: null
 synthesizer: null
-enricher: null
-summarizer: null
+chat_base_url: http://127.0.0.1:8080/v1
+enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
 ```
 
-No API key or chat server is needed. Storage is SQLite + FTS5, auto-managed
-under `~/.fitz/sqlite/`.
+No hosted API key is needed. Start a local OpenAI-compatible server before the
+first source-backed retrieval:
+
+```bash
+llama-server -hf bartowski/Qwen_Qwen3.5-0.8B-GGUF:Q4_K_M \
+  --alias qwen3.5-0.8b@Q4_K_M \
+  --host 127.0.0.1 --port 8080
+```
 
 ---
 
@@ -36,7 +44,7 @@ under `~/.fitz/sqlite/`.
 
 ```yaml
 collection: my_docs
-synthesizer: endpoint/qwen3.5-0.8b
+synthesizer: endpoint/qwen3.5-0.8b@Q4_K_M
 chat_base_url: http://localhost:8080/v1
 max_answer_tokens: 512
 short_answer_tokens: 192
@@ -98,7 +106,7 @@ chat_api_key_env: MISTRAL_API_KEY
 
 ## Mixed local + cloud (cost-optimized)
 
-Cheap local model for optional enrichment and query intelligence, smart cloud
+Required local enrichment, optional local query intelligence, and smart cloud
 model for optional synthesis:
 
 ```yaml
@@ -106,9 +114,9 @@ collection: my_docs
 chat_base_url: http://localhost:8080/v1
 chat_api_key_env: OPENAI_API_KEY
 
-query_intelligence: endpoint/qwen2.5-3b-instruct
-enricher: endpoint/qwen2.5-3b-instruct
-summarizer: endpoint/qwen2.5-7b-instruct
+query_intelligence: endpoint/qwen3.5-0.8b@Q4_K_M
+enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
 synthesizer: openai/gpt-4o
 ```
 
@@ -146,18 +154,19 @@ to skip the VLM and avoid the cost.
 
 ---
 
-## Optional Qwen 0.8B background enrichment
+## Required Qwen 0.8B enrichment
 
 ```yaml
 collection: my_docs
-chat_base_url: http://localhost:1234/v1
-enricher: endpoint/qwen3.5-0.8b
-summarizer: endpoint/qwen3.5-0.8b
+chat_base_url: http://127.0.0.1:8080/v1
+enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
 summary_batch_size: 15
 ```
 
-Use a Q4_K_M quantized small model when CPU-only enrichment is acceptable.
-Retrieval continues to work if these providers are omitted or offline.
+Use the Q4_K_M quantized small model for CPU-local enrichment. Ingestion fails
+closed if this provider is omitted or offline, so the collection is not treated
+as ready with missing metadata.
 
 ---
 
@@ -218,16 +227,18 @@ cfg = FitzKragConfig(
     collection="my_docs",
     synthesizer=None,
     query_intelligence=None,
-    enricher=None,
-    summarizer=None,
+    chat_base_url="http://127.0.0.1:8080/v1",
+    enricher="endpoint/qwen3.5-0.8b@Q4_K_M",
+    summarizer="endpoint/qwen3.5-0.8b@Q4_K_M",
 )
 engine = FitzKragEngine(cfg)
 pack = engine.evidence(Query(text="What is quantum computing?"))
 print(pack.mode, [item.file_path for item in pack.items])
 ```
 
-Only `collection` is strictly required; everything else can come from
-defaults or CLI flags.
+Only `collection` is strictly required by the schema because the local
+enrichment profile is the default. If you override it, keep enrichment and
+summarization bound to `qwen3.5-0.8b@Q4_K_M`.
 
 ---
 

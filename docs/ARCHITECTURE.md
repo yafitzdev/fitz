@@ -6,9 +6,9 @@ High-level system design of fitz-sage **v0.14.1+**.
 The architecture has three load-bearing decisions:
 
 1. **One protocol.** OpenAI-compatible HTTP. No SDK dependencies, no
-   provider-specific code paths. Optional role providers such as
-   `query_intelligence`, `synthesizer`, `enricher`, and `summarizer`
-   all speak the same `/chat/completions` endpoint.
+   provider-specific code paths. Role providers such as `query_intelligence`,
+   `synthesizer`, `enricher`, and `summarizer` all speak the same
+   `/chat/completions` endpoint. Enrichment roles are required by ingestion.
 2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
    typed-unit routing (symbols, sections, tables) + an ONNX cross-encoder
    reranker that scores candidates in a single local forward pass — no
@@ -55,7 +55,7 @@ The architecture has three load-bearing decisions:
 │  endpoint provider  │  │  WAL + FTS5         │  │  Parse (Docling / OCR)  │
 │  (any OpenAI-       │  │  one .db per        │  │  Chunk (semantic +      │
 │  compatible URL)    │  │  collection         │  │   structured)           │
-│  + enterprise auth  │  │  bm25() ranking     │  │  Optional enrich        │
+│  + enterprise auth  │  │  bm25() ranking     │  │  Required enrich        │
 │  (M2M, mTLS, CA)    │  │  json_each, json1   │  │   keywords, entities)   │
 └─────────────────────┘  └─────────────────────┘  └─────────────────────────┘
           │
@@ -111,8 +111,8 @@ Files → Parse (Docling for PDF/DOCX, GLM-OCR for scans, tree-sitter
         for code, native parsers for CSV/XLSX/SQL/JSON)
       → Chunk (sections, symbols, table rows — typed units, not
         fixed-size windows)
-      → Optional enrich (LLM-generated summaries, keywords, named entities;
-        hierarchical L1/L2 summaries when providers are configured)
+      → Required enrich (LLM-generated summaries, keywords, named entities,
+        hierarchical L1/L2 summaries)
       → Index into per-collection SQLite + FTS5 external-content tables
 ```
 
@@ -176,19 +176,23 @@ for the full schema-port notes (PostgreSQL → SQLite).
 
 ## Feature Control
 
-Features are controlled by **provider presence**, not boolean flags:
+Features are controlled by **provider presence**, not boolean flags. Enrichment
+providers are present by default and are required for ingestion:
 
 ```yaml
 # ENABLED — a provider is named
 rerank: onnx
 governance: pyrrho
-synthesizer: endpoint/qwen3.5-0.8b
+synthesizer: endpoint/qwen3.5-0.8b@Q4_K_M
+enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
 chat_base_url: http://localhost:8080/v1
 
 # DISABLED — omit the key (or set null)
 # synthesizer: null → no answer generation
 # rerank: null → no reranking step
 # governance: null → no governance
+# enricher/summarizer: null → source ingestion fails closed
 ```
 
 ---
@@ -228,7 +232,7 @@ metadata, not fixed-size text windows.
 └── ingest_state.json        # incremental ingest manifest
 ```
 
-Minimal retrieval config:
+Minimal local enrichment config:
 
 ```yaml
 collection: default
@@ -237,8 +241,9 @@ rerank: onnx
 governance: pyrrho
 query_intelligence: null
 synthesizer: null
-enricher: null
-summarizer: null
+chat_base_url: http://127.0.0.1:8080/v1
+enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
 ```
 
 Override per-invocation:
