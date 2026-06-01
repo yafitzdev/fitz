@@ -144,6 +144,14 @@ class TestUnknownProvider:
         with pytest.raises(ValueError, match="Unknown chat provider: unknown"):
             create_chat_provider("unknown")
 
+    def test_onnx_chat_provider_builds(self) -> None:
+        """`onnx` dispatches the managed Qwen ONNX chat provider."""
+        from fitz_sage.llm.providers.onnx_chat import DEFAULT_QWEN_MODEL_ID, OnnxChat
+
+        chat = create_chat_provider("onnx/qwen3.5-0.8b")
+        assert isinstance(chat, OnnxChat)
+        assert chat._model_id == DEFAULT_QWEN_MODEL_ID
+
     def test_unknown_rerank_provider_raises(self) -> None:
         """Unknown rerank provider raises with the supported list."""
         with pytest.raises(ValueError, match="Unknown rerank provider"):

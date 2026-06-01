@@ -133,8 +133,9 @@ class FitzKragEngine:
             msg = str(e)
             if "ConnectError" in type(e).__name__ or "10061" in msg or "Connection refused" in msg:
                 raise ConfigurationError(
-                    "Cannot connect to Ollama. Start it with: ollama serve\n"
-                    "Config: .fitz/config.yaml"
+                    "Cannot connect to the configured endpoint chat provider.\n"
+                    "Use `onnx/qwen3.5-0.8b` for managed local enrichment or "
+                    "check chat_base_url in .fitz/config.yaml."
                 ) from e
             raise ConfigurationError(f"Failed to initialize Fitz KRAG engine: {e}") from e
 

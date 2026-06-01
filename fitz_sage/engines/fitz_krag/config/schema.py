@@ -16,8 +16,8 @@ from pydantic import Field
 from fitz_sage.core.config import BasePluginConfig
 
 DEFAULT_LOCAL_LLM_BASE_URL = "http://127.0.0.1:8080/v1"
-DEFAULT_ENRICHMENT_MODEL = "qwen3.5-0.8b@Q4_K_M"
-DEFAULT_ENRICHMENT_SPEC = f"endpoint/{DEFAULT_ENRICHMENT_MODEL}"
+DEFAULT_ENRICHMENT_MODEL = "qwen3.5-0.8b"
+DEFAULT_ENRICHMENT_SPEC = f"onnx/{DEFAULT_ENRICHMENT_MODEL}"
 
 
 class FitzKragConfig(BasePluginConfig):
@@ -27,9 +27,8 @@ class FitzKragConfig(BasePluginConfig):
     Minimal local enrichment config:
     ```yaml
     collection: my_project
-    chat_base_url: http://127.0.0.1:8080/v1
-    enricher: endpoint/qwen3.5-0.8b@Q4_K_M
-    summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
+    enricher: onnx/qwen3.5-0.8b
+    summarizer: onnx/qwen3.5-0.8b
     synthesizer: null
     ```
 
@@ -73,7 +72,7 @@ class FitzKragConfig(BasePluginConfig):
         default=DEFAULT_LOCAL_LLM_BASE_URL,
         description=(
             "HTTP endpoint for chat — used by the ``endpoint`` provider. "
-            "Defaults to the local llama.cpp server URL for required enrichment."
+            "Ignored by the managed ONNX enrichment provider."
         ),
     )
 
@@ -216,7 +215,7 @@ class FitzKragConfig(BasePluginConfig):
         ge=1,
         description=(
             "Max retrieval strategies run concurrently. Set to 1 to serialize "
-            "LLM calls for single-model local servers (LM Studio, llama-server)."
+            "LLM calls for single-model endpoint servers."
         ),
     )
 

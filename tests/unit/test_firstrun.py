@@ -4,9 +4,8 @@ Unit tests for first-run auto-configuration.
 
 The behavior probes common ports for an OpenAI-compatible server
 (/v1/models), falls back to OpenAI cloud if OPENAI_API_KEY is set,
-and otherwise writes a retrieval-only config. There is no
-Ollama-specific path — Ollama users speak /v1/ just like everyone
-else. fitz-sage uses no embeddings.
+and otherwise writes an ONNX-only enrichment config. There is no
+Ollama-specific enrichment path. fitz-sage uses no embeddings.
 """
 
 from __future__ import annotations
@@ -125,8 +124,8 @@ class TestRunFirstrunSetup:
         assert "openai/gpt-4o" in config
         assert "synthesizer: openai/gpt-4o" in config
 
-    def test_no_provider_writes_retrieval_only_config(self, tmp_path, monkeypatch) -> None:
-        """No endpoint, no key -> retrieval-only config."""
+    def test_no_provider_writes_onnx_enrichment_config(self, tmp_path, monkeypatch) -> None:
+        """No endpoint, no key -> managed ONNX enrichment config."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         with (
             patch("fitz_sage.core.firstrun.detect_endpoint", return_value=None),
@@ -142,9 +141,11 @@ class TestRunFirstrunSetup:
         assert "collection: default" in config
         assert "synthesizer: null" in config
         assert "query_intelligence: null" in config
+        assert "enricher: onnx/qwen3.5-0.8b" in config
+        assert "summarizer: onnx/qwen3.5-0.8b" in config
 
-    def test_endpoint_with_no_chat_models_writes_retrieval_only_config(self, tmp_path) -> None:
-        """A reachable server with no models still permits retrieval."""
+    def test_endpoint_with_no_chat_models_writes_onnx_enrichment_config(self, tmp_path) -> None:
+        """A reachable server with no models still writes ONNX enrichment."""
         endpoint = DetectedEndpoint(
             base_url="http://localhost:8080/v1",
             chat_models=[],
@@ -161,3 +162,4 @@ class TestRunFirstrunSetup:
         assert ok is True
         config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
         assert "synthesizer: null" in config
+        assert "enricher: onnx/qwen3.5-0.8b" in config

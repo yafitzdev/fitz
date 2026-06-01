@@ -2,10 +2,11 @@
 """
 Public API for LLM providers.
 
-The single chat-protocol implementation behind these factories is
-``OpenAICompatChat`` (see ``fitz_sage.llm.providers.openai_compat``).
-Provider names are configuration presets:
+The default ingestion chat provider is the managed local ONNX Qwen runtime.
+Endpoint/cloud providers remain available for optional synthesis, query
+intelligence, and vision.
 
+- ``onnx/qwen3.5-0.8b`` — managed in-process Qwen3.5 0.8B ONNX runtime.
 - ``endpoint/<model>`` — bring your own OpenAI-compatible URL.
 - ``openai`` / ``openai/<model>`` — preset for the public OpenAI API.
 - ``azure_openai/<deployment>`` — preset for tenant-specific Azure
@@ -41,8 +42,8 @@ def get_chat(
     Get a chat provider.
 
     Args:
-        spec: Provider spec — ``endpoint/<model>``, ``openai``,
-            ``openai/<model>``, ``azure_openai/<deployment>``,
+        spec: Provider spec — ``onnx/qwen3.5-0.8b``, ``endpoint/<model>``,
+            ``openai``, ``openai/<model>``, ``azure_openai/<deployment>``,
             or ``enterprise/<model>``.
         tier: Model tier (smart, balanced, fast). Used as a default-
             model hint for the ``openai`` preset; ignored when an
@@ -50,6 +51,7 @@ def get_chat(
         config: Optional config — ``base_url``, ``auth`` block, etc.
 
     Examples:
+        >>> chat = get_chat("onnx/qwen3.5-0.8b")
         >>> chat = get_chat("endpoint/qwen2.5-7b",
         ...                 config={"base_url": "http://localhost:8080/v1"})
         >>> chat = get_chat("openai/gpt-4o")

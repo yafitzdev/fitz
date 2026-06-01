@@ -635,8 +635,8 @@ class KragIngestPipeline:
             return
         raise ConfigurationError(
             "Ingestion requires keyword/entity enrichment. Configure "
-            "`enricher: endpoint/qwen3.5-0.8b@Q4_K_M` and start the local "
-            "OpenAI-compatible inference server."
+            "`enricher: onnx/qwen3.5-0.8b` so Fitz can run the managed "
+            "local ONNX Qwen model."
         )
 
     def _require_summarizer(self) -> None:
@@ -645,8 +645,8 @@ class KragIngestPipeline:
             return
         raise ConfigurationError(
             "Ingestion requires hierarchy summarization. Configure "
-            "`summarizer: endpoint/qwen3.5-0.8b@Q4_K_M` and start the local "
-            "OpenAI-compatible inference server."
+            "`summarizer: onnx/qwen3.5-0.8b` so Fitz can run the managed "
+            "local ONNX Qwen model."
         )
 
     def _enrich_code_file(self, file_id: str) -> None:

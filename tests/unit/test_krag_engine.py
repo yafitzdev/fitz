@@ -145,14 +145,14 @@ class TestEngineInit:
         _patches["get_chat"].assert_has_calls(
             [
                 call(
-                    "endpoint/qwen3.5-0.8b@Q4_K_M",
+                    "onnx/qwen3.5-0.8b",
                     "fast",
-                    {"base_url": "http://127.0.0.1:8080/v1"},
+                    None,
                 ),
                 call(
-                    "endpoint/qwen3.5-0.8b@Q4_K_M",
+                    "onnx/qwen3.5-0.8b",
                     "balanced",
-                    {"base_url": "http://127.0.0.1:8080/v1"},
+                    None,
                 ),
             ]
         )
@@ -192,14 +192,14 @@ class TestEngineInit:
                     {"base_url": "http://127.0.0.1:8080/v1"},
                 ),
                 call(
-                    "endpoint/qwen3.5-0.8b@Q4_K_M",
+                    "onnx/qwen3.5-0.8b",
                     "fast",
-                    {"base_url": "http://127.0.0.1:8080/v1"},
+                    None,
                 ),
                 call(
-                    "endpoint/qwen3.5-0.8b@Q4_K_M",
+                    "onnx/qwen3.5-0.8b",
                     "balanced",
-                    {"base_url": "http://127.0.0.1:8080/v1"},
+                    None,
                 ),
             ]
         )
