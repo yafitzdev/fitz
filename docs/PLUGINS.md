@@ -1,3 +1,4 @@
+<!-- docs/PLUGINS.md -->
 # Plugin Development Guide
 
 fitz-sage **v0.14.1+** has a much smaller plugin surface than earlier
@@ -13,7 +14,7 @@ This guide covers what's pluggable and how to add a new one.
 
 | Type            | Format | Location                                       | Selected by config              |
 | --------------- | ------ | ---------------------------------------------- | -------------------------------- |
-| Chat provider   | Python | `fitz_sage/llm/providers/`                     | `chat_fast` / `chat_smart` / ... |
+| Chat provider   | Python | `fitz_sage/llm/providers/`                     | `query_intelligence` / `synthesizer` / ... |
 | Parser          | Python | `fitz_sage/ingestion/parser/plugins/`          | `parser:`                        |
 | Chunker         | Python | `fitz_sage/ingestion/chunking/plugins/`        | `chunker:` / format auto-routing |
 | Source          | Python | `fitz_sage/ingestion/source/plugins/`          | source spec at ingest time       |
@@ -75,16 +76,15 @@ OpenAI-compatible endpoint instead — e.g. Ollama exposes one at
 
 ### Model tiers
 
-`chat_fast`, `chat_balanced`, `chat_smart` are cost-tier slots. Wire
-them to different models or to the same model with different sampling:
+Role-specific provider fields are the primary control surface. Legacy
+`chat_fast`, `chat_balanced`, and `chat_smart` tiers are optional slots for
+code paths that still need a tiered chat factory:
 
 ```yaml
-chat_fast: endpoint            # cheap for enrichment / classification
-chat_balanced: endpoint        # default synthesizer
-chat_smart: endpoint           # heavy reasoning paths
-chat_fast_model: qwen2.5-3b-instruct
-chat_balanced_model: qwen2.5-7b-instruct
-chat_smart_model: qwen2.5-32b-instruct
+query_intelligence: endpoint/qwen2.5-3b-instruct
+enricher: endpoint/qwen2.5-3b-instruct
+summarizer: endpoint/qwen2.5-7b-instruct
+synthesizer: endpoint/qwen2.5-32b-instruct
 chat_base_url: http://localhost:8080/v1
 chat_api_key_env: OPENAI_API_KEY    # omit for unauthenticated local servers
 ```

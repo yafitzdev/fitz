@@ -1,3 +1,4 @@
+<!-- docs/INGESTION.md -->
 # Ingestion Pipeline
 
 How documents flow through Fitz from files to searchable chunks.
@@ -350,11 +351,8 @@ from fitz_sage.core import Query
 from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
 
 cfg = FitzKragConfig(
-    chat_fast="endpoint",
-    chat_balanced="endpoint",
-    chat_smart="endpoint",
+    synthesizer="endpoint/qwen2.5-7b-instruct",
     chat_base_url="http://localhost:8080/v1",
-    chat_smart_model="qwen2.5-7b-instruct",
     collection="my_collection",
 )
 engine = FitzKragEngine(cfg)

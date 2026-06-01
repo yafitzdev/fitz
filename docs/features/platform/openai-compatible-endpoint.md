@@ -1,3 +1,4 @@
+<!-- docs/features/platform/openai-compatible-endpoint.md -->
 # OpenAI-Compatible Endpoint Architecture
 
 **Status:** the canonical chat-protocol path. As of **v0.12.0** this is
@@ -59,8 +60,7 @@ The auth layer (`fitz_sage.llm.auth`) is shared across all presets:
 For `endpoint`, opt in to `ApiKeyAuth` via:
 
 ```yaml
-chat_smart: endpoint
-chat_smart_model: meta-llama-3.1-70b-instruct
+synthesizer: endpoint/meta-llama-3.1-70b-instruct
 chat_base_url: https://api.together.xyz/v1
 chat_api_key_env: TOGETHER_API_KEY
 ```
@@ -69,13 +69,7 @@ chat_api_key_env: TOGETHER_API_KEY
 
 ```yaml
 fitz_krag:
-  chat_fast: endpoint
-  chat_balanced: endpoint
-  chat_smart: endpoint
-  chat_fast_model: qwen2.5-3b-instruct
-  chat_balanced_model: qwen2.5-7b-instruct
-  chat_smart_model: qwen2.5-7b-instruct
-
+  synthesizer: endpoint/qwen2.5-7b-instruct
   chat_base_url: http://localhost:8080/v1
   chat_api_key_env: null         # unauthenticated local server
 
@@ -83,9 +77,8 @@ fitz_krag:
   collection: default
 ```
 
-Per-tier overrides (`chat_smart_base_url`, `chat_smart_api_key_env`,
-`chat_smart_model`) let you mix local and cloud if you want — cheap
-local model for fast/balanced, cloud smart model for synthesis.
+Use role-specific provider fields (`query_intelligence`, `enricher`,
+`summarizer`, `synthesizer`) to mix local and cloud models.
 
 ## Recommended local setup (llama.cpp)
 
@@ -101,18 +94,16 @@ v0.12.0. One process, one model, hot the whole time.
 
 ```yaml
 # OpenAI (preset; no base_url needed)
-chat_smart: openai/gpt-4o
+synthesizer: openai/gpt-4o
 # OPENAI_API_KEY in env
 
 # Together (endpoint with API key)
-chat_smart: endpoint
-chat_smart_model: meta-llama-3.1-70b-instruct
+synthesizer: endpoint/meta-llama-3.1-70b-instruct
 chat_base_url: https://api.together.xyz/v1
 chat_api_key_env: TOGETHER_API_KEY
 
 # OpenRouter (gateway over many vendors)
-chat_smart: endpoint
-chat_smart_model: anthropic/claude-sonnet-4
+synthesizer: endpoint/anthropic/claude-sonnet-4
 chat_base_url: https://openrouter.ai/api/v1
 chat_api_key_env: OPENROUTER_API_KEY
 ```
@@ -121,9 +112,9 @@ chat_api_key_env: OPENROUTER_API_KEY
 
 | Old spec                        | New spec                                                                               |
 |---------------------------------|----------------------------------------------------------------------------------------|
-| `ollama/qwen2.5:14b`            | `endpoint` + `chat_smart_model: qwen2.5:14b` + `chat_base_url: http://localhost:11434/v1` |
+| `ollama/qwen2.5:14b`            | `synthesizer: endpoint/qwen2.5:14b` + `chat_base_url: http://localhost:11434/v1` |
 | `cohere/command-a-03-2025`      | not directly supported — Cohere's chat endpoint isn't OpenAI-compatible. Use OpenRouter or another OpenAI-compatible gateway. |
-| `anthropic/claude-sonnet-4`     | `endpoint` + `chat_smart_model: anthropic/claude-sonnet-4` via OpenRouter + `OPENROUTER_API_KEY` |
+| `anthropic/claude-sonnet-4`     | `synthesizer: endpoint/anthropic/claude-sonnet-4` via OpenRouter + `OPENROUTER_API_KEY` |
 
 These migrations are surfaced in the `ValueError` raised when the
 legacy spec is loaded at runtime.

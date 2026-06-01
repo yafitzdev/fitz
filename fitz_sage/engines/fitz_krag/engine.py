@@ -164,6 +164,7 @@ class FitzKragEngine:
             cache_dir=col_dir / "parsed",
         )
         self._retrieval_router._agentic_strategy = agentic
+        self._retrieval_router._allow_llm_agentic = self._chat_factory is not None
         self._reader._source_dir = self._source_dir
 
     def _try_load_persisted_manifest(self, collection: str) -> None:
@@ -196,37 +197,22 @@ class FitzKragEngine:
 
     def _init_components(self) -> None:
         """Initialize engine components lazily."""
-        import threading
         import time as _t
-        from concurrent.futures import ThreadPoolExecutor
 
-        from fitz_sage.llm.client import get_chat
         from fitz_sage.storage.sqlite import SqliteConnectionManager
 
         _t0 = _t.perf_counter()
 
-        # The SQLite store and the LLM provider init independently, so run
-        # them in parallel. LLM provider init creates one HTTP client;
-        # overlapping with store startup saves the slower of the two.
         chat_config = _build_provider_config(
             self._config.chat_base_url,
             self._config.chat_api_key_env,
             spec=self._config.chat_smart,
         )
 
-        logger.debug("Starting database and connecting to LLM provider")
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            chat_future = pool.submit(
-                get_chat,
-                self._config.chat_smart,
-                "smart",
-                chat_config,
-            )
-            pg_future = pool.submit(SqliteConnectionManager.get_instance)
-
-            self._chat = chat_future.result()
-            self._connection_manager = pg_future.result()
-        logger.debug("Database and LLM provider initialized")
+        logger.debug("Starting database")
+        self._chat = None
+        self._connection_manager = SqliteConnectionManager.get_instance()
+        logger.debug("Database initialized")
 
         _t1 = _t.perf_counter()
         logger.debug(f"[init] providers+pg: {(_t1-_t0)*1000:.0f}ms")
@@ -293,51 +279,19 @@ class FitzKragEngine:
         _t3 = _t.perf_counter()
         logger.debug(f"[init] strategies: {(_t3-_ts1)*1000:.0f}ms")
 
-        # Chat factory (shared by detection, rewriter, HyDE, multi-hop, enrichment)
+        # Chat factory for legacy tiered LLM paths. Retrieval-first defaults
+        # leave chat tiers unset, so this stays None unless the user opts in.
         from fitz_sage.llm.factory import get_chat_factory
 
-        # The factory uses whatever specs the user configured per tier.
-        # If a user wants a single model across tiers (typical for local
-        # llama-server with one model loaded), they set the same spec
-        # for chat_fast / chat_balanced / chat_smart — no special-casing
-        # at this layer.
-        #
-        # The factory currently accepts a single config dict for all
-        # tiers, so per-tier base URLs aren't supported. In practice all
-        # three tiers share the same chat_base_url, so this is fine.
-        self._chat_factory = get_chat_factory(
-            {
-                "fast": self._config.chat_fast,
-                "balanced": self._config.chat_balanced,
-                "smart": self._config.chat_smart,
-            },
-            chat_config,
+        tier_specs = self._chat_tier_specs()
+        self._chat_factory = (
+            get_chat_factory(tier_specs, chat_config) if tier_specs is not None else None
         )
-
-        def _warmup_chat():
-            logger.debug("Warming LLM models")
-            try:
-                self._chat_factory("fast").chat(
-                    [{"role": "user", "content": "hi"}],
-                    max_tokens=1,
-                )
-            except Exception:
-                pass
-            try:
-                self._chat.chat(
-                    [{"role": "user", "content": "hi"}],
-                    max_tokens=1,
-                )
-            except Exception:
-                pass
-            logger.debug("LLM warmup complete")
-
-        if self._should_warm_chat():
-            threading.Thread(target=_warmup_chat, daemon=True).start()
 
         # Context + Generation
         from fitz_sage.engines.fitz_krag.context.assembler import ContextAssembler
         from fitz_sage.engines.fitz_krag.generation.synthesizer import CodeSynthesizer
+        from fitz_sage.llm.client import get_chat
 
         self._assembler = ContextAssembler(self._config)
         self._synthesizer = None
@@ -383,8 +337,11 @@ class FitzKragEngine:
         # Table query handler
         from fitz_sage.engines.fitz_krag.retrieval.table_handler import TableQueryHandler
 
+        table_chat = self._chat_factory("balanced") if self._chat_factory else None
         self._table_handler = TableQueryHandler(
-            self._chat_factory("balanced"), self._sqlite_table_store, self._config
+            table_chat,
+            self._sqlite_table_store,
+            self._config,
         )
 
         # Query prep defaults to the deterministic planner. If
@@ -394,7 +351,7 @@ class FitzKragEngine:
         from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
         from fitz_sage.retrieval.detection.modules import DEFAULT_MODULES
 
-        query_chat_factory = self._chat_factory
+        query_chat_factory = self._chat_factory or self._missing_chat_factory
         if self._config.query_intelligence:
             query_chat_config = _build_provider_config(
                 self._config.chat_base_url,
@@ -476,7 +433,7 @@ class FitzKragEngine:
 
         # Multi-hop controller — loops the retrieval pass, pyrrho-gated.
         self._hop_controller: Any = None
-        if self._config.enable_multi_hop:
+        if self._config.enable_multi_hop and self._chat_factory:
             from fitz_sage.engines.fitz_krag.retrieval.multihop import KragHopController
 
             self._hop_controller = KragHopController(
@@ -494,17 +451,35 @@ class FitzKragEngine:
         _t5 = _t.perf_counter()
         logger.debug(f"[init] schema: {(_t5-_t4)*1000:.0f}ms, " f"total: {(_t5-_t0)*1000:.0f}ms")
 
-        # Chat models already warming up from init (background threads above).
+        # Retrieval-first init intentionally does not create or warm chat clients.
 
-    def _should_warm_chat(self) -> bool:
-        """Return True when an optional chat-backed feature is configured."""
-        return any(
-            (
-                self._config.query_intelligence,
-                self._config.synthesizer,
-                self._config.enricher,
-                self._config.summarizer,
+    def _chat_tier_specs(self) -> dict[str, str] | None:
+        """Return complete tier specs when the legacy chat tiers are configured."""
+        configured = [
+            spec
+            for spec in (
+                self._config.chat_fast,
+                self._config.chat_balanced,
+                self._config.chat_smart,
             )
+            if spec
+        ]
+        if not configured:
+            return None
+
+        fallback = configured[0]
+        return {
+            "fast": self._config.chat_fast or fallback,
+            "balanced": self._config.chat_balanced or fallback,
+            "smart": self._config.chat_smart or fallback,
+        }
+
+    @staticmethod
+    def _missing_chat_factory(tier: str = "fast") -> Any:
+        """Raise when an LLM enhancement is requested without a provider."""
+        raise ConfigurationError(
+            f"No chat provider configured for tier '{tier}'. Configure the specific "
+            "feature provider, or set chat_fast/chat_balanced/chat_smart."
         )
 
     # Keywords that signal the query may have temporal/comparison/aggregation intent.
@@ -1252,6 +1227,7 @@ class FitzKragEngine:
             cache_dir=col_dir / "parsed",
         )
         self._retrieval_router._agentic_strategy = agentic
+        self._retrieval_router._allow_llm_agentic = self._chat_factory is not None
 
         # 4. Set source_dir on ContentReader for disk fallback
         self._reader._source_dir = source_dir

@@ -18,49 +18,42 @@ class FitzKragConfig(BasePluginConfig):
     """
     Fitz KRAG configuration.
 
-    Minimal local config (default — assumes one llama-server with
-    a chat model on localhost:8080):
+    Minimal retrieval config:
     ```yaml
-    chat_fast: endpoint/qwen2.5-7b-instruct
-    chat_balanced: endpoint/qwen2.5-7b-instruct
-    chat_smart: endpoint/qwen2.5-7b-instruct
-    chat_base_url: http://localhost:8080/v1
     collection: my_project
+    synthesizer: null
     ```
 
-    Cloud config (OpenAI):
+    Optional synthesis config (OpenAI):
     ```yaml
-    chat_smart: openai/gpt-4o
-    chat_balanced: openai/gpt-4o-mini
-    chat_fast: openai/gpt-4o-mini
+    synthesizer: openai/gpt-4o
     collection: my_project
     # OPENAI_API_KEY in env
     ```
 
     Note: fitz-sage uses no embedding model. Retrieval is BM25 + KRAG
-    typed-unit routing (code symbols, sections, tables) + LLM rerank.
-    The ``retrieval intelligence stack`` does the semantic work that
-    dense retrieval traditionally provides — without the failure mode
-    of surface-similar-but-wrong dense candidates.
+    typed-unit routing (code symbols, sections, tables) + optional ONNX
+    rerank. The ``retrieval intelligence stack`` does the semantic work that
+    dense retrieval traditionally provides without requiring a chat model.
     """
 
     # ==========================================================================
     # Core Plugins (shared infrastructure)
     # ==========================================================================
 
-    chat_fast: str = Field(
-        default="endpoint/qwen2.5-7b-instruct",
-        description="Chat model for fast optional LLM work (provider/model)",
+    chat_fast: str | None = Field(
+        default=None,
+        description="Optional fast-tier chat model for legacy tiered LLM work",
     )
 
-    chat_balanced: str = Field(
-        default="endpoint/qwen2.5-7b-instruct",
-        description="Chat model for general queries (provider/model)",
+    chat_balanced: str | None = Field(
+        default=None,
+        description="Optional balanced-tier chat model for legacy tiered LLM work",
     )
 
-    chat_smart: str = Field(
-        default="endpoint/qwen2.5-7b-instruct",
-        description="Chat model for complex generation (provider/model)",
+    chat_smart: str | None = Field(
+        default=None,
+        description="Optional smart-tier chat model for legacy tiered LLM work",
     )
 
     # Per-role base URLs — used by the ``endpoint`` and ``enterprise``
@@ -68,10 +61,10 @@ class FitzKragConfig(BasePluginConfig):
     # default URL) and ``azure_openai`` (which always requires its
     # own base_url at the spec level).
     chat_base_url: str | None = Field(
-        default="http://localhost:8080/v1",
+        default=None,
         description=(
             "HTTP endpoint for chat — used by the ``endpoint`` provider. "
-            "Default is a local llama-server on port 8080."
+            "None means no shared chat endpoint is configured."
         ),
     )
 

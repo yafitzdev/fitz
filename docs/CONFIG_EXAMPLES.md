@@ -4,8 +4,8 @@
 Working configs for the v0.12.0+ single-protocol / SQLite world. The
 schema rules:
 
-- **String specs** instead of nested dicts (`chat_smart: endpoint`, not
-  a provider block).
+- **String specs** instead of nested dicts (`synthesizer: endpoint/gpt-4o`,
+  not a provider block).
 - **Provider presence** controls features (`synthesizer: null` disables
   answer generation; `rerank: null` disables the reranker).
 - **Sensible defaults** — `collection` is the only thing every config
@@ -237,8 +237,8 @@ If you're migrating from v0.11.x:
 | `vector_db: pgvector`          | (deleted — SQLite + FTS5 is the only storage)            |
 | `vector_db_kwargs: ...`        | (deleted — no DB knobs)                                  |
 | `cloud: {enabled: true, ...}`  | (deleted — Fitz Cloud cache removed)                     |
-| `chat_smart: cohere/...`       | `chat_smart: endpoint`, point `chat_base_url` at the API |
-| `chat_smart: ollama/...`       | `chat_smart: endpoint`, `chat_base_url: http://localhost:11434/v1` |
+| `chat_smart: cohere/...`       | `synthesizer: endpoint/...`, point `chat_base_url` at the API |
+| `chat_smart: ollama/...`       | `synthesizer: endpoint/...`, `chat_base_url: http://localhost:11434/v1` |
 | `chat_smart: anthropic/...`    | not directly available — pick an OpenAI-compatible model |
 
 Loading a config with any of the deleted keys raises a `ValueError`

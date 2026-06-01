@@ -1,3 +1,4 @@
+<!-- docs/ARCHITECTURE.md -->
 # Architecture Overview
 
 High-level system design of fitz-sage **v0.14.1+**.
@@ -180,11 +181,13 @@ Features are controlled by **provider presence**, not boolean flags:
 # ENABLED — a provider is named
 rerank: onnx
 governance: pyrrho
-chat_smart: endpoint
+synthesizer: endpoint/qwen3.5-0.8b
 chat_base_url: http://localhost:8080/v1
 
 # DISABLED — omit the key (or set null)
-# rerank: null → no reranking step; governance: null → no governance
+# synthesizer: null → no answer generation
+# rerank: null → no reranking step
+# governance: null → no governance
 ```
 
 ---
@@ -224,21 +227,23 @@ metadata, not fixed-size text windows.
 └── ingest_state.json        # incremental ingest manifest
 ```
 
-Minimal config:
+Minimal retrieval config:
 
 ```yaml
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
-chat_base_url: http://localhost:8080/v1
-chat_smart_model: qwen2.5-7b-instruct
 collection: default
+parser: cpu
+rerank: onnx
+governance: pyrrho
+query_intelligence: null
+synthesizer: null
+enricher: null
+summarizer: null
 ```
 
 Override per-invocation:
 
 ```bash
-fitz query "..." \
+fitz answer "..." \
   --endpoint https://api.together.xyz/v1 \
   --model meta-llama-3.1-70b \
   --api-key-env TOGETHER_API_KEY

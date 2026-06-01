@@ -72,7 +72,7 @@ def query(
         help=(
             "Chat model name to send to --endpoint. "
             "If --endpoint is set without --model, the engine's "
-            "configured chat_smart model is used."
+            "configured chat_smart model is used when present."
         ),
     ),
     api_key_env: Optional[str] = typer.Option(

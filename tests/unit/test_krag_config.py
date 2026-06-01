@@ -11,10 +11,10 @@ class TestFitzKragConfig:
     def test_minimal_config(self):
         config = FitzKragConfig(collection="test")
         assert config.collection == "test"
-        assert config.chat_fast == "endpoint/qwen2.5-7b-instruct"
-        assert config.chat_balanced == "endpoint/qwen2.5-7b-instruct"
-        assert config.chat_smart == "endpoint/qwen2.5-7b-instruct"
-        assert config.chat_base_url == "http://localhost:8080/v1"
+        assert config.chat_fast is None
+        assert config.chat_balanced is None
+        assert config.chat_smart is None
+        assert config.chat_base_url is None
 
     def test_defaults(self):
         config = FitzKragConfig(collection="test")
@@ -79,10 +79,10 @@ class TestDefaultYaml:
         with path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         assert "fitz_krag" in raw
-        assert raw["fitz_krag"]["chat_fast"] == "endpoint/qwen2.5-7b-instruct"
-        assert raw["fitz_krag"]["chat_balanced"] == "endpoint/qwen2.5-7b-instruct"
-        assert raw["fitz_krag"]["chat_smart"] == "endpoint/qwen2.5-7b-instruct"
-        assert raw["fitz_krag"]["chat_base_url"] == "http://localhost:8080/v1"
+        assert raw["fitz_krag"]["chat_fast"] is None
+        assert raw["fitz_krag"]["chat_balanced"] is None
+        assert raw["fitz_krag"]["chat_smart"] is None
+        assert raw["fitz_krag"]["chat_base_url"] is None
         assert raw["fitz_krag"]["collection"] == "default"
         # Embedding fields are gone — fitz-sage no longer uses dense vectors.
         assert "embedding" not in raw["fitz_krag"]

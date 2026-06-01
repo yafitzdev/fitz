@@ -69,6 +69,9 @@ class AgenticSearchStrategy:
         if not unindexed:
             return []
 
+        if self._chat_factory is None:
+            allow_llm = False
+
         # Single file: always use it — user pointed at exactly this file
         if len(unindexed) == 1:
             selected_entries = unindexed

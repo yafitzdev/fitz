@@ -119,6 +119,7 @@ def write_config(
         f"chat_fast: {chat_fast}",
         f"chat_balanced: {chat_balanced}",
         f"chat_smart: {chat_smart}",
+        f"synthesizer: {chat_smart}",
         "",
         "# HTTP endpoint (used by the 'endpoint' provider)",
         f"chat_base_url: {chat_base_url if chat_base_url else 'null'}",

@@ -682,7 +682,7 @@ curl -X POST http://localhost:8000/query \
 
 **"Model not found" error**
 > The model name in your config doesn't match what your server has loaded. Check `/v1/models` on your server:
-> `curl http://localhost:8080/v1/models`. Then update `chat_smart` in `~/.fitz/config/fitz_krag.yaml` to match.
+> `curl http://localhost:8080/v1/models`. Then update `synthesizer` in `~/.fitz/config/fitz_krag.yaml` to match.
 
 **First query is slow**
 > First run initializes the database, downloads local ONNX models if needed, and indexes source files. Subsequent retrievals
@@ -707,7 +707,7 @@ curl -X POST http://localhost:8000/query \
 > ```
 > Or any OpenAI-compatible cloud via the `endpoint` provider:
 > ```yaml
-> chat_smart: endpoint/meta-llama-3.1-70b
+> synthesizer: endpoint/meta-llama-3.1-70b
 > chat_base_url: https://api.together.xyz/v1
 > chat_api_key_env: TOGETHER_API_KEY
 > ```

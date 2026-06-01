@@ -10,10 +10,10 @@ Usage:
 
     # Create factory once (flat config: one spec per tier)
     chat_factory = get_chat_factory({
-        "fast": "ollama/qwen3.5:0.6b",
-        "balanced": "ollama/qwen2.5:7b",
-        "smart": "ollama/qwen2.5:14b",
-    })
+        "fast": "endpoint/qwen2.5-3b-instruct",
+        "balanced": "endpoint/qwen2.5-7b-instruct",
+        "smart": "endpoint/qwen2.5-32b-instruct",
+    }, {"base_url": "http://localhost:8080/v1"})
 
     # Use different tiers per task
     fast_chat = chat_factory("fast")       # Simple tasks
@@ -38,7 +38,7 @@ ChatFactory = Callable[[ModelTier], ChatProvider]
 
 
 def get_chat_factory(
-    tier_specs: dict[str, str],
+    tier_specs: dict[str, str | None],
     config: dict[str, Any] | None = None,
 ) -> ChatFactory:
     """
@@ -46,22 +46,35 @@ def get_chat_factory(
 
     Args:
         tier_specs: Dict mapping tier name to provider spec
-                    (e.g., {"fast": "ollama/qwen3.5:0.6b", "smart": "ollama/qwen2.5:14b"}).
+                    (e.g., {"fast": "endpoint/qwen2.5-3b", "smart": "endpoint/qwen2.5-32b"}).
         config: Optional config with auth/base_url settings.
 
     Returns:
         Factory function: (tier) -> ChatProvider
 
     Example:
-        factory = get_chat_factory({"fast": "ollama/qwen3.5:0.6b", "smart": "ollama/qwen2.5:14b"})
+        factory = get_chat_factory(
+            {"fast": "endpoint/qwen2.5-3b", "smart": "endpoint/qwen2.5-32b"},
+            {"base_url": "http://localhost:8080/v1"},
+        )
         chat = factory("fast")  # Returns cached fast-tier client
         chat.chat([{"role": "user", "content": "Hello"}])
     """
+    configured_tiers = {tier: spec for tier, spec in tier_specs.items() if spec}
+    if not configured_tiers:
+        raise ValueError("At least one chat tier provider must be configured.")
+
+    fallback_spec = (
+        configured_tiers.get("fast")
+        or configured_tiers.get("balanced")
+        or configured_tiers.get("smart")
+        or next(iter(configured_tiers.values()))
+    )
     cache: dict[ModelTier, ChatProvider] = {}
 
     def factory(tier: ModelTier = "fast") -> ChatProvider:
         if tier not in cache:
-            spec = tier_specs.get(tier, tier_specs.get("fast"))
+            spec = configured_tiers.get(tier) or fallback_spec
             cache[tier] = create_chat_provider(spec, config, tier)
         return cache[tier]
 

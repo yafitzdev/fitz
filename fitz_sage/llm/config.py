@@ -62,32 +62,30 @@ _REMOVED_PROVIDERS: dict[str, str] = {
     "ollama": (
         "The 'ollama' provider has been removed. "
         "Use the 'endpoint' provider with Ollama's OpenAI-compatible URL:\n\n"
-        "  chat_smart: endpoint/qwen2.5:14b\n"
-        "  base_url: http://localhost:11434/v1\n\n"
+        "  synthesizer: endpoint/qwen2.5:14b\n"
+        "  chat_base_url: http://localhost:11434/v1\n\n"
         "For better local performance, prefer llama.cpp's llama-server:\n"
         "  llama-server -m model.gguf --port 8080\n"
-        "  chat_smart: endpoint/<model-name>\n"
-        "  base_url: http://localhost:8080/v1"
+        "  synthesizer: endpoint/<model-name>\n"
+        "  chat_base_url: http://localhost:8080/v1"
     ),
     "cohere": (
         "The 'cohere' provider has been removed. "
         "If you need Cohere's chat models, use the 'endpoint' provider with "
         "Cohere's OpenAI-compatible API or via OpenRouter:\n\n"
-        "  chat_smart: endpoint/command-a-03-2025\n"
-        "  base_url: https://api.cohere.com/compatibility/v1\n"
-        "  auth:\n"
-        "    api_key_env: COHERE_API_KEY\n\n"
-        "Cohere /rerank is no longer wired in fitz-sage; rerank is moving to "
-        "an LLM-rerank step using the chat model."
+        "  synthesizer: endpoint/command-a-03-2025\n"
+        "  chat_base_url: https://api.cohere.com/compatibility/v1\n"
+        "  chat_api_key_env: COHERE_API_KEY\n\n"
+        "Cohere /rerank is no longer wired in fitz-sage; use `rerank: onnx` "
+        "for the local cross-encoder reranker."
     ),
     "anthropic": (
         "The 'anthropic' provider has been removed. "
         "Use the 'endpoint' provider via OpenRouter or Anthropic's "
         "OpenAI-compatible compatibility layer:\n\n"
-        "  chat_smart: endpoint/anthropic/claude-sonnet-4\n"
-        "  base_url: https://openrouter.ai/api/v1\n"
-        "  auth:\n"
-        "    api_key_env: OPENROUTER_API_KEY"
+        "  synthesizer: endpoint/anthropic/claude-sonnet-4\n"
+        "  chat_base_url: https://openrouter.ai/api/v1\n"
+        "  chat_api_key_env: OPENROUTER_API_KEY"
     ),
 }
 
@@ -233,7 +231,7 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
         raise ValueError(
             "The 'enterprise' provider requires an 'auth' block in config.\n"
             "Example:\n"
-            "  chat_smart: enterprise/gpt-4o\n"
+            "  synthesizer: enterprise/gpt-4o\n"
             "  base_url: https://corp.gateway/openai/v1\n"
             "  auth:\n"
             "    type: enterprise\n"
@@ -355,7 +353,7 @@ def _resolve_openai_preset_kwargs(
             raise ValueError(
                 "azure_openai requires 'base_url' (Azure endpoints are "
                 "tenant-specific).\nExample:\n"
-                "  chat_smart: azure_openai/gpt-4o\n"
+                "  synthesizer: azure_openai/gpt-4o\n"
                 "  base_url: https://my-tenant.openai.azure.com/openai/deployments/my-deployment"
             )
         kwargs["base_url"] = _OPENAI_DEFAULT_BASE_URL
@@ -399,21 +397,23 @@ def create_chat_provider(
             raise ValueError(
                 "enterprise provider requires 'base_url' in config.\n"
                 "Example:\n"
-                "  chat_smart: enterprise/gpt-4o\n"
+                "  synthesizer: enterprise/gpt-4o\n"
                 "  base_url: https://corp.gateway/openai/v1"
             )
         if not model_name:
             raise ValueError(
                 "enterprise provider requires a model in the spec.\n"
                 "Example:\n"
-                "  chat_smart: enterprise/gpt-4o"
+                "  synthesizer: enterprise/gpt-4o"
             )
         return EnterpriseChat(auth, base_url=base_url, model=model_name, **kwargs)  # type: ignore[arg-type]
 
     if provider == "endpoint":
         from fitz_sage.llm.providers.openai_compat import OpenAICompatChat
 
-        auth, kwargs = _resolve_endpoint_kwargs(spec, config, require_model=True, role="chat_smart")
+        auth, kwargs = _resolve_endpoint_kwargs(
+            spec, config, require_model=True, role="synthesizer"
+        )
         base_url = kwargs.pop("base_url")
         model_name = kwargs.pop("model")
         return OpenAICompatChat(auth, model=model_name, base_url=base_url, tier=tier, **kwargs)

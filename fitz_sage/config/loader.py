@@ -9,7 +9,7 @@ Usage:
     config = load_engine_config("fitz_krag")
 
     # Values are typed and validated
-    chat_plugin = config.chat_smart  # "ollama/qwen2.5:14b"
+    chat_plugin = config.chat_smart  # None unless tiered chat is configured
 """
 
 from __future__ import annotations
@@ -164,7 +164,7 @@ def load_engine_config(engine: str):
 
     Examples:
         >>> config = load_engine_config("fitz_krag")
-        >>> config.chat_smart  # str: "ollama/qwen2.5:14b"
+        >>> config.chat_smart  # None unless tiered chat is configured
     """
     # Import engine-specific schema
     if engine == "fitz_krag":

@@ -105,6 +105,7 @@ class TestRunFirstrunSetup:
         assert ok is True
         config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
         assert "endpoint/qwen2.5-7b-instruct" in config
+        assert "synthesizer: endpoint/qwen2.5-7b-instruct" in config
         assert "chat_base_url: http://localhost:8080/v1" in config
 
     def test_openai_key_fallback(self, tmp_path, monkeypatch) -> None:
@@ -122,6 +123,7 @@ class TestRunFirstrunSetup:
         assert ok is True
         config = (tmp_path / "config.yaml").read_text(encoding="utf-8")
         assert "openai/gpt-4o" in config
+        assert "synthesizer: openai/gpt-4o" in config
 
     def test_no_provider_writes_retrieval_only_config(self, tmp_path, monkeypatch) -> None:
         """No endpoint, no key -> retrieval-only config."""

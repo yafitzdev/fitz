@@ -82,7 +82,7 @@ class KragIngestPipeline:
     def __init__(
         self,
         config: "FitzKragConfig",
-        chat: "ChatProvider",
+        chat: "ChatProvider | None",
         connection_manager: "SqliteConnectionManager",
         collection: str,
         table_store: "TableStore | None" = None,

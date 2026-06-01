@@ -45,7 +45,10 @@ Usage (Query via RAG):
     from fitz_sage.llm import get_chat_factory
     from fitz_sage.tabular import TableQueryStep
 
-    factory = get_chat_factory("cohere")
+    factory = get_chat_factory(
+        {"fast": "endpoint/qwen2.5-3b", "balanced": "endpoint/qwen2.5-7b"},
+        {"base_url": "http://localhost:8080/v1"},
+    )
     step = TableQueryStep(chat_factory=factory, table_store=store)
     augmented_chunks = step.execute(query, chunks)
 
@@ -54,7 +57,10 @@ Usage (Direct query - fast path):
     from fitz_sage.tabular import DirectTableQuery, is_table_file
 
     if is_table_file(file_path):
-        factory = get_chat_factory("cohere")
+        factory = get_chat_factory(
+            {"fast": "endpoint/qwen2.5-3b", "balanced": "endpoint/qwen2.5-7b"},
+            {"base_url": "http://localhost:8080/v1"},
+        )
         query = DirectTableQuery(chat_factory=factory)
         result = query.query(file_path, "how many cars sold in 2005?")
         print(result.answer)

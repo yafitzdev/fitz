@@ -12,6 +12,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+import typer
 
 from fitz_sage.cli.commands.query import _apply_chat_overrides
 
@@ -117,6 +118,28 @@ class TestApplyChatOverrides:
         update = mock_config.model_copy.call_args.kwargs["update"]
         assert update["chat_smart"] == "endpoint/qwen2.5-14b-instruct"
         assert update["synthesizer"] == "endpoint/qwen2.5-14b-instruct"
+
+    def test_endpoint_without_model_and_no_configured_model_exits(self) -> None:
+        """--endpoint alone needs a model when config has no chat_smart."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_config.chat_smart = None
+        mock_registry.load_config.return_value = mock_config
+
+        with (
+            patch(
+                "fitz_sage.runtime.registry.get_engine_registry",
+                return_value=mock_registry,
+            ),
+            patch("fitz_sage.cli.commands.query.ui"),
+            pytest.raises(typer.Exit),
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                "http://localhost:8080/v1",
+                None,
+                None,
+            )
 
     def test_api_key_env_only(self) -> None:
         """--api-key-env without --endpoint still applies."""

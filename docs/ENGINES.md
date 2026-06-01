@@ -1,3 +1,4 @@
+<!-- docs/ENGINES.md -->
 # Engines
 
 fitz-sage **v0.14.1+**. An engine is anything that implements the
@@ -84,11 +85,8 @@ from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.core import Query
 
 cfg = FitzKragConfig(
-    chat_fast="endpoint",
-    chat_balanced="endpoint",
-    chat_smart="endpoint",
+    synthesizer="endpoint/qwen2.5-7b-instruct",
     chat_base_url="http://localhost:8080/v1",
-    chat_smart_model="qwen2.5-7b-instruct",
     collection="my_docs",
 )
 engine = FitzKragEngine(cfg)
@@ -100,9 +98,10 @@ this for one-shots.
 
 ### Retrieval without synthesis
 
-`answer()` retrieves sources, then generates a grounded answer over
-them. To get the source material itself — not a generated answer —
-call `retrieve()`, the retrieval primitive `answer()` is built on:
+When `synthesizer` is configured, `answer()` retrieves sources, then
+generates a grounded answer over them. To get the source material itself
+without any chat provider, call `retrieve()`, the retrieval primitive
+`answer()` is built on:
 
 ```python
 results = engine.retrieve(Query(text="Where is auth handled?"))
@@ -117,8 +116,9 @@ synthesis. It returns an empty list when nothing relevant is found.
 
 ### Configuration
 
-See [CONFIG.md](CONFIG.md) for every key. The minimum is `collection:`
-and a chat tier. Everything else has working defaults.
+See [CONFIG.md](CONFIG.md) for every key. The minimum is `collection:`.
+Chat providers are optional and only needed for synthesized answers or
+LLM-backed enrichment/query-intelligence stages.
 
 ### Built-in features
 

@@ -56,16 +56,18 @@ used only when another config key opts into an LLM-backed stage.
 | `chat_balanced` | Summaries, table query helpers                     |
 | `chat_smart`    | Synthesis-oriented defaults                        |
 
-Each tier takes a provider/model spec. For `endpoint`, the model name is the
-part after the slash and `chat_base_url` supplies the OpenAI-compatible URL:
+Each optional LLM-backed role takes a provider/model spec. For `endpoint`,
+the model name is the part after the slash and `chat_base_url` supplies the
+OpenAI-compatible URL:
 
 ```yaml
-chat_smart: endpoint/qwen2.5-32b
+synthesizer: endpoint/qwen2.5-32b
 chat_base_url: http://localhost:8080/v1
 ```
 
-If `chat_base_url` is shared across tiers (the common case), set it
-once at the top level.
+If `chat_base_url` is shared across roles (the common case), set it once at
+the top level. Legacy `chat_fast`, `chat_balanced`, and `chat_smart` tiers are
+only needed for code paths that still request a tiered chat factory.
 
 ---
 

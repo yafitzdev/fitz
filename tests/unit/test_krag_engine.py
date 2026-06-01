@@ -141,8 +141,8 @@ class TestEngineInit:
         config = _make_config()
         engine = FitzKragEngine(config)
 
-        # Core clients called
-        _patches["get_chat"].assert_called_once()
+        # Retrieval-only init does not create chat clients.
+        _patches["get_chat"].assert_not_called()
         _patches["SqliteConnectionManager"].get_instance.assert_called()
 
         # Schema ensured
@@ -170,22 +170,26 @@ class TestEngineInit:
 
         FitzKragEngine(config)
 
-        assert _patches["get_chat"].call_count == 2
+        _patches["get_chat"].assert_called_once()
         _patches["CodeSynthesizer"].assert_called_once()
 
-    def test_default_config_does_not_warm_chat(self):
-        """Retrieval-only defaults should not warm a chat model."""
+    def test_default_config_has_no_chat_tier_factory(self):
+        """Retrieval-only defaults should not build a tiered chat factory."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._config = _make_config()
 
-        assert engine._should_warm_chat() is False
+        assert engine._chat_tier_specs() is None
 
-    def test_configured_optional_chat_stage_warms_chat(self):
-        """Optional chat-backed stages can still warm their provider."""
+    def test_configured_chat_tiers_build_factory_specs(self):
+        """Configured chat tiers still build complete factory specs."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
-        engine._config = _make_config(synthesizer="endpoint/qwen2.5-7b-instruct")
+        engine._config = _make_config(chat_fast="endpoint/qwen2.5-7b")
 
-        assert engine._should_warm_chat() is True
+        assert engine._chat_tier_specs() == {
+            "fast": "endpoint/qwen2.5-7b",
+            "balanced": "endpoint/qwen2.5-7b",
+            "smart": "endpoint/qwen2.5-7b",
+        }
 
     def test_init_failure_raises_configuration_error(self):
         """

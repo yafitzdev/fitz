@@ -14,10 +14,10 @@ def _write_test_config(path, collection="default"):
     """Write a minimal valid config file for testing."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f"chat_fast: ollama/test\n"
-        f"chat_balanced: ollama/test\n"
-        f"chat_smart: ollama/test\n"
-        f"embedding: ollama/test\n"
+        "synthesizer: null\n"
+        "query_intelligence: null\n"
+        "enricher: null\n"
+        "summarizer: null\n"
         f"collection: {collection}\n"
     )
 

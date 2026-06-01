@@ -89,6 +89,34 @@ class TestQueryHelpers:
         assert ctx.raw_config["chat_smart"] == "openai/gpt-4o"
         assert ctx.typed_config.collection == "test"
 
+    def test_cli_context_loads_retrieval_only_config(self, tmp_path):
+        """Retrieval-only configs do not expose tiered chat providers."""
+        import yaml
+
+        from fitz_sage.cli.context import CLIContext
+
+        config_path = tmp_path / "config.yaml"
+        config = {
+            "collection": "test",
+            "chat_fast": None,
+            "chat_balanced": None,
+            "chat_smart": None,
+            "synthesizer": None,
+            "query_intelligence": None,
+            "enricher": None,
+            "summarizer": None,
+        }
+        config_path.write_text(yaml.dump(config))
+
+        with patch(
+            "fitz_sage.cli.context.FitzPaths.config",
+            return_value=config_path,
+        ):
+            ctx = CLIContext.load(engine="fitz_krag")
+
+        assert ctx.chat_display == "none"
+        assert ctx.chat_tier_specs == {}
+
     def test_get_collections_returns_list(self):
         """Test get_collections returns collection list."""
         mock_ctx = MagicMock()

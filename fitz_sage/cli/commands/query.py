@@ -113,6 +113,9 @@ def _apply_chat_overrides(
         # chat_smart model name, but route it via the new endpoint.
         # If the existing spec isn't endpoint/<model>, switch it.
         existing = base_config.chat_smart
+        if not existing:
+            ui.error("--endpoint requires --model when no chat_smart model is configured.")
+            raise typer.Exit(1)
         if "/" in existing:
             _, model_name = existing.split("/", 1)
         else:

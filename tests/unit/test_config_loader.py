@@ -20,8 +20,8 @@ def test_load_config_from_defaults():
     assert hasattr(config, "chat_smart")
     assert hasattr(config, "collection")
 
-    # Verify string plugin specs
-    assert isinstance(config.chat_smart, str)
+    # Chat tier specs are optional; retrieval defaults do not require them.
+    assert config.chat_smart is None
 
     # Verify None for disabled features
     assert config.vision is None or isinstance(config.vision, str)
@@ -41,9 +41,8 @@ def test_config_required_field():
 
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 
-    # Missing required 'collection' field
     with pytest.raises(ValidationError):
-        FitzKragConfig(chat_smart="cohere", embedding="cohere")
+        FitzKragConfig()
 
 
 def test_config_validation():
@@ -52,15 +51,11 @@ def test_config_validation():
 
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 
-    # Invalid top_addresses (must be >= 1)
     with pytest.raises(ValidationError):
-        FitzKragConfig(chat_smart="cohere", embedding="cohere", collection="test", top_addresses=0)
+        FitzKragConfig(collection="test", top_addresses=0)
 
-    # Invalid max_context_tokens (must be >= 100)
     with pytest.raises(ValidationError):
-        FitzKragConfig(
-            chat_smart="cohere", embedding="cohere", collection="test", max_context_tokens=10
-        )
+        FitzKragConfig(collection="test", max_context_tokens=10)
 
 
 def test_config_none_for_disabled():
@@ -68,7 +63,6 @@ def test_config_none_for_disabled():
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 
     config = FitzKragConfig(
-        chat_smart="cohere",
         collection="test",
         rerank=None,  # Explicitly disabled
         vision=None,  # Explicitly disabled

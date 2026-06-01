@@ -65,10 +65,7 @@ def get_reranker(
     """
     Get a rerank provider.
 
-    There is no first-class rerank backend in fitz-sage right now —
-    rerank is moving to an LLM-rerank step using the chat model.
-    Pass ``None`` to disable; any other spec raises with an
-    actionable migration message.
+    ``onnx`` builds the local cross-encoder reranker. Pass ``None`` to disable.
     """
     return create_rerank_provider(spec, config)
 
