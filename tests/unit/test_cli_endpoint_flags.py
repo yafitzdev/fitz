@@ -19,7 +19,7 @@ from fitz_sage.cli.commands.query import _apply_chat_overrides
 
 @pytest.fixture(autouse=True)
 def _skip_firstrun():
-    with patch("fitz_sage.core.firstrun.needs_firstrun", return_value=False):
+    with patch("fitz_sage.config.firstrun.needs_firstrun", return_value=False):
         yield
 
 

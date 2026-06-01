@@ -202,7 +202,7 @@ class fitz:
                 f"Config file not found: {self.config_path}. "
                 f"Create it manually or pass auto_init=True."
             )
-        from fitz_sage.core.firstrun import run_firstrun_setup
+        from fitz_sage.config.firstrun import run_firstrun_setup
 
         if not run_firstrun_setup():
             raise ConfigurationError(f"Could not initialize config: {self.config_path}")

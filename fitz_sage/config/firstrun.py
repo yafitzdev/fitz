@@ -1,4 +1,4 @@
-# fitz_sage/core/firstrun.py
+# fitz_sage/config/firstrun.py
 """
 First-run experience for fitz-sage.
 
@@ -29,11 +29,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from fitz_sage.config.defaults import DEFAULT_ENRICHMENT_MODEL, DEFAULT_LOCAL_LLM_BASE_URL
 from fitz_sage.core.paths import FitzPaths
-from fitz_sage.engines.fitz_krag.config.schema import (
-    DEFAULT_ENRICHMENT_MODEL,
-    DEFAULT_LOCAL_LLM_BASE_URL,
-)
 
 logger = logging.getLogger(__name__)
 

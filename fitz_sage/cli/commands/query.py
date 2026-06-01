@@ -168,7 +168,7 @@ def command(
     # First-run setup (auto-detect providers if no config exists)
     # =========================================================================
 
-    from fitz_sage.core.firstrun import needs_firstrun, run_firstrun_setup
+    from fitz_sage.config.firstrun import needs_firstrun, run_firstrun_setup
 
     # Skip first-run if user supplied provider flags — they're explicitly
     # configuring synthesis at the CLI, no detection needed.

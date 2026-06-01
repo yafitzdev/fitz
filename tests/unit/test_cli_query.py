@@ -19,7 +19,7 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def _skip_firstrun():
     """Skip first-run detection in all query CLI tests."""
-    with patch("fitz_sage.core.firstrun.needs_firstrun", return_value=False):
+    with patch("fitz_sage.config.firstrun.needs_firstrun", return_value=False):
         yield
 
 

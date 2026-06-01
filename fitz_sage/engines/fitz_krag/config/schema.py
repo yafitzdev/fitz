@@ -13,10 +13,8 @@ from typing import Any
 
 from pydantic import Field
 
+from fitz_sage.config.defaults import DEFAULT_LOCAL_LLM_BASE_URL
 from fitz_sage.core.config import BasePluginConfig
-
-DEFAULT_LOCAL_LLM_BASE_URL = "http://127.0.0.1:8080/v1"
-DEFAULT_ENRICHMENT_MODEL = "qwen3.5-0.8b"
 
 
 class FitzKragConfig(BasePluginConfig):

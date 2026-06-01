@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from fitz_sage.core.firstrun import (
+from fitz_sage.config.firstrun import (
     DetectedEndpoint,
     EndpointModel,
     detect_endpoint,
@@ -93,9 +93,9 @@ class TestRunFirstrunSetup:
             chat_models=[EndpointModel(id="qwen2.5-7b-instruct")],
         )
         with (
-            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint),
+            patch("fitz_sage.config.firstrun.detect_endpoint", return_value=endpoint),
             patch(
-                "fitz_sage.core.firstrun.FitzPaths.config",
+                "fitz_sage.config.firstrun.FitzPaths.config",
                 return_value=tmp_path / "config.yaml",
             ),
         ):
@@ -111,9 +111,9 @@ class TestRunFirstrunSetup:
         """No local endpoint + OPENAI_API_KEY -> openai preset config."""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         with (
-            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=None),
+            patch("fitz_sage.config.firstrun.detect_endpoint", return_value=None),
             patch(
-                "fitz_sage.core.firstrun.FitzPaths.config",
+                "fitz_sage.config.firstrun.FitzPaths.config",
                 return_value=tmp_path / "config.yaml",
             ),
         ):
@@ -128,9 +128,9 @@ class TestRunFirstrunSetup:
         """No endpoint, no key -> minimal config; Qwen is internal."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         with (
-            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=None),
+            patch("fitz_sage.config.firstrun.detect_endpoint", return_value=None),
             patch(
-                "fitz_sage.core.firstrun.FitzPaths.config",
+                "fitz_sage.config.firstrun.FitzPaths.config",
                 return_value=tmp_path / "config.yaml",
             ),
         ):
@@ -151,9 +151,9 @@ class TestRunFirstrunSetup:
             chat_models=[],
         )
         with (
-            patch("fitz_sage.core.firstrun.detect_endpoint", return_value=endpoint),
+            patch("fitz_sage.config.firstrun.detect_endpoint", return_value=endpoint),
             patch(
-                "fitz_sage.core.firstrun.FitzPaths.config",
+                "fitz_sage.config.firstrun.FitzPaths.config",
                 return_value=tmp_path / "config.yaml",
             ),
         ):
