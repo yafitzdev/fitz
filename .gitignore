@@ -137,6 +137,7 @@ RELEASE_CHECKLIST.md
 rag_test_corpus
 CLAUDE.md
 .claude
+.codex
 docs/blog
 docs/limitations
 docs/roadmap
