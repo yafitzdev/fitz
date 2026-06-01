@@ -30,7 +30,7 @@ def _make_core(*, entity_graph_store: MagicMock | None = None):
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
 
-    config = FitzKragConfig(collection="test_col", enable_enrichment=True)
+    config = FitzKragConfig(collection="test_col")
     return KragIngestPipeline(
         config=config,
         chat=MagicMock(),
@@ -63,7 +63,7 @@ class TestEnrichEntityGraphIntegration:
     """Tests that enrich_file populates the entity graph during ingestion."""
 
     def test_no_enricher_provider_leaves_enricher_unconfigured(self):
-        """Enrichment requires an explicit provider, not just enable_enrichment."""
+        """Enrichment requires an explicit provider."""
         core = _make_core()
 
         assert core._enricher is None

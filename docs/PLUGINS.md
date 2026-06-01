@@ -173,8 +173,8 @@ preserve (e.g. a custom XML dialect).
 
 Ingestion enrichment (keyword / entity / temporal extraction and the
 L1/L2 hierarchy summaries) is built into the KRAG ingestion pipeline,
-not a plugin surface. It is controlled by the `enable_enrichment` and
-`enable_hierarchy` engine-config flags. See [ENRICHMENT.md](ENRICHMENT.md)
+not a plugin surface. It is controlled by provider presence: `enricher:`
+and `summarizer:`. See [ENRICHMENT.md](ENRICHMENT.md)
 for the architecture and [`features/ingestion/hierarchical-rag.md`](features/ingestion/hierarchical-rag.md)
 for the hierarchy details.
 

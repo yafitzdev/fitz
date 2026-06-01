@@ -110,7 +110,7 @@ class KragIngestPipeline:
 
         # Enricher
         self._enricher: Any = None
-        if config.enable_enrichment and config.enricher:
+        if config.enricher:
             from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
             self._enricher = KragEnricher(
@@ -202,8 +202,8 @@ class KragIngestPipeline:
 
         Populates the vocabulary store and entity graph (incremental, per
         file) and — for document files — the L1 hierarchy summary stored on
-        each section's metadata. ``enable_enrichment`` and ``enable_hierarchy``
-        are independent: a doc file is still processed for L1 hierarchy when
+        each section's metadata. ``enricher`` and ``summarizer`` are independent:
+        a doc file is still processed for L1 hierarchy when keyword/entity
         enrichment is off. Table files are not enriched.
         """
         if file_type in EXTENSION_MAP:
@@ -222,7 +222,7 @@ class KragIngestPipeline:
         Re-runs wholesale on re-ingest (incremental hierarchy is a v2 concern).
         """
         self.resolve_imports()
-        if self._config.enable_hierarchy and self._config.summarizer:
+        if self._config.summarizer:
             self._build_corpus_summary()
 
     def resolve_imports(self) -> int:
@@ -647,10 +647,10 @@ class KragIngestPipeline:
     def _enrich_doc_file(self, file_id: str) -> None:
         """Enrich a document file's sections with keywords + entities + L1 summary.
 
-        Keyword/entity extraction needs an enricher; L1 hierarchy only needs
-        ``enable_hierarchy`` — the two are gated independently.
+        Keyword/entity extraction needs an enricher; L1 hierarchy only needs a
+        summarizer — the two providers are gated independently.
         """
-        can_summarize_hierarchy = bool(self._config.enable_hierarchy and self._config.summarizer)
+        can_summarize_hierarchy = bool(self._config.summarizer)
         if not self._enricher and not can_summarize_hierarchy:
             return
         sections = self._section_store.get_by_file(file_id)

@@ -49,9 +49,8 @@ pipeline — no separate orchestrator, and no foreground query dependency.
 - **Temporal metadata** — dates, version numbers, time references found in the text
 - **Hierarchy** — L1 (per-file) and L2 (corpus) summaries for analytical queries
 
-Keyword/entity/temporal extraction runs when both `enricher:` is configured and
-`enable_enrichment` allows it. L1/L2 hierarchy summaries run when both
-`summarizer:` is configured and `enable_hierarchy` allows it. If the provider
+Keyword/entity/temporal extraction runs when `enricher:` is configured. L1/L2
+hierarchy summaries run when `summarizer:` is configured. If the provider
 fields are `null`, ingestion skips those LLM stages and retrieval still works.
 
 ---
@@ -114,7 +113,7 @@ Dates, version numbers, and relative time references found in the unit text.
 ## Hierarchy
 
 L1 and L2 summaries for analytical queries. Built by `KragIngestPipeline`
-itself, gated by `summarizer:` plus `enable_hierarchy`.
+itself when `summarizer:` is configured.
 
 ### The problem
 
@@ -219,8 +218,6 @@ Provider specs control whether the optional stages run:
 |------|----------|
 | `enricher: <provider/model>` | Keyword / entity / temporal extraction (`KragEnricher`) |
 | `summarizer: <provider/model>` | L1 (per-file) and L2 (corpus) hierarchy summaries |
-| `enable_enrichment` | Secondary gate for enrichment when `enricher` exists |
-| `enable_hierarchy` | Secondary gate for hierarchy when `summarizer` exists |
 
 Small CPU-local profile:
 

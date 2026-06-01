@@ -1,3 +1,4 @@
+<!-- docs/features/ingestion/hierarchical-rag.md -->
 # Hierarchical RAG
 
 ## Problem
@@ -29,7 +30,7 @@ Query routing is automatic — summaries match analytical queries via the BM25 +
 The `KragIngestPipeline` builds the hierarchy itself — there is no
 separate hierarchy enricher. L1 summaries are produced during the
 per-file `enrich` step; the L2 summary during the corpus `finalize`
-step. Both are gated by the `enable_hierarchy` config flag.
+step. Both run when `summarizer:` is configured.
 
 ### At Ingestion
 
@@ -71,8 +72,8 @@ Q: "What did users say about the async tutorial?"
 
 ## Key Design Decisions
 
-1. **On by default** — summaries are generated automatically during
-   ingestion, gated by the `enable_hierarchy` config flag.
+1. **Provider controlled** — summaries are generated during ingestion when
+   `summarizer:` is configured.
 
 2. **Automatic routing** — abstract queries lexically match the L2
    summary; specific queries match L0 token-for-token. The LLM
@@ -89,14 +90,15 @@ Q: "What did users say about the async tutorial?"
 ## Configuration
 
 The feature is built into the KRAG ingestion pipeline and controlled by
-one engine-config flag:
+provider presence:
 
 ```yaml
-enable_hierarchy: true   # build L1/L2 summaries during ingestion (default)
+summarizer: endpoint/qwen3.5-0.8b
+chat_base_url: http://localhost:8080/v1
 ```
 
-`enable_hierarchy` is independent of `enable_enrichment` — a document
-file still gets an L1 summary when keyword/entity enrichment is off.
+`summarizer:` is independent of `enricher:` — a document file still gets an L1
+summary when keyword/entity enrichment is off.
 
 ## Files
 
@@ -106,7 +108,7 @@ file still gets an L1 summary when keyword/entity enrichment is off.
 - **Summary storage:** L2 stored as a synthetic "Corpus Overview"
   section indexed in SQLite FTS5; L1 as `hierarchy_summary` metadata on
   each L0 section
-- **Config flag:** `enable_hierarchy` in `fitz_sage/engines/fitz_krag/config/schema.py`
+- **Config key:** `summarizer` in `fitz_sage/engines/fitz_krag/config/schema.py`
 
 ## Benefits
 

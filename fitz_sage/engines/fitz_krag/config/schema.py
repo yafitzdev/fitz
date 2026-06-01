@@ -356,11 +356,6 @@ class FitzKragConfig(BasePluginConfig):
         ),
     )
 
-    enable_enrichment: bool = Field(
-        default=True,
-        description="Allow keyword/entity extraction when an enricher provider is configured",
-    )
-
     # ==========================================================================
     # Multi-Hop
     # ==========================================================================
@@ -391,11 +386,6 @@ class FitzKragConfig(BasePluginConfig):
             "Optional chat provider/model spec for section/table/hierarchy summaries. "
             "None leaves summary generation disabled."
         ),
-    )
-
-    enable_hierarchy: bool = Field(
-        default=True,
-        description="Allow L1/L2 hierarchical summaries when a summarizer provider is configured",
     )
 
     # ==========================================================================

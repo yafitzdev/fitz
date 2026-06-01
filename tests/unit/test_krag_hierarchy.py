@@ -10,7 +10,7 @@ for the worker → core scheduling, and these tests for what each op produces.
 Tests that:
 - enrich_file adds an L1 hierarchy_summary to each section's metadata
 - finalize generates and stores the L2 corpus summary as a section
-- hierarchy is skipped when enable_hierarchy=False
+- hierarchy is skipped when no summarizer provider is configured
 - LLM errors fail gracefully
 
 Code symbols deliberately have no hierarchy stage — they already carry
@@ -29,9 +29,8 @@ from unittest.mock import MagicMock
 
 def _make_core(
     *,
-    enable_hierarchy: bool = True,
-    enable_enrichment: bool = True,
     summarizer: str | None = "endpoint/test-summarizer",
+    enricher: str | None = None,
     chat: MagicMock | None = None,
 ):
     """Create a KragIngestPipeline core with a mocked connection manager."""
@@ -40,9 +39,8 @@ def _make_core(
 
     config = FitzKragConfig(
         collection="test_col",
-        enable_enrichment=enable_enrichment,
-        enable_hierarchy=enable_hierarchy,
         summarizer=summarizer,
+        enricher=enricher,
     )
     return KragIngestPipeline(
         config=config,
@@ -96,7 +94,7 @@ class TestL1SectionHierarchy:
         """enrich_file on a doc generates one L1 summary, stamped on every section."""
         chat = MagicMock()
         chat.chat.return_value = "Document covers setup instructions."
-        core = _make_core(enable_hierarchy=True, chat=chat)
+        core = _make_core(chat=chat)
         core._enricher = _fake_enricher()
         core._section_store = MagicMock()
         core._section_store.get_by_file.return_value = _section_dicts(3)
@@ -109,11 +107,11 @@ class TestL1SectionHierarchy:
         for sec in persisted:
             assert sec["metadata"]["hierarchy_summary"] == "Document covers setup instructions."
 
-    def test_enrich_file_skips_l1_when_hierarchy_disabled(self):
-        """enable_hierarchy=False means no hierarchy_summary on section metadata."""
+    def test_enrich_file_skips_l1_without_summarizer(self):
+        """No summarizer provider means no hierarchy_summary on section metadata."""
         chat = MagicMock()
         chat.chat.return_value = "unused"
-        core = _make_core(enable_hierarchy=False, chat=chat)
+        core = _make_core(summarizer=None, chat=chat)
         core._enricher = _fake_enricher()
         core._section_store = MagicMock()
         core._section_store.get_by_file.return_value = _section_dicts(2)
@@ -123,12 +121,13 @@ class TestL1SectionHierarchy:
         persisted = core._section_store.update_enrichment_by_file.call_args[0][1]
         for sec in persisted:
             assert "hierarchy_summary" not in sec["metadata"]
+        chat.chat.assert_not_called()
 
     def test_l1_failure_does_not_crash(self):
         """An LLM failure during L1 generation is caught; enrichment still persists."""
         chat = MagicMock()
         chat.chat.side_effect = RuntimeError("Timeout")
-        core = _make_core(enable_hierarchy=True, chat=chat)
+        core = _make_core(chat=chat)
         core._enricher = _fake_enricher()
         core._section_store = MagicMock()
         core._section_store.get_by_file.return_value = _section_dicts(3)
@@ -141,13 +140,10 @@ class TestL1SectionHierarchy:
             assert "hierarchy_summary" not in sec["metadata"]
 
     def test_l1_runs_without_enricher(self):
-        """L1 hierarchy is produced even when keyword/entity enrichment is disabled.
-
-        enable_hierarchy and enable_enrichment are independent flags.
-        """
+        """L1 hierarchy is produced even when keyword/entity enrichment is disabled."""
         chat = MagicMock()
         chat.chat.return_value = "Document overview."
-        core = _make_core(enable_hierarchy=True, enable_enrichment=False, chat=chat)
+        core = _make_core(chat=chat)
         assert core._enricher is None
         core._section_store = MagicMock()
         core._section_store.get_by_file.return_value = _section_dicts(2)
@@ -160,9 +156,9 @@ class TestL1SectionHierarchy:
             assert sec["metadata"]["hierarchy_summary"] == "Document overview."
 
     def test_l1_skips_without_summarizer_provider(self):
-        """enable_hierarchy alone does not call a chat model without summarizer."""
+        """A missing summarizer provider does not call a chat model."""
         chat = MagicMock()
-        core = _make_core(enable_hierarchy=True, summarizer=None, chat=chat)
+        core = _make_core(summarizer=None, chat=chat)
         core._enricher = _fake_enricher()
         core._section_store = MagicMock()
         core._section_store.get_by_file.return_value = _section_dicts(2)
@@ -187,7 +183,7 @@ class TestL2CorpusSummary:
         """finalize rolls L1 summaries into an L2 summary stored as a section."""
         chat = MagicMock()
         chat.chat.return_value = "This corpus documents the system architecture."
-        core = _make_core(enable_hierarchy=True, chat=chat)
+        core = _make_core(chat=chat)
         core._section_store = MagicMock()
         core._section_store.get_hierarchy_summaries.return_value = ["L1 of doc A", "L1 of doc B"]
         core._raw_store = MagicMock()
@@ -205,7 +201,7 @@ class TestL2CorpusSummary:
 
     def test_finalize_skips_l2_without_l1_summaries(self):
         """No L1 summaries means no L2 corpus summary is stored."""
-        core = _make_core(enable_hierarchy=True, chat=MagicMock())
+        core = _make_core(chat=MagicMock())
         core._section_store = MagicMock()
         core._section_store.get_hierarchy_summaries.return_value = []
         core._raw_store = MagicMock()
@@ -215,9 +211,9 @@ class TestL2CorpusSummary:
 
         core._section_store.upsert_batch.assert_not_called()
 
-    def test_finalize_skips_l2_when_hierarchy_disabled(self):
-        """enable_hierarchy=False: finalize resolves imports but builds no L2."""
-        core = _make_core(enable_hierarchy=False, chat=MagicMock())
+    def test_finalize_resolves_imports_without_summarizer(self):
+        """No summarizer provider: finalize resolves imports but builds no L2."""
+        core = _make_core(summarizer=None, chat=MagicMock())
         core._section_store = MagicMock()
         core._raw_store = MagicMock()
         core._import_store = MagicMock()
@@ -230,8 +226,8 @@ class TestL2CorpusSummary:
         core._import_store.resolve_targets.assert_called_once()
 
     def test_finalize_skips_l2_without_summarizer_provider(self):
-        """enable_hierarchy alone does not build L2 without summarizer."""
-        core = _make_core(enable_hierarchy=True, summarizer=None, chat=MagicMock())
+        """A missing summarizer provider does not build L2."""
+        core = _make_core(summarizer=None, chat=MagicMock())
         core._section_store = MagicMock()
         core._raw_store = MagicMock()
         core._import_store = MagicMock()
@@ -245,7 +241,7 @@ class TestL2CorpusSummary:
         """An LLM failure during L2 generation is caught; nothing is stored."""
         chat = MagicMock()
         chat.chat.side_effect = RuntimeError("Timeout")
-        core = _make_core(enable_hierarchy=True, chat=chat)
+        core = _make_core(chat=chat)
         core._section_store = MagicMock()
         core._section_store.get_hierarchy_summaries.return_value = ["L1 of doc A"]
         core._raw_store = MagicMock()

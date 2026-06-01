@@ -412,7 +412,7 @@ class FitzKragEngine:
 
         # Entity graph store
         self._entity_graph_store: Any = None
-        if self._config.enable_enrichment and self._config.enricher:
+        if self._config.enricher:
             try:
                 from fitz_sage.retrieval.entity_graph.store import EntityGraphStore
 

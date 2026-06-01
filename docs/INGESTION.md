@@ -217,7 +217,7 @@ summarize and enrich steps add LLM-generated metadata.
 │  │  identifiers)     │  technologies)     │  versions, refs) │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                 │
-│  hierarchy summaries (pipeline-built, gated by enable_hierarchy) │
+│  hierarchy summaries (pipeline-built when summarizer is configured) │
 │    L1: one group summary per document file (on section metadata) │
 │    L2: corpus summary rolled up from L1 (built during finalize)  │
 │                                                                 │
@@ -227,9 +227,9 @@ summarize and enrich steps add LLM-generated metadata.
 ### KragEnricher
 
 `KragEnricher` extracts **keywords + entities + temporal metadata** in a
-single LLM call per batch of ~15 symbols or sections. This makes
-enrichment nearly free (~$0.13-0.74 for 1000 units). Gated by the
-`enable_enrichment` config flag.
+single LLM call per batch of ~15 symbols or sections. This makes enrichment
+nearly free (~$0.13-0.74 for 1000 units). It runs when `enricher:` is
+configured.
 
 **What it extracts:**
 - **Keywords** - Exact-match identifiers (TC-1001, JIRA-123, `AuthService`)
@@ -244,9 +244,8 @@ enrichment nearly free (~$0.13-0.74 for 1000 units). Gated by the
 
 ### Hierarchy
 
-L1 and L2 summaries for analytical queries, built by the pipeline
-itself. Gated by the `enable_hierarchy` config flag (independent of
-`enable_enrichment`).
+L1 and L2 summaries for analytical queries, built by the pipeline itself. They
+run when `summarizer:` is configured, independent of `enricher:`.
 
 **Levels:**
 - **Level 1:** Per-file group summary — stored on each document

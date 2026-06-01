@@ -1,3 +1,4 @@
+<!-- docs/features/retrieval/keyword-vocabulary.md -->
 # Exact Identifier Matching
 
 ## Problem
@@ -51,7 +52,7 @@ stage.
    virtual tables (`krag_symbol_fts`, `krag_section_fts`). The FTS5
    tokenizer keeps identifier tokens intact.
 
-3. **Keyword enrichment (optional).** When `enable_enrichment` is set,
+3. **Keyword enrichment (optional).** When `enricher:` is configured,
    `KragEnricher` additionally extracts exact-match identifiers as
    `keywords` on each unit (function names, class names, IDs,
    abbreviations). These keywords are stored on the unit and are
@@ -80,8 +81,8 @@ stage.
 
 ## Configuration
 
-None. FTS5 + `bm25()` are always active. Optional keyword enrichment is
-controlled by the `enable_enrichment` engine-config flag.
+None. FTS5 + `bm25()` are always active. Optional keyword enrichment runs when
+`enricher:` is configured.
 
 ## Files
 
