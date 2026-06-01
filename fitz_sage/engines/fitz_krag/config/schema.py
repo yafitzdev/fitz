@@ -292,15 +292,6 @@ class FitzKragConfig(BasePluginConfig):
     )
 
     # ==========================================================================
-    # Detection
-    # ==========================================================================
-
-    enable_detection: bool = Field(
-        default=True,
-        description="Enable shared detection (temporal, comparison, expansion awareness)",
-    )
-
-    # ==========================================================================
     # Query Intelligence
     # ==========================================================================
 
@@ -310,11 +301,6 @@ class FitzKragConfig(BasePluginConfig):
             "Optional chat provider/model spec for LLM query prep. "
             "None uses the deterministic no-chat planner."
         ),
-    )
-
-    enable_query_rewriting: bool = Field(
-        default=True,
-        description="Enable LLM-based query rewriting for retrieval optimization",
     )
 
     # ==========================================================================

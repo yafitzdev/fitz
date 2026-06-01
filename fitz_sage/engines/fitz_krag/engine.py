@@ -981,23 +981,21 @@ class FitzKragEngine:
             use_query_intelligence = self._config.query_intelligence is not None
 
         planner = getattr(self, "_query_planner", None) or DeterministicQueryPlanner()
-        plan = planner.plan(sanitized, detection_enabled=self._config.enable_detection)
+        plan = planner.plan(sanitized, detection_enabled=True)
 
         if use_query_intelligence:
             # Query prep — one batched LLM call: rewrite + analysis +
             # detection + keywords. Optional enhancement over the no-chat plan.
             fast_analysis = self._fast_analyze(sanitized)
             need_llm_analysis = fast_analysis is None
-            need_detection = bool(
-                self._config.enable_detection and self._needs_detection(sanitized)
-            )
+            need_detection = self._needs_detection(sanitized)
 
             try:
                 batch_result = self._query_batcher.batch_classify(
                     sanitized,
                     include_analysis=need_llm_analysis,
                     include_detection=need_detection,
-                    include_rewriting=self._config.enable_query_rewriting,
+                    include_rewriting=True,
                     include_extended=True,
                     include_keywords=True,
                     conversation_context=query.metadata.get("conversation_context"),
