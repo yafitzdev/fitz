@@ -9,7 +9,7 @@ exercise the real __init__ with patched imports.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -141,8 +141,22 @@ class TestEngineInit:
         config = _make_config()
         engine = FitzKragEngine(config)
 
-        # Retrieval-only init does not create chat clients.
-        _patches["get_chat"].assert_not_called()
+        # Required enrichment creates dedicated fast/balanced chat clients.
+        _patches["get_chat"].assert_has_calls(
+            [
+                call(
+                    "endpoint/qwen3.5-0.8b@Q4_K_M",
+                    "fast",
+                    {"base_url": "http://127.0.0.1:8080/v1"},
+                ),
+                call(
+                    "endpoint/qwen3.5-0.8b@Q4_K_M",
+                    "balanced",
+                    {"base_url": "http://127.0.0.1:8080/v1"},
+                ),
+            ]
+        )
+        assert _patches["get_chat"].call_count == 2
         _patches["SqliteConnectionManager"].get_instance.assert_called()
 
         # Schema ensured
@@ -170,7 +184,26 @@ class TestEngineInit:
 
         FitzKragEngine(config)
 
-        _patches["get_chat"].assert_called_once()
+        _patches["get_chat"].assert_has_calls(
+            [
+                call(
+                    "endpoint/qwen2.5-7b-instruct",
+                    "smart",
+                    {"base_url": "http://127.0.0.1:8080/v1"},
+                ),
+                call(
+                    "endpoint/qwen3.5-0.8b@Q4_K_M",
+                    "fast",
+                    {"base_url": "http://127.0.0.1:8080/v1"},
+                ),
+                call(
+                    "endpoint/qwen3.5-0.8b@Q4_K_M",
+                    "balanced",
+                    {"base_url": "http://127.0.0.1:8080/v1"},
+                ),
+            ]
+        )
+        assert _patches["get_chat"].call_count == 3
         _patches["CodeSynthesizer"].assert_called_once()
 
     def test_provider_config_forwards_auth_block(self):
