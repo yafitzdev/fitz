@@ -103,8 +103,6 @@ class TestQueryHelpers:
             "chat_smart": None,
             "synthesizer": None,
             "query_intelligence": None,
-            "enricher": None,
-            "summarizer": None,
         }
         config_path.write_text(yaml.dump(config))
 

@@ -12,15 +12,15 @@
 fitz_krag:
 
   # Optional chat models by tier. Query intelligence and answer synthesis stay
-  # provider-driven; ingestion enrichment is required below and defaults to
-  # managed in-process ONNX.
+  # provider-driven; ingestion enrichment always uses Fitz's managed Qwen ONNX
+  # runtime and is not user-configurable.
   chat_fast: null
   chat_balanced: null
   chat_smart: null
   query_intelligence: null
 
-  # HTTP endpoint for optional endpoint providers. Managed ONNX enrichment
-  # ignores this field.
+  # HTTP endpoint for optional endpoint providers. Managed Qwen ONNX ignores
+  # this field.
   chat_base_url: http://127.0.0.1:8080/v1
   vision_base_url: null
   chat_api_key_env: null
@@ -71,10 +71,5 @@ fitz_krag:
   short_answer_tokens: 192
   enable_citations: true
   strict_grounding: true
-
-  # Required ingestion LLM stages. These are not feature flags: enrichment
-  # is part of the KRAG index contract.
-  enricher: onnx/qwen3.5-0.8b
-  summarizer: onnx/qwen3.5-0.8b
 
   log_level: INFO

@@ -141,22 +141,9 @@ class TestEngineInit:
         config = _make_config()
         engine = FitzKragEngine(config)
 
-        # Required enrichment creates dedicated fast/balanced chat clients.
-        _patches["get_chat"].assert_has_calls(
-            [
-                call(
-                    "onnx/qwen3.5-0.8b",
-                    "fast",
-                    None,
-                ),
-                call(
-                    "onnx/qwen3.5-0.8b",
-                    "balanced",
-                    None,
-                ),
-            ]
-        )
-        assert _patches["get_chat"].call_count == 2
+        # Required enrichment uses the managed ONNX provider directly.
+        _patches["get_chat"].assert_not_called()
+        assert engine._enricher_chat is engine._summarizer_chat
         _patches["SqliteConnectionManager"].get_instance.assert_called()
 
         # Schema ensured
@@ -191,19 +178,9 @@ class TestEngineInit:
                     "smart",
                     {"base_url": "http://127.0.0.1:8080/v1"},
                 ),
-                call(
-                    "onnx/qwen3.5-0.8b",
-                    "fast",
-                    None,
-                ),
-                call(
-                    "onnx/qwen3.5-0.8b",
-                    "balanced",
-                    None,
-                ),
             ]
         )
-        assert _patches["get_chat"].call_count == 3
+        assert _patches["get_chat"].call_count == 1
         _patches["CodeSynthesizer"].assert_called_once()
 
     def test_provider_config_forwards_auth_block(self):

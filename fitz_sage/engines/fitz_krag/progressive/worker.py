@@ -9,14 +9,14 @@ never reimplements parse/summarize/enrich.
 
 State machine per file:
     REGISTERED → PARSED    (core.parse_file — store raw, extract symbols/sections)
-    PARSED     → ENRICHED  (core.enrich_file — optional keywords/entities,
+    PARSED     → ENRICHED  (core.enrich_file — required keywords/entities,
                             entity graph, L1 hierarchy summary)
 Once every file is ENRICHED the worker runs ``core.finalize`` (import graph +
 L2 hierarchy summary): eager indexing is then complete.
 
 ENRICHED → SUMMARIZED (core.summarize_file) is demand-driven. Summaries are
-generated only when a summarizer provider is configured and only for files a
-query has surfaced. Un-queried files are never summarized.
+generated only for files a query has surfaced. Un-queried files are never
+summarized.
 
 Priority queue:
     P1: Files the user just queried about

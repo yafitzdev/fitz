@@ -17,18 +17,15 @@ from fitz_sage.core.config import BasePluginConfig
 
 DEFAULT_LOCAL_LLM_BASE_URL = "http://127.0.0.1:8080/v1"
 DEFAULT_ENRICHMENT_MODEL = "qwen3.5-0.8b"
-DEFAULT_ENRICHMENT_SPEC = f"onnx/{DEFAULT_ENRICHMENT_MODEL}"
 
 
 class FitzKragConfig(BasePluginConfig):
     """
     Fitz KRAG configuration.
 
-    Minimal local enrichment config:
+    Minimal local config:
     ```yaml
     collection: my_project
-    enricher: onnx/qwen3.5-0.8b
-    summarizer: onnx/qwen3.5-0.8b
     synthesizer: null
     ```
 
@@ -352,18 +349,6 @@ class FitzKragConfig(BasePluginConfig):
     )
 
     # ==========================================================================
-    # Enrichment
-    # ==========================================================================
-
-    enricher: str | None = Field(
-        default=DEFAULT_ENRICHMENT_SPEC,
-        description=(
-            "Required chat provider/model spec for keyword/entity enrichment. "
-            "Defaults to the required local Qwen3.5 enrichment profile."
-        ),
-    )
-
-    # ==========================================================================
     # Multi-Hop
     # ==========================================================================
 
@@ -381,18 +366,6 @@ class FitzKragConfig(BasePluginConfig):
         ge=1,
         le=5,
         description="Maximum retrieval hops for multi-hop reasoning",
-    )
-
-    # ==========================================================================
-    # Hierarchy
-    # ==========================================================================
-
-    summarizer: str | None = Field(
-        default=DEFAULT_ENRICHMENT_SPEC,
-        description=(
-            "Required chat provider/model spec for section/table/hierarchy summaries. "
-            "Defaults to the required local Qwen3.5 enrichment profile."
-        ),
     )
 
     # ==========================================================================

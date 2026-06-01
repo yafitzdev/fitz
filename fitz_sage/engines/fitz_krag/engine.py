@@ -134,8 +134,8 @@ class FitzKragEngine:
             if "ConnectError" in type(e).__name__ or "10061" in msg or "Connection refused" in msg:
                 raise ConfigurationError(
                     "Cannot connect to the configured endpoint chat provider.\n"
-                    "Use `onnx/qwen3.5-0.8b` for managed local enrichment or "
-                    "check chat_base_url in .fitz/config.yaml."
+                    "Required enrichment uses Fitz's managed local Qwen ONNX runtime; "
+                    "check chat_base_url only for optional endpoint synthesis."
                 ) from e
             raise ConfigurationError(f"Failed to initialize Fitz KRAG engine: {e}") from e
 
@@ -304,6 +304,7 @@ class FitzKragEngine:
         from fitz_sage.engines.fitz_krag.context.assembler import ContextAssembler
         from fitz_sage.engines.fitz_krag.generation.synthesizer import CodeSynthesizer
         from fitz_sage.llm.client import get_chat
+        from fitz_sage.llm.providers.onnx_chat import OnnxChat
 
         self._assembler = ContextAssembler(self._config)
         self._synthesizer = None
@@ -318,31 +319,9 @@ class FitzKragEngine:
             synth_chat = get_chat(self._config.synthesizer, "smart", synth_config)
             self._synthesizer = CodeSynthesizer(synth_chat, self._config)
 
-        self._enricher_chat = None
-        if self._config.enricher:
-            enricher_config = _build_provider_config(
-                self._config.chat_base_url,
-                self._config.chat_api_key_env,
-                spec=self._config.enricher,
-                auth=self._config.auth,
-                cert_path=self._config.cert_path,
-            )
-            self._enricher_chat = get_chat(self._config.enricher, "fast", enricher_config)
-
-        self._summarizer_chat = None
-        if self._config.summarizer:
-            summarizer_config = _build_provider_config(
-                self._config.chat_base_url,
-                self._config.chat_api_key_env,
-                spec=self._config.summarizer,
-                auth=self._config.auth,
-                cert_path=self._config.cert_path,
-            )
-            self._summarizer_chat = get_chat(
-                self._config.summarizer,
-                "balanced",
-                summarizer_config,
-            )
+        standard_chat = OnnxChat()
+        self._enricher_chat = standard_chat
+        self._summarizer_chat = standard_chat
 
         # Governance — pyrrho classifier (single INT8 ONNX forward pass).
         # Provider-presence: the `governance:` config key builds the
@@ -432,14 +411,13 @@ class FitzKragEngine:
 
         # Entity graph store
         self._entity_graph_store: Any = None
-        if self._config.enricher:
-            try:
-                from fitz_sage.retrieval.entity_graph.store import EntityGraphStore
+        try:
+            from fitz_sage.retrieval.entity_graph.store import EntityGraphStore
 
-                self._entity_graph_store = EntityGraphStore(collection=self._config.collection)
-                self._expander._entity_graph_store = self._entity_graph_store
-            except Exception as e:
-                logger.debug(f"Entity graph store init: {e}")
+            self._entity_graph_store = EntityGraphStore(collection=self._config.collection)
+            self._expander._entity_graph_store = self._entity_graph_store
+        except Exception as e:
+            logger.debug(f"Entity graph store init: {e}")
 
         # Retrieval pass — Tiers 1-4 (retrieve -> rerank -> read) as one unit.
         from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass

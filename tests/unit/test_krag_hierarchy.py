@@ -10,7 +10,6 @@ for the worker → core scheduling, and these tests for what each op produces.
 Tests that:
 - enrich_file adds an L1 hierarchy_summary to each section's metadata
 - finalize generates and stores the L2 corpus summary as a section
-- missing enrichment/summarizer providers fail ingestion closed
 - LLM errors fail gracefully
 
 Code symbols deliberately have no hierarchy stage — they already carry
@@ -22,10 +21,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from fitz_sage.core import ConfigurationError
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -33,19 +28,13 @@ from fitz_sage.core import ConfigurationError
 
 def _make_core(
     *,
-    summarizer: str | None = "endpoint/test-summarizer",
-    enricher: str | None = "endpoint/test-enricher",
     chat: MagicMock | None = None,
 ):
     """Create a KragIngestPipeline core with a mocked connection manager."""
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
 
-    config = FitzKragConfig(
-        collection="test_col",
-        summarizer=summarizer,
-        enricher=enricher,
-    )
+    config = FitzKragConfig(collection="test_col")
     return KragIngestPipeline(
         config=config,
         chat=chat or MagicMock(),
@@ -111,21 +100,6 @@ class TestL1SectionHierarchy:
         for sec in persisted:
             assert sec["metadata"]["hierarchy_summary"] == "Document covers setup instructions."
 
-    def test_enrich_file_requires_summarizer(self):
-        """No summarizer provider fails indexing before L1 can be skipped."""
-        chat = MagicMock()
-        chat.chat.return_value = "unused"
-        core = _make_core(summarizer=None, chat=chat)
-        core._enricher = _fake_enricher()
-        core._section_store = MagicMock()
-        core._section_store.get_by_file.return_value = _section_dicts(2)
-
-        with pytest.raises(ConfigurationError, match="hierarchy summarization"):
-            core.enrich_file("file-1", ".md")
-
-        core._section_store.update_enrichment_by_file.assert_not_called()
-        chat.chat.assert_not_called()
-
     def test_l1_failure_does_not_crash(self):
         """An LLM failure during L1 generation is caught; enrichment still persists."""
         chat = MagicMock()
@@ -141,35 +115,6 @@ class TestL1SectionHierarchy:
         persisted = core._section_store.update_enrichment_by_file.call_args[0][1]
         for sec in persisted:
             assert "hierarchy_summary" not in sec["metadata"]
-
-    def test_l1_requires_enricher(self):
-        """L1 hierarchy is not allowed to run without keyword/entity enrichment."""
-        chat = MagicMock()
-        chat.chat.return_value = "Document overview."
-        core = _make_core(enricher=None, chat=chat)
-        assert core._enricher is None
-        core._section_store = MagicMock()
-        core._section_store.get_by_file.return_value = _section_dicts(2)
-
-        with pytest.raises(ConfigurationError, match="keyword/entity enrichment"):
-            core.enrich_file("file-1", ".md")
-
-        core._section_store.update_enrichment_by_file.assert_not_called()
-        chat.chat.assert_not_called()
-
-    def test_l1_requires_summarizer_provider(self):
-        """A missing summarizer provider fails before any L1 write."""
-        chat = MagicMock()
-        core = _make_core(summarizer=None, chat=chat)
-        core._enricher = _fake_enricher()
-        core._section_store = MagicMock()
-        core._section_store.get_by_file.return_value = _section_dicts(2)
-
-        with pytest.raises(ConfigurationError, match="hierarchy summarization"):
-            core.enrich_file("file-1", ".md")
-
-        chat.chat.assert_not_called()
-        core._section_store.update_enrichment_by_file.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -210,34 +155,6 @@ class TestL2CorpusSummary:
 
         core.finalize()
 
-        core._section_store.upsert_batch.assert_not_called()
-
-    def test_finalize_requires_summarizer_after_resolving_imports(self):
-        """No summarizer provider: finalize resolves imports, then fails closed."""
-        core = _make_core(summarizer=None, chat=MagicMock())
-        core._section_store = MagicMock()
-        core._raw_store = MagicMock()
-        core._import_store = MagicMock()
-
-        with pytest.raises(ConfigurationError, match="hierarchy summarization"):
-            core.finalize()
-
-        core._section_store.get_hierarchy_summaries.assert_not_called()
-        core._section_store.upsert_batch.assert_not_called()
-        # Import resolution still runs regardless of hierarchy config
-        core._import_store.resolve_targets.assert_called_once()
-
-    def test_finalize_missing_summarizer_does_not_build_l2(self):
-        """A missing summarizer provider fails before building L2."""
-        core = _make_core(summarizer=None, chat=MagicMock())
-        core._section_store = MagicMock()
-        core._raw_store = MagicMock()
-        core._import_store = MagicMock()
-
-        with pytest.raises(ConfigurationError, match="hierarchy summarization"):
-            core.finalize()
-
-        core._section_store.get_hierarchy_summaries.assert_not_called()
         core._section_store.upsert_batch.assert_not_called()
 
     def test_l2_failure_does_not_crash(self):

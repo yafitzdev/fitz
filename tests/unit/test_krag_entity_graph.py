@@ -17,9 +17,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from fitz_sage.core import ConfigurationError
 from fitz_sage.engines.fitz_krag.retrieval.expander import CodeExpander
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
@@ -31,13 +28,12 @@ from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 def _make_core(
     *,
     entity_graph_store: MagicMock | None = None,
-    enricher: str | None = "endpoint/test-enricher",
 ):
     """Create a KragIngestPipeline core with a mocked connection manager."""
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
 
-    config = FitzKragConfig(collection="test_col", enricher=enricher)
+    config = FitzKragConfig(collection="test_col")
     return KragIngestPipeline(
         config=config,
         chat=MagicMock(),
@@ -68,18 +64,6 @@ def _enricher_stamping(entity_sets: list[list[dict]]) -> MagicMock:
 
 class TestEnrichEntityGraphIntegration:
     """Tests that enrich_file populates the entity graph during ingestion."""
-
-    def test_no_enricher_provider_fails_ingestion(self):
-        """A missing enricher provider fails indexing instead of disabling enrichment."""
-        core = _make_core(enricher=None)
-        core._symbol_store = MagicMock()
-        core._symbol_store.get_by_file.return_value = [
-            {"id": "sym-001", "keywords": [], "entities": []},
-        ]
-
-        assert core._enricher is None
-        with pytest.raises(ConfigurationError, match="keyword/entity enrichment"):
-            core.enrich_file("file-1", ".py")
 
     def test_enrich_file_populates_entity_graph(self):
         """enrich_file adds each symbol's extracted entities to the graph store."""

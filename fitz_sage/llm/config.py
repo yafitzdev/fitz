@@ -67,9 +67,8 @@ HEADER_FORMAT_MAP: dict[str, str] = {
 _REMOVED_PROVIDERS: dict[str, str] = {
     "ollama": (
         "The 'ollama' provider has been removed. "
-        "Required enrichment is managed in-process with ONNX:\n\n"
-        "  enricher: onnx/qwen3.5-0.8b\n"
-        "  summarizer: onnx/qwen3.5-0.8b\n\n"
+        "Required enrichment is managed in-process with Qwen3.5 0.8B ONNX "
+        "and is not user-configurable.\n\n"
         "For optional Ollama answer synthesis, use the 'endpoint' provider with "
         "Ollama's OpenAI-compatible URL:\n\n"
         "  synthesizer: endpoint/qwen2.5:14b\n"

@@ -5,10 +5,7 @@ import pytest
 import yaml
 
 from fitz_sage.engines.fitz_krag.config import FitzKragConfig, get_default_config_path
-from fitz_sage.engines.fitz_krag.config.schema import (
-    DEFAULT_ENRICHMENT_SPEC,
-    DEFAULT_LOCAL_LLM_BASE_URL,
-)
+from fitz_sage.engines.fitz_krag.config.schema import DEFAULT_LOCAL_LLM_BASE_URL
 
 
 class TestFitzKragConfig:
@@ -19,8 +16,8 @@ class TestFitzKragConfig:
         assert config.chat_balanced is None
         assert config.chat_smart is None
         assert config.chat_base_url == DEFAULT_LOCAL_LLM_BASE_URL
-        assert config.enricher == DEFAULT_ENRICHMENT_SPEC
-        assert config.summarizer == DEFAULT_ENRICHMENT_SPEC
+        assert not hasattr(config, "enricher")
+        assert not hasattr(config, "summarizer")
         assert config.auth is None
         assert config.cert_path is None
 
@@ -89,6 +86,14 @@ class TestFitzKragConfig:
         with pytest.raises(Exception):
             FitzKragConfig(collection="test", nonexistent_field=True)
 
+    def test_enrichment_provider_fields_are_removed(self):
+        """Qwen enrichment is internal; legacy provider knobs are invalid."""
+        with pytest.raises(Exception):
+            FitzKragConfig(collection="test", enricher="onnx/qwen3.5-0.8b")
+
+        with pytest.raises(Exception):
+            FitzKragConfig(collection="test", summarizer="onnx/qwen3.5-0.8b")
+
     def test_no_chat_kwargs_field(self):
         """chat_kwargs, embedding_kwargs, rerank_kwargs, vision_kwargs are deleted."""
         config = FitzKragConfig(collection="test")
@@ -113,8 +118,8 @@ class TestDefaultYaml:
         assert raw["fitz_krag"]["chat_balanced"] is None
         assert raw["fitz_krag"]["chat_smart"] is None
         assert raw["fitz_krag"]["chat_base_url"] == DEFAULT_LOCAL_LLM_BASE_URL
-        assert raw["fitz_krag"]["enricher"] == DEFAULT_ENRICHMENT_SPEC
-        assert raw["fitz_krag"]["summarizer"] == DEFAULT_ENRICHMENT_SPEC
+        assert "enricher" not in raw["fitz_krag"]
+        assert "summarizer" not in raw["fitz_krag"]
         assert raw["fitz_krag"]["auth"] is None
         assert raw["fitz_krag"]["cert_path"] is None
         assert raw["fitz_krag"]["short_answer_tokens"] == 192

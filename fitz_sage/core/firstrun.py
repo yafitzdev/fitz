@@ -2,9 +2,10 @@
 """
 First-run experience for fitz-sage.
 
-Writes ``.fitz/config.yaml`` with the required managed ONNX enrichment profile.
-If an OpenAI-compatible LLM endpoint is already available, optional synthesis
-providers are configured too.
+Writes ``.fitz/config.yaml`` for user-configurable providers. Required
+enrichment always uses the managed Qwen ONNX runtime and is not written as
+configuration. If an OpenAI-compatible LLM endpoint is already available,
+optional synthesis providers are configured too.
 
 Detection order:
 
@@ -13,8 +14,8 @@ Detection order:
    server wins; we read its ``/models`` listing to choose a chat model.
 2. **OpenAI cloud** — falls back to ``openai/gpt-4o-mini`` if
    ``OPENAI_API_KEY`` is set, again for optional synthesis only.
-3. **No provider** — writes the ONNX-only enrichment config. The first ingest
-   downloads Qwen3.5 0.8B ONNX into the Hugging Face cache and runs it locally.
+3. **No provider** — writes a minimal config. The first ingest downloads
+   Qwen3.5 0.8B ONNX into the Hugging Face cache and runs it locally.
 
 There is no Ollama-specific enrichment path; Ollama is only an optional
 OpenAI-compatible endpoint for synthesis. fitz-sage uses no embeddings;
@@ -31,7 +32,6 @@ from pathlib import Path
 from fitz_sage.core.paths import FitzPaths
 from fitz_sage.engines.fitz_krag.config.schema import (
     DEFAULT_ENRICHMENT_MODEL,
-    DEFAULT_ENRICHMENT_SPEC,
     DEFAULT_LOCAL_LLM_BASE_URL,
 )
 
@@ -138,10 +138,6 @@ def write_config(
         "rerank: null",
         "vision: null",
         "",
-        "# Required ingestion enrichment model (managed ONNX)",
-        f"enricher: {DEFAULT_ENRICHMENT_SPEC}",
-        f"summarizer: {DEFAULT_ENRICHMENT_SPEC}",
-        "",
         "collection: default",
         "",
     ]
@@ -153,7 +149,7 @@ def write_local_enrichment_config(
     *,
     chat_base_url: str = DEFAULT_LOCAL_LLM_BASE_URL,
 ) -> Path:
-    """Write a default config that uses the managed ONNX enrichment runtime."""
+    """Write a default config; enrichment is managed internally."""
     config_path = FitzPaths.config()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -161,19 +157,16 @@ def write_local_enrichment_config(
         "# Fitz Configuration",
         "# Docs: https://github.com/yafitzdev/fitz-sage/blob/main/docs/CONFIG.md",
         "",
-        "# Enrichment-first default: ingestion uses managed ONNX Qwen.",
+        "# Ingestion uses Fitz-managed ONNX Qwen automatically.",
         "collection: default",
         "parser: cpu",
         "rerank: onnx",
         "governance: pyrrho",
-        "# Optional endpoint providers use chat_base_url; ONNX enrichment ignores it.",
+        "# Optional endpoint providers use chat_base_url; managed Qwen ignores it.",
         f"chat_base_url: {chat_base_url}",
         "",
-        "# Required ingestion enrichment model.",
         "query_intelligence: null",
         "synthesizer: null",
-        f"enricher: {DEFAULT_ENRICHMENT_SPEC}",
-        f"summarizer: {DEFAULT_ENRICHMENT_SPEC}",
         "",
     ]
     config_path.write_text("\n".join(lines), encoding="utf-8")
@@ -202,7 +195,7 @@ def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
             f"\n  Detected an OpenAI-compatible server at {endpoint.base_url}, "
             f"but it lists no chat models."
         )
-        print(f"  Wrote ONNX enrichment config for: {DEFAULT_ENRICHMENT_MODEL}")
+        print(f"  Wrote minimal config; enrichment uses managed {DEFAULT_ENRICHMENT_MODEL}.")
         print(f"\n  Config: {config_path}\n")
         return True
 
@@ -243,7 +236,7 @@ def _configure_local_enrichment_required() -> bool:
     """Write config when no optional chat endpoint is available."""
     config_path = write_local_enrichment_config()
     print("\n  No optional chat endpoint found.")
-    print(f"  Wrote config for required ONNX model: {DEFAULT_ENRICHMENT_MODEL}")
+    print(f"  Wrote minimal config; enrichment uses managed {DEFAULT_ENRICHMENT_MODEL}.")
     print("  First ingest will download the managed Qwen3.5 0.8B ONNX weights locally.")
     print(f"\n  Config: {config_path}\n")
     return True

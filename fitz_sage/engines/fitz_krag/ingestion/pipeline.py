@@ -6,11 +6,11 @@ The single ingestion implementation for the KRAG engine, structured as
 composable operations:
 
 - per file — ``parse_file`` (extract symbols / sections / tables, store
-  raw content; no LLM), optional ``summarize_file`` (provider summaries),
-  optional ``enrich_file`` (keywords + entities, vocabulary, entity graph,
+  raw content; no LLM), ``summarize_file`` (provider summaries on demand),
+  ``enrich_file`` (keywords + entities, vocabulary, entity graph,
   L1 hierarchy summary)
 - corpus — ``finalize`` (resolve the import graph, build the L2 hierarchy
-  summary when a summarizer is configured)
+  summary)
 
 ``ingest()`` is a thin synchronous loop over these ops for blocking
 whole-corpus ingestion. The progressive ``BackgroundIngestWorker``
@@ -94,8 +94,13 @@ class KragIngestPipeline:
     ):
         self._config = config
         self._chat = chat
-        self._enricher_chat = enricher_chat or chat
-        self._summarizer_chat = summarizer_chat or chat
+        standard_chat = enricher_chat or summarizer_chat or chat
+        if standard_chat is None:
+            from fitz_sage.llm.providers.onnx_chat import OnnxChat
+
+            standard_chat = OnnxChat()
+        self._enricher_chat = enricher_chat or standard_chat
+        self._summarizer_chat = summarizer_chat or standard_chat
         self._cm = connection_manager
         self._collection = collection
         self._table_extensions = set(config.table_extensions)
@@ -110,14 +115,12 @@ class KragIngestPipeline:
         self._entity_graph_store = entity_graph_store
 
         # Enricher
-        self._enricher: Any = None
-        if config.enricher:
-            from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
+        from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
-            self._enricher = KragEnricher(
-                self._enricher_chat,
-                batch_size=config.summary_batch_size,
-            )
+        self._enricher: Any = KragEnricher(
+            self._enricher_chat,
+            batch_size=config.summary_batch_size,
+        )
 
         # Code strategies
         self._strategies: dict[str, Any] = {}
@@ -630,23 +633,21 @@ class KragIngestPipeline:
     # ------------------------------------------------------------------
 
     def _require_enricher(self) -> None:
-        """Fail closed when keyword/entity enrichment is not configured."""
-        if self._enricher:
+        """Fail closed when keyword/entity enrichment cannot run."""
+        if self._enricher and self._enricher_chat:
             return
         raise ConfigurationError(
-            "Ingestion requires keyword/entity enrichment. Configure "
-            "`enricher: onnx/qwen3.5-0.8b` so Fitz can run the managed "
-            "local ONNX Qwen model."
+            "Ingestion requires keyword/entity enrichment, but the managed "
+            "local Qwen ONNX runtime was not initialized."
         )
 
     def _require_summarizer(self) -> None:
-        """Fail closed when hierarchy/table summarization is not configured."""
-        if self._config.summarizer and self._summarizer_chat:
+        """Fail closed when hierarchy/table summarization cannot run."""
+        if self._summarizer_chat:
             return
         raise ConfigurationError(
-            "Ingestion requires hierarchy summarization. Configure "
-            "`summarizer: onnx/qwen3.5-0.8b` so Fitz can run the managed "
-            "local ONNX Qwen model."
+            "Ingestion requires hierarchy summarization, but the managed "
+            "local Qwen ONNX runtime was not initialized."
         )
 
     def _enrich_code_file(self, file_id: str) -> None:
