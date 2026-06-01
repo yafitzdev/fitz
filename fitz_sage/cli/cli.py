@@ -3,7 +3,9 @@
 Fitz CLI - Main application.
 
 Commands:
-    fitz query         Query knowledge base (--source to register, --chat for interactive)
+    fitz retrieve      Retrieve governed evidence (--source to register)
+    fitz answer        Generate an optional synthesized answer
+    fitz query         Compatibility synthesized-answer command
     fitz collections   Manage collections (list, info, delete)
     fitz serve         Start the REST API server
 
@@ -32,7 +34,7 @@ import typer  # noqa: E402
 
 app = typer.Typer(
     name="fitz",
-    help='Fitz - local-first RAG framework. Start with: fitz query "your question" --source ./docs',
+    help='Fitz - local-first retrieval. Start with: fitz retrieve "your question" --source ./docs',
     no_args_is_help=True,
     add_completion=False,
 )

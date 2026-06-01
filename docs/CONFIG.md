@@ -1,3 +1,4 @@
+<!-- docs/CONFIG.md -->
 # Configuration Reference
 
 fitz-sage **v0.14.1+**. Engine config lives at
@@ -10,49 +11,57 @@ on first ingest).
 ## Minimal config
 
 ```yaml
-# ~/.fitz/config/fitz_krag.yaml — local llama.cpp / Ollama / LM Studio
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
-chat_base_url: http://localhost:8080/v1
-chat_smart_model: qwen2.5-7b-instruct
+# ~/.fitz/config/fitz_krag.yaml
 collection: default
+parser: cpu
+rerank: onnx
+governance: pyrrho
+query_intelligence: null
+synthesizer: null
+enricher: null
+summarizer: null
 ```
 
-To talk to a hosted endpoint:
+This is enough for `fitz retrieve` and `fitz_sage.evidence(...)`: no API key and
+no local chat server are required.
+
+To enable synthesized answers through a hosted endpoint:
 
 ```yaml
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
+synthesizer: endpoint/gpt-4o
 chat_base_url: https://api.openai.com/v1
 chat_api_key_env: OPENAI_API_KEY
-chat_smart_model: gpt-4o
-chat_balanced_model: gpt-4o-mini
-chat_fast_model: gpt-4o-mini
 collection: default
 ```
 
-Or override the entire chat stack per-invocation with CLI flags
-(`--endpoint`, `--model`, `--api-key-env`) — no config file needed.
+Or pass the provider per invocation:
+
+```bash
+fitz answer "What is X?" \
+  --endpoint https://api.openai.com/v1 \
+  --model gpt-4o \
+  --api-key-env OPENAI_API_KEY
+```
 
 ---
 
-## LLM tiers
+## Optional LLM Providers
 
-| Key             | Purpose                          | Typical use                                   |
-| --------------- | -------------------------------- | --------------------------------------------- |
-| `chat_fast`     | Cheap/fast                       | Classification, detection, query rewriting    |
-| `chat_balanced` | Middle tier                      | SQL generation, table queries, enrichment     |
-| `chat_smart`    | Best reasoning                   | Answer synthesis                              |
+The retrieval path does not require chat. Chat tiers are provider definitions
+used only when another config key opts into an LLM-backed stage.
 
-Each tier takes a provider spec (almost always `endpoint`). Pair it
-with a model name via the per-tier `*_model` key, or with a
-provider-prefixed model in the spec itself:
+| Key             | Typical use when referenced by a feature provider |
+| --------------- | -------------------------------------------------- |
+| `chat_fast`     | Query-intelligence enhancement, enrichment         |
+| `chat_balanced` | Summaries, table query helpers                     |
+| `chat_smart`    | Synthesis-oriented defaults                        |
+
+Each tier takes a provider/model spec. For `endpoint`, the model name is the
+part after the slash and `chat_base_url` supplies the OpenAI-compatible URL:
 
 ```yaml
-chat_smart: endpoint            # provider only
-chat_smart_model: qwen2.5-32b   # model name passed to the endpoint
+chat_smart: endpoint/qwen2.5-32b
+chat_base_url: http://localhost:8080/v1
 ```
 
 If `chat_base_url` is shared across tiers (the common case), set it
@@ -83,12 +92,15 @@ for those backends instead (Ollama exposes one at
 
 Features are switched on by **provider presence**, not boolean flags:
 
-| Feature       | Enabled when                                | Disabled when                       |
-| ------------- | ------------------------------------------- | ----------------------------------- |
-| ONNX reranker | `rerank: onnx` (default)                    | `rerank: null` (or omitted)         |
-| Governance    | `governance: pyrrho` (default)              | `governance: null`                  |
-| VLM in parser | `parser: docling_vision` + `vision:` set    | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
-| Enrichment    | `chat_*` configured (always-on otherwise)   | no chat provider                    |
+| Feature            | Enabled when                             | Disabled when                       |
+| ------------------ | ---------------------------------------- | ----------------------------------- |
+| ONNX reranker      | `rerank: onnx` (default)                 | `rerank: null`                      |
+| Governance         | `governance: pyrrho` (default)           | `governance: null`                  |
+| Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |
+| Answer synthesis   | `synthesizer: <provider/model>`          | `synthesizer: null`                 |
+| Enrichment         | `enricher: <provider/model>`             | `enricher: null`                    |
+| Hierarchy summaries | `summarizer: <provider/model>`          | `summarizer: null`                  |
+| VLM in parser      | `parser: docling_vision` + `vision:` set | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
 
 ---
 
@@ -133,8 +145,9 @@ built-in plugins — they are not `parser:` options.
 
 ## Authentication
 
-API keys are read from environment variables — never put them in the
-config file. Name the env var with `chat_api_key_env`:
+API keys are needed only for optional hosted providers. They are read from
+environment variables — never put them in the config file. Name the env var with
+`chat_api_key_env`:
 
 ```yaml
 chat_api_key_env: OPENAI_API_KEY
@@ -174,14 +187,14 @@ baseline.
 The CLI accepts overrides without editing the config file:
 
 ```bash
-fitz query "What is X?" \
+fitz answer "What is X?" \
   --endpoint https://api.together.xyz/v1 \
   --model meta-llama-3.1-70b \
   --api-key-env TOGETHER_API_KEY
 ```
 
-`--endpoint` overrides `chat_base_url`, `--model` overrides the smart
-tier's model, `--api-key-env` overrides `chat_api_key_env`.
+`fitz answer` uses these flags to configure the synthesizer for that invocation.
+`fitz retrieve` ignores chat endpoint flags because it does not synthesize.
 
 ---
 

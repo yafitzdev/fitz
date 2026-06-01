@@ -9,8 +9,10 @@ Complete reference for the Fitz Python SDK (v0.14.1).
 ```python
 import fitz_sage
 
-answer = fitz_sage.query("What is the refund policy?", source="./docs")
-print(answer.text)
+pack = fitz_sage.evidence("What is the refund policy?", source="./docs")
+print(pack.mode)
+for item in pack.items:
+    print(item.file_path, item.excerpt)
 ```
 
 ---
@@ -19,9 +21,36 @@ print(answer.text)
 
 The simplest way to use Fitz - matches CLI behavior.
 
+### fitz_sage.evidence()
+
+Retrieve a governed evidence pack without answer synthesis.
+
+```python
+fitz_sage.evidence(
+    question: str,                 # The question to retrieve evidence for
+    source: str | Path = None,     # If provided, registers documents first
+    collection: str = None,        # Collection name (uses default if not specified)
+) -> EvidencePack
+```
+
+**Returns:** `EvidencePack` with `query`, `mode`, ranked `items`, `reasons`,
+`timings`, `indexing_status`, and `metadata`.
+
+**Examples:**
+
+```python
+pack = fitz_sage.evidence("What is the refund policy?", source="./docs")
+print(pack.mode)  # TRUSTWORTHY, DISPUTED, ABSTAIN, or None
+
+for item in pack.items:
+    print(f"{item.rank}. {item.file_path}:{item.line_range}")
+    print(item.excerpt)
+```
+
 ### fitz_sage.query()
 
-Query the knowledge base.
+Generate a synthesized answer. This requires a configured synthesizer provider;
+use `evidence()` for the default no-chat retrieval path.
 
 ```python
 fitz_sage.query(
@@ -83,6 +112,18 @@ f.query(
 ) -> Answer  # synthesized answer: text, provenance, mode
 ```
 
+Requires `synthesizer:` in config or an engine instance configured with a
+synthesizer provider.
+
+#### evidence()
+
+```python
+f.evidence(
+    question: str,
+    source: str | Path = None,  # If provided, registers documents before retrieval
+) -> EvidencePack
+```
+
 #### point()
 
 Register a source file or directory. Indexing runs in the background — queries
@@ -94,9 +135,9 @@ f.point(source: str | Path) -> None
 
 #### retrieve()
 
-The raw sources behind an answer, without synthesis (useful for building your
-own citations or synthesis). For KRAG, returns `ReadResult` objects with
-`content`, `file_path`, and `line_range`.
+The raw sources behind an answer/evidence pack, without governance packaging.
+For KRAG, returns `ReadResult` objects with `content`, `file_path`, and
+`line_range`. Most applications should prefer `evidence()`.
 
 ```python
 f.retrieve(question: str) -> list
@@ -123,10 +164,10 @@ from fitz_sage import fitz
 
 # Multiple collections
 physics = fitz(collection="physics")
-physics_answer = physics.query("Explain entanglement", source="./physics_papers")
+physics_pack = physics.evidence("Explain entanglement", source="./physics_papers")
 
 legal = fitz(collection="legal")
-legal_answer = legal.query("What are the payment terms?", source="./contracts")
+legal_pack = legal.evidence("What are the payment terms?", source="./contracts")
 
 # Custom config
 f = fitz(config_path="./my_config.yaml")
@@ -161,6 +202,37 @@ class Answer:
 | `DISPUTED` | Conflicting sources detected |
 | `ABSTAIN` | Insufficient evidence to answer |
 
+### EvidencePack
+
+The retrieval-first response contract.
+
+```python
+from fitz_sage import EvidencePack, EvidenceItem
+
+class EvidencePack:
+    query: str
+    mode: AnswerMode | None
+    items: list[EvidenceItem]
+    reasons: list[str]
+    timings: dict
+    indexing_status: dict
+    metadata: dict
+
+class EvidenceItem:
+    rank: int
+    source_id: str
+    file_path: str
+    address_kind: str
+    address_location: str
+    line_range: tuple[int, int] | None
+    score: float | None
+    excerpt: str
+    content: str
+    metadata: dict
+```
+
+Use `pack.to_dict()` or `pack.to_json()` for API responses and downstream apps.
+
 ### Provenance
 
 Source attribution for an answer.
@@ -194,7 +266,7 @@ query = Query(
 ### Direct Engine Access
 
 `create_engine()` returns an engine implementing the `RetrievalEngine` protocol —
-`answer()` plus the full ingest/retrieve lifecycle:
+`evidence()`, optional `answer()`, and the full ingest/retrieve lifecycle:
 
 ```python
 from pathlib import Path
@@ -204,8 +276,9 @@ engine = create_engine("fitz_krag")
 engine.load("default")                  # bind to a collection
 engine.point(Path("./docs"))            # register a source (indexes in background)
 
+pack = engine.evidence(Query(text="What is X?"))     # governed evidence
 answer = engine.answer(Query(text="What is X?"))     # synthesized answer
-sources = engine.retrieve(Query(text="What is X?"))  # raw sources, no synthesis
+sources = engine.retrieve(Query(text="What is X?"))  # raw sources, no governance packaging
 ```
 
 ### Engine Selection
@@ -249,7 +322,7 @@ from fitz_sage import (
 )
 
 try:
-    answer = fitz_sage.query("What is X?")
+    pack = fitz_sage.evidence("What is X?")
 except ConfigurationError as e:
     print(f"Config issue: {e}")
 except QueryError as e:

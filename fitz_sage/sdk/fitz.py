@@ -1,6 +1,6 @@
 # fitz_sage/sdk/fitz.py
 """
-Fitz class - stateful SDK for the Fitz KRAG framework.
+Fitz class - stateful SDK for the Fitz KRAG retrieval engine.
 
 A thin, stateful wrapper around a single engine instance bound to one
 collection. It is the complete programmatic front door — point, query,
@@ -24,24 +24,24 @@ logger = get_logger(__name__)
 
 class fitz:
     """
-    Stateful SDK for the Fitz RAG framework.
+    Stateful SDK for governed Fitz retrieval.
 
     Holds one engine bound to a collection and exposes the full lifecycle::
 
         f = fitz(collection="docs")
         f.point("./docs")                  # register documents (indexes in bg)
-        answer = f.query("What is X?")     # synthesized answer
-        sources = f.retrieve("What is X?") # raw sources, no synthesis
+        pack = f.evidence("What is X?")    # governed evidence
+        answer = f.query("What is X?")     # optional synthesized answer
 
     Queries work immediately via agentic search and get better as background
     indexing completes; call ``f.wait_for_indexing()`` to block until it finishes.
 
     Examples:
         >>> f = fitz()
-        >>> answer = f.query("What is the refund policy?", source="./docs")
-        >>> print(answer.text)
-        >>> for source in answer.provenance:
-        ...     print(source.excerpt)
+        >>> pack = f.evidence("What is the refund policy?", source="./docs")
+        >>> print(pack.mode)
+        >>> for item in pack.items:
+        ...     print(item.excerpt)
     """
 
     def __init__(

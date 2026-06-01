@@ -1,3 +1,4 @@
+<!-- docs/CLI.md -->
 # CLI Reference
 
 fitz-sage **v0.14.1+**. The CLI is one binary, `fitz`, with a small
@@ -13,14 +14,17 @@ fitz <command> --help
 ## Quick Start
 
 ```bash
-# One-shot: register docs + query
-fitz query "What is X?" --source ./docs
+# One-shot: register docs + retrieve governed evidence
+fitz retrieve "What is X?" --source ./docs
 
-# Subsequent queries reuse the collection
-fitz query "Follow-up question"
+# Subsequent retrieval reuses the collection
+fitz retrieve "Follow-up question"
 
-# Point at any OpenAI-compatible endpoint without editing config
-fitz query "What is X?" \
+# JSON emits the full EvidencePack
+fitz retrieve "What is X?" --source ./docs --format json
+
+# Optional synthesis: point at any OpenAI-compatible endpoint
+fitz answer "What is X?" \
   --endpoint https://api.together.xyz/v1 \
   --model meta-llama-3.1-70b \
   --api-key-env TOGETHER_API_KEY \
@@ -31,38 +35,71 @@ fitz query "What is X?" \
 
 ## Commands
 
-The CLI has three commands: `query`, `collections`, and `serve`.
+The main commands are `retrieve`, `answer`, `query`, `collections`, and `serve`.
 Configuration is auto-created on first run; there is no separate init
 step.
 
-### `fitz query`
+### `fitz retrieve`
 
-Ask a question. With `--source`, registers documents first; without
-it, queries the active collection.
+Return a ranked, governed evidence pack without answer synthesis. With
+`--source`, registers documents first; without it, retrieves from the active
+collection.
 
 ```bash
-fitz query "Your question"
-fitz query "What is this about?" --source ./docs
-fitz query "Summarize the key points" -c my_collection --source ./docs
-fitz query --chat                                # interactive
-fitz query --chat -c my_collection               # interactive on a collection
+fitz retrieve "Your question"
+fitz retrieve "What is this about?" --source ./docs
+fitz retrieve "Which test failed?" -c my_collection --source ./docs --top-k 10
+fitz retrieve "Which test failed?" --format json
 ```
 
 **Arguments**
-- `QUESTION` — the question (optional with `--chat`)
+- `QUESTION` — the question to retrieve evidence for
 
 **Options**
-- `-s, --source PATH` — register documents (file or directory) before querying
+- `-s, --source PATH` — register documents (file or directory) before retrieval
 - `-c, --collection TEXT` — collection name (default: `default`)
 - `-e, --engine TEXT` — engine name (default: `fitz_krag`)
-- `--chat` — interactive multi-turn mode
-- `--endpoint TEXT` — OpenAI-compatible URL; overrides `chat_base_url`
-- `-m, --model TEXT` — chat model name; overrides smart-tier model
-- `--api-key-env TEXT` — env var holding the API key; overrides `chat_api_key_env`
+- `--format text|json` — human-readable output or serialized `EvidencePack`
+- `--top-k INT` — maximum evidence items to show
 
-**Chat mode**
-- Type questions naturally.
-- Exit with `exit`, `quit`, or `Ctrl+C`.
+### `fitz answer`
+
+Generate a synthesized answer from the retrieved evidence. This requires an
+explicit synthesizer provider, either from config (`synthesizer:`) or from the
+CLI endpoint flags.
+
+```bash
+fitz answer "Your question" --source ./docs \
+  --endpoint http://localhost:8080/v1 \
+  --model qwen3.5-0.8b
+
+fitz answer "Your question" -c my_collection \
+  --endpoint https://api.openai.com/v1 \
+  --model gpt-4o \
+  --api-key-env OPENAI_API_KEY
+```
+
+If no synthesizer is configured, the command fails with an actionable error and
+points you back to `fitz retrieve`.
+
+**Options**
+- `-s, --source PATH` — register documents before answering
+- `-c, --collection TEXT` — collection name
+- `-e, --engine TEXT` — engine name
+- `--endpoint TEXT` — OpenAI-compatible URL; pairs with `--model`
+- `-m, --model TEXT` — chat model name sent to the endpoint
+- `--api-key-env TEXT` — env var holding the API key
+
+### `fitz query`
+
+Compatibility alias for synthesized answer behavior, plus interactive chat mode.
+For new workflows, prefer `fitz retrieve` for evidence and `fitz answer` for
+explicit synthesis.
+
+```bash
+fitz query "Your question" --endpoint http://localhost:8080/v1 --model qwen3.5-0.8b
+fitz query --chat -c my_collection
+```
 
 ---
 
@@ -113,12 +150,14 @@ fitz serve --reload                  # auto-reload (dev)
 The minimum on-disk config (`~/.fitz/config/fitz_krag.yaml`) is:
 
 ```yaml
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
-chat_base_url: http://localhost:8080/v1
-chat_smart_model: qwen2.5-7b-instruct
 collection: default
+parser: cpu
+rerank: onnx
+governance: pyrrho
+query_intelligence: null
+synthesizer: null
+enricher: null
+summarizer: null
 ```
 
 This file is auto-created on first run. See [CONFIG.md](CONFIG.md) for
@@ -158,11 +197,8 @@ storage.
 ### Local-first setup
 
 ```bash
-# Start a local OpenAI-compatible server
-llama-server -m qwen2.5-7b-instruct.gguf --port 8080 &
-
-# Ingest + query (config is auto-created on first run)
-fitz query "What's in my docs?" --source ./docs
+# Ingest + retrieve governed evidence; no chat server required
+fitz retrieve "What's in my docs?" --source ./docs
 ```
 
 ### Multi-turn exploration
@@ -177,7 +213,7 @@ fitz query --chat -c project_x
 
 ```bash
 export OPENAI_API_KEY=...
-fitz query "What is X?" \
+fitz answer "What is X?" \
   --endpoint https://api.openai.com/v1 \
   --model gpt-4o \
   --api-key-env OPENAI_API_KEY \
