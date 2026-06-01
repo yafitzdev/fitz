@@ -201,6 +201,27 @@ class TestBM25Prefilter:
         assert len(result) == _BM25_PREFILTER_THRESHOLD
 
 
+class TestNoLlmRetrieval:
+    def test_allow_llm_false_uses_bm25_without_chat(self):
+        """No-chat retrieval should select from manifest with deterministic scoring."""
+        entries = [_generic_entry(f"docs/config_{i}.md") for i in range(20)]
+        manifest = MagicMock()
+        manifest.files_not_in_state.return_value = entries
+        chat_factory = MagicMock(side_effect=AssertionError("chat called"))
+        strategy = AgenticSearchStrategy(
+            manifest=manifest,
+            source_dir=Path("/project"),
+            chat_factory=chat_factory,
+            config=MagicMock(),
+        )
+        strategy._read_from_disk = MagicMock(return_value="configuration guide")
+
+        result = strategy.retrieve("config", limit=3, allow_llm=False)
+
+        assert len(result) == 3
+        chat_factory.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Tests: path-match fallback
 # ---------------------------------------------------------------------------

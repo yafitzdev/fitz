@@ -321,6 +321,7 @@ class TestCodeSynthesizer:
         assert answer.text == "The function does X [S1]."
         assert len(answer.provenance) == 1
         chat.chat.assert_called_once()
+        assert chat.chat.call_args.kwargs["max_tokens"] == config.max_answer_tokens
 
     # -- test_generate_strict_grounding -------------------------------------
 

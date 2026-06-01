@@ -5,6 +5,8 @@ Tests for the Fitz SDK.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 
@@ -110,6 +112,33 @@ class TestFitzQuery:
 
         with pytest.raises(QueryError, match="cannot be empty"):
             f.query("   ")
+
+
+class TestFitzEvidence:
+    """Tests for fitz.evidence() method."""
+
+    def test_evidence_points_source_and_returns_pack(self, tmp_path):
+        """Evidence mode points an optional source before retrieval."""
+        from fitz_sage.core import EvidencePack
+        from fitz_sage.sdk import fitz
+
+        config_path = tmp_path / "config.yaml"
+        source = tmp_path / "docs"
+        source.mkdir()
+        _write_test_config(config_path)
+
+        expected = EvidencePack(query="question", mode=None)
+        engine = MagicMock()
+        engine.evidence.return_value = expected
+
+        f = fitz(config_path=config_path)
+        f._engine = engine
+
+        result = f.evidence("question", source=source)
+
+        assert result is expected
+        engine.point.assert_called_once_with(source.resolve(), "default")
+        engine.evidence.assert_called_once()
 
 
 class TestFitzExports:

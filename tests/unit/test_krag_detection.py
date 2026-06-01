@@ -256,7 +256,10 @@ class TestEngineAnswerDetectionFlow:
 
     def test_detection_result_flows_to_router(self):
         """Detection result from batched call is passed to router.retrieve."""
-        engine = _make_engine(enable_detection=True)
+        engine = _make_engine(
+            enable_detection=True,
+            query_intelligence="endpoint/qwen2.5-7b-instruct",
+        )
 
         # Wire up batcher to return detection results
         from fitz_sage.engines.fitz_krag.query_batcher import BatchResult

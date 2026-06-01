@@ -1,4 +1,4 @@
-# tests/test_cli_query.py
+# tests/unit/test_cli_query.py
 """
 Tests for the query command.
 """
@@ -32,6 +32,13 @@ class TestQueryCommand:
 
         assert result.exit_code == 0
         assert "Query your knowledge base" in result.output or "query" in result.output.lower()
+
+    def test_answer_shows_help(self):
+        """Test that answer --help works."""
+        result = runner.invoke(app, ["answer", "--help"])
+
+        assert result.exit_code == 0
+        assert "synthesis" in result.output.lower() or "answer" in result.output.lower()
 
     def test_query_no_collections_exits(self):
         """Test that query exits when no collections found."""

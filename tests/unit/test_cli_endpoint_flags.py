@@ -67,6 +67,7 @@ class TestApplyChatOverrides:
                 "chat_fast": "endpoint/qwen2.5-7b",
                 "chat_balanced": "endpoint/qwen2.5-7b",
                 "chat_smart": "endpoint/qwen2.5-7b",
+                "synthesizer": "endpoint/qwen2.5-7b",
             }
         )
 
@@ -92,6 +93,7 @@ class TestApplyChatOverrides:
         update = mock_config.model_copy.call_args.kwargs["update"]
         assert update["chat_base_url"] == "http://localhost:8080/v1"
         assert update["chat_smart"] == "endpoint/qwen2.5-14b-instruct"
+        assert update["synthesizer"] == "endpoint/qwen2.5-14b-instruct"
 
     def test_endpoint_without_model_existing_no_slash(self) -> None:
         """If existing chat_smart has no slash, use it as the bare model name."""
@@ -114,6 +116,7 @@ class TestApplyChatOverrides:
 
         update = mock_config.model_copy.call_args.kwargs["update"]
         assert update["chat_smart"] == "endpoint/qwen2.5-14b-instruct"
+        assert update["synthesizer"] == "endpoint/qwen2.5-14b-instruct"
 
     def test_api_key_env_only(self) -> None:
         """--api-key-env without --endpoint still applies."""
@@ -159,6 +162,7 @@ class TestApplyChatOverrides:
         update = mock_config.model_copy.call_args.kwargs["update"]
         assert update["chat_base_url"] == "https://api.together.xyz/v1"
         assert update["chat_smart"] == "endpoint/meta-llama-3.1-70b"
+        assert update["synthesizer"] == "endpoint/meta-llama-3.1-70b"
         assert update["chat_api_key_env"] == "TOGETHER_API_KEY"
 
 
