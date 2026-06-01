@@ -87,6 +87,8 @@ jobs:
           pip install cryptography
           # Auth resilience (lightweight, needed for M2M auth).
           pip install tenacity circuitbreaker
+          # Managed Qwen lifecycle tests patch Hugging Face downloads.
+          pip install huggingface-hub
           # Property testing.
           pip install hypothesis
           # Install package in editable mode without deps (already installed above).
@@ -177,6 +179,7 @@ jobs:
           pip install numpy
           pip install cryptography
           pip install tenacity circuitbreaker
+          pip install huggingface-hub
           pip install hypothesis
           pip install -e . --no-deps
 
