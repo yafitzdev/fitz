@@ -28,13 +28,13 @@ No LLM provider found
 **Solution:**
 
 The config is created automatically on first run — edit it, or pass
-`--endpoint`, `--model`, and `--api-key-env` directly on the
-`fitz query` command:
+`--synthesizer`, `--endpoint`, and `--api-key-env` directly on the
+`fitz answer` command:
 
 ```bash
-fitz query "What is X?" \
+fitz answer "What is X?" \
   --endpoint https://api.openai.com/v1 \
-  --model gpt-4o-mini \
+  --synthesizer endpoint/gpt-4o-mini \
   --api-key-env OPENAI_API_KEY \
   --source ./docs
 ```

@@ -198,13 +198,13 @@ Set env vars: `CORP_CLIENT_ID`, `CORP_CLIENT_SECRET`,
 # Configure synthesis just for this answer
 fitz answer "What is X?" \
   --endpoint https://api.together.xyz/v1 \
-  --model meta-llama-3.1-70b \
+  --synthesizer endpoint/meta-llama-3.1-70b \
   --api-key-env TOGETHER_API_KEY \
   --source ./docs
 ```
 
-`--endpoint`, `--model`, and `--api-key-env` configure the synthesizer for that
-invocation.
+`--synthesizer`, `--endpoint`, and `--api-key-env` configure the synthesizer
+for that invocation.
 
 ---
 

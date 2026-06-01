@@ -77,7 +77,7 @@ fitz retrieve "What is our refund policy?" --source ./docs
 # Optional: synthesize an answer from that evidence
 fitz answer "What is our refund policy?" --source ./docs \
   --endpoint http://localhost:8080/v1 \
-  --model gpt-oss-20b
+  --synthesizer endpoint/gpt-oss-20b
 ```
 
 That's it. Your documents are now searchable with governed provenance first.
@@ -384,9 +384,10 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >For one-off synthesized answers against any OpenAI-compatible URL, skip the config:
 >
 >```bash
->fitz answer "..." --endpoint http://localhost:8080/v1 --model gpt-oss-20b
+>fitz answer "..." --endpoint http://localhost:8080/v1 \
+>                 --synthesizer endpoint/gpt-oss-20b
 >fitz answer "..." --endpoint https://api.together.xyz/v1 \
->                 --model meta-llama-3.1-70b \
+>                 --synthesizer endpoint/meta-llama-3.1-70b \
 >                 --api-key-env TOGETHER_API_KEY
 >```
 
@@ -559,7 +560,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 ```bash
 fitz retrieve "question" --source ./docs  # Point at docs and retrieve evidence
 fitz retrieve "question"                  # Retrieve from existing collection
-fitz answer "question" --endpoint ...     # Optional synthesized answer
+fitz answer "question" --synthesizer ...  # Optional synthesized answer
 fitz query --chat                         # Compatibility interactive mode
 fitz collections                       # List and delete knowledge collections
 fitz serve                             # Start REST API server
@@ -678,7 +679,7 @@ curl -X POST http://localhost:8000/query \
 **"Connection refused at localhost:8080" error**
 > This only applies to optional synthesis or enrichment. Use `fitz retrieve "..."` for evidence without a server, or start one
 > with llama.cpp: `llama-server -m model.gguf --port 8080 -c 8192`. For a one-off synthesized answer:
-> `fitz answer "..." --endpoint https://api.openai.com/v1 --api-key-env OPENAI_API_KEY`.
+> `fitz answer "..." --synthesizer openai/gpt-4o`.
 
 **"Model not found" error**
 > The model name in your config doesn't match what your server has loaded. Check `/v1/models` on your server:
@@ -696,7 +697,7 @@ curl -X POST http://localhost:8000/query \
 > ```
 > Or override at the CLI without editing YAML:
 > ```bash
-> fitz answer "..." --endpoint http://localhost:8080/v1 --model gpt-oss-20b
+> fitz answer "..." --endpoint http://localhost:8080/v1 --synthesizer endpoint/gpt-oss-20b
 > ```
 
 **How do I use a cloud provider?**

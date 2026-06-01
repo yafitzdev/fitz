@@ -246,7 +246,7 @@ Override per-invocation:
 ```bash
 fitz answer "..." \
   --endpoint https://api.together.xyz/v1 \
-  --model meta-llama-3.1-70b \
+  --synthesizer endpoint/meta-llama-3.1-70b \
   --api-key-env TOGETHER_API_KEY
 ```
 

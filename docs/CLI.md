@@ -23,10 +23,13 @@ fitz retrieve "Follow-up question"
 # JSON emits the full EvidencePack
 fitz retrieve "What is X?" --source ./docs --format json
 
-# Optional synthesis: point at any OpenAI-compatible endpoint
+# Optional synthesis: pass a provider spec directly
+fitz answer "What is X?" --synthesizer openai/gpt-4o --source ./docs
+
+# Or point at any OpenAI-compatible endpoint
 fitz answer "What is X?" \
   --endpoint https://api.together.xyz/v1 \
-  --model meta-llama-3.1-70b \
+  --synthesizer endpoint/meta-llama-3.1-70b \
   --api-key-env TOGETHER_API_KEY \
   --source ./docs
 ```
@@ -66,17 +69,18 @@ fitz retrieve "Which test failed?" --format json
 
 Generate a synthesized answer from the retrieved evidence. This requires an
 explicit synthesizer provider, either from config (`synthesizer:`) or from the
-CLI endpoint flags.
+CLI synthesis flags.
 
 ```bash
 fitz answer "Your question" --source ./docs \
+  --synthesizer openai/gpt-4o
+
+fitz answer "Your question" --source ./docs \
   --endpoint http://localhost:8080/v1 \
-  --model qwen3.5-0.8b
+  --synthesizer endpoint/qwen3.5-0.8b
 
 fitz answer "Your question" -c my_collection \
-  --endpoint https://api.openai.com/v1 \
-  --model gpt-4o \
-  --api-key-env OPENAI_API_KEY
+  --synthesizer openai/gpt-4o
 ```
 
 If no synthesizer is configured, the command fails with an actionable error and
@@ -86,7 +90,8 @@ points you back to `fitz retrieve`.
 - `-s, --source PATH` — register documents before answering
 - `-c, --collection TEXT` — collection name
 - `-e, --engine TEXT` — engine name
-- `--endpoint TEXT` — OpenAI-compatible URL; pairs with `--model`
+- `--synthesizer TEXT` — provider/model spec for synthesis
+- `--endpoint TEXT` — OpenAI-compatible URL; pairs with `--model` or `--synthesizer endpoint/<model>`
 - `-m, --model TEXT` — chat model name sent to the endpoint
 - `--api-key-env TEXT` — env var holding the API key
 
@@ -97,7 +102,8 @@ For new workflows, prefer `fitz retrieve` for evidence and `fitz answer` for
 explicit synthesis.
 
 ```bash
-fitz query "Your question" --endpoint http://localhost:8080/v1 --model qwen3.5-0.8b
+fitz query "Your question" --synthesizer openai/gpt-4o
+fitz query "Your question" --endpoint http://localhost:8080/v1 --synthesizer endpoint/qwen3.5-0.8b
 fitz query --chat -c my_collection
 ```
 
@@ -214,9 +220,7 @@ fitz query --chat -c project_x
 ```bash
 export OPENAI_API_KEY=...
 fitz answer "What is X?" \
-  --endpoint https://api.openai.com/v1 \
-  --model gpt-4o \
-  --api-key-env OPENAI_API_KEY \
+  --synthesizer openai/gpt-4o \
   --source ./docs
 ```
 

@@ -37,10 +37,7 @@ collection: default
 Or pass the provider per invocation:
 
 ```bash
-fitz answer "What is X?" \
-  --endpoint https://api.openai.com/v1 \
-  --model gpt-4o \
-  --api-key-env OPENAI_API_KEY
+fitz answer "What is X?" --synthesizer openai/gpt-4o
 ```
 
 ---
@@ -209,12 +206,12 @@ The CLI accepts overrides without editing the config file:
 ```bash
 fitz answer "What is X?" \
   --endpoint https://api.together.xyz/v1 \
-  --model meta-llama-3.1-70b \
+  --synthesizer endpoint/meta-llama-3.1-70b \
   --api-key-env TOGETHER_API_KEY
 ```
 
 `fitz answer` uses these flags to configure the synthesizer for that invocation.
-`fitz retrieve` ignores chat endpoint flags because it does not synthesize.
+`fitz retrieve` ignores synthesis override flags because it does not synthesize.
 
 ---
 

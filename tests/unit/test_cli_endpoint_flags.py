@@ -1,6 +1,6 @@
 # tests/unit/test_cli_endpoint_flags.py
 """
-Unit tests for `fitz query --endpoint / --model / --api-key-env` flags.
+Unit tests for `fitz query --endpoint / --synthesizer / --model / --api-key-env` flags.
 
 These flags let users point the CLI at any OpenAI-compatible HTTP
 server without editing engine YAML — the canonical UX for the
@@ -71,6 +71,98 @@ class TestApplyChatOverrides:
                 "synthesizer": "endpoint/qwen2.5-7b",
             }
         )
+
+    def test_synthesizer_only_sets_role_provider(self) -> None:
+        """--synthesizer overrides only the synthesis provider."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_config.model_copy.return_value = MagicMock()
+        mock_registry.load_config.return_value = mock_config
+
+        with patch(
+            "fitz_sage.runtime.registry.get_engine_registry",
+            return_value=mock_registry,
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                None,
+                None,
+                None,
+                synthesizer="openai/gpt-4o",
+            )
+
+        mock_config.model_copy.assert_called_once_with(update={"synthesizer": "openai/gpt-4o"})
+
+    def test_synthesizer_endpoint_pairs_with_endpoint(self) -> None:
+        """--synthesizer endpoint/<model> can take the URL from --endpoint."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_config.model_copy.return_value = MagicMock()
+        mock_registry.load_config.return_value = mock_config
+
+        with patch(
+            "fitz_sage.runtime.registry.get_engine_registry",
+            return_value=mock_registry,
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                "http://localhost:8080/v1",
+                None,
+                None,
+                synthesizer="endpoint/qwen2.5-7b",
+            )
+
+        mock_config.model_copy.assert_called_once_with(
+            update={
+                "chat_base_url": "http://localhost:8080/v1",
+                "synthesizer": "endpoint/qwen2.5-7b",
+            }
+        )
+
+    def test_synthesizer_endpoint_requires_endpoint_or_configured_url(self) -> None:
+        """Direct endpoint specs need a URL from the CLI or config."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_config.chat_base_url = None
+        mock_registry.load_config.return_value = mock_config
+
+        with (
+            patch(
+                "fitz_sage.runtime.registry.get_engine_registry",
+                return_value=mock_registry,
+            ),
+            patch("fitz_sage.cli.commands.query.ui"),
+            pytest.raises(typer.Exit),
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                None,
+                None,
+                None,
+                synthesizer="endpoint/qwen2.5-7b",
+            )
+
+    def test_synthesizer_and_model_conflict(self) -> None:
+        """--synthesizer and --model both set the synthesis model."""
+        mock_registry = MagicMock()
+        mock_config = MagicMock()
+        mock_registry.load_config.return_value = mock_config
+
+        with (
+            patch(
+                "fitz_sage.runtime.registry.get_engine_registry",
+                return_value=mock_registry,
+            ),
+            patch("fitz_sage.cli.commands.query.ui"),
+            pytest.raises(typer.Exit),
+        ):
+            _apply_chat_overrides(
+                "fitz_krag",
+                "http://localhost:8080/v1",
+                "qwen2.5-7b",
+                None,
+                synthesizer="endpoint/qwen2.5-14b",
+            )
 
     def test_endpoint_without_model_reuses_existing_synthesizer_model(self) -> None:
         """--endpoint alone keeps the existing model name, swaps the URL."""
@@ -206,5 +298,18 @@ class TestQueryCommandFlagPlumbing:
         # which breaks substring matching. Strip them before asserting.
         plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
         assert "--endpoint" in plain
+        assert "--synthesizer" in plain
         assert "--model" in plain
         assert "--api-key-env" in plain
+
+    def test_answer_help_exposes_synthesizer_flag(self) -> None:
+        import re
+
+        from typer.testing import CliRunner
+
+        from fitz_sage.cli.cli import app
+
+        result = CliRunner().invoke(app, ["answer", "--help"])
+        assert result.exit_code == 0
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        assert "--synthesizer" in plain

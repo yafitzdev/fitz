@@ -62,7 +62,14 @@ def query(
         help=(
             "OpenAI-compatible chat endpoint URL "
             "(e.g. http://localhost:8080/v1, https://api.openai.com/v1). "
-            "Overrides chat_base_url; pairs with --model."
+            "Overrides chat_base_url; pairs with --model or --synthesizer endpoint/<model>."
+        ),
+    ),
+    synthesizer: Optional[str] = typer.Option(
+        None,
+        "--synthesizer",
+        help=(
+            "Provider/model spec for answer synthesis " "(e.g. endpoint/qwen2.5-7b, openai/gpt-4o)."
         ),
     ),
     model: Optional[str] = typer.Option(
@@ -95,6 +102,7 @@ def query(
         engine=engine,
         chat=chat,
         endpoint=endpoint,
+        synthesizer=synthesizer,
         model=model,
         api_key_env=api_key_env,
     )
@@ -142,7 +150,14 @@ def answer(
         help=(
             "OpenAI-compatible chat endpoint URL "
             "(e.g. http://localhost:8080/v1, https://api.openai.com/v1). "
-            "Overrides chat_base_url; pairs with --model."
+            "Overrides chat_base_url; pairs with --model or --synthesizer endpoint/<model>."
+        ),
+    ),
+    synthesizer: Optional[str] = typer.Option(
+        None,
+        "--synthesizer",
+        help=(
+            "Provider/model spec for answer synthesis " "(e.g. endpoint/qwen2.5-7b, openai/gpt-4o)."
         ),
     ),
     model: Optional[str] = typer.Option(
@@ -167,6 +182,7 @@ def answer(
         engine=engine,
         chat=False,
         endpoint=endpoint,
+        synthesizer=synthesizer,
         model=model,
         api_key_env=api_key_env,
     )
