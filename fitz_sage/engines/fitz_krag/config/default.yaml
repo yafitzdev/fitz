@@ -12,16 +12,16 @@
 fitz_krag:
 
   # Optional chat models by tier — single chat protocol
-  # (OpenAI-compatible HTTP). Retrieval does not require these. Set
-  # query_intelligence/synthesizer/enricher/summarizer to provider specs
-  # when LLM-backed stages are wanted.
+  # (OpenAI-compatible HTTP). Query intelligence and answer synthesis stay
+  # provider-driven; ingestion enrichment is required below.
   chat_fast: null
   chat_balanced: null
   chat_smart: null
   query_intelligence: null
 
-  # HTTP endpoint for chat (and vision, when vision_base_url is null).
-  chat_base_url: null
+  # HTTP endpoint for the required local enrichment runtime. The default
+  # assumes llama.cpp's llama-server on 127.0.0.1:8080.
+  chat_base_url: http://127.0.0.1:8080/v1
   vision_base_url: null
   chat_api_key_env: null
   auth: null
@@ -72,9 +72,9 @@ fitz_krag:
   enable_citations: true
   strict_grounding: true
 
-  # Optional background LLM stages. Null keeps default retrieval/indexing
-  # usable without a local server or API key.
-  enricher: null
-  summarizer: null
+  # Required ingestion LLM stages. These are not feature flags: enrichment
+  # is part of the KRAG index contract.
+  enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+  summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
 
   log_level: INFO

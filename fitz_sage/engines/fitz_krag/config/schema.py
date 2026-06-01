@@ -15,14 +15,21 @@ from pydantic import Field
 
 from fitz_sage.core.config import BasePluginConfig
 
+DEFAULT_LOCAL_LLM_BASE_URL = "http://127.0.0.1:8080/v1"
+DEFAULT_ENRICHMENT_MODEL = "qwen3.5-0.8b@Q4_K_M"
+DEFAULT_ENRICHMENT_SPEC = f"endpoint/{DEFAULT_ENRICHMENT_MODEL}"
+
 
 class FitzKragConfig(BasePluginConfig):
     """
     Fitz KRAG configuration.
 
-    Minimal retrieval config:
+    Minimal local enrichment config:
     ```yaml
     collection: my_project
+    chat_base_url: http://127.0.0.1:8080/v1
+    enricher: endpoint/qwen3.5-0.8b@Q4_K_M
+    summarizer: endpoint/qwen3.5-0.8b@Q4_K_M
     synthesizer: null
     ```
 
@@ -63,10 +70,10 @@ class FitzKragConfig(BasePluginConfig):
     # default URL) and ``azure_openai`` (which always requires its
     # own base_url at the spec level).
     chat_base_url: str | None = Field(
-        default=None,
+        default=DEFAULT_LOCAL_LLM_BASE_URL,
         description=(
             "HTTP endpoint for chat — used by the ``endpoint`` provider. "
-            "None means no shared chat endpoint is configured."
+            "Defaults to the local llama.cpp server URL for required enrichment."
         ),
     )
 
@@ -350,10 +357,10 @@ class FitzKragConfig(BasePluginConfig):
     # ==========================================================================
 
     enricher: str | None = Field(
-        default=None,
+        default=DEFAULT_ENRICHMENT_SPEC,
         description=(
-            "Optional chat provider/model spec for keyword/entity enrichment. "
-            "None leaves enrichment disabled."
+            "Required chat provider/model spec for keyword/entity enrichment. "
+            "Defaults to the required local Qwen3.5 enrichment profile."
         ),
     )
 
@@ -382,10 +389,10 @@ class FitzKragConfig(BasePluginConfig):
     # ==========================================================================
 
     summarizer: str | None = Field(
-        default=None,
+        default=DEFAULT_ENRICHMENT_SPEC,
         description=(
-            "Optional chat provider/model spec for section/table/hierarchy summaries. "
-            "None leaves summary generation disabled."
+            "Required chat provider/model spec for section/table/hierarchy summaries. "
+            "Defaults to the required local Qwen3.5 enrichment profile."
         ),
     )
 

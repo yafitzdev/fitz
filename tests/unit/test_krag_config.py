@@ -5,6 +5,10 @@ import pytest
 import yaml
 
 from fitz_sage.engines.fitz_krag.config import FitzKragConfig, get_default_config_path
+from fitz_sage.engines.fitz_krag.config.schema import (
+    DEFAULT_ENRICHMENT_SPEC,
+    DEFAULT_LOCAL_LLM_BASE_URL,
+)
 
 
 class TestFitzKragConfig:
@@ -14,7 +18,9 @@ class TestFitzKragConfig:
         assert config.chat_fast is None
         assert config.chat_balanced is None
         assert config.chat_smart is None
-        assert config.chat_base_url is None
+        assert config.chat_base_url == DEFAULT_LOCAL_LLM_BASE_URL
+        assert config.enricher == DEFAULT_ENRICHMENT_SPEC
+        assert config.summarizer == DEFAULT_ENRICHMENT_SPEC
         assert config.auth is None
         assert config.cert_path is None
 
@@ -106,7 +112,9 @@ class TestDefaultYaml:
         assert raw["fitz_krag"]["chat_fast"] is None
         assert raw["fitz_krag"]["chat_balanced"] is None
         assert raw["fitz_krag"]["chat_smart"] is None
-        assert raw["fitz_krag"]["chat_base_url"] is None
+        assert raw["fitz_krag"]["chat_base_url"] == DEFAULT_LOCAL_LLM_BASE_URL
+        assert raw["fitz_krag"]["enricher"] == DEFAULT_ENRICHMENT_SPEC
+        assert raw["fitz_krag"]["summarizer"] == DEFAULT_ENRICHMENT_SPEC
         assert raw["fitz_krag"]["auth"] is None
         assert raw["fitz_krag"]["cert_path"] is None
         assert raw["fitz_krag"]["short_answer_tokens"] == 192

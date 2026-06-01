@@ -2,9 +2,9 @@
 """
 First-run experience for fitz-sage.
 
-Writes ``.fitz/config.yaml`` so retrieval works on first invocation. If an
-OpenAI-compatible LLM endpoint is available, optional synthesis providers are
-configured too.
+Writes ``.fitz/config.yaml`` with the required local enrichment profile. If an
+OpenAI-compatible LLM endpoint is already available, optional synthesis providers
+are configured too.
 
 Detection order:
 
@@ -14,11 +14,12 @@ Detection order:
    Recommended setup is llama.cpp's ``llama-server`` on port 8080.
 2. **OpenAI cloud** — falls back to ``openai/gpt-4o-mini`` if
    ``OPENAI_API_KEY`` is set.
-3. **No provider** — writes a retrieval-only config with synthesis disabled.
+3. **No provider** — writes the required local enrichment config and prints the
+   llama.cpp command the user needs to run before ingestion.
 
-There is no Ollama-specific code path; Ollama users run it in
-``/v1/`` mode and it's just another OpenAI-compatible server on
-port 11434. fitz-sage uses no embeddings; chat providers are optional.
+There is no Ollama-specific code path; Ollama users run it in ``/v1/`` mode and
+it's just another OpenAI-compatible server on port 11434. fitz-sage uses no
+embeddings; ingestion enrichment is mandatory.
 """
 
 from __future__ import annotations
@@ -29,6 +30,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fitz_sage.core.paths import FitzPaths
+from fitz_sage.engines.fitz_krag.config.schema import (
+    DEFAULT_ENRICHMENT_MODEL,
+    DEFAULT_ENRICHMENT_SPEC,
+    DEFAULT_LOCAL_LLM_BASE_URL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +127,8 @@ def write_config(
         f"chat_smart: {chat_smart}",
         f"synthesizer: {chat_smart}",
         "",
-        "# HTTP endpoint (used by the 'endpoint' provider)",
-        f"chat_base_url: {chat_base_url if chat_base_url else 'null'}",
+        "# HTTP endpoint (used by the required local enrichment provider)",
+        f"chat_base_url: {chat_base_url if chat_base_url else DEFAULT_LOCAL_LLM_BASE_URL}",
         "vision_base_url: null",
         "",
         "# Optional API key environment variable",
@@ -133,6 +139,10 @@ def write_config(
         "rerank: null",
         "vision: null",
         "",
+        "# Required ingestion enrichment model",
+        f"enricher: {DEFAULT_ENRICHMENT_SPEC}",
+        f"summarizer: {DEFAULT_ENRICHMENT_SPEC}",
+        "",
         "collection: default",
         "",
     ]
@@ -140,8 +150,11 @@ def write_config(
     return config_path
 
 
-def write_retrieval_config() -> Path:
-    """Write a default retrieval-only config with optional LLM stages disabled."""
+def write_local_enrichment_config(
+    *,
+    chat_base_url: str = DEFAULT_LOCAL_LLM_BASE_URL,
+) -> Path:
+    """Write a default config that requires the local enrichment runtime."""
     config_path = FitzPaths.config()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -149,17 +162,18 @@ def write_retrieval_config() -> Path:
         "# Fitz Configuration",
         "# Docs: https://github.com/yafitzdev/fitz-sage/blob/main/docs/CONFIG.md",
         "",
-        "# Retrieval-first default: no chat endpoint or API key required.",
+        "# Enrichment-first default: ingestion requires the local Qwen runtime.",
         "collection: default",
         "parser: cpu",
         "rerank: onnx",
         "governance: pyrrho",
+        f"chat_base_url: {chat_base_url}",
         "",
-        "# Optional LLM stages stay disabled until a provider is configured.",
+        "# Required ingestion enrichment model.",
         "query_intelligence: null",
         "synthesizer: null",
-        "enricher: null",
-        "summarizer: null",
+        f"enricher: {DEFAULT_ENRICHMENT_SPEC}",
+        f"summarizer: {DEFAULT_ENRICHMENT_SPEC}",
         "",
     ]
     config_path.write_text("\n".join(lines), encoding="utf-8")
@@ -183,12 +197,12 @@ def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
 
     chat_model = _pick_chat_model(endpoint)
     if chat_model is None:
-        config_path = write_retrieval_config()
+        config_path = write_local_enrichment_config(chat_base_url=endpoint.base_url)
         print(
             f"\n  Detected an OpenAI-compatible server at {endpoint.base_url}, "
             f"but it lists no chat models."
         )
-        print("  Wrote retrieval-only config; synthesis is disabled.")
+        print(f"  Wrote config for required enrichment model: {DEFAULT_ENRICHMENT_MODEL}")
         print(f"\n  Config: {config_path}\n")
         return True
 
@@ -201,7 +215,8 @@ def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
     )
 
     print(f"\n  Auto-configured from {endpoint.base_url}:")
-    print(f"    chat: {chat_model}")
+    print(f"    chat:       {chat_model}")
+    print(f"    enrichment: {DEFAULT_ENRICHMENT_MODEL}")
     print(f"\n  Config: {config_path}\n")
     return True
 
@@ -214,21 +229,29 @@ def _configure_from_openai_key() -> bool:
         chat_fast="openai/gpt-4o-mini",
         chat_balanced="openai/gpt-4o-mini",
         chat_smart="openai/gpt-4o",
-        chat_base_url=None,
+        chat_base_url=DEFAULT_LOCAL_LLM_BASE_URL,
     )
     print("\n  Configured from OPENAI_API_KEY:")
     print("    chat (smart):    gpt-4o")
     print("    chat (fast/bal): gpt-4o-mini")
+    print(f"    enrichment:      {DEFAULT_ENRICHMENT_MODEL} at {DEFAULT_LOCAL_LLM_BASE_URL}")
     print(f"\n  Config: {config_path}\n")
     return True
 
 
-def _configure_retrieval_only() -> bool:
-    """Write retrieval-only config when no chat provider is available."""
-    config_path = write_retrieval_config()
-    print("\n  No LLM provider found.")
-    print("  Wrote retrieval-only config; use `fitz retrieve ...` for evidence.")
-    print("  To synthesize answers later, configure `synthesizer:` or pass --endpoint/--model.")
+def _configure_local_enrichment_required() -> bool:
+    """Write config when the required local enrichment runtime is not running yet."""
+    config_path = write_local_enrichment_config()
+    print("\n  No local enrichment runtime found.")
+    print(f"  Wrote config for required model: {DEFAULT_ENRICHMENT_MODEL}")
+    print("  Start an OpenAI-compatible server before ingesting documents, for example:")
+    print()
+    print(
+        "    llama-server "
+        "-hf bartowski/Qwen_Qwen3.5-0.8B-GGUF:Q4_K_M "
+        f"--alias {DEFAULT_ENRICHMENT_MODEL} "
+        "--host 127.0.0.1 --port 8080"
+    )
     print(f"\n  Config: {config_path}\n")
     return True
 
@@ -249,5 +272,6 @@ def run_firstrun_setup() -> bool:
     if os.getenv("OPENAI_API_KEY"):
         return _configure_from_openai_key()
 
-    # 3. Nothing reachable — retrieval still works without a chat provider.
-    return _configure_retrieval_only()
+    # 3. Nothing reachable — write the required local runtime config and
+    # tell the user how to satisfy it before ingestion.
+    return _configure_local_enrichment_required()
