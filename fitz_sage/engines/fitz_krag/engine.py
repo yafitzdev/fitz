@@ -1212,6 +1212,8 @@ class FitzKragEngine:
         manifest = builder.build(source, manifest_path, progress=progress)
         self._manifest = manifest
         self._source_dir = source_dir
+        if manifest.entries():
+            self._ensure_standard_llm_available(progress)
 
         # 2. Persist source_dir so `fitz query` can find it across processes
         col_dir.mkdir(parents=True, exist_ok=True)
@@ -1267,6 +1269,22 @@ class FitzKragEngine:
             self._bg_worker.start()
 
         return manifest
+
+    def _ensure_standard_llm_available(
+        self,
+        progress: Callable[[str], None] | None = None,
+    ) -> None:
+        """Download and validate the managed Qwen runtime before enrichment starts."""
+        ensure_available = getattr(self._enricher_chat, "ensure_available", None)
+        if not callable(ensure_available):
+            return
+
+        _progress = progress or (lambda _: None)
+        _progress("Preparing managed Qwen3.5 0.8B ONNX enrichment model...")
+        info = ensure_available()
+        revision = getattr(info, "revision", "")
+        short_revision = revision[:12] if revision else "unknown"
+        _progress(f"Managed Qwen ready ({short_revision}).")
 
     def _fast_index_code_files(
         self,

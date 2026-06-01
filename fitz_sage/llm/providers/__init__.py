@@ -32,9 +32,13 @@ __all__ = [
 ]
 
 # Managed ONNX chat provider for required enrichment.
-from fitz_sage.llm.providers.onnx_chat import OnnxChat  # noqa: E402,F401
+from fitz_sage.llm.providers.onnx_chat import (  # noqa: E402,F401
+    OnnxChat,
+    OnnxChatModelError,
+    OnnxChatModelInfo,
+)
 
-__all__.append("OnnxChat")
+__all__.extend(["OnnxChat", "OnnxChatModelError", "OnnxChatModelInfo"])
 
 # OpenAI-compatible HTTP provider for optional endpoint/cloud chat paths.
 try:

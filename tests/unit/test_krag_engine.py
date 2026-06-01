@@ -628,6 +628,53 @@ class TestPoint:
         build_manifest_path = builder_cls.return_value.build.call_args.args[1]
         assert build_manifest_path == workspace / "collections" / "custom" / "manifest.json"
 
+    def test_point_prepares_managed_qwen_for_sources(self, tmp_path):
+        """Source registration validates the mandatory managed Qwen runtime early."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config(collection="default")
+        engine._bg_worker = None
+        engine._manifest = None
+        engine._source_dir = None
+        engine._retrieval_router = MagicMock()
+        engine._reader = MagicMock()
+        engine._chat_factory = None
+        engine._chat = None
+        engine._connection_manager = MagicMock()
+        engine._table_store = MagicMock()
+        engine._sqlite_table_store = MagicMock()
+        engine._entity_graph_store = None
+        engine._summarizer_chat = MagicMock()
+        engine._fast_index_code_files = MagicMock()
+
+        model_info = MagicMock()
+        model_info.revision = "abc123456789def"
+        engine._enricher_chat = MagicMock()
+        engine._enricher_chat.ensure_available.return_value = model_info
+
+        source = tmp_path / "docs"
+        source.mkdir()
+        workspace = tmp_path / ".fitz"
+        manifest = MagicMock()
+        manifest.entries.return_value = {"release_notes.md": MagicMock()}
+        progress = MagicMock()
+
+        with (
+            patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
+            patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
+            patch(
+                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
+                ".AgenticSearchStrategy"
+            ),
+            patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline"),
+        ):
+            builder_cls.return_value.build.return_value = manifest
+
+            engine.point(source, start_worker=False, progress=progress)
+
+        engine._enricher_chat.ensure_available.assert_called_once()
+        progress.assert_any_call("Preparing managed Qwen3.5 0.8B ONNX enrichment model...")
+        progress.assert_any_call("Managed Qwen ready (abc123456789).")
+
 
 # ---------------------------------------------------------------------------
 # TestConfig

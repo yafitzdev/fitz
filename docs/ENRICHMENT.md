@@ -218,6 +218,18 @@ summary_batch_size: 15
 
 `summary_batch_size` (default 15) sets the LLM batch size for both summarization and enrichment.
 
+To inspect the exact managed model snapshot:
+
+```python
+from fitz_sage.llm.providers.onnx_chat import OnnxChat
+
+info = OnnxChat().model_info()
+print(info.repo_id, info.revision, info.onnx_path)
+```
+
+`model_info(include_checksum=True)` also computes a bundle SHA256 over the ONNX
+graph and external data files.
+
 ---
 
 ## Key Files
