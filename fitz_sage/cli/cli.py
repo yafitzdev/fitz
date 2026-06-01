@@ -98,6 +98,78 @@ def query(
     )
 
 
+@app.command("retrieve")
+def retrieve(
+    question: Optional[str] = typer.Argument(None, help="Question to retrieve evidence for."),
+    source: Optional[Path] = typer.Option(
+        None, "--source", "-s", help="Path to documents (registers before retrieval)."
+    ),
+    collection: Optional[str] = typer.Option(None, "--collection", "-c", help="Collection name."),
+    engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
+    output_format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json.",
+    ),
+    top_k: Optional[int] = typer.Option(None, "--top-k", help="Maximum evidence items to show."),
+) -> None:
+    """Retrieve governed evidence without answer synthesis."""
+    from fitz_sage.cli.commands import retrieve as mod
+
+    mod.command(
+        question=question,
+        source=source,
+        collection=collection,
+        engine=engine,
+        output_format=output_format,
+        top_k=top_k,
+    )
+
+
+@app.command("answer")
+def answer(
+    question: Optional[str] = typer.Argument(None, help="Question to answer."),
+    source: Optional[Path] = typer.Option(
+        None, "--source", "-s", help="Path to documents (registers before answering)."
+    ),
+    collection: Optional[str] = typer.Option(None, "--collection", "-c", help="Collection name."),
+    engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
+    endpoint: Optional[str] = typer.Option(
+        None,
+        "--endpoint",
+        help=(
+            "OpenAI-compatible chat endpoint URL "
+            "(e.g. http://localhost:8080/v1, https://api.openai.com/v1). "
+            "Overrides chat_base_url; pairs with --model."
+        ),
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Chat model name to send to --endpoint.",
+    ),
+    api_key_env: Optional[str] = typer.Option(
+        None,
+        "--api-key-env",
+        help="Environment variable name holding an API key for --endpoint.",
+    ),
+) -> None:
+    """Answer with optional synthesis; use retrieve for evidence-only output."""
+    from fitz_sage.cli.commands import query as mod
+
+    mod.command(
+        question=question,
+        source=source,
+        collection=collection,
+        engine=engine,
+        chat=False,
+        endpoint=endpoint,
+        model=model,
+        api_key_env=api_key_env,
+    )
+
+
 @app.command("collections")
 def collections() -> None:
     """Manage collections (list, info, delete)."""

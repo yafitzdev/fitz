@@ -14,9 +14,12 @@ fitz_krag:
   # Chat models by tier — single chat protocol (OpenAI-compatible HTTP).
   # Provider name 'endpoint' = bring your own URL (set via chat_base_url
   # below). 'openai' / 'azure_openai' / 'enterprise' are presets.
+  # Retrieval uses deterministic query prep by default; set
+  # query_intelligence to a provider spec when LLM-enhanced query prep is wanted.
   chat_fast: endpoint/qwen2.5-7b-instruct
   chat_balanced: endpoint/qwen2.5-7b-instruct
   chat_smart: endpoint/qwen2.5-7b-instruct
+  query_intelligence: null
 
   # HTTP endpoint for chat (and vision, when vision_base_url is null).
   # Default assumes a local llama-server on port 8080.
@@ -63,6 +66,8 @@ fitz_krag:
   include_file_header: true
 
   # Generation
+  synthesizer: null
+  max_answer_tokens: 512
   enable_citations: true
   strict_grounding: true
 

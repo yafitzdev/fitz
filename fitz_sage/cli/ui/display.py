@@ -200,4 +200,67 @@ def display_sources(chunks, max_sources: int = 5, indent: int = 0) -> None:
             print(f"  [{i}] {filename}{chunk_str}")
 
 
-__all__ = ["display_answer", "display_sources"]
+def display_evidence_pack(pack, max_items: int = 10) -> None:
+    """Display a governed evidence pack."""
+    print()
+
+    mode = getattr(pack, "mode", None)
+    mode_text = getattr(mode, "value", mode) or "unlabeled"
+    reasons = getattr(pack, "reasons", []) or []
+    items = getattr(pack, "items", []) or []
+    indexing_status = getattr(pack, "indexing_status", {}) or {}
+
+    if RICH:
+        table = Table(title=f"Evidence ({mode_text})")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("File", style="cyan", max_width=48)
+        table.add_column("Location", style="yellow", max_width=24)
+        table.add_column("Score", style="magenta", width=8)
+        table.add_column("Excerpt", style="dim", max_width=64)
+
+        for item in items[:max_items]:
+            score = "-" if item.score is None else f"{item.score:.3f}"
+            location = item.address_location
+            if item.line_range:
+                location = f"{location}:{item.line_range[0]}-{item.line_range[1]}"
+            table.add_row(
+                str(item.rank),
+                _short_path(item.file_path),
+                location,
+                score,
+                _sanitize_for_display(item.excerpt),
+            )
+        console.print(table)
+
+        if reasons:
+            console.print(Panel("\n".join(reasons), title="Governance", border_style="yellow"))
+    else:
+        print(f"Evidence mode: {mode_text}")
+        for reason in reasons:
+            print(f"- {reason}")
+        for item in items[:max_items]:
+            score = "-" if item.score is None else f"{item.score:.3f}"
+            location = item.address_location
+            if item.line_range:
+                location = f"{location}:{item.line_range[0]}-{item.line_range[1]}"
+            print(f"[{item.rank}] {_short_path(item.file_path)} {location} score={score}")
+            print(f"    {_sanitize_for_display(item.excerpt)}")
+
+    if indexing_status and not indexing_status.get("complete", True):
+        pending = indexing_status.get("pending", "?")
+        total = indexing_status.get("total", "?")
+        if RICH:
+            console.print(f"[dim]Indexing pending: {pending}/{total}[/dim]")
+        else:
+            print(f"Indexing pending: {pending}/{total}")
+
+
+def _short_path(path: str) -> str:
+    """Return a compact path for terminal display."""
+    if not path:
+        return "?"
+    parts = path.replace("\\", "/").split("/")
+    return "/".join(parts[-3:]) if len(parts) > 3 else path
+
+
+__all__ = ["display_answer", "display_sources", "display_evidence_pack"]

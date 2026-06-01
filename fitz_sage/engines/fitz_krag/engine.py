@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any, Callable
 from fitz_sage.core import (
     Answer,
     ConfigurationError,
+    EvidenceItem,
+    EvidencePack,
     GenerationError,
     KnowledgeError,
     Query,
@@ -212,7 +214,7 @@ class FitzKragEngine:
             spec=self._config.chat_smart,
         )
 
-        print("  Starting database and connecting to LLM provider...", end="", flush=True)
+        logger.debug("Starting database and connecting to LLM provider")
         with ThreadPoolExecutor(max_workers=2) as pool:
             chat_future = pool.submit(
                 get_chat,
@@ -224,7 +226,7 @@ class FitzKragEngine:
 
             self._chat = chat_future.result()
             self._connection_manager = pg_future.result()
-        print(" done.", flush=True)
+        logger.debug("Database and LLM provider initialized")
 
         _t1 = _t.perf_counter()
         logger.debug(f"[init] providers+pg: {(_t1-_t0)*1000:.0f}ms")
@@ -313,7 +315,7 @@ class FitzKragEngine:
         )
 
         def _warmup_chat():
-            print("  Loading LLM models (first run may take a moment)...", end="", flush=True)
+            logger.debug("Warming LLM models")
             try:
                 self._chat_factory("fast").chat(
                     [{"role": "user", "content": "hi"}],
@@ -328,7 +330,7 @@ class FitzKragEngine:
                 )
             except Exception:
                 pass
-            print(" done.", flush=True)
+            logger.debug("LLM warmup complete")
 
         threading.Thread(target=_warmup_chat, daemon=True).start()
 
@@ -337,7 +339,15 @@ class FitzKragEngine:
         from fitz_sage.engines.fitz_krag.generation.synthesizer import CodeSynthesizer
 
         self._assembler = ContextAssembler(self._config)
-        self._synthesizer = CodeSynthesizer(self._chat, self._config)
+        self._synthesizer = None
+        if self._config.synthesizer:
+            synth_config = _build_provider_config(
+                self._config.chat_base_url,
+                self._config.chat_api_key_env,
+                spec=self._config.synthesizer,
+            )
+            synth_chat = get_chat(self._config.synthesizer, "smart", synth_config)
+            self._synthesizer = CodeSynthesizer(synth_chat, self._config)
 
         # Governance — pyrrho classifier (single INT8 ONNX forward pass).
         # Provider-presence: the `governance:` config key builds the
@@ -354,13 +364,31 @@ class FitzKragEngine:
             self._chat_factory("balanced"), self._sqlite_table_store, self._config
         )
 
-        # Batched query intelligence: rewrite + analysis + detection +
-        # keywords in one LLM call (the only query-prep call).
+        # Query prep defaults to the deterministic planner. If
+        # query_intelligence is configured, the batcher uses that provider as
+        # an optional LLM enhancer.
         from fitz_sage.engines.fitz_krag.query_batcher import QueryBatcher
+        from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
         from fitz_sage.retrieval.detection.modules import DEFAULT_MODULES
 
+        query_chat_factory = self._chat_factory
+        if self._config.query_intelligence:
+            query_chat_config = _build_provider_config(
+                self._config.chat_base_url,
+                self._config.chat_api_key_env,
+                spec=self._config.query_intelligence,
+            )
+            query_chat_factory = get_chat_factory(
+                {
+                    "fast": self._config.query_intelligence,
+                    "balanced": self._config.query_intelligence,
+                    "smart": self._config.query_intelligence,
+                },
+                query_chat_config,
+            )
+        self._query_planner = DeterministicQueryPlanner()
         self._query_batcher = QueryBatcher(
-            chat_factory=self._chat_factory,
+            chat_factory=query_chat_factory,
             detection_modules=list(DEFAULT_MODULES),
         )
 
@@ -599,6 +627,11 @@ class FitzKragEngine:
 
         if not query.text or not query.text.strip():
             raise QueryError("Query text cannot be empty")
+        if self._synthesizer is None:
+            raise GenerationError(
+                "No synthesizer configured. Run `fitz retrieve ...` for evidence, "
+                "or configure a synthesizer provider."
+            )
 
         with self._query_scope():
             logger.info(f"Starting query processing (query_length={len(query.text)})")
@@ -731,6 +764,98 @@ class FitzKragEngine:
             except Exception as e:
                 raise KnowledgeError(f"Retrieval failed: {e}") from e
 
+    def evidence(
+        self,
+        query: Query,
+        *,
+        progress: Callable[[str], None] | None = None,
+        top_k: int | None = None,
+    ) -> EvidencePack:
+        """Return a governed evidence pack for a query, without synthesis or chat prep."""
+        import time
+
+        from fitz_sage.engines.fitz_krag.context.compressor import compress_results
+
+        if not query.text or not query.text.strip():
+            raise QueryError("Query text cannot be empty")
+
+        with self._query_scope():
+            logger.info(f"Starting evidence retrieval (query_length={len(query.text)})")
+            try:
+                outcome = self._retrieve_core(
+                    query,
+                    progress=progress,
+                    use_query_intelligence=False,
+                    allow_llm_strategies=False,
+                    execute_table_queries=False,
+                )
+                expanded = compress_results(outcome.expanded) if outcome.expanded else []
+                timings = list(outcome.timings)
+
+                mode: AnswerMode | None = None
+                reasons: list[str] = []
+                if not expanded:
+                    mode = AnswerMode.ABSTAIN
+                    reasons = ["No relevant evidence retrieved."]
+                elif self._governance is not None:
+                    t0 = time.perf_counter()
+                    governance = self._governance.decide(outcome.sanitized, expanded)
+                    timings.append(("Governance", time.perf_counter() - t0))
+                    mode = governance.mode
+                    reasons = list(governance.reasons)
+
+                requested_top_k = top_k or query.metadata.get("top_k")
+                items = self._build_evidence_items(expanded)
+                if requested_top_k is not None:
+                    items = items[: int(requested_top_k)]
+
+                self._boost_queried_files(outcome)
+
+                return EvidencePack(
+                    query=outcome.sanitized,
+                    mode=mode,
+                    items=items,
+                    reasons=reasons,
+                    timings={name: duration for name, duration in timings},
+                    indexing_status=self.indexing_status(),
+                    metadata={"engine": "fitz_krag", "source_query": query.text},
+                )
+            except Exception as e:
+                raise KnowledgeError(f"Evidence retrieval failed: {e}") from e
+
+    def _build_evidence_items(self, results: list["ReadResult"]) -> list[EvidenceItem]:
+        """Convert KRAG read results into stable core evidence items."""
+        items: list[EvidenceItem] = []
+        for rank, result in enumerate(results, start=1):
+            address = result.address
+            kind = getattr(address.kind, "value", str(address.kind))
+            metadata = {**address.metadata, **result.metadata}
+            items.append(
+                EvidenceItem(
+                    rank=rank,
+                    source_id=address.source_id,
+                    file_path=result.file_path,
+                    address_kind=kind,
+                    address_location=address.location,
+                    line_range=result.line_range,
+                    score=address.score,
+                    excerpt=self._excerpt(result.content),
+                    content=result.content,
+                    metadata=metadata,
+                )
+            )
+        return items
+
+    @staticmethod
+    def _excerpt(content: str, max_chars: int = 320) -> str:
+        """Build a compact one-line excerpt."""
+        import re
+
+        text = re.sub(r"\s+", " ", content).strip()
+        if len(text) <= max_chars:
+            return text
+        return text[: max_chars - 3].rstrip() + "..."
+
     def _boost_queried_files(self, outcome: "_RetrievalOutcome") -> None:
         """Flag the files this query surfaced for the background worker.
 
@@ -773,8 +898,39 @@ class FitzKragEngine:
                 self._bg_worker.signal_query_end()
             clear_query_context()
 
+    @contextmanager
+    def _retrieval_strategy_scope(self, allow_llm_strategies: bool) -> Any:
+        """Temporarily force deterministic retrieval strategies for evidence mode."""
+        if allow_llm_strategies:
+            yield
+            return
+
+        router = self._retrieval_router
+        original_code_strategy = getattr(router, "_code_strategy", None)
+        original_allow_agentic = getattr(router, "_allow_llm_agentic", True)
+
+        fallback = getattr(original_code_strategy, "_fallback", None)
+        if fallback is not None:
+            router._code_strategy = fallback
+        if hasattr(router, "_allow_llm_agentic"):
+            router._allow_llm_agentic = False
+
+        try:
+            yield
+        finally:
+            if original_code_strategy is not None:
+                router._code_strategy = original_code_strategy
+            if hasattr(router, "_allow_llm_agentic"):
+                router._allow_llm_agentic = original_allow_agentic
+
     def _retrieve_core(
-        self, query: Query, *, progress: Callable[[str], None] | None = None
+        self,
+        query: Query,
+        *,
+        progress: Callable[[str], None] | None = None,
+        use_query_intelligence: bool | None = None,
+        allow_llm_strategies: bool = True,
+        execute_table_queries: bool = True,
     ) -> _RetrievalOutcome:
         """Run the retrieval half of the KRAG pipeline.
 
@@ -785,7 +941,10 @@ class FitzKragEngine:
         import re
         import time
 
-        from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
+        from fitz_sage.engines.fitz_krag.query_planner import (
+            DeterministicQueryPlanner,
+            plan_from_batch_result,
+        )
         from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
 
         # 0. Sanitize and normalize query
@@ -806,78 +965,82 @@ class FitzKragEngine:
         _progress = progress or (lambda _: None)
         timings: list[tuple[str, float]] = []
 
-        # 1. Query prep — one batched LLM call: rewrite + analysis +
-        #    detection + keywords. Always runs; the keyword section is
-        #    wanted on every query.
         _progress("Analyzing query...")
         t0 = time.perf_counter()
 
-        # fast-analyze gates the analysis section, _needs_detection gates the
-        # detection section; rewriting and keywords are always included.
-        fast_analysis = self._fast_analyze(sanitized)
-        need_llm_analysis = fast_analysis is None
-        need_detection = bool(self._config.enable_detection and self._needs_detection(sanitized))
+        if use_query_intelligence is None:
+            use_query_intelligence = self._config.query_intelligence is not None
 
-        retrieval_query = sanitized
-        rewrite_result = None
-        try:
-            batch_result = self._query_batcher.batch_classify(
-                sanitized,
-                include_analysis=need_llm_analysis,
-                include_detection=need_detection,
-                include_rewriting=self._config.enable_query_rewriting,
-                include_extended=True,
-                include_keywords=True,
-                conversation_context=query.metadata.get("conversation_context"),
+        planner = getattr(self, "_query_planner", None) or DeterministicQueryPlanner()
+        plan = planner.plan(sanitized, detection_enabled=self._config.enable_detection)
+
+        if use_query_intelligence:
+            # Query prep — one batched LLM call: rewrite + analysis +
+            # detection + keywords. Optional enhancement over the no-chat plan.
+            fast_analysis = self._fast_analyze(sanitized)
+            need_llm_analysis = fast_analysis is None
+            need_detection = bool(
+                self._config.enable_detection and self._needs_detection(sanitized)
             )
-            analysis = batch_result.analysis if batch_result.analysis else fast_analysis
-            detection = (
-                self._build_detection_summary(batch_result.detection_results)
-                if need_detection and batch_result.detection_results is not None
-                else None
-            )
-            rewrite_result = batch_result.rewrite_result
-            if rewrite_result and rewrite_result.rewritten_query != sanitized:
-                retrieval_query = rewrite_result.rewritten_query
-                logger.debug(
-                    "Query rewritten",
-                    original_preview=sanitized[:50],
-                    rewritten_preview=retrieval_query[:50],
+
+            try:
+                batch_result = self._query_batcher.batch_classify(
+                    sanitized,
+                    include_analysis=need_llm_analysis,
+                    include_detection=need_detection,
+                    include_rewriting=self._config.enable_query_rewriting,
+                    include_extended=True,
+                    include_keywords=True,
+                    conversation_context=query.metadata.get("conversation_context"),
                 )
-        except Exception as e:
-            logger.warning(f"Batched query intelligence failed: {e}")
-            analysis = fast_analysis or QueryAnalysis(
-                primary_type=QueryType.GENERAL,
-                confidence=0.3,
-                refined_query=sanitized,
-            )
-            detection = None
-            batch_result = None
+                llm_detection = (
+                    self._build_detection_summary(batch_result.detection_results)
+                    if need_detection and batch_result.detection_results is not None
+                    else plan.detection
+                )
+                plan = plan_from_batch_result(
+                    sanitized,
+                    batch_result,
+                    fallback_analysis=fast_analysis or plan.analysis,
+                    detection=llm_detection,
+                    fallback_plan=plan,
+                )
+                if plan.rewrite_result and plan.retrieval_query != sanitized:
+                    logger.debug(
+                        "Query rewritten",
+                        original_preview=sanitized[:50],
+                        rewritten_preview=plan.retrieval_query[:50],
+                    )
+            except Exception as e:
+                logger.warning(f"Batched query intelligence failed: {e}")
         timings.append(("Query prep", time.perf_counter() - t0))
 
         # Build retrieval profile — single object with all gates and signals
         profile = build_retrieval_profile(
-            analysis,
-            detection,
+            plan.analysis,
+            plan.detection,
             self._config,
-            extended_signals=(batch_result.extended_signals if batch_result else None),
-            keywords=(batch_result.keywords if batch_result else None),
+            extended_signals=plan.extended_signals,
+            keywords=plan.keywords,
         )
 
         # 2. Retrieve — one retrieval pass, or a multi-hop loop of passes.
         #    A pass is Tiers 1-4: retrieve -> fuse -> rerank -> read.
         _progress("Retrieving relevant sources...")
         t0 = time.perf_counter()
-        use_multi_hop = self._hop_controller and self._config.enable_multi_hop
-        if use_multi_hop:
-            read_results = self._hop_controller.execute(retrieval_query, profile)
-        else:
-            read_results = self._retrieval_pass.run(
-                retrieval_query,
-                profile,
-                rewrite_result=rewrite_result,
-                progress=progress,
-            )
+        use_multi_hop = (
+            allow_llm_strategies and self._hop_controller and self._config.enable_multi_hop
+        )
+        with self._retrieval_strategy_scope(allow_llm_strategies):
+            if use_multi_hop:
+                read_results = self._hop_controller.execute(plan.retrieval_query, profile)
+            else:
+                read_results = self._retrieval_pass.run(
+                    plan.retrieval_query,
+                    profile,
+                    rewrite_result=plan.rewrite_result,
+                    progress=progress,
+                )
         addresses = [r.address for r in read_results]
         timings.append(("Retrieval", time.perf_counter() - t0))
 
@@ -894,7 +1057,8 @@ class FitzKragEngine:
         timings.append(("Expand context", time.perf_counter() - t0))
 
         # 4.5. Execute table queries (SQL generation + execution)
-        expanded = self._table_handler.process(sanitized, expanded)
+        if execute_table_queries:
+            expanded = self._table_handler.process(sanitized, expanded)
 
         return _RetrievalOutcome(
             sanitized=sanitized, expanded=expanded, addresses=addresses, timings=timings

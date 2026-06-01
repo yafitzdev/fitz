@@ -107,6 +107,7 @@ def _apply_chat_overrides(
         overrides["chat_fast"] = spec
         overrides["chat_balanced"] = spec
         overrides["chat_smart"] = spec
+        overrides["synthesizer"] = spec
     elif endpoint is not None:
         # User gave --endpoint but no --model. Reuse the configured
         # chat_smart model name, but route it via the new endpoint.
@@ -120,6 +121,7 @@ def _apply_chat_overrides(
         overrides["chat_fast"] = spec
         overrides["chat_balanced"] = spec
         overrides["chat_smart"] = spec
+        overrides["synthesizer"] = spec
 
     if api_key_env is not None:
         overrides["chat_api_key_env"] = api_key_env

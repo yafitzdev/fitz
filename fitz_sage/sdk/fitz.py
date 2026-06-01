@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
-from fitz_sage.core import Answer, ConfigurationError, Query, QueryError
+from fitz_sage.core import Answer, ConfigurationError, EvidencePack, Query, QueryError
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -133,6 +133,20 @@ class fitz:
         return self._get_engine().retrieve(
             Query(text=question, metadata=self._metadata(conversation_context))
         )
+
+    def evidence(
+        self,
+        question: str,
+        source: Optional[Union[str, Path]] = None,
+        conversation_context: Optional["ConversationContext"] = None,
+    ) -> EvidencePack:
+        """Retrieve a governed EvidencePack without answer synthesis."""
+        if not question or not question.strip():
+            raise QueryError("Question cannot be empty")
+        engine = self._get_engine()
+        if source is not None:
+            engine.point(self._resolve_source(source), self._collection)
+        return engine.evidence(Query(text=question, metadata=self._metadata(conversation_context)))
 
     def wait_for_indexing(self) -> None:
         """Block until background indexing of pointed sources completes."""

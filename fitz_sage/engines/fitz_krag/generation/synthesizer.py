@@ -106,7 +106,8 @@ class CodeSynthesizer:
                 [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
-                ]
+                ],
+                max_tokens=self._config.max_answer_tokens,
             )
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")

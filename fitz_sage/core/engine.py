@@ -1,4 +1,5 @@
-"""KnowledgeEngine protocols - Query → Answer contract. See docs/API_REFERENCE.md for details."""
+# fitz_sage/core/engine.py
+"""KnowledgeEngine protocols - Query -> Answer contract. See docs/API_REFERENCE.md for details."""
 
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from .answer import Answer
+from .evidence import EvidencePack
 from .query import Query
 
 
@@ -55,4 +57,8 @@ class RetrievalEngine(KnowledgeEngine, Protocol):
 
     def retrieve(self, query: Query) -> list:
         """Return the raw retrieved sources behind answer(), without synthesis."""
+        ...
+
+    def evidence(self, query: Query) -> EvidencePack:
+        """Return governed, serializable evidence behind answer(), without synthesis."""
         ...

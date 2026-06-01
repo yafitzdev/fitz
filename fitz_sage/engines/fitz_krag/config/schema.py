@@ -50,7 +50,7 @@ class FitzKragConfig(BasePluginConfig):
 
     chat_fast: str = Field(
         default="endpoint/qwen2.5-7b-instruct",
-        description="Chat model for detection and query analysis (provider/model)",
+        description="Chat model for fast optional LLM work (provider/model)",
     )
 
     chat_balanced: str = Field(
@@ -265,6 +265,20 @@ class FitzKragConfig(BasePluginConfig):
     # Generation
     # ==========================================================================
 
+    synthesizer: str | None = Field(
+        default=None,
+        description=(
+            "Optional chat provider/model spec for answer synthesis. "
+            "None leaves retrieval/evidence as the default surface."
+        ),
+    )
+
+    max_answer_tokens: int = Field(
+        default=512,
+        ge=1,
+        description="Maximum tokens requested from the optional answer synthesizer.",
+    )
+
     enable_citations: bool = Field(
         default=True,
         description="Enable [S1], [S2] citation markers in answers",
@@ -287,6 +301,14 @@ class FitzKragConfig(BasePluginConfig):
     # ==========================================================================
     # Query Intelligence
     # ==========================================================================
+
+    query_intelligence: str | None = Field(
+        default=None,
+        description=(
+            "Optional chat provider/model spec for LLM query prep. "
+            "None uses the deterministic no-chat planner."
+        ),
+    )
 
     enable_query_rewriting: bool = Field(
         default=True,

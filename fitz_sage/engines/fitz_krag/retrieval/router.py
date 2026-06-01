@@ -49,6 +49,7 @@ class RetrievalRouter:
         self._table_strategy = table_strategy
         self._config = config
         self._agentic_strategy = agentic_strategy
+        self._allow_llm_agentic = True
 
     def retrieve(
         self,
@@ -207,7 +208,9 @@ class RetrievalRouter:
     ) -> list[Address]:
         """Run agentic search with progress reporting."""
         try:
-            agentic_addresses = self._agentic_strategy.retrieve(query, limit)
+            agentic_addresses = self._agentic_strategy.retrieve(
+                query, limit, allow_llm=self._allow_llm_agentic
+            )
             if agentic_addresses:
                 paths = set()
                 for a in agentic_addresses:
