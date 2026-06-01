@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core import KnowledgeError
 from fitz_sage.core.json_utils import parse_llm_json
 
 if TYPE_CHECKING:
@@ -99,12 +100,15 @@ class KragEnricher:
             )
             return self._parse_response(response, len(items))
         except Exception as e:
-            logger.warning(f"Enrichment batch failed: {e}")
-            return [{"keywords": [], "entities": []} for _ in items]
+            logger.error(f"Required enrichment batch failed: {e}")
+            raise KnowledgeError(f"Required enrichment batch failed: {e}") from e
 
     def _parse_response(self, response: str, expected_count: int) -> list[dict[str, Any]]:
         """Parse LLM response into list of enrichment dicts."""
         parsed = parse_llm_json(response, as_array=True)
         if isinstance(parsed, list) and len(parsed) >= expected_count:
             return parsed[:expected_count]
-        return [{"keywords": [], "entities": []} for _ in range(expected_count)]
+        raise ValueError(
+            "enrichment model returned invalid JSON; expected a JSON array "
+            f"with {expected_count} item(s)"
+        )

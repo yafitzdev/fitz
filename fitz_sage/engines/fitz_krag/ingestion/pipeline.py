@@ -26,6 +26,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core import ConfigurationError
 from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.ingestion.import_graph_store import ImportGraphStore
 from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
@@ -190,11 +191,11 @@ class KragIngestPipeline:
 
         Code symbols carry no summary — code files are a no-op here.
         """
-        if not self._config.summarizer:
-            return
         if file_type in self._table_extensions:
+            self._require_summarizer()
             self._summarize_table_file(file_id)
         elif file_type not in EXTENSION_MAP:
+            self._require_summarizer()
             self._summarize_doc_file(file_id)
 
     def enrich_file(self, file_id: str, file_type: str) -> None:
@@ -202,9 +203,9 @@ class KragIngestPipeline:
 
         Populates the vocabulary store and entity graph (incremental, per
         file) and — for document files — the L1 hierarchy summary stored on
-        each section's metadata. ``enricher`` and ``summarizer`` are independent:
-        a doc file is still processed for L1 hierarchy when keyword/entity
-        enrichment is off. Table files are not enriched.
+        each section's metadata. Enrichment is part of the ingestion contract;
+        missing providers fail ingestion instead of producing an under-enriched
+        index. Table files are summarized separately and are not entity-enriched.
         """
         if file_type in EXTENSION_MAP:
             self._enrich_code_file(file_id)
@@ -222,8 +223,8 @@ class KragIngestPipeline:
         Re-runs wholesale on re-ingest (incremental hierarchy is a v2 concern).
         """
         self.resolve_imports()
-        if self._config.summarizer:
-            self._build_corpus_summary()
+        self._require_summarizer()
+        self._build_corpus_summary()
 
     def resolve_imports(self) -> int:
         """Resolve import-graph ``target_file_id``s now that all files exist."""
@@ -628,14 +629,33 @@ class KragIngestPipeline:
     # Enrich helpers
     # ------------------------------------------------------------------
 
+    def _require_enricher(self) -> None:
+        """Fail closed when keyword/entity enrichment is not configured."""
+        if self._enricher:
+            return
+        raise ConfigurationError(
+            "Ingestion requires keyword/entity enrichment. Configure "
+            "`enricher: endpoint/qwen3.5-0.8b@Q4_K_M` and start the local "
+            "OpenAI-compatible inference server."
+        )
+
+    def _require_summarizer(self) -> None:
+        """Fail closed when hierarchy/table summarization is not configured."""
+        if self._config.summarizer and self._summarizer_chat:
+            return
+        raise ConfigurationError(
+            "Ingestion requires hierarchy summarization. Configure "
+            "`summarizer: endpoint/qwen3.5-0.8b@Q4_K_M` and start the local "
+            "OpenAI-compatible inference server."
+        )
+
     def _enrich_code_file(self, file_id: str) -> None:
         """Enrich a code file's symbols with keywords + entities.
 
-        Code symbols have no hierarchy stage, so without an enricher there is
-        nothing to do.
+        Code symbols have no hierarchy stage, but keyword/entity enrichment is
+        still required for the retrieval index.
         """
-        if not self._enricher:
-            return
+        self._require_enricher()
         symbols = self._symbol_store.get_by_file(file_id)
         if not symbols:
             return
@@ -647,19 +667,16 @@ class KragIngestPipeline:
     def _enrich_doc_file(self, file_id: str) -> None:
         """Enrich a document file's sections with keywords + entities + L1 summary.
 
-        Keyword/entity extraction needs an enricher; L1 hierarchy only needs a
-        summarizer — the two providers are gated independently.
+        Keyword/entity extraction and the L1 hierarchy summary are both required
+        parts of the document retrieval index.
         """
-        can_summarize_hierarchy = bool(self._config.summarizer)
-        if not self._enricher and not can_summarize_hierarchy:
-            return
+        self._require_enricher()
+        self._require_summarizer()
         sections = self._section_store.get_by_file(file_id)
         if not sections:
             return
-        if self._enricher:
-            self._enricher.enrich_sections(sections)
-        if can_summarize_hierarchy:
-            self._generate_l1_summary(sections)
+        self._enricher.enrich_sections(sections)
+        self._generate_l1_summary(sections)
         # One write persists keywords, entities, and the L1 hierarchy summary
         self._section_store.update_enrichment_by_file(file_id, sections)
         if self._entity_graph_store:
