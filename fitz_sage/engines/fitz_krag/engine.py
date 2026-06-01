@@ -1198,6 +1198,9 @@ class FitzKragEngine:
         col = collection or self._config.collection
         source = Path(source).resolve()
 
+        if col != self._config.collection:
+            self.load(col)
+
         # When source is a single file, use its parent as the source directory
         source_dir = source.parent if source.is_file() else source
 

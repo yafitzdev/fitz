@@ -521,6 +521,64 @@ class TestEvidence:
 
 
 # ---------------------------------------------------------------------------
+# TestPoint
+# ---------------------------------------------------------------------------
+
+
+class TestPoint:
+    """Tests for source registration and collection routing."""
+
+    def test_point_collection_override_rebinds_collection_components(self, tmp_path):
+        """point(..., collection=...) binds background ingestion to that collection."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config(collection="default")
+        engine._bg_worker = None
+        engine._manifest = None
+        engine._source_dir = None
+        engine._retrieval_router = MagicMock()
+        engine._reader = MagicMock()
+        engine._chat_factory = None
+        engine._chat = None
+        engine._connection_manager = MagicMock()
+        engine._table_store = MagicMock()
+        engine._sqlite_table_store = MagicMock()
+        engine._entity_graph_store = None
+        engine._enricher_chat = None
+        engine._summarizer_chat = None
+        engine._fast_index_code_files = MagicMock()
+
+        source = tmp_path / "docs"
+        source.mkdir()
+        workspace = tmp_path / ".fitz"
+        manifest = MagicMock()
+
+        def _load(collection: str) -> None:
+            engine._config.collection = collection
+
+        with (
+            patch.object(engine, "load", side_effect=_load) as load,
+            patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
+            patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
+            patch(
+                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
+                ".AgenticSearchStrategy"
+            ),
+            patch(
+                "fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline"
+            ) as pipeline_cls,
+        ):
+            builder_cls.return_value.build.return_value = manifest
+
+            engine.point(source, "custom", start_worker=False)
+
+        load.assert_called_once_with("custom")
+        pipeline_cls.assert_called_once()
+        assert pipeline_cls.call_args.kwargs["collection"] == "custom"
+        build_manifest_path = builder_cls.return_value.build.call_args.args[1]
+        assert build_manifest_path == workspace / "collections" / "custom" / "manifest.json"
+
+
+# ---------------------------------------------------------------------------
 # TestConfig
 # ---------------------------------------------------------------------------
 
