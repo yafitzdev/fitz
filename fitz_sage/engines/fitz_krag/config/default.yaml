@@ -71,4 +71,9 @@ fitz_krag:
   enable_citations: true
   strict_grounding: true
 
+  # Optional background LLM stages. Null keeps default retrieval/indexing
+  # usable without a local server or API key.
+  enricher: null
+  summarizer: null
+
   log_level: INFO

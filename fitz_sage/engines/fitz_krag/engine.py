@@ -349,6 +349,28 @@ class FitzKragEngine:
             synth_chat = get_chat(self._config.synthesizer, "smart", synth_config)
             self._synthesizer = CodeSynthesizer(synth_chat, self._config)
 
+        self._enricher_chat = None
+        if self._config.enricher:
+            enricher_config = _build_provider_config(
+                self._config.chat_base_url,
+                self._config.chat_api_key_env,
+                spec=self._config.enricher,
+            )
+            self._enricher_chat = get_chat(self._config.enricher, "fast", enricher_config)
+
+        self._summarizer_chat = None
+        if self._config.summarizer:
+            summarizer_config = _build_provider_config(
+                self._config.chat_base_url,
+                self._config.chat_api_key_env,
+                spec=self._config.summarizer,
+            )
+            self._summarizer_chat = get_chat(
+                self._config.summarizer,
+                "balanced",
+                summarizer_config,
+            )
+
         # Governance — pyrrho classifier (single INT8 ONNX forward pass).
         # Provider-presence: the `governance:` config key builds the
         # classifier (`pyrrho` / `pyrrho/<model>`) or disables it (`null`).
@@ -432,7 +454,7 @@ class FitzKragEngine:
 
         # Entity graph store
         self._entity_graph_store: Any = None
-        if self._config.enable_enrichment:
+        if self._config.enable_enrichment and self._config.enricher:
             try:
                 from fitz_sage.retrieval.entity_graph.store import EntityGraphStore
 
@@ -1236,6 +1258,8 @@ class FitzKragEngine:
             table_store=self._table_store,
             sqlite_table_store=self._sqlite_table_store,
             entity_graph_store=self._entity_graph_store,
+            enricher_chat=self._enricher_chat,
+            summarizer_chat=self._summarizer_chat,
         )
 
         # Fast synchronous symbol indexing (AST only, no LLM) via the core's

@@ -6,10 +6,11 @@ The single ingestion implementation for the KRAG engine, structured as
 composable operations:
 
 - per file — ``parse_file`` (extract symbols / sections / tables, store
-  raw content; no LLM), ``summarize_file`` (LLM summaries), ``enrich_file``
-  (keywords + entities, vocabulary, entity graph, L1 hierarchy summary)
+  raw content; no LLM), optional ``summarize_file`` (provider summaries),
+  optional ``enrich_file`` (keywords + entities, vocabulary, entity graph,
+  L1 hierarchy summary)
 - corpus — ``finalize`` (resolve the import graph, build the L2 hierarchy
-  summary)
+  summary when a summarizer is configured)
 
 ``ingest()`` is a thin synchronous loop over these ops for blocking
 whole-corpus ingestion. The progressive ``BackgroundIngestWorker``
@@ -87,9 +88,13 @@ class KragIngestPipeline:
         table_store: "TableStore | None" = None,
         sqlite_table_store: "SqliteTableStore | None" = None,
         entity_graph_store: Any = None,
+        enricher_chat: "ChatProvider | None" = None,
+        summarizer_chat: "ChatProvider | None" = None,
     ):
         self._config = config
         self._chat = chat
+        self._enricher_chat = enricher_chat or chat
+        self._summarizer_chat = summarizer_chat or chat
         self._cm = connection_manager
         self._collection = collection
         self._table_extensions = set(config.table_extensions)
@@ -105,10 +110,13 @@ class KragIngestPipeline:
 
         # Enricher
         self._enricher: Any = None
-        if config.enable_enrichment:
+        if config.enable_enrichment and config.enricher:
             from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
-            self._enricher = KragEnricher(chat, batch_size=config.summary_batch_size)
+            self._enricher = KragEnricher(
+                self._enricher_chat,
+                batch_size=config.summary_batch_size,
+            )
 
         # Code strategies
         self._strategies: dict[str, Any] = {}
@@ -182,6 +190,8 @@ class KragIngestPipeline:
 
         Code symbols carry no summary — code files are a no-op here.
         """
+        if not self._config.summarizer:
+            return
         if file_type in self._table_extensions:
             self._summarize_table_file(file_id)
         elif file_type not in EXTENSION_MAP:
@@ -212,7 +222,7 @@ class KragIngestPipeline:
         Re-runs wholesale on re-ingest (incremental hierarchy is a v2 concern).
         """
         self.resolve_imports()
-        if self._config.enable_hierarchy:
+        if self._config.enable_hierarchy and self._config.summarizer:
             self._build_corpus_summary()
 
     def resolve_imports(self) -> int:
@@ -537,7 +547,7 @@ class KragIngestPipeline:
             prompt = self._build_section_summary_prompt(batch)
 
             try:
-                response = self._chat.chat(
+                response = self._summarizer_chat.chat(
                     [
                         {
                             "role": "system",
@@ -596,7 +606,7 @@ class KragIngestPipeline:
         )
 
         try:
-            response = self._chat.chat(
+            response = self._summarizer_chat.chat(
                 [
                     {
                         "role": "system",
@@ -640,14 +650,15 @@ class KragIngestPipeline:
         Keyword/entity extraction needs an enricher; L1 hierarchy only needs
         ``enable_hierarchy`` — the two are gated independently.
         """
-        if not self._enricher and not self._config.enable_hierarchy:
+        can_summarize_hierarchy = bool(self._config.enable_hierarchy and self._config.summarizer)
+        if not self._enricher and not can_summarize_hierarchy:
             return
         sections = self._section_store.get_by_file(file_id)
         if not sections:
             return
         if self._enricher:
             self._enricher.enrich_sections(sections)
-        if self._config.enable_hierarchy:
+        if can_summarize_hierarchy:
             self._generate_l1_summary(sections)
         # One write persists keywords, entities, and the L1 hierarchy summary
         self._section_store.update_enrichment_by_file(file_id, sections)
@@ -695,7 +706,7 @@ class KragIngestPipeline:
             return
 
         try:
-            group_summary = self._chat.chat(
+            group_summary = self._summarizer_chat.chat(
                 [
                     {
                         "role": "system",
@@ -729,7 +740,7 @@ class KragIngestPipeline:
         """Generate the L2 corpus-level summary from L1 summaries."""
         content = "\n".join(f"- {s}" for s in l1_summaries[:20])
         try:
-            return self._chat.chat(
+            return self._summarizer_chat.chat(
                 [
                     {
                         "role": "system",

@@ -62,6 +62,12 @@ def _enricher_stamping(entity_sets: list[list[dict]]) -> MagicMock:
 class TestEnrichEntityGraphIntegration:
     """Tests that enrich_file populates the entity graph during ingestion."""
 
+    def test_no_enricher_provider_leaves_enricher_unconfigured(self):
+        """Enrichment requires an explicit provider, not just enable_enrichment."""
+        core = _make_core()
+
+        assert core._enricher is None
+
     def test_enrich_file_populates_entity_graph(self):
         """enrich_file adds each symbol's extracted entities to the graph store."""
         entity_store = MagicMock()

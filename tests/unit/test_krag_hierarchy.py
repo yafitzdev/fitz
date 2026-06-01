@@ -31,6 +31,7 @@ def _make_core(
     *,
     enable_hierarchy: bool = True,
     enable_enrichment: bool = True,
+    summarizer: str | None = "endpoint/test-summarizer",
     chat: MagicMock | None = None,
 ):
     """Create a KragIngestPipeline core with a mocked connection manager."""
@@ -41,6 +42,7 @@ def _make_core(
         collection="test_col",
         enable_enrichment=enable_enrichment,
         enable_hierarchy=enable_hierarchy,
+        summarizer=summarizer,
     )
     return KragIngestPipeline(
         config=config,
@@ -157,6 +159,21 @@ class TestL1SectionHierarchy:
         for sec in persisted:
             assert sec["metadata"]["hierarchy_summary"] == "Document overview."
 
+    def test_l1_skips_without_summarizer_provider(self):
+        """enable_hierarchy alone does not call a chat model without summarizer."""
+        chat = MagicMock()
+        core = _make_core(enable_hierarchy=True, summarizer=None, chat=chat)
+        core._enricher = _fake_enricher()
+        core._section_store = MagicMock()
+        core._section_store.get_by_file.return_value = _section_dicts(2)
+
+        core.enrich_file("file-1", ".md")
+
+        chat.chat.assert_not_called()
+        persisted = core._section_store.update_enrichment_by_file.call_args[0][1]
+        for sec in persisted:
+            assert "hierarchy_summary" not in sec["metadata"]
+
 
 # ---------------------------------------------------------------------------
 # TestL2CorpusSummary — produced by core.finalize
@@ -211,6 +228,18 @@ class TestL2CorpusSummary:
         core._section_store.upsert_batch.assert_not_called()
         # Import resolution still runs regardless of hierarchy config
         core._import_store.resolve_targets.assert_called_once()
+
+    def test_finalize_skips_l2_without_summarizer_provider(self):
+        """enable_hierarchy alone does not build L2 without summarizer."""
+        core = _make_core(enable_hierarchy=True, summarizer=None, chat=MagicMock())
+        core._section_store = MagicMock()
+        core._raw_store = MagicMock()
+        core._import_store = MagicMock()
+
+        core.finalize()
+
+        core._section_store.get_hierarchy_summaries.assert_not_called()
+        core._section_store.upsert_batch.assert_not_called()
 
     def test_l2_failure_does_not_crash(self):
         """An LLM failure during L2 generation is caught; nothing is stored."""

@@ -346,9 +346,17 @@ class FitzKragConfig(BasePluginConfig):
     # Enrichment
     # ==========================================================================
 
+    enricher: str | None = Field(
+        default=None,
+        description=(
+            "Optional chat provider/model spec for keyword/entity enrichment. "
+            "None leaves enrichment disabled."
+        ),
+    )
+
     enable_enrichment: bool = Field(
         default=True,
-        description="Enable keyword/entity extraction during ingestion",
+        description="Allow keyword/entity extraction when an enricher provider is configured",
     )
 
     # ==========================================================================
@@ -375,9 +383,17 @@ class FitzKragConfig(BasePluginConfig):
     # Hierarchy
     # ==========================================================================
 
+    summarizer: str | None = Field(
+        default=None,
+        description=(
+            "Optional chat provider/model spec for section/table/hierarchy summaries. "
+            "None leaves summary generation disabled."
+        ),
+    )
+
     enable_hierarchy: bool = Field(
         default=True,
-        description="Enable L1/L2 hierarchical summaries during ingestion",
+        description="Allow L1/L2 hierarchical summaries when a summarizer provider is configured",
     )
 
     # ==========================================================================
