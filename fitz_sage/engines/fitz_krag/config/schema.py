@@ -272,6 +272,15 @@ class FitzKragConfig(BasePluginConfig):
         description="Maximum tokens requested from the optional answer synthesizer.",
     )
 
+    short_answer_tokens: int = Field(
+        default=192,
+        ge=1,
+        description=(
+            "Maximum tokens for specific factual synthesis questions. "
+            "The effective cap is min(short_answer_tokens, max_answer_tokens)."
+        ),
+    )
+
     enable_citations: bool = Field(
         default=True,
         description="Enable [S1], [S2] citation markers in answers",

@@ -66,6 +66,7 @@ fitz_krag:
   # Generation
   synthesizer: null
   max_answer_tokens: 512
+  short_answer_tokens: 192
   enable_citations: true
   strict_grounding: true
 

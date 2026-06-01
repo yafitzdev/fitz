@@ -9,6 +9,7 @@ Adapts the RGS pattern for address-based provenance. Answers include
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from fitz_sage.core import Answer, GenerationError, Provenance
@@ -41,6 +42,18 @@ and documentation context as primary references. Cite sources using [S1], [S2], 
 etc. markers. You may supplement with general knowledge when the context is \
 insufficient, but clearly indicate when doing so. If the context does not contain \
 relevant information, respond with "No information found"."""
+
+CONCISE_ANSWER_INSTRUCTION = """\
+Keep the answer concise and evidence-first. Start with the direct answer, then \
+add only the source-backed details needed to justify it. Prefer 1-3 short \
+paragraphs or a compact bullet list."""
+
+SHORT_FACTUAL_ANSWER_INSTRUCTION = """\
+This is a specific factual question. Answer in 1-3 sentences unless the sources \
+show multiple conflicting facts. Do not write background explanation before the \
+answer."""
+
+SHORT_FACTUAL_MAX_TOKENS = 192
 
 
 class CodeSynthesizer:
@@ -97,9 +110,11 @@ class CodeSynthesizer:
         mode_instruction = get_mode_instruction(answer_mode)
         if answer_mode == AnswerMode.DISPUTED and conflict_context:
             mode_instruction = self._build_disputed_instruction(conflict_context)
-        system_prompt = f"{mode_instruction}\n\n{system_prompt}"
+        style_instruction = self._build_style_instruction(query)
+        system_prompt = f"{mode_instruction}\n\n{style_instruction}\n\n{system_prompt}"
 
         user_prompt = f"Context:\n{context}\n\nQuestion: {query}"
+        max_tokens = self._max_tokens_for_query(query)
 
         try:
             raw_answer = self._chat.chat(
@@ -107,7 +122,7 @@ class CodeSynthesizer:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                max_tokens=self._config.max_answer_tokens,
+                max_tokens=max_tokens,
             )
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
@@ -130,6 +145,54 @@ class CodeSynthesizer:
             mode=answer_mode,
             metadata=metadata,
         )
+
+    def _build_style_instruction(self, query: str) -> str:
+        """Return synthesis style guidance for the query shape."""
+        if self._is_short_factual_query(query):
+            return f"{CONCISE_ANSWER_INSTRUCTION}\n\n{SHORT_FACTUAL_ANSWER_INSTRUCTION}"
+        return CONCISE_ANSWER_INSTRUCTION
+
+    def _max_tokens_for_query(self, query: str) -> int:
+        """Return the output cap for the query shape."""
+        configured_max = int(self._config.max_answer_tokens)
+        if not self._is_short_factual_query(query):
+            return configured_max
+
+        configured_short = int(
+            getattr(self._config, "short_answer_tokens", SHORT_FACTUAL_MAX_TOKENS)
+        )
+        return min(configured_max, configured_short)
+
+    @staticmethod
+    def _is_short_factual_query(query: str) -> bool:
+        """Detect narrow factual questions that should get compact synthesis."""
+        normalized = re.sub(r"\s+", " ", query.strip().lower())
+        if not normalized:
+            return False
+
+        broad_cues = (
+            "architecture",
+            "compare",
+            "design",
+            "explain",
+            "how does",
+            "overview",
+            "summarize",
+            "why",
+        )
+        if any(cue in normalized for cue in broad_cues):
+            return False
+
+        factual_prefixes = (
+            "what ",
+            "which ",
+            "who ",
+            "when ",
+            "where ",
+            "how many ",
+            "how much ",
+        )
+        return normalized.startswith(factual_prefixes) and len(normalized.split()) <= 18
 
     def _build_disputed_instruction(self, conflict_context: dict) -> str:
         """

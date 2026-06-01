@@ -38,9 +38,13 @@ under `~/.fitz/sqlite/`.
 collection: my_docs
 synthesizer: endpoint/qwen3.5-0.8b
 chat_base_url: http://localhost:8080/v1
+max_answer_tokens: 512
+short_answer_tokens: 192
 ```
 
 No API key needed — local servers are usually unauthenticated by default.
+The shorter factual-question cap keeps small local models from writing long
+answers for simple lookup questions.
 
 ---
 

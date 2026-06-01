@@ -184,6 +184,22 @@ baseline.
 
 ---
 
+## Synthesis Knobs
+
+```yaml
+synthesizer: endpoint/qwen3.5-0.8b
+chat_base_url: http://localhost:8080/v1
+max_answer_tokens: 512       # general answer cap
+short_answer_tokens: 192     # factual-question cap
+strict_grounding: true
+```
+
+The optional synthesizer prompt is concise by default. For narrow factual
+questions, fitz-sage uses the smaller `short_answer_tokens` cap so small local
+models do not spend most of the query time writing long prose.
+
+---
+
 ## Per-invocation overrides
 
 The CLI accepts overrides without editing the config file:

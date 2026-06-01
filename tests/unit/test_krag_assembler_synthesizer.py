@@ -18,6 +18,8 @@ from fitz_sage.engines.fitz_krag.context.assembler import (
     ContextAssembler,
 )
 from fitz_sage.engines.fitz_krag.generation.synthesizer import (
+    CONCISE_ANSWER_INSTRUCTION,
+    SHORT_FACTUAL_ANSWER_INSTRUCTION,
     SYSTEM_PROMPT_GROUNDED,
     SYSTEM_PROMPT_OPEN,
     CodeSynthesizer,
@@ -31,6 +33,8 @@ from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
 def _make_config(
     max_context_tokens: int = 8000,
+    max_answer_tokens: int = 512,
+    short_answer_tokens: int = 192,
     include_file_header: bool = True,
     strict_grounding: bool = True,
     enable_citations: bool = True,
@@ -38,6 +42,8 @@ def _make_config(
     """Build a mock FitzKragConfig with the given fields."""
     cfg = MagicMock()
     cfg.max_context_tokens = max_context_tokens
+    cfg.max_answer_tokens = max_answer_tokens
+    cfg.short_answer_tokens = short_answer_tokens
     cfg.include_file_header = include_file_header
     cfg.strict_grounding = strict_grounding
     cfg.enable_citations = enable_citations
@@ -315,7 +321,7 @@ class TestCodeSynthesizer:
         synth = CodeSynthesizer(chat=chat, config=config)
 
         result = _make_result(source_id="src_1")
-        answer = synth.generate("what does foo do?", "context...", [result])
+        answer = synth.generate("explain what foo does", "context...", [result])
 
         assert isinstance(answer, Answer)
         assert answer.text == "The function does X [S1]."
@@ -354,6 +360,40 @@ class TestCodeSynthesizer:
         system_msg = messages[0]
         assert system_msg["role"] == "system"
         assert SYSTEM_PROMPT_OPEN in system_msg["content"]
+
+    # -- test_short_factual_generation_is_capped ----------------------------
+
+    def test_short_factual_generation_is_capped(self) -> None:
+        """Specific factual questions use the shorter synthesis cap."""
+        chat = MagicMock()
+        chat.chat.return_value = "Sprint 47 failed checkout retry [S1]."
+        config = _make_config(max_answer_tokens=512, short_answer_tokens=160)
+        synth = CodeSynthesizer(chat=chat, config=config)
+
+        synth.generate("Which test failed in Sprint 47?", "ctx", [])
+
+        messages = chat.chat.call_args[0][0]
+        system_msg = messages[0]["content"]
+        assert CONCISE_ANSWER_INSTRUCTION in system_msg
+        assert SHORT_FACTUAL_ANSWER_INSTRUCTION in system_msg
+        assert chat.chat.call_args.kwargs["max_tokens"] == 160
+
+    # -- test_broad_generation_uses_general_cap -----------------------------
+
+    def test_broad_generation_uses_general_cap(self) -> None:
+        """Broad synthesis questions use the configured general answer cap."""
+        chat = MagicMock()
+        chat.chat.return_value = "answer"
+        config = _make_config(max_answer_tokens=512, short_answer_tokens=160)
+        synth = CodeSynthesizer(chat=chat, config=config)
+
+        synth.generate("Explain the authentication architecture", "ctx", [])
+
+        messages = chat.chat.call_args[0][0]
+        system_msg = messages[0]["content"]
+        assert CONCISE_ANSWER_INSTRUCTION in system_msg
+        assert SHORT_FACTUAL_ANSWER_INSTRUCTION not in system_msg
+        assert chat.chat.call_args.kwargs["max_tokens"] == 512
 
     # -- test_generate_llm_error_raises_generation_error --------------------
 

@@ -26,6 +26,8 @@ class TestFitzKragConfig:
         assert config.enable_citations is True
         assert config.strict_grounding is True
         assert config.max_context_tokens == 48000
+        assert config.max_answer_tokens == 512
+        assert config.short_answer_tokens == 192
 
     def test_custom_values(self):
         """Cloud config: openai preset with API key in env."""
@@ -83,6 +85,7 @@ class TestDefaultYaml:
         assert raw["fitz_krag"]["chat_balanced"] is None
         assert raw["fitz_krag"]["chat_smart"] is None
         assert raw["fitz_krag"]["chat_base_url"] is None
+        assert raw["fitz_krag"]["short_answer_tokens"] == 192
         assert raw["fitz_krag"]["collection"] == "default"
         # Embedding fields are gone — fitz-sage no longer uses dense vectors.
         assert "embedding" not in raw["fitz_krag"]
