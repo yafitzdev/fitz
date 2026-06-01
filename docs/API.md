@@ -312,7 +312,7 @@ Health check endpoint.
 ```json
 {
   "status": "healthy",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "config_exists": true
 }
 ```

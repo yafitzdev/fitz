@@ -6,7 +6,7 @@ windows, that embeddings are the right index, and that all content
 types deserve the same search strategy — and replaces them with
 **typed-unit retrieval over a structural index**.
 
-This document explains why, and how it works in v0.14.0+.
+This document explains why, and how it works in v0.14.1+.
 
 ---
 
@@ -83,7 +83,7 @@ Agentic RAG:
 GraphRAG:
   Document → LLM entity/relation extraction → graph → communities → answer
 
-KRAG (v0.14.0+):
+KRAG (v0.14.1+):
   Document → [symbols] [sections] [tables] → FTS5 + structure → routed search
            → expand via graph → LLM rerank → answer
 ```
@@ -164,7 +164,7 @@ on raw `onnxruntime`).
 
 ## Comparison
 
-| Dimension                | Traditional RAG    | Agentic RAG          | GraphRAG                       | KRAG (v0.14.0+)                  |
+| Dimension                | Traditional RAG    | Agentic RAG          | GraphRAG                       | KRAG (v0.14.1+)                  |
 | ------------------------ | ------------------ | -------------------- | ------------------------------ | -------------------------------- |
 | Retrieval unit           | Fixed-size chunk   | Fixed-size chunk     | Entity / community node        | Symbols, sections, tables        |
 | Structure awareness      | None               | Reasoned per-query   | LLM-extracted graph            | Deterministic (AST + imports)    |

@@ -102,9 +102,7 @@ class BackgroundIngestWorker:
         if total == 0:
             return ""
         done = sum(
-            1
-            for e in entries.values()
-            if e.state in (FileState.ENRICHED, FileState.SUMMARIZED)
+            1 for e in entries.values() if e.state in (FileState.ENRICHED, FileState.SUMMARIZED)
         )
         return f"Indexing documents... {done}/{total}"
 
@@ -147,8 +145,7 @@ class BackgroundIngestWorker:
             self._finalize_phase()  # corpus finalize
             t3 = time.perf_counter()
             logger.info(
-                "Eager indexing complete in %.1fs "
-                "(parse=%.1fs, enrich=%.1fs, finalize=%.1fs)",
+                "Eager indexing complete in %.1fs (parse=%.1fs, enrich=%.1fs, finalize=%.1fs)",
                 t3 - t0,
                 t1 - t0,
                 t2 - t1,

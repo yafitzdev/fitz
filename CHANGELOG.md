@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-06-01
+
 ### 🚀 Added
 
 - **`RetrievalEngine` protocol** (`fitz_sage.RetrievalEngine`) — extends
@@ -43,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   streaming-chat path, and ~25 unreferenced methods. Deduplicated LLM-JSON parsing,
   retrieval scoring, KRAG store helpers, the tree-sitter scaffold, and the tabular
   SQL/file-reader paths. Net ~2,950 lines removed; tests + `contract_map` green.
+
+### 🔄 Changed
+
+- **Docs and examples refreshed for the current SDK/config surface.** Examples now
+  show `fitz.query(..., source=...)`, the engine-scoped
+  `~/.fitz/config/fitz_krag.yaml` config path, the `cpu` parser default, and
+  provider-controlled governance/VLM behavior.
+- **`contract_map` validates the live architecture contract directly.** It now
+  distinguishes module-level edges from lazy imports, supports optional import
+  dependencies, renders local role rules, and adds `--fail-on-errors` for CI/release
+  gating.
 
 ### 🔧 Fixed
 
@@ -2310,7 +2323,8 @@ Initial release of Fitz RAG framework.
 
 ---
 
-[Unreleased]: https://github.com/yafitzdev/fitz-sage/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/yafitzdev/fitz-sage/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/yafitzdev/fitz-sage/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.11.0...v0.12.0

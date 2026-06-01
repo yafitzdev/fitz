@@ -1,6 +1,6 @@
 # Plugin Development Guide
 
-fitz-sage **v0.14.0+** has a much smaller plugin surface than earlier
+fitz-sage **v0.14.1+** has a much smaller plugin surface than earlier
 versions: chat is mono-protocol (one OpenAI-compatible provider with
 sugar presets), embedding/vector-db are gone, and the remaining plugin
 types are Python modules wired by config.

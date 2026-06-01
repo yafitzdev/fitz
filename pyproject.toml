@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fitz-sage"
-version = "0.14.0"
+version = "0.14.1"
 description = "Intelligent, honest knowledge retrieval in 5 minutes. No infrastructure. No boilerplate."
 readme = "README.md"
 license = {text = "MIT"}

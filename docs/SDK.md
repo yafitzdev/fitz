@@ -1,6 +1,6 @@
 # docs/SDK.md
 
-Complete reference for the Fitz Python SDK (v0.14.0).
+Complete reference for the Fitz Python SDK (v0.14.1).
 
 ---
 

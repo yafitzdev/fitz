@@ -8,7 +8,6 @@ Both collections are already on disk; this only runs the eval phase. The
 reranker reads Address.summary, so the summary column is the only variable.
 """
 from fitz_sage.runtime import create_engine
-
 from tools.retrieval_eval.benchmark import DATASETS_DIR, aggregate, evaluate
 from tools.retrieval_eval.dataset import Dataset, load_dataset
 

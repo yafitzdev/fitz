@@ -1,6 +1,6 @@
 # Engines
 
-fitz-sage **v0.14.0+**. An engine is anything that implements the
+fitz-sage **v0.14.1+**. An engine is anything that implements the
 `KnowledgeEngine` protocol — given a `Query`, return an `Answer` with
 mode (`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN`) and provenance.
 
