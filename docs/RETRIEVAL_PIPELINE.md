@@ -6,6 +6,9 @@ fitz-sage is retrieval-first. The default product surface returns a governed
 and enough provenance for another application to decide what to do next.
 Generated answers are optional and live behind `fitz answer` / `fitz_sage.query()`.
 
+For the retrieval strategy itself, see
+[Three-Stage Retrieval Strategy](features/retrieval/three-stage-strategy.md).
+
 ---
 
 ## User Journey

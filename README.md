@@ -264,7 +264,11 @@ units, each with its own storage format and search strategy.
 ### Retrieval Intelligence
 
 Most RAG implementations are naive vector search — they fail silently on real-world queries.
-`fitz-sage` runs retrieval as a **broad recall → rerank → govern** pipeline:
+`fitz-sage` runs retrieval as a **broad recall → rerank → Pyrrho cutoff** pipeline:
+
+<br>
+
+Full explanation: [Three-Stage Retrieval Strategy](docs/features/retrieval/three-stage-strategy.md).
 
 <br>
 
@@ -272,7 +276,7 @@ Most RAG implementations are naive vector search — they fail silently on real-
 |-------|--------------|-----------|
 | **1. Broad recall** | Extract real query terms, add semantic keywords, run BM25 over typed units, and fan out only when the query needs it (comparison, temporal, aggregation, multi-query). False positives are acceptable here. | Cheap SQLite FTS + deterministic query prep |
 | **2. Rerank** | INT8 ONNX cross-encoder reorders the broad candidate list by true query relevance. This is where precision belongs. | Local ONNX reranker |
-| **3. Govern cutoff** | `pyrrho` evaluates `query + top 1`, then `query + top 2`, and so on until evidence is enough or the cutoff is reached. | Local ONNX classifier |
+| **3. Pyrrho cutoff** | `pyrrho` evaluates `query + top 1`, then `query + top 2`, and so on until evidence is enough or the cutoff is reached. | Local ONNX classifier |
 
 <br>
 
