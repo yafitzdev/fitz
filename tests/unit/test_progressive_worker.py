@@ -3,7 +3,8 @@
 
 The worker is a scheduler over the KragIngestPipeline core: it owns the
 manifest, priority queue, state machine, and query-pausing, and delegates all
-ingestion work to ``core.parse_file`` / ``summarize_file`` / ``enrich_file`` /
+ingestion work to ``core.parse_file`` / ``keyword_file`` /
+``link_entities_file`` / ``build_hierarchy_file`` / ``summarize_file`` /
 ``finalize``.
 """
 
@@ -100,7 +101,7 @@ class TestGetOrderedFiles:
 
 class TestScheduling:
     def test_run_drives_core_through_eager_phases(self, tmp_path: Path) -> None:
-        """Every REGISTERED file is parsed and enriched; finalize runs once.
+        """Every REGISTERED file is parsed and keyworded before wait() returns.
 
         Per-section summarization is demand-driven, so ``_run`` does not call
         ``summarize_file`` during the eager phases — the warm loop does, and
@@ -112,18 +113,31 @@ class TestScheduling:
 
         core = MagicMock()
         worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+
+        keyword_calls = 0
+
+        def _keyword(_file_id: str, _file_type: str) -> None:
+            nonlocal keyword_calls
+            keyword_calls += 1
+            if keyword_calls == 2:
+                worker._stop_event.set()
+
+        core.keyword_file.side_effect = _keyword
+
         worker.start()
-        worker.wait()  # returns once eager indexing is done
-        worker.stop()  # ends the demand-driven warm loop
+        worker.wait()  # returns once the query-ready index is done
+        worker.stop()
 
-        # Both files reached the terminal eager state
-        assert manifest.get("src/main.py").state == FileState.ENRICHED
-        assert manifest.get("docs/readme.md").state == FileState.ENRICHED
+        # Both files reached the query-ready state before deep enrichment.
+        assert manifest.get("src/main.py").state == FileState.QUERY_READY
+        assert manifest.get("docs/readme.md").state == FileState.QUERY_READY
 
-        # Core eager ops called once per file, finalize once for the corpus
+        # Core query-ready ops called once per file; deep work did not run yet.
         assert core.parse_file.call_count == 2
-        assert core.enrich_file.call_count == 2
-        core.finalize.assert_called_once()
+        assert core.keyword_file.call_count == 2
+        core.link_entities_file.assert_not_called()
+        core.build_hierarchy_file.assert_not_called()
+        core.finalize.assert_not_called()
         core.summarize_file.assert_not_called()  # demand-driven — no query yet
 
     def test_parse_phase_passes_file_identity_to_core(self, tmp_path: Path) -> None:
@@ -141,31 +155,48 @@ class TestScheduling:
         assert file_id == "id-src/main.py"
         assert manifest.get("src/main.py").state == FileState.PARSED
 
-    def test_enrich_phase_routes_by_file_type(self, tmp_path: Path) -> None:
-        """enrich_file receives the file's id and type; PARSED -> ENRICHED."""
+    def test_keyword_phase_routes_by_file_type(self, tmp_path: Path) -> None:
+        """keyword_file receives the file's id/type; PARSED -> QUERY_READY."""
         manifest = FileManifest(tmp_path / "manifest.json")
         manifest.add(_make_entry("a.py", file_type=".py", state=FileState.PARSED))
 
         core = MagicMock()
         worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-        worker._enrich_phase()
+        worker._keyword_phase()
 
-        core.enrich_file.assert_called_once_with("id-a.py", ".py")
-        assert manifest.get("a.py").state == FileState.ENRICHED
+        core.keyword_file.assert_called_once_with("id-a.py", ".py")
+        assert manifest.get("a.py").state == FileState.QUERY_READY
 
-    def test_enrich_failure_stops_before_finalize(self, tmp_path: Path) -> None:
-        """Required enrichment failure leaves the file PARSED and stops indexing."""
+    def test_keyword_failure_stops_before_query_ready(self, tmp_path: Path) -> None:
+        """Required keyword failure leaves the file PARSED and stops indexing."""
         manifest = FileManifest(tmp_path / "manifest.json")
         manifest.add(_make_entry("a.py", file_type=".py", state=FileState.PARSED))
 
         core = MagicMock()
-        core.enrich_file.side_effect = RuntimeError("llm unavailable")
+        core.keyword_file.side_effect = RuntimeError("llm unavailable")
         worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
 
-        with pytest.raises(RuntimeError, match="Required enrichment failed"):
-            worker._enrich_phase()
+        with pytest.raises(RuntimeError, match="Required keyword enrichment failed"):
+            worker._keyword_phase()
 
         assert manifest.get("a.py").state == FileState.PARSED
+
+    def test_deep_enrich_phase_runs_remaining_stages(self, tmp_path: Path) -> None:
+        """Deep enrichment advances query-ready files through entities and hierarchy."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("a.py", file_type=".py", state=FileState.QUERY_READY))
+        manifest.add(_make_entry("b.md", file_type=".md", state=FileState.ENTITY_LINKED))
+        manifest.add(_make_entry("c.md", file_type=".md", state=FileState.HIERARCHY_READY))
+
+        core = MagicMock()
+        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+        worker._deep_enrich_phase()
+
+        core.link_entities_file.assert_called_once_with("id-a.py", ".py")
+        assert core.build_hierarchy_file.call_count == 2
+        assert manifest.get("a.py").state == FileState.ENRICHED
+        assert manifest.get("b.md").state == FileState.ENRICHED
+        assert manifest.get("c.md").state == FileState.ENRICHED
 
     def test_parse_failure_does_not_block_other_files(self, tmp_path: Path) -> None:
         """One file failing to parse leaves it behind but does not stop the rest."""
@@ -231,7 +262,7 @@ class TestBoostFiles:
         manifest.bump_priority.assert_called_once_with(["src/main.py"])
 
         # Sibling in same dir (src/) bumped to P2 — but NOT the queried file
-        # itself, NOT an unrelated dir, NOT an already-ENRICHED file
+        # itself, NOT an unrelated dir, NOT a fully enriched file
         manifest.bump_priority_level.assert_called_once()
         call_args = manifest.bump_priority_level.call_args
         siblings_arg = call_args[0][0]
@@ -240,7 +271,7 @@ class TestBoostFiles:
         assert "src/utils.py" in siblings_arg
         assert "src/main.py" not in siblings_arg, "queried file should not be in siblings"
         assert "docs/readme.md" not in siblings_arg, "unrelated dir should not be in siblings"
-        assert "src/done.py" not in siblings_arg, "ENRICHED files should be excluded"
+        assert "src/done.py" not in siblings_arg, "fully enriched files should be excluded"
         assert level_arg == 2
 
 
@@ -258,9 +289,9 @@ class TestWait:
         progress.assert_not_called()
 
     def test_status_line_counts_indexed_files(self, tmp_path: Path) -> None:
-        """_status_line counts indexed (ENRICHED or SUMMARIZED) / total."""
+        """_status_line counts query-ready-or-later files / total."""
         manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("a.py", state=FileState.ENRICHED))
+        manifest.add(_make_entry("a.py", state=FileState.QUERY_READY))
         manifest.add(_make_entry("b.py", state=FileState.SUMMARIZED))
         manifest.add(_make_entry("c.md", state=FileState.REGISTERED))
 
@@ -275,12 +306,12 @@ class TestWait:
 
         assert worker._status_line() == ""
 
-    def test_wait_returns_when_eager_indexing_done(self, tmp_path: Path) -> None:
-        """wait() returns once eager indexing finishes and reports completion.
+    def test_wait_returns_when_query_ready_done(self, tmp_path: Path) -> None:
+        """wait() returns once query-ready indexing finishes and reports completion.
 
         The worker thread stays alive afterwards — it keeps running the
-        demand-driven warm loop — so wait() keys off the eager-done event,
-        not thread exit.
+        deep enrichment and demand-driven warm loop — so wait() keys off the
+        query-ready event, not thread exit.
         """
         manifest = FileManifest(tmp_path / "manifest.json")
         manifest.add(_make_entry("a.py", file_type=".py"))
@@ -292,7 +323,7 @@ class TestWait:
         worker.wait(progress=progress)
 
         assert worker._eager_done.is_set()
-        progress.assert_any_call("Indexing complete.")
+        progress.assert_any_call("Query-ready indexing complete; deep enrichment continues.")
         worker.stop()
 
 

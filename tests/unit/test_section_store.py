@@ -32,6 +32,8 @@ def _make_row(
     summary="A summary.",
     parent_section_id=None,
     position=0,
+    keywords=None,
+    entities=None,
     metadata=None,
 ):
     """Create a tuple matching the section_index SELECT column order."""
@@ -46,6 +48,8 @@ def _make_row(
         summary,
         parent_section_id,
         position,
+        keywords or [],
+        entities or [],
         metadata or {},
     )
 
@@ -64,7 +68,18 @@ class TestRowToDict:
         assert result["summary"] == "A summary."
         assert result["parent_section_id"] is None
         assert result["position"] == 0
+        assert result["keywords"] == []
+        assert result["entities"] == []
         assert result["metadata"] == {}
+
+    def test_parses_json_keyword_and_entity_columns(self):
+        row = _make_row(
+            keywords='["alpha", "beta"]',
+            entities='[{"name": "Acme", "type": "org"}]',
+        )
+        result = _row_to_dict(row)
+        assert result["keywords"] == ["alpha", "beta"]
+        assert result["entities"] == [{"name": "Acme", "type": "org"}]
 
     def test_parses_json_string_metadata(self):
         row = _make_row(metadata='{"key": "value"}')

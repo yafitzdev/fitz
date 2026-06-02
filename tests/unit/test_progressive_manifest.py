@@ -50,22 +50,34 @@ def test_indexing_status_counts_by_state(tmp_path: Path) -> None:
     manifest = FileManifest(tmp_path / "manifest.json")
     manifest.add(_make_entry("a.py", file_id="a", state=FileState.REGISTERED))
     manifest.add(_make_entry("b.py", file_id="b", state=FileState.PARSED))
-    manifest.add(_make_entry("c.py", file_id="c", state=FileState.ENRICHED))
-    manifest.add(_make_entry("d.py", file_id="d", state=FileState.SUMMARIZED))
+    manifest.add(_make_entry("c.py", file_id="c", state=FileState.KEYWORDED))
+    manifest.add(_make_entry("d.py", file_id="d", state=FileState.QUERY_READY))
+    manifest.add(_make_entry("e.py", file_id="e", state=FileState.ENRICHED))
+    manifest.add(_make_entry("f.py", file_id="f", state=FileState.SUMMARIZED))
 
     status = indexing_status(manifest)
 
-    assert status["total"] == 4
-    assert status["pending"] == 2  # registered + parsed
-    assert status["indexed"] == 2  # enriched + summarized
+    assert status["total"] == 6
+    assert status["pending"] == 3  # registered + parsed + keyworded
+    assert status["indexed"] == 3  # query_ready + enriched + summarized
     assert status["complete"] is False
-    assert status["by_state"] == {"registered": 1, "parsed": 1, "enriched": 1, "summarized": 1}
+    assert status["query_ready"] is False
+    assert status["deep_pending"] == 4
+    assert status["fully_enriched"] is False
+    assert status["by_state"] == {
+        "registered": 1,
+        "parsed": 1,
+        "keyworded": 1,
+        "query_ready": 1,
+        "enriched": 1,
+        "summarized": 1,
+    }
 
 
-def test_indexing_status_complete_when_none_pending(tmp_path: Path) -> None:
-    """complete=True once no files remain registered/parsed."""
+def test_indexing_status_complete_when_all_query_ready(tmp_path: Path) -> None:
+    """complete=True once every file can serve retrieval queries."""
     manifest = FileManifest(tmp_path / "manifest.json")
-    manifest.add(_make_entry("a.py", file_id="a", state=FileState.ENRICHED))
+    manifest.add(_make_entry("a.py", file_id="a", state=FileState.QUERY_READY))
     manifest.add(_make_entry("b.py", file_id="b", state=FileState.SUMMARIZED))
 
     status = indexing_status(manifest)
@@ -73,6 +85,22 @@ def test_indexing_status_complete_when_none_pending(tmp_path: Path) -> None:
     assert status["total"] == 2
     assert status["pending"] == 0
     assert status["complete"] is True
+    assert status["query_ready"] is True
+    assert status["deep_pending"] == 1
+    assert status["fully_enriched"] is False
+
+
+def test_indexing_status_fully_enriched_when_deep_work_done(tmp_path: Path) -> None:
+    """fully_enriched=True once all files completed mandatory deep enrichment."""
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_make_entry("a.py", file_id="a", state=FileState.ENRICHED))
+    manifest.add(_make_entry("b.py", file_id="b", state=FileState.SUMMARIZED))
+
+    status = indexing_status(manifest)
+
+    assert status["complete"] is True
+    assert status["deep_pending"] == 0
+    assert status["fully_enriched"] is True
 
 
 def test_indexing_status_none_manifest() -> None:
@@ -82,6 +110,9 @@ def test_indexing_status_none_manifest() -> None:
         "indexed": 0,
         "pending": 0,
         "complete": True,
+        "query_ready": True,
+        "deep_pending": 0,
+        "fully_enriched": True,
         "by_state": {},
     }
 
@@ -160,6 +191,18 @@ class TestFileManifest:
 
         assert len(not_summarized) == 1
         assert not_summarized[0].rel_path == "c.py"
+
+    def test_files_not_query_ready(self, tmp_path: Path) -> None:
+        """Query-ready filtering includes all later enrichment states."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("a.py", state=FileState.PARSED))
+        manifest.add(_make_entry("b.py", state=FileState.KEYWORDED))
+        manifest.add(_make_entry("c.py", state=FileState.QUERY_READY))
+        manifest.add(_make_entry("d.py", state=FileState.ENRICHED))
+
+        not_ready = manifest.files_not_query_ready()
+
+        assert {entry.rel_path for entry in not_ready} == {"a.py", "b.py"}
 
     def test_bump_priority_sets_p1(self, tmp_path: Path) -> None:
         """Queried files become priority 1 with a last_queried_at timestamp."""

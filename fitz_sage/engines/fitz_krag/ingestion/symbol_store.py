@@ -139,7 +139,8 @@ class SymbolStore:
 
         sql = f"""
             SELECT s.id, s.name, s.qualified_name, s.kind, s.raw_file_id,
-                   s.start_line, s.end_line, s.signature, s.metadata,
+                   s.start_line, s.end_line, s.signature,
+                   s.keywords, s.entities, s.metadata,
                    bm25({FTS}) AS rank
             FROM {FTS}
             JOIN {TABLE} s ON s.rowid = {FTS}.rowid
@@ -151,8 +152,8 @@ class SymbolStore:
             rows = conn.execute(sql, (fts_query, limit)).fetchall()
         results = []
         for row in rows:
-            d = _row_to_dict(row[:9])
-            d["bm25_score"] = -float(row[9]) if row[9] is not None else 0.0
+            d = _row_to_dict(row[:11])
+            d["bm25_score"] = -float(row[11]) if row[11] is not None else 0.0
             results.append(d)
         return results
 
@@ -161,7 +162,7 @@ class SymbolStore:
         pattern = f"%{query}%"
         sql = f"""
             SELECT id, name, qualified_name, kind, raw_file_id,
-                   start_line, end_line, signature, metadata
+                   start_line, end_line, signature, keywords, entities, metadata
             FROM {TABLE}
             WHERE name LIKE ? COLLATE NOCASE
                OR qualified_name LIKE ? COLLATE NOCASE
@@ -177,7 +178,7 @@ class SymbolStore:
     def get(self, symbol_id: str) -> dict[str, Any] | None:
         sql = f"""
             SELECT id, name, qualified_name, kind, raw_file_id,
-                   start_line, end_line, signature, metadata
+                   start_line, end_line, signature, keywords, entities, metadata
             FROM {TABLE} WHERE id = ?
         """
         with self._cm.connection(self._collection) as conn:
@@ -190,7 +191,7 @@ class SymbolStore:
         """All symbols for a file. ``references`` returned as a Python list."""
         sql = f"""
             SELECT id, name, qualified_name, kind, raw_file_id,
-                   start_line, end_line, signature, metadata,
+                   start_line, end_line, signature, keywords, entities, metadata,
                    "references"
             FROM {TABLE}
             WHERE raw_file_id = ?
@@ -200,8 +201,8 @@ class SymbolStore:
             rows = conn.execute(sql, (raw_file_id,)).fetchall()
         results = []
         for row in rows:
-            d = _row_to_dict(row[:9])
-            d["references"] = _decode_json_list(row[9])
+            d = _row_to_dict(row[:11])
+            d["references"] = _decode_json_list(row[11])
             results.append(d)
         return results
 
@@ -211,7 +212,7 @@ class SymbolStore:
         placeholders = ",".join(["?"] * len(terms))
         sql = f"""
             SELECT id, name, qualified_name, kind, raw_file_id,
-                   start_line, end_line, signature, metadata
+                   start_line, end_line, signature, keywords, entities, metadata
             FROM {TABLE}
             WHERE EXISTS (
                 SELECT 1 FROM json_each({TABLE}.keywords) k
@@ -267,7 +268,9 @@ def _decode_json_list(value: Any) -> list:
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:
-    meta = store_utils.decode_json(row[8], {})
+    keywords = store_utils.decode_json(row[8], [])
+    entities = store_utils.decode_json(row[9], [])
+    meta = store_utils.decode_json(row[10], {})
     return {
         "id": row[0],
         "name": row[1],
@@ -277,5 +280,7 @@ def _row_to_dict(row: tuple) -> dict[str, Any]:
         "start_line": row[5],
         "end_line": row[6],
         "signature": row[7],
+        "keywords": keywords if isinstance(keywords, list) else [],
+        "entities": entities if isinstance(entities, list) else [],
         "metadata": meta,
     }

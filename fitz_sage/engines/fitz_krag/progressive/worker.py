@@ -9,10 +9,13 @@ never reimplements parse/summarize/enrich.
 
 State machine per file:
     REGISTERED → PARSED    (core.parse_file — store raw, extract symbols/sections)
-    PARSED     → ENRICHED  (core.enrich_file — required keywords/entities,
-                            entity graph, L1 hierarchy summary)
-Once every file is ENRICHED the worker runs ``core.finalize`` (import graph +
-L2 hierarchy summary): eager indexing is then complete.
+    PARSED     → KEYWORDED → QUERY_READY
+                           (core.keyword_file — minimum Qwen retrieval index)
+    QUERY_READY → ENTITY_LINKED → HIERARCHY_READY → ENRICHED
+                           (entity graph + L1 hierarchy summary)
+Once every file reaches ENRICHED the worker runs ``core.finalize`` (import
+graph + L2 hierarchy summary). ``wait()`` only blocks through QUERY_READY so
+queries can run while mandatory deep enrichment continues.
 
 ENRICHED → SUMMARIZED (core.summarize_file) is demand-driven. Summaries are
 generated only for files a query has surfaced. Un-queried files are never
@@ -32,7 +35,11 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
+from fitz_sage.engines.fitz_krag.progressive.manifest import (
+    FileState,
+    is_fully_enriched_state,
+    is_query_ready_state,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -44,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 class BackgroundIngestWorker:
-    """Daemon thread that schedules the ingestion core: REGISTERED → ENRICHED."""
+    """Daemon thread that schedules the ingestion core through staged enrichment."""
 
     def __init__(
         self,
@@ -58,9 +65,10 @@ class BackgroundIngestWorker:
 
         self._stop_event = threading.Event()
         self._query_active = threading.Event()  # Set = query is running
-        self._eager_done = threading.Event()  # Set = parse/enrich/finalize done
+        self._eager_done = threading.Event()  # Set = minimum query-ready index done
         self._thread: threading.Thread | None = None
         self._failure: Exception | None = None
+        self._deep_failure: Exception | None = None
 
     def start(self) -> None:
         """Start daemon thread (daemon=True, won't block process exit)."""
@@ -76,12 +84,13 @@ class BackgroundIngestWorker:
         logger.info("Background ingestion worker stopped")
 
     def wait(self, progress: "Callable[[str], None] | None" = None) -> None:
-        """Block until *eager* indexing (parse/enrich/finalize) has finished.
+        """Block until the minimum query-ready index has finished.
 
-        Reports coarse progress (files enriched / total) at ~10s intervals.
-        Returns once the corpus is queryable — the worker thread keeps
-        running afterwards to summarize queried files on demand. A no-op
-        when the worker was never started.
+        Reports coarse progress (query-ready files / total) at ~10s intervals.
+        Returns once the corpus can serve best-effort retrieval. The worker
+        thread keeps running afterwards to complete mandatory entity/hierarchy
+        enrichment and demand summaries. A no-op when the worker was never
+        started.
         """
         if self._thread is None:
             return
@@ -98,7 +107,7 @@ class BackgroundIngestWorker:
                 progress(f"Indexing failed: {self._failure}")
             raise RuntimeError(f"Indexing failed: {self._failure}") from self._failure
         if progress:
-            progress("Indexing complete.")
+            progress("Query-ready indexing complete; deep enrichment continues.")
 
     def _status_line(self) -> str:
         """Coarse indexing-progress line from manifest file states."""
@@ -106,9 +115,7 @@ class BackgroundIngestWorker:
         total = len(entries)
         if total == 0:
             return ""
-        done = sum(
-            1 for e in entries.values() if e.state in (FileState.ENRICHED, FileState.SUMMARIZED)
-        )
+        done = sum(1 for e in entries.values() if is_query_ready_state(e.state))
         return f"Indexing documents... {done}/{total}"
 
     def signal_query_start(self) -> None:
@@ -127,7 +134,7 @@ class BackgroundIngestWorker:
         dirs = {str(Path(rp).parent) for rp in rel_paths}
         siblings: list[str] = []
         for rp, entry in self._manifest.entries().items():
-            if entry.state == FileState.ENRICHED:
+            if is_fully_enriched_state(entry.state):
                 continue
             parent = str(Path(rp).parent)
             if parent in dirs and rp not in rel_paths:
@@ -140,28 +147,46 @@ class BackgroundIngestWorker:
     # ------------------------------------------------------------------
 
     def _run(self) -> None:
-        """Eager phases (parse → enrich → finalize), then the demand-driven warm loop."""
+        """Query-ready phases first, then deep enrichment and the warm loop."""
+        query_ready = False
         try:
             t0 = time.perf_counter()
             self._parse_phase()  # REGISTERED → PARSED (no LLM)
             t1 = time.perf_counter()
-            self._enrich_phase()  # PARSED → ENRICHED (LLM)
+            self._keyword_phase()  # PARSED → QUERY_READY (minimum LLM)
             t2 = time.perf_counter()
-            self._finalize_phase()  # corpus finalize
-            t3 = time.perf_counter()
+            query_ready = True
+            self._eager_done.set()
             logger.info(
-                "Eager indexing complete in %.1fs (parse=%.1fs, enrich=%.1fs, finalize=%.1fs)",
-                t3 - t0,
+                "Query-ready indexing complete in %.1fs (parse=%.1fs, keyword=%.1fs)",
+                t2 - t0,
                 t1 - t0,
                 t2 - t1,
-                t3 - t2,
             )
         except Exception as e:
             self._failure = e
             logger.error(f"Background worker failed: {e}")
         finally:
             self._eager_done.set()
-        # Demand-driven summarization runs only after required enrichment succeeds.
+
+        if query_ready and self._failure is None and not self._stop_event.is_set():
+            try:
+                t3 = time.perf_counter()
+                self._deep_enrich_phase()  # QUERY_READY → ENRICHED
+                t4 = time.perf_counter()
+                self._finalize_phase()  # corpus finalize
+                t5 = time.perf_counter()
+                logger.info(
+                    "Deep enrichment complete in %.1fs (enrich=%.1fs, finalize=%.1fs)",
+                    t5 - t3,
+                    t4 - t3,
+                    t5 - t4,
+                )
+            except Exception as e:
+                self._deep_failure = e
+                logger.error(f"Background deep enrichment failed: {e}")
+
+        # Demand-driven summarization runs after the query-ready phase succeeds.
         if self._failure is None:
             self._warm_loop()
 
@@ -195,8 +220,8 @@ class BackgroundIngestWorker:
                 logger.warning(f"Background parse failed for {entry.rel_path}: {e}")
         self._manifest.save()
 
-    def _enrich_phase(self) -> None:
-        """PARSED → ENRICHED: extract keywords/entities + L1 (pauses during queries)."""
+    def _keyword_phase(self) -> None:
+        """PARSED → QUERY_READY: extract minimum keywords (pauses during queries)."""
         failures: list[str] = []
         for entry in self._get_ordered_files(FileState.PARSED):
             if self._stop_event.is_set():
@@ -205,17 +230,66 @@ class BackgroundIngestWorker:
             if self._stop_event.is_set():
                 return
             try:
-                self._core.enrich_file(entry.file_id, entry.file_type)
-                self._manifest.update_state(entry.rel_path, FileState.ENRICHED)
+                self._core.keyword_file(entry.file_id, entry.file_type)
+                self._manifest.update_state(entry.rel_path, FileState.KEYWORDED)
+                self._manifest.update_state(entry.rel_path, FileState.QUERY_READY)
             except Exception as e:
                 failures.append(f"{entry.rel_path}: {e}")
-                logger.error(f"Background enrichment failed for {entry.rel_path}: {e}")
+                logger.error(f"Background keyword enrichment failed for {entry.rel_path}: {e}")
                 break
         self._manifest.save()
         if failures:
             raise RuntimeError(
-                "Required enrichment failed; indexing stopped before finalize. " + failures[0]
+                "Required keyword enrichment failed; indexing stopped before query-ready. "
+                + failures[0]
             )
+
+    def _deep_enrich_phase(self) -> None:
+        """QUERY_READY → ENRICHED: entity graph + L1 hierarchy summaries."""
+        failures: list[str] = []
+        for state in (FileState.QUERY_READY, FileState.ENTITY_LINKED, FileState.HIERARCHY_READY):
+            for entry in self._get_ordered_files(state):
+                if self._stop_event.is_set():
+                    return
+                self._wait_if_query_active()
+                if self._stop_event.is_set():
+                    return
+                try:
+                    self._deep_enrich_entry(entry)
+                except Exception as e:
+                    failures.append(f"{entry.rel_path}: {e}")
+                    logger.error(f"Background deep enrichment failed for {entry.rel_path}: {e}")
+                    break
+            if failures:
+                break
+        self._manifest.save()
+        if failures:
+            raise RuntimeError(
+                "Required deep enrichment failed; finalize was skipped. " + failures[0]
+            )
+
+    def _deep_enrich_entry(self, entry: "ManifestEntry") -> None:
+        """Run remaining enrichment phases for one query-ready entry."""
+        current = self._manifest.get(entry.rel_path)
+        if current is None:
+            return
+
+        if current.state == FileState.QUERY_READY:
+            self._core.link_entities_file(current.file_id, current.file_type)
+            self._manifest.update_state(current.rel_path, FileState.ENTITY_LINKED)
+            current = self._manifest.get(entry.rel_path)
+            if current is None:
+                return
+
+        if current.state == FileState.ENTITY_LINKED:
+            self._core.build_hierarchy_file(current.file_id, current.file_type)
+            self._manifest.update_state(current.rel_path, FileState.HIERARCHY_READY)
+            current = self._manifest.get(entry.rel_path)
+            if current is None:
+                return
+
+        if current.state == FileState.HIERARCHY_READY:
+            self._manifest.update_state(current.rel_path, FileState.ENRICHED)
 
     def _finalize_phase(self) -> None:
         """Corpus finalize — import graph + L2 hierarchy summary."""

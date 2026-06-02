@@ -206,7 +206,7 @@ class TestNoLlmRetrieval:
         """No-chat retrieval should select from manifest with deterministic scoring."""
         entries = [_generic_entry(f"docs/config_{i}.md") for i in range(20)]
         manifest = MagicMock()
-        manifest.files_not_in_state.return_value = entries
+        manifest.entries.return_value = {entry.rel_path: entry for entry in entries}
         chat_factory = MagicMock(side_effect=AssertionError("chat called"))
         strategy = AgenticSearchStrategy(
             manifest=manifest,
@@ -220,6 +220,29 @@ class TestNoLlmRetrieval:
 
         assert len(result) == 3
         chat_factory.assert_not_called()
+
+    def test_query_ready_files_are_not_agentic_candidates(self):
+        """Once keyword indexing is usable, agentic fallback leaves the file alone."""
+        not_ready = _generic_entry("docs/raw.md")
+        ready = _generic_entry("docs/ready.md")
+        ready.state = "query_ready"
+        manifest = MagicMock()
+        manifest.entries.return_value = {
+            not_ready.rel_path: not_ready,
+            ready.rel_path: ready,
+        }
+        strategy = AgenticSearchStrategy(
+            manifest=manifest,
+            source_dir=Path("/project"),
+            chat_factory=None,
+            config=MagicMock(),
+        )
+        strategy._read_from_disk = MagicMock(return_value="raw content")
+
+        result = strategy.retrieve("raw ready", limit=10, allow_llm=False)
+
+        assert len(result) == 1
+        assert result[0].location == "docs/raw.md"
 
 
 # ---------------------------------------------------------------------------

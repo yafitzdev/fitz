@@ -91,6 +91,20 @@ class TestEnrichSymbols:
         assert symbols[1]["keywords"] == ["hash", "sha256"]
         assert symbols[1]["entities"] == [{"name": "SHA-256", "type": "algorithm"}]
 
+    def test_keyword_strategy_only_sets_keywords(self):
+        """enrich_symbol_keywords runs the query-ready keyword strategy only."""
+        enrichments = [{"keywords": ["auth", "login"]}]
+        chat = _make_chat(response=_make_enrichment_response(enrichments))
+        enricher = KragEnricher(chat, batch_size=15)
+        symbols = _symbol_dicts(1)
+
+        enricher.enrich_symbol_keywords(symbols)
+
+        assert symbols[0]["keywords"] == ["auth", "login"]
+        assert "entities" not in symbols[0]
+        messages = chat.chat.call_args.args[0]
+        assert "Extract retrieval keywords" in messages[0]["content"]
+
     def test_modifies_in_place(self):
         """enrich_symbols modifies the original list objects, not copies."""
         enrichments = [
@@ -137,6 +151,25 @@ class TestEnrichSections:
         assert sections[0]["entities"] == [{"name": "KRAG", "type": "system"}]
         assert sections[1]["keywords"] == ["setup", "config"]
         assert sections[1]["entities"] == []
+
+    def test_entity_strategy_preserves_existing_keywords(self):
+        """enrich_section_entities does not erase query-ready keywords."""
+        enrichments = [
+            {
+                "entities": [{"name": "KRAG", "type": "system"}],
+                "temporal": {"dates": ["2026-06-02"], "versions": [], "refs": []},
+            }
+        ]
+        chat = _make_chat(response=_make_enrichment_response(enrichments))
+        enricher = KragEnricher(chat, batch_size=15)
+        sections = _section_dicts(1)
+        sections[0]["keywords"] = ["retrieval"]
+
+        enricher.enrich_section_entities(sections)
+
+        assert sections[0]["keywords"] == ["retrieval"]
+        assert sections[0]["entities"] == [{"name": "KRAG", "type": "system"}]
+        assert sections[0]["metadata"]["temporal"]["dates"] == ["2026-06-02"]
 
     def test_preserves_exact_identifiers_when_model_misses_them(self):
         """Ticket-like IDs are added deterministically even if the model omits them."""

@@ -7,8 +7,9 @@ composable operations:
 
 - per file — ``parse_file`` (extract symbols / sections / tables, store
   raw content; no LLM), ``summarize_file`` (provider summaries on demand),
-  ``enrich_file`` (keywords + entities, vocabulary, entity graph,
-  L1 hierarchy summary)
+  ``keyword_file`` (minimum retrieval keywords), ``link_entities_file``
+  (entity graph), ``build_hierarchy_file`` (L1 hierarchy summary), and
+  ``enrich_file`` (blocking whole-file enrichment)
 - corpus — ``finalize`` (resolve the import graph, build the L2 hierarchy
   summary)
 
@@ -203,6 +204,25 @@ class KragIngestPipeline:
         elif file_type not in EXTENSION_MAP:
             self._require_summarizer()
             self._summarize_doc_file(file_id)
+
+    def keyword_file(self, file_id: str, file_type: str) -> None:
+        """Extract the minimum keyword index needed for query-ready retrieval."""
+        if file_type in EXTENSION_MAP:
+            self._keyword_code_file(file_id)
+        elif file_type not in self._table_extensions:
+            self._keyword_doc_file(file_id)
+
+    def link_entities_file(self, file_id: str, file_type: str) -> None:
+        """Extract entities and populate the entity graph for one file."""
+        if file_type in EXTENSION_MAP:
+            self._link_code_entities_file(file_id)
+        elif file_type not in self._table_extensions:
+            self._link_doc_entities_file(file_id)
+
+    def build_hierarchy_file(self, file_id: str, file_type: str) -> None:
+        """Generate file-level hierarchy summaries for one document file."""
+        if file_type not in EXTENSION_MAP and file_type not in self._table_extensions:
+            self._build_doc_hierarchy_file(file_id)
 
     def enrich_file(self, file_id: str, file_type: str) -> None:
         """Extract keywords/entities for one file and feed downstream stores.
@@ -652,6 +672,55 @@ class KragIngestPipeline:
             "Ingestion requires hierarchy summarization, but the managed "
             "local Qwen ONNX runtime was not initialized."
         )
+
+    def _keyword_code_file(self, file_id: str) -> None:
+        """Extract query-ready keywords for a code file's symbols."""
+        self._require_enricher()
+        symbols = self._symbol_store.get_by_file(file_id)
+        if not symbols:
+            return
+        self._enricher.enrich_symbol_keywords(symbols)
+        self._symbol_store.update_enrichment_by_file(file_id, symbols)
+
+    def _keyword_doc_file(self, file_id: str) -> None:
+        """Extract query-ready keywords for a document file's sections."""
+        self._require_enricher()
+        sections = self._section_store.get_by_file(file_id)
+        if not sections:
+            return
+        self._enricher.enrich_section_keywords(sections)
+        self._section_store.update_enrichment_by_file(file_id, sections)
+
+    def _link_code_entities_file(self, file_id: str) -> None:
+        """Extract entities for code symbols and update the entity graph."""
+        self._require_enricher()
+        symbols = self._symbol_store.get_by_file(file_id)
+        if not symbols:
+            return
+        self._enricher.enrich_symbol_entities(symbols)
+        self._symbol_store.update_enrichment_by_file(file_id, symbols)
+        if self._entity_graph_store:
+            self._populate_entity_graph(symbols, "symbol_id")
+
+    def _link_doc_entities_file(self, file_id: str) -> None:
+        """Extract entities for document sections and update the entity graph."""
+        self._require_enricher()
+        sections = self._section_store.get_by_file(file_id)
+        if not sections:
+            return
+        self._enricher.enrich_section_entities(sections)
+        self._section_store.update_enrichment_by_file(file_id, sections)
+        if self._entity_graph_store:
+            self._populate_entity_graph(sections, "section_id")
+
+    def _build_doc_hierarchy_file(self, file_id: str) -> None:
+        """Generate and persist an L1 hierarchy summary for a document file."""
+        self._require_summarizer()
+        sections = self._section_store.get_by_file(file_id)
+        if not sections:
+            return
+        self._generate_l1_summary(sections)
+        self._section_store.update_enrichment_by_file(file_id, sections)
 
     def _enrich_code_file(self, file_id: str) -> None:
         """Enrich a code file's symbols with keywords + entities.

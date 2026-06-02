@@ -88,7 +88,7 @@ class SectionStore:
         sql = f"""
             SELECT s.id, s.raw_file_id, s.title, s.level,
                    s.page_start, s.page_end, s.content, s.summary,
-                   s.parent_section_id, s.position, s.metadata,
+                   s.parent_section_id, s.position, s.keywords, s.entities, s.metadata,
                    bm25({FTS}) AS rank
             FROM {FTS}
             JOIN {TABLE} s ON s.rowid = {FTS}.rowid
@@ -100,17 +100,17 @@ class SectionStore:
             rows = conn.execute(sql, (fts_query, limit)).fetchall()
         results = []
         for row in rows:
-            d = _row_to_dict(row[:11])
+            d = _row_to_dict(row[:13])
             # bm25() returns negative numbers (lower=better); flip sign so
             # downstream code that treats higher-better is consistent.
-            d["bm25_score"] = -float(row[11]) if row[11] is not None else 0.0
+            d["bm25_score"] = -float(row[13]) if row[13] is not None else 0.0
             results.append(d)
         return results
 
     def get(self, section_id: str) -> dict[str, Any] | None:
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, metadata
+                   content, summary, parent_section_id, position, keywords, entities, metadata
             FROM {TABLE} WHERE id = ?
         """
         with self._cm.connection(self._collection) as conn:
@@ -122,7 +122,7 @@ class SectionStore:
     def get_by_file(self, raw_file_id: str) -> list[dict[str, Any]]:
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, metadata
+                   content, summary, parent_section_id, position, keywords, entities, metadata
             FROM {TABLE}
             WHERE raw_file_id = ?
             ORDER BY position
@@ -142,7 +142,7 @@ class SectionStore:
         placeholders = ",".join(["?"] * len(terms))
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, metadata
+                   content, summary, parent_section_id, position, keywords, entities, metadata
             FROM {TABLE}
             WHERE EXISTS (
                 SELECT 1 FROM json_each({TABLE}.keywords) k
@@ -158,7 +158,7 @@ class SectionStore:
     def get_children(self, section_id: str) -> list[dict[str, Any]]:
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, metadata
+                   content, summary, parent_section_id, position, keywords, entities, metadata
             FROM {TABLE}
             WHERE parent_section_id = ?
             ORDER BY position
@@ -190,7 +190,7 @@ class SectionStore:
         """Fetch all L2 corpus-level summary chunks for this collection."""
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, metadata
+                   content, summary, parent_section_id, position, keywords, entities, metadata
             FROM {TABLE}
             WHERE json_extract(metadata, '$.is_corpus_summary') = 'true'
                OR json_extract(metadata, '$.is_corpus_summary') = 1
@@ -220,7 +220,9 @@ class SectionStore:
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:
-    meta = store_utils.decode_json(row[10], {})
+    keywords = store_utils.decode_json(row[10], [])
+    entities = store_utils.decode_json(row[11], [])
+    meta = store_utils.decode_json(row[12], {})
     return {
         "id": row[0],
         "raw_file_id": row[1],
@@ -232,5 +234,7 @@ def _row_to_dict(row: tuple) -> dict[str, Any]:
         "summary": row[7],
         "parent_section_id": row[8],
         "position": row[9],
+        "keywords": keywords if isinstance(keywords, list) else [],
+        "entities": entities if isinstance(entities, list) else [],
         "metadata": meta,
     }

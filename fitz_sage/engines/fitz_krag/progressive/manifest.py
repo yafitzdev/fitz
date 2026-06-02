@@ -25,8 +25,34 @@ class FileState(str, Enum):
 
     REGISTERED = "registered"  # In manifest only, no DB data
     PARSED = "parsed"  # Raw content + symbols/sections stored
-    SUMMARIZED = "summarized"  # LLM summaries exist, BM25 works
-    ENRICHED = "enriched"  # Keywords/entities extracted (terminal state)
+    KEYWORDED = "keyworded"  # Qwen keywords/aliases extracted
+    QUERY_READY = "query_ready"  # Minimum retrieval index is usable
+    ENTITY_LINKED = "entity_linked"  # Entity graph was populated
+    HIERARCHY_READY = "hierarchy_ready"  # L1 hierarchy summary exists
+    ENRICHED = "enriched"  # Required deep enrichment completed
+    SUMMARIZED = "summarized"  # Demand summaries exist for queried files
+
+
+_QUERY_READY_STATES = frozenset(
+    {
+        FileState.QUERY_READY,
+        FileState.ENTITY_LINKED,
+        FileState.HIERARCHY_READY,
+        FileState.ENRICHED,
+        FileState.SUMMARIZED,
+    }
+)
+_FULLY_ENRICHED_STATES = frozenset({FileState.ENRICHED, FileState.SUMMARIZED})
+
+
+def is_query_ready_state(state: FileState) -> bool:
+    """Return whether a manifest state can answer retrieval queries."""
+    return state in _QUERY_READY_STATES
+
+
+def is_fully_enriched_state(state: FileState) -> bool:
+    """Return whether required deep enrichment has completed for a file."""
+    return state in _FULLY_ENRICHED_STATES
 
 
 @dataclass
@@ -170,6 +196,11 @@ class FileManifest:
         with self._lock:
             return [e for e in self._entries.values() if e.state != state]
 
+    def files_not_query_ready(self) -> list[ManifestEntry]:
+        """Return entries that still need the minimum retrieval index."""
+        with self._lock:
+            return [e for e in self._entries.values() if not is_query_ready_state(e.state)]
+
     def to_manifest_text(self, entries: list[ManifestEntry] | None = None) -> str:
         """Build compact manifest text for LLM consumption.
 
@@ -222,24 +253,41 @@ class FileManifest:
 def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
     """Summarize a manifest's background-indexing progress.
 
-    Returns ``total`` / ``indexed`` / ``pending`` counts, a per-state breakdown,
-    and a ``complete`` flag (no files still REGISTERED or PARSED). Reflects
-    whatever the background worker has persisted, since manifests load from disk.
+    Returns ``total`` / ``indexed`` / ``pending`` counts for the query-ready
+    index, plus deep-enrichment progress. ``complete`` intentionally means the
+    collection can serve retrieval queries while the daemon may still be doing
+    mandatory entity/hierarchy work in the background.
     """
     if manifest is None:
-        return {"total": 0, "indexed": 0, "pending": 0, "complete": True, "by_state": {}}
+        return {
+            "total": 0,
+            "indexed": 0,
+            "pending": 0,
+            "complete": True,
+            "query_ready": True,
+            "deep_pending": 0,
+            "fully_enriched": True,
+            "by_state": {},
+        }
 
     by_state: dict[str, int] = {}
-    for entry in manifest.entries().values():
+    entries = list(manifest.entries().values())
+    for entry in entries:
         by_state[entry.state.value] = by_state.get(entry.state.value, 0) + 1
 
     total = sum(by_state.values())
-    pending = by_state.get(FileState.REGISTERED.value, 0) + by_state.get(FileState.PARSED.value, 0)
+    indexed = sum(1 for entry in entries if is_query_ready_state(entry.state))
+    fully_enriched = sum(1 for entry in entries if is_fully_enriched_state(entry.state))
+    pending = total - indexed
+    deep_pending = total - fully_enriched
     return {
         "total": total,
-        "indexed": total - pending,
+        "indexed": indexed,
         "pending": pending,
         "complete": pending == 0,
+        "query_ready": pending == 0,
+        "deep_pending": deep_pending,
+        "fully_enriched": deep_pending == 0,
         "by_state": by_state,
     }
 

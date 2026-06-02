@@ -1,8 +1,8 @@
 # fitz_sage/engines/fitz_krag/retrieval/strategies/agentic_search.py
 """
-Agentic search strategy — LLM-driven file selection from manifest.
+Agentic search strategy — file selection from manifest before query-ready indexing.
 
-For files not yet indexed (not at SUMMARIZED state), this strategy:
+For files not yet query-ready, this strategy:
 1. Builds compact manifest text
 2. Uses BM25 pre-filter when >50 unindexed files
 3. Asks LLM to pick relevant files
@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core.json_utils import parse_llm_json
+from fitz_sage.engines.fitz_krag.progressive.manifest import is_query_ready_state
 from fitz_sage.engines.fitz_krag.progressive.parsed_cache import RICH_DOC_EXTENSIONS
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
@@ -37,7 +38,7 @@ _LLM_MAX_FILES = 10
 
 
 class AgenticSearchStrategy:
-    """LLM-driven file selection from manifest for unindexed files."""
+    """File selection from manifest for files that are not query-ready yet."""
 
     def __init__(
         self,
@@ -54,18 +55,20 @@ class AgenticSearchStrategy:
         self._cache_dir = cache_dir
 
     def retrieve(self, query: str, limit: int, *, allow_llm: bool = True) -> list[Address]:
-        """Retrieve addresses for unindexed files via LLM file selection.
+        """Retrieve addresses for not-query-ready files via file selection.
 
-        1. Get files NOT at SUMMARIZED state from manifest
+        1. Get files that are not query-ready from manifest
         2. Build compact manifest text (~50-100 tokens/file)
         3. If >50 unindexed files: BM25 pre-filter to top 50
         4. LLM picks ~5-10 candidate files
         5. Read file content from disk
         6. Create Address objects with AST line ranges from manifest
         """
-        from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
-
-        unindexed = self._manifest.files_not_in_state(FileState.SUMMARIZED)
+        unindexed = [
+            entry
+            for entry in self._manifest.entries().values()
+            if not is_query_ready_state(entry.state)
+        ]
         if not unindexed:
             return []
 
