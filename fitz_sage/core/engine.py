@@ -1,5 +1,5 @@
 # fitz_sage/core/engine.py
-"""KnowledgeEngine protocols - Query -> Answer contract. See docs/API_REFERENCE.md for details."""
+"""Knowledge engine protocols. See docs/API_REFERENCE.md for details."""
 
 from __future__ import annotations
 
@@ -22,18 +22,19 @@ class KnowledgeEngine(Protocol):
 
 @runtime_checkable
 class RetrievalEngine(KnowledgeEngine, Protocol):
-    """A KnowledgeEngine that also ingests sources and exposes raw retrieval.
+    """A KnowledgeEngine that ingests sources and exposes retrieval evidence.
 
     Engines that support persistent ingest (see EngineCapabilities) implement
-    this richer contract on top of answer(). Typical lifecycle::
+    this richer contract. Typical lifecycle::
 
         engine = create_engine("fitz_krag")
         engine.load("my_docs")              # bind to a collection
-        engine.point(Path("./docs"))        # register a source (indexes in the
-                                            # background; queries work immediately)
-        engine.wait_for_indexing()          # optional: block until indexing done
-        answer = engine.answer(Query(text="...?"))     # synthesized answer
+        engine.point(Path("./docs"))        # register a source
+        engine.wait_for_query_surface()     # parsed units are searchable
+        engine.wait_for_indexing()          # optional: block through keywording
+        evidence = engine.evidence(Query(text="...?")) # governed evidence
         sources = engine.retrieve(Query(text="...?"))  # raw sources, no synthesis
+        answer = engine.answer(Query(text="...?"))     # optional synthesis
 
     ``retrieve()`` returns a list of engine-specific source objects (for KRAG,
     ``ReadResult`` — content + file_path + line_range).
@@ -48,7 +49,11 @@ class RetrievalEngine(KnowledgeEngine, Protocol):
         ...
 
     def wait_for_indexing(self) -> None:
-        """Block until background indexing of pointed sources completes."""
+        """Block until pointed sources reach query-ready keyword indexing."""
+        ...
+
+    def wait_for_query_surface(self) -> None:
+        """Block until parsed source units are searchable."""
         ...
 
     def indexing_status(self) -> dict:
