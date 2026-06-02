@@ -671,7 +671,7 @@ class TestEvidence:
     def test_broad_query_requires_minimum_trustworthy_window(self):
         """Broad corpus queries do not stop on a top-1 trustworthy verdict."""
         engine = _make_engine()
-        addresses, results = _evidence_results(5)
+        addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
@@ -679,11 +679,10 @@ class TestEvidence:
             _decision(AnswerMode.TRUSTWORTHY, "Top one is plausible."),
             _decision(AnswerMode.TRUSTWORTHY, "Top two are plausible."),
             _decision(AnswerMode.TRUSTWORTHY, "Top three are plausible."),
-            _decision(AnswerMode.TRUSTWORTHY, "Top four are plausible."),
             _decision(AnswerMode.TRUSTWORTHY, "Broad window is enough."),
         ]
 
-        pack = engine.evidence(Query(text="What are the key facts in this corpus?"), top_k=5)
+        pack = engine.evidence(Query(text="What are the key facts in this corpus?"), top_k=4)
 
         assert pack.mode == AnswerMode.TRUSTWORTHY
         assert [item.file_path for item in pack.items] == [
@@ -691,12 +690,11 @@ class TestEvidence:
             "docs/2.md",
             "docs/3.md",
             "docs/4.md",
-            "docs/5.md",
         ]
-        assert engine._governance.decide.call_count == 5
+        assert engine._governance.decide.call_count == 4
         cutoff = pack.metadata["governance_cutoff"]
         assert cutoff["policy"]["query_shape"] == "broad"
-        assert cutoff["policy"]["min_trustworthy_docs"] == 5
+        assert cutoff["policy"]["min_trustworthy_docs"] == 4
 
     def test_comparison_query_stops_on_disputed_after_two_docs(self):
         """Comparison/conflict queries can stop on disputed once both sides exist."""

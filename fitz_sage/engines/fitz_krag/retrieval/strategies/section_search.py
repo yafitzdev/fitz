@@ -30,11 +30,12 @@ class SectionSearchStrategy:
     def __init__(
         self,
         section_store: "SectionStore",
+        raw_store: Any,
         config: "FitzKragConfig",
     ):
         self._section_store = section_store
+        self._raw_store = raw_store
         self._config = config
-        self._raw_store: Any = None  # Set by engine for freshness boosting
 
     def retrieve(
         self,
@@ -113,17 +114,26 @@ class SectionSearchStrategy:
             content = (section.get("content") or "").strip()
             summary = f"{title}: {content[:300]}" if content else title
 
+        metadata = dict(section.get("metadata") or {})
+        raw_file = self._raw_store.get(section["raw_file_id"]) if self._raw_store else None
+        if raw_file and raw_file.get("path"):
+            metadata["source_path"] = raw_file["path"]
+
+        metadata.update(
+            {
+                "section_id": section["id"],
+                "level": section["level"],
+                "page_start": section.get("page_start"),
+                "page_end": section.get("page_end"),
+                "parent_section_id": section.get("parent_section_id"),
+            }
+        )
+
         return Address(
             kind=AddressKind.SECTION,
             source_id=section["raw_file_id"],
             location=location,
             summary=summary,
             score=section.get("combined_score", 0.0),
-            metadata={
-                "section_id": section["id"],
-                "level": section["level"],
-                "page_start": section.get("page_start"),
-                "page_end": section.get("page_end"),
-                "parent_section_id": section.get("parent_section_id"),
-            },
+            metadata=metadata,
         )

@@ -16,6 +16,7 @@ runs on every query regardless of how many hops there are.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.types import ReadResult
@@ -27,6 +28,32 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.retrieval.reader import ContentReader
     from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressReranker
     from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouter
+
+_BROAD_OVERVIEW_TERMS = (
+    "summary",
+    "overview",
+    "roadmap",
+    "report",
+    "quarterly",
+    "annual",
+    "executive",
+    "key metrics",
+    "feedback",
+)
+_CONTROL_SURFACE_TERMS = {"test", "tests", "case", "cases", "fixture", "fixtures", "readme"}
+_CONTROL_SURFACE_MARKERS = (
+    "keyword_test",
+    "test_cases",
+    "/test",
+    "\\test",
+    "_test",
+    "fixture",
+    "fixtures",
+    "readme",
+    "source_dir",
+    "collections/",
+    ".fitz",
+)
 
 
 class RetrievalPass:
@@ -77,8 +104,54 @@ class RetrievalPass:
             return []
         if self._reranker is not None:
             addresses = self._reranker.rerank(query, addresses)
+        addresses = _apply_broad_corpus_prior(query, addresses, profile)
         addresses = _enforce_broad_file_diversity(addresses, profile)
         return self._reader.read(addresses, self._config.top_read)
+
+
+def _apply_broad_corpus_prior(query: str, addresses: list[Any], profile: Any = None) -> list[Any]:
+    """For corpus overviews, prefer overview files over test/control surfaces."""
+    if profile is None:
+        return addresses
+    if (
+        getattr(profile, "specificity", "") != "broad"
+        and getattr(profile, "answer_type", "") != "exploratory"
+    ):
+        return addresses
+
+    query_terms = set(re.findall(r"[A-Za-z0-9_]+", query.lower()))
+    if query_terms & _CONTROL_SURFACE_TERMS:
+        return addresses
+
+    scored: list[tuple[int, int, Any]] = []
+    for index, address in enumerate(addresses):
+        scored.append((_broad_corpus_priority(address), index, address))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [address for _, _, address in scored]
+
+
+def _broad_corpus_priority(address: Any) -> int:
+    """Score address-level corpus overview usefulness before final reading."""
+    haystack = _address_text(address)
+    priority = 0
+    if any(term in haystack for term in _BROAD_OVERVIEW_TERMS):
+        priority += 1
+    if any(marker in haystack for marker in _CONTROL_SURFACE_MARKERS):
+        priority -= 2
+    return priority
+
+
+def _address_text(address: Any) -> str:
+    """Combine stable address fields used by broad-corpus ranking priors."""
+    metadata = getattr(address, "metadata", {}) or {}
+    parts = [
+        getattr(address, "source_id", ""),
+        getattr(address, "location", ""),
+        getattr(address, "summary", ""),
+        str(metadata.get("source_path", "")),
+        str(metadata.get("disk_path", "")),
+    ]
+    return " ".join(part for part in parts if part).lower().replace("\\", "/")
 
 
 def _enforce_broad_file_diversity(addresses: list[Any], profile: Any = None) -> list[Any]:

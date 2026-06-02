@@ -19,13 +19,18 @@ def mock_section_store():
 
 
 @pytest.fixture
+def mock_raw_store():
+    return MagicMock()
+
+
+@pytest.fixture
 def mock_config():
     return MagicMock()
 
 
 @pytest.fixture
-def strategy(mock_section_store, mock_config):
-    return SectionSearchStrategy(mock_section_store, mock_config)
+def strategy(mock_section_store, mock_raw_store, mock_config):
+    return SectionSearchStrategy(mock_section_store, mock_raw_store, mock_config)
 
 
 def _make_section_result(
@@ -70,7 +75,8 @@ class TestRetrieve:
         assert len(results) == 1
         assert results[0].kind == AddressKind.SECTION
 
-    def test_address_contains_section_metadata(self, strategy, mock_section_store):
+    def test_address_contains_section_metadata(self, strategy, mock_section_store, mock_raw_store):
+        mock_raw_store.get.return_value = {"path": "docs/guide.md"}
         mock_section_store.search_bm25.return_value = [
             _make_section_result(
                 id_="sec1",
@@ -96,6 +102,7 @@ class TestRetrieve:
         assert addr.metadata["page_start"] == 5
         assert addr.metadata["page_end"] == 8
         assert addr.metadata["parent_section_id"] == "parent1"
+        assert addr.metadata["source_path"] == "docs/guide.md"
 
     def test_respects_limit(self, strategy, mock_section_store):
         mock_section_store.search_bm25.return_value = [

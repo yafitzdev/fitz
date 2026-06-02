@@ -37,7 +37,7 @@ logger = get_logger(__name__)
 _DEFAULT_GOVERNANCE_CUTOFF = 10
 _NARROW_MIN_EVIDENCE = 1
 _COMPARISON_MIN_EVIDENCE = 2
-_BROAD_MIN_EVIDENCE = 5
+_BROAD_MIN_EVIDENCE = 4
 _AGGREGATION_MIN_EVIDENCE = 5
 _DISPUTE_PATIENCE_DOCS = 2
 _STABLE_DISPUTE_DOCS = 2
@@ -300,7 +300,11 @@ class FitzKragEngine:
         )
 
         code_strategy = CodeSearchStrategy(self._symbol_store, self._config)
-        section_strategy = SectionSearchStrategy(self._section_store, self._config)
+        section_strategy = SectionSearchStrategy(
+            self._section_store,
+            self._raw_store,
+            self._config,
+        )
         table_strategy = TableSearchStrategy(self._table_store, self._config)
         self._retrieval_router = RetrievalRouter(
             code_strategy=code_strategy,

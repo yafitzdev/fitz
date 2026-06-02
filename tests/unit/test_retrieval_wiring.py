@@ -193,9 +193,7 @@ def _make_section_strategy(
     """Build a SectionSearchStrategy with mocked dependencies."""
     store = section_store or MagicMock()
     cfg = config or _make_config()
-    strategy = SectionSearchStrategy(store, cfg)
-    strategy._raw_store = raw_store
-    return strategy
+    return SectionSearchStrategy(store, raw_store or MagicMock(), cfg)
 
 
 class TestSectionKeywordBoostIncreasesScore:

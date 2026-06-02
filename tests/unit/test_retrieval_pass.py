@@ -13,12 +13,16 @@ from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
 
-def _addr(location: str = "mod.func", source_id: str = "src") -> Address:
+def _addr(
+    location: str = "mod.func",
+    source_id: str = "src",
+    summary: str | None = None,
+) -> Address:
     return Address(
         kind=AddressKind.SYMBOL,
         source_id=source_id,
         location=location,
-        summary=f"Symbol {location}",
+        summary=summary or f"Symbol {location}",
         score=0.9,
     )
 
@@ -101,4 +105,54 @@ class TestRetrievalPass:
             "doc-a-file",
             "doc-b-file",
             "doc-a-section",
+        ]
+
+    def test_broad_corpus_query_promotes_overview_files_after_rerank(self):
+        test_cases = _addr(
+            location="Summary",
+            source_id="keyword_test/test_cases.md",
+            summary="Sprint 47 test results",
+        )
+        roadmap = _addr(
+            location="product_roadmap_2024.md",
+            source_id="product_roadmap_2024.md",
+            summary="Product roadmap and launch priorities",
+        )
+        quarterly = _addr(
+            location="quarterly_summary_q2_2024.md",
+            source_id="quarterly_summary_q2_2024.md",
+            summary="Q2 executive summary and key metrics",
+        )
+        rp, _router, reranker, _reader = _build([test_cases, roadmap, quarterly])
+        reranker.rerank.return_value = [test_cases, roadmap, quarterly]
+        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+
+        results = rp.run("What are the key facts in this corpus?", profile=profile)
+
+        assert [r.address.source_id for r in results] == [
+            "product_roadmap_2024.md",
+            "quarterly_summary_q2_2024.md",
+            "keyword_test/test_cases.md",
+        ]
+
+    def test_broad_test_query_keeps_test_surface_order(self):
+        test_cases = _addr(
+            location="Summary",
+            source_id="keyword_test/test_cases.md",
+            summary="Sprint 47 test results",
+        )
+        roadmap = _addr(
+            location="product_roadmap_2024.md",
+            source_id="product_roadmap_2024.md",
+            summary="Product roadmap and launch priorities",
+        )
+        rp, _router, reranker, _reader = _build([test_cases, roadmap])
+        reranker.rerank.return_value = [test_cases, roadmap]
+        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+
+        results = rp.run("Summarize all test cases", profile=profile)
+
+        assert [r.address.source_id for r in results] == [
+            "keyword_test/test_cases.md",
+            "product_roadmap_2024.md",
         ]
