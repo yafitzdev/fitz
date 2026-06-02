@@ -1,3 +1,4 @@
+# fitz_sage/runtime/runner.py
 """
 Universal Runner - Single entry point for all engine execution.
 
@@ -8,7 +9,7 @@ Philosophy:
     - One function to rule them all: run()
     - Engine selection is config-driven or explicit
     - All engines accessed through same interface
-    - CLI, API, and examples route through here
+    - CLI and API route through here
 """
 
 from pathlib import Path

@@ -126,7 +126,7 @@ Changelog = "https://github.com/yafitzdev/fitz-sage/blob/main/CHANGELOG.md"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["fitz_sage*"]
-exclude = ["tests*", "tools*", "examples*"]
+exclude = ["tests*", "tools*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yaml", "*.yml"]
@@ -151,8 +151,6 @@ line-length = 100
 "tools/contract_map/common.py" = ["E402"]
 # Test files: E402 is intentional - pytest markers must come before imports
 "tests/**/*.py" = ["E402"]
-# Examples: imports placed contextually for teaching purposes
-"examples/**/*.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.10"
