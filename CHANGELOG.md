@@ -74,11 +74,13 @@ optional user flag.
   failures.
 - **First-run config aligns with the product defaults.** Auto-created
   configs now write `parser: cpu`, `rerank: onnx`, and
-  `governance: pyrrho`; `rerank: null` / `governance: null` are internal
-  smoke-test settings, not normal user configuration.
+  `governance: pyrrho`; `rerank: null` and `governance: null` are rejected
+  outside test-only internals.
 - **CLI/docs/examples now distinguish evidence from synthesis.**
   `query`/`retrieve` are retrieval/evidence commands; `answer` is the
   optional generated-answer command.
+- **`fitz query` keeps the no-flags UX.** Endpoint/model/API-key flags live on
+  `fitz answer`, while `fitz query` remains the minimal retrieval surface.
 
 ### 🔧 Fixed
 
@@ -89,6 +91,15 @@ optional user flag.
   progress messages and evidence counts, avoid scanning fitz workspace
   files as user sources, and keep source-query rows from outranking real
   corpus evidence.
+- **Corpus summary hygiene** — stale synthetic `__corpus_summary__` rows are
+  versioned, deleted before regeneration, and excluded from ordinary BM25
+  section hits. Corpus summaries now enter retrieval only through the explicit
+  broad-overview injection path.
+- **Supplemental scan noise** — the CLI only reports the supplemental scan when
+  the manifest actually has files below query-ready state.
+- **Metric comparison cutoff** — Pyrrho cutoff now seeds comparison prefixes
+  with direct metric/table evidence, so `Q1 vs Q2 total responses` selects both
+  exact metric rows before stopping instead of stopping on weaker prose.
 
 ### 🗑 Removed
 

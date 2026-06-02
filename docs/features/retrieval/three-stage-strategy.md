@@ -29,7 +29,8 @@ flowchart LR
     R --> C["Candidate evidence pool"]
     C --> K["2. ONNX rerank"]
     K --> L["Ranked evidence list"]
-    L --> P["3. Pyrrho cutoff"]
+    L --> S["Shape-aware prefix ordering"]
+    S --> P["3. Pyrrho cutoff"]
     P --> E["EvidencePack"]
 
     QC --> QC1["Recall + cutoff policy shape"]
@@ -122,6 +123,13 @@ Reranking also standardizes the candidate list before Pyrrho sees it. Pyrrho
 should judge evidence sufficiency over a relevance-ordered prefix, not over raw
 BM25 order.
 
+For comparison-shaped metric queries, fitz-sage applies one deterministic
+pre-cutoff guard after reading content: evidence that directly contains the
+requested metric/table row is seeded ahead of weaker prose mentions before
+Pyrrho evaluates prefixes. This keeps questions like "Q1 vs Q2 total responses"
+from stopping on a generic Q1 summary when the exact Q1 metric table is already
+available lower in the ranked list.
+
 ---
 
 ## Stage 3: Pyrrho Cutoff
@@ -173,6 +181,12 @@ Policy varies by query shape:
 The default cutoff inspects at most the top 10 evidence items unless the caller
 requests fewer.
 
+Corpus overview queries are a special case: evidence sufficiency is not
+well-defined for "key facts in this corpus" style prompts, so Pyrrho returns
+representative sources instead of a trustworthy verdict. Synthetic corpus
+summaries are injected only through this overview path and are excluded from
+ordinary BM25 section hits.
+
 ---
 
 ## How Existing Retrieval Features Fit
@@ -197,6 +211,7 @@ The old mental model was "many retrieval strategies." The new product model is
 | Entity graph | Recall / expansion | Adds related evidence once entity enrichment exists. |
 | Supplemental scan | Recall | Covers registered files that are not fully query-ready yet. |
 | ONNX reranker | Rerank | Sorts noisy recall candidates by relevance. |
+| Metric comparison prefixing | Governance policy | Promotes direct metric/table evidence before Pyrrho cutoff. |
 | Multi-hop | Post-cutoff fallback | Runs another retrieval pass when Pyrrho abstains and a bridge is available. |
 | Pyrrho | Governance | Classifies query contract and decides enough / disputed / not enough over ranked prefixes. |
 

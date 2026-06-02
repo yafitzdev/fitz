@@ -84,13 +84,14 @@ flowchart TD
     R --> R3["Table metadata search"]
     R --> R4["Unindexed scan for files not query-ready"]
 
-    G --> G1["Evaluate query + top 1"]
-    G1 --> G2{"TRUSTWORTHY?"}
-    G2 -->|"yes"| E
-    G2 -->|"no"| G3["Evaluate query + top 2"]
-    G3 --> G4{"Enough evidence or max cutoff?"}
-    G4 -->|"continue"| G3
-    G4 -->|"stop"| E
+    G --> G1["Shape-aware evidence prefix"]
+    G1 --> G2["Evaluate query + top 1"]
+    G2 --> G3{"TRUSTWORTHY?"}
+    G3 -->|"yes"| E
+    G3 -->|"no"| G4["Evaluate query + top 2"]
+    G4 --> G5{"Enough evidence or max cutoff?"}
+    G5 -->|"continue"| G4
+    G5 -->|"stop"| E
 ```
 
 ### Stage 1: Broad Recall
@@ -192,6 +193,10 @@ files not yet query-ready. The output may show `Indexing pending`,
 `Enrichment pending`, or `Deep enrichment pending`. The daemon continues Qwen
 keywords, entities, hierarchy, and demand summaries.
 
+The supplemental scan only runs when the manifest still has files below
+query-ready. Fully query-ready collections do not print scan progress or touch
+disk fallback.
+
 ### Case 4: Index is complete
 
 Retrieval uses the fully populated stores. No daemon is spawned, and later
@@ -220,8 +225,12 @@ the configured synthesizer. This is separate from the retrieval package default.
 | Hierarchical summaries | Fully indexed recall for broad analytical questions. |
 | Unindexed scan | Temporary bridge while files are not query-ready. |
 | ONNX reranker | Precision stage before governance. |
-| Pyrrho | Mandatory query-contract classification plus sufficiency and dispute cutoff for evidence packs. |
+| Pyrrho | Mandatory query-contract classification plus sufficiency and dispute cutoff for evidence packs. Comparison-shaped metric queries seed cutoff with direct metric/table evidence before Pyrrho can stop. |
 | Multi-hop | Bounded bridge retrieval when the first pass still abstains and the answer appears one hop away. |
+
+Synthetic corpus summaries are not normal section hits. They are schema-versioned,
+deleted before regeneration, excluded from ordinary BM25, and injected only when
+the query contract/profile calls for a representative corpus overview.
 
 ---
 

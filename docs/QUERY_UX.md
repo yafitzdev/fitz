@@ -49,6 +49,8 @@ flowchart TD
 Repeat queries should feel immediate once the collection has a query-ready
 surface. If files are still registered but not query-ready, the supplemental
 scan can still surface relevant files while the daemon catches up.
+When every file is already query-ready, the supplemental scan is skipped and no
+scan progress line is shown.
 
 ## User-Facing Feed
 
@@ -63,6 +65,7 @@ flags:
 | `Search surface ready; enrichment continues.` | Retrieval can run while deeper enrichment proceeds. |
 | `Analyzing query...` | Query profile and semantic keywords are being prepared. |
 | `Retrieving relevant sources...` | Recall, rerank, and Pyrrho cutoff are running. |
+| `Supplemental scan: ...` | Only appears when files are still below query-ready and disk fallback is useful. |
 | `Indexing pending: X/Y` | Some files are not query-ready yet. |
 | `Enrichment pending: X/Y` | Query-ready retrieval works, but deeper entity/hierarchy enrichment is still running. |
 
