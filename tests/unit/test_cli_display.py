@@ -186,6 +186,37 @@ def test_format_governance_metadata_preserves_extra_reasons():
     ]
 
 
+def test_format_governance_metadata_shows_structured_lookup_contract_first():
+    """Exact source-finding success should be visible before Pyrrho probabilities."""
+    metadata = {
+        "governance_cutoff": {
+            "structured_lookup_contract": {
+                "matched_identifiers": ["TC-0901"],
+                "matched_sources": 1,
+            },
+            "pyrrho": {
+                "mode": "abstain",
+                "probabilities": {
+                    "abstain": 0.73,
+                    "disputed": 0.11,
+                    "trustworthy": 0.16,
+                },
+            },
+        }
+    }
+
+    lines = _format_governance_metadata(
+        metadata,
+        ["Structured lookup contract satisfied by exact identifier match: TC-0901."],
+    )
+
+    assert lines[0] == (
+        "Structured lookup: retrieval contract satisfied by exact match for "
+        "TC-0901; selected 1 source(s)."
+    )
+    assert lines[1].startswith("Pyrrho: ABSTAIN")
+
+
 def test_format_broad_overview_metadata_skips_pyrrho_cutoff_language():
     """Broad overview metadata should explain representative-source semantics."""
     metadata = {

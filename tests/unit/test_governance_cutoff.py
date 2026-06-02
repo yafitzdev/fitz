@@ -156,12 +156,50 @@ def test_metric_comparison_cutoff_prefers_exact_table_evidence():
     assert q1_conclusion not in result.selected
 
 
+def test_structured_lookup_exact_identifier_satisfies_retrieval_contract():
+    """Source-finding queries should trust exact identifier matches after Pyrrho abstains."""
+    profile = SimpleNamespace(query_contract="structured_lookup")
+    exact_match = _result(
+        "All regression tests passed. TC-0901: Data export - PASSED.",
+        "keyword_test/test_cases.md",
+    )
+    noise = _result("Operational incidents must be reviewed monthly.", "policy.md")
+
+    result = apply_governance_cutoff(
+        "Which document mentions TC-0901?",
+        [exact_match, noise],
+        _AbstainingGovernance(),
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [exact_match]
+    assert result.metadata["stop_reason"] == "structured_lookup_exact_match"
+    assert result.metadata["structured_lookup_contract"] == {
+        "matched_identifiers": ["TC-0901"],
+        "matched_sources": 1,
+    }
+    assert result.metadata["pyrrho"]["mode"] == "abstain"
+    assert result.reasons == [
+        "Structured lookup contract satisfied by exact identifier match: TC-0901."
+    ]
+
+
 class _TrustworthyGovernance:
     def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
         return GovernanceDecision(
             mode=AnswerMode.TRUSTWORTHY,
             probs=(0.05, 0.05, 0.90),
             reason="Pyrrho: sources support a confident answer (P=0.90).",
+        )
+
+
+class _AbstainingGovernance:
+    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
+        return GovernanceDecision(
+            mode=AnswerMode.ABSTAIN,
+            probs=(0.80, 0.05, 0.15),
+            reason="Pyrrho: retrieved sources do not contain enough evidence (P=0.80).",
         )
 
 

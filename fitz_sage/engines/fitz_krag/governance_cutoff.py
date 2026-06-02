@@ -183,6 +183,24 @@ def apply_governance_cutoff(
         last_reasons = _decision_reasons(decision)
         trace = _prefix_trace(size, mode, decision)
 
+        structured_lookup_matches = _structured_lookup_exact_matches(
+            query,
+            profile,
+            results[:size],
+            policy,
+        )
+        if structured_lookup_matches:
+            trajectory.append(trace)
+            return _structured_lookup_cutoff_result(
+                query,
+                structured_lookup_matches,
+                policy,
+                evaluated=size,
+                decision=decision,
+                trajectory=trajectory,
+                started_at=t0,
+            )
+
         if mode is AnswerMode.TRUSTWORTHY:
             consecutive_disputed = 0
             if size >= policy.min_trustworthy_docs:
@@ -240,6 +258,18 @@ def apply_governance_cutoff(
 
         trajectory.append(trace)
         consecutive_disputed = 0
+
+    structured_lookup_matches = _structured_lookup_exact_matches(query, profile, results, policy)
+    if structured_lookup_matches:
+        return _structured_lookup_cutoff_result(
+            query,
+            structured_lookup_matches,
+            policy,
+            evaluated=policy.max_docs,
+            decision=last_decision,
+            trajectory=trajectory,
+            started_at=t0,
+        )
 
     if stable_disputed_decision is not None:
         disputed_reasons = _decision_reasons(stable_disputed_decision)
@@ -553,6 +583,73 @@ def _query_contract_blocker(
     return f"Query contract not satisfied: retrieved evidence is missing {shown}{suffix}."
 
 
+def _structured_lookup_exact_matches(
+    query: str,
+    profile: Any,
+    results: list["ReadResult"],
+    policy: GovernanceCutoffPolicy,
+) -> list["ReadResult"]:
+    """Return individual sources that satisfy an exact structured lookup."""
+    if getattr(profile, "query_contract", None) != "structured_lookup":
+        return []
+
+    identifiers = _exact_identifiers(query)
+    if not identifiers:
+        return []
+
+    matches: list["ReadResult"] = []
+    for result in results[: policy.max_docs]:
+        evidence = _normalized_evidence([result])
+        if all(
+            any(
+                _contains_all_terms(evidence, variant)
+                for variant in _identifier_variants(identifier)
+            )
+            for identifier in identifiers
+        ):
+            matches.append(result)
+    return matches
+
+
+def _structured_lookup_cutoff_result(
+    query: str,
+    matches: list["ReadResult"],
+    policy: GovernanceCutoffPolicy,
+    *,
+    evaluated: int,
+    decision: Any,
+    trajectory: list[dict[str, Any]],
+    started_at: float,
+) -> GovernanceCutoffResult:
+    """Build a cutoff result for an exact structured lookup match."""
+    identifiers = _exact_identifiers(query)
+    identifier_text = ", ".join(identifiers)
+    mode = AnswerMode.TRUSTWORTHY
+    return GovernanceCutoffResult(
+        selected=matches,
+        mode=mode,
+        reasons=[
+            f"Structured lookup contract satisfied by exact identifier match: {identifier_text}."
+        ],
+        timings=[("Governance", time.perf_counter() - started_at)],
+        metadata={
+            **_governance_cutoff_metadata(
+                policy,
+                evaluated=evaluated,
+                selected=len(matches),
+                mode=mode,
+                decision=decision,
+                trajectory=trajectory,
+                stop_reason="structured_lookup_exact_match",
+            ),
+            "structured_lookup_contract": {
+                "matched_identifiers": identifiers,
+                "matched_sources": len(matches),
+            },
+        },
+    )
+
+
 def _contract_requirements(
     query: str,
     profile: Any,
@@ -795,7 +892,7 @@ def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
     if decision is None:
         return {}
 
-    metadata: dict[str, Any] = {"mode": mode.value}
+    metadata: dict[str, Any] = {"mode": _decision_mode(decision).value}
 
     probs = getattr(decision, "probs", None)
     if isinstance(probs, (list, tuple)) and len(probs) == 3:
