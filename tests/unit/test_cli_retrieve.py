@@ -202,6 +202,58 @@ class TestRetrieveCommand:
         mock_engine.wait_for_query_surface.assert_called_once()
         mock_engine.evidence.assert_called_once()
 
+    def test_retrieve_reuses_current_directory_collection_when_source_matches(self, tmp_path):
+        """Repeated no-flag queries should not rebuild the same current-dir collection."""
+        collection_dir = tmp_path / ".fitz" / "collections" / tmp_path.name
+        collection_dir.mkdir(parents=True)
+        (collection_dir / "manifest.json").write_text("{}", encoding="utf-8")
+        (collection_dir / "source_dir.txt").write_text(str(tmp_path), encoding="utf-8")
+
+        pack = EvidencePack(query="What changed?", mode=AnswerMode.TRUSTWORTHY)
+
+        mock_engine = MagicMock()
+        mock_engine.evidence.return_value = pack
+
+        mock_registry = MagicMock()
+        mock_registry.list.return_value = ["fitz_krag"]
+        mock_caps = MagicMock()
+        mock_caps.supports_persistent_ingest = True
+        mock_registry.get_capabilities.return_value = mock_caps
+
+        with (
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry", return_value=mock_registry
+            ),
+            patch("fitz_sage.cli.commands.retrieve.get_default_engine", return_value="fitz_krag"),
+            patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
+            patch("fitz_sage.cli.commands.retrieve.Path.cwd", return_value=tmp_path),
+            patch("fitz_sage.cli.commands.retrieve.display_evidence_pack"),
+        ):
+            result = runner.invoke(app, ["retrieve", "What changed?"])
+
+        assert result.exit_code == 0
+        mock_engine.load.assert_called_once_with(tmp_path.name)
+        mock_engine.point.assert_not_called()
+        mock_engine.wait_for_query_surface.assert_not_called()
+        mock_engine.evidence.assert_called_once()
+
+    def test_spawn_index_daemon_reuses_running_pid(self, tmp_path):
+        """A live PID file should prevent duplicate detached daemons."""
+        pid_path = tmp_path / ".fitz" / "collections" / "docs" / "index_daemon.pid"
+        pid_path.parent.mkdir(parents=True)
+        pid_path.write_text("123", encoding="utf-8")
+
+        from fitz_sage.cli.commands import retrieve
+
+        with (
+            patch("fitz_sage.cli.commands.retrieve._pid_is_running", return_value=True),
+            patch("fitz_sage.cli.commands.retrieve.subprocess.Popen") as popen,
+        ):
+            spawned = retrieve._spawn_index_daemon("docs", "fitz_krag", tmp_path)
+
+        assert spawned is True
+        popen.assert_not_called()
+
     def test_retrieve_spawns_daemon_when_indexing_is_pending(self):
         """CLI query returns evidence, then hands remaining enrichment to a daemon."""
         pack = EvidencePack(

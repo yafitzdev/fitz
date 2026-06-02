@@ -35,11 +35,34 @@ def _daemon_pid_path(collection: str, cwd: Path) -> Path:
 
 def _pid_is_running(pid: int) -> bool:
     """Return whether a process id appears to still be alive."""
+    if os.name == "nt":
+        return _windows_pid_is_running(pid)
     try:
         os.kill(pid, 0)
         return True
     except OSError:
         return False
+
+
+def _windows_pid_is_running(pid: int) -> bool:
+    """Return whether a Windows process id is active."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    process_query_limited_information = 0x1000
+    still_active = 259
+
+    handle = kernel32.OpenProcess(process_query_limited_information, False, int(pid))
+    if not handle:
+        return False
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _read_running_daemon_pid(pid_path: Path) -> int | None:
@@ -112,6 +135,24 @@ def _collection_name_for_source(source: Path) -> str:
     return name or "default"
 
 
+def _persisted_source_matches(collection: str, source: Path, cwd: Path) -> bool:
+    """Return whether a collection already points at this source directory."""
+    collection_dir = cwd / ".fitz" / "collections" / collection
+    source_dir_path = collection_dir / "source_dir.txt"
+    manifest_path = collection_dir / "manifest.json"
+    if not source_dir_path.exists() or not manifest_path.exists():
+        return False
+
+    try:
+        persisted = Path(source_dir_path.read_text(encoding="utf-8").strip()).resolve()
+    except OSError:
+        return False
+
+    selected = source.resolve()
+    selected_dir = selected.parent if selected.is_file() else selected
+    return persisted == selected_dir.resolve()
+
+
 def command(
     question: Optional[str],
     source: Optional[Path],
@@ -149,14 +190,24 @@ def command(
     question_text = question if question is not None else ui.prompt_text("Question")
     metadata = {"top_k": top_k} if top_k is not None else {}
     progress = None if output_format == "json" else ui.info
+    cwd = Path.cwd()
+    source_was_explicit = source is not None
 
     try:
         engine_instance = create_engine(engine_name)
         if effective_source is not None:
-            if progress:
-                progress(f"Registering {effective_source}...")
-            engine_instance.point(effective_source, selected_collection, progress=progress)
-            engine_instance.wait_for_query_surface(progress=progress)
+            if (
+                not source_was_explicit
+                and _persisted_source_matches(selected_collection, effective_source, cwd)
+            ):
+                if progress:
+                    progress(f"Loading collection '{selected_collection}'...")
+                engine_instance.load(selected_collection)
+            else:
+                if progress:
+                    progress(f"Registering {effective_source}...")
+                engine_instance.point(effective_source, selected_collection, progress=progress)
+                engine_instance.wait_for_query_surface(progress=progress)
         else:
             if progress:
                 progress(f"Loading collection '{selected_collection}'...")
@@ -176,11 +227,11 @@ def command(
             if callable(stop_worker):
                 stop_worker()
             if output_format != "json" and _spawn_index_daemon(
-                selected_collection, engine_name, Path.cwd()
+                selected_collection, engine_name, cwd
             ):
                 ui.info("Indexing continues in the background.")
             elif output_format == "json":
-                _spawn_index_daemon(selected_collection, engine_name, Path.cwd())
+                _spawn_index_daemon(selected_collection, engine_name, cwd)
     except Exception as e:
         ui.error(f"Retrieve failed: {e}")
         logger.debug("Retrieve error", exc_info=True)

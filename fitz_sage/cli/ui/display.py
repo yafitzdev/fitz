@@ -230,7 +230,7 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
                 _short_path(item.file_path),
                 location,
                 score,
-                _sanitize_for_display(item.excerpt),
+                _compact_evidence_excerpt(item.excerpt),
             )
         if governance_lines:
             table.caption = "\n".join(governance_lines)
@@ -245,7 +245,7 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
             if item.line_range:
                 location = f"{location}:{item.line_range[0]}-{item.line_range[1]}"
             print(f"[{item.rank}] {_short_path(item.file_path)} {location} score={score}")
-            print(f"    {_sanitize_for_display(item.excerpt)}")
+            print(f"    {_compact_evidence_excerpt(item.excerpt)}")
 
     if indexing_status and (
         not indexing_status.get("complete", True)
@@ -282,7 +282,7 @@ def _evidence_title(mode_text: str, metadata: dict) -> str:
     """Return the evidence table title with Pyrrho verdict folded in."""
     pyrrho = _pyrrho_metadata(metadata)
     verdict = pyrrho.get("mode") if pyrrho else mode_text
-    return f"Evidence - Pyrrho {verdict}" if verdict else "Evidence"
+    return f"Evidence (Pyrrho: {_format_verdict(verdict)})" if verdict else "Evidence"
 
 
 def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]:
@@ -296,10 +296,10 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
     probs = pyrrho.get("probabilities", {}) if pyrrho else {}
     if isinstance(probs, dict) and probs:
         lines.append(
-            "Pyrrho probabilities: "
-            f"trustworthy={_fmt_prob(probs.get('trustworthy'))}  "
-            f"abstain={_fmt_prob(probs.get('abstain'))}  "
-            f"disputed={_fmt_prob(probs.get('disputed'))}"
+            "Pyrrho: "
+            f"P(TRUSTWORTHY)={_fmt_prob(probs.get('trustworthy'))}  "
+            f"P(ABSTAIN)={_fmt_prob(probs.get('abstain'))}  "
+            f"P(DISPUTED)={_fmt_prob(probs.get('disputed'))}"
         )
 
     policy = cutoff.get("policy", {}) if isinstance(cutoff.get("policy", {}), dict) else {}
@@ -308,19 +308,19 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
     )
     if has_cutoff_values:
         parts = [
-            f"selected={cutoff.get('selected', '?')}",
-            f"evaluated={cutoff.get('evaluated', '?')}/{cutoff.get('max', '?')}",
+            f"selected {cutoff.get('selected', '?')}",
+            f"evaluated {cutoff.get('evaluated', '?')}/{cutoff.get('max', '?')}",
         ]
         if policy:
             parts.extend(
                 [
-                    f"shape={policy.get('query_shape', '?')}",
-                    f"min_trust={policy.get('min_trustworthy_docs', '?')}",
-                    f"min_dispute={policy.get('min_disputed_docs', '?')}",
-                    f"dispute_patience={policy.get('disputed_patience_docs', '?')}",
+                    f"policy {policy.get('query_shape', '?')}",
+                    f"min trustworthy {policy.get('min_trustworthy_docs', '?')}",
+                    f"min disputed {policy.get('min_disputed_docs', '?')}",
+                    f"dispute patience {policy.get('disputed_patience_docs', '?')}",
                 ]
             )
-        lines.append("Governance cutoff: " + "  ".join(parts))
+        lines.append("Cutoff: " + "; ".join(parts))
 
     reason = pyrrho.get("reason") if pyrrho else None
     shown_reasons: set[str] = set()
@@ -350,6 +350,20 @@ def _fmt_prob(value: object) -> str:
         return f"{float(value):.2f}"
     except (TypeError, ValueError):
         return "?"
+
+
+def _format_verdict(value: object) -> str:
+    """Format a governance verdict for a compact table title."""
+    text = str(value).strip()
+    return text.upper() if text else "UNKNOWN"
+
+
+def _compact_evidence_excerpt(text: str, max_chars: int = 96) -> str:
+    """Return a terminal-sized excerpt without changing the JSON payload."""
+    compact = " ".join(str(text).split())
+    if len(compact) > max_chars:
+        compact = compact[: max_chars - 3].rstrip() + "..."
+    return _sanitize_for_display(compact)
 
 
 def _short_path(path: str) -> str:

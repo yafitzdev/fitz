@@ -296,9 +296,11 @@ class TestRetrievalRouter:
 
         router.retrieve("key facts", progress=progress)
 
-        progress.assert_any_call("Unindexed scan: checking files not yet query-ready...")
         progress.assert_any_call(
-            "Unindexed scan: added 2 pre-index candidate(s) from 2 file(s) (a.md, b.md)"
+            "Supplemental scan: checking files still awaiting enriched index..."
+        )
+        progress.assert_any_call(
+            "Supplemental scan: added 2 early candidate(s) from 2 file(s) (a.md, b.md)"
         )
 
 

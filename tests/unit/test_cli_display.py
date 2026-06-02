@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from fitz_sage.cli.ui.display import (
+    _compact_evidence_excerpt,
     _evidence_title,
     _format_governance_metadata,
     _format_indexing_status,
@@ -62,7 +63,7 @@ def test_evidence_title_combines_pyrrho_verdict():
         }
     }
 
-    assert _evidence_title("trustworthy", metadata) == "Evidence - Pyrrho trustworthy"
+    assert _evidence_title("trustworthy", metadata) == "Evidence (Pyrrho: TRUSTWORTHY)"
 
 
 def test_format_governance_metadata_shows_pyrrho_and_cutoff():
@@ -92,10 +93,10 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
     }
 
     assert _format_governance_metadata(metadata, []) == [
-        "Pyrrho probabilities: trustworthy=0.53  abstain=0.21  disputed=0.26",
+        "Pyrrho: P(TRUSTWORTHY)=0.53  P(ABSTAIN)=0.21  P(DISPUTED)=0.26",
         (
-            "Governance cutoff: selected=6  evaluated=6/10  shape=broad  "
-            "min_trust=4  min_dispute=2  dispute_patience=2"
+            "Cutoff: selected 6; evaluated 6/10; policy broad; "
+            "min trustworthy 4; min disputed 2; dispute patience 2"
         ),
         "Pyrrho: sources support a confident answer (P=0.53).",
     ]
@@ -122,3 +123,13 @@ def test_format_governance_metadata_preserves_extra_reasons():
         "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
         "Pyrrho abstained after evaluating the top 10 evidence item(s).",
     ]
+
+
+def test_compact_evidence_excerpt_keeps_terminal_table_short():
+    """Display excerpts should stay compact without changing stored evidence content."""
+    text = " ".join(["cell"] * 80)
+
+    excerpt = _compact_evidence_excerpt(text, max_chars=60)
+
+    assert len(excerpt) <= 60
+    assert excerpt.endswith("...")

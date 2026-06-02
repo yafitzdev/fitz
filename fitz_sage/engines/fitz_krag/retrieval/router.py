@@ -132,7 +132,7 @@ class RetrievalRouter:
             # Submit agentic search in the same pool
             agentic_future: Future | None = None
             if self._agentic_strategy and run_agentic:
-                _progress("Unindexed scan: checking files not yet query-ready...")
+                _progress("Supplemental scan: checking files still awaiting enriched index...")
                 agentic_future = pool.submit(self._run_agentic, query, limit, _progress)
 
             # Collect strategy results
@@ -220,11 +220,11 @@ class RetrievalRouter:
                         paths.add(parts[-1] if parts else dp)
                 files_str = ", ".join(sorted(paths)[:5])
                 progress(
-                    f"Unindexed scan: added {len(agentic_addresses)} pre-index candidate(s) "
+                    f"Supplemental scan: added {len(agentic_addresses)} early candidate(s) "
                     f"from {len(paths)} file(s) ({files_str})"
                 )
             else:
-                progress("Unindexed scan: no pre-index candidates found")
+                progress("Supplemental scan: no early candidates found")
             return agentic_addresses
         except Exception as e:
             logger.warning(f"Agentic strategy failed: {e}")
