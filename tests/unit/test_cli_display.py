@@ -25,6 +25,25 @@ def test_format_indexing_status_shows_deep_enrichment_when_query_ready():
     assert _format_indexing_status(status) == "Deep enrichment pending: 62/63"
 
 
+def test_format_indexing_status_names_single_deep_pending_file():
+    """A one-file deep-enrichment tail should be visible to the user."""
+    status = {
+        "total": 62,
+        "pending": 0,
+        "complete": True,
+        "query_ready": True,
+        "deep_pending": 1,
+        "deep_pending_files": [
+            {"path": "pdf/1.0 BA Yan Fitzner.pdf", "state": "query_ready", "priority": 4}
+        ],
+        "fully_enriched": False,
+    }
+
+    assert _format_indexing_status(status) == (
+        "Deep enrichment pending: 1/62 (pdf/1.0 BA Yan Fitzner.pdf, query_ready)"
+    )
+
+
 def test_format_indexing_status_shows_enrichment_after_parse_surface_ready():
     """Parsed files are searchable, so remaining keyword work is enrichment."""
     status = {

@@ -251,7 +251,7 @@ class TestRetrieveCommand:
         ):
             spawned = retrieve._spawn_index_daemon("docs", "fitz_krag", tmp_path)
 
-        assert spawned is True
+        assert spawned == "running"
         popen.assert_not_called()
 
     def test_retrieve_spawns_daemon_when_indexing_is_pending(self):

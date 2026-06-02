@@ -87,8 +87,13 @@ _CODE_TERMS = {
 _DATA_TERMS = {"csv", "table", "spreadsheet", "row", "column", "sql"}
 _DOC_TERMS = {"section", "document", "policy", "procedure", "manual", "spec"}
 _COMPARATIVE_PATTERN = (
-    r"\b(compare|difference between|different from|better|worse|higher|lower|greater|"
-    r"less|more|fewer|larger|smaller|highest|lowest|best|worst)\b"
+    r"\b(compare|difference between|different from|changed between|changes between|"
+    r"change between|better|worse|higher|lower|greater|less|more|fewer|larger|"
+    r"smaller|highest|lowest|best|worst)\b"
+)
+_MONTH_PATTERN = (
+    r"\b(?:january|february|march|april|may|june|july|august|september|"
+    r"october|november|december)(?:\s+\d{4})?\b"
 )
 
 
@@ -192,7 +197,10 @@ def deterministic_keywords(query: str, terms: list[str] | None = None) -> list[s
     """Extract query terms plus dictionary synonym/acronym expansions."""
     seen: set[str] = set()
     keywords: list[str] = []
-    for term in (*(terms or content_terms(query)), *expand_terms(query)):
+    expanded_terms: list[str] = []
+    for term in terms or content_terms(query):
+        expanded_terms.extend(_keyword_variants(term))
+    for term in (*expanded_terms, *expand_terms(query)):
         low = term.lower()
         if low not in seen:
             seen.add(low)
@@ -292,6 +300,7 @@ def _freshness_detection(query: str):
 def _temporal_references(lower_query: str) -> list[str]:
     patterns = (
         r"\bq[1-4](?:\s+\d{4})?\b",
+        _MONTH_PATTERN,
         r"\b\d{4}\b",
         r"\b(?:last|next)\s+(?:week|month|quarter|year)\b",
         r"\b(?:today|yesterday|tomorrow)\b",
@@ -326,6 +335,8 @@ def _comparison_entities(query: str) -> list[str]:
     patterns = (
         r"\b(?:compare|comparing)\s+(.+?)\s+(?:and|with|to|vs|versus)\s+(.+?)(?:[?.!,]|$)",
         r"\bdifference between\s+(.+?)\s+and\s+(.+?)(?:[?.!,]|$)",
+        r"\b(?:changed|changes|change)\s+between\s+(.+?)\s+and\s+(.+?)(?:[?.!,]|$)",
+        r"\bbetween\s+(.+?)\s+and\s+(.+?)(?:[?.!,]|$)",
         r"\b(.+?)\s+(?:vs|versus)\s+(.+?)(?:[?.!,]|$)",
     )
     for pattern in patterns:
@@ -371,6 +382,18 @@ def _comparison_queries(query: str, entities: list[str]) -> list[str]:
 def _clean_entity(value: str) -> str:
     cleaned = re.sub(r"^\s*(compare|difference|between|the)\s+", "", value, flags=re.IGNORECASE)
     return cleaned.strip(" ?.,")
+
+
+def _keyword_variants(term: str) -> list[str]:
+    """Return exact-token variants that should survive tokenizer differences."""
+    variants = [term]
+    if "_" in term:
+        variants.append(term.replace("_", "-"))
+        variants.append(term.replace("_", " "))
+    if "-" in term:
+        variants.append(term.replace("-", "_"))
+        variants.append(term.replace("-", " "))
+    return variants
 
 
 def _specificity(query: str, detection: DetectionSummary | None) -> str:

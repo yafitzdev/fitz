@@ -61,6 +61,84 @@ def test_cutoff_serializes_pyrrho_g31_metadata():
     assert pyrrho["scalars"]["false_trustworthy_risk"] == 0.09
 
 
+def test_contract_gate_waits_for_all_comparison_entities():
+    """A comparison verdict cannot stop while one explicit side is missing."""
+    profile = SimpleNamespace(
+        has_temporal_intent=True,
+        has_comparison_intent=True,
+        comparison_entities=["Q1", "Q2 2024"],
+        answer_type="comparative",
+    )
+    results = [
+        _result("Q1 revenue increased.", "quarterly_summary_q1_2024.md"),
+        _result("Q1 customer feedback improved.", "feedback_q1_2024.md"),
+        _result("Q2 revenue increased faster.", "quarterly_summary_q2_2024.md"),
+    ]
+
+    result = apply_governance_cutoff(
+        "What changed between Q1 and Q2 2024?",
+        results,
+        _TrustworthyGovernance(),
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert len(result.selected) == 3
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+    assert "contract_blocker" in result.metadata["trajectory"][1]
+
+
+def test_contract_gate_abstains_when_temporal_scope_is_missing():
+    """Pyrrho confidence should not certify evidence from the wrong month."""
+    profile = SimpleNamespace(has_temporal_intent=True, has_comparison_intent=False)
+
+    result = apply_governance_cutoff(
+        "What changed in March 2024?",
+        [_result("April feedback improved after the beta release.", "feedback_april_2024.md")],
+        _TrustworthyGovernance(),
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["stop_reason"] == "contract_unsatisfied_at_cutoff"
+    assert "march 2024" in result.reasons[0]
+
+
+def test_contract_gate_abstains_when_required_metric_is_missing():
+    """Metric questions need evidence containing the metric, not just the period."""
+    profile = SimpleNamespace(has_temporal_intent=True, has_comparison_intent=False)
+
+    result = apply_governance_cutoff(
+        "What was Q4 2024 revenue?",
+        [_result("Q4 2024 roadmap targets were postponed.", "roadmap_q4_2024.md")],
+        _TrustworthyGovernance(),
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["contract_blocker"]
+    assert "revenue" in result.reasons[0]
+
+
+class _TrustworthyGovernance:
+    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
+        return GovernanceDecision(
+            mode=AnswerMode.TRUSTWORTHY,
+            probs=(0.05, 0.05, 0.90),
+            reason="Pyrrho: sources support a confident answer (P=0.90).",
+        )
+
+
+def _result(content: str, file_path: str) -> SimpleNamespace:
+    """Build a compact ReadResult-like fixture."""
+    return SimpleNamespace(
+        content=content,
+        file_path=file_path,
+        address=SimpleNamespace(location=file_path, summary=content),
+        metadata={},
+    )
+
+
 def _head(
     *,
     raw_label: str,

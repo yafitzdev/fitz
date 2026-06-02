@@ -29,6 +29,15 @@ _IDENTIFIER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b[A-Z][a-z]+(?:[A-Z][A-Za-z0-9]*)+\b"),
     re.compile(r"(?:/[A-Za-z0-9._{}:-]+){2,}"),
 )
+_ENTITY_PHRASE_PATTERN = re.compile(r"\b[A-Z][A-Za-z0-9]+(?:[ \t]+[A-Z][A-Za-z0-9]+){1,4}\b")
+_ENTITY_STOP_PHRASES = {
+    "Abstract",
+    "Chapter",
+    "Content",
+    "Figure",
+    "Section",
+    "Table",
+}
 _MIN_ENRICHMENT_TOKENS = 256
 _ENRICHMENT_TOKENS_PER_ITEM = 128
 _MAX_ENRICHMENT_TOKENS = 2048
@@ -73,6 +82,18 @@ class KragEnricher:
     def enrich_section_entities(self, section_dicts: list[dict[str, Any]]) -> None:
         """Enrich section dicts in-place with entities and temporal metadata."""
         self._enrich_section_dicts(section_dicts, EnrichmentStrategy.ENTITIES)
+
+    def derive_section_entities(self, section_dicts: list[dict[str, Any]]) -> None:
+        """Derive document-section entities without a second generation pass."""
+        for section in section_dicts:
+            item = {
+                "name": section.get("title", ""),
+                "content": (section.get("summary", "") or section.get("content", ""))[:1000],
+            }
+            section["entities"] = _merge_entities(
+                section.get("entities", []),
+                _deterministic_entities(item),
+            )
 
     def _enrich_symbol_dicts(
         self,
@@ -206,6 +227,45 @@ def _deterministic_keywords(item: dict[str, str]) -> list[str]:
     return keywords
 
 
+def _deterministic_entities(item: dict[str, str]) -> list[dict[str, str]]:
+    """Extract identifier and named-phrase entities without model generation."""
+    text = f"{item.get('name', '')}\n{item.get('content', '')}"
+    entities: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for pattern in _IDENTIFIER_PATTERNS:
+        for match in pattern.finditer(text):
+            value = match.group(0).strip(".,;:()[]{}")
+            if _add_entity(entities, seen, value, "identifier") and len(entities) >= 8:
+                return entities
+
+    for match in _ENTITY_PHRASE_PATTERN.finditer(text):
+        value = match.group(0).strip(".,;:()[]{}")
+        if value in _ENTITY_STOP_PHRASES:
+            continue
+        if _add_entity(entities, seen, value, "entity") and len(entities) >= 8:
+            return entities
+
+    return entities
+
+
+def _add_entity(
+    entities: list[dict[str, str]],
+    seen: set[str],
+    value: str,
+    entity_type: str,
+) -> bool:
+    """Append one entity if it is usable and new."""
+    if len(value) < 3:
+        return False
+    key = value.casefold()
+    if key in seen:
+        return False
+    seen.add(key)
+    entities.append({"name": value, "type": entity_type})
+    return True
+
+
 def _apply_enrichment(
     target: dict[str, Any],
     item: dict[str, str],
@@ -245,6 +305,30 @@ def _merge_keywords(model_keywords: Any, deterministic: list[str]) -> list[str]:
             seen.add(keyword)
             merged.append(keyword)
     return merged
+
+
+def _merge_entities(
+    model_entities: Any, deterministic: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    """Merge entity dicts while preserving first occurrence."""
+    merged: list[dict[str, str]] = []
+    seen: set[str] = set()
+    if isinstance(model_entities, list):
+        for entity in model_entities:
+            if not isinstance(entity, dict):
+                continue
+            name = str(entity.get("name", "")).strip()
+            if not name or name.casefold() in seen:
+                continue
+            seen.add(name.casefold())
+            merged.append({"name": name, "type": str(entity.get("type", "entity") or "entity")})
+    for entity in deterministic:
+        name = entity["name"]
+        if name.casefold() in seen:
+            continue
+        seen.add(name.casefold())
+        merged.append(entity)
+    return merged[:8]
 
 
 def _enrichment_max_tokens(item_count: int) -> int:

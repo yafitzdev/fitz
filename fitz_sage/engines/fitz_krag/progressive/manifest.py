@@ -266,6 +266,7 @@ def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
             "complete": True,
             "query_ready": True,
             "deep_pending": 0,
+            "deep_pending_files": [],
             "fully_enriched": True,
             "by_state": {},
         }
@@ -280,6 +281,18 @@ def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
     fully_enriched = sum(1 for entry in entries if is_fully_enriched_state(entry.state))
     pending = total - indexed
     deep_pending = total - fully_enriched
+    deep_pending_files = [
+        {
+            "path": entry.rel_path,
+            "state": entry.state.value,
+            "priority": entry.priority,
+        }
+        for entry in sorted(
+            entries,
+            key=lambda item: (item.priority, item.size_bytes, item.rel_path),
+        )
+        if not is_fully_enriched_state(entry.state)
+    ][:5]
     return {
         "total": total,
         "indexed": indexed,
@@ -287,6 +300,7 @@ def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
         "complete": pending == 0,
         "query_ready": pending == 0,
         "deep_pending": deep_pending,
+        "deep_pending_files": deep_pending_files,
         "fully_enriched": deep_pending == 0,
         "by_state": by_state,
     }

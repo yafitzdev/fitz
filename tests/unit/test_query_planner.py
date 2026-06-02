@@ -59,3 +59,34 @@ class TestDeterministicQueryPlanner:
         assert plan.analysis.primary_type == QueryType.CODE
         assert plan.detection is None
         assert "failure" in plan.keywords
+
+    def test_detects_changed_between_temporal_comparison(self):
+        """Between-period change wording should route like a comparison."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("What changed between Q1 and Q2 2024?")
+
+        assert plan.detection is not None
+        assert plan.detection.has_temporal_intent
+        assert plan.detection.has_comparison_intent
+        assert plan.detection.comparison_entities == ["Q1", "Q2 2024"]
+
+    def test_temporal_detection_recognizes_month_names(self):
+        """Month-scoped queries should carry temporal references."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("What changed in March 2024?")
+
+        assert plan.detection is not None
+        assert plan.detection.has_temporal_intent
+        assert "march 2024" in plan.detection.temporal.metadata["references"]
+
+    def test_exact_identifier_keywords_include_tokenizer_variants(self):
+        """Exact IDs should survive underscore vs hyphen tokenizer differences."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("Find TC_1000")
+
+        assert "TC_1000" in plan.keywords
+        assert "TC-1000" in plan.keywords
+        assert "TC 1000" in plan.keywords

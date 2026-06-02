@@ -18,6 +18,10 @@ from fitz_sage.runtime import create_engine, get_default_engine, get_engine_regi
 
 logger = get_logger(__name__)
 
+_DAEMON_SPAWNED = "spawned"
+_DAEMON_RUNNING = "running"
+_DAEMON_FAILED = "failed"
+
 
 def _indexing_needs_daemon(status: dict) -> bool:
     """Return whether a detached worker should continue enrichment."""
@@ -31,6 +35,11 @@ def _indexing_needs_daemon(status: dict) -> bool:
 def _daemon_pid_path(collection: str, cwd: Path) -> Path:
     """Return the PID file path for a collection's detached index worker."""
     return cwd / ".fitz" / "collections" / collection / "index_daemon.pid"
+
+
+def _daemon_log_path(collection: str, cwd: Path) -> Path:
+    """Return the detached index worker log path."""
+    return cwd / ".fitz" / "collections" / collection / "index_daemon.log"
 
 
 def _pid_is_running(pid: int) -> bool:
@@ -74,11 +83,11 @@ def _read_running_daemon_pid(pid_path: Path) -> int | None:
     return pid if _pid_is_running(pid) else None
 
 
-def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> bool:
+def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
     """Start a detached process that continues indexing this collection."""
     pid_path = _daemon_pid_path(collection, cwd)
     if _read_running_daemon_pid(pid_path) is not None:
-        return True
+        return _DAEMON_RUNNING
 
     cmd = [
         sys.executable,
@@ -91,11 +100,20 @@ def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> bool:
         engine_name,
     ]
 
+    log_handle = None
+    log_path = _daemon_log_path(collection, cwd)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        log_handle = log_path.open("ab")
+    except Exception as e:
+        logger.debug(f"Failed to open index daemon log: {e}")
+        return _DAEMON_FAILED
+
     kwargs: dict = {
         "cwd": str(cwd),
         "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
+        "stdout": log_handle,
+        "stderr": log_handle,
         "close_fds": True,
     }
     if os.name == "nt":
@@ -112,12 +130,14 @@ def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> bool:
 
     try:
         process = subprocess.Popen(cmd, **kwargs)
-        pid_path.parent.mkdir(parents=True, exist_ok=True)
         pid_path.write_text(str(process.pid), encoding="utf-8")
-        return True
+        return _DAEMON_SPAWNED
     except Exception as e:
         logger.debug(f"Failed to spawn index daemon: {e}")
-        return False
+        return _DAEMON_FAILED
+    finally:
+        if log_handle is not None:
+            log_handle.close()
 
 
 def _default_source(source: Optional[Path], collection: Optional[str]) -> Optional[Path]:
@@ -196,9 +216,8 @@ def command(
     try:
         engine_instance = create_engine(engine_name)
         if effective_source is not None:
-            if (
-                not source_was_explicit
-                and _persisted_source_matches(selected_collection, effective_source, cwd)
+            if not source_was_explicit and _persisted_source_matches(
+                selected_collection, effective_source, cwd
             ):
                 if progress:
                     progress(f"Loading collection '{selected_collection}'...")
@@ -226,10 +245,12 @@ def command(
             stop_worker = getattr(engine_instance, "stop_background_indexing", None)
             if callable(stop_worker):
                 stop_worker()
-            if output_format != "json" and _spawn_index_daemon(
-                selected_collection, engine_name, cwd
-            ):
-                ui.info("Indexing continues in the background.")
+            if output_format != "json":
+                daemon_status = _spawn_index_daemon(selected_collection, engine_name, cwd)
+                if daemon_status == _DAEMON_SPAWNED:
+                    ui.info("Indexing continues in the background.")
+                elif daemon_status == _DAEMON_RUNNING:
+                    ui.info("Indexing daemon already running.")
             elif output_format == "json":
                 _spawn_index_daemon(selected_collection, engine_name, cwd)
     except Exception as e:

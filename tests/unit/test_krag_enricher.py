@@ -188,6 +188,26 @@ class TestEnrichSections:
 
         assert sections[0]["keywords"] == ["timeout", "TC-4812"]
 
+    def test_derive_section_entities_does_not_call_llm(self):
+        """Progressive doc entity linking should not run a second generation pass."""
+        chat = _make_chat()
+        enricher = KragEnricher(chat, batch_size=15)
+        sections = [
+            {
+                "title": "Customer Contract",
+                "content": "Acme Corp signed contract TC-1000 for the Berlin rollout.",
+                "summary": None,
+                "keywords": ["contract"],
+            }
+        ]
+
+        enricher.derive_section_entities(sections)
+
+        chat.chat.assert_not_called()
+        assert {"name": "TC-1000", "type": "identifier"} in sections[0]["entities"]
+        assert {"name": "Acme Corp", "type": "entity"} in sections[0]["entities"]
+        assert sections[0]["keywords"] == ["contract"]
+
 
 # ---------------------------------------------------------------------------
 # TestBatchProcessing

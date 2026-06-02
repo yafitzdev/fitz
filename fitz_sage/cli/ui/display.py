@@ -267,14 +267,30 @@ def _format_indexing_status(indexing_status: dict) -> str:
             return f"Enrichment pending: {pending}/{total}"
         if not indexing_status.get("fully_enriched", True):
             pending = indexing_status.get("deep_pending", "?")
-            return f"Deep enrichment pending: {pending}/{total}"
+            return _pending_status_line("Deep enrichment pending", pending, total, indexing_status)
 
     if indexing_status.get("query_ready") and not indexing_status.get("fully_enriched", True):
         pending = indexing_status.get("deep_pending", "?")
-        return f"Deep enrichment pending: {pending}/{total}"
+        return _pending_status_line("Deep enrichment pending", pending, total, indexing_status)
 
     pending = indexing_status.get("pending", "?")
     return f"Indexing pending: {pending}/{total}"
+
+
+def _pending_status_line(label: str, pending: object, total: object, indexing_status: dict) -> str:
+    """Return a status line with the first deep-pending path when available."""
+    files = indexing_status.get("deep_pending_files", [])
+    if not isinstance(files, list) or not files:
+        return f"{label}: {pending}/{total}"
+    first = files[0]
+    if not isinstance(first, dict):
+        return f"{label}: {pending}/{total}"
+    path = str(first.get("path") or "").strip()
+    state = str(first.get("state") or "").strip()
+    if not path:
+        return f"{label}: {pending}/{total}"
+    state_label = f", {state}" if state else ""
+    return f"{label}: {pending}/{total} ({path}{state_label})"
 
 
 def _evidence_title(mode_text: str, metadata: dict) -> str:

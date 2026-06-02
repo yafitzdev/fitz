@@ -134,6 +134,37 @@ class TestEnrichEntityGraphIntegration:
         # Should not raise
         core.enrich_file("file-1", ".py")
 
+    def test_link_doc_entities_uses_deterministic_derivation(self):
+        """Progressive doc entity linking should not run Qwen entity generation."""
+        entity_store = MagicMock()
+        core = _make_core(entity_graph_store=entity_store)
+        sections = [
+            {
+                "id": "sec-001",
+                "keywords": ["contract"],
+                "entities": [],
+                "metadata": {},
+            }
+        ]
+
+        def _derive(items):
+            items[0]["entities"] = [{"name": "TC-1000", "type": "identifier"}]
+
+        core._enricher = MagicMock()
+        core._enricher.derive_section_entities.side_effect = _derive
+        core._section_store = MagicMock()
+        core._section_store.get_by_file.return_value = sections
+
+        core.link_entities_file("file-1", ".md")
+
+        core._enricher.derive_section_entities.assert_called_once_with(sections)
+        core._enricher.enrich_section_entities.assert_not_called()
+        core._section_store.update_enrichment_by_file.assert_called_once_with("file-1", sections)
+        entity_store.add_chunk_entities.assert_called_once_with(
+            "sec-001",
+            [("TC-1000", "identifier")],
+        )
+
 
 # ---------------------------------------------------------------------------
 # Helpers — CodeExpander

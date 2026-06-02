@@ -24,6 +24,26 @@ _DISPUTE_PATIENCE_DOCS = 2
 _STABLE_DISPUTE_DOCS = 2
 _FOLLOWUP_BATCH_SIZE = 2
 _BROAD_OVERVIEW_SOURCE_COUNT = 6
+_MONTH_PATTERN = (
+    r"\b(january|february|march|april|may|june|july|august|september|"
+    r"october|november|december)(?:\s+(\d{4}))?\b"
+)
+_EXACT_IDENTIFIER_PATTERN = re.compile(
+    r"\b[A-Za-z]{1,12}[-_][A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*\b|"
+    r"\b[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9_-]*\b"
+)
+_REQUIRED_QUERY_TERMS = {
+    "revenue": ("revenue", "revenues"),
+    "profit": ("profit", "profits"),
+    "margin": ("margin", "margins"),
+    "cost": ("cost", "costs"),
+    "budget": ("budget", "budgets"),
+    "invoice": ("invoice", "invoices"),
+    "churn": ("churn",),
+    "retention": ("retention",),
+    "conversion": ("conversion", "conversions"),
+    "sales": ("sales",),
+}
 
 
 @dataclass(frozen=True)
@@ -113,11 +133,22 @@ def apply_governance_cutoff(
         mode = _decision_mode(decision)
         last_decision = decision
         last_reasons = _decision_reasons(decision)
-        trajectory.append(_prefix_trace(size, mode, decision))
+        trace = _prefix_trace(size, mode, decision)
 
         if mode is AnswerMode.TRUSTWORTHY:
             consecutive_disputed = 0
             if size >= policy.min_trustworthy_docs:
+                contract_blocker = _query_contract_blocker(
+                    query,
+                    profile,
+                    results[:size],
+                    policy,
+                )
+                if contract_blocker:
+                    trace["contract_blocker"] = contract_blocker
+                    trajectory.append(trace)
+                    continue
+                trajectory.append(trace)
                 return GovernanceCutoffResult(
                     selected=results[:size],
                     mode=mode,
@@ -133,9 +164,11 @@ def apply_governance_cutoff(
                         stop_reason="trustworthy_min_evidence_met",
                     ),
                 )
+            trajectory.append(trace)
             continue
 
         if mode is AnswerMode.DISPUTED:
+            trajectory.append(trace)
             consecutive_disputed += 1
             if consecutive_disputed >= _STABLE_DISPUTE_DOCS:
                 stable_disputed_decision = decision
@@ -157,6 +190,7 @@ def apply_governance_cutoff(
                 )
             continue
 
+        trajectory.append(trace)
         consecutive_disputed = 0
 
     if stable_disputed_decision is not None:
@@ -180,8 +214,18 @@ def apply_governance_cutoff(
             ),
         )
 
-    reasons = list(last_reasons)
-    reasons.append(f"Pyrrho abstained after evaluating the top {policy.max_docs} evidence item(s).")
+    contract_blocker = _query_contract_blocker(query, profile, results[: policy.max_docs], policy)
+    if contract_blocker:
+        reasons = list(last_reasons)
+        reasons.insert(0, contract_blocker)
+        reasons.append("Evidence did not satisfy the query contract within the cutoff.")
+        stop_reason = "contract_unsatisfied_at_cutoff"
+    else:
+        reasons = list(last_reasons)
+        reasons.append(
+            f"Pyrrho abstained after evaluating the top {policy.max_docs} evidence item(s)."
+        )
+        stop_reason = "cutoff_exhausted"
     return GovernanceCutoffResult(
         selected=results[: policy.max_docs],
         mode=AnswerMode.ABSTAIN,
@@ -194,7 +238,8 @@ def apply_governance_cutoff(
             mode=AnswerMode.ABSTAIN,
             decision=last_decision,
             trajectory=trajectory,
-            stop_reason="cutoff_exhausted",
+            stop_reason=stop_reason,
+            contract_blocker=contract_blocker,
         ),
     )
 
@@ -245,6 +290,8 @@ def governance_query_shape(profile: Any, *, query: str | None = None) -> str:
         or getattr(profile, "comparison_entities", None)
     ):
         return "comparison"
+    if _looks_like_temporal_comparison(query or "", profile):
+        return "comparison"
     if getattr(profile, "has_aggregation_intent", False):
         return "aggregation"
     if _is_broad_overview_query(query or "", profile):
@@ -256,6 +303,23 @@ def governance_query_shape(profile: Any, *, query: str | None = None) -> str:
     ):
         return "broad"
     return "narrow"
+
+
+def _looks_like_temporal_comparison(query: str, profile: Any) -> bool:
+    """Return whether temporal range wording needs comparison-style coverage."""
+    if not query:
+        return False
+    lower = query.lower()
+    if not getattr(profile, "has_temporal_intent", False):
+        return False
+    if len(_required_temporal_requirements(query)) < 2:
+        return False
+    return bool(
+        re.search(
+            r"\b(between|compare|comparison|versus|vs|higher|lower|changed|changes|change)\b",
+            lower,
+        )
+    )
 
 
 def _is_broad_overview_query(query: str, profile: Any) -> bool:
@@ -388,6 +452,7 @@ def _governance_cutoff_metadata(
     decision: Any = None,
     trajectory: list[dict[str, Any]] | None = None,
     stop_reason: str | None = None,
+    contract_blocker: str | None = None,
 ) -> dict[str, Any]:
     """Build serializable metadata for the cutoff loop."""
     metadata = {
@@ -398,6 +463,8 @@ def _governance_cutoff_metadata(
     }
     if stop_reason:
         metadata["stop_reason"] = stop_reason
+    if contract_blocker:
+        metadata["contract_blocker"] = contract_blocker
     if policy is not None:
         metadata["policy"] = {
             "query_shape": policy.query_shape,
@@ -411,6 +478,158 @@ def _governance_cutoff_metadata(
     if pyrrho_metadata:
         metadata["pyrrho"] = pyrrho_metadata
     return metadata
+
+
+def _query_contract_blocker(
+    query: str,
+    profile: Any,
+    results: list["ReadResult"],
+    policy: GovernanceCutoffPolicy,
+) -> str | None:
+    """Return a hard blocker when evidence misses explicit query requirements."""
+    requirements = _contract_requirements(query, profile, policy)
+    if not requirements:
+        return None
+
+    evidence = _normalized_evidence(results)
+    missing = [
+        label
+        for label, variants in requirements
+        if not any(_contains_all_terms(evidence, variant) for variant in variants)
+    ]
+    if not missing:
+        return None
+
+    shown = ", ".join(missing[:4])
+    suffix = "" if len(missing) <= 4 else f", +{len(missing) - 4} more"
+    return f"Query contract not satisfied: retrieved evidence is missing {shown}{suffix}."
+
+
+def _contract_requirements(
+    query: str,
+    profile: Any,
+    policy: GovernanceCutoffPolicy,
+) -> list[tuple[str, tuple[tuple[str, ...], ...]]]:
+    """Build explicit coverage requirements from the query and retrieval profile."""
+    requirements: list[tuple[str, tuple[tuple[str, ...], ...]]] = []
+    seen: set[str] = set()
+
+    def add(label: str, variants: tuple[tuple[str, ...], ...]) -> None:
+        key = label.lower()
+        if key and key not in seen:
+            seen.add(key)
+            requirements.append((label, variants))
+
+    for label, variants in _required_temporal_requirements(query):
+        add(label, variants)
+
+    if policy.query_shape == "comparison" or getattr(profile, "has_comparison_intent", False):
+        for entity in getattr(profile, "comparison_entities", []) or []:
+            normalized = _clean_requirement_label(str(entity))
+            if normalized:
+                add(normalized, (_terms_variant(normalized),))
+
+    for identifier in _exact_identifiers(query):
+        add(identifier, _identifier_variants(identifier))
+
+    lower = query.lower()
+    for term, variants in _REQUIRED_QUERY_TERMS.items():
+        if re.search(rf"\b{re.escape(term)}s?\b", lower):
+            add(term, tuple((variant,) for variant in variants))
+
+    return requirements
+
+
+def _required_temporal_requirements(query: str) -> list[tuple[str, tuple[tuple[str, ...], ...]]]:
+    """Return explicit month/quarter/year requirements from a query."""
+    lower = query.lower()
+    requirements: list[tuple[str, tuple[tuple[str, ...], ...]]] = []
+    seen: set[str] = set()
+
+    for match in re.finditer(r"\b(q[1-4])(?:\s+(\d{4}))?\b", lower):
+        quarter = match.group(1)
+        year = match.group(2)
+        label = f"{quarter} {year}" if year else quarter
+        if label not in seen:
+            seen.add(label)
+            requirements.append((label, ((_terms_variant(label)),)))
+
+    for match in re.finditer(_MONTH_PATTERN, lower):
+        month = match.group(1)
+        year = match.group(2)
+        label = f"{month} {year}" if year else month
+        if label not in seen:
+            seen.add(label)
+            requirements.append((label, ((_terms_variant(label)),)))
+
+    if not requirements:
+        for match in re.finditer(r"\b\d{4}\b", lower):
+            year = match.group(0)
+            if year not in seen:
+                seen.add(year)
+                requirements.append((year, ((year,),)))
+
+    return requirements
+
+
+def _exact_identifiers(query: str) -> list[str]:
+    """Extract exact identifiers from the user query."""
+    identifiers: list[str] = []
+    seen: set[str] = set()
+    for match in _EXACT_IDENTIFIER_PATTERN.finditer(query):
+        value = match.group(0).strip(".,;:()[]{}")
+        if not value or value.lower() in seen:
+            continue
+        seen.add(value.lower())
+        identifiers.append(value)
+    return identifiers
+
+
+def _identifier_variants(identifier: str) -> tuple[tuple[str, ...], ...]:
+    """Return tokenizer-tolerant variants for an exact identifier."""
+    variants = {
+        _terms_variant(identifier),
+        _terms_variant(identifier.replace("_", "-")),
+        _terms_variant(identifier.replace("-", "_")),
+        _terms_variant(identifier.replace("_", " ").replace("-", " ")),
+    }
+    return tuple(variant for variant in variants if variant)
+
+
+def _normalized_evidence(results: list["ReadResult"]) -> str:
+    """Combine selected evidence fields into normalized searchable text."""
+    parts: list[str] = []
+    for result in results:
+        parts.append(str(getattr(result, "content", "")))
+        parts.append(str(getattr(result, "file_path", "")))
+        address = getattr(result, "address", None)
+        if address is not None:
+            parts.append(str(getattr(address, "location", "")))
+            parts.append(str(getattr(address, "summary", "")))
+        metadata = getattr(result, "metadata", {}) or {}
+        if isinstance(metadata, dict):
+            parts.extend(str(value) for value in metadata.values() if isinstance(value, str))
+    return _normalize_text(" ".join(parts))
+
+
+def _contains_all_terms(evidence: str, terms: tuple[str, ...]) -> bool:
+    """Return whether all normalized terms are present in selected evidence."""
+    return all(re.search(rf"\b{re.escape(term)}\b", evidence) for term in terms if term)
+
+
+def _terms_variant(value: str) -> tuple[str, ...]:
+    """Normalize a requirement label into word-like evidence terms."""
+    return tuple(part for part in _normalize_text(value).split() if part)
+
+
+def _clean_requirement_label(value: str) -> str:
+    """Normalize a profile/entity label without destroying temporal tokens."""
+    return re.sub(r"\s+", " ", value.strip(" ?.,;:()[]{}")).lower()
+
+
+def _normalize_text(value: str) -> str:
+    """Normalize text for deterministic contract matching."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
 
 
 def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:

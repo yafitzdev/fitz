@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +11,8 @@ import typer
 
 from fitz_sage.cli.ui import ui
 from fitz_sage.runtime import create_engine, get_default_engine, get_engine_registry
+
+logger = logging.getLogger(__name__)
 
 
 def _pid_path(collection: str) -> Path:
@@ -19,6 +22,11 @@ def _pid_path(collection: str) -> Path:
 
 def command(collection: str, engine: Optional[str]) -> None:
     """Continue indexing a persisted collection until deep enrichment is complete."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+        force=True,
+    )
     registry = get_engine_registry()
     engine_name = engine or get_default_engine()
     if engine_name not in registry.list():
@@ -26,9 +34,13 @@ def command(collection: str, engine: Optional[str]) -> None:
         raise typer.Exit(1)
 
     engine_instance = create_engine(engine_name)
-    engine_instance.load(collection)
     try:
+        logger.info("Index daemon started: collection=%s engine=%s", collection, engine_name)
+        logger.info("Index daemon loading collection: %s", collection)
+        engine_instance.load(collection)
+        logger.info("Index daemon continuing enrichment: %s", collection)
         engine_instance.continue_indexing()
+        logger.info("Index daemon completed: collection=%s engine=%s", collection, engine_name)
     finally:
         try:
             _pid_path(collection).unlink(missing_ok=True)

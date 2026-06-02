@@ -336,21 +336,26 @@ class BackgroundIngestWorker:
             return
 
         if current.state == FileState.QUERY_READY:
+            logger.info("Deep enrichment entity linking started for %s", current.rel_path)
             self._core.link_entities_file(current.file_id, current.file_type)
             self._manifest.update_state(current.rel_path, FileState.ENTITY_LINKED)
+            logger.info("Deep enrichment entity linking finished for %s", current.rel_path)
             current = self._manifest.get(entry.rel_path)
             if current is None:
                 return
 
         if current.state == FileState.ENTITY_LINKED:
+            logger.info("Deep enrichment hierarchy started for %s", current.rel_path)
             self._core.build_hierarchy_file(current.file_id, current.file_type)
             self._manifest.update_state(current.rel_path, FileState.HIERARCHY_READY)
+            logger.info("Deep enrichment hierarchy finished for %s", current.rel_path)
             current = self._manifest.get(entry.rel_path)
             if current is None:
                 return
 
         if current.state == FileState.HIERARCHY_READY:
             self._manifest.update_state(current.rel_path, FileState.ENRICHED)
+            logger.info("Deep enrichment completed for %s", current.rel_path)
 
     def _finalize_phase(self) -> None:
         """Corpus finalize — import graph + L2 hierarchy summary."""

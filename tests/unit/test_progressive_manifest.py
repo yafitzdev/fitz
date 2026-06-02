@@ -63,6 +63,11 @@ def test_indexing_status_counts_by_state(tmp_path: Path) -> None:
     assert status["complete"] is False
     assert status["query_ready"] is False
     assert status["deep_pending"] == 4
+    assert status["deep_pending_files"][0] == {
+        "path": "a.py",
+        "state": "registered",
+        "priority": 4,
+    }
     assert status["fully_enriched"] is False
     assert status["by_state"] == {
         "registered": 1,
@@ -112,6 +117,7 @@ def test_indexing_status_none_manifest() -> None:
         "complete": True,
         "query_ready": True,
         "deep_pending": 0,
+        "deep_pending_files": [],
         "fully_enriched": True,
         "by_state": {},
     }

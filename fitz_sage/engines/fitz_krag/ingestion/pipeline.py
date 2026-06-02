@@ -1,4 +1,5 @@
 # fitz_sage/engines/fitz_krag/ingestion/pipeline.py
+# fitz_sage/engines/fitz_krag/ingestion/pipeline.py
 """
 KRAG ingestion core.
 
@@ -712,7 +713,7 @@ class KragIngestPipeline:
         sections = self._section_store.get_by_file(file_id)
         if not sections:
             return
-        self._enricher.enrich_section_entities(sections)
+        self._enricher.derive_section_entities(sections)
         self._section_store.update_enrichment_by_file(file_id, sections)
         if self._entity_graph_store:
             self._populate_entity_graph(sections, "section_id")
