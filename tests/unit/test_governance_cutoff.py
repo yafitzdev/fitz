@@ -120,6 +120,42 @@ def test_contract_gate_abstains_when_required_metric_is_missing():
     assert "revenue" in result.reasons[0]
 
 
+def test_metric_comparison_cutoff_prefers_exact_table_evidence():
+    """Metric comparisons should not stop on weaker prose before exact table rows."""
+    profile = SimpleNamespace(
+        has_temporal_intent=True,
+        has_comparison_intent=True,
+        comparison_entities=["Q1", "Q2"],
+        answer_type="comparative",
+    )
+    q2_metrics = _result(
+        "| Metric | April | May | Q2 Avg | vs Q1 |\n"
+        "| Total Responses | 278 | 312 | 295 | +51% |",
+        "quarterly_summary_q2_2024.md",
+    )
+    q1_conclusion = _result(
+        "Q1 established a strong foundation. Customer engagement is increasing "
+        "(50% more responses).",
+        "quarterly_summary_q1_2024.md",
+    )
+    q1_metrics = _result(
+        "| Metric | January | February | March | Change |\n"
+        "| Total Responses | 156 | 189 | 234 | +50% |",
+        "quarterly_summary_q1_2024.md",
+    )
+
+    result = apply_governance_cutoff(
+        "Which quarterly summary had higher total responses, Q1 or Q2?",
+        [q2_metrics, q1_conclusion, q1_metrics],
+        _TrustworthyGovernance(),
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [q2_metrics, q1_metrics]
+    assert q1_conclusion not in result.selected
+
+
 class _TrustworthyGovernance:
     def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
         return GovernanceDecision(

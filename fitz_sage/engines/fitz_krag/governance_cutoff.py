@@ -44,6 +44,52 @@ _REQUIRED_QUERY_TERMS = {
     "conversion": ("conversion", "conversions"),
     "sales": ("sales",),
 }
+_METRIC_STOP_TERMS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "between",
+    "compare",
+    "compared",
+    "did",
+    "doc",
+    "docs",
+    "document",
+    "documents",
+    "for",
+    "had",
+    "has",
+    "have",
+    "higher",
+    "highest",
+    "how",
+    "in",
+    "less",
+    "lower",
+    "lowest",
+    "more",
+    "most",
+    "of",
+    "or",
+    "quarter",
+    "quarterly",
+    "report",
+    "reports",
+    "summary",
+    "summaries",
+    "the",
+    "vs",
+    "versus",
+    "was",
+    "were",
+    "what",
+    "when",
+    "which",
+    "who",
+    "why",
+}
+_METRIC_MODIFIER_TERMS = {"average", "avg", "count", "mean", "number", "sum", "total"}
 
 
 @dataclass(frozen=True)
@@ -122,6 +168,8 @@ def apply_governance_cutoff(
                 "sufficiency_evaluated": False,
             },
         )
+
+    results = _prioritize_comparison_metric_evidence(query, profile, results, policy)
 
     last_reasons: list[str] = []
     last_decision: Any = None
@@ -538,6 +586,116 @@ def _contract_requirements(
             add(term, tuple((variant,) for variant in variants))
 
     return requirements
+
+
+def _prioritize_comparison_metric_evidence(
+    query: str,
+    profile: Any,
+    results: list["ReadResult"],
+    policy: GovernanceCutoffPolicy,
+) -> list["ReadResult"]:
+    """For metric comparisons, seed the cutoff prefix with direct metric evidence."""
+    if policy.query_shape != "comparison" or len(results) < 3:
+        return results
+
+    metric_phrases = _comparison_metric_phrases(query)
+    if not metric_phrases:
+        return results
+
+    entity_variants = _comparison_entity_variants(query, profile)
+    scored: list[tuple[int, int, "ReadResult"]] = []
+    best_score = 0
+    for index, result in enumerate(results):
+        evidence = _normalized_evidence([result])
+        score = _comparison_metric_evidence_score(evidence, metric_phrases, entity_variants)
+        best_score = max(best_score, score)
+        scored.append((score, index, result))
+
+    if best_score <= 0:
+        return results
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [result for _, _, result in scored]
+
+
+def _comparison_metric_phrases(query: str) -> tuple[str, ...]:
+    """Extract metric-like terms from a comparison query."""
+    tokens = [
+        token
+        for token in _normalize_text(query).split()
+        if token and token not in _METRIC_STOP_TERMS and not re.fullmatch(r"q[1-4]|\d{4}", token)
+    ]
+    phrases: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        normalized = " ".join(_terms_variant(value))
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            phrases.append(normalized)
+
+    for term, variants in _REQUIRED_QUERY_TERMS.items():
+        if re.search(rf"\b{re.escape(term)}s?\b", query.lower()):
+            for variant in variants:
+                add(variant)
+
+    for first, second in zip(tokens, tokens[1:], strict=False):
+        if first in _METRIC_MODIFIER_TERMS or second not in _METRIC_MODIFIER_TERMS:
+            add(f"{first} {second}")
+
+    for token in tokens:
+        if token not in _METRIC_MODIFIER_TERMS:
+            add(token)
+
+    return tuple(phrases)
+
+
+def _comparison_entity_variants(
+    query: str,
+    profile: Any,
+) -> tuple[tuple[str, ...], ...]:
+    """Return normalized entity/time variants each comparison side may satisfy."""
+    variants: list[tuple[str, ...]] = []
+    seen: set[tuple[str, ...]] = set()
+
+    def add(items: tuple[str, ...]) -> None:
+        if items and items not in seen:
+            seen.add(items)
+            variants.append(items)
+
+    for _, requirement_variants in _required_temporal_requirements(query):
+        for variant in requirement_variants:
+            add(variant)
+
+    for entity in getattr(profile, "comparison_entities", []) or []:
+        add(_terms_variant(str(entity)))
+
+    return tuple(variants)
+
+
+def _comparison_metric_evidence_score(
+    evidence: str,
+    metric_phrases: tuple[str, ...],
+    entity_variants: tuple[tuple[str, ...], ...],
+) -> int:
+    """Score one evidence item by metric specificity and comparison-side coverage."""
+    metric_score = 0
+    for phrase in metric_phrases:
+        terms = _terms_variant(phrase)
+        if _contains_all_terms(evidence, terms):
+            metric_score += 3 if len(terms) > 1 else 1
+
+    if metric_score == 0:
+        return 0
+
+    entity_hits = sum(1 for variant in entity_variants if _contains_all_terms(evidence, variant))
+    structured_bonus = 0
+    if re.search(r"\bmetric\b", evidence) or "|" in evidence:
+        structured_bonus += 1
+    if re.search(r"\b(table|row|column|avg|average|total)\b", evidence):
+        structured_bonus += 1
+
+    return metric_score * 100 + entity_hits * 20 + structured_bonus * 10
 
 
 def _required_temporal_requirements(query: str) -> list[tuple[str, tuple[tuple[str, ...], ...]]]:
