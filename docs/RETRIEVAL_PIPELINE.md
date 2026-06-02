@@ -65,12 +65,15 @@ the richer index in the background.
 
 ```mermaid
 flowchart TD
-    Q["User query"] --> P["Query prep"]
+    Q["User query"] --> C["Pyrrho query-contract classification"]
+    C --> P["Query prep"]
     P --> R["Broad recall"]
     R --> X["Cross-strategy fusion"]
     X --> K["ONNX reranker"]
     K --> G["Pyrrho cutoff loop"]
     G --> E["EvidencePack"]
+
+    C --> C1["evidence sufficiency / structured lookup / temporal / exhaustive / comparison / overview"]
 
     P --> P1["Deterministic terms, query type, intent detection"]
     P --> P2["Managed Qwen semantic keywords"]
@@ -96,6 +99,10 @@ Broad recall is intentionally permissive. It uses real query terms, dictionary
 synonyms/acronyms, managed Qwen semantic keywords, and intent fanout for
 comparison, temporal, aggregation, and freshness queries. False positives are
 acceptable because the reranker and governance cutoff handle precision.
+Pyrrho g3.1's query-contract head now adds an early shape signal before recall:
+representative overview queries avoid false sufficiency, comparison coverage
+boosts comparison handling, temporal grounding boosts recency/temporal routing,
+and structured lookups increase table recall.
 
 Primary stores:
 
@@ -204,6 +211,7 @@ the configured synthesizer. This is separate from the retrieval package default.
 |----------|------|
 | Sparse BM25 / keyword vocabulary | Broad recall backbone. |
 | Managed Qwen semantic query keywords | Broad recall expansion in the default no-endpoint path. |
+| Pyrrho query contract | Pre-retrieval shape signal that steers recall and cutoff policy. |
 | Dictionary query expansion | Fast synonyms/acronyms, no LLM call. |
 | Query rewriting | Optional `query_intelligence` enhancement for conversational context or ambiguous phrasing. |
 | Multi-query decomposition | Optional `query_intelligence` enhancement for compound questions. |
@@ -212,7 +220,7 @@ the configured synthesizer. This is separate from the retrieval package default.
 | Hierarchical summaries | Fully indexed recall for broad analytical questions. |
 | Unindexed scan | Temporary bridge while files are not query-ready. |
 | ONNX reranker | Precision stage before governance. |
-| Pyrrho | Mandatory sufficiency and dispute cutoff for evidence packs. |
+| Pyrrho | Mandatory query-contract classification plus sufficiency and dispute cutoff for evidence packs. |
 | Multi-hop | Bounded bridge retrieval when the first pass still abstains and the answer appears one hop away. |
 
 ---
@@ -223,7 +231,7 @@ the configured synthesizer. This is separate from the retrieval package default.
 |---------------|-----------|----------|
 | Managed Qwen3.5 0.8B ONNX | yes | ingestion keywords/entities/hierarchy and default semantic query keywords |
 | ONNX reranker | default | candidate precision after broad recall |
-| Pyrrho ONNX | default product governance | evidence sufficiency, dispute, and abstention |
+| Pyrrho g3.1 | default product governance | query contract, evidence sufficiency, dispute, abstention, route/taxonomy/scalar metadata |
 | OpenAI-compatible endpoint | optional | answer synthesis, optional query intelligence, optional vision parser |
 
 No dense embedding model and no vector database are used.

@@ -30,7 +30,7 @@ Query → RetrievalPass (retrieve → rerank → read) → pyrrho verdict
 - `ABSTAIN` → **keep going.** Extract a bridge question from what's been
   read, and run another pass with it.
 
-The sufficiency check is the pyrrho verdict — a ~30 ms INT8 ONNX forward
+The sufficiency check is the Pyrrho verdict — a local CPU classifier forward
 pass, **no chat call**. In paths that allow LLM strategies, the only chat call
 multi-hop adds is bridge extraction, spent only on the `ABSTAIN` path.
 
@@ -38,7 +38,7 @@ multi-hop adds is bridge extraction, spent only on the `ABSTAIN` path.
 
 `enable_multi_hop` defaults to `true`. A single hop is the common case:
 for most queries pyrrho returns `TRUSTWORTHY` after the first pass and
-the loop exits. The cost on that path is one ~30 ms pyrrho call for the
+the loop exits. The cost on that path is one local Pyrrho call for the
 sufficiency check — no chat call. `max_hops` (default `2`) caps the loop.
 
 ## Key design decisions

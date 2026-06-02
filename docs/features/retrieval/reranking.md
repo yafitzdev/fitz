@@ -62,10 +62,11 @@ swapped in a dedicated cross-encoder for three reasons:
    benchmark — chat-based reranking was reinventing this with worse
    inductive bias.
 
-The same architectural pattern as the
-[pyrrho governance classifier](https://huggingface.co/yafitzdev/pyrrho-nano-g3):
-ModernBERT-base + INT8 ONNX on raw `onnxruntime`, lazy-loaded on
-first call, cached for the process lifetime.
+The same model family as the
+[Pyrrho governance classifier](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1):
+ModernBERT-base, local CPU inference, lazy-loaded on first call, and cached for
+the process lifetime. The reranker remains ONNX; Pyrrho g3.1 is a multitask
+safetensors checkpoint.
 
 ## How it works
 

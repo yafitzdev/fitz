@@ -74,19 +74,10 @@ pip install fitz-sage
 
 # Start with governed evidence. From a docs folder, --source is optional.
 fitz query "What is our refund policy?" --source ./docs
-
-# Optional: synthesize an answer from that evidence
-fitz answer "What is our refund policy?" --source ./docs \
-  --endpoint http://localhost:8080/v1 \
-  --synthesizer endpoint/gpt-oss-20b
 ```
 
 That's it. Your documents are now searchable with governed provenance first.
 `fitz query` returns evidence, not a generated answer.
-
-
-![fitz-sage quickstart demo](https://raw.githubusercontent.com/yafitzdev/fitz-sage/main/docs/assets/quickstart_demo.gif)
-*Figure 1: Example of user experience for querying documents using fitz-sage.*
 
 ---
 
@@ -99,10 +90,10 @@ problem directly, while working as a Data Engineer in the automotive industry. N
 The retrieval architecture is [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md) — documents are parsed into typed units (
 code symbols, sections, tables) and each query is routed to the right search strategy, rather than searching flat chunks uniformly.
 
-Honesty is enforced by [**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-nano-g3) — a fine-tuned ModernBERT encoder that classifies every `(query, retrieved contexts)` pair into
-`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` in a local INT8 ONNX forward pass on CPU. No LLM dependency on the governance path.
+Honesty is enforced by [**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1) — a fine-tuned multitask ModernBERT encoder that classifies every `(query, retrieved contexts)` pair into
+`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` in a local CPU forward pass. No LLM dependency on the governance path.
 Validated against [fitz-gov](https://github.com/yafitzdev/fitz-gov), a purpose-built benchmark of 24,592 adversarial evidence-governance cases:
-**97.52% overall accuracy** and **1.42% false-trustworthy rate**.
+**98.05% governance accuracy**, **0.95% false-trustworthy rate**, and **94.23% query-contract macro F1** in the g3.1 release selection.
 
 It runs in production today and powers [fitz-forge](https://github.com/yafitzdev/fitz-forge).
 
@@ -197,14 +188,13 @@ SQL, and epistemic honesty out of the box — without configuration.
 > Ask a question immediately — no ingestion command required. `fitz-sage` parses a searchable surface, returns governed
 > evidence, and then lets a background daemon finish managed Qwen keyword/entity/hierarchy enrichment.
 
-**Honest answers ✅** → [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
+**Honest answers ✅** → [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
 > Most RAG tools confidently answer even when the answer isn't in your documents. Ask "What was our Q4 revenue?" when
 > your docs only cover Q1-Q3, and typical RAG hallucinates a number. `fitz-sage` says: *"I cannot find Q4 revenue figures
 > in the provided documents."*
 >
-> → Detects when to abstain at **97.83% recall** on [fitz-gov](https://github.com/yafitzdev/fitz-gov), a 24,592-case benchmark for
-> evidence governance.
-> Overall accuracy: **97.52%**. False-trustworthy rate: **1.42%**. One local encoder forward pass, no LLM call.
+> → Reaches **98.05% governance accuracy**, **0.95% false-trustworthy rate**, and **94.23% query-contract macro F1**
+> in the g3.1 release selection on [fitz-gov](https://github.com/yafitzdev/fitz-gov). One local encoder forward pass, no LLM call.
 
 **Actionable failures 🔍**
 > When `fitz-sage` can't answer, it doesn't just refuse — it explains what it searched for, shows related topics that *do* 
@@ -276,7 +266,7 @@ Full explanation: [Three-Stage Retrieval Strategy](docs/features/retrieval/three
 |-------|--------------|-----------|
 | **1. Broad recall** | Extract real query terms, add semantic keywords, run BM25 over typed units, and fan out only when the query needs it (comparison, temporal, aggregation, multi-query). False positives are acceptable here. | Cheap SQLite FTS + deterministic query prep |
 | **2. Rerank** | INT8 ONNX cross-encoder reorders the broad candidate list by true query relevance. This is where precision belongs. | Local ONNX reranker |
-| **3. Pyrrho cutoff** | `pyrrho` evaluates `query + top 1`, then `query + top 2`, and so on until evidence is enough or the cutoff is reached. | Local ONNX classifier |
+| **3. Pyrrho cutoff** | `pyrrho` evaluates `query + top 1`, then `query + top 2`, and so on until evidence is enough or the cutoff is reached. | Local g3.1 CPU classifier |
 
 <br>
 
@@ -329,11 +319,11 @@ Across those tiers, [built-in intelligence](docs/features/retrieval) handles the
 
 ### Governance — Know What You Don't Know
 
-[Feature docs](docs/CONSTRAINTS.md) • [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3) • [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov)
+[Feature docs](docs/CONSTRAINTS.md) • [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1) • [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov)
 
 Most RAG systems hallucinate confidently. `fitz-sage` **measures and enforces** epistemic honesty using
-[**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-nano-g3) — a fine-tuned ModernBERT-base encoder served as
-INT8 ONNX. One local forward pass per query, no external LLM call.
+[**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1) — a fine-tuned multitask ModernBERT-base encoder.
+One local CPU forward pass per query, no external LLM call.
 
 <br>
 
@@ -342,12 +332,12 @@ INT8 ONNX. One local forward pass per query, no external LLM call.
                │
                ▼
   ┌──────────────────────────┐
-  │  pyrrho (ModernBERT,     │   single INT8 ONNX forward pass
-  │  INT8 ONNX, local CPU)   │   split ONNX export
+  │  pyrrho g3.1             │   local CPU forward pass
+  │  multitask ModernBERT    │   safetensors checkpoint
   └────────────┬─────────────┘
                │ softmax → (p_abstain, p_disputed, p_trustworthy)
                ▼
-  Calibrated threshold (TAU = 0.60 on P(TRUSTWORTHY))
+  Calibrated threshold (TAU = 0.39 on P(TRUSTWORTHY))
                │
                ▼
   TRUSTWORTHY  /  DISPUTED  /  ABSTAIN  →  EvidencePack / optional synthesis
@@ -355,20 +345,23 @@ INT8 ONNX. One local forward pass per query, no external LLM call.
 
 <br>
 
-| Decision        | Meaning                              | Recall    |
-|-----------------|--------------------------------------|-----------|
-| **ABSTAIN**     | Evidence doesn't answer the question | **97.83%** |
-| **DISPUTED**    | Sources contradict each other        | **98.34%** |
-| **TRUSTWORTHY** | Consistent, sufficient evidence      | **96.28%** |
+| Signal | g3.1 release metric |
+|--------|---------------------|
+| Governance accuracy | **98.05%** |
+| False-trustworthy rate | **0.95%** |
+| Query-contract macro F1 | **94.23%** |
+| Route accuracy | **92.96%** |
+| Taxonomy accuracy | **89.43%** |
+| Scalar MAE | **0.0587** |
 
-**Overall accuracy: 97.52% ± 0.43** | **False-trustworthy: 1.42% ± 0.16** on fitz-gov V8.0.0 (3-seed mean, 2,459-case held-out test split)
+g3.1 also exposes pre-retrieval query contract, route/domain, taxonomy, and scalar governance metadata.
 
 <br>
 
 > [!NOTE]
 > Governance asks "given three relevant documents that partially contradict each other, should you flag a dispute, hedge
-> the answer, or trust the consensus?" That's a judgment call even humans disagree on. Pyrrho was trained on 2,920 labeled
-> cases from fitz-gov V8.0.0 to make those calls reproducibly.
+> the answer, or trust the consensus?" That's a judgment call even humans disagree on. Pyrrho was trained on
+> fitz-gov V8.1 multitask data to make those calls reproducibly.
 
 <strong>The system fails safe 🛡️</strong>
 > Threshold calibration is tuned on the `TRUSTWORTHY` probability: when pyrrho is uncertain, it falls back to the runner-up
@@ -532,37 +525,37 @@ INT8 ONNX. One local forward pass per query, no external LLM call.
 <br>
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                         fitz-sage                             │
-├───────────────────────────────────────────────────────────────┤
-│  User Interfaces                                              │
-│  CLI: query | retrieve | answer | collections | serve         │
-│  SDK: fitz_sage.evidence(source=...)                          │
-│  API: /query | /chat | /collections | /health                 │
-├───────────────────────────────────────────────────────────────┤
-│  Engines                                                      │
-│  ┌────────────┐  ┌────────────┐                               │
-│  │  FitzKRAG  │  │  Custom... │  (extensible registry)        │
-│  └────────────┘  └────────────┘                               │
-├───────────────────────────────────────────────────────────────┤
-│  Optional LLM Provider (single OpenAI-compatible HTTP protocol)│
-│  synthesis | query-intelligence | vision                      │
-├───────────────────────────────────────────────────────────────┤
-│  Local CPU encoders (INT8 ONNX, no external calls)            │
-│  pyrrho (governance)  |  gte-reranker-modernbert-base         │
-├───────────────────────────────────────────────────────────────┤
-│  Storage (SQLite + FTS5, one .db per collection)              │
-│  symbols | sections | tables | full-text search (bm25)        │
-├───────────────────────────────────────────────────────────────┤
-│  Retrieval (address-based, baked-in intelligence)             │
-│  symbols | sections | tables | import graphs | reranking      │
-├───────────────────────────────────────────────────────────────┤
-│  Managed Qwen enrichment (required, local ONNX)               │
-│  semantic query keywords | entities | hierarchy | summaries   │
-├───────────────────────────────────────────────────────────────┤
-│  Governance (epistemic safety)                                │
-│  pyrrho encoder | TRUSTWORTHY / DISPUTED / ABSTAIN, local CPU │
-└───────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         fitz-sage                               │
+├─────────────────────────────────────────────────────────────────┤
+│  User Interfaces                                                │
+│  CLI: query | retrieve | answer | collections | serve           │
+│  SDK: fitz_sage.evidence(source=...)                            │
+│  API: /query | /chat | /collections | /health                   │
+├─────────────────────────────────────────────────────────────────┤
+│  Engines                                                        │
+│  ┌────────────┐  ┌────────────┐                                 │
+│  │  FitzKRAG  │  │  Custom... │  (extensible registry)          │
+│  └────────────┘  └────────────┘                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  Optional LLM Provider (single OpenAI-compatible HTTP protocol) │
+│  synthesis | query-intelligence | vision                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Local CPU encoders (INT8 ONNX, no external calls)              │
+│  pyrrho (governance)  |  gte-reranker-modernbert-base           │
+├─────────────────────────────────────────────────────────────────┤
+│  Storage (SQLite + FTS5, one .db per collection)                │
+│  symbols | sections | tables | full-text search (bm25)          │
+├─────────────────────────────────────────────────────────────────┤
+│  Retrieval (address-based, baked-in intelligence)               │
+│  symbols | sections | tables | import graphs | reranking        │
+├─────────────────────────────────────────────────────────────────┤
+│  Managed Qwen enrichment (required, local ONNX)                 │
+│  semantic query keywords | entities | hierarchy | summaries     │
+├─────────────────────────────────────────────────────────────────┤
+│  Governance (epistemic safety)                                  │
+│  pyrrho encoder | TRUSTWORTHY / DISPUTED / ABSTAIN, local CPU   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 </details>

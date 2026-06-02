@@ -13,9 +13,10 @@ The system cannot distinguish between "I have evidence" and "I'm making an educa
 ## Solution: Pyrrho evidence governance
 
 Every `(query, retrieved evidence prefix)` pair runs through the **pyrrho**
-fine-tuned classifier ([`yafitzdev/pyrrho-nano-g3`](https://huggingface.co/yafitzdev/pyrrho-nano-g3),
-a ModernBERT-base head trained on the fitz-gov benchmark and served as
-INT8 ONNX). A single forward pass
+fine-tuned classifier
+([`yafitzdev/pyrrho-nano-g3.1`](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1),
+a multitask ModernBERT-base model trained on the fitz-gov benchmark). A
+single local CPU forward pass
 returns one of `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`:
 
 ```
@@ -31,8 +32,8 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 ### Prefix cutoff classification
 
 Pyrrho replaces the constraint+sklearn cascade that fitz-sage used
-through v0.12.x. Each decision is one ONNX inference call on CPU, no
-external LLM dependency.
+through v0.12.x. Each decision is one local classifier call on CPU, no
+external LLM dependency. g3.1 also classifies the query contract before recall.
 
 For evidence retrieval, Pyrrho runs incrementally:
 
@@ -72,7 +73,7 @@ Every `EvidencePack` includes a **mode** indicating confidence level:
 Governance is selected by the `governance:` field:
 
 ```yaml
-governance: pyrrho  # default INT8 ONNX classifier
+governance: pyrrho  # default local Pyrrho g3.1 classifier
 # governance: pyrrho/<hf-model-id>  # custom pyrrho fine-tune
 ```
 

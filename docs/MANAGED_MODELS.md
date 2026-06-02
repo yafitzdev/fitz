@@ -2,7 +2,7 @@
 # Managed Models
 
 fitz-sage retrieval works without an API key or an external inference server.
-The standard retrieval path uses local ONNX models on CPU.
+The standard retrieval path uses local CPU models.
 
 ## Default Local Models
 
@@ -10,22 +10,25 @@ The standard retrieval path uses local ONNX models on CPU.
 |---|---|---|---|
 | Enrichment and semantic query keywords | `onnx-community/Qwen3.5-0.8B-Text-ONNX` (`qwen3.5-0.8b`) | raw `onnxruntime`, CPU | Required metadata backbone for better recall. |
 | Reranking | `Alibaba-NLP/gte-reranker-modernbert-base` | raw `onnxruntime`, CPU | Cross-encoder precision over broad recall candidates. |
-| Governance | `yafitzdev/pyrrho-nano-g3` | raw `onnxruntime`, CPU | Sufficiency/conflict classifier for ranked evidence prefixes. |
+| Governance + query contract | `yafitzdev/pyrrho-nano-g3.1` | `torch` + `safetensors`, CPU | Sufficiency/conflict classifier for ranked evidence prefixes plus pre-retrieval query-contract metadata. |
 
-None of these models require `torch`, `optimum`, `llama.cpp`, GGUF, or an
-OpenAI-compatible server.
+None of these models require `optimum`, `llama.cpp`, GGUF, or an
+OpenAI-compatible server. Pyrrho g3.1 currently uses `torch` because the
+published multitask checkpoint is a safetensors model; Qwen and the reranker
+remain ONNX-only.
 
 ## Download Behavior
 
 Models are downloaded lazily from Hugging Face the first time a workflow needs
-them. The files are cached by `huggingface_hub` in the user's normal Hugging
-Face cache.
+them. Qwen and the reranker use the Hugging Face cache. Pyrrho uses Fitz's
+managed user cache under `~/.fitz/models/pyrrho/...` so Windows users do not need
+symlink privileges.
 
 | Model | Trigger |
 |---|---|
 | Qwen3.5 0.8B ONNX | First query or ingest that needs required enrichment or semantic query keywords. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
-| Pyrrho | First governance cutoff evaluation. |
+| Pyrrho g3.1 | First query-contract classification or governance cutoff evaluation. |
 
 The CLI may print messages such as:
 

@@ -133,12 +133,13 @@ Epistemic governance (TRUSTWORTHY / DISPUTED / ABSTAIN) follows the
 same declaration pattern — the `governance:` key declares the classifier:
 
 ```yaml
-governance: pyrrho                  # default — the pyrrho INT8 ONNX classifier
+governance: pyrrho                  # default — the local Pyrrho g3.1 classifier
 # governance: pyrrho/<hf-model-id>  # a custom pyrrho fine-tune
 ```
 
-`governance: pyrrho` runs INT8 ONNX evidence-prefix checks in the cutoff loop.
-The v0.13.0 constraint+sklearn cascade it replaced is gone.
+`governance: pyrrho` runs query-contract classification before recall and
+evidence-prefix checks in the cutoff loop. The v0.13.0 constraint+sklearn
+cascade it replaced is gone.
 
 ## Managed enrichment
 

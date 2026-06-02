@@ -24,10 +24,11 @@ optimizes for high-recall candidate gathering first, lets the local ONNX
 cross-encoder impose precision, then asks Pyrrho whether the top-1,
 top-2, ... evidence prefix is enough to answer.
 
-**Pyrrho g1 → g3.** Governance moves to
-[`yafitzdev/pyrrho-nano-g3`](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
-with `TAU = 0.60`. The model card reports 97.52% accuracy and 1.42%
-false-trustworthy on the fitz-gov V8.0.0 held-out test split.
+**Pyrrho g1 → g3.1.** Governance moves to
+[`yafitzdev/pyrrho-nano-g3.1`](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
+with `TAU = 0.39`. The new multitask Pyrrho keeps the
+TRUSTWORTHY/DISPUTED/ABSTAIN cutoff head and adds query-contract,
+route/domain, taxonomy, and scalar heads.
 
 **Managed Qwen enrichment is standard.** Qwen3.5 0.8B ONNX is the
 required local runtime for semantic query keywords and ingestion
@@ -53,17 +54,24 @@ optional user flag.
 - **Pyrrho evidence metadata in CLI output** — evidence tables now expose
   the governance verdict, cutoff, probabilities, and reasons without a
   separate awkward metadata box.
+- **Pyrrho query-contract routing** — g3.1 classifies the query contract
+  before recall, so representative overviews, exhaustive coverage,
+  comparisons, temporal grounding, and structured lookups can steer recall
+  and cutoff policy before evidence is selected.
 
 ### 🔄 Changed
 
-- **Pyrrho docs, defaults, and calibration now target g3.** The default
-  governance repo and model-card links point at `pyrrho-nano-g3`.
+- **Pyrrho docs, defaults, and calibration now target g3.1.** The default
+  governance repo and model-card links point at `pyrrho-nano-g3.1`.
 - **ONNX encoder loading handles external data sidecars.** Split ONNX
   exports such as `model_quantized.onnx` + `model_quantized.onnx.data`
   now load through the shared encoder backend.
 - **ONNX encoder loading can fall back to `tokenizer.json`.** Hub repos
   whose tokenizer config names an unavailable wrapper still load through
   `PreTrainedTokenizerFast` when they ship a standard tokenizer JSON.
+- **Pyrrho uses Fitz's managed model cache.** The g3.1 checkpoint downloads
+  into `~/.fitz/models/pyrrho/...`, avoiding Windows Hugging Face symlink-cache
+  failures.
 - **First-run config aligns with the product defaults.** Auto-created
   configs now write `parser: cpu`, `rerank: onnx`, and
   `governance: pyrrho`; `rerank: null` / `governance: null` are internal

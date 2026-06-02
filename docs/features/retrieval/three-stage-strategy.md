@@ -13,7 +13,10 @@ The retrieval strategy is deliberately split into three jobs:
 
 This split matters because each stage optimizes a different failure mode. Recall
 is allowed to be noisy. Reranking is where precision belongs. Pyrrho decides
-whether the ranked evidence is sufficient, disputed, or incomplete.
+whether the ranked evidence is sufficient, disputed, or incomplete. Pyrrho g3.1
+also runs a query-only contract head before recall so the stack knows whether
+the user is asking for a narrow answer, comparison coverage, exhaustive
+coverage, temporal grounding, structured lookup, or a representative overview.
 
 ---
 
@@ -21,12 +24,15 @@ whether the ranked evidence is sufficient, disputed, or incomplete.
 
 ```mermaid
 flowchart LR
-    Q["User query"] --> R["1. Broad recall"]
+    Q["User query"] --> QC["Pyrrho query contract"]
+    QC --> R["1. Broad recall"]
     R --> C["Candidate evidence pool"]
     C --> K["2. ONNX rerank"]
     K --> L["Ranked evidence list"]
     L --> P["3. Pyrrho cutoff"]
     P --> E["EvidencePack"]
+
+    QC --> QC1["Recall + cutoff policy shape"]
 
     R --> R1["Real query keywords"]
     R --> R2["Managed-Qwen semantic keywords"]
@@ -58,7 +64,8 @@ Inputs:
 - the user's exact query terms
 - deterministic synonyms and acronyms
 - managed Qwen semantic keywords for the query
-- detected query shape: narrow, broad, comparison, temporal, aggregation, or freshness-sensitive
+- Pyrrho query contract: evidence sufficiency, structured lookup, temporal grounding, exhaustive coverage, comparison coverage, or representative overview
+- deterministic query shape: narrow, broad, comparison, temporal, aggregation, or freshness-sensitive
 - typed retrieval units from KRAG: sections, code symbols, tables, files, summaries
 
 Main retrieval legs:
@@ -120,7 +127,7 @@ BM25 order.
 ## Stage 3: Pyrrho Cutoff
 
 Pyrrho is not an answer generator and does not retrieve more documents. It is a
-local ONNX governance classifier over `(query, evidence prefix)`.
+local CPU governance classifier over `(query, evidence prefix)`.
 
 For a ranked list, fitz-sage evaluates prefixes:
 
@@ -178,6 +185,7 @@ The old mental model was "many retrieval strategies." The new product model is
 | Sparse BM25 / FTS5 | Recall | Cheap candidate generation. |
 | Keyword vocabulary | Recall | Exact identifiers, codes, acronyms, test IDs. |
 | Managed Qwen semantic keywords | Recall | Adds semantic aliases without embeddings. |
+| Pyrrho query contract | Recall / governance policy | Adds a pre-retrieval shape signal. |
 | Query expansion | Recall | Deterministic synonyms and acronym expansion. |
 | Query rewriting | Recall | Fixes conversational or ambiguous phrasing before search. |
 | Multi-query decomposition | Recall | Bounded fanout for compound questions. |
@@ -190,7 +198,7 @@ The old mental model was "many retrieval strategies." The new product model is
 | Supplemental scan | Recall | Covers registered files that are not fully query-ready yet. |
 | ONNX reranker | Rerank | Sorts noisy recall candidates by relevance. |
 | Multi-hop | Post-cutoff fallback | Runs another retrieval pass when Pyrrho abstains and a bridge is available. |
-| Pyrrho | Governance | Decides enough / disputed / not enough over ranked prefixes. |
+| Pyrrho | Governance | Classifies query contract and decides enough / disputed / not enough over ranked prefixes. |
 
 Nothing in this model makes enrichment optional. Required enrichment improves
 the recall surface and the evidence available to the reranker. The difference is

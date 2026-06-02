@@ -23,7 +23,7 @@ User query
 Retrieve via KRAG + FTS5
   │
   ▼
-Pyrrho classifier (single local INT8 ONNX forward pass)
+Pyrrho g3.1 classifier (local CPU forward pass)
   │
   ▼
 TRUSTWORTHY / DISPUTED / ABSTAIN
@@ -32,20 +32,19 @@ TRUSTWORTHY / DISPUTED / ABSTAIN
 EvidencePack is returned; optional synthesizer can use the mode
 ```
 
-The classifier is [`yafitzdev/pyrrho-nano-g3`](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
-on HuggingFace — a fine-tune of `answerdotai/ModernBERT-base` on the
-fitz-gov V8.0.0 benchmark. The model card has the full headline numbers;
-the short version:
+The classifier is
+[`yafitzdev/pyrrho-nano-g3.1`](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
+on Hugging Face. It is a multitask `answerdotai/ModernBERT-base`
+classifier trained from fitz-gov V8 data plus query-contract labels.
+It exposes:
 
-| Metric                     | Pyrrho nano g3 |
-| -------------------------- | -------------- |
-| Held-out test split        | 2,459 examples, 3 seeds |
-| Overall accuracy           | **97.52% ± 0.43** |
-| ABSTAIN recall             | **97.83% ± 0.76** |
-| DISPUTED recall            | **98.34% ± 0.24** |
-| TRUSTWORTHY recall         | **96.28% ± 0.83** |
-| False-trustworthy rate     | **1.42% ± 0.16** |
-| External LLM dependency    | **none** |
+| Head | Purpose |
+| ---- | ------- |
+| Governance | `TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` over `query + evidence prefix`. |
+| Query contract | Pre-retrieval shape: evidence sufficiency, structured lookup, temporal grounding, exhaustive coverage, comparison coverage, representative overview. |
+| Route/domain | Broad domain label for observability. |
+| Taxonomy | Evidence-pattern label such as direct answer, conflict, missing evidence, wrong specificity. |
+| Scalars | Evidence sufficiency, alignment, coverage, conflict density, retry value, false-trustworthy risk. |
 
 ---
 
@@ -64,7 +63,7 @@ The legacy constraint+sklearn cascade was removed entirely:
 
 What remains in `fitz_sage/governance/`:
 
-- `pyrrho.py` — the new ONNX inference module
+- `pyrrho.py` — the local Pyrrho g3.1 inference module
 - `protocol.py` — the `EvidenceItem` protocol (any object with
   `.content` + `.metadata`)
 - `instructions.py` — the small `AnswerMode → prompt instruction` map
@@ -81,6 +80,8 @@ decision = governance.decide(query, retrieved_contexts)
 # decision.mode    → AnswerMode (TRUSTWORTHY / DISPUTED / ABSTAIN)
 # decision.probs   → (p_abstain, p_disputed, p_trustworthy)
 # decision.reason  → one-line human-readable explanation
+# decision.query_contract / route / taxonomy expose g3.1 head metadata
+# decision.scalars exposes the retrieval-relevant scalar heads
 ```
 
 `retrieved_contexts` is any sequence of objects satisfying the
@@ -90,8 +91,8 @@ qualify.
 `create_governance("pyrrho")` returns a `Pyrrho` classifier instance.
 The engine owns this instance and calls `.decide()` after retrieval and
 before answer synthesis. The model is lazy-loaded on first decision;
-that first call downloads/loads the ONNX export when missing, and
-subsequent calls are a single local ONNX forward pass.
+that first call downloads/loads the safetensors checkpoint when missing, and
+subsequent calls are local CPU forward passes.
 
 ---
 
@@ -106,14 +107,19 @@ if pred == TRUSTWORTHY and P(TRUSTWORTHY) < TAU:
     pred = argmax over (ABSTAIN, DISPUTED)
 ```
 
-`TAU = 0.60` is the default. This is the rule that produces the
-headline numbers above.
+`TAU = 0.39` is the default for g3.1.
 
 ---
 
 ## Where it plugs in
 
-The `FitzKragEngine` runs the pyrrho classifier after retrieval and reranking:
+The `FitzKragEngine` uses Pyrrho twice:
+
+1. Before recall, Pyrrho classifies the query contract. That signal steers
+   recall profile and cutoff policy.
+2. After reranking, Pyrrho evaluates evidence prefixes.
+
+The cutoff loop:
 
 1. Broad recall + rerank candidates → ranked `ReadResult`s.
 2. Pyrrho scores `query + top 1`.
@@ -142,9 +148,7 @@ heuristics over 108 features. It worked but was:
   fitz-sage no longer ships (v0.12.0 dropped the embedding API).
 
 A single fine-tuned classifier replaces all of that. It sees the
-same `(query, contexts)` pair, decides in one forward pass, and ships
-as a deterministic INT8 ONNX model with adjacent external-data files
-downloaded from the Hub.
+same `(query, contexts)` pair and decides in one local forward pass.
 
 ---
 
@@ -166,7 +170,7 @@ The model card calls out these known boundaries:
 
 ## See Also
 
-- [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
+- [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
 - [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov) — the evaluation dataset
 - [pyrrho training code](https://github.com/yafitzdev/pyrrho)
 - [`features/governance/governance-benchmarking.md`](features/governance/governance-benchmarking.md) — historical notes on the pre-v0.13.0 cascade

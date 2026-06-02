@@ -132,7 +132,7 @@ query intelligence, or vision parsing. Managed Qwen enrichment is internal.
 | Hierarchical summaries  | L1 file summaries and L2 corpus overview built during enrichment |
 | Multi-hop retrieval     | Iterative bridge extraction for compound questions            |
 | ONNX reranker           | INT8 cross-encoder, single forward pass on CPU                |
-| Epistemic governance    | TRUSTWORTHY / DISPUTED / ABSTAIN via the pyrrho ONNX classifier |
+| Epistemic governance    | Query contract plus TRUSTWORTHY / DISPUTED / ABSTAIN via Pyrrho g3.1 |
 | Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
 | Progressive ingestion   | Parse first, return evidence, continue Qwen enrichment in daemon |
 
