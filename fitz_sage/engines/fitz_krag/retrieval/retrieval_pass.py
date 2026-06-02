@@ -29,21 +29,44 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressReranker
     from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouter
 
-_BROAD_OVERVIEW_TERMS = (
-    "summary",
-    "overview",
-    "roadmap",
-    "report",
-    "quarterly",
-    "annual",
-    "executive",
-    "key metrics",
-    "feedback",
-)
-_CONTROL_SURFACE_TERMS = {"test", "tests", "case", "cases", "fixture", "fixtures", "readme"}
+_BROAD_PATH_WEIGHTS = {
+    "summary": 3,
+    "roadmap": 3,
+    "quarterly": 2,
+    "report": 1,
+    "annual": 2,
+}
+_BROAD_LOCATION_WEIGHTS = {
+    "executive summary": 2,
+    "key metrics": 2,
+    "overview": 1,
+}
+_BROAD_SHARED_WEIGHTS = {
+    "feedback": 1,
+    "executive": 2,
+}
+_CONTROL_SURFACE_TERMS = {
+    "test",
+    "tests",
+    "case",
+    "cases",
+    "fixture",
+    "fixtures",
+    "readme",
+    "query",
+    "queries",
+    "prompt",
+    "prompts",
+}
 _CONTROL_SURFACE_MARKERS = (
     "keyword_test",
     "test_cases",
+    "near_duplicate",
+    "poisoning",
+    "/artifacts/",
+    "/queries",
+    "queries.",
+    "_queries",
     "/test",
     "\\test",
     "_test",
@@ -103,7 +126,9 @@ class RetrievalPass:
         if not addresses:
             return []
         if self._reranker is not None:
+            candidates = addresses
             addresses = self._reranker.rerank(query, addresses)
+            addresses = _ensure_broad_corpus_coverage(query, candidates, addresses, profile)
         addresses = _apply_broad_corpus_prior(query, addresses, profile)
         addresses = _enforce_broad_file_diversity(addresses, profile)
         return self._reader.read(addresses, self._config.top_read)
@@ -111,16 +136,7 @@ class RetrievalPass:
 
 def _apply_broad_corpus_prior(query: str, addresses: list[Any], profile: Any = None) -> list[Any]:
     """For corpus overviews, prefer overview files over test/control surfaces."""
-    if profile is None:
-        return addresses
-    if (
-        getattr(profile, "specificity", "") != "broad"
-        and getattr(profile, "answer_type", "") != "exploratory"
-    ):
-        return addresses
-
-    query_terms = set(re.findall(r"[A-Za-z0-9_]+", query.lower()))
-    if query_terms & _CONTROL_SURFACE_TERMS:
+    if not _should_apply_broad_corpus_prior(query, profile):
         return addresses
 
     scored: list[tuple[int, int, Any]] = []
@@ -130,24 +146,70 @@ def _apply_broad_corpus_prior(query: str, addresses: list[Any], profile: Any = N
     return [address for _, _, address in scored]
 
 
+def _ensure_broad_corpus_coverage(
+    query: str,
+    candidates: list[Any],
+    selected: list[Any],
+    profile: Any = None,
+) -> list[Any]:
+    """Preserve high-value overview candidates that reranking may have dropped."""
+    if not _should_apply_broad_corpus_prior(query, profile):
+        return selected
+
+    selected_keys = {(address.source_id, address.location) for address in selected}
+    rescued: list[Any] = []
+    for address in candidates:
+        key = (address.source_id, address.location)
+        if key in selected_keys:
+            continue
+        if _broad_corpus_priority(address) <= 0:
+            continue
+        selected_keys.add(key)
+        rescued.append(address)
+    return selected + rescued
+
+
+def _should_apply_broad_corpus_prior(query: str, profile: Any = None) -> bool:
+    """Return whether broad corpus ordering should apply to this query."""
+    if profile is None:
+        return False
+    if (
+        getattr(profile, "specificity", "") != "broad"
+        and getattr(profile, "answer_type", "") != "exploratory"
+    ):
+        return False
+
+    query_terms = set(re.findall(r"[A-Za-z0-9_]+", query.lower()))
+    if query_terms & _CONTROL_SURFACE_TERMS:
+        return False
+    return True
+
+
 def _broad_corpus_priority(address: Any) -> int:
     """Score address-level corpus overview usefulness before final reading."""
-    haystack = _address_text(address)
+    path_text = _address_path_text(address)
+    location_text = str(getattr(address, "location", "")).lower().replace("\\", "/")
+    haystack = f"{path_text} {location_text}"
     priority = 0
-    if any(term in haystack for term in _BROAD_OVERVIEW_TERMS):
-        priority += 1
+    for term, weight in _BROAD_PATH_WEIGHTS.items():
+        if term in path_text:
+            priority += weight
+    for term, weight in _BROAD_LOCATION_WEIGHTS.items():
+        if term in location_text:
+            priority += weight
+    for term, weight in _BROAD_SHARED_WEIGHTS.items():
+        if term in haystack:
+            priority += weight
     if any(marker in haystack for marker in _CONTROL_SURFACE_MARKERS):
-        priority -= 2
+        priority -= 4
     return priority
 
 
-def _address_text(address: Any) -> str:
-    """Combine stable address fields used by broad-corpus ranking priors."""
+def _address_path_text(address: Any) -> str:
+    """Combine stable path-like address fields used by broad-corpus priors."""
     metadata = getattr(address, "metadata", {}) or {}
     parts = [
         getattr(address, "source_id", ""),
-        getattr(address, "location", ""),
-        getattr(address, "summary", ""),
         str(metadata.get("source_path", "")),
         str(metadata.get("disk_path", "")),
     ]

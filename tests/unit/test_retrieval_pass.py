@@ -17,6 +17,7 @@ def _addr(
     location: str = "mod.func",
     source_id: str = "src",
     summary: str | None = None,
+    metadata: dict | None = None,
 ) -> Address:
     return Address(
         kind=AddressKind.SYMBOL,
@@ -24,6 +25,7 @@ def _addr(
         location=location,
         summary=summary or f"Symbol {location}",
         score=0.9,
+        metadata=metadata or {},
     )
 
 
@@ -130,9 +132,93 @@ class TestRetrievalPass:
         results = rp.run("What are the key facts in this corpus?", profile=profile)
 
         assert [r.address.source_id for r in results] == [
-            "product_roadmap_2024.md",
             "quarterly_summary_q2_2024.md",
+            "product_roadmap_2024.md",
             "keyword_test/test_cases.md",
+        ]
+
+    def test_broad_corpus_query_rescues_overview_file_dropped_by_reranker(self):
+        queries = _addr(
+            location="Queries",
+            source_id="retrieval_logic/base/queries.md",
+            summary="Queries used by retrieval tests",
+        )
+        q2 = _addr(
+            location="quarterly_summary_q2_2024.md",
+            source_id="quarterly_summary_q2_2024.md",
+            summary="Q2 executive summary and key metrics",
+        )
+        roadmap = _addr(
+            location="product_roadmap_2024.md",
+            source_id="product_roadmap_2024.md",
+            summary="Product roadmap and launch priorities",
+        )
+        rp, _router, reranker, _reader = _build([queries, q2, roadmap])
+        reranker.rerank.return_value = [queries, q2]
+        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+
+        results = rp.run("What are the key facts in this corpus?", profile=profile)
+
+        assert [r.address.source_id for r in results] == [
+            "quarterly_summary_q2_2024.md",
+            "product_roadmap_2024.md",
+            "retrieval_logic/base/queries.md",
+        ]
+
+    def test_broad_corpus_query_prioritizes_summaries_over_generic_overviews(self):
+        feedback = _addr(
+            location="Overview > Agent Quality",
+            source_id="hierarchical_rag/feedback_march_2024.md",
+            summary="Customer feedback overview",
+        )
+        q1 = _addr(
+            location="quarterly_summary_q1_2024.md",
+            source_id="quarterly_summary_q1_2024.md",
+            summary="Q1 executive summary and key metrics",
+        )
+        roadmap = _addr(
+            location="product_roadmap_2024.md",
+            source_id="product_roadmap_2024.md",
+            summary="Product roadmap and launch priorities",
+        )
+        rp, _router, reranker, _reader = _build([feedback, q1, roadmap])
+        reranker.rerank.return_value = [feedback, q1, roadmap]
+        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+
+        results = rp.run("What are the key facts in this corpus?", profile=profile)
+
+        assert [r.address.source_id for r in results] == [
+            "quarterly_summary_q1_2024.md",
+            "product_roadmap_2024.md",
+            "hierarchical_rag/feedback_march_2024.md",
+        ]
+
+    def test_broad_corpus_query_does_not_promote_content_summary_words(self):
+        incident = _addr(
+            location="A16 Incident 17B Impact Summary",
+            source_id=(
+                "retrieval_logic/near_duplicate_poisoning/artifacts/"
+                "A16_incident_17b_impact_summary.txt"
+            ),
+            summary="Title: Incident Report Summary",
+        )
+        feedback = _addr(
+            location="Overview > Agent Quality",
+            source_id="hierarchical_rag/feedback_march_2024.md",
+            summary="Customer comments",
+        )
+        rp, _router, reranker, _reader = _build([incident, feedback])
+        reranker.rerank.return_value = [incident, feedback]
+        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+
+        results = rp.run("What are the key facts in this corpus?", profile=profile)
+
+        assert [r.address.source_id for r in results] == [
+            "hierarchical_rag/feedback_march_2024.md",
+            (
+                "retrieval_logic/near_duplicate_poisoning/artifacts/"
+                "A16_incident_17b_impact_summary.txt"
+            ),
         ]
 
     def test_broad_test_query_keeps_test_surface_order(self):

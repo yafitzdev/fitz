@@ -246,13 +246,35 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
             print(f"[{item.rank}] {_short_path(item.file_path)} {location} score={score}")
             print(f"    {_sanitize_for_display(item.excerpt)}")
 
-    if indexing_status and not indexing_status.get("complete", True):
-        pending = indexing_status.get("pending", "?")
-        total = indexing_status.get("total", "?")
+    if indexing_status and (
+        not indexing_status.get("complete", True)
+        or not indexing_status.get("fully_enriched", True)
+    ):
+        status_line = _format_indexing_status(indexing_status)
         if RICH:
-            console.print(f"[dim]Indexing pending: {pending}/{total}[/dim]")
+            console.print(f"[dim]{status_line}[/dim]")
         else:
-            print(f"Indexing pending: {pending}/{total}")
+            print(status_line)
+
+
+def _format_indexing_status(indexing_status: dict) -> str:
+    """Return a user-facing status line for query-ready vs deep enrichment work."""
+    total = indexing_status.get("total", "?")
+    by_state = indexing_status.get("by_state", {}) or {}
+    if by_state and not by_state.get("registered", 0):
+        if not indexing_status.get("complete", True):
+            pending = indexing_status.get("pending", "?")
+            return f"Enrichment pending: {pending}/{total}"
+        if not indexing_status.get("fully_enriched", True):
+            pending = indexing_status.get("deep_pending", "?")
+            return f"Deep enrichment pending: {pending}/{total}"
+
+    if indexing_status.get("query_ready") and not indexing_status.get("fully_enriched", True):
+        pending = indexing_status.get("deep_pending", "?")
+        return f"Deep enrichment pending: {pending}/{total}"
+
+    pending = indexing_status.get("pending", "?")
+    return f"Indexing pending: {pending}/{total}"
 
 
 def _short_path(path: str) -> str:
