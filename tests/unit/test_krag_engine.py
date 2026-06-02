@@ -808,6 +808,24 @@ class TestEvidence:
         """Queries like `Q1 or Q2` should not stop on one quarterly document."""
         engine = _make_engine()
         addresses, results = _evidence_results(2)
+        results[0].content = "Q1 total revenue was 100."
+        results[0].address = Address(
+            kind=results[0].address.kind,
+            source_id=results[0].address.source_id,
+            location=results[0].address.location,
+            summary="Q1 total revenue was 100.",
+            score=results[0].address.score,
+            metadata=results[0].address.metadata,
+        )
+        results[1].content = "Q2 total revenue was 120."
+        results[1].address = Address(
+            kind=results[1].address.kind,
+            source_id=results[1].address.source_id,
+            location=results[1].address.location,
+            summary="Q2 total revenue was 120.",
+            score=results[1].address.score,
+            metadata=results[1].address.metadata,
+        )
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
         engine._governance = MagicMock()

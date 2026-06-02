@@ -165,8 +165,8 @@ def vlm_krag_engine(set_workspace):
         "vision": f"endpoint/{VISION_MODEL}",
         "vision_base_url": _RESOLVED_VISION_BASE_URL,
         "parser": "docling_vision",
-        # Relax for testing
-        "governance": None,
+        # Mandatory product path: retrieval is governed by Pyrrho.
+        "governance": "pyrrho",
         "strict_grounding": False,
         "top_addresses": 20,
         "top_read": 10,

@@ -284,7 +284,7 @@ class TestApplyChatOverrides:
 class TestQueryCommandFlagPlumbing:
     """End-to-end flag plumbing through the CLI runner."""
 
-    def test_flags_appear_in_help(self) -> None:
+    def test_query_help_stays_minimal(self) -> None:
         import re
 
         from typer.testing import CliRunner
@@ -297,10 +297,12 @@ class TestQueryCommandFlagPlumbing:
         # interleaves color codes between the two dashes of long flags),
         # which breaks substring matching. Strip them before asserting.
         plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
-        assert "--endpoint" in plain
-        assert "--synthesizer" in plain
-        assert "--model" in plain
-        assert "--api-key-env" in plain
+        assert "--source" in plain
+        assert "--collection" in plain
+        assert "--endpoint" not in plain
+        assert "--synthesizer" not in plain
+        assert "--model" not in plain
+        assert "--api-key-env" not in plain
 
     def test_answer_help_exposes_synthesizer_flag(self) -> None:
         import re
@@ -312,4 +314,7 @@ class TestQueryCommandFlagPlumbing:
         result = CliRunner().invoke(app, ["answer", "--help"])
         assert result.exit_code == 0
         plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        assert "--endpoint" in plain
         assert "--synthesizer" in plain
+        assert "--model" in plain
+        assert "--api-key-env" in plain
