@@ -1,158 +1,53 @@
-# Shell scripts (local dev)
-fitz.ps1
+# .gitignore
+# Repository whitelist. Everything is ignored unless explicitly allowed below.
+*
 
-# Local-only contributor notes — not for GitHub
-HANDOFF.md
-CLAUDE.md
+# Versioned project surfaces.
+!.github/
+!.github/**
+!docs/
+!docs/**
+!examples/
+!examples/**
+!fitz_sage/
+!fitz_sage/**
+!tests/
+!tests/**
+!tools/
+!tools/**
 
-# Local-only end-to-end smoke harness (needs a live LM Studio server;
-# can't run in CI). Kept on disk, not shipped.
-.smoke_test/
+# Root metadata.
+!.gitignore
+!CHANGELOG.md
+!CONTRIBUTING.md
+!LICENSE
+!pyproject.toml
+!README.md
 
-# Byte-compiled / optimized / DLL files
+# Local-only docs.
+docs/roadmap/
+docs/roadmap/**
+
+# Generated artifacts inside versioned trees.
 __pycache__/
+**/__pycache__/
 *.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
+**/*.py[cod]
 .pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# IDEs
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.project
-.pydevproject
-.settings/
-*.sublime-project
-*.sublime-workspace
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# ruff
+**/.pytest_cache/
+.hypothesis/
+**/.hypothesis/
 .ruff_cache/
-
-# Pyre
-.pyre/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Local configuration
-local_config.yaml
-*.local.yaml
-secrets.yaml
-
-# Test artifacts
-test_docs/
-.test_output/
-.e2e_cache.db
+**/.ruff_cache/
+.mypy_cache/
+**/.mypy_cache/
+.fitz/
+**/.fitz/
 .e2e_cache/
-
-# Mutation testing
-.mutmut-cache
-html/
-mutation_summary.txt
-
-# Vector DB data (local development)
-qdrant_data/
-chroma_data/
-
-# Logs
-*.log
-logs/
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-
-RELEASE_CHECKLIST.md
-.fitz
-rag_test_corpus
-CLAUDE.md
-.claude
-.codex
-docs/blog
-docs/limitations
-docs/roadmap
-docs/archive
-docs/todo
-
-# Claude Code temp files
-tmpclaude-*-cwd
-.mcp.json
-openapi.json
-.claudeignore
-tags
-
-# GSD planning docs (local-only)
-.planning/
-
-.fitz-graveyard
-tools/retrieval_eval/results
+**/.e2e_cache/
+*.egg-info/
+**/*.egg-info/
+build/
+dist/
+tools/retrieval_eval/results/
+tools/retrieval_eval/results/**
