@@ -209,9 +209,11 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
     reasons = getattr(pack, "reasons", []) or []
     items = getattr(pack, "items", []) or []
     indexing_status = getattr(pack, "indexing_status", {}) or {}
+    metadata = getattr(pack, "metadata", {}) or {}
+    governance_lines = _format_governance_metadata(metadata, reasons)
 
     if RICH:
-        table = Table(title=f"Evidence ({mode_text})")
+        table = Table(title=_evidence_title(mode_text, metadata))
         table.add_column("#", style="dim", width=3)
         table.add_column("File", style="cyan", max_width=48)
         table.add_column("Location", style="yellow", max_width=24)
@@ -230,14 +232,13 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
                 score,
                 _sanitize_for_display(item.excerpt),
             )
+        if governance_lines:
+            table.caption = "\n".join(governance_lines)
         console.print(table)
-
-        if reasons:
-            console.print(Panel("\n".join(reasons), title="Governance", border_style="yellow"))
     else:
-        print(f"Evidence mode: {mode_text}")
-        for reason in reasons:
-            print(f"- {reason}")
+        print(_evidence_title(mode_text, metadata))
+        for line in governance_lines:
+            print(line)
         for item in items[:max_items]:
             score = "-" if item.score is None else f"{item.score:.3f}"
             location = item.address_location
@@ -275,6 +276,80 @@ def _format_indexing_status(indexing_status: dict) -> str:
 
     pending = indexing_status.get("pending", "?")
     return f"Indexing pending: {pending}/{total}"
+
+
+def _evidence_title(mode_text: str, metadata: dict) -> str:
+    """Return the evidence table title with Pyrrho verdict folded in."""
+    pyrrho = _pyrrho_metadata(metadata)
+    verdict = pyrrho.get("mode") if pyrrho else mode_text
+    return f"Evidence - Pyrrho {verdict}" if verdict else "Evidence"
+
+
+def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]:
+    """Format Pyrrho and cutoff metadata as compact display lines."""
+    cutoff = metadata.get("governance_cutoff", {}) if isinstance(metadata, dict) else {}
+    if not isinstance(cutoff, dict):
+        cutoff = {}
+
+    lines: list[str] = []
+    pyrrho = _pyrrho_metadata(metadata)
+    probs = pyrrho.get("probabilities", {}) if pyrrho else {}
+    if isinstance(probs, dict) and probs:
+        lines.append(
+            "Pyrrho probabilities: "
+            f"trustworthy={_fmt_prob(probs.get('trustworthy'))}  "
+            f"abstain={_fmt_prob(probs.get('abstain'))}  "
+            f"disputed={_fmt_prob(probs.get('disputed'))}"
+        )
+
+    policy = cutoff.get("policy", {}) if isinstance(cutoff.get("policy", {}), dict) else {}
+    has_cutoff_values = any(key in cutoff for key in ("selected", "evaluated", "max")) or bool(
+        policy
+    )
+    if has_cutoff_values:
+        parts = [
+            f"selected={cutoff.get('selected', '?')}",
+            f"evaluated={cutoff.get('evaluated', '?')}/{cutoff.get('max', '?')}",
+        ]
+        if policy:
+            parts.extend(
+                [
+                    f"shape={policy.get('query_shape', '?')}",
+                    f"min_trust={policy.get('min_trustworthy_docs', '?')}",
+                    f"min_dispute={policy.get('min_disputed_docs', '?')}",
+                    f"dispute_patience={policy.get('disputed_patience_docs', '?')}",
+                ]
+            )
+        lines.append("Governance cutoff: " + "  ".join(parts))
+
+    reason = pyrrho.get("reason") if pyrrho else None
+    shown_reasons: set[str] = set()
+    if isinstance(reason, str) and reason:
+        lines.append(reason)
+        shown_reasons.add(reason)
+    for item in reasons:
+        if item not in shown_reasons:
+            lines.append(item)
+            shown_reasons.add(item)
+
+    return lines
+
+
+def _pyrrho_metadata(metadata: dict) -> dict:
+    """Return nested Pyrrho metadata from an evidence pack metadata dict."""
+    cutoff = metadata.get("governance_cutoff", {}) if isinstance(metadata, dict) else {}
+    if not isinstance(cutoff, dict):
+        return {}
+    pyrrho = cutoff.get("pyrrho", {})
+    return pyrrho if isinstance(pyrrho, dict) else {}
+
+
+def _fmt_prob(value: object) -> str:
+    """Format a probability-like value."""
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "?"
 
 
 def _short_path(path: str) -> str:

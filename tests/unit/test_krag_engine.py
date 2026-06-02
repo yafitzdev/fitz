@@ -63,6 +63,13 @@ def _decision(mode: AnswerMode, reason: str) -> MagicMock:
     decision = MagicMock()
     decision.mode = mode
     decision.reasons = (reason,)
+    decision.reason = reason
+    if mode is AnswerMode.TRUSTWORTHY:
+        decision.probs = (0.11, 0.22, 0.67)
+    elif mode is AnswerMode.DISPUTED:
+        decision.probs = (0.12, 0.68, 0.20)
+    else:
+        decision.probs = (0.69, 0.18, 0.13)
     return decision
 
 
@@ -662,6 +669,15 @@ class TestEvidence:
         assert cutoff["max"] == 3
         assert cutoff["mode"] == "trustworthy"
         assert cutoff["policy"]["query_shape"] == "narrow"
+        assert cutoff["pyrrho"] == {
+            "mode": "trustworthy",
+            "probabilities": {
+                "abstain": 0.11,
+                "disputed": 0.22,
+                "trustworthy": 0.67,
+            },
+            "reason": "Enough evidence at two docs.",
+        }
         first_contexts = engine._governance.decide.call_args_list[0].args[1]
         second_contexts = engine._governance.decide.call_args_list[1].args[1]
         assert len(first_contexts) == 1

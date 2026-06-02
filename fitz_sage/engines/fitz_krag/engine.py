@@ -117,6 +117,32 @@ def _merge_query_keywords(*keyword_lists: list[str]) -> list[str]:
     return merged
 
 
+def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
+    """Serialize the governance decision fields Pyrrho exposes."""
+    if decision is None:
+        return {}
+
+    metadata: dict[str, Any] = {"mode": mode.value}
+
+    probs = getattr(decision, "probs", None)
+    if isinstance(probs, (list, tuple)) and len(probs) == 3:
+        metadata["probabilities"] = {
+            "abstain": float(probs[0]),
+            "disputed": float(probs[1]),
+            "trustworthy": float(probs[2]),
+        }
+
+    reason = getattr(decision, "reason", None)
+    if not isinstance(reason, str):
+        reasons = getattr(decision, "reasons", None)
+        if isinstance(reasons, (list, tuple)) and reasons:
+            reason = str(reasons[0])
+    if isinstance(reason, str) and reason:
+        metadata["reason"] = reason
+
+    return metadata
+
+
 @dataclass
 class _RetrievalOutcome:
     """Carrier for the retrieval half of the KRAG pipeline.
@@ -910,10 +936,12 @@ class FitzKragEngine:
 
         t0 = time.perf_counter()
         last_reasons: list[str] = []
+        last_decision: Any = None
         stable_disputed_decision: Any = None
         consecutive_disputed = 0
         for size in range(1, policy.max_docs + 1):
             decision = self._governance.decide(query, results[:size])
+            last_decision = decision
             last_reasons = list(decision.reasons)
 
             if decision.mode is AnswerMode.TRUSTWORTHY:
@@ -929,6 +957,7 @@ class FitzKragEngine:
                             evaluated=size,
                             selected=size,
                             mode=decision.mode,
+                            decision=decision,
                         ),
                     )
                 continue
@@ -948,6 +977,7 @@ class FitzKragEngine:
                             evaluated=size,
                             selected=size,
                             mode=decision.mode,
+                            decision=decision,
                         ),
                     )
                 continue
@@ -969,6 +999,7 @@ class FitzKragEngine:
                     evaluated=policy.max_docs,
                     selected=policy.max_docs,
                     mode=AnswerMode.DISPUTED,
+                    decision=stable_disputed_decision,
                 ),
             )
 
@@ -986,6 +1017,7 @@ class FitzKragEngine:
                 evaluated=policy.max_docs,
                 selected=policy.max_docs,
                 mode=AnswerMode.ABSTAIN,
+                decision=last_decision,
             ),
         )
 
@@ -1056,6 +1088,7 @@ class FitzKragEngine:
         evaluated: int,
         selected: int,
         mode: AnswerMode,
+        decision: Any = None,
     ) -> dict[str, Any]:
         """Build serializable metadata for the cutoff loop."""
         metadata = {
@@ -1071,6 +1104,9 @@ class FitzKragEngine:
                 "min_disputed_docs": policy.min_disputed_docs,
                 "disputed_patience_docs": policy.disputed_patience_docs,
             }
+        pyrrho_metadata = _pyrrho_metadata(mode, decision)
+        if pyrrho_metadata:
+            metadata["pyrrho"] = pyrrho_metadata
         return metadata
 
     @staticmethod
