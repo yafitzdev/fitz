@@ -94,14 +94,16 @@ for those backends instead (Ollama exposes one at
 
 ## Feature control
 
-Optional endpoint-backed features are switched on by **provider presence**, not
-boolean flags. Enrichment and hierarchy summaries are standard engine behavior
-and are required for ingestion:
+The retrieval backbone is not optional: managed Qwen enrichment, the ONNX
+reranker, and Pyrrho governance always run in the standard product path.
+Optional endpoint-backed features are switched on by **provider presence**,
+not boolean flags:
 
-| Feature            | Enabled when                             | Disabled when                       |
+| Feature            | Standard / enabled when                  | Disabled when                       |
 | ------------------ | ---------------------------------------- | ----------------------------------- |
-| ONNX reranker      | `rerank: onnx` (default)                 | `rerank: null` for internal raw timing |
-| Governance         | `governance: pyrrho` (default)           | `governance: null` for smoke tests only |
+| Managed enrichment | always uses local `onnx/qwen3.5-0.8b`    | not disabled                        |
+| ONNX reranker      | `rerank: onnx` (default)                 | not disabled                        |
+| Governance         | `governance: pyrrho` (default)           | not disabled                        |
 | Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |
 | Answer synthesis   | `synthesizer: <provider/model>`          | `synthesizer: null`                 |
 | VLM in parser      | `parser: docling_vision` + `vision:` set | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |

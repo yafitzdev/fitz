@@ -58,17 +58,28 @@ def test_config_validation():
         FitzKragConfig(collection="test", max_context_tokens=10)
 
 
-def test_config_none_for_disabled():
-    """Test that None properly disables optional features."""
+def test_config_rejects_nullable_mandatory_retrieval_features():
+    """Governance and rerank are mandatory product features."""
+    from pydantic import ValidationError
+
+    from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+
+    with pytest.raises(ValidationError):
+        FitzKragConfig(collection="test", rerank=None)
+
+    with pytest.raises(ValidationError):
+        FitzKragConfig(collection="test", governance=None)
+
+
+def test_config_none_for_optional_vision():
+    """Vision remains optional because parser choice controls whether it is used."""
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 
     config = FitzKragConfig(
         collection="test",
-        rerank=None,  # Explicitly disabled
         vision=None,  # Explicitly disabled
     )
 
-    assert config.rerank is None
     assert config.vision is None
 
 
@@ -83,11 +94,9 @@ def test_enable_guardrails_raises_migration_error():
 
 
 def test_create_governance_dispatch():
-    """`create_governance` maps a config spec to a classifier instance or None."""
+    """`create_governance` maps a config spec to a classifier instance."""
     from fitz_sage.governance import Pyrrho, create_governance
     from fitz_sage.governance.pyrrho import MODEL_ID, TAU
-
-    assert create_governance(None) is None
 
     default = create_governance("pyrrho")
     assert isinstance(default, Pyrrho)
@@ -106,3 +115,6 @@ def test_create_governance_unknown_provider():
 
     with pytest.raises(ValueError, match="Unknown governance provider"):
         create_governance("bogus")
+
+    with pytest.raises(ValueError, match="Governance must"):
+        create_governance(None)

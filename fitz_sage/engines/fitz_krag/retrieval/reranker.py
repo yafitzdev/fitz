@@ -28,7 +28,7 @@ class AddressReranker:
         self,
         reranker: "RerankProvider",
         k: int = 10,
-        min_addresses: int = 20,
+        min_addresses: int = 2,
     ):
         self._reranker = reranker
         self._k = k
@@ -38,8 +38,7 @@ class AddressReranker:
         """
         Rerank addresses using cross-encoder on summaries.
 
-        Skips reranking if fewer than min_addresses to avoid unnecessary
-        API calls when the set is already small enough.
+        Skips reranking only when fewer than min_addresses are available.
 
         Args:
             query: User query text

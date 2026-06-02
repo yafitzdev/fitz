@@ -125,8 +125,8 @@ The `FitzKragEngine` runs the pyrrho classifier after retrieval and reranking:
    cutoff metadata, and source items.
 6. Optional `answer()` synthesis receives the same mode and evidence.
 
-`governance: pyrrho` is the product default. `governance: null` exists only for
-internal smoke tests and raw retrieval timing.
+`governance: pyrrho` is the product default and governance is mandatory in the
+standard retrieval pipeline.
 
 ---
 

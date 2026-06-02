@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
@@ -24,7 +25,7 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     """Build a `FitzKragEngine` with every component replaced by a mock.
 
     Bypasses `__init__` entirely — no real imports, no stores. Detection,
-    governance, multi-hop, and rewriting are disabled; the query batcher
+    multi-hop and rewriting are disabled; the query batcher
     returns a neutral `GENERAL` analysis. Pass `**config_overrides` to
     tweak the `FitzKragConfig` (`collection` defaults to `test_collection`).
     """
@@ -46,7 +47,13 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     engine._table_handler.process.side_effect = lambda q, results: results
     engine._assembler = MagicMock(name="assembler")
     engine._synthesizer = MagicMock(name="synthesizer")
-    engine._governance = None
+    governance_decision = MagicMock(name="governance_decision")
+    governance_decision.mode = AnswerMode.TRUSTWORTHY
+    governance_decision.reason = "Sources support a confident answer."
+    governance_decision.reasons = ("Sources support a confident answer.",)
+    governance_decision.probs = (0.1, 0.1, 0.8)
+    engine._governance = MagicMock(name="governance")
+    engine._governance.decide.return_value = governance_decision
     engine._query_rewriter = None
     engine._address_reranker = None
     engine._hop_controller = None

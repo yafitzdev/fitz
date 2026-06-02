@@ -250,8 +250,7 @@ with the migration message.
 | Removed key                  | Replacement          |
 | ---------------------------- | -------------------- |
 | `enable_guardrails: true`    | `governance: pyrrho` |
-| `enable_guardrails: false`   | internal smoke-test-only `governance: null` |
+| `enable_guardrails: false`   | remove the key; governance is mandatory |
 
-`enable_guardrails` is replaced by `governance`, which follows the
-provider-presence pattern (`rerank`, `vision`, `parser`). Loading a
+`enable_guardrails` is replaced by mandatory Pyrrho governance. Loading a
 config with the old key raises a `ValueError` with the migration message.

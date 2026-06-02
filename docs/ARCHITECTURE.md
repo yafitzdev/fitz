@@ -194,8 +194,6 @@ chat_base_url: http://localhost:8080/v1
 
 # DISABLED — omit the key (or set null)
 # synthesizer: null → no answer generation
-# rerank: null → internal raw-retrieval timing only
-# governance: null → internal smoke-test mode only
 ```
 
 ---

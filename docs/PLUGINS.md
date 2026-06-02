@@ -48,9 +48,9 @@ The same pattern applies to vision (VLM): set `parser: docling_vision`
 to bake the VLM into ingestion, or set `parser: cpu` / `parser: docling` /
 `parser: glm_ocr` to skip it.
 
-`rerank: null` and `governance: null` are internal smoke-test and raw-timing
-settings, not normal user configuration. Governance is selected by the engine
-config's `governance:` field and is not a plugin.
+Reranking and governance are not plugin toggles. Reranking is selected by the
+engine config's `rerank:` field, governance is selected by `governance:`, and
+both are part of the standard retrieval backbone.
 
 ---
 

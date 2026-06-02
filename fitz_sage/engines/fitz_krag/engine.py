@@ -26,6 +26,7 @@ from fitz_sage.core import (
 )
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+from fitz_sage.engines.fitz_krag.governance_cutoff import apply_governance_cutoff
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -33,14 +34,6 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.types import Address, ReadResult
 
 logger = get_logger(__name__)
-
-_DEFAULT_GOVERNANCE_CUTOFF = 10
-_NARROW_MIN_EVIDENCE = 1
-_COMPARISON_MIN_EVIDENCE = 2
-_BROAD_MIN_EVIDENCE = 4
-_AGGREGATION_MIN_EVIDENCE = 5
-_DISPUTE_PATIENCE_DOCS = 2
-_STABLE_DISPUTE_DOCS = 2
 
 
 def _report_timings(
@@ -117,32 +110,6 @@ def _merge_query_keywords(*keyword_lists: list[str]) -> list[str]:
     return merged
 
 
-def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
-    """Serialize the governance decision fields Pyrrho exposes."""
-    if decision is None:
-        return {}
-
-    metadata: dict[str, Any] = {"mode": mode.value}
-
-    probs = getattr(decision, "probs", None)
-    if isinstance(probs, (list, tuple)) and len(probs) == 3:
-        metadata["probabilities"] = {
-            "abstain": float(probs[0]),
-            "disputed": float(probs[1]),
-            "trustworthy": float(probs[2]),
-        }
-
-    reason = getattr(decision, "reason", None)
-    if not isinstance(reason, str):
-        reasons = getattr(decision, "reasons", None)
-        if isinstance(reasons, (list, tuple)) and reasons:
-            reason = str(reasons[0])
-    if isinstance(reason, str) and reason:
-        metadata["reason"] = reason
-
-    return metadata
-
-
 @dataclass
 class _RetrievalOutcome:
     """Carrier for the retrieval half of the KRAG pipeline.
@@ -155,17 +122,6 @@ class _RetrievalOutcome:
     addresses: list[Address]
     timings: list[tuple[str, float]]
     profile: Any | None = None
-
-
-@dataclass(frozen=True)
-class _GovernanceCutoffPolicy:
-    """Deterministic stop policy wrapped around Pyrrho verdicts."""
-
-    query_shape: str
-    max_docs: int
-    min_trustworthy_docs: int
-    min_disputed_docs: int
-    disputed_patience_docs: int
 
 
 class FitzKragEngine:
@@ -387,9 +343,8 @@ class FitzKragEngine:
         self._enricher_chat = standard_chat
         self._summarizer_chat = standard_chat
 
-        # Governance — pyrrho classifier (single INT8 ONNX forward pass).
-        # Provider-presence: the `governance:` config key builds the
-        # classifier (`pyrrho` / `pyrrho/<model>`) or disables it (`null`).
+        # Governance — mandatory pyrrho classifier (single INT8 ONNX forward pass).
+        # The model lazily loads on first decide() so engine init stays fast.
         # The model lazily loads on first decide() so engine init stays fast.
         from fitz_sage.governance import create_governance
 
@@ -439,23 +394,22 @@ class FitzKragEngine:
             detection_modules=[],
         )
 
-        # Reranker — INT8 ONNX cross-encoder via get_reranker().
+        # Reranker — mandatory INT8 ONNX cross-encoder via get_reranker().
         # Default backbone: Alibaba-NLP/gte-reranker-modernbert-base.
-        # Override with rerank: "onnx/<hf-model-id>" or disable with null.
-        self._address_reranker: Any = None
-        if self._config.rerank:
-            from fitz_sage.llm.client import get_reranker
+        # Override with rerank: "onnx/<hf-model-id>".
+        from fitz_sage.llm.client import get_reranker
 
-            reranker = get_reranker(self._config.rerank)
+        reranker = get_reranker(self._config.rerank)
+        if reranker is None:
+            raise ConfigurationError("Reranking is mandatory; configure rerank: onnx.")
 
-            if reranker:
-                from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressReranker
+        from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressReranker
 
-                self._address_reranker = AddressReranker(
-                    reranker=reranker,
-                    k=self._config.rerank_k,
-                    min_addresses=self._config.rerank_min_addresses,
-                )
+        self._address_reranker = AddressReranker(
+            reranker=reranker,
+            k=self._config.rerank_k,
+            min_addresses=self._config.rerank_min_addresses,
+        )
 
         # LLM structural code search (default when chat available)
         if self._config.code_search_mode != "hybrid" and self._chat_factory:
@@ -737,30 +691,10 @@ class FitzKragEngine:
 
                 # 5. Run governance — pyrrho classifier on the (query, contexts) pair.
                 # ReadResult satisfies EvidenceItem (has .content).
-                answer_mode = AnswerMode.TRUSTWORTHY
-                governance = None
-                if self._governance is not None:
-                    t0 = time.perf_counter()
-                    governance = self._governance.decide(sanitized, expanded)
-                    answer_mode = governance.mode
-
-                    # Progressive mode: agentic LLM code search already validated
-                    # relevance structurally. If pyrrho returns ABSTAIN on a result
-                    # set produced by the progressive manifest path, prefer to
-                    # generate — the structural retrieval is the stronger signal
-                    # here than the classifier's distribution-shifted call.
-                    if (
-                        answer_mode == AnswerMode.ABSTAIN
-                        and self._manifest is not None
-                        and expanded
-                    ):
-                        logger.info(
-                            "Overriding ABSTAIN -> TRUSTWORTHY in progressive mode "
-                            "(structural retrieval validated relevance)"
-                        )
-                        answer_mode = AnswerMode.TRUSTWORTHY
-
-                    timings.append(("Governance", time.perf_counter() - t0))
+                t0 = time.perf_counter()
+                governance = self._governance.decide(sanitized, expanded)
+                answer_mode = governance.mode
+                timings.append(("Governance", time.perf_counter() - t0))
 
                 # 5.5. Compress code context (AST-based, ~50-70% token reduction)
                 expanded = compress_results(expanded)
@@ -774,9 +708,9 @@ class FitzKragEngine:
                 gap_context = None
                 conflict_context = None
                 if answer_mode == AnswerMode.ABSTAIN:
-                    governance_reasons = governance.reasons if governance else ()
+                    governance_reasons = governance.reasons
                     gap_context = self._build_gap_context(sanitized, governance_reasons)
-                elif answer_mode == AnswerMode.DISPUTED and governance:
+                elif answer_mode == AnswerMode.DISPUTED:
                     conflict_context = {"reason": governance.reason}
                 answer = self._synthesizer.generate(
                     sanitized,
@@ -864,261 +798,33 @@ class FitzKragEngine:
                 timings = list(outcome.timings)
 
                 requested_top_k = top_k or query.metadata.get("top_k")
-                selected, mode, reasons, governance_timings, cutoff_metadata = (
-                    self._apply_governance_cutoff(
-                        outcome.sanitized,
-                        outcome.expanded,
-                        profile=outcome.profile,
-                        requested_top_k=requested_top_k,
-                    )
+                cutoff = apply_governance_cutoff(
+                    outcome.sanitized,
+                    outcome.expanded,
+                    self._governance,
+                    profile=outcome.profile,
+                    requested_top_k=requested_top_k,
                 )
-                timings.extend(governance_timings)
-                items = self._build_evidence_items(selected)
+                timings.extend(cutoff.timings)
+                items = self._build_evidence_items(cutoff.selected)
 
                 self._boost_queried_files(outcome)
 
                 return EvidencePack(
                     query=outcome.sanitized,
-                    mode=mode,
+                    mode=cutoff.mode,
                     items=items,
-                    reasons=reasons,
+                    reasons=cutoff.reasons,
                     timings={name: duration for name, duration in timings},
                     indexing_status=self.indexing_status(),
                     metadata={
                         "engine": "fitz_krag",
                         "source_query": query.text,
-                        "governance_cutoff": cutoff_metadata,
+                        "governance_cutoff": cutoff.metadata,
                     },
                 )
             except Exception as e:
                 raise KnowledgeError(f"Evidence retrieval failed: {e}") from e
-
-    def _apply_governance_cutoff(
-        self,
-        query: str,
-        results: list["ReadResult"],
-        *,
-        profile: Any = None,
-        requested_top_k: Any = None,
-    ) -> tuple[list["ReadResult"], AnswerMode | None, list[str], list[tuple[str, float]], dict]:
-        """Use Pyrrho to select the smallest sufficient prefix of ranked evidence."""
-        import time
-
-        if not results:
-            return (
-                [],
-                AnswerMode.ABSTAIN,
-                ["No relevant evidence retrieved."],
-                [],
-                self._governance_cutoff_metadata(
-                    None,
-                    evaluated=0,
-                    selected=0,
-                    mode=AnswerMode.ABSTAIN,
-                ),
-            )
-
-        policy = self._governance_cutoff_policy(profile, len(results), requested_top_k)
-        if self._governance is None:
-            selected = results[: policy.max_docs]
-            return (
-                selected,
-                AnswerMode.ABSTAIN,
-                ["Pyrrho governance is unavailable; evidence sufficiency was not evaluated."],
-                [],
-                self._governance_cutoff_metadata(
-                    policy,
-                    evaluated=0,
-                    selected=len(selected),
-                    mode=AnswerMode.ABSTAIN,
-                ),
-            )
-
-        t0 = time.perf_counter()
-        last_reasons: list[str] = []
-        last_decision: Any = None
-        stable_disputed_decision: Any = None
-        consecutive_disputed = 0
-        for size in range(1, policy.max_docs + 1):
-            decision = self._governance.decide(query, results[:size])
-            last_decision = decision
-            last_reasons = list(decision.reasons)
-
-            if decision.mode is AnswerMode.TRUSTWORTHY:
-                consecutive_disputed = 0
-                if size >= policy.min_trustworthy_docs:
-                    return (
-                        results[:size],
-                        decision.mode,
-                        last_reasons,
-                        [("Governance", time.perf_counter() - t0)],
-                        self._governance_cutoff_metadata(
-                            policy,
-                            evaluated=size,
-                            selected=size,
-                            mode=decision.mode,
-                            decision=decision,
-                        ),
-                    )
-                continue
-
-            if decision.mode is AnswerMode.DISPUTED:
-                consecutive_disputed += 1
-                if consecutive_disputed >= _STABLE_DISPUTE_DOCS:
-                    stable_disputed_decision = decision
-                if self._should_stop_on_disputed(policy, size, consecutive_disputed):
-                    return (
-                        results[:size],
-                        decision.mode,
-                        last_reasons,
-                        [("Governance", time.perf_counter() - t0)],
-                        self._governance_cutoff_metadata(
-                            policy,
-                            evaluated=size,
-                            selected=size,
-                            mode=decision.mode,
-                            decision=decision,
-                        ),
-                    )
-                continue
-
-            consecutive_disputed = 0
-
-        if stable_disputed_decision is not None:
-            disputed_reasons = list(stable_disputed_decision.reasons)
-            disputed_reasons.append(
-                f"Pyrrho found a stable dispute by the top {policy.max_docs} evidence item(s)."
-            )
-            return (
-                results[: policy.max_docs],
-                AnswerMode.DISPUTED,
-                disputed_reasons,
-                [("Governance", time.perf_counter() - t0)],
-                self._governance_cutoff_metadata(
-                    policy,
-                    evaluated=policy.max_docs,
-                    selected=policy.max_docs,
-                    mode=AnswerMode.DISPUTED,
-                    decision=stable_disputed_decision,
-                ),
-            )
-
-        reasons = list(last_reasons)
-        reasons.append(
-            f"Pyrrho abstained after evaluating the top {policy.max_docs} evidence item(s)."
-        )
-        return (
-            results[: policy.max_docs],
-            AnswerMode.ABSTAIN,
-            reasons,
-            [("Governance", time.perf_counter() - t0)],
-            self._governance_cutoff_metadata(
-                policy,
-                evaluated=policy.max_docs,
-                selected=policy.max_docs,
-                mode=AnswerMode.ABSTAIN,
-                decision=last_decision,
-            ),
-        )
-
-    def _should_stop_on_disputed(
-        self,
-        policy: "_GovernanceCutoffPolicy",
-        size: int,
-        consecutive_disputed: int,
-    ) -> bool:
-        """Return whether a DISPUTED verdict is strong enough to stop."""
-        if policy.query_shape == "comparison":
-            return size >= policy.min_disputed_docs
-        if policy.query_shape == "narrow":
-            return consecutive_disputed >= policy.disputed_patience_docs + 1
-        return False
-
-    def _governance_cutoff_policy(
-        self,
-        profile: Any,
-        result_count: int,
-        requested_top_k: Any = None,
-    ) -> "_GovernanceCutoffPolicy":
-        """Build a deterministic policy for interpreting Pyrrho verdicts."""
-        max_docs = self._governance_cutoff_limit(result_count, requested_top_k)
-        query_shape = self._governance_query_shape(profile)
-        min_docs_by_shape = {
-            "narrow": _NARROW_MIN_EVIDENCE,
-            "comparison": _COMPARISON_MIN_EVIDENCE,
-            "broad": _BROAD_MIN_EVIDENCE,
-            "aggregation": _AGGREGATION_MIN_EVIDENCE,
-        }
-        min_trustworthy_docs = min(max_docs, min_docs_by_shape[query_shape])
-        min_disputed_docs = min(max_docs, _COMPARISON_MIN_EVIDENCE)
-        return _GovernanceCutoffPolicy(
-            query_shape=query_shape,
-            max_docs=max_docs,
-            min_trustworthy_docs=min_trustworthy_docs,
-            min_disputed_docs=min_disputed_docs,
-            disputed_patience_docs=_DISPUTE_PATIENCE_DOCS,
-        )
-
-    @staticmethod
-    def _governance_query_shape(profile: Any) -> str:
-        """Map retrieval profile signals to a cutoff policy shape."""
-        if profile is None:
-            return "narrow"
-        if (
-            getattr(profile, "has_comparison_intent", False)
-            or getattr(profile, "answer_type", "") == "comparative"
-            or getattr(profile, "comparison_queries", None)
-            or getattr(profile, "comparison_entities", None)
-        ):
-            return "comparison"
-        if getattr(profile, "has_aggregation_intent", False):
-            return "aggregation"
-        if (
-            getattr(profile, "specificity", "") == "broad"
-            or getattr(profile, "answer_type", "") == "exploratory"
-            or getattr(profile, "inject_corpus_summaries", False)
-        ):
-            return "broad"
-        return "narrow"
-
-    @staticmethod
-    def _governance_cutoff_metadata(
-        policy: "_GovernanceCutoffPolicy | None",
-        *,
-        evaluated: int,
-        selected: int,
-        mode: AnswerMode,
-        decision: Any = None,
-    ) -> dict[str, Any]:
-        """Build serializable metadata for the cutoff loop."""
-        metadata = {
-            "evaluated": evaluated,
-            "selected": selected,
-            "max": policy.max_docs if policy else 0,
-            "mode": mode.value,
-        }
-        if policy is not None:
-            metadata["policy"] = {
-                "query_shape": policy.query_shape,
-                "min_trustworthy_docs": policy.min_trustworthy_docs,
-                "min_disputed_docs": policy.min_disputed_docs,
-                "disputed_patience_docs": policy.disputed_patience_docs,
-            }
-        pyrrho_metadata = _pyrrho_metadata(mode, decision)
-        if pyrrho_metadata:
-            metadata["pyrrho"] = pyrrho_metadata
-        return metadata
-
-    @staticmethod
-    def _governance_cutoff_limit(result_count: int, requested_top_k: Any = None) -> int:
-        """Return the maximum evidence prefix Pyrrho may inspect."""
-        limit = _DEFAULT_GOVERNANCE_CUTOFF
-        if requested_top_k is not None:
-            try:
-                limit = min(limit, max(1, int(requested_top_k)))
-            except (TypeError, ValueError):
-                pass
-        return max(1, min(result_count, limit))
 
     def _add_semantic_query_keywords(self, query: str, plan: Any) -> Any:
         """Use local Qwen for keyword-only query expansion."""
@@ -1342,9 +1048,11 @@ class FitzKragEngine:
                     )
             except Exception as e:
                 logger.warning(f"Batched query intelligence failed: {e}")
-        else:
-            plan = self._add_semantic_query_keywords(sanitized, plan)
         timings.append(("Query prep", time.perf_counter() - t0))
+
+        t0 = time.perf_counter()
+        plan = self._add_semantic_query_keywords(sanitized, plan)
+        timings.append(("Qwen query keywords", time.perf_counter() - t0))
 
         # Build retrieval profile — single object with all gates and signals
         profile = build_retrieval_profile(
@@ -1373,7 +1081,19 @@ class FitzKragEngine:
                     progress=progress,
                 )
         addresses = [r.address for r in read_results]
-        timings.append(("Retrieval", time.perf_counter() - t0))
+        retrieval_duration = time.perf_counter() - t0
+        if not use_multi_hop:
+            pass_timings = getattr(self._retrieval_pass, "last_timings", {})
+            timings.extend(
+                (label, pass_timings[key])
+                for key, label in (
+                    ("recall", "Recall"),
+                    ("rerank", "Rerank"),
+                    ("read", "Read"),
+                )
+                if key in pass_timings
+            )
+        timings.append(("Retrieval", retrieval_duration))
 
         if not read_results:
             return _RetrievalOutcome(
@@ -1396,7 +1116,9 @@ class FitzKragEngine:
 
         # 4.5. Execute table queries (SQL generation + execution)
         if execute_table_queries:
+            t0 = time.perf_counter()
             expanded = self._table_handler.process(sanitized, expanded)
+            timings.append(("Table queries", time.perf_counter() - t0))
 
         return _RetrievalOutcome(
             sanitized=sanitized,

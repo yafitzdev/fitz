@@ -3,7 +3,7 @@
 Unit tests for AddressReranker.
 
 Tests cross-encoder reranking of KRAG addresses: reranking when addresses
-exceed min_addresses, passthrough truncation when below, and error handling.
+reach min_addresses, passthrough truncation when below, and error handling.
 """
 
 from __future__ import annotations
@@ -49,6 +49,25 @@ def _make_rerank_result(index: int, score: float) -> MagicMock:
 
 class TestAddressReranker:
     """Tests for AddressReranker.rerank()."""
+
+    def test_default_reranks_two_or_more_addresses(self):
+        """The product default reranks as soon as there is a real choice."""
+        reranker_provider = MagicMock(name="reranker")
+        reranker_provider.rerank.return_value = [
+            _make_rerank_result(index=1, score=0.95),
+            _make_rerank_result(index=0, score=0.85),
+        ]
+        addresses = [
+            _addr(location="func_a", score=0.8),
+            _addr(location="func_b", score=0.7),
+        ]
+
+        reranker = AddressReranker(reranker=reranker_provider, k=2)
+
+        result = reranker.rerank("query", addresses)
+
+        reranker_provider.rerank.assert_called_once()
+        assert [address.location for address in result] == ["func_b", "func_a"]
 
     def test_reranks_when_addresses_ge_min_addresses(self):
         """Reranking is applied when address count >= min_addresses."""

@@ -31,7 +31,6 @@ fitz_krag:
   # Reranker. 'onnx' = INT8 ONNX cross-encoder (Alibaba-NLP/gte-reranker-
   # modernbert-base by default; ~30-100ms CPU for 10-20 candidates).
   # 'onnx/<hf-model-id>' to swap in a different cross-encoder.
-  # null = disabled.
   rerank: onnx
 
   # Vision (null = disabled). Uses the OpenAI-compatible chat-completions
@@ -45,7 +44,7 @@ fitz_krag:
 
   # Governance. 'pyrrho' = INT8 ONNX epistemic classifier that labels each
   # answer TRUSTWORTHY / DISPUTED / ABSTAIN before generation.
-  # 'pyrrho/<hf-model-id>' to swap in a custom fine-tune. null = disabled.
+  # 'pyrrho/<hf-model-id>' to swap in a custom fine-tune.
   governance: pyrrho
 
   collection: default

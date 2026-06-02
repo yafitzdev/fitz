@@ -67,7 +67,8 @@ def get_reranker(
     """
     Get a rerank provider.
 
-    ``onnx`` builds the local cross-encoder reranker. Pass ``None`` to disable.
+    ``onnx`` builds the local cross-encoder reranker. Engine config keeps
+    reranking mandatory; ``None`` is accepted only by low-level tests.
     """
     return create_rerank_provider(spec, config)
 

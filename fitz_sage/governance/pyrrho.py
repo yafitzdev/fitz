@@ -37,7 +37,7 @@ headline numbers in the model card.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable
 
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.encoders.onnx import OnnxEncoderBackend
@@ -98,34 +98,64 @@ class Pyrrho(OnnxEncoderBackend):
             A GovernanceDecision with the selected AnswerMode, the full softmax
             distribution, and a one-line human-readable reason.
         """
+        return self.decide_many(query, [contexts])[0]
+
+    def decide_many(
+        self,
+        query: str,
+        contexts_by_prefix: list[list[EvidenceItem]],
+    ) -> list[GovernanceDecision]:
+        """Classify several evidence prefixes in one tokenizer/ONNX batch."""
         import numpy as np
 
-        if not contexts:
-            return GovernanceDecision(
-                mode=AnswerMode.ABSTAIN,
-                probs=(1.0, 0.0, 0.0),
-                reason="Pyrrho: no contexts retrieved.",
-            )
+        if not contexts_by_prefix:
+            return []
 
-        text = _format_input(query, (c.content for c in contexts))
-        enc = self._encode(text, truncation=True, max_length=MAX_LENGTH)
-        logits = self._run(enc)[0]  # single input -> first (only) row
+        decisions: list[GovernanceDecision | None] = [None] * len(contexts_by_prefix)
+        text_indices: list[int] = []
+        texts: list[str] = []
+        for index, contexts in enumerate(contexts_by_prefix):
+            if not contexts:
+                decisions[index] = GovernanceDecision(
+                    mode=AnswerMode.ABSTAIN,
+                    probs=(1.0, 0.0, 0.0),
+                    reason="Pyrrho: no contexts retrieved.",
+                )
+                continue
+            texts.append(_format_input(query, (c.content for c in contexts)))
+            text_indices.append(index)
 
-        exp = np.exp(logits - logits.max())
-        probs_arr = exp / exp.sum()
-        probs: tuple[float, float, float] = (
-            float(probs_arr[0]),
-            float(probs_arr[1]),
-            float(probs_arr[2]),
-        )
+        if texts:
+            enc = self._encode(texts, padding=True, truncation=True, max_length=MAX_LENGTH)
+            logits_batch = self._run(enc)
+            for index, logits in zip(text_indices, logits_batch, strict=True):
+                decisions[index] = _decision_from_logits(logits, np)
 
-        pred = int(probs_arr.argmax())
-        # Calibrated fallback: low-confidence TRUSTWORTHY -> runner-up between A/D.
-        if pred == 2 and probs[2] < TAU:
-            pred = int(np.argmax(probs_arr[:2]))
+        return [decision for decision in decisions if decision is not None]
 
-        mode = LABELS[pred]
-        return GovernanceDecision(mode=mode, probs=probs, reason=_reason_for(mode, probs))
+
+def _decision_from_logits(logits: Any, np: Any) -> GovernanceDecision:
+    """Convert one logits row into a calibrated Pyrrho decision."""
+    probs_arr = _softmax(logits, np)
+    probs: tuple[float, float, float] = (
+        float(probs_arr[0]),
+        float(probs_arr[1]),
+        float(probs_arr[2]),
+    )
+
+    pred = int(probs_arr.argmax())
+    # Calibrated fallback: low-confidence TRUSTWORTHY -> runner-up between A/D.
+    if pred == 2 and probs[2] < TAU:
+        pred = int(np.argmax(probs_arr[:2]))
+
+    mode = LABELS[pred]
+    return GovernanceDecision(mode=mode, probs=probs, reason=_reason_for(mode, probs))
+
+
+def _softmax(logits: Any, np: Any) -> Any:
+    """Softmax one logits row with numerical stabilization."""
+    exp = np.exp(logits - logits.max())
+    return exp / exp.sum()
 
 
 __all__ = ["GovernanceDecision", "Pyrrho", "MODEL_ID", "TAU"]

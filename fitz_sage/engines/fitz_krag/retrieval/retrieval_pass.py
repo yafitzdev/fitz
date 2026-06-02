@@ -16,8 +16,9 @@ runs on every query regardless of how many hops there are.
 
 from __future__ import annotations
 
-from dataclasses import replace
 import re
+import time
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.types import ReadResult
@@ -94,6 +95,7 @@ class RetrievalPass:
         self._reranker = reranker
         self._reader = reader
         self._config = config
+        self.last_timings: dict[str, float] = {}
 
     def run(
         self,
@@ -119,21 +121,34 @@ class RetrievalPass:
             Read results for the surviving addresses (``<= rerank_k`` when a
             reranker is configured).
         """
+        self.last_timings = {}
+
+        t0 = time.perf_counter()
         addresses = self._router.retrieve(
             query, profile, rewrite_result=rewrite_result, progress=progress
         )
+        self.last_timings["recall"] = time.perf_counter() - t0
         if exclude:
             addresses = [a for a in addresses if (a.source_id, a.location) not in exclude]
         if not addresses:
+            self.last_timings["rerank"] = 0.0
+            self.last_timings["read"] = 0.0
             return []
         if self._reranker is not None:
             candidates = addresses
+            t0 = time.perf_counter()
             addresses = self._reranker.rerank(query, addresses)
+            self.last_timings["rerank"] = time.perf_counter() - t0
             addresses = _ensure_broad_corpus_coverage(query, candidates, addresses, profile)
+        else:
+            self.last_timings["rerank"] = 0.0
         addresses = _apply_broad_corpus_prior(query, addresses, profile)
         addresses = _enforce_broad_file_diversity(addresses, profile)
         addresses = _assign_broad_effective_scores(query, addresses, profile)
-        return self._reader.read(addresses, self._config.top_read)
+        t0 = time.perf_counter()
+        results = self._reader.read(addresses, self._config.top_read)
+        self.last_timings["read"] = time.perf_counter() - t0
+        return results
 
 
 def _apply_broad_corpus_prior(query: str, addresses: list[Any], profile: Any = None) -> list[Any]:

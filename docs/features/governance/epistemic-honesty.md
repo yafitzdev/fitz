@@ -57,7 +57,7 @@ Every `EvidencePack` includes a **mode** indicating confidence level:
 
 ## Key Design Decisions
 
-1. **Standard product path** - `governance: pyrrho` is the default. `governance: null` is an internal smoke-test mode, not a normal user option.
+1. **Standard product path** - `governance: pyrrho` is the default and Pyrrho governance is mandatory.
 
 2. **Retrieval-first classification** - Governance labels the evidence pack before any optional synthesis.
 
@@ -73,7 +73,7 @@ Governance is selected by the `governance:` field:
 
 ```yaml
 governance: pyrrho  # default INT8 ONNX classifier
-# governance: null  # internal smoke-test mode only
+# governance: pyrrho/<hf-model-id>  # custom pyrrho fine-tune
 ```
 
 ## Files

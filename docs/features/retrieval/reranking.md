@@ -96,8 +96,8 @@ include" by design.
 
 ## Key design decisions
 
-1. **Standard rerank stage.** `rerank: onnx` is the default product path.
-   `rerank: null` is reserved for raw retrieval timing and tests.
+1. **Standard rerank stage.** `rerank: onnx` is the default product path,
+   and the engine config does not expose a normal "rerank off" mode.
 2. **Shared with pyrrho.** Both encoders subclass `OnnxEncoderBackend`
    — one `onnxruntime` + `transformers` load path, no separate
    infrastructure.
@@ -122,12 +122,6 @@ rerank: onnx        # uses Alibaba-NLP/gte-reranker-modernbert-base
 rerank: onnx/BAAI/bge-reranker-base
 # rerank: onnx/jinaai/jina-reranker-v3
 # rerank: onnx/cross-encoder/ms-marco-MiniLM-L-6-v2
-```
-
-### Internal raw-retrieval timing only
-
-```yaml
-# rerank: null
 ```
 
 ## Files

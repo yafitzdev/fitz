@@ -455,7 +455,8 @@ def create_rerank_provider(
     `Alibaba-NLP/gte-reranker-modernbert-base`. Override with
     ``onnx/<hf-model-id>`` to use a different cross-encoder.
 
-    Pass ``None`` to disable reranking entirely.
+    ``None`` is accepted only for direct low-level tests; engine config keeps
+    reranking mandatory.
     """
     if spec is None:
         return None
@@ -469,8 +470,7 @@ def create_rerank_provider(
         return OnnxReranker(model_id=model or DEFAULT_MODEL_ID)
 
     raise ValueError(
-        f"Unknown rerank provider: {provider}. "
-        f"Supported: 'onnx' (or 'onnx/<hf-model-id>'), or None to disable."
+        f"Unknown rerank provider: {provider}. " f"Supported: 'onnx' or 'onnx/<hf-model-id>'."
     )
 
 

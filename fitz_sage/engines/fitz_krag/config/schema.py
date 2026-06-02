@@ -104,13 +104,12 @@ class FitzKragConfig(BasePluginConfig):
         description="Env var name for vision-endpoint API key (None = no auth).",
     )
 
-    rerank: str | None = Field(
+    rerank: str = Field(
         default="onnx",
         description=(
             "Reranker backend. 'onnx' (default) loads the INT8 ONNX "
             "cross-encoder (`Alibaba-NLP/gte-reranker-modernbert-base` "
-            "by default; override with `onnx/<hf-model-id>`). None "
-            "disables reranking entirely."
+            "by default; override with `onnx/<hf-model-id>`)."
         ),
     )
 
@@ -260,13 +259,12 @@ class FitzKragConfig(BasePluginConfig):
     # Governance
     # ==========================================================================
 
-    governance: str | None = Field(
+    governance: str = Field(
         default="pyrrho",
         description=(
             "Epistemic governance classifier. 'pyrrho' (default) labels each "
             "answer TRUSTWORTHY / DISPUTED / ABSTAIN via an INT8 ONNX "
-            "classifier; 'pyrrho/<hf-model-id>' swaps in a custom fine-tune. "
-            "null disables governance entirely."
+            "classifier; 'pyrrho/<hf-model-id>' swaps in a custom fine-tune."
         ),
     )
 
@@ -330,9 +328,9 @@ class FitzKragConfig(BasePluginConfig):
     )
 
     rerank_min_addresses: int = Field(
-        default=20,
+        default=2,
         ge=1,
-        description="Minimum addresses before reranking is applied (skip if fewer)",
+        description="Minimum addresses before reranking is applied.",
     )
 
     # ==========================================================================

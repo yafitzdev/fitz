@@ -104,8 +104,7 @@ The reranker is part of the standard retrieval pipeline. It is an INT8 ONNX cros
 
 1. `rerank: onnx` is the default.
 2. The retrieval pipeline includes the reranker step before Pyrrho governance.
-3. `rerank: null` exists for tests and raw retrieval timing, not as the normal
-   product mode.
+3. The engine config does not expose a normal "rerank off" mode.
 
 ### Config example
 
@@ -116,9 +115,6 @@ rerank: onnx
 # Different cross-encoder
 # rerank: onnx/BAAI/bge-reranker-base
 # rerank: onnx/jinaai/jina-reranker-v3
-
-# Internal raw-retrieval timing only:
-# rerank: null
 ```
 
 ### Key files
@@ -139,12 +135,10 @@ same declaration pattern — the `governance:` key declares the classifier:
 ```yaml
 governance: pyrrho                  # default — the pyrrho INT8 ONNX classifier
 # governance: pyrrho/<hf-model-id>  # a custom pyrrho fine-tune
-# governance: null                  # internal smoke-test mode only
 ```
 
-`governance: pyrrho` runs a single INT8 ONNX forward pass for each evidence
-prefix in the cutoff loop. The v0.13.0 constraint+sklearn cascade it replaced
-is gone.
+`governance: pyrrho` runs INT8 ONNX evidence-prefix checks in the cutoff loop.
+The v0.13.0 constraint+sklearn cascade it replaced is gone.
 
 ## Managed enrichment
 
