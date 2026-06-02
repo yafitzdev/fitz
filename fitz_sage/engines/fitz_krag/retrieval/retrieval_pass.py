@@ -66,6 +66,7 @@ _CONTROL_SURFACE_MARKERS = (
     "near_duplicate",
     "poisoning",
     "/artifacts/",
+    "/artifcats/",
     "/queries",
     "queries.",
     "_queries",
@@ -74,11 +75,14 @@ _CONTROL_SURFACE_MARKERS = (
     "_test",
     "fixture",
     "fixtures",
+    "formal_eval_harness",
     "readme",
     "source_dir",
     "collections/",
     ".fitz",
 )
+_BROAD_GROUP_TARGET = 3
+_BROAD_GROUP_LOOKAHEAD = 16
 
 
 class RetrievalPass:
@@ -144,6 +148,7 @@ class RetrievalPass:
             self.last_timings["rerank"] = 0.0
         addresses = _apply_broad_corpus_prior(query, addresses, profile)
         addresses = _enforce_broad_file_diversity(addresses, profile)
+        addresses = _enforce_broad_group_diversity(query, addresses, profile)
         addresses = _assign_broad_effective_scores(query, addresses, profile)
         t0 = time.perf_counter()
         results = self._reader.read(addresses, self._config.top_read)
@@ -174,14 +179,25 @@ def _ensure_broad_corpus_coverage(
         return selected
 
     selected_keys = {(address.source_id, address.location) for address in selected}
+    selected_groups = {
+        _broad_group_key(address) for address in selected if not _is_control_surface(address)
+    }
     rescued: list[Any] = []
     for address in candidates:
         key = (address.source_id, address.location)
         if key in selected_keys:
             continue
-        if _broad_corpus_priority(address) <= 0:
+        group = _broad_group_key(address)
+        priority_rescue = _broad_corpus_priority(address) > 0
+        group_rescue = (
+            len(selected_groups) < _BROAD_GROUP_TARGET
+            and group not in selected_groups
+            and not _is_control_surface(address)
+        )
+        if not priority_rescue and not group_rescue:
             continue
         selected_keys.add(key)
+        selected_groups.add(group)
         rescued.append(address)
     return selected + rescued
 
@@ -279,6 +295,74 @@ def _enforce_broad_file_diversity(addresses: list[Any], profile: Any = None) -> 
         seen.add(address.source_id)
         promoted.append(address)
     return promoted + deferred
+
+
+def _enforce_broad_group_diversity(
+    query: str,
+    addresses: list[Any],
+    profile: Any = None,
+) -> list[Any]:
+    """For corpus overview queries, seed the cutoff window with corpus-family coverage."""
+    if not _should_apply_broad_corpus_prior(query, profile):
+        return addresses
+    if len(addresses) <= _BROAD_GROUP_TARGET:
+        return addresses
+
+    lookahead = addresses[: min(len(addresses), _BROAD_GROUP_LOOKAHEAD)]
+    eligible = [address for address in lookahead if not _is_control_surface(address)]
+    available_groups = {_broad_group_key(address) for address in eligible}
+    target = min(_BROAD_GROUP_TARGET, len(available_groups))
+    if target < 2:
+        return addresses
+
+    selected_keys: set[tuple[str, str]] = set()
+    selected_groups: set[str] = set()
+    promoted: list[Any] = []
+    for address in eligible:
+        group = _broad_group_key(address)
+        if group in selected_groups:
+            continue
+        promoted.append(address)
+        selected_groups.add(group)
+        selected_keys.add((address.source_id, address.location))
+        if len(promoted) >= target:
+            break
+
+    if len(promoted) < 2:
+        return addresses
+
+    remainder = [
+        address
+        for address in addresses
+        if (address.source_id, address.location) not in selected_keys
+    ]
+    return promoted + remainder
+
+
+def _broad_group_key(address: Any) -> str:
+    """Return the top-level corpus family for broad overview diversity."""
+    path_text = _primary_address_path(address).replace("\\", "/").strip("/")
+    if not path_text:
+        return str(getattr(address, "source_id", ""))
+    return path_text.split("/", 1)[0].lower()
+
+
+def _is_control_surface(address: Any) -> bool:
+    """Return whether an address is test/control material for broad overview ranking."""
+    path_text = _address_path_text(address)
+    location_text = str(getattr(address, "location", "")).lower().replace("\\", "/")
+    haystack = f"{path_text} {location_text}"
+    return any(marker in haystack for marker in _CONTROL_SURFACE_MARKERS)
+
+
+def _primary_address_path(address: Any) -> str:
+    """Return the most stable source path for one address."""
+    metadata = getattr(address, "metadata", {}) or {}
+    return (
+        str(metadata.get("source_path", ""))
+        or str(metadata.get("disk_path", ""))
+        or str(getattr(address, "source_id", ""))
+    )
 
 
 __all__ = ["RetrievalPass"]

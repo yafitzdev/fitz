@@ -222,6 +222,115 @@ class TestRetrievalPass:
             ),
         ]
 
+    def test_broad_corpus_query_seeds_cutoff_window_with_corpus_family_diversity(self):
+        q2 = _addr(
+            location="Key Metrics Progression",
+            source_id="q2-id",
+            summary="Q2 executive summary and key metrics",
+            metadata={"source_path": "hierarchical_rag/quarterly_summary_q2_2024.md"},
+        )
+        q1 = _addr(
+            location="Key Metrics Progression",
+            source_id="q1-id",
+            summary="Q1 executive summary and key metrics",
+            metadata={"source_path": "hierarchical_rag/quarterly_summary_q1_2024.md"},
+        )
+        roadmap = _addr(
+            location="Customer Feedback Integration",
+            source_id="roadmap-id",
+            summary="Product roadmap and customer feedback",
+            metadata={"source_path": "hierarchical_rag/product_roadmap_2024.md"},
+        )
+        feedback = _addr(
+            location="Overview > Agent Quality",
+            source_id="feedback-id",
+            summary="Customer feedback overview",
+            metadata={"source_path": "hierarchical_rag/feedback_march_2024.md"},
+        )
+        pdf = _addr(
+            location="84 5.3 Beurteilung",
+            source_id="pdf-id",
+            summary="Bachelor thesis section",
+            metadata={"source_path": "pdf/1.0 BA Yan Fitzner.pdf"},
+        )
+        glossary = _addr(
+            location="A10 Glossary Internal Terms",
+            source_id="glossary-id",
+            summary="Internal glossary and operational definitions",
+            metadata={
+                "source_path": "retrieval_logic/base/artifacts/A10_glossary_internal_terms.txt"
+            },
+        )
+        rp, _router, reranker, _reader = _build([q2, q1, roadmap, feedback, pdf, glossary])
+        reranker.rerank.return_value = [q2, q1, roadmap, feedback, pdf, glossary]
+        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+
+        results = rp.run("What are the key facts in this corpus?", profile=profile)
+
+        assert [r.address.source_id for r in results[:4]] == [
+            "q2-id",
+            "pdf-id",
+            "q1-id",
+            "roadmap-id",
+        ]
+
+    def test_broad_corpus_query_rescues_neutral_non_control_family(self):
+        q2 = _addr(
+            location="Key Metrics Progression",
+            source_id="q2-id",
+            summary="Q2 executive summary and key metrics",
+            metadata={"source_path": "hierarchical_rag/quarterly_summary_q2_2024.md"},
+        )
+        q1 = _addr(
+            location="Key Metrics Progression",
+            source_id="q1-id",
+            summary="Q1 executive summary and key metrics",
+            metadata={"source_path": "hierarchical_rag/quarterly_summary_q1_2024.md"},
+        )
+        queries = _addr(
+            location="Queries",
+            source_id="queries-id",
+            summary="Retrieval test queries",
+            metadata={"source_path": "retrieval_logic/base/queries"},
+        )
+        test_cases = _addr(
+            location="Summary",
+            source_id="test-cases-id",
+            summary="Sprint 47 test case summary",
+            metadata={"source_path": "keyword_test/test_cases.md"},
+        )
+        formal_eval = _addr(
+            location="A10 Glossary Internal Terms",
+            source_id="formal-eval-id",
+            summary="Formal eval harness glossary fixture",
+            metadata={
+                "source_path": (
+                    "retrieval_logic/formal_eval_harness/artifcats/"
+                    "A10_glossary_internal_terms.txt"
+                )
+            },
+        )
+        pdf = _addr(
+            location="84 5.3 Beurteilung",
+            source_id="pdf-id",
+            summary="Bachelor thesis section",
+            metadata={"source_path": "pdf/1.0 BA Yan Fitzner.pdf"},
+        )
+        rp, _router, reranker, _reader = _build([q2, q1, queries, test_cases, formal_eval, pdf])
+        reranker.rerank.return_value = [q2, q1, formal_eval, queries, test_cases]
+        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+
+        results = rp.run("What are the key facts in this corpus?", profile=profile)
+
+        assert [r.address.source_id for r in results] == [
+            "q2-id",
+            "pdf-id",
+            "q1-id",
+            "queries-id",
+            "test-cases-id",
+            "formal-eval-id",
+        ]
+
     def test_broad_corpus_query_scores_follow_effective_rank(self):
         control = _addr(
             location="Queries",
