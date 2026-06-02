@@ -117,7 +117,7 @@ class fitz:
         engine = self._get_engine()
         if source is not None:
             engine.point(self._resolve_source(source), self._collection)
-            engine.wait_for_indexing()
+            engine.wait_for_query_surface()
         return engine.answer(Query(text=question, metadata=self._metadata(conversation_context)))
 
     def retrieve(
@@ -149,18 +149,22 @@ class fitz:
         engine = self._get_engine()
         if source is not None:
             engine.point(self._resolve_source(source), self._collection)
-            engine.wait_for_indexing()
+            engine.wait_for_query_surface()
         return engine.evidence(Query(text=question, metadata=self._metadata(conversation_context)))
 
     def wait_for_indexing(self) -> None:
-        """Block until background indexing of pointed sources completes."""
+        """Block until background indexing reaches the query-ready keyword phase."""
         self._get_engine().wait_for_indexing()
+
+    def wait_for_query_surface(self) -> None:
+        """Block until parsed retrieval units are searchable."""
+        self._get_engine().wait_for_query_surface()
 
     def indexing_status(self) -> dict:
         """Background-indexing progress for this collection.
 
         Returns counts (total, indexed, pending, by_state) and a ``complete``
-        flag. ``complete`` means the required enrichment pass has finished.
+        flag. ``complete`` means query-ready keyword indexing has finished.
         """
         return self._get_engine().indexing_status()
 

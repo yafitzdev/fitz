@@ -1482,7 +1482,7 @@ class FitzKragEngine:
         return _manifest_status(self._manifest)
 
     def wait_for_indexing(self, progress: Callable[[str], None] | None = None) -> None:
-        """Block until background indexing finishes.
+        """Block until background indexing reaches the query-ready keyword phase.
 
         No-op when no background worker is running (e.g. querying an
         already-loaded collection). Ctrl-C pauses indexing gracefully —
@@ -1496,6 +1496,12 @@ class FitzKragEngine:
             self._bg_worker.stop()
             if progress:
                 progress("Indexing paused — it resumes on the next query.")
+
+    def wait_for_query_surface(self, progress: Callable[[str], None] | None = None) -> None:
+        """Block until parsed retrieval units are searchable."""
+        if not self._bg_worker:
+            return
+        self._bg_worker.wait_for_query_surface(progress=progress)
 
     @property
     def config(self) -> FitzKragConfig:

@@ -326,6 +326,28 @@ class TestWait:
         progress.assert_any_call("Query-ready indexing complete; deep enrichment continues.")
         worker.stop()
 
+    def test_wait_for_query_surface_returns_after_parse(self, tmp_path: Path) -> None:
+        """wait_for_query_surface() returns before keyword enrichment finishes."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("a.md", file_type=".md"))
+
+        core = MagicMock()
+        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+
+        def _keyword(_file_id: str, _file_type: str) -> None:
+            worker._stop_event.wait(timeout=5.0)
+
+        core.keyword_file.side_effect = _keyword
+        progress = MagicMock()
+
+        worker.start()
+        worker.wait_for_query_surface(progress=progress)
+
+        assert worker._parse_done.is_set()
+        assert manifest.get("a.md").state == FileState.PARSED
+        progress.assert_any_call("Search surface ready; enrichment continues.")
+        worker.stop()
+
 
 # -------------------------------------------------------------------------
 # 5. Demand-driven warm loop — summarize only query-flagged files

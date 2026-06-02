@@ -339,7 +339,7 @@ def _run_persistent_ingest_query(
             t0 = time.perf_counter()
             ui.info(f"Registering {source}...")
             manifest = engine_instance.point(source, collection, progress=ui.info)
-            engine_instance.wait_for_indexing(progress=ui.info)
+            engine_instance.wait_for_query_surface(progress=ui.info)
             t_point = time.perf_counter() - t0
             ui.info(f"Registered {len(manifest.entries())} files")
         else:

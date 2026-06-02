@@ -59,7 +59,7 @@ def command(
             if progress:
                 progress(f"Registering {source}...")
             engine_instance.point(source, selected_collection, progress=progress)
-            engine_instance.wait_for_indexing(progress=progress)
+            engine_instance.wait_for_query_surface(progress=progress)
         else:
             if progress:
                 progress(f"Loading collection '{selected_collection}'...")

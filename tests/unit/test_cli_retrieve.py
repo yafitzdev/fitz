@@ -162,11 +162,11 @@ class TestRetrieveCommand:
         assert result.exit_code == 0
         assert [method[0] for method in mock_engine.method_calls[:3]] == [
             "point",
-            "wait_for_indexing",
+            "wait_for_query_surface",
             "evidence",
         ]
         mock_engine.point.assert_called_once()
         assert mock_engine.point.call_args.args[0] == source
         assert mock_engine.point.call_args.args[1] == "default"
-        mock_engine.wait_for_indexing.assert_called_once()
+        mock_engine.wait_for_query_surface.assert_called_once()
         mock_engine.evidence.assert_called_once()

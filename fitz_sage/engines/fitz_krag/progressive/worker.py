@@ -65,6 +65,7 @@ class BackgroundIngestWorker:
 
         self._stop_event = threading.Event()
         self._query_active = threading.Event()  # Set = query is running
+        self._parse_done = threading.Event()  # Set = typed units are searchable
         self._eager_done = threading.Event()  # Set = minimum query-ready index done
         self._thread: threading.Thread | None = None
         self._failure: Exception | None = None
@@ -109,6 +110,29 @@ class BackgroundIngestWorker:
         if progress:
             progress("Query-ready indexing complete; deep enrichment continues.")
 
+    def wait_for_query_surface(self, progress: "Callable[[str], None] | None" = None) -> None:
+        """Block until parsed symbols/sections/tables are searchable.
+
+        This is the CLI fast path: BM25 can run after parsing, while Qwen
+        keyword/entity/hierarchy enrichment continues behind the query.
+        """
+        if self._thread is None:
+            return
+        last_emit = 0.0
+        while not self._parse_done.is_set() and self._thread.is_alive():
+            if progress and time.monotonic() - last_emit >= 10.0:
+                line = self._parse_status_line()
+                if line:
+                    progress(line)
+                last_emit = time.monotonic()
+            self._parse_done.wait(timeout=1.0)
+        if self._failure is not None and not self._parse_done.is_set():
+            if progress:
+                progress(f"Indexing failed: {self._failure}")
+            raise RuntimeError(f"Indexing failed: {self._failure}") from self._failure
+        if progress:
+            progress("Search surface ready; enrichment continues.")
+
     def _status_line(self) -> str:
         """Coarse indexing-progress line from manifest file states."""
         entries = self._manifest.entries()
@@ -117,6 +141,15 @@ class BackgroundIngestWorker:
             return ""
         done = sum(1 for e in entries.values() if is_query_ready_state(e.state))
         return f"Indexing documents... {done}/{total}"
+
+    def _parse_status_line(self) -> str:
+        """Coarse parse-progress line from manifest file states."""
+        entries = self._manifest.entries()
+        total = len(entries)
+        if total == 0:
+            return ""
+        parsed = sum(1 for e in entries.values() if e.state != FileState.REGISTERED)
+        return f"Parsing documents... {parsed}/{total}"
 
     def signal_query_start(self) -> None:
         """Pause LLM calls (let query have priority)."""
@@ -153,6 +186,7 @@ class BackgroundIngestWorker:
             t0 = time.perf_counter()
             self._parse_phase()  # REGISTERED → PARSED (no LLM)
             t1 = time.perf_counter()
+            self._parse_done.set()
             self._keyword_phase()  # PARSED → QUERY_READY (minimum LLM)
             t2 = time.perf_counter()
             query_ready = True
@@ -167,6 +201,7 @@ class BackgroundIngestWorker:
             self._failure = e
             logger.error(f"Background worker failed: {e}")
         finally:
+            self._parse_done.set()
             self._eager_done.set()
 
         if query_ready and self._failure is None and not self._stop_event.is_set():
