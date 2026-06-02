@@ -37,6 +37,7 @@ def _addr(
     location: str = "mod.func",
     summary: str = "does something",
     score: float = 0.5,
+    metadata: dict | None = None,
 ) -> Address:
     """Shortcut to build an Address."""
     return Address(
@@ -45,6 +46,7 @@ def _addr(
         location=location,
         summary=summary,
         score=score,
+        metadata=metadata or {},
     )
 
 
@@ -264,6 +266,40 @@ class TestRetrievalRouter:
         assert len(result) == 5
         # Should be top-5 by score
         assert result[0].score == 1.0
+
+    def test_agentic_progress_reports_pre_index_candidates(self):
+        """Progress text scopes agentic results as pre-index candidates."""
+        code_strat = MagicMock()
+        code_strat.retrieve.return_value = []
+        agentic = MagicMock()
+        agentic.retrieve.return_value = [
+            _addr(
+                AddressKind.FILE,
+                source_id="a",
+                location="docs/a.md",
+                metadata={"disk_path": "docs/a.md"},
+            ),
+            _addr(
+                AddressKind.FILE,
+                source_id="b",
+                location="docs/b.md",
+                metadata={"disk_path": "docs/b.md"},
+            ),
+        ]
+        progress = MagicMock()
+
+        router = RetrievalRouter(
+            code_strategy=code_strat,
+            config=_make_config(top_addresses=10),
+            agentic_strategy=agentic,
+        )
+
+        router.retrieve("key facts", progress=progress)
+
+        progress.assert_any_call("Unindexed scan: checking files not yet query-ready...")
+        progress.assert_any_call(
+            "Unindexed scan: added 2 pre-index candidate(s) from 2 file(s) (a.md, b.md)"
+        )
 
 
 # ---------------------------------------------------------------------------
