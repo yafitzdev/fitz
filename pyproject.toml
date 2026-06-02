@@ -69,15 +69,12 @@ dependencies = [
     "pypdfium2>=4.0",
     "python-docx>=1.0",
     "python-pptx>=0.6",
-    # Local CPU encoders — pyrrho governance classifier + gte-reranker
-    # cross-encoder. Both run pre-built INT8 ONNX on raw onnxruntime:
-    #   onnxruntime    — the inference session
-    #   transformers   — the tokenizer (torch NOT pulled; it's optional)
-    #   huggingface-hub — fetches the pre-built .onnx from the model repo
-    #   numpy          — softmax / logit post-processing
-    # Deliberately NOT `optimum`: optimum 2.x hard-depends on torch
-    # (~2 GB), which the pre-built-ONNX load path never needs.
+    # Local CPU encoders:
+    #   pyrrho-nano-g3.1 — custom multitask ModernBERT checkpoint
+    #   gte-reranker     — pre-built INT8 ONNX cross-encoder
     "transformers>=4.50",
+    "torch>=2.1",
+    "safetensors>=0.4",
     "onnxruntime>=1.20",
     "huggingface-hub>=0.20",
     "numpy>=1.26",

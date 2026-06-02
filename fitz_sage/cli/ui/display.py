@@ -312,6 +312,14 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
             f"P(DISPUTED)={_fmt_prob(probs.get('disputed'))}"
         )
 
+    head_line = _format_pyrrho_heads(pyrrho)
+    if head_line:
+        lines.append(head_line)
+
+    scalar_line = _format_pyrrho_scalars(pyrrho)
+    if scalar_line:
+        lines.append(scalar_line)
+
     policy = cutoff.get("policy", {}) if isinstance(cutoff.get("policy", {}), dict) else {}
     has_cutoff_values = any(key in cutoff for key in ("selected", "evaluated", "max")) or bool(
         policy
@@ -381,6 +389,46 @@ def _fmt_prob(value: object) -> str:
         return f"{float(value):.2f}"
     except (TypeError, ValueError):
         return "?"
+
+
+def _format_pyrrho_heads(pyrrho: dict) -> str:
+    """Format compact g3.1 head labels."""
+    if not pyrrho:
+        return ""
+    parts: list[str] = []
+    for key, label in (
+        ("query_contract", "contract"),
+        ("route", "route"),
+        ("taxonomy", "taxonomy"),
+    ):
+        head = pyrrho.get(key)
+        if not isinstance(head, dict):
+            continue
+        final_label = head.get("final_label")
+        if not final_label:
+            continue
+        confidence = _fmt_prob(head.get("confidence"))
+        parts.append(f"{label} {final_label} ({confidence})")
+    return "Pyrrho heads: " + "; ".join(parts) if parts else ""
+
+
+def _format_pyrrho_scalars(pyrrho: dict) -> str:
+    """Format the retrieval-relevant g3.1 scalar heads."""
+    scalars = pyrrho.get("scalars") if isinstance(pyrrho, dict) else None
+    if not isinstance(scalars, dict) or not scalars:
+        return ""
+    labels = {
+        "evidence_sufficiency": "sufficiency",
+        "query_evidence_alignment": "alignment",
+        "answer_coverage": "coverage",
+        "conflict_density": "conflict",
+        "retrieval_retry_value": "retry",
+        "false_trustworthy_risk": "false-trust risk",
+    }
+    parts = [
+        f"{label} {_fmt_prob(scalars[key])}" for key, label in labels.items() if key in scalars
+    ]
+    return "Pyrrho signals: " + "; ".join(parts) if parts else ""
 
 
 def _format_verdict(value: object) -> str:

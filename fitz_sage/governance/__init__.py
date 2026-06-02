@@ -4,9 +4,10 @@ Epistemic governance.
 
 A single classifier decides whether retrieved sources support a confident
 answer (TRUSTWORTHY), contradict each other (DISPUTED), or simply don't
-contain enough information (ABSTAIN). The classifier is the
-[pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
-fine-tune of ModernBERT-base, served as INT8 ONNX on CPU.
+contain enough information (ABSTAIN). The standard classifier is
+[pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1), a multitask
+ModernBERT model with governance, query-contract, route/domain, taxonomy,
+and scalar heads running locally on CPU.
 
 Governance is mandatory in the standard product path. The ``governance:``
 config key declares which pyrrho classifier to use:
@@ -16,12 +17,13 @@ config key declares which pyrrho classifier to use:
     governance = create_governance("pyrrho")
     decision = governance.decide(query, retrieved_contexts)
     # decision.mode in {TRUSTWORTHY, DISPUTED, ABSTAIN}
-    # decision.probs is the full softmax distribution
+    # decision.probs is the governance softmax distribution
+    # decision.query_contract / route / taxonomy expose g3.1 head metadata
     # decision.reason is a one-line human-readable summary
 
 The legacy constraint+sklearn cascade was removed in v0.13.0. The pyrrho
-classifier is faster than the cascade it replaced and reports 97.52%
-held-out accuracy with a 1.42% false-trustworthy rate on fitz-gov V8.
+classifier is faster than the cascade it replaced and now also supplies the
+pre-retrieval query-contract signal used by the retrieval stack.
 """
 
 from __future__ import annotations

@@ -46,6 +46,11 @@ class RetrievalProfile:
     # Semantic keyword expansion (from the query-prep bus)
     keywords: list[str] = field(default_factory=list)
 
+    # Pyrrho g3.1 pre-retrieval query contract
+    query_contract: str | None = None
+    query_contract_confidence: float | None = None
+    query_contract_probabilities: dict[str, float] = field(default_factory=dict)
+
     # Feature gates
     run_agentic: bool = True
     inject_corpus_summaries: bool = False
@@ -79,6 +84,7 @@ def build_retrieval_profile(
     *,
     extended_signals: dict[str, Any] | None = None,
     keywords: list[str] | None = None,
+    query_contract: Any = None,
 ) -> RetrievalProfile:
     """Build a RetrievalProfile from classification outputs + config.
 
@@ -96,6 +102,20 @@ def build_retrieval_profile(
     specificity = ext.get("specificity", "moderate")
     answer_type = ext.get("answer_type", "factual")
     domain = ext.get("domain", "general")
+    contract_label = _query_contract_label(query_contract)
+    contract_confidence = _query_contract_confidence(query_contract)
+    contract_probabilities = _query_contract_probabilities(query_contract)
+
+    if contract_label == "representative_overview":
+        specificity = "broad"
+        answer_type = "exploratory"
+    elif contract_label == "exhaustive_coverage":
+        specificity = "broad"
+        answer_type = "exploratory"
+    elif contract_label == "comparison_coverage":
+        answer_type = "comparative"
+    elif contract_label == "structured_lookup":
+        answer_type = "factual"
 
     # --- Analysis-derived ---
     if analysis:
@@ -146,6 +166,14 @@ def build_retrieval_profile(
             except Exception:
                 pass
 
+    if contract_label == "comparison_coverage":
+        has_comparison_intent = True
+    elif contract_label == "temporal_grounding":
+        has_temporal_intent = True
+        boost_recency = True
+    elif contract_label == "exhaustive_coverage":
+        has_aggregation_intent = True
+
     # --- top_k: base * fetch_multiplier * specificity adjustment ---
     top_k = config.top_addresses * fetch_multiplier
     if specificity == "broad":
@@ -178,6 +206,12 @@ def build_retrieval_profile(
         if specificity == "broad" or answer_type == "exploratory":
             inject_corpus_summaries = True
 
+    if contract_label == "structured_lookup":
+        strategy_weights = dict(strategy_weights)
+        strategy_weights["table"] = max(strategy_weights.get("table", 0.0), 0.35)
+        top_k = max(top_k, config.top_addresses)
+        top_read = max(top_read, config.top_read)
+
     # --- Entity expansion limit (from engine._is_thematic) ---
     is_thematic = analysis is not None and primary_type not in ("code", "data") and confidence < 0.6
     entity_expansion_limit = 12 if is_thematic else 3
@@ -194,6 +228,9 @@ def build_retrieval_profile(
         comparison_entities=comparison_entities,
         temporal_references=temporal_references,
         keywords=keywords or [],
+        query_contract=contract_label,
+        query_contract_confidence=contract_confidence,
+        query_contract_probabilities=contract_probabilities,
         run_agentic=run_agentic,
         inject_corpus_summaries=inject_corpus_summaries,
         boost_recency=boost_recency,
@@ -207,3 +244,23 @@ def build_retrieval_profile(
         analysis_type=primary_type,
         analysis_confidence=confidence,
     )
+
+
+def _query_contract_label(query_contract: Any) -> str | None:
+    """Return Pyrrho's final query-contract label if available."""
+    label = getattr(query_contract, "final_label", None)
+    return str(label) if label else None
+
+
+def _query_contract_confidence(query_contract: Any) -> float | None:
+    """Return Pyrrho's query-contract confidence if available."""
+    confidence = getattr(query_contract, "confidence", None)
+    return float(confidence) if isinstance(confidence, int | float) else None
+
+
+def _query_contract_probabilities(query_contract: Any) -> dict[str, float]:
+    """Return serializable query-contract probabilities."""
+    probabilities = getattr(query_contract, "probabilities", None)
+    if not isinstance(probabilities, dict):
+        return {}
+    return {str(key): float(value) for key, value in probabilities.items()}

@@ -101,8 +101,8 @@ def test_create_governance_dispatch():
     default = create_governance("pyrrho")
     assert isinstance(default, Pyrrho)
     assert default._model_id == MODEL_ID
-    assert MODEL_ID == "yafitzdev/pyrrho-nano-g3"
-    assert TAU == 0.60
+    assert MODEL_ID == "yafitzdev/pyrrho-nano-g3.1"
+    assert TAU == 0.39
 
     custom = create_governance("pyrrho/acme/custom-fine-tune")
     assert isinstance(custom, Pyrrho)

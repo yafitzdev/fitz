@@ -42,8 +42,8 @@ fitz_krag:
   # heavier opt-in parsers for scanned PDFs, figures, and complex tables.
   parser: cpu
 
-  # Governance. 'pyrrho' = INT8 ONNX epistemic classifier that labels each
-  # answer TRUSTWORTHY / DISPUTED / ABSTAIN before generation.
+  # Governance. 'pyrrho' = local Pyrrho g3.1 classifier that labels query
+  # contracts and evidence prefixes as TRUSTWORTHY / DISPUTED / ABSTAIN.
   # 'pyrrho/<hf-model-id>' to swap in a custom fine-tune.
   governance: pyrrho
 

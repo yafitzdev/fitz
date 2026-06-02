@@ -114,6 +114,36 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
     ]
 
 
+def test_format_governance_metadata_shows_pyrrho_g31_heads_and_scalars():
+    """g3.1 metadata should be visible without dumping raw JSON."""
+    metadata = {
+        "governance_cutoff": {
+            "pyrrho": {
+                "query_contract": {
+                    "final_label": "structured_lookup",
+                    "confidence": 0.88,
+                },
+                "route": {"final_label": "business_ops", "confidence": 0.81},
+                "taxonomy": {"final_label": "direct_evidence", "confidence": 0.77},
+                "scalars": {
+                    "evidence_sufficiency": 0.84,
+                    "query_evidence_alignment": 0.79,
+                    "retrieval_retry_value": 0.17,
+                    "false_trustworthy_risk": 0.09,
+                },
+            },
+        }
+    }
+
+    assert _format_governance_metadata(metadata, []) == [
+        (
+            "Pyrrho heads: contract structured_lookup (0.88); "
+            "route business_ops (0.81); taxonomy direct_evidence (0.77)"
+        ),
+        ("Pyrrho signals: sufficiency 0.84; alignment 0.79; " "retry 0.17; false-trust risk 0.09"),
+    ]
+
+
 def test_format_governance_metadata_preserves_extra_reasons():
     """Additional governance reasons should not be hidden by Pyrrho metadata."""
     metadata = {

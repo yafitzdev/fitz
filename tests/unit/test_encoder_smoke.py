@@ -1,13 +1,13 @@
 # tests/unit/test_encoder_smoke.py
 """
-Smoke test — actually load and run the local INT8 ONNX encoders.
+Smoke test — actually load and run the local managed classifiers.
 
 The rest of the unit suite never triggers a real model load: both
 encoders lazy-import their dependencies inside `_load()`, so the suite
 only ever checks that the provider objects *construct*. This test
-closes that gap — it downloads (first run) and loads the pyrrho
-governance classifier and the gte-reranker cross-encoder, then runs one
-real forward pass each.
+closes that gap — it downloads (first run) and loads the Pyrrho
+governance classifier and the ONNX gte-reranker cross-encoder, then runs
+one real forward pass each.
 
 Marked `slow` (network + model load); excluded from `pytest -m "not
 slow"`. This is the coverage that catches a fresh-install crash on the
@@ -24,7 +24,7 @@ pytestmark = pytest.mark.slow
 
 
 def test_pyrrho_loads_and_decides():
-    """create_governance('pyrrho') -> a real INT8 ONNX decide() call."""
+    """create_governance('pyrrho') -> a real local Pyrrho decide() call."""
     from fitz_sage.core.answer_mode import AnswerMode
     from fitz_sage.governance import create_governance
 

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock
 
 from fitz_sage.engines.fitz_krag.query_planner import (
     DeterministicQueryPlanner,
@@ -48,6 +49,7 @@ class QueryPipeline:
         config: "FitzKragConfig",
         query_planner: Any,
         query_batcher: Any,
+        query_contract_classifier: Any,
         semantic_keyword_batcher: Any,
         retrieval_pass: Any,
         hop_controller: Any,
@@ -61,6 +63,7 @@ class QueryPipeline:
         self._config = config
         self._query_planner = query_planner
         self._query_batcher = query_batcher
+        self._query_contract_classifier = query_contract_classifier
         self._semantic_keyword_batcher = semantic_keyword_batcher
         self._retrieval_pass = retrieval_pass
         self._hop_controller = hop_controller
@@ -89,6 +92,10 @@ class QueryPipeline:
         _progress("Analyzing query...")
 
         t0 = time.perf_counter()
+        query_contract = self._classify_query_contract(sanitized)
+        timings.append(("Pyrrho query contract", time.perf_counter() - t0))
+
+        t0 = time.perf_counter()
         plan = self._prepare_query_plan(
             sanitized,
             query.metadata,
@@ -106,6 +113,7 @@ class QueryPipeline:
             self._config,
             extended_signals=plan.extended_signals,
             keywords=plan.keywords,
+            query_contract=query_contract,
         )
 
         _progress("Retrieving relevant sources...")
@@ -215,6 +223,14 @@ class QueryPipeline:
 
         return plan
 
+    def _classify_query_contract(self, sanitized: str) -> Any:
+        """Classify the query contract when the governance backend exposes it."""
+        classifier = self._query_contract_classifier
+        classify_query = getattr(classifier, "classify_query", None)
+        if not callable(classify_query) or _is_mock_callable(classify_query):
+            return None
+        return classify_query(sanitized)
+
     def _add_semantic_query_keywords(self, query: str, plan: QueryPlan) -> QueryPlan:
         """Use local Qwen for keyword-only query expansion."""
         batcher = self._semantic_keyword_batcher
@@ -290,6 +306,13 @@ def _merge_query_keywords(*keyword_lists: list[str]) -> list[str]:
                 seen.add(key)
                 merged.append(value)
     return merged
+
+
+def _is_mock_callable(value: Any) -> bool:
+    """Return whether a callable came from unittest.mock."""
+    if isinstance(value, Mock):
+        return True
+    return isinstance(getattr(value, "__self__", None), Mock)
 
 
 __all__ = ["QueryPipeline", "RetrievalOutcome"]

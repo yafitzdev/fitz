@@ -64,7 +64,13 @@ def apply_governance_cutoff(
             mode=mode,
             reasons=["No relevant evidence retrieved."],
             timings=[],
-            metadata=_governance_cutoff_metadata(None, evaluated=0, selected=0, mode=mode),
+            metadata=_governance_cutoff_metadata(
+                None,
+                evaluated=0,
+                selected=0,
+                mode=mode,
+                stop_reason="no_results",
+            ),
         )
 
     t0 = time.perf_counter()
@@ -90,6 +96,7 @@ def apply_governance_cutoff(
                     evaluated=0,
                     selected=selected_count,
                     mode=mode,
+                    stop_reason="representative_overview",
                 ),
                 "representative_sources": True,
                 "sufficiency_evaluated": False,
@@ -99,12 +106,14 @@ def apply_governance_cutoff(
     last_reasons: list[str] = []
     last_decision: Any = None
     stable_disputed_decision: Any = None
+    trajectory: list[dict[str, Any]] = []
     consecutive_disputed = 0
 
     for size, decision in _iter_prefix_decisions(governance, query, results, policy):
         mode = _decision_mode(decision)
         last_decision = decision
         last_reasons = _decision_reasons(decision)
+        trajectory.append(_prefix_trace(size, mode, decision))
 
         if mode is AnswerMode.TRUSTWORTHY:
             consecutive_disputed = 0
@@ -120,6 +129,8 @@ def apply_governance_cutoff(
                         selected=size,
                         mode=mode,
                         decision=decision,
+                        trajectory=trajectory,
+                        stop_reason="trustworthy_min_evidence_met",
                     ),
                 )
             continue
@@ -140,6 +151,8 @@ def apply_governance_cutoff(
                         selected=size,
                         mode=mode,
                         decision=decision,
+                        trajectory=trajectory,
+                        stop_reason="dispute_policy_met",
                     ),
                 )
             continue
@@ -162,6 +175,8 @@ def apply_governance_cutoff(
                 selected=policy.max_docs,
                 mode=AnswerMode.DISPUTED,
                 decision=stable_disputed_decision,
+                trajectory=trajectory,
+                stop_reason="stable_dispute_at_cutoff",
             ),
         )
 
@@ -178,6 +193,8 @@ def apply_governance_cutoff(
             selected=policy.max_docs,
             mode=AnswerMode.ABSTAIN,
             decision=last_decision,
+            trajectory=trajectory,
+            stop_reason="cutoff_exhausted",
         ),
     )
 
@@ -214,6 +231,13 @@ def governance_query_shape(profile: Any, *, query: str | None = None) -> str:
     """Map retrieval profile signals to a cutoff policy shape."""
     if profile is None:
         return "narrow"
+    query_contract = getattr(profile, "query_contract", None)
+    if query_contract == "representative_overview":
+        return "broad_overview"
+    if query_contract == "comparison_coverage":
+        return "comparison"
+    if query_contract == "exhaustive_coverage":
+        return "aggregation"
     if (
         getattr(profile, "has_comparison_intent", False)
         or getattr(profile, "answer_type", "") == "comparative"
@@ -362,6 +386,8 @@ def _governance_cutoff_metadata(
     selected: int,
     mode: AnswerMode,
     decision: Any = None,
+    trajectory: list[dict[str, Any]] | None = None,
+    stop_reason: str | None = None,
 ) -> dict[str, Any]:
     """Build serializable metadata for the cutoff loop."""
     metadata = {
@@ -370,6 +396,8 @@ def _governance_cutoff_metadata(
         "max": policy.max_docs if policy else 0,
         "mode": mode.value,
     }
+    if stop_reason:
+        metadata["stop_reason"] = stop_reason
     if policy is not None:
         metadata["policy"] = {
             "query_shape": policy.query_shape,
@@ -377,6 +405,8 @@ def _governance_cutoff_metadata(
             "min_disputed_docs": policy.min_disputed_docs,
             "disputed_patience_docs": policy.disputed_patience_docs,
         }
+    if trajectory:
+        metadata["trajectory"] = trajectory
     pyrrho_metadata = _pyrrho_metadata(mode, decision)
     if pyrrho_metadata:
         metadata["pyrrho"] = pyrrho_metadata
@@ -406,6 +436,49 @@ def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
     if isinstance(reason, str) and reason:
         metadata["reason"] = reason
 
+    for key in ("governance", "query_contract", "route", "taxonomy"):
+        head = _head_metadata(getattr(decision, key, None))
+        if head:
+            metadata[key] = head
+
+    scalars = getattr(decision, "scalars", None)
+    if isinstance(scalars, dict) and scalars:
+        metadata["scalars"] = {str(key): float(value) for key, value in scalars.items()}
+
+    return metadata
+
+
+def _prefix_trace(size: int, mode: AnswerMode, decision: Any) -> dict[str, Any]:
+    """Serialize one evaluated prefix for cutoff observability."""
+    trace = _pyrrho_metadata(mode, decision)
+    trace["prefix_n"] = size
+    return trace
+
+
+def _head_metadata(head: Any) -> dict[str, Any]:
+    """Serialize a Pyrrho g3.1 head decision."""
+    if head is None or isinstance(head, Mock):
+        return {}
+
+    metadata: dict[str, Any] = {}
+    for key in (
+        "raw_label",
+        "final_label",
+        "used_threshold_fallback",
+        "threshold",
+        "confidence",
+        "runner_up_label",
+        "runner_up_probability",
+        "margin_to_runner_up",
+        "entropy",
+    ):
+        value = getattr(head, key, None)
+        if value is not None:
+            metadata[key] = value
+
+    probabilities = getattr(head, "probabilities", None)
+    if isinstance(probabilities, dict) and probabilities:
+        metadata["probabilities"] = {str(key): float(value) for key, value in probabilities.items()}
     return metadata
 
 

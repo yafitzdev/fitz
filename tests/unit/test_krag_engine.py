@@ -9,6 +9,7 @@ exercise the real __init__ with patched imports.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -645,6 +646,35 @@ class TestEvidence:
         assert "payment retry" in profile.keywords
         assert "timeout failure" in profile.keywords
 
+    def test_evidence_uses_pyrrho_query_contract_in_retrieval_profile(self):
+        """Pyrrho's pre-retrieval contract should steer recall before cutoff."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(2)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+
+        class QueryContractGovernance:
+            def classify_query(self, query: str) -> SimpleNamespace:
+                return SimpleNamespace(
+                    final_label="comparison_coverage",
+                    confidence=0.91,
+                    probabilities={"comparison_coverage": 0.91},
+                )
+
+            def decide(self, query: str, contexts: list[ReadResult]) -> MagicMock:
+                return _decision(AnswerMode.TRUSTWORTHY, "Enough comparative evidence.")
+
+        engine._governance = QueryContractGovernance()
+
+        engine.evidence(Query(text="Compare React and Vue performance"), top_k=2)
+
+        profile = engine._retrieval_router.retrieve.call_args.args[1]
+        assert profile.query_contract == "comparison_coverage"
+        assert profile.query_contract_confidence == 0.91
+        assert profile.query_contract_probabilities == {"comparison_coverage": 0.91}
+        assert profile.has_comparison_intent is True
+        assert profile.answer_type == "comparative"
+
     def test_evidence_uses_pyrrho_cutoff_over_reranked_results(self):
         """Evidence mode returns the smallest reranked prefix Pyrrho accepts."""
         engine = _make_engine()
@@ -773,6 +803,30 @@ class TestEvidence:
         assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
         assert engine._governance.decide.call_count == 2
         assert pack.metadata["governance_cutoff"]["policy"]["query_shape"] == "comparison"
+
+    def test_comparative_or_query_requires_both_temporal_sides(self):
+        """Queries like `Q1 or Q2` should not stop on one quarterly document."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(2)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        engine._governance = MagicMock()
+        engine._governance.decide.side_effect = [
+            _decision(AnswerMode.TRUSTWORTHY, "Top one is not enough."),
+            _decision(AnswerMode.TRUSTWORTHY, "Both quarters represented."),
+        ]
+
+        pack = engine.evidence(
+            Query(text="Which quarter had higher total revenue, Q1 or Q2?"),
+            top_k=2,
+        )
+
+        assert pack.mode == AnswerMode.TRUSTWORTHY
+        assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
+        assert engine._governance.decide.call_count == 2
+        cutoff = pack.metadata["governance_cutoff"]
+        assert cutoff["policy"]["query_shape"] == "comparison"
+        assert cutoff["policy"]["min_trustworthy_docs"] == 2
 
     def test_narrow_query_disputed_needs_patience_window(self):
         """Narrow queries keep going for two more docs before disputed stops."""

@@ -315,7 +315,7 @@ class FitzKragEngine:
         self._enricher_chat = standard_chat
         self._summarizer_chat = standard_chat
 
-        # Governance — mandatory pyrrho classifier (single INT8 ONNX forward pass).
+        # Governance — mandatory Pyrrho g3.1 local classifier.
         # The model lazily loads on first decide() so engine init stays fast.
         # The model lazily loads on first decide() so engine init stays fast.
         from fitz_sage.governance import create_governance
@@ -908,6 +908,7 @@ class FitzKragEngine:
             config=self._config,
             query_planner=getattr(self, "_query_planner", None),
             query_batcher=self._query_batcher,
+            query_contract_classifier=self._governance,
             semantic_keyword_batcher=getattr(self, "_semantic_keyword_batcher", None),
             retrieval_pass=self._retrieval_pass,
             hop_controller=self._hop_controller,

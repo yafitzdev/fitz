@@ -86,6 +86,10 @@ _CODE_TERMS = {
 }
 _DATA_TERMS = {"csv", "table", "spreadsheet", "row", "column", "sql"}
 _DOC_TERMS = {"section", "document", "policy", "procedure", "manual", "spec"}
+_COMPARATIVE_PATTERN = (
+    r"\b(compare|difference between|different from|better|worse|higher|lower|greater|"
+    r"less|more|fewer|larger|smaller|highest|lowest|best|worst)\b"
+)
 
 
 @dataclass(frozen=True)
@@ -263,9 +267,7 @@ def _aggregation_detection(query: str):
 def _comparison_detection(query: str):
     lower = query.lower()
     entities = _comparison_entities(query)
-    detected = bool(entities) or bool(
-        re.search(r"\b(compare|difference between|different from|better|worse)\b", lower)
-    )
+    detected = bool(entities) or bool(re.search(_COMPARATIVE_PATTERN, lower))
     if not detected:
         return ComparisonModule().not_detected()
 
@@ -320,6 +322,7 @@ def _time_focused_queries(query: str, references: list[str]) -> list[str]:
 
 
 def _comparison_entities(query: str) -> list[str]:
+    lower = query.lower()
     patterns = (
         r"\b(?:compare|comparing)\s+(.+?)\s+(?:and|with|to|vs|versus)\s+(.+?)(?:[?.!,]|$)",
         r"\bdifference between\s+(.+?)\s+and\s+(.+?)(?:[?.!,]|$)",
@@ -331,6 +334,20 @@ def _comparison_entities(query: str) -> list[str]:
             continue
         entities = [_clean_entity(match.group(1)), _clean_entity(match.group(2))]
         return [entity for entity in entities if entity]
+
+    if re.search(_COMPARATIVE_PATTERN, lower):
+        temporal_refs = _temporal_references(lower)
+        if len(temporal_refs) >= 2:
+            return temporal_refs[:4]
+
+        or_match = re.search(
+            r"\b([A-Za-z0-9][A-Za-z0-9_.-]*)\s+or\s+([A-Za-z0-9][A-Za-z0-9_.-]*)\b",
+            query,
+            flags=re.IGNORECASE,
+        )
+        if or_match:
+            entities = [_clean_entity(or_match.group(1)), _clean_entity(or_match.group(2))]
+            return [entity for entity in entities if entity]
     return []
 
 
