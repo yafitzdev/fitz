@@ -8,10 +8,11 @@ line:
 
 - a `threading.Lock`-guarded lazy load that runs once per process,
 - pulling a pre-built ONNX straight from a HuggingFace repo with
-  `huggingface_hub.hf_hub_download` (no on-the-fly export, no `optimum`,
-  no `torch`),
+  `huggingface_hub.hf_hub_download`, including adjacent ONNX external-data
+  sidecars when present (no on-the-fly export, no `optimum`, no `torch`),
 - building an `onnxruntime.InferenceSession` on the CPU provider,
-- the `transformers` tokenizer load,
+- the `transformers` tokenizer load, with a direct `tokenizer.json`
+  fallback for repos whose tokenizer config names an unavailable wrapper,
 - feeding only the inputs the ONNX graph actually declares.
 
 Subclasses own what genuinely differs: the public method, the tokenizer
@@ -22,6 +23,7 @@ subclass, not another ~150-line module.
 
 from __future__ import annotations
 
+import json
 import threading
 from typing import Any
 
@@ -68,13 +70,13 @@ class OnnxEncoderBackend:
 
             import onnxruntime as ort
             from huggingface_hub import hf_hub_download
-            from transformers import AutoTokenizer
+            from huggingface_hub.errors import EntryNotFoundError, LocalEntryNotFoundError
+            from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
             logger.info(
                 f"Loading ONNX encoder {self._model_id} "
                 f"({self._onnx_subfolder or '.'}/{self._onnx_file})"
             )
-            self._tokenizer = AutoTokenizer.from_pretrained(self._model_id)
             try:
                 onnx_path = hf_hub_download(
                     repo_id=self._model_id,
@@ -88,7 +90,63 @@ class OnnxEncoderBackend:
                     f"{self._model_id}: {e}. Point the encoder at an ONNX "
                     f"file the repo actually ships."
                 ) from e
+            sidecar_file = f"{self._onnx_file}.data"
+            try:
+                hf_hub_download(
+                    repo_id=self._model_id,
+                    filename=sidecar_file,
+                    subfolder=self._onnx_subfolder or None,
+                )
+            except (EntryNotFoundError, LocalEntryNotFoundError):
+                pass
+            except Exception as e:
+                raise RuntimeError(
+                    f"Could not fetch the ONNX external-data sidecar "
+                    f"'{self._onnx_subfolder or '.'}/{sidecar_file}' from "
+                    f"{self._model_id}: {e}."
+                ) from e
+            self._tokenizer = self._load_tokenizer(
+                AutoTokenizer=AutoTokenizer,
+                PreTrainedTokenizerFast=PreTrainedTokenizerFast,
+                hf_hub_download=hf_hub_download,
+            )
             self._session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+
+    def _load_tokenizer(
+        self,
+        *,
+        AutoTokenizer: Any,
+        PreTrainedTokenizerFast: Any,
+        hf_hub_download: Any,
+    ) -> Any:
+        """Load a HF tokenizer, falling back to tokenizer.json when needed."""
+        try:
+            return AutoTokenizer.from_pretrained(self._model_id)
+        except ValueError as original_error:
+            try:
+                tokenizer_path = hf_hub_download(
+                    repo_id=self._model_id,
+                    filename="tokenizer.json",
+                    subfolder=None,
+                )
+                tokenizer_config_path = hf_hub_download(
+                    repo_id=self._model_id,
+                    filename="tokenizer_config.json",
+                    subfolder=None,
+                )
+            except Exception as fallback_error:
+                raise RuntimeError(
+                    f"Could not load tokenizer for {self._model_id}: {original_error}"
+                ) from fallback_error
+
+            with open(tokenizer_config_path, encoding="utf-8") as f:
+                tokenizer_config = json.load(f)
+            special_tokens = {
+                key: tokenizer_config[key]
+                for key in ("unk_token", "sep_token", "pad_token", "cls_token", "mask_token")
+                if tokenizer_config.get(key)
+            }
+            return PreTrainedTokenizerFast(tokenizer_file=tokenizer_path, **special_tokens)
 
     def _encode(self, *args: Any, **tokenizer_kwargs: Any) -> Any:
         """Tokenize into numpy tensors, loading the model on first call.

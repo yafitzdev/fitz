@@ -85,11 +85,15 @@ def test_enable_guardrails_raises_migration_error():
 def test_create_governance_dispatch():
     """`create_governance` maps a config spec to a classifier instance or None."""
     from fitz_sage.governance import Pyrrho, create_governance
+    from fitz_sage.governance.pyrrho import MODEL_ID, TAU
 
     assert create_governance(None) is None
 
     default = create_governance("pyrrho")
     assert isinstance(default, Pyrrho)
+    assert default._model_id == MODEL_ID
+    assert MODEL_ID == "yafitzdev/pyrrho-nano-g3"
+    assert TAU == 0.60
 
     custom = create_governance("pyrrho/acme/custom-fine-tune")
     assert isinstance(custom, Pyrrho)

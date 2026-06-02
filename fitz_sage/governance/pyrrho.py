@@ -4,7 +4,7 @@ Pyrrho governance backend — single-pass ONNX classifier for
 TRUSTWORTHY / DISPUTED / ABSTAIN.
 
 Replaces the constraint+sklearn cascade. One forward pass through an
-INT8 ONNX ModernBERT-base fine-tune (~30 ms on CPU), no LLM call.
+INT8 ONNX ModernBERT-base fine-tune, no LLM call.
 
 The lazy load + forward pass are inherited from `OnnxEncoderBackend`:
 the pre-quantized ONNX is pulled straight from the model repo with
@@ -12,7 +12,7 @@ the pre-quantized ONNX is pulled straight from the model repo with
 `optimum`, and therefore no `torch`, on the dependency path.
 
 Model card:
-    https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1
+    https://huggingface.co/yafitzdev/pyrrho-nano-g3
 
 The model expects input in the form:
 
@@ -30,7 +30,7 @@ Output labels (in id order):
 
 Calibrated decision rule: if argmax is TRUSTWORTHY but
 P(TRUSTWORTHY) < TAU, fall back to the runner-up between ABSTAIN and
-DISPUTED. This is the rule that produced the 86.13% / 5.27 % FT
+DISPUTED. This is the rule used for the pyrrho-nano-g3 held-out
 headline numbers in the model card.
 """
 
@@ -43,10 +43,10 @@ from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.encoders.onnx import OnnxEncoderBackend
 from fitz_sage.governance.protocol import EvidenceItem
 
-MODEL_ID = "yafitzdev/pyrrho-modernbert-base-v1"
+MODEL_ID = "yafitzdev/pyrrho-nano-g3"
 ONNX_FILE = "model_quantized.onnx"  # pre-quantized INT8, at the repo root
 MAX_LENGTH = 4096
-TAU = 0.50
+TAU = 0.60
 
 # id -> AnswerMode
 LABELS = (AnswerMode.ABSTAIN, AnswerMode.DISPUTED, AnswerMode.TRUSTWORTHY)

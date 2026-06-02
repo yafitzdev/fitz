@@ -5,7 +5,7 @@ Epistemic governance.
 A single classifier decides whether retrieved sources support a confident
 answer (TRUSTWORTHY), contradict each other (DISPUTED), or simply don't
 contain enough information (ABSTAIN). The classifier is the
-[pyrrho](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+[pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
 fine-tune of ModernBERT-base, served as INT8 ONNX on CPU.
 
 Governance follows the provider-presence pattern — the ``governance:``
@@ -21,8 +21,8 @@ config key declares the classifier (or ``null`` to disable it):
         # decision.reason is a one-line human-readable summary
 
 The legacy constraint+sklearn cascade was removed in v0.13.0. The pyrrho
-classifier is +7.43 pp accuracy, -0.43 pp false-trustworthy, and ~50x
-faster than the cascade it replaced.
+classifier is faster than the cascade it replaced and reports 97.52%
+held-out accuracy with a 1.42% false-trustworthy rate on fitz-gov V8.
 """
 
 from __future__ import annotations

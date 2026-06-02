@@ -9,6 +9,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - Unreleased
+
+### 🎉 Highlights
+
+**Retrieval-first fitz-sage.** The default product surface is now
+`fitz query "..."`: point it at a folder, or run it from a folder, and it
+returns governed evidence instead of a generated answer. `fitz answer`
+remains the explicit optional synthesis path for users who configure an
+OpenAI-compatible endpoint.
+
+**Broad recall → ONNX rerank → Pyrrho cutoff.** Query execution now
+optimizes for high-recall candidate gathering first, lets the local ONNX
+cross-encoder impose precision, then asks Pyrrho whether the top-1,
+top-2, ... evidence prefix is enough to answer.
+
+**Managed Qwen enrichment is standard.** Qwen3.5 0.8B ONNX is the
+required local runtime for semantic query keywords and ingestion
+enrichment. It is downloaded when missing and is not exposed as an
+optional user flag.
+
+### 🚀 Added
+
+- **One-command query UX** — `fitz query "question"` now defaults to the
+  current directory when no `--source` or `--collection` is provided,
+  registers the source, waits only for the parsed search surface, and
+  returns the best governed evidence while deeper indexing continues.
+- **Staged progressive indexing** — collections move through queryable
+  states (`PARSED`, `KEYWORDED`, `ENTITY_LINKED`, `HIERARCHY_READY`,
+  `ENRICHED`, `SUMMARIZED`) instead of blocking the first query on every
+  enrichment phase.
+- **Background indexing daemon** — keyword/entity/hierarchy enrichment can
+  continue after the foreground query returns, so follow-up queries benefit
+  from a richer index without requiring an explicit ingest command.
+- **Canonical retrieval pipeline docs** —
+  `docs/RETRIEVAL_PIPELINE.md` now documents the query cases, strategy
+  roles, and flowcharts for partial and fully indexed collections.
+- **Pyrrho evidence metadata in CLI output** — evidence tables now expose
+  the governance verdict, cutoff, probabilities, and reasons without a
+  separate awkward metadata box.
+
+### 🔄 Changed
+
+- **Pyrrho default model upgraded to
+  [`yafitzdev/pyrrho-nano-g3`](https://huggingface.co/yafitzdev/pyrrho-nano-g3).**
+  The calibrated `TRUSTWORTHY` threshold is now `TAU = 0.60`; the model
+  card reports 97.52% accuracy and 1.42% false-trustworthy on the
+  fitz-gov V8.0.0 held-out test split.
+- **ONNX encoder loading handles external data sidecars.** Split ONNX
+  exports such as `model_quantized.onnx` + `model_quantized.onnx.data`
+  now load through the shared encoder backend.
+- **ONNX encoder loading can fall back to `tokenizer.json`.** Hub repos
+  whose tokenizer config names an unavailable wrapper still load through
+  `PreTrainedTokenizerFast` when they ship a standard tokenizer JSON.
+- **First-run config aligns with the product defaults.** Auto-created
+  configs now write `parser: cpu`, `rerank: onnx`, and
+  `governance: pyrrho`; `rerank: null` / `governance: null` are internal
+  smoke-test settings, not normal user configuration.
+- **CLI/docs/examples now distinguish evidence from synthesis.**
+  `query`/`retrieve` are retrieval/evidence commands; `answer` is the
+  optional generated-answer command.
+
+### 🔧 Fixed
+
+- **Qwen enrichment JSON hardening** — required enrichment now repairs or
+  rejects malformed model output with clearer errors instead of silently
+  corrupting the index.
+- **Partial-corpus evidence consistency** — broad-corpus queries now align
+  progress messages and evidence counts, avoid scanning fitz workspace
+  files as user sources, and keep source-query rows from outranking real
+  corpus evidence.
+
+### 🗑 Removed
+
+- **No llama.cpp / GGUF fallback path.** Managed Qwen enrichment is ONNX-only
+  for a smaller, simpler runtime contract.
+
 ## [0.14.1] - 2026-06-01
 
 ### 🚀 Added
@@ -2324,6 +2400,7 @@ Initial release of Fitz RAG framework.
 ---
 
 [Unreleased]: https://github.com/yafitzdev/fitz-sage/compare/v0.14.1...HEAD
+[0.15.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.14.1...HEAD
 [0.14.1]: https://github.com/yafitzdev/fitz-sage/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.12.0...v0.13.0

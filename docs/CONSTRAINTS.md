@@ -23,7 +23,7 @@ User query
 Retrieve via KRAG + FTS5
   │
   ▼
-Pyrrho classifier (single INT8 ONNX forward pass, ~30 ms CPU)
+Pyrrho classifier (single local INT8 ONNX forward pass)
   │
   ▼
 TRUSTWORTHY / DISPUTED / ABSTAIN
@@ -32,17 +32,20 @@ TRUSTWORTHY / DISPUTED / ABSTAIN
 EvidencePack is returned; optional synthesizer can use the mode
 ```
 
-The classifier is [`yafitzdev/pyrrho-modernbert-base-v1`](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+The classifier is [`yafitzdev/pyrrho-nano-g3`](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
 on HuggingFace — a fine-tune of `answerdotai/ModernBERT-base` on the
-fitz-gov v5.1 benchmark. The model card has the full headline numbers;
+fitz-gov V8.0.0 benchmark. The model card has the full headline numbers;
 the short version:
 
-| Metric                     | Pyrrho v1     | Pre-v0.13.0 cascade  | Δ        |
-| -------------------------- | ------------- | -------------------- | -------- |
-| Overall accuracy           | **86.13%**    | 78.7%                | +7.43 pp |
-| False-trustworthy rate     | **5.27%**     | 5.7%                 | -0.43 pp |
-| Wall-clock per decision    | **~30 ms**    | ~500–2000 ms (5 chat calls) | ~50x faster |
-| External LLM dependency    | **none**      | required             | —        |
+| Metric                     | Pyrrho nano g3 |
+| -------------------------- | -------------- |
+| Held-out test split        | 2,459 examples, 3 seeds |
+| Overall accuracy           | **97.52% ± 0.43** |
+| ABSTAIN recall             | **97.83% ± 0.76** |
+| DISPUTED recall            | **98.34% ± 0.24** |
+| TRUSTWORTHY recall         | **96.28% ± 0.83** |
+| False-trustworthy rate     | **1.42% ± 0.16** |
+| External LLM dependency    | **none** |
 
 ---
 
@@ -87,8 +90,8 @@ qualify.
 `create_governance("pyrrho")` returns a `Pyrrho` classifier instance.
 The engine owns this instance and calls `.decide()` after retrieval and
 before answer synthesis. The model is lazy-loaded on first decision;
-that first call costs the ONNX-load latency (~1–2 s on CPU), and
-subsequent calls are ~30 ms.
+that first call downloads/loads the ONNX export when missing, and
+subsequent calls are a single local ONNX forward pass.
 
 ---
 
@@ -103,7 +106,7 @@ if pred == TRUSTWORTHY and P(TRUSTWORTHY) < TAU:
     pred = argmax over (ABSTAIN, DISPUTED)
 ```
 
-`TAU = 0.50` is the default. This is the rule that produces the
+`TAU = 0.60` is the default. This is the rule that produces the
 headline numbers above.
 
 ---
@@ -140,33 +143,30 @@ heuristics over 108 features. It worked but was:
 
 A single fine-tuned classifier replaces all of that. It sees the
 same `(query, contexts)` pair, decides in one forward pass, and ships
-as a 1.35 GB HF model (INT8 ONNX, deterministic). The +7 pp accuracy
-and -0.43 pp false-trustworthy delta are the validation.
+as a deterministic INT8 ONNX model with adjacent external-data files
+downloaded from the Hub.
 
 ---
 
 ## Limitations
 
-The model card calls out two known failure modes:
+The model card calls out these known boundaries:
 
-1. **Multi-source convergence misclassified as DISPUTED.** When multiple
-   authoritative sources agree on a fact with small numerical variation
-   within tolerance (e.g. four climate agencies citing 1.09–1.20 °C of
-   warming), the model occasionally classifies the case as `DISPUTED`.
-   ~57% error rate on the `multi_source_convergence` fitz-gov
-   subcategory (n=7). v2 will target this with augmentation.
-2. **Short clean factual contexts trigger over-abstention.** A single
-   sentence answering the question with no surrounding methodology
-   can be classified as `ABSTAIN`. Training data was 62.7% hard
-   tier1 cases (rich, methodological contexts) — the model under-fits
-   the short-clean pattern. Production RAG chunks are typically
-   tier1-like and largely unaffected.
+1. **English-only training and evaluation data.**
+2. **Source-bounded judgment.** Pyrrho judges only the retrieved evidence;
+   it does not retrieve new evidence or verify claims against outside
+   knowledge.
+3. **Numeric agreement is learned, not hard-coded.** Exact numeric workflows
+   should still be evaluated before deployment.
+4. **Safety-tuned thresholding.** The decision threshold is tuned for low
+   false-trustworthy rate, so some answerable cases may be classified as
+   `ABSTAIN` or `DISPUTED`.
 
 ---
 
 ## See Also
 
-- [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+- [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
 - [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov) — the evaluation dataset
 - [pyrrho training code](https://github.com/yafitzdev/pyrrho)
 - [`features/governance/governance-benchmarking.md`](features/governance/governance-benchmarking.md) — historical notes on the pre-v0.13.0 cascade

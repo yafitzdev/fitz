@@ -13,8 +13,9 @@ The system cannot distinguish between "I have evidence" and "I'm making an educa
 ## Solution: Pyrrho evidence governance
 
 Every `(query, retrieved evidence prefix)` pair runs through the **pyrrho**
-fine-tuned classifier (a ModernBERT-base head distilled on the
-fitz-gov benchmark, served as INT8 ONNX). A single forward pass
+fine-tuned classifier ([`yafitzdev/pyrrho-nano-g3`](https://huggingface.co/yafitzdev/pyrrho-nano-g3),
+a ModernBERT-base head trained on the fitz-gov benchmark and served as
+INT8 ONNX). A single forward pass
 returns one of `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`:
 
 ```

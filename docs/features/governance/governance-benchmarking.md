@@ -3,12 +3,12 @@
 > **Note.** This document describes the **constraint+sklearn cascade**
 > that served as fitz-sage's governance backend through v0.12.x. As of
 > v0.13.0 the cascade has been removed and replaced by the
-> [pyrrho](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+> [pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
 > classifier — see [`docs/CONSTRAINTS.md`](../../CONSTRAINTS.md) for
 > the current architecture. The fitz-gov benchmark dataset itself is
-> still active, and pyrrho's headline numbers (86.13% accuracy, 5.27%
-> false-trustworthy on the same eval split) are measured against the
-> same v5.1 set.
+> still active, and the current pyrrho-nano-g3 headline numbers are
+> 97.52% accuracy and 1.42% false-trustworthy on the fitz-gov V8.0.0
+> held-out test split.
 
 ## The Problem with RAG Benchmarks
 

@@ -99,10 +99,10 @@ problem directly, while working as a Data Engineer in the automotive industry. N
 The retrieval architecture is [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md) — documents are parsed into typed units (
 code symbols, sections, tables) and each query is routed to the right search strategy, rather than searching flat chunks uniformly.
 
-Honesty is enforced by [**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1) — a fine-tuned ModernBERT encoder that classifies every `(query, retrieved contexts)` pair into
-`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` in a single ~30 ms INT8 ONNX forward pass on CPU. No LLM dependency on the governance path.
-Validated against [fitz-gov](https://github.com/yafitzdev/fitz-gov), a purpose-built benchmark of 2,920 adversarial test cases:
-**86.13% overall accuracy** and **5.27% false-trustworthy rate**.
+Honesty is enforced by [**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-nano-g3) — a fine-tuned ModernBERT encoder that classifies every `(query, retrieved contexts)` pair into
+`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` in a local INT8 ONNX forward pass on CPU. No LLM dependency on the governance path.
+Validated against [fitz-gov](https://github.com/yafitzdev/fitz-gov), a purpose-built benchmark of 24,592 adversarial evidence-governance cases:
+**97.52% overall accuracy** and **1.42% false-trustworthy rate**.
 
 It runs in production today and powers [fitz-forge](https://github.com/yafitzdev/fitz-forge).
 
@@ -197,14 +197,14 @@ SQL, and epistemic honesty out of the box — without configuration.
 > Ask a question immediately — no ingestion command required. `fitz-sage` parses a searchable surface, returns governed
 > evidence, and then lets a background daemon finish managed Qwen keyword/entity/hierarchy enrichment.
 
-**Honest answers ✅** → [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
+**Honest answers ✅** → [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
 > Most RAG tools confidently answer even when the answer isn't in your documents. Ask "What was our Q4 revenue?" when
 > your docs only cover Q1-Q3, and typical RAG hallucinates a number. `fitz-sage` says: *"I cannot find Q4 revenue figures
 > in the provided documents."*
 >
-> → Detects when to abstain at **92.94% recall** on [fitz-gov](https://github.com/yafitzdev/fitz-gov), a 2,920 case benchmark for
-> epistemic honesty (62.7% hard difficulty).
-> Overall accuracy: **86.13%**. False-trustworthy rate: **5.27%**. One ~30 ms encoder forward pass, no LLM call.
+> → Detects when to abstain at **97.83% recall** on [fitz-gov](https://github.com/yafitzdev/fitz-gov), a 24,592-case benchmark for
+> evidence governance.
+> Overall accuracy: **97.52%**. False-trustworthy rate: **1.42%**. One local encoder forward pass, no LLM call.
 
 **Actionable failures 🔍**
 > When `fitz-sage` can't answer, it doesn't just refuse — it explains what it searched for, shows related topics that *do* 
@@ -325,11 +325,11 @@ Across those tiers, [built-in intelligence](docs/features/retrieval) handles the
 
 ### Governance — Know What You Don't Know
 
-[Feature docs](docs/CONSTRAINTS.md) • [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1) • [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov)
+[Feature docs](docs/CONSTRAINTS.md) • [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3) • [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov)
 
 Most RAG systems hallucinate confidently. `fitz-sage` **measures and enforces** epistemic honesty using
-[**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1) — a fine-tuned ModernBERT-base encoder served as
-INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
+[**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-nano-g3) — a fine-tuned ModernBERT-base encoder served as
+INT8 ONNX. One local forward pass per query, no external LLM call.
 
 <br>
 
@@ -339,11 +339,11 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
                ▼
   ┌──────────────────────────┐
   │  pyrrho (ModernBERT,     │   single INT8 ONNX forward pass
-  │  INT8 ONNX, ~30 ms CPU)  │   ~150 MB on disk
+  │  INT8 ONNX, local CPU)   │   split ONNX export
   └────────────┬─────────────┘
                │ softmax → (p_abstain, p_disputed, p_trustworthy)
                ▼
-  Calibrated threshold (TAU = 0.50 on P(TRUSTWORTHY))
+  Calibrated threshold (TAU = 0.60 on P(TRUSTWORTHY))
                │
                ▼
   TRUSTWORTHY  /  DISPUTED  /  ABSTAIN  →  EvidencePack / optional synthesis
@@ -353,18 +353,18 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 
 | Decision        | Meaning                              | Recall    |
 |-----------------|--------------------------------------|-----------|
-| **ABSTAIN**     | Evidence doesn't answer the question | **92.94%** |
-| **DISPUTED**    | Sources contradict each other        | **94.81%** |
-| **TRUSTWORTHY** | Consistent, sufficient evidence      | **79.38%** |
+| **ABSTAIN**     | Evidence doesn't answer the question | **97.83%** |
+| **DISPUTED**    | Sources contradict each other        | **98.34%** |
+| **TRUSTWORTHY** | Consistent, sufficient evidence      | **96.28%** |
 
-**Overall accuracy: 86.13% ± 0.86** | **False-trustworthy: 5.27% ± 0.21** on fitz-gov v5.1 (3-seed mean, 584-case eval split, 62.7% hard difficulty)
+**Overall accuracy: 97.52% ± 0.43** | **False-trustworthy: 1.42% ± 0.16** on fitz-gov V8.0.0 (3-seed mean, 2,459-case held-out test split)
 
 <br>
 
 > [!NOTE]
 > Governance asks "given three relevant documents that partially contradict each other, should you flag a dispute, hedge
 > the answer, or trust the consensus?" That's a judgment call even humans disagree on. Pyrrho was trained on 2,920 labeled
-> cases from fitz-gov v5.1 to make those calls reproducibly.
+> cases from fitz-gov V8.0.0 to make those calls reproducibly.
 
 <strong>The system fails safe 🛡️</strong>
 > Threshold calibration is tuned on the `TRUSTWORTHY` probability: when pyrrho is uncertain, it falls back to the runner-up
@@ -557,7 +557,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 │  semantic query keywords | entities | hierarchy | summaries   │
 ├───────────────────────────────────────────────────────────────┤
 │  Governance (epistemic safety)                                │
-│  pyrrho encoder | TRUSTWORTHY / DISPUTED / ABSTAIN, ~30 ms CPU│
+│  pyrrho encoder | TRUSTWORTHY / DISPUTED / ABSTAIN, local CPU │
 └───────────────────────────────────────────────────────────────┘
 ```
 
