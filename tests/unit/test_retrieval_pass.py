@@ -17,6 +17,7 @@ def _addr(
     location: str = "mod.func",
     source_id: str = "src",
     summary: str | None = None,
+    score: float = 0.9,
     metadata: dict | None = None,
 ) -> Address:
     return Address(
@@ -24,7 +25,7 @@ def _addr(
         source_id=source_id,
         location=location,
         summary=summary or f"Symbol {location}",
-        score=0.9,
+        score=score,
         metadata=metadata or {},
     )
 
@@ -220,6 +221,34 @@ class TestRetrievalPass:
                 "A16_incident_17b_impact_summary.txt"
             ),
         ]
+
+    def test_broad_corpus_query_scores_follow_effective_rank(self):
+        control = _addr(
+            location="Queries",
+            source_id="retrieval_logic/base/queries.md",
+            summary="Queries used by retrieval tests",
+            score=1.5,
+        )
+        roadmap = _addr(
+            location="product_roadmap_2024.md",
+            source_id="product_roadmap_2024.md",
+            summary="Product roadmap",
+            score=0.01,
+        )
+        rp, _router, reranker, _reader = _build([control, roadmap])
+        reranker.rerank.return_value = [control, roadmap]
+        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+
+        results = rp.run("What are the key facts in this corpus?", profile=profile)
+
+        assert [r.address.source_id for r in results] == [
+            "product_roadmap_2024.md",
+            "retrieval_logic/base/queries.md",
+        ]
+        assert results[0].address.score > results[1].address.score
+        assert results[0].address.metadata["retrieval_score"] == 0.01
+        assert results[1].address.metadata["retrieval_score"] == 1.5
+        assert results[0].address.metadata["ranking_score_kind"] == "broad_corpus"
 
     def test_broad_test_query_keeps_test_surface_order(self):
         test_cases = _addr(

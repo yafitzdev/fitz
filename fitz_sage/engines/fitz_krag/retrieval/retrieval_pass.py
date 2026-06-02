@@ -16,6 +16,7 @@ runs on every query regardless of how many hops there are.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -131,6 +132,7 @@ class RetrievalPass:
             addresses = _ensure_broad_corpus_coverage(query, candidates, addresses, profile)
         addresses = _apply_broad_corpus_prior(query, addresses, profile)
         addresses = _enforce_broad_file_diversity(addresses, profile)
+        addresses = _assign_broad_effective_scores(query, addresses, profile)
         return self._reader.read(addresses, self._config.top_read)
 
 
@@ -214,6 +216,32 @@ def _address_path_text(address: Any) -> str:
         str(metadata.get("disk_path", "")),
     ]
     return " ".join(part for part in parts if part).lower().replace("\\", "/")
+
+
+def _assign_broad_effective_scores(
+    query: str,
+    addresses: list[Any],
+    profile: Any = None,
+) -> list[Any]:
+    """Make broad-corpus displayed scores follow the final effective rank."""
+    if not _should_apply_broad_corpus_prior(query, profile):
+        return addresses
+
+    total = len(addresses)
+    rescored: list[Any] = []
+    for index, address in enumerate(addresses):
+        metadata = dict(address.metadata)
+        metadata.setdefault("retrieval_score", address.score)
+        metadata["broad_corpus_priority"] = _broad_corpus_priority(address)
+        metadata["ranking_score_kind"] = "broad_corpus"
+        rescored.append(
+            replace(
+                address,
+                score=(total - index) / total,
+                metadata=metadata,
+            )
+        )
+    return rescored
 
 
 def _enforce_broad_file_diversity(addresses: list[Any], profile: Any = None) -> list[Any]:
