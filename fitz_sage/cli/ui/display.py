@@ -294,12 +294,8 @@ def _pending_status_line(label: str, pending: object, total: object, indexing_st
 
 
 def _evidence_title(mode_text: str, metadata: dict) -> str:
-    """Return the evidence table title with Pyrrho verdict folded in."""
-    if _is_broad_overview(metadata):
-        return "Evidence (Broad Overview)"
-    pyrrho = _pyrrho_metadata(metadata)
-    verdict = pyrrho.get("mode") if pyrrho else mode_text
-    return f"Evidence (Pyrrho: {_format_verdict(verdict)})" if verdict else "Evidence"
+    """Return the stable evidence table title."""
+    return "Evidence"
 
 
 def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]:
@@ -321,12 +317,15 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
     pyrrho = _pyrrho_metadata(metadata)
     probs = pyrrho.get("probabilities", {}) if pyrrho else {}
     if isinstance(probs, dict) and probs:
+        verdict = _format_verdict(pyrrho.get("mode"))
         lines.append(
-            "Pyrrho: "
+            f"Pyrrho: {verdict}  "
             f"P(TRUSTWORTHY)={_fmt_prob(probs.get('trustworthy'))}  "
             f"P(ABSTAIN)={_fmt_prob(probs.get('abstain'))}  "
             f"P(DISPUTED)={_fmt_prob(probs.get('disputed'))}"
         )
+    elif pyrrho and pyrrho.get("mode") and not pyrrho.get("reason"):
+        lines.append(f"Pyrrho: {_format_verdict(pyrrho.get('mode'))}")
 
     head_line = _format_pyrrho_heads(pyrrho)
     if head_line:

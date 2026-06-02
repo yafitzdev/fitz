@@ -74,19 +74,19 @@ def test_format_indexing_status_shows_indexing_when_query_surface_is_pending():
     assert _format_indexing_status(status) == "Indexing pending: 12/63"
 
 
-def test_evidence_title_combines_pyrrho_verdict():
-    """Evidence table title should include the Pyrrho verdict."""
+def test_evidence_title_stays_stable_for_pyrrho_verdict():
+    """Evidence table title should not encode governance state."""
     metadata = {
         "governance_cutoff": {
             "pyrrho": {"mode": "trustworthy"},
         }
     }
 
-    assert _evidence_title("trustworthy", metadata) == "Evidence (Pyrrho: TRUSTWORTHY)"
+    assert _evidence_title("trustworthy", metadata) == "Evidence"
 
 
-def test_broad_overview_title_uses_representative_sources():
-    """Broad overview packs should not look like Pyrrho-certified evidence."""
+def test_broad_overview_title_stays_stable():
+    """Broad overview semantics belong in governance metadata, not the title."""
     metadata = {
         "governance_cutoff": {
             "representative_sources": True,
@@ -94,7 +94,7 @@ def test_broad_overview_title_uses_representative_sources():
         }
     }
 
-    assert _evidence_title("abstain", metadata) == "Evidence (Broad Overview)"
+    assert _evidence_title("abstain", metadata) == "Evidence"
 
 
 def test_format_governance_metadata_shows_pyrrho_and_cutoff():
@@ -124,7 +124,7 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
     }
 
     assert _format_governance_metadata(metadata, []) == [
-        "Pyrrho: P(TRUSTWORTHY)=0.53  P(ABSTAIN)=0.21  P(DISPUTED)=0.26",
+        "Pyrrho: TRUSTWORTHY  P(TRUSTWORTHY)=0.53  P(ABSTAIN)=0.21  P(DISPUTED)=0.26",
         (
             "Cutoff: selected 6; evaluated 6/10; policy broad; "
             "min trustworthy 4; min disputed 2; dispute patience 2"
