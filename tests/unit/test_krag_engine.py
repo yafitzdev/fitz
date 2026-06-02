@@ -25,6 +25,7 @@ from fitz_sage.core import (
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine, _build_provider_config
+from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from tests.unit.mock_engine import build_mock_engine
 
@@ -569,6 +570,92 @@ class TestEvidence:
         engine._query_batcher.batch_classify.assert_not_called()
         engine._synthesizer.generate.assert_not_called()
         engine._table_handler.process.assert_not_called()
+
+    def test_evidence_adds_semantic_keywords_to_broad_recall_profile(self):
+        """Evidence mode enriches broad recall keywords without full chat prep."""
+        engine = _make_engine()
+        engine._semantic_keyword_batcher.batch_classify.return_value = BatchResult(
+            keywords=["payment retry", "timeout failure"]
+        )
+        address = Address(
+            kind=AddressKind.SECTION,
+            source_id="doc-1",
+            location="Sprint 47",
+            summary="Sprint 47 test results",
+            score=0.91,
+        )
+        result = ReadResult(
+            address=address,
+            content="Sprint 47 failed because the payment retry test timed out.",
+            file_path="docs/sprint.md",
+            line_range=(10, 12),
+        )
+        engine._retrieval_router.retrieve.return_value = [address]
+        engine._reader.read.return_value = [result]
+        decision = MagicMock()
+        decision.mode = AnswerMode.TRUSTWORTHY
+        decision.reasons = ("Enough evidence.",)
+        engine._governance = MagicMock()
+        engine._governance.decide.return_value = decision
+
+        engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
+
+        engine._query_batcher.batch_classify.assert_not_called()
+        engine._semantic_keyword_batcher.batch_classify.assert_called_once()
+        profile = engine._retrieval_router.retrieve.call_args.args[1]
+        assert "payment retry" in profile.keywords
+        assert "timeout failure" in profile.keywords
+
+    def test_evidence_uses_pyrrho_cutoff_over_reranked_results(self):
+        """Evidence mode returns the smallest reranked prefix Pyrrho accepts."""
+        engine = _make_engine()
+        addresses = [
+            Address(
+                kind=AddressKind.SECTION,
+                source_id=f"doc-{i}",
+                location=f"Section {i}",
+                summary=f"Section {i}",
+                score=1.0 - (i * 0.1),
+            )
+            for i in range(1, 4)
+        ]
+        results = [
+            ReadResult(
+                address=address,
+                content=f"Evidence body {i}",
+                file_path=f"docs/{i}.md",
+                line_range=(i, i),
+            )
+            for i, address in enumerate(addresses, start=1)
+        ]
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+
+        abstain = MagicMock()
+        abstain.mode = AnswerMode.ABSTAIN
+        abstain.reasons = ("Need more evidence.",)
+        trustworthy = MagicMock()
+        trustworthy.mode = AnswerMode.TRUSTWORTHY
+        trustworthy.reasons = ("Enough evidence at two docs.",)
+        engine._governance = MagicMock()
+        engine._governance.decide.side_effect = [abstain, trustworthy]
+
+        pack = engine.evidence(Query(text="What happened?"), top_k=3)
+
+        assert pack.mode == AnswerMode.TRUSTWORTHY
+        assert pack.reasons == ["Enough evidence at two docs."]
+        assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
+        assert pack.metadata["governance_cutoff"] == {
+            "evaluated": 2,
+            "selected": 2,
+            "max": 3,
+            "mode": "trustworthy",
+        }
+        first_contexts = engine._governance.decide.call_args_list[0].args[1]
+        second_contexts = engine._governance.decide.call_args_list[1].args[1]
+        assert len(first_contexts) == 1
+        assert len(second_contexts) == 2
+        engine._expander.expand.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

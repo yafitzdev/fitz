@@ -256,29 +256,41 @@ units, each with its own storage format and search strategy.
 
 > [!NOTE]
 > All retrieval units share the same retrieval intelligence (temporal handling, comparison queries, multi-hop reasoning, etc.) 
-> and the same enrichment pipeline (summaries, keywords, entities, hierarchical summaries).
+> and the same staged enrichment pipeline (query-ready keywords first; entities and hierarchy continue in the background).
 
 ---
 
 ### Retrieval Intelligence
 
 Most RAG implementations are naive vector search — they fail silently on real-world queries.
-`fitz-sage` runs retrieval as a **tiered pipeline**, each tier with one job:
+`fitz-sage` runs retrieval as a **broad recall → rerank → govern** pipeline:
 
 <br>
 
-| Tier | Stage | What it does |
-|------|-------|--------------|
-| **1** | Transform | Rewrite the query, detect intent (temporal, comparison, aggregation), build a retrieval profile |
-| **2** | Generate | BM25 + KRAG typed-unit strategies — symbols, sections, tables — run in parallel |
-| **3** | Fuse | Merge candidates across strategies, deduplicate, keyword-boost |
-| **4** | Rerank | INT8 ONNX cross-encoder reorders by true relevance — ~30 ms on CPU |
-| **5** | Read | Fetch content for the surviving addresses, on demand |
-| **6** | Govern | `pyrrho` classifies the evidence → `TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` |
+| Stage | What it does | Main cost |
+|-------|--------------|-----------|
+| **1. Broad recall** | Extract real query terms, add semantic keywords, run BM25 over typed units, and fan out only when the query needs it (comparison, temporal, aggregation, multi-query). False positives are acceptable here. | Cheap SQLite FTS + deterministic query prep |
+| **2. Rerank** | INT8 ONNX cross-encoder reorders the broad candidate list by true query relevance. This is where precision belongs. | Local ONNX reranker |
+| **3. Govern cutoff** | `pyrrho` evaluates `query + top 1`, then `query + top 2`, and so on until evidence is enough or the cutoff is reached. | Local ONNX classifier |
 
 <br>
 
-**Tiers 2–5 form one retrieval pass.** Most queries take a single pass; multi-hop loops it — bridge question, retrieve again — when `pyrrho` judges the evidence insufficient. Reranking lives inside the pass, so the cross-encoder runs on every query.
+The quick path is keyword-first: real query keywords + Qwen semantic keywords + BM25. L1 summaries, entity graph links, and corpus hierarchy improve fully indexed retrieval, but they are not required before the first governed evidence pack can be returned.
+
+Existing retrieval strategies are not deleted; they move into clear roles:
+
+| Strategy | Role in the pipeline |
+|----------|----------------------|
+| Keyword vocabulary, sparse BM25 | Broad recall backbone |
+| Query expansion | Broad recall keyword enrichment |
+| Query rewriting | Transform only when conversational context or ambiguity would harm recall |
+| Multi-query decomposition | Bounded broad recall for compound questions |
+| Comparison, temporal, aggregation, freshness | Recall fanout and scoring hints |
+| Hierarchical summaries | Fully indexed recall and rerank evidence, not the instant gate |
+| Entity graph | Fully indexed context expansion after initial ranking |
+| Reranking | Mandatory precision stage before governance |
+| Multi-hop | Fallback bridge retrieval after the cutoff loop still abstains |
+| Agentic manifest search | Fallback only for files that are not query-ready yet |
 
 <br>
 

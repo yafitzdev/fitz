@@ -34,6 +34,8 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+_DEFAULT_GOVERNANCE_CUTOFF = 10
+
 
 def _report_timings(
     progress: Callable[[str], None],
@@ -93,6 +95,20 @@ def _build_provider_config(
         cfg["auth"] = {"api_key_env": api_key_env}
 
     return cfg or None
+
+
+def _merge_query_keywords(*keyword_lists: list[str]) -> list[str]:
+    """Merge query keyword lists while preserving first occurrence."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for keywords in keyword_lists:
+        for keyword in keywords:
+            value = str(keyword).strip()
+            key = value.lower()
+            if value and key not in seen:
+                seen.add(key)
+                merged.append(value)
+    return merged
 
 
 @dataclass
@@ -369,6 +385,10 @@ class FitzKragEngine:
         self._query_batcher = QueryBatcher(
             chat_factory=query_chat_factory,
             detection_modules=list(DEFAULT_MODULES),
+        )
+        self._semantic_keyword_batcher = QueryBatcher(
+            chat_factory=lambda _tier: self._enricher_chat,
+            detection_modules=[],
         )
 
         # Reranker — INT8 ONNX cross-encoder via get_reranker().
@@ -779,10 +799,6 @@ class FitzKragEngine:
         top_k: int | None = None,
     ) -> EvidencePack:
         """Return a governed evidence pack for a query, without synthesis or chat prep."""
-        import time
-
-        from fitz_sage.engines.fitz_krag.context.compressor import compress_results
-
         if not query.text or not query.text.strip():
             raise QueryError("Query text cannot be empty")
 
@@ -795,26 +811,20 @@ class FitzKragEngine:
                     use_query_intelligence=False,
                     allow_llm_strategies=False,
                     execute_table_queries=False,
+                    expand_context=False,
                 )
-                expanded = compress_results(outcome.expanded) if outcome.expanded else []
                 timings = list(outcome.timings)
 
-                mode: AnswerMode | None = None
-                reasons: list[str] = []
-                if not expanded:
-                    mode = AnswerMode.ABSTAIN
-                    reasons = ["No relevant evidence retrieved."]
-                elif self._governance is not None:
-                    t0 = time.perf_counter()
-                    governance = self._governance.decide(outcome.sanitized, expanded)
-                    timings.append(("Governance", time.perf_counter() - t0))
-                    mode = governance.mode
-                    reasons = list(governance.reasons)
-
                 requested_top_k = top_k or query.metadata.get("top_k")
-                items = self._build_evidence_items(expanded)
-                if requested_top_k is not None:
-                    items = items[: int(requested_top_k)]
+                selected, mode, reasons, governance_timings, cutoff_metadata = (
+                    self._apply_governance_cutoff(
+                        outcome.sanitized,
+                        outcome.expanded,
+                        requested_top_k=requested_top_k,
+                    )
+                )
+                timings.extend(governance_timings)
+                items = self._build_evidence_items(selected)
 
                 self._boost_queried_files(outcome)
 
@@ -825,10 +835,127 @@ class FitzKragEngine:
                     reasons=reasons,
                     timings={name: duration for name, duration in timings},
                     indexing_status=self.indexing_status(),
-                    metadata={"engine": "fitz_krag", "source_query": query.text},
+                    metadata={
+                        "engine": "fitz_krag",
+                        "source_query": query.text,
+                        "governance_cutoff": cutoff_metadata,
+                    },
                 )
             except Exception as e:
                 raise KnowledgeError(f"Evidence retrieval failed: {e}") from e
+
+    def _apply_governance_cutoff(
+        self,
+        query: str,
+        results: list["ReadResult"],
+        *,
+        requested_top_k: Any = None,
+    ) -> tuple[list["ReadResult"], AnswerMode | None, list[str], list[tuple[str, float]], dict]:
+        """Use Pyrrho to select the smallest sufficient prefix of ranked evidence."""
+        import time
+
+        if not results:
+            return (
+                [],
+                AnswerMode.ABSTAIN,
+                ["No relevant evidence retrieved."],
+                [],
+                {"evaluated": 0, "selected": 0, "max": 0, "mode": AnswerMode.ABSTAIN.value},
+            )
+
+        limit = self._governance_cutoff_limit(len(results), requested_top_k)
+        if self._governance is None:
+            selected = results[:limit]
+            return (
+                selected,
+                AnswerMode.ABSTAIN,
+                ["Pyrrho governance is unavailable; evidence sufficiency was not evaluated."],
+                [],
+                {
+                    "evaluated": 0,
+                    "selected": len(selected),
+                    "max": limit,
+                    "mode": AnswerMode.ABSTAIN.value,
+                },
+            )
+
+        t0 = time.perf_counter()
+        last_reasons: list[str] = []
+        for size in range(1, limit + 1):
+            decision = self._governance.decide(query, results[:size])
+            last_reasons = list(decision.reasons)
+            if decision.mode is not AnswerMode.ABSTAIN:
+                return (
+                    results[:size],
+                    decision.mode,
+                    last_reasons,
+                    [("Governance", time.perf_counter() - t0)],
+                    {
+                        "evaluated": size,
+                        "selected": size,
+                        "max": limit,
+                        "mode": decision.mode.value,
+                    },
+                )
+
+        reasons = list(last_reasons)
+        reasons.append(f"Pyrrho abstained after evaluating the top {limit} evidence item(s).")
+        return (
+            results[:limit],
+            AnswerMode.ABSTAIN,
+            reasons,
+            [("Governance", time.perf_counter() - t0)],
+            {
+                "evaluated": limit,
+                "selected": limit,
+                "max": limit,
+                "mode": AnswerMode.ABSTAIN.value,
+            },
+        )
+
+    @staticmethod
+    def _governance_cutoff_limit(result_count: int, requested_top_k: Any = None) -> int:
+        """Return the maximum evidence prefix Pyrrho may inspect."""
+        limit = _DEFAULT_GOVERNANCE_CUTOFF
+        if requested_top_k is not None:
+            try:
+                limit = min(limit, max(1, int(requested_top_k)))
+            except (TypeError, ValueError):
+                pass
+        return max(1, min(result_count, limit))
+
+    def _add_semantic_query_keywords(self, query: str, plan: Any) -> Any:
+        """Use local Qwen for keyword-only query expansion."""
+        batcher = getattr(self, "_semantic_keyword_batcher", None)
+        if batcher is None:
+            return plan
+
+        try:
+            batch_result = batcher.batch_classify(
+                query,
+                include_analysis=False,
+                include_detection=False,
+                include_rewriting=False,
+                include_extended=False,
+                include_keywords=True,
+            )
+        except Exception as e:
+            logger.debug(f"Semantic query keyword expansion failed: {e}")
+            return plan
+
+        if not batch_result.keywords:
+            return plan
+
+        from fitz_sage.engines.fitz_krag.query_planner import QueryPlan
+
+        return QueryPlan(
+            retrieval_query=plan.retrieval_query,
+            analysis=plan.analysis,
+            detection=plan.detection,
+            rewrite_result=plan.rewrite_result,
+            extended_signals=plan.extended_signals,
+            keywords=_merge_query_keywords(plan.keywords, batch_result.keywords),
+        )
 
     def _build_evidence_items(self, results: list["ReadResult"]) -> list[EvidenceItem]:
         """Convert KRAG read results into stable core evidence items."""
@@ -938,6 +1065,7 @@ class FitzKragEngine:
         use_query_intelligence: bool | None = None,
         allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
+        expand_context: bool = True,
     ) -> _RetrievalOutcome:
         """Run the retrieval half of the KRAG pipeline.
 
@@ -1018,6 +1146,8 @@ class FitzKragEngine:
                     )
             except Exception as e:
                 logger.warning(f"Batched query intelligence failed: {e}")
+        else:
+            plan = self._add_semantic_query_keywords(sanitized, plan)
         timings.append(("Query prep", time.perf_counter() - t0))
 
         # Build retrieval profile — single object with all gates and signals
@@ -1054,12 +1184,15 @@ class FitzKragEngine:
                 sanitized=sanitized, expanded=[], addresses=[], timings=timings
             )
 
-        # 4. Expand with context
-        t0 = time.perf_counter()
-        expanded = self._expander.expand(
-            read_results, entity_expansion_limit=profile.entity_expansion_limit
-        )
-        timings.append(("Expand context", time.perf_counter() - t0))
+        if expand_context:
+            # 4. Expand with context
+            t0 = time.perf_counter()
+            expanded = self._expander.expand(
+                read_results, entity_expansion_limit=profile.entity_expansion_limit
+            )
+            timings.append(("Expand context", time.perf_counter() - t0))
+        else:
+            expanded = read_results
 
         # 4.5. Execute table queries (SQL generation + execution)
         if execute_table_queries:
