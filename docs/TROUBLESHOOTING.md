@@ -10,8 +10,8 @@ no embeddings, no vector DB).
 ## Quick Diagnostics
 
 Open the config file directly at `~/.fitz/config/fitz_krag.yaml`. For
-`fitz retrieve`, verify the collection and storage settings. For
-`fitz answer` / `fitz query`, also verify `synthesizer`,
+`fitz query` / `fitz retrieve`, verify the collection and indexing status. For
+`fitz answer`, also verify `synthesizer`,
 `chat_base_url`, and the API-key environment variable if your endpoint
 requires one.
 
@@ -53,7 +53,8 @@ LLMError: Cannot connect to http://localhost:8080/v1
 
 1. Confirm an OpenAI-compatible server is running and reachable at the
    configured `chat_base_url`. This applies only when you configured an
-   endpoint-backed role such as `synthesizer:` or `query_intelligence:`.
+   endpoint-backed role such as `synthesizer:`, `query_intelligence:`, or
+   `vision:`.
    Common local options:
 
    ```bash
@@ -133,7 +134,7 @@ collection's `.db` and re-ingest. There is no in-place migration step.
 
 ```bash
 fitz collections delete my_collection
-fitz query --source ./docs "..."
+fitz query "..." --source ./docs
 ```
 
 ---
@@ -197,7 +198,7 @@ ValueError: No documents found in ./path
    `.py`, `.go`, `.ts`, `.java`, `.cs`, `.sql`, `.xlsx`, `.csv`, etc.).
 3. Try with a specific file:
    ```bash
-   fitz query --source ./path/file.pdf "test query"
+   fitz query "test query" --source ./path/file.pdf
    ```
 
 ---

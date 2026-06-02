@@ -8,9 +8,9 @@ Tables in documents get chunked arbitrarily, breaking structure:
 - **Standard RAG:** Returns fragments like "Alice" + "salary column" (separated chunks)
 - **Expected:** Query the full table: `SELECT salary FROM employees WHERE name = 'Alice'`
 
-Text-based retrieval (BM25, full-text, or embedding similarity) fails on entity-specific table queries because chunked text doesn't capture row-level data. Tables need **structured querying (SQL)**, not chunk retrieval.
+Text-based retrieval (BM25 or full-text search over chunks) fails on entity-specific table queries because chunked text doesn't capture row-level data. Tables need **structured querying (SQL)**, not chunk retrieval.
 
-## Solution: Table Registry + SQL Execution
+## Solution: Table Registry + Optional SQL Execution
 
 Fitz stores tables in SQLite and registers them for guaranteed retrieval:
 
@@ -21,7 +21,7 @@ Table chunk retrieved via registry (guaranteed, not semantic similarity)
      ↓
 LLM generates SQL: SELECT salary FROM employees WHERE name = 'Alice'
      ↓
-SQL executed on stored table data
+SQL executed on stored table data when optional answer synthesis runs
      ↓
 Result: "Alice earns $85,000"
 ```
@@ -66,7 +66,7 @@ Result: "Alice earns $85,000"
 
 4. **SQL execution** - Query executed on in-memory SQLite table
 
-5. **Result formatting** - LLM formats SQL results into natural language answer
+5. **Result formatting** - optional synthesizer formats SQL results into a natural language answer
 
 ## Key Design Decisions
 
@@ -76,13 +76,14 @@ Result: "Alice earns $85,000"
 
 3. **Full table storage** - Tables stored intact in SQLite, not chunked and scattered.
 
-4. **LLM-generated SQL** - Uses the same chat LLM to generate SQL (no separate query planner).
+4. **LLM-generated SQL is optional** - SQL generation runs in the answer path when a chat synthesizer is configured. Evidence retrieval still returns the relevant table/source units.
 
 5. **In-memory execution** - SQLite tables loaded into memory for query execution (fast, no external DB).
 
 ## Configuration
 
-No configuration required. Feature is baked into the ingestion and answering pipelines.
+No configuration is required for table detection and table evidence retrieval.
+Computed SQL answers require optional answer synthesis.
 
 Internal parameters:
 - `max_table_rows`: Max rows to index in schema chunk (default: 3 sample rows)

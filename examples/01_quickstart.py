@@ -2,11 +2,10 @@
 """
 Quickstart - The simplest way to use Fitz.
 
-This is the 90% use case: point at docs, ask questions, get answers with sources.
+This is the 90% use case: point at docs, ask questions, get governed evidence.
 
 Requirements:
     pip install fitz-sage
-    export OPENAI_API_KEY="your-key"  # if using a hosted OpenAI-compatible endpoint
 
 Run:
     python examples/01_quickstart.py
@@ -40,14 +39,14 @@ questions = [
 
 for i, question in enumerate(questions):
     print(f"Q: {question}")
-    answer = f.query(question, source=source if i == 0 else None)
-    print(f"A: {answer.text}\n")
+    pack = f.evidence(question, source=source if i == 0 else None)
+    print(f"Mode: {pack.mode}\n")
 
-    # Every answer includes sources
-    if answer.provenance:
-        print("Sources:")
-        for source in answer.provenance[:3]:  # Show top 3
-            print(f"  - {source.source_id}")
+    # Every evidence pack includes ranked source units.
+    if pack.items:
+        print("Evidence:")
+        for item in pack.items[:3]:
+            print(f"  - {item.file_path}: {item.excerpt[:120]}")
         print()
 
 # =============================================================================

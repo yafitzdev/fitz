@@ -16,9 +16,10 @@ Additional issues:
 - Complex phrasing that doesn't match document language
 - Ambiguous queries with multiple possible meanings
 
-## Solution: LLM-Powered Query Rewriting
+## Solution: Optional LLM-Powered Query Rewriting
 
-Rewrite queries using conversation context before retrieval:
+When `query_intelligence:` is configured, fitz-sage can rewrite queries using
+conversation context before retrieval:
 
 ```
 Conversation history:  User: "Tell me about TechCorp"
@@ -51,7 +52,7 @@ Rewritten query:       "What products does TechCorp make?"
    - Converts questions to document-matching form
    - Detects ambiguity
 3. Rewritten query is used for retrieval
-4. Original query is preserved for answer generation
+4. Original query is preserved for fallback and optional answer generation
 
 ### Ambiguity Detection
 
@@ -71,7 +72,7 @@ All interpretations are searched and results are merged.
 
 ## Key Design Decisions
 
-1. **LLM-based** - Uses the `query_intelligence` chat provider for intelligent rewriting.
+1. **Endpoint-backed enhancement** - Uses the `query_intelligence` chat provider for intelligent rewriting. With `query_intelligence: null`, the deterministic planner uses the original query.
 
 2. **Batched** - Rewriting is one section of the single query-prep LLM call (alongside analysis, detection, keywords) — no call of its own.
 
@@ -79,7 +80,7 @@ All interpretations are searched and results are merged.
 
 4. **Confidence scoring** - Each rewrite includes confidence (0.0-1.0).
 
-5. **Preserves original** - Original query kept for fallback and answer generation.
+5. **Preserves original** - Original query kept for fallback and optional answer generation.
 
 6. **Graceful degradation** - On LLM failure, original query is used unchanged.
 

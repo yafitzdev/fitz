@@ -39,7 +39,8 @@ The architecture has three load-bearing decisions:
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  Engine: FitzKRAG                                                           │
-│  - Deterministic planner + optional query-intelligence provider             │
+│  - Deterministic planner + managed Qwen semantic keywords                   │
+│  - Optional query-intelligence provider                                     │
 │  - Router: symbol search · section search · table SQL                       │
 │  - Expander (import graph, entity links, same-file refs, hierarchy)         │
 │  - ONNX cross-encoder reranker (gte-reranker-modernbert-base)               │
@@ -52,11 +53,11 @@ The architecture has three load-bearing decisions:
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────────┐
 │  LLM / ONNX         │  │  Storage (SQLite)   │  │  Ingestion Pipeline     │
 ├─────────────────────┤  ├─────────────────────┤  ├─────────────────────────┤
-│  Qwen3.5 0.8B ONNX  │  │  WAL + FTS5         │  │  Parse (Docling / OCR)  │
-│  for enrichment     │  │  one .db per        │  │  Chunk (semantic +      │
-│  endpoint/cloud     │  │  collection         │  │   structured)           │
-│  for optional chat  │  │  bm25() ranking     │  │  Required enrich        │
-│  + enterprise auth  │  │  json_each, json1   │  │   keywords, entities)   │
+│  Qwen3.5 0.8B ONNX  │  │  WAL + FTS5         │  │  Parse (CPU / Docling)  │
+│  enrichment + query │  │  one .db per        │  │  typed units: symbols,  │
+│  endpoint/cloud     │  │  collection         │  │   sections, tables      │
+│  for optional chat  │  │  bm25() ranking     │  │  Required staged        │
+│  + enterprise auth  │  │  json_each, json1   │  │   enrichment            │
 └─────────────────────┘  └─────────────────────┘  └─────────────────────────┘
           │
           ▼
@@ -89,31 +90,34 @@ Strict import rules enforce separation of concerns (verified by
 
 ### Query
 
-Retrieval runs as a tiered pipeline. Tiers 2-5 form one `RetrievalPass`
-(retrieve → rerank → read); multi-hop loops the pass on a bridge query
-when pyrrho judges the evidence insufficient.
+Retrieval runs as a broad recall → rerank → govern pipeline. A
+`RetrievalPass` is retrieve → fuse → rerank → read; multi-hop may loop that
+pass on a bridge query when pyrrho judges the evidence insufficient.
 
 ```
-Tier 1  Transform   deterministic plan → optional rewrite/analyze/detect intent
-Tier 2  Generate    route to symbol / section / table search over FTS5 bm25
-Tier 3  Fuse        merge across strategies, dedup, keyword-boost
-Tier 4  Rerank      ONNX cross-encoder (gte-reranker-modernbert-base, ~30 ms CPU)
-Tier 5  Read        fetch content for the surviving addresses
-        expand      import graph, entity links, hierarchical context
-Tier 6  Govern      pyrrho → AnswerMode ∈ {TRUSTWORTHY, DISPUTED, ABSTAIN}
-        synthesize  optional chat call writes the answer + provenance
+1  Query prep      deterministic plan + Qwen semantic keywords
+                   optional query_intelligence rewrite/analyze/detect
+2  Broad recall    symbol / section / table BM25, intent fanout,
+                   unindexed scan when files are not query-ready
+3  Fuse            merge across strategies, dedup, keyword and freshness boosts
+4  Rerank          ONNX cross-encoder (gte-reranker-modernbert-base)
+5  Read            fetch content for surviving addresses
+6  Govern cutoff   pyrrho evaluates top-1, top-2, ... up to cutoff
+7  Synthesize      optional chat call writes an Answer from governed evidence
 ```
 
 ### Ingestion
 
 ```
-Files → Parse (Docling for PDF/DOCX, GLM-OCR for scans, tree-sitter
-        for code, native parsers for CSV/XLSX/SQL/JSON)
-      → Chunk (sections, symbols, table rows — typed units, not
-        fixed-size windows)
-      → Required enrich (LLM-generated summaries, keywords, named entities,
-        hierarchical L1/L2 summaries)
-      → Index into per-collection SQLite + FTS5 external-content tables
+Files → Register manifest
+      → Parse (CPU parser by default, Docling/vision/OCR optional,
+        tree-sitter/AST for code, native table parsers)
+      → Store typed units (symbols, sections, tables) in SQLite + FTS5
+      → Search surface ready
+      → Required staged enrichment:
+        Qwen keywords → query-ready
+        entity graph + hierarchy → fully enriched
+        demand summaries → only for files surfaced by queries
 ```
 
 ---
@@ -178,7 +182,8 @@ for the full schema-port notes (PostgreSQL → SQLite).
 ## Feature Control
 
 Features are controlled by **provider presence**, not boolean flags. Enrichment
-is standard engine behavior and is required for ingestion:
+is standard engine behavior and is required for ingestion; it does not have a
+public provider knob.
 
 ```yaml
 # ENABLED — a provider is named
@@ -189,8 +194,8 @@ chat_base_url: http://localhost:8080/v1
 
 # DISABLED — omit the key (or set null)
 # synthesizer: null → no answer generation
-# rerank: null → no reranking step
-# governance: null → no governance
+# rerank: null → internal raw-retrieval timing only
+# governance: null → internal smoke-test mode only
 ```
 
 ---
@@ -261,17 +266,16 @@ fitz_sage/
 ├── engines/
 │   └── fitz_krag/       # KRAG engine: retrieval/, generation/, ingestion/
 ├── retrieval/           # SHARED retrieval intelligence
-│   ├── detection/       # LLM-based query classification
+│   ├── detection/       # deterministic modules + optional LLM parsing
 │   ├── entity_graph/    # Entity-based linking
-│   ├── vocabulary/      # Keyword storage + matching
-│   └── rewriter/        # LLM-based query rewriting
+│   └── rewriter/        # optional query-intelligence rewrite types
 ├── llm/                 # Managed ONNX enrichment + optional chat endpoints
 │   ├── providers/       # onnx_chat, endpoint, enterprise, onnx_reranker
 │   ├── auth/            # ApiKeyAuth, M2MAuth, CompositeAuth
 │   ├── config.py        # provider-spec → instance factory
 │   └── client.py        # get_chat, ...
 ├── storage/             # SqliteConnectionManager (WAL, FTS5)
-├── ingestion/           # parser plugins, chunking plugins, enrichment
+├── ingestion/           # parser/chunking plugins used by KRAG ingestion
 ├── tabular/             # CSV/XLSX → SqliteTableStore + SQL generation
 ├── governance/          # pyrrho classifier, answer modes, instructions
 ├── runtime/             # multi-engine orchestration
@@ -303,6 +307,7 @@ fitz_sage/
 ## See Also
 
 - [Unified Storage](features/platform/unified-storage.md) — SQLite + FTS5
+- [Retrieval Pipeline](RETRIEVAL_PIPELINE.md) — query flow, cutoff, and indexing states
 - [PLUGINS.md](PLUGINS.md) — plugin development guide
 - [CONFIG.md](CONFIG.md) — configuration reference
 - [FEATURE_CONTROL.md](FEATURE_CONTROL.md) — feature-control architecture

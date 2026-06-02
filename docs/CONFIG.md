@@ -21,7 +21,7 @@ synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-This is enough for `fitz retrieve` and `fitz_sage.evidence(...)` with local
+This is enough for `fitz query`, `fitz retrieve`, and `fitz_sage.evidence(...)` with local
 enrichment: no hosted API key and no external inference server are required.
 On first ingestion, fitz-sage downloads the managed Qwen3.5 0.8B ONNX weights
 into the Hugging Face cache and runs them on CPU.
@@ -52,9 +52,9 @@ Role-specific provider fields bind LLM-backed stages:
 | `query_intelligence` | Optional query-prep enhancement                  |
 | `synthesizer`        | Optional answer generation                       |
 
-Required keyword/entity enrichment and hierarchy summaries always use Fitz's
-managed Qwen3.5 0.8B ONNX runtime. There is no config key for that internal
-model. Optional LLM-backed roles take a provider/model spec. For `endpoint`,
+Required keyword/entity enrichment, hierarchy summaries, and default semantic
+query keywords always use Fitz's managed Qwen3.5 0.8B ONNX runtime. There is no
+config key for that internal model. Optional LLM-backed roles take a provider/model spec. For `endpoint`,
 the model name is the part after the slash and `chat_base_url` supplies the
 OpenAI-compatible URL:
 
@@ -94,14 +94,14 @@ for those backends instead (Ollama exposes one at
 
 ## Feature control
 
-Features are switched on by **provider presence**, not boolean flags. Enrichment
-and hierarchy summaries are standard engine behavior and are required for
-ingestion:
+Optional endpoint-backed features are switched on by **provider presence**, not
+boolean flags. Enrichment and hierarchy summaries are standard engine behavior
+and are required for ingestion:
 
 | Feature            | Enabled when                             | Disabled when                       |
 | ------------------ | ---------------------------------------- | ----------------------------------- |
-| ONNX reranker      | `rerank: onnx` (default)                 | `rerank: null`                      |
-| Governance         | `governance: pyrrho` (default)           | `governance: null`                  |
+| ONNX reranker      | `rerank: onnx` (default)                 | `rerank: null` for internal raw timing |
+| Governance         | `governance: pyrrho` (default)           | `governance: null` for smoke tests only |
 | Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |
 | Answer synthesis   | `synthesizer: <provider/model>`          | `synthesizer: null`                 |
 | VLM in parser      | `parser: docling_vision` + `vision:` set | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
@@ -174,16 +174,16 @@ For enterprise (M2M / mTLS) deployments see
 ## Retrieval knobs
 
 ```yaml
-top_addresses: 50      # how many candidates to fetch from FTS5 (default 50)
-top_read: 50           # how many to read into context after rerank (default 50)
-retrieval_workers: 4   # max retrieval strategies run concurrently; set to 1 to serialize LLM calls for single-model endpoint servers
+top_addresses: 50      # candidates fetched during broad recall
+top_read: 50           # candidates read after rerank
+retrieval_workers: 4   # max retrieval strategies run concurrently
 governance: pyrrho
-strict_grounding: false
+rerank: onnx
 ```
 
-KRAG also exposes detection, multi-hop, and rewriter switches under
-their respective config blocks. The defaults are the smoke-tested
-baseline.
+Query intelligence defaults to deterministic detection plus managed Qwen
+semantic keywords. Set `query_intelligence:` only when you want an optional
+endpoint-backed rewrite/analyze/detect bus.
 
 ---
 
@@ -214,13 +214,15 @@ fitz answer "What is X?" \
 ```
 
 `fitz answer` uses these flags to configure the synthesizer for that invocation.
-`fitz retrieve` ignores synthesis override flags because it does not synthesize.
+`fitz query` and `fitz retrieve` ignore synthesis override flags because they do
+not synthesize.
 
 ---
 
 ## See Also
 
 - [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) — full example configs by deployment
+- [RETRIEVAL_PIPELINE.md](RETRIEVAL_PIPELINE.md) — retrieval and enrichment flow
 - [FEATURE_CONTROL.md](FEATURE_CONTROL.md) — the provider-presence pattern
 - [CLI.md](CLI.md) — CLI reference
 - [features/platform/openai-compatible-endpoint.md](features/platform/openai-compatible-endpoint.md)

@@ -19,7 +19,8 @@ for item in pack.items:
 
 ## Module-Level API
 
-The simplest way to use Fitz - matches CLI behavior.
+The simplest retrieval-first SDK call is `fitz_sage.evidence(...)`. It matches
+the default `fitz query` CLI behavior.
 
 ### fitz_sage.evidence()
 
@@ -50,7 +51,7 @@ for item in pack.items:
 ### fitz_sage.query()
 
 Generate a synthesized answer. This requires a configured synthesizer provider;
-use `evidence()` for the default no-chat retrieval path.
+use `evidence()` for the default retrieval path.
 
 ```python
 fitz_sage.query(
@@ -127,7 +128,8 @@ f.evidence(
 #### point()
 
 Register a source file or directory. Indexing runs in the background — queries
-work immediately and improve as it completes.
+work after the parsed search surface is ready and improve as Qwen enrichment
+completes.
 
 ```python
 f.point(source: str | Path) -> None
@@ -143,11 +145,12 @@ For KRAG, returns `ReadResult` objects with `content`, `file_path`, and
 f.retrieve(question: str) -> list
 ```
 
-#### wait_for_indexing() / indexing_status()
+#### wait_for_query_surface() / wait_for_indexing() / indexing_status()
 
 ```python
-f.wait_for_indexing() -> None   # block until background indexing completes
-f.indexing_status() -> dict     # {total, indexed, pending, complete, by_state}
+f.wait_for_query_surface() -> None  # block until parsed units are searchable
+f.wait_for_indexing() -> None       # block until query-ready keywording completes
+f.indexing_status() -> dict         # query-ready + deep-enrichment progress
 ```
 
 ### Properties
@@ -274,7 +277,8 @@ from fitz_sage import create_engine, Query
 
 engine = create_engine("fitz_krag")
 engine.load("default")                  # bind to a collection
-engine.point(Path("./docs"))            # register a source (indexes in background)
+engine.point(Path("./docs"))            # register a source
+engine.wait_for_query_surface()         # parsed units are searchable
 
 pack = engine.evidence(Query(text="What is X?"))     # governed evidence
 answer = engine.answer(Query(text="What is X?"))     # synthesized answer

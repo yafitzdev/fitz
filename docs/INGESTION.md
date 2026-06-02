@@ -1,331 +1,145 @@
 <!-- docs/INGESTION.md -->
 # Ingestion Pipeline
 
-How documents flow through Fitz from files to searchable chunks.
+fitz-sage does not expose a separate `ingest` command. Ingestion starts when
+you point a query at a source:
+
+```bash
+fitz query "Which documents are relevant?"
+fitz query "Which documents are relevant?" --source ./docs
+```
+
+The foreground command waits only until parsed retrieval units are searchable.
+Managed Qwen enrichment continues in the background.
 
 ---
 
-## Overview
+## Pipeline Overview
 
-The ingestion pipeline transforms your documents into searchable knowledge:
-
+```mermaid
+flowchart TD
+    A["Source file or directory"] --> B["ManifestBuilder"]
+    B --> C["REGISTERED"]
+    C --> D["Parse file"]
+    D --> E["Store typed units in SQLite + FTS5"]
+    E --> F["PARSED: search surface ready"]
+    F --> G["Qwen keywords"]
+    G --> H["QUERY_READY"]
+    H --> I["Qwen entities + entity graph"]
+    I --> J["Qwen hierarchy summaries"]
+    J --> K["ENRICHED"]
+    K --> L["Demand summaries for queried files"]
 ```
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌──────────────────────┐
-│  Files  │ →  │  Parse  │ →  │  Chunk  │ →  │ Index (SQLite + FTS5)│
-└─────────┘    └─────────┘    └─────────┘    └──────────────────────┘
-                   │              │
-              ParsedDoc       Chunks[]
-```
 
-**Key features:**
-- **Incremental** - Only processes new/changed files
-- **Format-aware** - PDFs, code, markdown handled differently
-- **Enriched** - Required LLM metadata (keywords, entities, summaries, hierarchies)
+The same `KragIngestPipeline` core performs the work whether it is called from
+the foreground command, the in-process worker thread, or the detached
+`index-daemon`.
 
 ---
 
-## Pipeline Stages
+## Stages
 
-### 1. File Discovery
+### 1. Manifest Build
 
-Finds files to ingest and provides local access.
+`ManifestBuilder` scans the source, hashes files, extracts cheap structural
+hints, and records every file under `.fitz/collections/<collection>/`.
 
-```
-point(path) → recursive scan → [SourceFile, SourceFile, ...]
-```
+For code, it records function/class/method names and line ranges when available.
+For prose, it records headings. This stage has no LLM calls.
 
-| Component | Purpose |
-|-----------|---------|
-| `SourceFile` | The unit of input to a parser (URI, local path, MIME type, metadata) |
+### 2. Parse
 
-**What happens:**
-1. Recursively scans the input directory (`pathlib.rglob`)
-2. Filters by supported extensions
-3. Constructs a `SourceFile` for each discovered file
+`parse_file` stores raw content and typed units:
+
+| Content | Stored unit | Store |
+|---------|-------------|-------|
+| Python / TypeScript / Java / Go | symbols | `SymbolStore` |
+| Markdown, text, rich documents | sections | `SectionStore` |
+| CSV / TSV / tables | table metadata and native table data | `TableStore` / `SqliteTableStore` |
+| Generic fallback text | file/section fallback | `SectionStore` |
+
+After parse, FTS5/BM25 can already search the collection. This is the gate the
+CLI waits for before returning the first evidence pack.
+
+### 3. Keyword Enrichment
+
+`keyword_file` uses managed Qwen3.5 0.8B ONNX to add semantic keywords and
+aliases. Once a file reaches `QUERY_READY`, it has the minimum Qwen enrichment
+needed by steady-state retrieval.
+
+### 4. Deep Enrichment
+
+Deep enrichment continues after the first query:
+
+- `link_entities_file` populates entity metadata and the entity graph.
+- `build_hierarchy_file` creates L1 per-file hierarchy summaries.
+- `finalize` creates corpus-level structures such as import graph rollups and
+  the L2 corpus overview.
+
+Deep enrichment is mandatory for the full index, but it does not block the
+first evidence pack.
+
+### 5. Demand Summaries
+
+Summaries for individual surfaced files are generated after the file has been
+queried. Files no query ever touches are not summarized eagerly. This keeps the
+first-run cost focused on the metadata that moves retrieval quality most.
 
 ---
 
-### 2. Diff (Change Detection)
+## Indexing Status
 
-Determines which files need processing.
-
-```
-Differ.diff(files, state) → (to_ingest, to_skip, to_delete)
-```
-
-| Component | Purpose |
-|-----------|---------|
-| `FileScanner` | Computes file hashes |
-| `Differ` | Compares against stored state |
-| `IngestStateManager` | Persists file hashes and chunker IDs |
-
-**Change detection:**
-
-| Change Type | Detection Method | Action |
-|-------------|------------------|--------|
-| New file | Not in state | Ingest |
-| Modified file | Content hash changed | Re-ingest |
-| Config changed | Chunker ID changed | Re-chunk |
-| Deleted file | In state, not on disk | Mark deleted |
-| Unchanged | Hash + chunker match | Skip |
-
-**State file:** `.fitz/ingest_state.json`
+`indexing_status()` reports both query readiness and deep enrichment:
 
 ```json
 {
-  "files": {
-    "/path/to/doc.md": {
-      "content_hash": "abc123...",
-      "chunker_id": "recursive:1000:200",
-      "chunk_ids": ["chunk1", "chunk2"],
-      "ingested_at": "2024-01-15T10:30:00"
-    }
+  "total": 65,
+  "indexed": 63,
+  "pending": 2,
+  "complete": false,
+  "query_ready": false,
+  "deep_pending": 40,
+  "fully_enriched": false,
+  "by_state": {
+    "parsed": 2,
+    "query_ready": 23,
+    "enriched": 40
   }
 }
 ```
 
----
-
-### 3. Parse (Document Extraction)
-
-Converts files to structured documents.
-
-```
-Parser.parse(SourceFile) → ParsedDocument
-```
-
-| Component | Purpose |
-|-----------|---------|
-| `ParserRouter` | Routes files to parsers by extension |
-| `DoclingParser` | PDFs, DOCX, images via Docling |
-| `DoclingVisionParser` | Same + VLM for figure descriptions |
-| `GlmOcrParser` | Hybrid pypdfium2 + GLM-OCR via the vision endpoint |
-| `PlainTextParser` | Text files, markdown, code |
-
-**Parsed document structure:**
-
-```python
-ParsedDocument(
-    source_uri="file:///path/to/doc.pdf",
-    elements=[
-        TextElement(text="Chapter 1", level=1),
-        TextElement(text="Introduction paragraph..."),
-        TableElement(data=[...]),
-        ImageElement(description="[Figure]"),  # or VLM description
-    ],
-    metadata={"title": "Document Title", ...}
-)
-```
-
-**Parser selection:**
-
-| Extension | Parser | Notes |
-|-----------|--------|-------|
-| `.pdf`, `.docx`, `.pptx` | Docling | Structure extraction |
-| `.png`, `.jpg` | Docling | OCR + optional VLM |
-| `.md`, `.txt`, `.py` | PlainText | Direct text reading |
-
-**VLM for figures:** Set `parser: docling_vision` to enable AI-generated figure descriptions instead of `[Figure]` placeholders.
-
----
-
-### 4. Chunk (Text Splitting)
-
-Splits documents into retrieval-sized pieces.
-
-```
-Chunker.chunk(ParsedDocument) → [Chunk, Chunk, ...]
-```
-
-| Component | Purpose |
-|-----------|---------|
-| `ChunkingRouter` | Routes by extension or uses default |
-| `RecursiveChunker` | General-purpose, respects structure |
-| `MarkdownChunker` | Header-aware splitting |
-| `PythonCodeChunker` | AST-aware, keeps functions intact |
-
-**Chunk structure:**
-
-```python
-Chunk(
-    id="abc123...",           # Deterministic hash
-    content="The text...",    # Chunk content
-    metadata={
-        "source_file": "/path/to/doc.pdf",
-        "chunk_index": 0,
-        "page": 1,
-        "heading": "Chapter 1",
-    }
-)
-```
-
-**Chunker ID:**
-
-Each chunker has a unique ID encoding its parameters:
-
-```
-recursive:1000:200  # plugin:chunk_size:overlap
-python_code:1500:100
-markdown:800:150
-```
-
-If the chunker ID changes (e.g., you change chunk_size), affected files are automatically re-chunked.
-
----
-
-### 5. Store (SQLite + FTS5)
-
-Persists ingested units for retrieval. There are no vectors and no
-database server — each collection is a single `.db` file.
-
-| Component | Purpose |
-|-----------|---------|
-| `SqliteConnectionManager` | One `.db` file per collection under `<workspace>/sqlite/` |
-| `SymbolStore` | Code symbols → `krag_symbol_index` (+ `krag_symbol_fts`) |
-| `SectionStore` | Document sections → `krag_section_index` (+ `krag_section_fts`) |
-| `TableStore` | Table metadata → `krag_table_index` |
-
-**What happens:**
-- Ingested units (code symbols, document sections, tables, chunks) are
-  written to per-collection SQLite databases.
-- FTS5 indexes back BM25 keyword search over symbol and section text.
-- One `fitz_<collection>.db` lives under the workspace `sqlite/`
-  directory — no server, no connection string, no vectors.
-
----
-
-## Enrichment (KragIngestPipeline)
-
-KRAG ingestion is driven by `KragIngestPipeline` — per-file operations
-**parse → summarize → enrich**, then a corpus **finalize**. The
-summarize and enrich steps add LLM-generated metadata.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  KragIngestPipeline                                             │
-│  per file:  parse → summarize → enrich      corpus:  finalize   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  summarize  →  1-2 sentence LLM summaries for sections / tables  │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                     KragEnricher                         │   │
-│  │       One LLM call per batch (~15 symbols/sections)       │   │
-│  ├──────────────────────────────────────────────────────────┤   │
-│  │  Keywords         │  Entities          │  Temporal        │   │
-│  │  (exact-match     │  (classes, people, │  (dates,         │   │
-│  │  identifiers)     │  technologies)     │  versions, refs) │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                 │
-│  hierarchy summaries (pipeline-built with managed Qwen ONNX)          │
-│    L1: one group summary per document file (on section metadata) │
-│    L2: corpus summary rolled up from L1 (built during finalize)  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### KragEnricher
-
-`KragEnricher` extracts **keywords + entities + temporal metadata** in a
-single LLM call per batch of ~15 symbols or sections. This makes enrichment
-cheap and local with the managed Qwen3.5 0.8B ONNX runtime.
-
-**What it extracts:**
-- **Keywords** - Exact-match identifiers (TC-1001, JIRA-123, `AuthService`)
-- **Entities** - Named entities (classes, people, technologies)
-- **Temporal metadata** - Dates, version numbers, time references
-
-**Results:**
-- Keywords / entities stored on each symbol's / section's
-  `keywords` and `entities` fields
-- Temporal references stored on `metadata["temporal"]`
-- Entities also fed into the `EntityGraphStore` for related-unit lookup
-
-### Hierarchy
-
-L1 and L2 summaries for analytical queries, built by the pipeline itself. They
-are required for document collections and use the same managed Qwen ONNX
-runtime as keyword/entity enrichment.
-
-**Levels:**
-- **Level 1:** Per-file group summary — stored on each document
-  section's `metadata["hierarchy_summary"]`
-- **Level 2:** Corpus summary — rolled up from the L1 summaries during
-  `finalize`, stored as a synthetic retrievable section ("Corpus
-  Overview")
-
-**Use case:** "What are the main themes?" retrieves the L2 corpus
-summary instead of random sections.
-
----
-
-## Incremental Ingestion
-
-Fitz only processes what's changed. When you point Fitz at a source directory, ingestion happens automatically in the background:
-
-```bash
-$ fitz query --source ./docs "What is quantum computing?"
-
-Pointing at ./docs...
-  Scanning... 847 files
-  → 12 new files
-  → 3 modified files
-  → 832 unchanged (skipped)
-  Ingesting 15 files in background...
-
-Answer: Quantum computing uses qubits...
-```
-
-### What triggers re-ingestion?
-
-| Change | Re-ingest? | Why |
-|--------|------------|-----|
-| File content changed | Yes | Content hash differs |
-| Chunk size changed | Yes | Chunker ID differs |
-| New file added | Yes | Not in state |
-| File deleted | Mark deleted | Clean up indexed entries |
+`complete` means all files are at least query-ready. `fully_enriched` means the
+entity/hierarchy stages are done too.
 
 ---
 
 ## File Format Support
 
-### Documents
+| Format | Path |
+|--------|------|
+| `.pdf` | `parser: cpu` by default; `docling`, `docling_vision`, or `glm_ocr` are optional heavier parsers |
+| `.docx`, `.pptx` | Docling-backed document parsing when installed |
+| `.md`, `.rst`, `.txt` | section extraction and heading-aware storage |
+| `.py` | AST-backed symbol extraction |
+| `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.go` | tree-sitter-backed symbol extraction when grammar packages are installed |
+| `.csv`, `.tsv` | native SQLite table storage plus table metadata search |
+| `.json`, `.yaml`, `.sql` | text/section fallback |
 
-| Format | Parser | Features |
-|--------|--------|----------|
-| PDF | Docling | Tables, figures, sections |
-| DOCX | Docling | Styles, tables |
-| PPTX | Docling | Slides as sections |
-| HTML | Docling | Structure extraction |
-
-### Code
-
-| Format | Chunker | Features |
-|--------|---------|----------|
-| Python | `python_code` | AST-aware, preserves functions |
-| Markdown | `markdown` | Header-aware splitting |
-| Other code | `recursive` | Respects indentation |
-
-### Text
-
-| Format | Parser | Notes |
-|--------|--------|-------|
-| `.txt` | PlainText | Direct reading |
-| `.md` | PlainText | Preserves formatting |
-| `.json`, `.yaml` | PlainText | Treated as text |
+Unsupported files are skipped rather than forcing a broken generic parse.
 
 ---
 
 ## CLI Usage
 
-Ingestion is triggered automatically when you point Fitz at a source directory. There is no separate `ingest` command.
-
 ```bash
-# Point at docs and query (CLI waits for required enrichment before retrieval)
-fitz query --source ./docs "What is quantum computing?"
+# Default: current directory is the source
+fitz query "What is in this corpus?"
 
-# Subsequent queries reuse the already-ingested data
-fitz query "Explain entanglement"
+# Explicit source and collection
+fitz query "What is in this corpus?" --source ./docs --collection docs
+
+# Evidence controls
+fitz retrieve "What is in this corpus?" --source ./docs --top-k 8
 ```
 
 ---
@@ -335,38 +149,30 @@ fitz query "Explain entanglement"
 ```python
 import fitz_sage
 
-# Query with source (blocks until required enrichment finishes)
-answer = fitz_sage.query("What is quantum computing?", source="./docs")
+pack = fitz_sage.evidence("Which documents are relevant?", source="./docs")
+for item in pack.items:
+    print(item.file_path, item.excerpt)
 ```
 
-### Advanced usage
-
-Drive ingestion directly through the engine for fine-grained control:
+Advanced lifecycle:
 
 ```python
 from pathlib import Path
 
-from fitz_sage.core import Query
-from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
+from fitz_sage import Query, create_engine
 
-cfg = FitzKragConfig(
-    synthesizer="endpoint/qwen2.5-7b-instruct",
-    chat_base_url="http://localhost:8080/v1",
-    collection="my_collection",
-)
-engine = FitzKragEngine(cfg)
+engine = create_engine("fitz_krag")
 engine.load("my_collection")
+engine.point(Path("./docs"), collection="my_collection")
+engine.wait_for_query_surface()
 
-# Register a directory for progressive querying and background indexing.
-manifest = engine.point(Path("./docs"), collection="my_collection")
-answer = engine.answer(Query(text="What is in these docs?"))
-print(f"Registered {len(manifest.entries())} files")
-print(answer.text)
+pack = engine.evidence(Query(text="What is in these docs?"))
+status = engine.indexing_status()
 ```
 
-For one-off use of a single file, pass that file path to `point()`.
-Per-collection manifest and parsed caches live under the fitz workspace
-collection directory.
+Use `wait_for_indexing()` only when you explicitly want to block until the
+query-ready keyword phase completes. Deep enrichment may still continue after
+that until `fully_enriched` is true.
 
 ---
 
@@ -374,16 +180,20 @@ collection directory.
 
 | File | Purpose |
 |------|---------|
-| `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | `KragIngestPipeline` — ingestion core (parse/summarize/enrich/finalize) |
-| `fitz_sage/engines/fitz_krag/ingestion/enricher.py` | `KragEnricher` — keyword/entity/temporal extraction |
-| `fitz_sage/ingestion/parser/router.py` | Parser selection |
-| `fitz_sage/ingestion/chunking/router.py` | Chunker selection |
-| `fitz_sage/cli/commands/query.py` | CLI command (--source triggers ingestion) |
+| `fitz_sage/engines/fitz_krag/progressive/builder.py` | fast source scan and manifest construction |
+| `fitz_sage/engines/fitz_krag/progressive/manifest.py` | file state machine and indexing status |
+| `fitz_sage/engines/fitz_krag/progressive/worker.py` | background worker and detached daemon path |
+| `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | parse/keyword/entity/hierarchy/finalize core |
+| `fitz_sage/engines/fitz_krag/ingestion/enricher.py` | Qwen keyword/entity/temporal extraction |
+| `fitz_sage/engines/fitz_krag/ingestion/section_store.py` | document section storage and FTS5 search |
+| `fitz_sage/engines/fitz_krag/ingestion/symbol_store.py` | code symbol storage and FTS5 search |
+| `fitz_sage/engines/fitz_krag/ingestion/table_store.py` | table metadata storage |
 
 ---
 
 ## See Also
 
-- [CONFIG.md](CONFIG.md) - Configuration reference
-- [FEATURE_CONTROL.md](FEATURE_CONTROL.md) - VLM and rerank control
-- [PLUGINS.md](PLUGINS.md) - Creating custom chunkers/parsers
+- [RETRIEVAL_PIPELINE.md](RETRIEVAL_PIPELINE.md) - query flow and indexing states
+- [ENRICHMENT.md](ENRICHMENT.md) - managed Qwen enrichment details
+- [CONFIG.md](CONFIG.md) - configuration reference
+- [features/platform/progressive-krag-agentic-search.md](features/platform/progressive-krag-agentic-search.md)

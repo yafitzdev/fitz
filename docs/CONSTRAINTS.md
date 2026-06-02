@@ -1,15 +1,14 @@
 # Epistemic Governance
 
-How fitz-sage decides when to answer, when to flag a dispute, and when to
-abstain.
+How fitz-sage decides whether retrieved evidence is sufficient, disputed, or
+insufficient.
 
 ---
 
 ## Overview
 
 Most RAG systems confidently answer even when they shouldn't. fitz-sage
-classifies every `(query, retrieved contexts)` pair into one of three
-modes before generating an answer:
+classifies `(query, retrieved evidence prefix)` pairs into one of three modes:
 
 | Mode          | Meaning                                                                |
 | ------------- | ---------------------------------------------------------------------- |
@@ -30,7 +29,7 @@ Pyrrho classifier (single INT8 ONNX forward pass, ~30 ms CPU)
 TRUSTWORTHY / DISPUTED / ABSTAIN
   │
   ▼
-Synthesizer (chat call) generates answer with the right epistemic posture
+EvidencePack is returned; optional synthesizer can use the mode
 ```
 
 The classifier is [`yafitzdev/pyrrho-modernbert-base-v1`](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
@@ -111,22 +110,20 @@ headline numbers above.
 
 ## Where it plugs in
 
-The `FitzKragEngine` runs the pyrrho classifier between retrieval and generation:
+The `FitzKragEngine` runs the pyrrho classifier after retrieval and reranking:
 
-1. Retrieve + expand + rerank candidates → `expanded`
-2. The classifier scores `(sanitized_query, expanded)` → `governance.mode`
-3. The synthesizer receives `answer_mode` and prepends the matching
-   instruction from `governance/instructions.py`:
-   - `TRUSTWORTHY` → answer clearly and directly
-   - `DISPUTED` → state the disagreement, don't pick a side
-   - `ABSTAIN` → state evidence is insufficient
-4. The engine builds `gap_context` (for ABSTAIN) and a simple
-   conflict reason (for DISPUTED) to pass to the synthesizer.
+1. Broad recall + rerank candidates → ranked `ReadResult`s.
+2. Pyrrho scores `query + top 1`.
+3. If the verdict is `ABSTAIN`, the engine adds the next evidence item and
+   scores again.
+4. The loop stops when evidence is `TRUSTWORTHY`, a dispute is stable, or the
+   cutoff is reached.
+5. `evidence()` returns an `EvidencePack` with mode, reasons, probabilities,
+   cutoff metadata, and source items.
+6. Optional `answer()` synthesis receives the same mode and evidence.
 
-Set the classifier with `governance: <spec> | null` in `FitzKragConfig`.
-`governance: pyrrho` (default) runs it; `governance: null` disables
-governance entirely — the smoke test uses `null` to measure raw
-retrieval timing.
+`governance: pyrrho` is the product default. `governance: null` exists only for
+internal smoke tests and raw retrieval timing.
 
 ---
 

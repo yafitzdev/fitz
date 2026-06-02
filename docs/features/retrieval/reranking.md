@@ -26,7 +26,7 @@ Query: "What's the battery warranty?"
    returns ~20 candidates
             │
             ▼
-   ONNX cross-encoder — precision           ◀── enabled when `rerank:` is set
+   ONNX cross-encoder — precision           ◀── standard product path
    one forward pass over (q, doc) pairs
    ~30–100 ms CPU for 10–20 candidates
             │
@@ -34,7 +34,7 @@ Query: "What's the battery warranty?"
    Top-K truly-relevant candidates
             │
             ▼
-   Synthesizer + governance (pyrrho)
+   Pyrrho governance cutoff
 ```
 
 **Default backbone:** [`Alibaba-NLP/gte-reranker-modernbert-base`](https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base) —
@@ -96,8 +96,8 @@ include" by design.
 
 ## Key design decisions
 
-1. **Provider-presence pattern.** Set `rerank: onnx` and the step
-   runs; omit (or set `null`) and it doesn't.
+1. **Standard rerank stage.** `rerank: onnx` is the default product path.
+   `rerank: null` is reserved for raw retrieval timing and tests.
 2. **Shared with pyrrho.** Both encoders subclass `OnnxEncoderBackend`
    — one `onnxruntime` + `transformers` load path, no separate
    infrastructure.
@@ -124,10 +124,10 @@ rerank: onnx/BAAI/bge-reranker-base
 # rerank: onnx/cross-encoder/ms-marco-MiniLM-L-6-v2
 ```
 
-### Disable
+### Internal raw-retrieval timing only
 
 ```yaml
-# rerank: null    # or omit the key entirely
+# rerank: null
 ```
 
 ## Files

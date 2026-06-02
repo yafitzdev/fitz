@@ -1,9 +1,10 @@
 <!-- docs/ENGINES.md -->
 # Engines
 
-fitz-sage **v0.14.1+**. An engine is anything that implements the
-`KnowledgeEngine` protocol — given a `Query`, return an `Answer` with
-mode (`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN`) and provenance.
+fitz-sage **v0.14.1+**. The base engine protocol still supports
+`answer(Query) -> Answer`, but the production `fitz_krag` engine is
+retrieval-first: use `evidence(Query) -> EvidencePack` when you want the
+ranked source material without generation.
 
 The shipping engine is `fitz_krag` (Knowledge Routing Augmented
 Generation). It's the only one most users need.
@@ -67,14 +68,14 @@ queries to the right strategy.
 
 ```
 Query
- ├─► Rewriter (resolves pronouns / coreference via chat call)
- ├─► Analyzer (detects intent: temporal, comparison, aggregation, ...)
- ├─► Router (symbol search · section search · table SQL)
- │    └─► FTS5 + bm25() over per-collection .db
- ├─► Expander (import graph, entity links, same-file refs, hierarchy)
+ ├─► Query prep (deterministic signals + managed Qwen semantic keywords)
+ ├─► Optional query intelligence (rewrite / analyze / detect)
+ ├─► Router (symbol search · section search · table metadata)
+│    └─► FTS5 + bm25() over per-collection .db
  ├─► OnnxReranker (ONNX cross-encoder, ~30 ms CPU)
- ├─► Governance (pyrrho classifier → TRUSTWORTHY / DISPUTED / ABSTAIN)
- └─► Synthesizer → Answer (+ provenance + mode)
+ ├─► Governance cutoff (pyrrho → TRUSTWORTHY / DISPUTED / ABSTAIN)
+ ├─► EvidencePack
+ └─► Optional synthesizer → Answer (+ provenance + mode)
 ```
 
 ### Usage
@@ -85,23 +86,26 @@ from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.core import Query
 
 cfg = FitzKragConfig(
-    synthesizer="endpoint/qwen2.5-7b-instruct",
-    chat_base_url="http://localhost:8080/v1",
     collection="my_docs",
 )
 engine = FitzKragEngine(cfg)
-answer = engine.answer(Query(text="What is X?"))
+engine.load("my_docs")
+pack = engine.evidence(Query(text="What is X?"))
 ```
 
-The convenience function `run_fitz_krag(text, **overrides)` wraps
-this for one-shots.
+### Retrieval-first evidence
 
-### Retrieval without synthesis
+`evidence()` returns the governed, serializable evidence pack. This is the
+contract used by `fitz query` and `fitz retrieve`:
 
-When `synthesizer` is configured, `answer()` retrieves sources, then
-generates a grounded answer over them. To get the source material itself
-without any chat provider, call `retrieve()`, the retrieval primitive
-`answer()` is built on:
+```python
+pack = engine.evidence(Query(text="Where is auth handled?"))
+for item in pack.items:
+    print(item.file_path, item.excerpt)
+```
+
+For raw engine-specific source objects without governance packaging, call
+`retrieve()`:
 
 ```python
 results = engine.retrieve(Query(text="Where is auth handled?"))
@@ -109,16 +113,14 @@ for r in results:                       # list[ReadResult]
     print(r.file_path, r.content)
 ```
 
-`retrieve()` runs the same analyze → detect → route → expand pipeline
-as `answer()` and returns `ReadResult`s (`file_path`, `content`, and an
-`Address` with provenance and score), skipping governance and
-synthesis. It returns an empty list when nothing relevant is found.
+`retrieve()` returns `ReadResult`s (`file_path`, `content`, and an `Address`
+with provenance and score), skipping evidence packaging and optional synthesis.
 
 ### Configuration
 
 See [CONFIG.md](CONFIG.md) for every key. The minimum is `collection:`.
-Chat providers are optional and only needed for synthesized answers or
-LLM-backed enrichment/query-intelligence stages.
+Chat providers are optional and only needed for synthesized answers, optional
+query intelligence, or vision parsing. Managed Qwen enrichment is internal.
 
 ### Built-in features
 
@@ -127,12 +129,12 @@ LLM-backed enrichment/query-intelligence stages.
 | Symbol / section / table routing | Per-content-type retrieval strategies              |
 | Import graph traversal  | Code: walks references and imports across files               |
 | Entity linking          | Cross-source linking via shared named entities                |
-| Hierarchical summaries  | L1 (section), L2 (doc-level) summaries built at ingest        |
+| Hierarchical summaries  | L1 file summaries and L2 corpus overview built during enrichment |
 | Multi-hop retrieval     | Iterative bridge extraction for compound questions            |
 | ONNX reranker           | INT8 cross-encoder, single forward pass on CPU                |
 | Epistemic governance    | TRUSTWORTHY / DISPUTED / ABSTAIN via the pyrrho ONNX classifier |
 | Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
-| Incremental ingestion   | Re-ingest only changed files (`.fitz/ingest_state.json`)      |
+| Progressive ingestion   | Parse first, return evidence, continue Qwen enrichment in daemon |
 
 ---
 
@@ -194,5 +196,5 @@ config-loader hooks.
    dataclasses, not in Python keywords.
 3. **Shared infrastructure.** Chat layer, SQLite storage, and
    ingestion are shared across engines.
-4. **Honest answers.** Every `Answer` carries a `mode` — engines never
-   pretend they know something they don't.
+4. **Honest evidence.** Every `EvidencePack` carries a `mode`; optional
+   answers inherit that epistemic posture.

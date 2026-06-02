@@ -29,23 +29,28 @@ The reranker that does run (`OnnxReranker`) is an INT8 ONNX cross-encoder
 
 ## Feature Control
 
-Features are controlled by **provider presence**, not boolean flags:
+Optional endpoint-backed features are controlled by **provider presence**, not
+boolean flags. The retrieval backbone is different: managed Qwen enrichment,
+ONNX reranking, and Pyrrho governance are the standard product path.
 
 ```yaml
-# ENABLED (default) — INT8 ONNX cross-encoder
+# Standard retrieval path
 rerank: onnx
-# or: rerank: onnx/<hf-model-id>  to swap in a different cross-encoder
-
-# DISABLED — omit the key (or set null)
-# rerank not set → no reranking step in the pipeline
+governance: pyrrho
 ```
+
+The provider-presence pattern applies to optional capabilities such as answer
+synthesis, query intelligence, and vision parsing. For example, set
+`synthesizer: endpoint/<model>` to enable generated answers, or leave
+`synthesizer` unset to keep `fitz query` retrieval-only.
 
 The same pattern applies to vision (VLM): set `parser: docling_vision`
 to bake the VLM into ingestion, or set `parser: cpu` / `parser: docling` /
 `parser: glm_ocr` to skip it.
 
-Governance is selected by the engine config's `governance:` field
-(`pyrrho` or `null`) — it is not a plugin.
+`rerank: null` and `governance: null` are internal smoke-test and raw-timing
+settings, not normal user configuration. Governance is selected by the engine
+config's `governance:` field and is not a plugin.
 
 ---
 

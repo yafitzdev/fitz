@@ -1,7 +1,8 @@
 # Feature Control Architecture
 
-How optional features (VLM in the parser, ONNX reranking, governance)
-are switched on and off in fitz-sage **v0.14.1+**.
+How provider-backed features (VLM in the parser, optional synthesis, optional
+query intelligence, and advanced model swaps) are declared in fitz-sage
+**v0.14.1+**.
 
 ---
 
@@ -10,9 +11,11 @@ are switched on and off in fitz-sage **v0.14.1+**.
 fitz-sage uses a **provider-presence pattern**:
 
 - **Config declares WHICH** provider/model to use.
-- **Provider presence determines IF** the feature runs.
+- **Provider presence determines IF** optional endpoint-backed features run.
 - **No `enabled: true / false` flags.** Setting a provider enables
   the feature; omitting it (or setting `null`) skips that step.
+- **Retrieval intelligence is baked in.** Managed Qwen enrichment, broad recall,
+  ONNX reranking, and Pyrrho governance are the standard product pipeline.
 
 This keeps the config declarative and avoids boolean flags that
 can drift out of sync with the actual provider config.
@@ -43,9 +46,11 @@ can drift out of sync with the actual provider config.
 │    parser: docling_vision   → Uses vision provider              │
 │    parser: glm_ocr          → No VLM (GLM-OCR for scans)        │
 │                                                                 │
-│  ONNX Reranker (controlled by `rerank:` presence):               │
-│    rerank: (omitted / null) → No reranker step                  │
-│    rerank: onnx → Reranker auto-enabled         │
+│  Optional endpoint-backed roles:                                 │
+│    synthesizer: null       → no generated answer                 │
+│    synthesizer: endpoint/X → fitz answer can synthesize          │
+│    query_intelligence: null       → deterministic query prep     │
+│    query_intelligence: endpoint/X → optional rewrite/analyze bus │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -90,16 +95,17 @@ vision_model: gpt-4o
 
 ## ONNX reranker control
 
-The reranker is an INT8 ONNX cross-encoder
+The reranker is part of the standard retrieval pipeline. It is an INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base` by default) run on raw
 `onnxruntime`. One forward pass over `(query, candidate)` pairs;
 ~30–100 ms on CPU for 10–20 candidates. No external API call.
 
 ### How it works
 
-1. Set `rerank:` in the engine config (default: `onnx`).
-2. The retrieval pipeline auto-includes the reranker step when the
-   provider is configured; otherwise it's skipped.
+1. `rerank: onnx` is the default.
+2. The retrieval pipeline includes the reranker step before Pyrrho governance.
+3. `rerank: null` exists for tests and raw retrieval timing, not as the normal
+   product mode.
 
 ### Config example
 
@@ -111,8 +117,8 @@ rerank: onnx
 # rerank: onnx/BAAI/bge-reranker-base
 # rerank: onnx/jinaai/jina-reranker-v3
 
-# Disabled
-# rerank: null    # or omit the key entirely
+# Internal raw-retrieval timing only:
+# rerank: null
 ```
 
 ### Key files
@@ -128,26 +134,37 @@ rerank: onnx
 ## Governance
 
 Epistemic governance (TRUSTWORTHY / DISPUTED / ABSTAIN) follows the
-provider-presence pattern — the `governance:` key declares the
-classifier:
+same declaration pattern — the `governance:` key declares the classifier:
 
 ```yaml
 governance: pyrrho                  # default — the pyrrho INT8 ONNX classifier
 # governance: pyrrho/<hf-model-id>  # a custom pyrrho fine-tune
-# governance: null                  # disable governance (smoke test only)
+# governance: null                  # internal smoke-test mode only
 ```
 
-`governance: pyrrho` runs a single INT8 ONNX forward pass per query;
-`governance: null` skips the step. The v0.13.0 constraint+sklearn
-cascade it replaced is gone.
+`governance: pyrrho` runs a single INT8 ONNX forward pass for each evidence
+prefix in the cutoff loop. The v0.13.0 constraint+sklearn cascade it replaced
+is gone.
+
+## Managed enrichment
+
+Qwen3.5 0.8B ONNX enrichment does not follow provider presence because it is
+not optional. It is the standard local runtime for:
+
+- ingestion keywords and aliases;
+- entity extraction for the entity graph;
+- hierarchy summaries;
+- default semantic query keywords.
+
+There is no `enrichment:` provider key. If the managed runtime cannot load,
+ingestion fails closed instead of silently producing an under-enriched index.
 
 ---
 
 ## Why this pattern?
 
 1. **No boolean flags to sync.** Provider presence is the toggle.
-2. **Reading the config tells you the runtime.** No hidden defaults
-   silently flipping behaviour.
+2. **Reading the config tells you endpoint usage.** No hidden network calls.
 3. **One retrieval pipeline.** Steps are conditionally executed; you
    don't have to swap pipeline plugins to add/remove features.
 
@@ -181,16 +198,21 @@ answer_expander: endpoint/expander
 
 ## Quick Reference
 
-| Feature        | Config key   | Enable                          | Disable                       |
-| -------------- | ------------ | ------------------------------- | ----------------------------- |
-| VLM in parser  | `parser:` + `vision:` | `parser: docling_vision` + `vision:` set | `parser: cpu` / `parser: docling` / `parser: glm_ocr` |
-| ONNX reranker  | `rerank:`    | `rerank: onnx` (default)        | `rerank: null` (or omit)      |
-| Governance     | `governance:`         | `governance: pyrrho` (default)  | `governance: null`            |
+| Feature | Config key | Product default |
+|---------|------------|-----------------|
+| Managed Qwen enrichment | internal | always required |
+| Pyrrho governance | `governance:` | `governance: pyrrho` |
+| ONNX reranker | `rerank:` | `rerank: onnx` |
+| Answer synthesis | `synthesizer:` | `null`, enabled only by explicit provider |
+| Query intelligence | `query_intelligence:` | `null`, deterministic prep + Qwen keywords |
+| VLM in parser | `parser:` + `vision:` | off unless `parser: docling_vision` + `vision:` |
 
 ---
 
 ## See Also
 
 - [Reranking](features/retrieval/reranking.md) — detailed reranker docs
+- [Enrichment](ENRICHMENT.md) — managed Qwen enrichment
+- [Retrieval Pipeline](RETRIEVAL_PIPELINE.md) — how retrieval stages fit together
 - [PLUGINS.md](PLUGINS.md) — plugin development guide
 - [CONFIG.md](CONFIG.md) — full configuration reference

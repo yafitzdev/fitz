@@ -5,15 +5,17 @@ Working configs for the managed-ONNX / SQLite world. The schema rules:
 
 - **String specs** instead of nested dicts (`synthesizer: endpoint/gpt-4o`,
   not a provider block).
-- **Provider presence** controls features (`synthesizer: null` disables
-  answer generation; `rerank: null` disables the reranker; enrichment uses the
-  internal managed Qwen ONNX runtime and is always required for ingestion).
+- **Provider presence** controls optional endpoint-backed features
+  (`synthesizer: null` means no generated answer; `query_intelligence: null`
+  means deterministic query prep plus managed Qwen semantic keywords).
+- **Retrieval defaults are real defaults** — managed Qwen enrichment, Pyrrho
+  governance, and the ONNX reranker are the product path.
 - **Sensible defaults** — `collection` is the only thing every config
   must set; the rest can be overridden per-invocation via CLI flags.
 
 ---
 
-## Minimal: local enrichment required
+## Minimal: retrieval-first local setup
 
 ```yaml
 # ~/.fitz/config/fitz_krag.yaml
@@ -26,7 +28,8 @@ synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-No hosted API key or external inference server is needed. On first ingestion,
+No hosted API key or external inference server is needed for `fitz query`,
+`fitz retrieve`, or `fitz_sage.evidence(...)`. On first ingestion,
 fitz-sage downloads the managed Qwen3.5 0.8B ONNX weights into the Hugging Face
 cache and runs them locally on CPU.
 
@@ -98,8 +101,8 @@ chat_api_key_env: MISTRAL_API_KEY
 
 ## Mixed local + cloud (cost-optimized)
 
-Required internal Qwen enrichment, optional local query intelligence, and smart
-cloud model for optional synthesis:
+Required internal Qwen enrichment, optional local query intelligence, and a
+smart cloud model for optional synthesis:
 
 ```yaml
 collection: my_docs
@@ -111,7 +114,7 @@ synthesizer: openai/gpt-4o
 
 ---
 
-## With ONNX cross-encoder reranker
+## Standard ONNX cross-encoder reranker
 
 ```yaml
 # Default — INT8 ONNX cross-encoder (gte-reranker-modernbert-base, 149M)
@@ -247,7 +250,7 @@ with the migration message.
 | Removed key                  | Replacement          |
 | ---------------------------- | -------------------- |
 | `enable_guardrails: true`    | `governance: pyrrho` |
-| `enable_guardrails: false`   | `governance: null`   |
+| `enable_guardrails: false`   | internal smoke-test-only `governance: null` |
 
 `enable_guardrails` is replaced by `governance`, which follows the
 provider-presence pattern (`rerank`, `vision`, `parser`). Loading a

@@ -136,7 +136,7 @@ The honest-RAG thesis is that *lower recall plus correct abstention*
 beats *higher recall plus occasional hallucination*. Embedding-based
 retrieval had a known failure mode of surface-similar-but-wrong
 candidates that the governance cascade then had to clean up. BM25 +
-LLM rerank produces fewer such candidates. Cases that fall off the
+ONNX cross-encoder rerank produces fewer such candidates. Cases that fall off the
 recall curve are exactly the queries where `ABSTAIN` is the right
 answer — which is what the pyrrho classifier does correctly. The
 architecture is now lined up with the philosophy.

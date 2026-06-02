@@ -7,11 +7,12 @@ excerpt + requirements doc) and uses it as one BM25 query. The TF
 distribution gets flat, the relevant tokens drown in surrounding
 context, and FTS5 returns mostly noise.
 
-## Solution: automatic query decomposition
+## Solution: optional query decomposition
 
-Instead of running the entire input as one query, the query-prep
-call's rewrite section decomposes a compound query into focused
-sub-queries, each run as its own targeted FTS5 search.
+When `query_intelligence:` is configured, the query-prep rewrite section can
+decompose a compound query into focused sub-queries, each run as its own
+targeted FTS5 search. Without query intelligence, the deterministic planner
+runs the original query plus cheaper keyword/intent fanout.
 
 ## How it works
 
@@ -19,7 +20,7 @@ sub-queries, each run as its own targeted FTS5 search.
 Query comes in
     │
     ▼
-Query-prep call — rewrite section
+Optional query-intelligence rewrite section
     │
     ├─ single-topic query  → one FTS5 + bm25() search
     │
@@ -34,15 +35,15 @@ Query-prep call — rewrite section
 
 ## Key Design Decisions
 
-1. **Always-on** - No user configuration needed. Built into the KRAG retrieval pipeline.
+1. **Optional endpoint-backed enhancement** - Enable with `query_intelligence:` when compound-query decomposition is worth the endpoint call.
 
-2. **No extra LLM call** - Decomposition is one section of the batched query-prep call (`tier="fast"`); it adds no round-trip of its own.
+2. **Batched with other query intelligence** - Decomposition is one section of the query-prep call; it adds no extra round-trip beyond that optional call.
 
 3. **Content-based** - Triggers when the query covers multiple distinct topics or points — not by length.
 
-4. **LLM handles extraction** - No regex, no entity configuration. LLM figures out what's important (Jira tickets, error codes, names, etc.).
+4. **LLM handles extraction** - No regex or entity configuration. The configured query-intelligence model figures out what's important.
 
-5. **Graceful degradation** - If chat client unavailable, falls back to single search.
+5. **Graceful degradation** - If query intelligence is unavailable, retrieval falls back to deterministic planning and a single main search plus keyword/intent fanout.
 
 ## Example
 
@@ -63,7 +64,12 @@ Expected: ACK within 100ms. Actual: Timeout.
 
 ## Configuration
 
-No configuration required — query decomposition is automatic. The query-prep call's rewrite section splits compound, multi-topic queries into focused sub-queries; single-topic queries run as one search.
+```yaml
+query_intelligence: endpoint/qwen2.5-7b-instruct
+chat_base_url: http://localhost:8080/v1
+```
+
+Leave `query_intelligence: null` for the default no-endpoint path.
 
 ## Benefits
 

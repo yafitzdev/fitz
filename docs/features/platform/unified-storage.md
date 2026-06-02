@@ -12,7 +12,7 @@ One `.db` file per collection under `<workspace>/sqlite/`. Zero install,
 stdlib only.
 
 - **No vector database.** Retrieval is BM25 over FTS5 external-content
-  tables, plus KRAG address routing and LLM reranking — vectors were
+  tables, plus KRAG address routing and ONNX cross-encoder reranking — vectors were
   removed in the same release as the embedding pipeline.
 - **No server.** SQLite is a file. Open it, query it, close it.
   Each call gets its own connection (microseconds to open).

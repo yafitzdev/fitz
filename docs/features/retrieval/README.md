@@ -1,16 +1,16 @@
 # docs/features/retrieval/
 
-Deep-dive documentation for fitz-sage's retrieval intelligence
-modules. All of these run automatically — none require configuration
-to enable.
+Deep-dive documentation for fitz-sage's retrieval intelligence modules. The
+default pipeline is broad recall → ONNX rerank → Pyrrho cutoff. See
+[Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) for the end-to-end flow.
 
 | File                       | Feature                                                          |
 | -------------------------- | ---------------------------------------------------------------- |
 | `sparse-search.md`         | FTS5 + native `bm25()` over typed-unit stores                    |
 | `reranking.md`             | INT8 ONNX cross-encoder reranker (gte-reranker-modernbert-base)  |
-| `query-rewriting.md`       | LLM-based query reformulation (pronouns, typos, intent)          |
-| `query-expansion.md`       | Rule-based synonym / acronym expansion                           |
-| `multi-query-rag.md`       | Decomposes long queries into focused sub-queries                 |
+| `query-rewriting.md`       | Optional query-intelligence reformulation (pronouns, typos, intent) |
+| `query-expansion.md`       | Dictionary + managed-Qwen keyword expansion                      |
+| `multi-query-rag.md`       | Optional decomposition for long compound queries                 |
 | `multi-hop-reasoning.md`   | Iterative retrieval with bridge extraction                       |
 | `keyword-vocabulary.md`    | Exact-match identifier vocabulary (TC-123, AuthService, …)       |
 | `entity-graph.md`          | Entity-based linking across typed units                          |
@@ -23,7 +23,7 @@ What's *not* here anymore (removed in v0.12.0):
 
 - **Hybrid search.** Embeddings + sparse fusion required a vector
   layer that was removed; retrieval is now pure FTS5 + structural
-  routing + LLM rerank.
+  routing + ONNX cross-encoder rerank.
 - **HyDE.** Hypothetical Document Embeddings was an
   embeddings-only technique.
 - **Contextual embeddings.** Same — relied on the embedding stack.

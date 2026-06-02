@@ -10,9 +10,9 @@ Most RAG systems confidently answer questions even when the answer isn't in the 
 
 The system cannot distinguish between "I have evidence" and "I'm making an educated guess."
 
-## Solution: pyrrho classifier
+## Solution: Pyrrho evidence governance
 
-Every `(query, retrieved contexts)` pair runs through the **pyrrho**
+Every `(query, retrieved evidence prefix)` pair runs through the **pyrrho**
 fine-tuned classifier (a ModernBERT-base head distilled on the
 fitz-gov benchmark, served as INT8 ONNX). A single forward pass
 returns one of `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`:
@@ -27,11 +27,18 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 
 ## How It Works
 
-### Single-pass classification
+### Prefix cutoff classification
 
 Pyrrho replaces the constraint+sklearn cascade that fitz-sage used
-through v0.12.x. Each decision is one ONNX inference call (~30 ms
-on CPU), no external LLM dependency.
+through v0.12.x. Each decision is one ONNX inference call on CPU, no
+external LLM dependency.
+
+For evidence retrieval, Pyrrho runs incrementally:
+
+1. classify `query + top 1 evidence item`;
+2. if it abstains, classify `query + top 2`;
+3. continue until the evidence is trustworthy, a dispute is stable, or the
+   cutoff is reached.
 
 | Case it catches              | Resulting mode | Example                                                                        |
 | ---------------------------- | -------------- | ------------------------------------------------------------------------------ |
@@ -39,23 +46,23 @@ on CPU), no external LLM dependency.
 | Insufficient evidence        | `ABSTAIN`      | "I cannot find information about X in the provided documents."                 |
 | Sufficient supporting evidence | `TRUSTWORTHY` | Direct answer with citations.                                                  |
 
-### Answer Modes
+### Evidence Modes
 
-Every answer includes a **mode** indicating confidence level:
+Every `EvidencePack` includes a **mode** indicating confidence level:
 
-- `TRUSTWORTHY` — Strong evidence supports the answer across multiple sources
+- `TRUSTWORTHY` — Strong evidence supports downstream answering
 - `DISPUTED` — Sources conflict; both views are presented
-- `ABSTAIN` — Insufficient evidence; refuses to answer
+- `ABSTAIN` — Insufficient evidence; downstream systems should not answer
 
 ## Key Design Decisions
 
-1. **Provider-controlled default** - `governance: pyrrho` is the default. Set `governance: null` only for smoke tests or raw retrieval timing.
+1. **Standard product path** - `governance: pyrrho` is the default. `governance: null` is an internal smoke-test mode, not a normal user option.
 
-2. **Pre-generation evidence classification** - The governance classifier evaluates the query and retrieved contexts before synthesis, then the LLM receives the matching answer posture.
+2. **Retrieval-first classification** - Governance labels the evidence pack before any optional synthesis.
 
 3. **Explicit modes** - The mode field is first-class in the Answer dataclass, not a hidden flag.
 
-4. **Fail-safe defaults** - When in doubt, ABSTAIN. Better to say "I don't know" than to hallucinate.
+4. **Fail-safe defaults** - When in doubt, ABSTAIN. Better to return insufficient evidence than to invite hallucination.
 
 5. **Transparent reasoning** - When abstaining or disputing, the system explains why.
 
@@ -65,13 +72,14 @@ Governance is selected by the `governance:` field:
 
 ```yaml
 governance: pyrrho  # default INT8 ONNX classifier
-# governance: null  # disable governance
+# governance: null  # internal smoke-test mode only
 ```
 
 ## Files
 
 - **Governance backend:** `fitz_sage/governance/pyrrho.py`
 - **Answer modes:** `fitz_sage/core/answer_mode.py` (AnswerMode enum)
+- **Evidence contract:** `fitz_sage/core/evidence.py`
 
 ## Benefits
 
@@ -107,7 +115,7 @@ Mode: TRUSTWORTHY
 
 - Runs locally with `onnxruntime`, `transformers`, `huggingface-hub`, and `numpy`
 - Uses no external LLM call for the governance decision
-- Works with any chat provider because it runs before answer synthesis
+- Works without any chat provider because it governs retrieved evidence
 
 ## Related Features
 

@@ -85,7 +85,7 @@ GraphRAG:
 
 KRAG (v0.14.1+):
   Document → [symbols] [sections] [tables] → FTS5 + structure → routed search
-           → expand via graph → LLM rerank → answer
+           → ONNX rerank → Pyrrho cutoff → EvidencePack
 ```
 
 Note what's *not* in KRAG's pipeline: vector similarity search.
@@ -133,7 +133,7 @@ queries automatically:
 | --------- | ---------------------------------------------- | --------------------------------------------------------- |
 | Code      | Symbol search (name + BM25 over qualified name + summary) | Functions have names, types, and summaries — use all   |
 | Documents | Section search (BM25 + hierarchy)              | Sections have titles, parents, children — use the tree    |
-| Tables    | SQL generation from natural language           | Tables are structured — query them with SQL, not similarity |
+| Tables    | Table metadata retrieval; optional SQL in answer path | Tables are structured — retrieve table evidence first, compute only when synthesis is configured |
 
 **4. Structural expansion.**
 
@@ -171,8 +171,8 @@ on raw `onnxruntime`).
 | Cross-file dependencies  | Text search        | Multi-hop agent      | Entity co-occurrence           | Import graph traversal           |
 | Content-type handling    | All treated as text| Agent chooses tools  | All treated as text            | Routed by content type           |
 | Ingestion cost           | Low (chunk only)   | Low (chunk only)     | Very high (LLM per doc)        | Medium (parse + summarise)       |
-| Query latency            | Fast               | Slow (N LLM calls)   | Fast                           | Fast (1 search + graph + 1 rerank LLM) |
-| Cost per query           | Low                | High                 | Low                            | Low (≤ 2 LLM calls)              |
+| Query latency            | Fast               | Slow (N LLM calls)   | Fast                           | Fast (BM25 + local ONNX rerank/govern) |
+| Cost per query           | Low                | High                 | Low                            | Low (no endpoint call for evidence) |
 | Predictability           | Deterministic      | Non-deterministic    | Deterministic                  | Deterministic                    |
 | Graph accuracy           | n/a                | n/a                  | Probabilistic                  | Exact (parsed from source)       |
 | Code understanding       | Line-split text    | Agent reads + reasons| Entity labels only             | Parsed AST + qualified names     |
@@ -189,14 +189,14 @@ add value — but bounded and deterministic:
 - **Multi-hop reasoning** for compound questions, with a fixed hop
   limit and deterministic bridge extraction. Not open-ended agent
   loops.
-- **Query rewriting** to resolve pronouns / context — one chat call,
-  not an agent loop.
+- **Query rewriting** to resolve pronouns / context when optional
+  `query_intelligence` is configured — one chat call, not an agent loop.
 - **Detection-based routing** that classifies query intent (temporal,
-  comparison, aggregation) with one chat call, then uses deterministic
-  strategies. Not agent deliberation.
+  comparison, aggregation) deterministically by default and can be enhanced by
+  the optional query-intelligence bus.
 
-The pattern: use the LLM for *classification* and *generation*; use
-*structure* for retrieval and expansion.
+The pattern: use structure and local ONNX models for retrieval and governance;
+use endpoint LLMs only for optional query intelligence or generated answers.
 
 ---
 
@@ -220,7 +220,7 @@ The pattern: use the LLM for *classification* and *generation*; use
                     ┌───────────────────────────────────────────┐
                     │             QUERY TIME                    │
                     │                                           │
-  Query ──► Rewrite ──► Analyze ──► Detect ──► Route            │
+  Query ──► Plan + Qwen keywords ──► Route                      │
                     │                             │             │
                     │              ┌──────────────┤             │
                     │              ▼              ▼             │
@@ -237,8 +237,8 @@ The pattern: use the LLM for *classification* and *generation*; use
                     │           OnnxReranker (ONNX cross-encoder)│
                     │              │                            │
                     │              ▼                            │
-                    │         Read + Assemble + Synthesize      │
-                    │           + Governance (pyrrho)           │
+                    │         Read + Pyrrho cutoff              │
+                    │           → EvidencePack                  │
                     └───────────────────────────────────────────┘
 ```
 
@@ -246,14 +246,15 @@ The pattern: use the LLM for *classification* and *generation*; use
 
 ## Two entry points
 
-KRAG exposes its pipeline two ways:
+KRAG exposes its pipeline three ways:
 
-- **`answer(query)`** — retrieve, then synthesize a grounded `Answer`
-  with a `TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` mode and provenance.
+- **`evidence(query)`** — return a governed `EvidencePack` with ranked
+  source items, Pyrrho probabilities, cutoff metadata, timings, and indexing
+  status. This is the `fitz query` / `fitz retrieve` contract.
 - **`retrieve(query)`** — run retrieval only and return the expanded
-  sources as `list[ReadResult]` (file content + `Address` provenance),
-  no synthesis. It is the primitive `answer()` builds on — use it when
-  you want the source material rather than a generated answer.
+  sources as `list[ReadResult]`, without evidence packaging.
+- **`answer(query)`** — optional synthesis from the retrieved/governed context
+  when `synthesizer:` is configured.
 
 See [ENGINES.md](../../ENGINES.md) for usage.
 

@@ -3,11 +3,12 @@
 Tabular Data - CSV files become queryable SQL tables.
 
 Unlike other RAG systems that chunk CSVs into fragments, Fitz stores tables
-natively in SQLite. You can run real SQL queries and get computed answers.
+natively in SQLite. This example uses optional synthesis so SQL results can be
+formatted as computed answers.
 
 Requirements:
     pip install fitz-sage
-    export OPENAI_API_KEY="your-key"  # if using a hosted OpenAI-compatible endpoint
+    Configure `synthesizer:` or pass a config_path with an endpoint-backed model.
 
 Run:
     python examples/02_tabular_sql.py

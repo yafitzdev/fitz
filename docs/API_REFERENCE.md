@@ -4,9 +4,50 @@ Core data models and protocols for fitz-sage.
 
 ## Core Models
 
+### EvidencePack
+
+The retrieval-first response contract. `fitz query`, `fitz retrieve`, and
+`fitz_sage.evidence()` return this shape.
+
+**Definition:**
+```python
+@dataclass
+class EvidencePack:
+    query: str
+    mode: AnswerMode | None
+    items: list[EvidenceItem]
+    reasons: list[str]
+    timings: dict[str, float]
+    indexing_status: dict[str, Any]
+    metadata: dict[str, Any]
+```
+
+**Evidence items:**
+```python
+@dataclass
+class EvidenceItem:
+    rank: int
+    source_id: str
+    file_path: str
+    address_kind: str
+    address_location: str
+    line_range: tuple[int, int] | None
+    score: float | None
+    excerpt: str
+    content: str
+    metadata: dict[str, Any]
+```
+
+Use `pack.to_dict()` or `pack.to_json()` when returning evidence from an API.
+
+---
+
 ### Chunk
 
-A unit of ingested content. Ingestion pipelines parse and chunk source files into Chunk objects.
+A generic unit of ingested content retained for compatibility with custom
+engines and older plugin surfaces. The production KRAG engine uses typed
+retrieval units (`Symbol`, `Section`, `TableSpec`) and exposes them through
+`EvidenceItem`, not through public chunk objects.
 
 **Definition:**
 ```python
@@ -126,9 +167,10 @@ answer = Answer(
 
 **Provenance:**
 
-The `provenance` field provides attribution and allows users to verify the answer against source material. Different engines may provide different levels of provenance:
-- **Fitz RAG**: chunks retrieved from SQLite storage
-- Custom engines: whatever makes sense for their paradigm
+The `provenance` field provides attribution and allows users to verify the
+answer against source material. For retrieval-first workflows, prefer
+`EvidencePack.items`, which include file path, location, score, excerpt, and
+full content.
 
 **Answer Mode:**
 
@@ -137,7 +179,7 @@ Indicates how certain the answer should be interpreted (3-class system):
 - `DISPUTED`: Sources disagree; answer presents multiple perspectives
 - `ABSTAIN`: Insufficient evidence to answer definitively
 
-If `None`, no epistemic assessment was performed (e.g., engine doesn't support constraints, or constraints were disabled).
+If `None`, no epistemic assessment was performed.
 
 **Metadata:**
 
@@ -199,6 +241,37 @@ Implementations should be idempotent when possible. The same query should produc
 ---
 
 ## Duck-Typed Protocols
+
+### RetrievalEngine
+
+Protocol implemented by engines that support persistent source registration and
+retrieval-first evidence.
+
+```python
+class RetrievalEngine(KnowledgeEngine, Protocol):
+    def load(self, collection: str) -> None: ...
+    def point(self, source: Path, collection: str | None = None) -> Any: ...
+    def wait_for_query_surface(self) -> None: ...
+    def wait_for_indexing(self) -> None: ...
+    def indexing_status(self) -> dict: ...
+    def retrieve(self, query: Query) -> list: ...
+    def evidence(self, query: Query) -> EvidencePack: ...
+```
+
+**Usage:**
+```python
+from pathlib import Path
+from fitz_sage import Query, create_engine
+
+engine = create_engine("fitz_krag")
+engine.load("docs")
+engine.point(Path("./docs"), collection="docs")
+engine.wait_for_query_surface()
+
+pack = engine.evidence(Query(text="Which documents are relevant?"))
+```
+
+---
 
 ### ChunkLike
 

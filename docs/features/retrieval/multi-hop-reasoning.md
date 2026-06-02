@@ -21,7 +21,7 @@ classifier whether the accumulated evidence is enough:
 
 ```
 Query → RetrievalPass (retrieve → rerank → read) → pyrrho verdict
-          TRUSTWORTHY / DISPUTED  → stop — generate the answer
+          TRUSTWORTHY / DISPUTED  → stop — return governed evidence
           ABSTAIN                 → extract a bridge question, loop
 ```
 
@@ -31,8 +31,8 @@ Query → RetrievalPass (retrieve → rerank → read) → pyrrho verdict
   read, and run another pass with it.
 
 The sufficiency check is the pyrrho verdict — a ~30 ms INT8 ONNX forward
-pass, **no chat call**. The only chat call multi-hop adds is bridge
-extraction, spent only on the `ABSTAIN` path.
+pass, **no chat call**. In paths that allow LLM strategies, the only chat call
+multi-hop adds is bridge extraction, spent only on the `ABSTAIN` path.
 
 ## On by default
 
@@ -80,7 +80,7 @@ max_hops: 2              # default — hop cap (1-5)
   cites the paper but doesn't name its author. Bridge question:
   *"Find the paper Smith et al. cited in the 2023 review."*
 - **Hop 2** — retrieve the cited paper. Pyrrho `TRUSTWORTHY`: the author
-  is in the evidence. Stop and answer.
+  is in the evidence. Stop and return that evidence.
 
 ## Related
 

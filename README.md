@@ -72,8 +72,8 @@ A: "I don't have enough information
 ```bash
 pip install fitz-sage
 
-# Start with governed evidence
-fitz retrieve "What is our refund policy?" --source ./docs
+# Start with governed evidence. From a docs folder, --source is optional.
+fitz query "What is our refund policy?" --source ./docs
 
 # Optional: synthesize an answer from that evidence
 fitz answer "What is our refund policy?" --source ./docs \
@@ -82,6 +82,7 @@ fitz answer "What is our refund policy?" --source ./docs \
 ```
 
 That's it. Your documents are now searchable with governed provenance first.
+`fitz query` returns evidence, not a generated answer.
 
 
 ![fitz-sage quickstart demo](https://raw.githubusercontent.com/yafitzdev/fitz-sage/main/docs/assets/quickstart_demo.gif)
@@ -120,9 +121,9 @@ Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](
 RAG is how ChatGPT's "file search," Notion AI, and enterprise knowledge tools actually work under the hood.
 Instead of sending all your documents to an AI, RAG:
 
-1. [X] **Indexes your documents** — Splits them into chunks, converts to vectors, stores in a database
-2. [X] **Retrieves only what's relevant** — When you ask a question, finds the 5-10 most relevant chunks
-3. [X] **Sends just those chunks to the LLM** — The AI answers based on focused, relevant context
+1. [X] **Indexes your documents** — Stores searchable source units in a database
+2. [X] **Retrieves only what's relevant** — When you ask a question, finds the best source units
+3. [X] **Optionally sends those sources to an LLM** — Generated answers are a layer on top of retrieval
 
 Traditional approach:
 ```
@@ -193,8 +194,8 @@ SQL, and epistemic honesty out of the box — without configuration.
 > Queries are routed to the right strategy per content type.
 
 **Zero-wait querying 🐆** → [Progressive KRAG](docs/features/platform/progressive-krag-agentic-search.md)
-> Ask a question immediately — no ingestion step required. `fitz-sage` serves answers instantly via agentic search while
-> a background worker indexes your files. Queries get faster over time as indexing completes, but they work from second one.
+> Ask a question immediately — no ingestion command required. `fitz-sage` parses a searchable surface, returns governed
+> evidence, and then lets a background daemon finish managed Qwen keyword/entity/hierarchy enrichment.
 
 **Honest answers ✅** → [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-modernbert-base-v1)
 > Most RAG tools confidently answer even when the answer isn't in your documents. Ask "What was our Q4 revenue?" when
@@ -229,7 +230,7 @@ SQL, and epistemic honesty out of the box — without configuration.
 > Any questions left? Try fitz on itself:
 >
 > ```bash
-> fitz retrieve "How does the retrieval pipeline work?" --source ./fitz_sage
+> fitz query "How does the retrieval pipeline work?" --source ./fitz_sage
 > ```
 >
 > The codebase speaks for itself.
@@ -311,7 +312,7 @@ Across those tiers, [built-in intelligence](docs/features/retrieval) handles the
 | [**temporal-queries**](docs/features/retrieval/temporal-queries.md) | "What changed between Q1 and Q2?" | ❌ Random chunks — No awareness of time periods in query | ✅ Temporal query handling |
 | [**aggregation-queries**](docs/features/retrieval/aggregation-queries.md) | "List all the test cases that failed" | ❌ Partial list — No mechanism for comprehensive retrieval | ✅ Aggregation query handling |
 | [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What's the latest status on feature X?" | ❌ Old docs rank equally — No awareness of how recent a document is | ✅ Recency boosting |
-| [**query-expansion**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | ❌ No matches — User says "fetch", docs say "retrieve"; "db" vs "database" | ✅ LLM-driven synonym expansion (no embeddings) |
+| [**query-expansion**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | ❌ No matches — User says "fetch", docs say "retrieve"; "db" vs "database" | ✅ Dictionary + managed-Qwen keyword expansion (no embeddings) |
 | [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | ❌ Lost context — Pronouns like "it" reference nothing, retrieval fails | ✅ Conversational context resolution |
 | [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ❌ Imprecise ranking — BM25 ≠ true relevance; best answer buried | ✅ ONNX cross-encoder reranker, ~30 ms on CPU |
 
@@ -386,7 +387,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >```bash
 >pip install fitz-sage
 >
->fitz retrieve "Your question here" --source ./docs
+>fitz query "Your question here" --source ./docs
 >```
 >
 >`fitz-sage` creates a retrieval-first config on first run:
@@ -419,7 +420,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >```
 >
 >The SDK provides:
->- Module-level `evidence()` matching `fitz retrieve`
+>- Module-level `evidence()` matching `fitz query`
 >- Module-level `query()` for optional synthesis
 >- Retrieval-only auto-config creation
 >- Full provenance tracking
@@ -440,7 +441,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 >```bash
 >pip install fitz-sage
 >
->fitz retrieve "Your question here" --source ./docs
+>fitz query "Your question here" --source ./docs
 >```
 >
 >Reranking, governance, and required enrichment run as local ONNX models on CPU — no separate embedding server, no second API key.
@@ -531,7 +532,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 │                         fitz-sage                             │
 ├───────────────────────────────────────────────────────────────┤
 │  User Interfaces                                              │
-│  CLI: retrieve | answer | collections | serve                 │
+│  CLI: query | retrieve | answer | collections | serve         │
 │  SDK: fitz_sage.evidence(source=...)                          │
 │  API: /query | /chat | /collections | /health                 │
 ├───────────────────────────────────────────────────────────────┤
@@ -541,7 +542,7 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 │  └────────────┘  └────────────┘                               │
 ├───────────────────────────────────────────────────────────────┤
 │  Optional LLM Provider (single OpenAI-compatible HTTP protocol)│
-│  synthesis | enrichment | query-intelligence add-ons          │
+│  synthesis | query-intelligence | vision                      │
 ├───────────────────────────────────────────────────────────────┤
 │  Local CPU encoders (INT8 ONNX, no external calls)            │
 │  pyrrho (governance)  |  gte-reranker-modernbert-base         │
@@ -552,8 +553,8 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 │  Retrieval (address-based, baked-in intelligence)             │
 │  symbols | sections | tables | import graphs | reranking      │
 ├───────────────────────────────────────────────────────────────┤
-│  Optional enrichment                                          │
-│  summaries | keywords | entities | hierarchical summaries     │
+│  Managed Qwen enrichment (required, local ONNX)               │
+│  semantic query keywords | entities | hierarchy | summaries   │
 ├───────────────────────────────────────────────────────────────┤
 │  Governance (epistemic safety)                                │
 │  pyrrho encoder | TRUSTWORTHY / DISPUTED / ABSTAIN, ~30 ms CPU│
@@ -571,15 +572,15 @@ INT8 ONNX. One forward pass per query, ~30 ms on CPU, no external LLM call.
 <br>
 
 ```bash
-fitz retrieve "question" --source ./docs  # Point at docs and retrieve evidence
-fitz retrieve "question"                  # Retrieve from existing collection
+fitz query "question" --source ./docs     # Point at docs and retrieve evidence
+fitz query "question"                     # Use current folder or existing collection
+fitz retrieve "question" --format json    # Evidence with script-friendly controls
 fitz answer "question" --synthesizer ...  # Optional synthesized answer
-fitz query --chat                         # Compatibility interactive mode
 fitz collections                       # List and delete knowledge collections
 fitz serve                             # Start REST API server
 ```
 
-Config: `~/.fitz/config/fitz_krag.yaml` — auto-created on first run, edit to opt into synthesis or enrichment providers.
+Config: `~/.fitz/config/fitz_krag.yaml` — auto-created on first run. Retrieval works with managed local ONNX models; edit config only for optional synthesis, query intelligence, or vision.
 
 </details>
 
@@ -690,7 +691,7 @@ curl -X POST http://localhost:8000/query \
 > `pip install fitz-sage[docs]`
 
 **"Connection refused at localhost:8080" error**
-> This only applies to optional endpoint-backed synthesis or query intelligence. Use `fitz retrieve "..."` for evidence without an endpoint server. For a one-off synthesized answer:
+> This only applies to optional endpoint-backed synthesis or query intelligence. Use `fitz query "..."` for evidence without an endpoint server. For a one-off synthesized answer:
 > `fitz answer "..." --synthesizer openai/gpt-4o`.
 
 **"Model not found" error**

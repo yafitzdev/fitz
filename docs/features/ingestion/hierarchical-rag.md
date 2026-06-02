@@ -76,7 +76,7 @@ Q: "What did users say about the async tutorial?"
    through Fitz's standard Qwen ONNX runtime.
 
 2. **Automatic routing** — abstract queries lexically match the L2
-   summary; specific queries match L0 token-for-token. The LLM
+   summary; specific queries match L0 token-for-token. The ONNX
    reranker resolves edge cases.
 
 3. **Wholesale rebuild** - `finalize` re-runs the L2 summary on every
@@ -165,8 +165,8 @@ Hierarchy only activates when BM25 + the ONNX cross-encoder reranker promote a s
 
 ## Dependencies
 
-- Same LLM provider used for answering (no additional dependencies)
-- Summaries stored in the same SQLite collection as chunks
+- Managed Qwen3.5 0.8B ONNX runtime
+- Summaries stored in the same SQLite collection as sections
 
 ## Performance Considerations
 

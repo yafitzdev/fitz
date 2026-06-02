@@ -206,7 +206,7 @@ class MyEngine:
         """
         self._config = config
         self._documents: Dict[str, str] = {}  # id -> content
-        self._embeddings: Dict[str, Any] = {}  # id -> embedding
+        self._term_index: Dict[str, set[str]] = {}  # id -> lexical terms
         
         try:
             self._initialize()
@@ -246,7 +246,7 @@ class MyEngine:
         try:
             for doc_id, content in zip(doc_ids, documents):
                 self._documents[doc_id] = content
-                self._embeddings[doc_id] = self._embed(content)
+                self._term_index[doc_id] = self._terms(content)
             
             logger.info(f"Added {len(documents)} documents")
             return doc_ids
@@ -254,11 +254,9 @@ class MyEngine:
         except Exception as e:
             raise KnowledgeError(f"Failed to add documents: {e}") from e
     
-    def _embed(self, text: str) -> Any:
-        """Create embedding for text."""
-        # Your embedding logic here
-        # For demo, just return word count as "embedding"
-        return len(text.split())
+    def _terms(self, text: str) -> set[str]:
+        """Create a tiny lexical term set for demo retrieval."""
+        return {token.lower() for token in text.split() if len(token) > 2}
     
     def answer(self, query: Query) -> Answer:
         """
@@ -324,8 +322,7 @@ class MyEngine:
         scores = []
         query_words = set(query.lower().split())
         
-        for doc_id, content in self._documents.items():
-            doc_words = set(content.lower().split())
+        for doc_id, doc_words in self._term_index.items():
             overlap = len(query_words & doc_words)
             score = overlap / max(len(query_words), 1)
             scores.append((doc_id, score))
@@ -354,7 +351,7 @@ class MyEngine:
     def clear(self) -> None:
         """Clear the knowledge base."""
         self._documents.clear()
-        self._embeddings.clear()
+        self._term_index.clear()
         logger.info("Knowledge base cleared")
 ```
 

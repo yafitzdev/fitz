@@ -1,8 +1,9 @@
 <!-- docs/CLI.md -->
 # CLI Reference
 
-fitz-sage **v0.14.1+**. The CLI is one binary, `fitz`, with a small
-set of commands.
+fitz-sage **v0.14.1+**. The CLI is intentionally small: one command for the
+normal retrieval workflow, one command for explicit answer synthesis, and a few
+operational commands.
 
 ```bash
 fitz --help
@@ -14,39 +15,73 @@ fitz <command> --help
 ## Quick Start
 
 ```bash
-# One-shot: register docs + retrieve governed evidence
-fitz retrieve "What is X?" --source ./docs
+# From inside a document folder: register the current directory and return evidence
+fitz query "Which documents are relevant to the refund policy?"
 
-# Subsequent retrieval reuses the collection
-fitz retrieve "Follow-up question"
+# Point at a different source folder
+fitz query "Which documents are relevant to the refund policy?" --source ./docs
 
-# JSON emits the full EvidencePack
-fitz retrieve "What is X?" --source ./docs --format json
+# Advanced evidence controls
+fitz retrieve "Which documents are relevant?" --source ./docs --top-k 8
+fitz retrieve "Which documents are relevant?" --source ./docs --format json
 
-# Optional synthesis: pass a provider spec directly
-fitz answer "What is X?" --synthesizer openai/gpt-4o --source ./docs
-
-# Or point at any OpenAI-compatible endpoint
-fitz answer "What is X?" \
-  --endpoint https://api.together.xyz/v1 \
-  --synthesizer endpoint/meta-llama-3.1-70b \
-  --api-key-env TOGETHER_API_KEY \
-  --source ./docs
+# Optional generated answer, only when you explicitly provide a synthesizer
+fitz answer "What is the refund policy?" --source ./docs \
+  --endpoint http://localhost:8080/v1 \
+  --synthesizer endpoint/qwen2.5-7b-instruct
 ```
+
+`fitz query` is the product default. It returns a ranked `EvidencePack`; it does
+not generate an answer. Required retrieval enrichment runs through the managed
+Qwen3.5 0.8B ONNX model on CPU, so no API key or external inference server is
+needed for retrieval.
 
 ---
 
 ## Commands
 
-The main commands are `retrieve`, `answer`, `query`, `collections`, and `serve`.
-Configuration is auto-created on first run; there is no separate init
+The main commands are `query`, `retrieve`, `answer`, `collections`, and `serve`.
+Configuration is auto-created on first run; there is no separate init or ingest
 step.
+
+### `fitz query`
+
+Return governed evidence with the fewest flags. If neither `--source` nor
+`--collection` is provided, `fitz query` uses the current working directory as
+the source and derives the collection name from that folder.
+
+```bash
+fitz query "Your question"
+fitz query "Your question" --source ./docs
+fitz query "Your question" --collection product_docs
+fitz query "Your question" --source ./docs --collection product_docs
+```
+
+**Arguments**
+- `QUESTION` - the question to retrieve evidence for
+
+**Options**
+- `-s, --source PATH` - file or directory to register before retrieval
+- `-c, --collection TEXT` - collection name; defaults to the source folder name
+- `-e, --engine TEXT` - engine name; defaults to `fitz_krag`
+
+**What the user sees**
+
+1. A short progress feed: source registration, managed Qwen readiness, parsing,
+   query analysis, and retrieval.
+2. A ranked evidence table.
+3. Pyrrho governance metadata folded into the table caption: probabilities,
+   cutoff policy, and reasons.
+4. An indexing status line when Qwen keyword/deep enrichment is still running.
+
+If enrichment is still pending after the first evidence pack is shown, the CLI
+starts a detached `index-daemon` process so the collection keeps improving after
+the foreground command exits.
 
 ### `fitz retrieve`
 
-Return a ranked, governed evidence pack without answer synthesis. With
-`--source`, registers documents first; without it, retrieves from the active
-collection.
+Same evidence workflow as `fitz query`, with explicit output controls. Use it
+when scripts need JSON or a fixed evidence count.
 
 ```bash
 fitz retrieve "Your question"
@@ -55,20 +90,17 @@ fitz retrieve "Which test failed?" -c my_collection --source ./docs --top-k 10
 fitz retrieve "Which test failed?" --format json
 ```
 
-**Arguments**
-- `QUESTION` — the question to retrieve evidence for
-
 **Options**
-- `-s, --source PATH` — register documents (file or directory) before retrieval
-- `-c, --collection TEXT` — collection name (default: `default`)
-- `-e, --engine TEXT` — engine name (default: `fitz_krag`)
-- `--format text|json` — human-readable output or serialized `EvidencePack`
-- `--top-k INT` — maximum evidence items to show
+- `-s, --source PATH` - file or directory to register before retrieval
+- `-c, --collection TEXT` - collection name; defaults to the source folder name
+- `-e, --engine TEXT` - engine name; defaults to `fitz_krag`
+- `--format text|json` - human-readable table or serialized `EvidencePack`
+- `--top-k INT` - maximum evidence items to show
 
 ### `fitz answer`
 
-Generate a synthesized answer from the retrieved evidence. This requires an
-explicit synthesizer provider, either from config (`synthesizer:`) or from the
+Generate an optional synthesized answer from retrieved evidence. This is not the
+default retrieval surface. It requires a configured `synthesizer:` provider or
 CLI synthesis flags.
 
 ```bash
@@ -84,34 +116,21 @@ fitz answer "Your question" -c my_collection \
 ```
 
 If no synthesizer is configured, the command fails with an actionable error and
-points you back to `fitz retrieve`.
+points you back to evidence retrieval.
 
 **Options**
-- `-s, --source PATH` — register documents before answering
-- `-c, --collection TEXT` — collection name
-- `-e, --engine TEXT` — engine name
-- `--synthesizer TEXT` — provider/model spec for synthesis
-- `--endpoint TEXT` — OpenAI-compatible URL; pairs with `--model` or `--synthesizer endpoint/<model>`
-- `-m, --model TEXT` — chat model name sent to the endpoint
-- `--api-key-env TEXT` — env var holding the API key
-
-### `fitz query`
-
-Compatibility alias for synthesized answer behavior, plus interactive chat mode.
-For new workflows, prefer `fitz retrieve` for evidence and `fitz answer` for
-explicit synthesis.
-
-```bash
-fitz query "Your question" --synthesizer openai/gpt-4o
-fitz query "Your question" --endpoint http://localhost:8080/v1 --synthesizer endpoint/qwen2.5-7b-instruct
-fitz query --chat -c my_collection
-```
-
----
+- `-s, --source PATH` - register documents before answering
+- `-c, --collection TEXT` - collection name
+- `-e, --engine TEXT` - engine name
+- `--synthesizer TEXT` - provider/model spec for synthesis
+- `--endpoint TEXT` - OpenAI-compatible URL; pairs with `--model` or
+  `--synthesizer endpoint/<model>`
+- `-m, --model TEXT` - chat model name sent to the endpoint
+- `--api-key-env TEXT` - env var holding the API key
 
 ### `fitz collections`
 
-Manage collections (list, info, delete).
+Manage collections.
 
 ```bash
 fitz collections          # interactive menu
@@ -120,11 +139,8 @@ fitz collections info my_collection
 fitz collections delete my_collection
 ```
 
-A collection is a single `.db` file under `~/.fitz/sqlite/fitz_<name>.db`.
-`delete` removes the file (and its `-wal` / `-shm` siblings) — there's no
-DB-level `DROP DATABASE` step because there's no server.
-
----
+A collection is a single SQLite database under the fitz workspace. Deleting a
+collection removes the `.db` file and its `-wal` / `-shm` siblings.
 
 ### `fitz serve`
 
@@ -133,21 +149,15 @@ Start the REST API server.
 ```bash
 fitz serve
 fitz serve --host 0.0.0.0 -p 8080
-fitz serve --reload                  # auto-reload (dev)
+fitz serve --reload
 ```
 
 **Options**
-- `-h, --host TEXT` — bind host (default `127.0.0.1`)
-- `-p, --port INT` — bind port (default `8000`)
-- `--reload` — auto-reload on code change
+- `-h, --host TEXT` - bind host; default `127.0.0.1`
+- `-p, --port INT` - bind port; default `8000`
+- `--reload` - auto-reload on code change
 
-**Endpoints** (see [API.md](API.md) for the full schema)
-- `POST /query` — query the knowledge base; pass `source` to register first
-- `POST /chat` — multi-turn conversation
-- `GET /collections` — list
-- `GET /collections/{name}` — details
-- `DELETE /collections/{name}` — delete
-- `GET /health` — health check
+See [API.md](API.md) for endpoint schemas.
 
 ---
 
@@ -165,18 +175,20 @@ synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-This file is auto-created on first run. Required enrichment uses managed
-Qwen3.5 0.8B ONNX and is downloaded automatically on first ingest. See
-[CONFIG.md](CONFIG.md) for every key and [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md)
-for ready-to-paste configurations.
+This is enough for `fitz query`, `fitz retrieve`, and
+`fitz_sage.evidence(...)`. Managed Qwen3.5 0.8B ONNX enrichment, the ONNX
+reranker, and Pyrrho governance all run locally on CPU.
+
+See [CONFIG.md](CONFIG.md) for every key and
+[CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) for deployment examples.
 
 ---
 
 ## Environment Variables
 
-API keys are read from environment variables (never put them in
-config). The CLI looks up the variable name from `chat_api_key_env`,
-or from the `--api-key-env` flag.
+API keys are needed only for optional endpoint-backed roles such as answer
+synthesis, query intelligence, or vision parsing. The CLI looks up the variable
+name from `chat_api_key_env` or from the `--api-key-env` flag.
 
 ```bash
 # OpenAI
@@ -184,53 +196,16 @@ export OPENAI_API_KEY="..."
 
 # Together / Groq / Mistral
 export TOGETHER_API_KEY="..."
-
-# Optional local endpoint servers (no key)
-# ollama serve
-# LM Studio (Settings → Developer → Local Server)
 ```
 
-`FITZ_HOME` overrides `~/.fitz/` if you want to relocate config +
-storage.
-
+`FITZ_HOME` overrides `~/.fitz/` if you want to relocate config and storage.
 `FITZ_LOG_LEVEL=DEBUG` enables verbose logging for any command.
 
 ---
 
-## Common Workflows
+## See Also
 
-### Local-first setup
-
-```bash
-# Ingest + retrieve governed evidence with managed ONNX enrichment
-fitz retrieve "What's in my docs?" --source ./docs
-```
-
-### Multi-turn exploration
-
-```bash
-fitz query --chat --source ./docs -c project_x
-# ... or pick up an existing collection ...
-fitz query --chat -c project_x
-```
-
-### Cloud-only
-
-```bash
-export OPENAI_API_KEY=...
-fitz answer "What is X?" \
-  --synthesizer openai/gpt-4o \
-  --source ./docs
-```
-
----
-
-## Getting Help
-
-```bash
-fitz --help
-fitz <command> --help
-```
-
-See also: [CONFIG.md](CONFIG.md), [TROUBLESHOOTING.md](TROUBLESHOOTING.md),
-[API.md](API.md).
+- [RETRIEVAL_PIPELINE.md](RETRIEVAL_PIPELINE.md) - retrieval flow and indexing states
+- [CONFIG.md](CONFIG.md) - configuration reference
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - common issues
+- [API.md](API.md) - REST API reference

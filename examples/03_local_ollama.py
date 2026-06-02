@@ -3,7 +3,8 @@
 Fully Local Setup - No API keys, no cloud, complete privacy.
 
 Fitz can run 100% locally using:
-- Ollama for the LLM (via its OpenAI-compatible endpoint)
+- Managed ONNX models for retrieval
+- Ollama for optional answer synthesis (via its OpenAI-compatible endpoint)
 - SQLite for storage
 
 Requirements:
@@ -24,16 +25,17 @@ from pathlib import Path
 # Step 1: Create local config
 # =============================================================================
 
-# Fitz auto-detects Ollama, but you can also configure manually
 config_content = """
 # Local-only configuration - no API keys needed.
-# Point fitz-sage at Ollama's OpenAI-compatible endpoint.
+# Retrieval uses managed local ONNX models.
+# The synthesizer points at Ollama's OpenAI-compatible endpoint.
 
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
+synthesizer: endpoint/llama3.2
 chat_base_url: http://localhost:11434/v1
-chat_smart_model: llama3.2
+parser: cpu
+rerank: onnx
+governance: pyrrho
+query_intelligence: null
 
 collection: local_demo
 """
@@ -63,7 +65,7 @@ docs_dir.mkdir()
 All data processing happens locally on your machine.
 No data is sent to external servers.
 Documents are stored in a local SQLite database.
-Answers are generated using local Ollama models.
+Evidence retrieval uses local ONNX models; answers are generated using local Ollama models.
 """
 )
 

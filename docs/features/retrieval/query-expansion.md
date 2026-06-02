@@ -26,7 +26,7 @@ Original query:   "How do I fetch the db config?"
 expand_terms() →   ["get", "retrieve", "database", "datastore",
                     "configuration"]
                               ↓
-Merged into the query-prep keyword set (alongside the LLM-generated
+Merged into the query-prep keyword set (alongside managed-Qwen
 semantic keywords)
                               ↓
 The keyword set runs as one extra FTS5 + bm25() retrieval leg
@@ -38,8 +38,8 @@ The keyword set runs as one extra FTS5 + bm25() retrieval leg
 
 1. `expand_terms()` scans the query for known synonyms and acronyms
    (rule-based, no LLM).
-2. The matched terms are merged into `BatchResult.keywords` alongside
-   the query-prep call's LLM-generated semantic keywords.
+2. The matched terms are merged into the query plan's keyword set alongside
+   managed-Qwen semantic keywords.
 3. The router runs that keyword set as one extra BM25 retrieval leg,
    pooled and ranked with the other strategy results.
 
@@ -102,8 +102,8 @@ the user typed "db".
 ## Performance
 
 - `expand_terms()` is microsecond-fast (rule-based dictionary lookup).
-- It adds no LLM call — the terms ride along in the query-prep call
-  that already runs.
+- It adds no endpoint call — dictionary terms ride alongside the managed-Qwen
+  semantic keyword expansion that already runs in the default path.
 - The keyword set adds one extra BM25 leg; FTS5 + `bm25()` is sub-10 ms
   per call on typical collections.
 

@@ -241,7 +241,7 @@ export CORP_CLIENT_SECRET="my-client-secret"
 export CORP_LLM_API_KEY="my-llm-api-key"
 
 # Run Fitz
-fitz query --source ./docs "What is the refund policy?"
+fitz query "What is the refund policy?" --source ./docs
 ```
 
 ## Benefits

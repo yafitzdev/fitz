@@ -6,7 +6,6 @@ Practical examples for the current SDK.
 
 ```bash
 pip install fitz-sage
-export OPENAI_API_KEY="your-key"  # if using a hosted OpenAI-compatible endpoint
 
 python examples/01_quickstart.py
 ```
@@ -15,9 +14,9 @@ python examples/01_quickstart.py
 
 | File | Description | Key Features |
 |------|-------------|--------------|
-| [`01_quickstart.py`](01_quickstart.py) | Basic SDK usage | `fitz()` -> `query(..., source=...)` |
-| [`02_tabular_sql.py`](02_tabular_sql.py) | CSV -> SQL queries | Native SQLite tables, computed answers |
-| [`03_local_ollama.py`](03_local_ollama.py) | 100% local setup | No API keys, Ollama + SQLite |
+| [`01_quickstart.py`](01_quickstart.py) | Basic SDK usage | `fitz()` -> `evidence(..., source=...)` |
+| [`02_tabular_sql.py`](02_tabular_sql.py) | CSV -> SQL queries | Native SQLite tables, optional computed answers |
+| [`03_local_ollama.py`](03_local_ollama.py) | Optional local synthesis | Ollama OpenAI-compatible endpoint + SQLite |
 | [`05_advanced_queries.py`](05_advanced_queries.py) | Query intelligence | Keyword matching, comparisons, aggregations |
 
 ## Basic SDK Usage
@@ -27,19 +26,19 @@ from fitz_sage import fitz
 
 f = fitz(collection="my_docs")
 
-# The first query can point at a source. Fitz registers the files and queries
-# the collection through the same call.
-answer = f.query("What is the refund policy?", source="./docs")
+# The first evidence call can point at a source. Fitz registers the files and
+# retrieves governed evidence through the same call.
+pack = f.evidence("What is the refund policy?", source="./docs")
 
-print(answer.text)
-for source in answer.provenance:
-    print(f"  - {source.source_id}")
+print(pack.mode)
+for item in pack.items:
+    print(f"  - {item.file_path}: {item.excerpt}")
 ```
 
 Subsequent queries can omit `source` and use the same collection:
 
 ```python
-answer = f.query("What are the cancellation terms?")
+pack = f.evidence("What are the cancellation terms?")
 ```
 
 ## Tabular Data
@@ -49,11 +48,11 @@ from fitz_sage import fitz
 
 f = fitz(collection="sales")
 
-# Natural language -> SQL -> computed answer
-answer = f.query("What is the total revenue by region?", source="./data")
+# Retrieval-first evidence over table metadata and nearby documents
+pack = f.evidence("What is the total revenue by region?", source="./data")
 ```
 
-## Local-Only
+## Optional Local Synthesis
 
 ```bash
 ollama pull llama3.2
@@ -67,14 +66,12 @@ f = fitz(collection="private_docs")
 answer = f.query("Summarize the key points", source="./confidential")
 ```
 
-Point `~/.fitz/config/fitz_krag.yaml` at Ollama's OpenAI-compatible endpoint:
+Point `~/.fitz/config/fitz_krag.yaml` at Ollama's OpenAI-compatible endpoint
+when you want generated answers:
 
 ```yaml
-chat_fast: endpoint
-chat_balanced: endpoint
-chat_smart: endpoint
+synthesizer: endpoint/llama3.2
 chat_base_url: http://localhost:11434/v1
-chat_smart_model: llama3.2
 ```
 
 ## Advanced Query Features
@@ -83,11 +80,11 @@ chat_smart_model: llama3.2
 from fitz_sage import fitz
 
 f = fitz(collection="bugs")
-f.query("What is BUG-1001?", source="./bug_reports")
+f.evidence("What is BUG-1001?", source="./bug_reports")
 
-answer = f.query("Compare Pro vs Enterprise plan")
-answer = f.query("What are the main trends this quarter?")
-answer = f.query("What is BUG-9999?")  # should abstain when evidence is missing
+pack = f.evidence("Compare Pro vs Enterprise plan")
+pack = f.evidence("What are the main trends this quarter?")
+pack = f.evidence("What is BUG-9999?")  # should abstain when evidence is missing
 ```
 
 ## Running the Examples

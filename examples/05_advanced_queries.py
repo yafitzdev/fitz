@@ -4,13 +4,12 @@ Advanced Queries - Keyword matching, governance, and query patterns.
 
 Fitz has built-in intelligence for different query types:
 - Exact keyword matching (IDs, tickets, versions)
-- Hybrid retrieval (structural + lexical)
+- Structural + lexical broad recall
 - Aggregation queries (trends, summaries)
 - Comparison queries (A vs B)
 
 Requirements:
     pip install fitz-sage
-    export OPENAI_API_KEY="your-key"  # if using a hosted OpenAI-compatible endpoint
 
 Run:
     python examples/05_advanced_queries.py
@@ -20,6 +19,15 @@ import tempfile
 from pathlib import Path
 
 from fitz_sage import fitz
+
+
+def show_pack(pack, max_items: int = 2) -> None:
+    """Print a compact EvidencePack preview."""
+    print(f"Mode: {pack.mode}")
+    for item in pack.items[:max_items]:
+        print(f"  - {item.file_path}: {item.excerpt[:140]}")
+    print()
+
 
 # =============================================================================
 # Setup: Create documents with identifiers
@@ -123,10 +131,8 @@ keyword_queries = [
 
 for i, q in enumerate(keyword_queries):
     print(f"Q: {q}")
-    answer = f.query(q, source=str(temp_dir) if i == 0 else None)
-    # Truncate long answers for demo
-    text = answer.text[:200] + "..." if len(answer.text) > 200 else answer.text
-    print(f"A: {text}\n")
+    pack = f.evidence(q, source=str(temp_dir) if i == 0 else None)
+    show_pack(pack)
 
 # =============================================================================
 # Step 3: Comparison queries
@@ -145,9 +151,8 @@ comparison_queries = [
 
 for q in comparison_queries:
     print(f"Q: {q}")
-    answer = f.query(q)
-    text = answer.text[:300] + "..." if len(answer.text) > 300 else answer.text
-    print(f"A: {text}\n")
+    pack = f.evidence(q)
+    show_pack(pack)
 
 # =============================================================================
 # Step 4: Aggregation queries
@@ -166,9 +171,8 @@ aggregation_queries = [
 
 for q in aggregation_queries:
     print(f"Q: {q}")
-    answer = f.query(q)
-    text = answer.text[:300] + "..." if len(answer.text) > 300 else answer.text
-    print(f"A: {text}\n")
+    pack = f.evidence(q)
+    show_pack(pack)
 
 # =============================================================================
 # Step 5: Honest "I don't know" responses
@@ -187,28 +191,27 @@ unknown_queries = [
 
 for q in unknown_queries:
     print(f"Q: {q}")
-    answer = f.query(q)
-    print(f"A: {answer.text}\n")
+    pack = f.evidence(q)
+    show_pack(pack)
 
 # =============================================================================
-# Step 6: Working with Answer objects
+# Step 6: Working with EvidencePack objects
 # =============================================================================
 
 print("=" * 60)
-print("ANSWER OBJECT DETAILS")
+print("EVIDENCE PACK DETAILS")
 print("=" * 60)
 
-answer = f.query("What bugs were fixed in v2.3.2?")
+pack = f.evidence("What bugs were fixed in v2.3.2?")
 
-print(f"Answer text: {answer.text[:100]}...")
-print(f"\nProvenance ({len(answer.provenance)} sources):")
-for prov in answer.provenance:
-    print(f"  - {prov.source_id}")
-    if prov.excerpt:
-        print(f"    Excerpt: {prov.excerpt[:80]}...")
+print(f"Query: {pack.query}")
+print(f"Mode: {pack.mode}")
+print(f"\nEvidence ({len(pack.items)} item(s)):")
+for item in pack.items:
+    print(f"  - {item.file_path}")
+    print(f"    Excerpt: {item.excerpt[:100]}...")
 
-print(f"\nAnswer mode: {answer.mode}")
-print(f"Metadata keys: {list(answer.metadata.keys())}")
+print(f"\nMetadata keys: {list(pack.metadata.keys())}")
 
 # Cleanup
 import shutil
