@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_MAX_RERANK_TEXT_CHARS = 1200
+
 
 class AddressReranker:
     """Cross-encoder reranker for KRAG Address objects."""
@@ -49,7 +51,7 @@ class AddressReranker:
         if len(addresses) < self._min_addresses:
             return addresses[: self._k]
 
-        documents = [addr.summary or addr.location for addr in addresses]
+        documents = [_rerank_document(addr) for addr in addresses]
 
         try:
             ranked = self._reranker.rerank(query, documents, top_n=self._k)
@@ -74,3 +76,12 @@ class AddressReranker:
         except Exception as e:
             logger.warning(f"Reranking failed, using original order: {e}")
             return addresses[: self._k]
+
+
+def _rerank_document(addr: Address) -> str:
+    """Build the text shown to the cross-encoder for one address."""
+    parts = [addr.summary or addr.location]
+    text = addr.metadata.get("text")
+    if isinstance(text, str) and text.strip():
+        parts.append(text.strip()[:_MAX_RERANK_TEXT_CHARS])
+    return "\n".join(part for part in parts if part).strip() or addr.location

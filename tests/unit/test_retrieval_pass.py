@@ -86,3 +86,19 @@ class TestRetrievalPass:
 
         reader.read.assert_called_once()
         assert [r.address.location for r in results] == ["a"]
+
+    def test_broad_query_defers_duplicate_files_after_rerank(self):
+        a1 = _addr(location="doc-a-file", source_id="doc-a")
+        a2 = _addr(location="doc-a-section", source_id="doc-a")
+        b1 = _addr(location="doc-b-file", source_id="doc-b")
+        rp, _router, reranker, _reader = _build([a1, a2, b1])
+        reranker.rerank.return_value = [a1, a2, b1]
+        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+
+        results = rp.run("What are the key facts?", profile=profile)
+
+        assert [r.address.location for r in results] == [
+            "doc-a-file",
+            "doc-b-file",
+            "doc-a-section",
+        ]

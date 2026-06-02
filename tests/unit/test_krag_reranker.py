@@ -196,6 +196,34 @@ class TestAddressReranker:
         assert documents[0] == "Handles user auth"
         assert documents[1] == "mod.other"
 
+    def test_rerank_includes_agentic_file_text(self):
+        """File-level agentic candidates include their loaded text for reranking."""
+        reranker_provider = MagicMock(name="reranker")
+        reranker_provider.rerank.return_value = [
+            _make_rerank_result(index=0, score=0.9),
+        ]
+        address = Address(
+            kind=AddressKind.FILE,
+            source_id="doc",
+            location="product_roadmap.md",
+            summary="Document: Roadmap, Metrics",
+            score=0.5,
+            metadata={"text": "Launch plan and customer feedback trends."},
+        )
+
+        reranker = AddressReranker(
+            reranker=reranker_provider,
+            k=1,
+            min_addresses=1,
+        )
+
+        reranker.rerank("What are the key facts?", [address])
+
+        documents = reranker_provider.rerank.call_args.args[1]
+        assert documents == [
+            "Document: Roadmap, Metrics\nLaunch plan and customer feedback trends."
+        ]
+
     def test_reranked_addresses_preserve_kind_and_metadata(self):
         """Reranked addresses retain kind, source_id, location, summary, metadata."""
         reranker_provider = MagicMock(name="reranker")

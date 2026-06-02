@@ -118,7 +118,7 @@ Default knobs:
 max_cutoff = 10
 narrow_min_docs = 1
 comparison_min_docs = 2
-broad_min_docs = 3
+broad_min_docs = 5
 aggregation_min_docs = 5
 dispute_patience_docs = 2
 ```

@@ -77,7 +77,30 @@ class RetrievalPass:
             return []
         if self._reranker is not None:
             addresses = self._reranker.rerank(query, addresses)
+        addresses = _enforce_broad_file_diversity(addresses, profile)
         return self._reader.read(addresses, self._config.top_read)
+
+
+def _enforce_broad_file_diversity(addresses: list[Any], profile: Any = None) -> list[Any]:
+    """For exploratory queries, defer repeated hits from the same file."""
+    if profile is None:
+        return addresses
+    if (
+        getattr(profile, "specificity", "") != "broad"
+        and getattr(profile, "answer_type", "") != "exploratory"
+    ):
+        return addresses
+
+    seen: set[str] = set()
+    promoted: list[Any] = []
+    deferred: list[Any] = []
+    for address in addresses:
+        if address.source_id in seen:
+            deferred.append(address)
+            continue
+        seen.add(address.source_id)
+        promoted.append(address)
+    return promoted + deferred
 
 
 __all__ = ["RetrievalPass"]
