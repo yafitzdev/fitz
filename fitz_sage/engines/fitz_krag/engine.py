@@ -1507,9 +1507,10 @@ class FitzKragEngine:
         manifest_path = col_dir / "manifest.json"
         builder = ManifestBuilder(self._config)
         manifest = builder.build(source, manifest_path, progress=progress)
+        manifest_entries = manifest.entries()
         self._manifest = manifest
         self._source_dir = source_dir
-        if manifest.entries():
+        if manifest_entries:
             self._ensure_standard_llm_available(progress)
 
         # 2. Persist source_dir so `fitz query` can find it across processes
@@ -1547,6 +1548,7 @@ class FitzKragEngine:
             enricher_chat=self._enricher_chat,
             summarizer_chat=self._summarizer_chat,
         )
+        core.delete_files_not_in_paths(set(manifest_entries))
 
         # Fast synchronous symbol indexing (AST only, no LLM) via the core's
         # parse op. Populates symbol_store + import_store so LLM code search

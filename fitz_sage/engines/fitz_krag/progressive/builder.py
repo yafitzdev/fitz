@@ -35,7 +35,16 @@ _RICH_DOC_EXTENSIONS = {".pdf", ".docx", ".pptx", ".html", ".htm"}
 _ALL_EXTENSIONS = _CODE_EXTENSIONS | _DOC_EXTENSIONS | _TABLE_EXTENSIONS | _RICH_DOC_EXTENSIONS
 
 # Directories to skip
-_SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", ".tox", ".eggs"}
+_SKIP_DIRS = {
+    ".fitz",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    ".tox",
+    ".eggs",
+}
 
 # Heading regex for markdown
 _MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)

@@ -260,6 +260,14 @@ class KragIngestPipeline:
             logger.debug(f"Import target resolution failed: {e}")
             return 0
 
+    def delete_files_not_in_paths(self, current_paths: set[str]) -> int:
+        """Delete stored files that are no longer part of the current source manifest."""
+        existing_ids = self._raw_store.list_ids_by_path()
+        stale_paths = set(existing_ids) - set(current_paths) - {_CORPUS_FILE_PATH}
+        for stale_path in stale_paths:
+            self._delete_file(existing_ids[stale_path])
+        return len(stale_paths)
+
     # ------------------------------------------------------------------
     # Synchronous whole-corpus ingest — a thin loop over the core ops
     # ------------------------------------------------------------------
@@ -342,11 +350,7 @@ class KragIngestPipeline:
             self.enrich_file(file_id, abs_path.suffix.lower())
 
         # 5. Delete removed files (the synthetic corpus file is not scanned)
-        deleted_paths = set(existing_hashes.keys()) - current_paths - {_CORPUS_FILE_PATH}
-        for del_path in deleted_paths:
-            if del_path in existing_ids:
-                self._delete_file(existing_ids[del_path])
-        stats["files_deleted"] = len(deleted_paths)
+        stats["files_deleted"] = self.delete_files_not_in_paths(current_paths)
 
         # 6. Corpus finalize — import graph + L2 hierarchy summary
         self.finalize()
@@ -986,7 +990,16 @@ class KragIngestPipeline:
             files.extend(source.rglob(f"*{ext}"))
 
         # Filter out common non-source directories
-        skip_dirs = {".git", ".venv", "venv", "__pycache__", "node_modules", ".tox", ".eggs"}
+        skip_dirs = {
+            ".fitz",
+            ".git",
+            ".venv",
+            "venv",
+            "__pycache__",
+            "node_modules",
+            ".tox",
+            ".eggs",
+        }
         return [f for f in sorted(files) if not any(part in skip_dirs for part in f.parts)]
 
     def _relative_path(self, abs_path: Path, source: Path) -> str:

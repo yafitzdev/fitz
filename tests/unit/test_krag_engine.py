@@ -863,6 +863,55 @@ class TestPoint:
         progress.assert_any_call("Preparing managed Qwen3.5 0.8B ONNX enrichment model...")
         progress.assert_any_call("Managed Qwen ready (abc123456789).")
 
+    def test_point_deletes_stale_files_outside_current_manifest(self, tmp_path):
+        """Re-pointing cleans previously indexed files that the scanner now excludes."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config(collection="rag_test_corpus")
+        engine._bg_worker = None
+        engine._manifest = None
+        engine._source_dir = None
+        engine._retrieval_router = MagicMock()
+        engine._reader = MagicMock()
+        engine._chat_factory = None
+        engine._chat = None
+        engine._connection_manager = MagicMock()
+        engine._table_store = MagicMock()
+        engine._sqlite_table_store = MagicMock()
+        engine._entity_graph_store = None
+        engine._enricher_chat = None
+        engine._summarizer_chat = None
+        engine._fast_index_code_files = MagicMock()
+
+        source = tmp_path / "rag_test_corpus"
+        source.mkdir()
+        workspace = source / ".fitz"
+        manifest = MagicMock()
+        manifest.entries.return_value = {
+            "README.md": MagicMock(),
+            "hierarchical_rag/feedback.md": MagicMock(),
+        }
+        pipeline_core = MagicMock()
+
+        with (
+            patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
+            patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
+            patch(
+                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
+                ".AgenticSearchStrategy"
+            ),
+            patch(
+                "fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline",
+                return_value=pipeline_core,
+            ),
+        ):
+            builder_cls.return_value.build.return_value = manifest
+
+            engine.point(source, start_worker=False)
+
+        pipeline_core.delete_files_not_in_paths.assert_called_once_with(
+            {"README.md", "hierarchical_rag/feedback.md"}
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestConfig
