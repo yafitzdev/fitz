@@ -193,6 +193,7 @@ def _ensure_broad_corpus_coverage(
             len(selected_groups) < _BROAD_GROUP_TARGET
             and group not in selected_groups
             and not _is_control_surface(address)
+            and _has_broad_overview_signal(address)
         )
         if not priority_rescue and not group_rescue:
             continue
@@ -309,7 +310,11 @@ def _enforce_broad_group_diversity(
         return addresses
 
     lookahead = addresses[: min(len(addresses), _BROAD_GROUP_LOOKAHEAD)]
-    eligible = [address for address in lookahead if not _is_control_surface(address)]
+    eligible = [
+        address
+        for address in lookahead
+        if not _is_control_surface(address) and _has_broad_overview_signal(address)
+    ]
     available_groups = {_broad_group_key(address) for address in eligible}
     target = min(_BROAD_GROUP_TARGET, len(available_groups))
     if target < 2:
@@ -353,6 +358,11 @@ def _is_control_surface(address: Any) -> bool:
     location_text = str(getattr(address, "location", "")).lower().replace("\\", "/")
     haystack = f"{path_text} {location_text}"
     return any(marker in haystack for marker in _CONTROL_SURFACE_MARKERS)
+
+
+def _has_broad_overview_signal(address: Any) -> bool:
+    """Return whether a candidate is suitable for broad-overview promotion."""
+    return _broad_corpus_priority(address) > 0
 
 
 def _primary_address_path(address: Any) -> str:

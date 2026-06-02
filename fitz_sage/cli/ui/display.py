@@ -248,8 +248,7 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
             print(f"    {_compact_evidence_excerpt(item.excerpt)}")
 
     if indexing_status and (
-        not indexing_status.get("complete", True)
-        or not indexing_status.get("fully_enriched", True)
+        not indexing_status.get("complete", True) or not indexing_status.get("fully_enriched", True)
     ):
         status_line = _format_indexing_status(indexing_status)
         if RICH:
@@ -280,6 +279,8 @@ def _format_indexing_status(indexing_status: dict) -> str:
 
 def _evidence_title(mode_text: str, metadata: dict) -> str:
     """Return the evidence table title with Pyrrho verdict folded in."""
+    if _is_broad_overview(metadata):
+        return "Representative Sources (Broad Overview)"
     pyrrho = _pyrrho_metadata(metadata)
     verdict = pyrrho.get("mode") if pyrrho else mode_text
     return f"Evidence (Pyrrho: {_format_verdict(verdict)})" if verdict else "Evidence"
@@ -292,6 +293,15 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
         cutoff = {}
 
     lines: list[str] = []
+    if _is_broad_overview(metadata):
+        selected = cutoff.get("selected", "?")
+        max_items = cutoff.get("max", "?")
+        lines.append(
+            f"Broad overview: selected {selected} representative source(s) from top {max_items}; "
+            "evidence sufficiency was not evaluated."
+        )
+        return _append_unique_reasons(lines, reasons)
+
     pyrrho = _pyrrho_metadata(metadata)
     probs = pyrrho.get("probabilities", {}) if pyrrho else {}
     if isinstance(probs, dict) and probs:
@@ -327,12 +337,33 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
     if isinstance(reason, str) and reason:
         lines.append(reason)
         shown_reasons.add(reason)
-    for item in reasons:
-        if item not in shown_reasons:
-            lines.append(item)
-            shown_reasons.add(item)
+    return _append_unique_reasons(lines, reasons, shown_reasons=shown_reasons)
 
+
+def _append_unique_reasons(
+    lines: list[str],
+    reasons: list[str],
+    *,
+    shown_reasons: set[str] | None = None,
+) -> list[str]:
+    """Append reasons once while preserving order."""
+    shown = shown_reasons or set(lines)
+    for item in reasons:
+        if item not in shown:
+            lines.append(item)
+            shown.add(item)
     return lines
+
+
+def _is_broad_overview(metadata: dict) -> bool:
+    """Return whether metadata represents a deterministic broad-overview result."""
+    cutoff = metadata.get("governance_cutoff", {}) if isinstance(metadata, dict) else {}
+    if not isinstance(cutoff, dict):
+        return False
+    policy = cutoff.get("policy", {}) if isinstance(cutoff.get("policy", {}), dict) else {}
+    return (
+        bool(cutoff.get("representative_sources")) or policy.get("query_shape") == "broad_overview"
+    )
 
 
 def _pyrrho_metadata(metadata: dict) -> dict:

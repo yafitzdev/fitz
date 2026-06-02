@@ -66,6 +66,18 @@ def test_evidence_title_combines_pyrrho_verdict():
     assert _evidence_title("trustworthy", metadata) == "Evidence (Pyrrho: TRUSTWORTHY)"
 
 
+def test_broad_overview_title_uses_representative_sources():
+    """Broad overview packs should not look like Pyrrho-certified evidence."""
+    metadata = {
+        "governance_cutoff": {
+            "representative_sources": True,
+            "policy": {"query_shape": "broad_overview"},
+        }
+    }
+
+    assert _evidence_title("abstain", metadata) == "Representative Sources (Broad Overview)"
+
+
 def test_format_governance_metadata_shows_pyrrho_and_cutoff():
     """Governance metadata should expose probabilities and cutoff policy."""
     metadata = {
@@ -122,6 +134,37 @@ def test_format_governance_metadata_preserves_extra_reasons():
     ) == [
         "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
         "Pyrrho abstained after evaluating the top 10 evidence item(s).",
+    ]
+
+
+def test_format_broad_overview_metadata_skips_pyrrho_cutoff_language():
+    """Broad overview metadata should explain representative-source semantics."""
+    metadata = {
+        "governance_cutoff": {
+            "evaluated": 0,
+            "selected": 4,
+            "max": 10,
+            "mode": "abstain",
+            "representative_sources": True,
+            "sufficiency_evaluated": False,
+            "policy": {
+                "query_shape": "broad_overview",
+                "min_trustworthy_docs": 4,
+                "min_disputed_docs": 2,
+                "disputed_patience_docs": 2,
+            },
+        }
+    }
+
+    assert _format_governance_metadata(
+        metadata,
+        ["Query is too broad for evidence sufficiency; returned representative sources."],
+    ) == [
+        (
+            "Broad overview: selected 4 representative source(s) from top 10; "
+            "evidence sufficiency was not evaluated."
+        ),
+        "Query is too broad for evidence sufficiency; returned representative sources.",
     ]
 
 

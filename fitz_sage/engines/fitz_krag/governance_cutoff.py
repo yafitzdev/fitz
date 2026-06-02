@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ _AGGREGATION_MIN_EVIDENCE = 5
 _DISPUTE_PATIENCE_DOCS = 2
 _STABLE_DISPUTE_DOCS = 2
 _FOLLOWUP_BATCH_SIZE = 2
+_BROAD_OVERVIEW_SOURCE_COUNT = 6
 
 
 @dataclass(frozen=True)
@@ -65,8 +67,35 @@ def apply_governance_cutoff(
             metadata=_governance_cutoff_metadata(None, evaluated=0, selected=0, mode=mode),
         )
 
-    policy = governance_cutoff_policy(profile, len(results), requested_top_k)
     t0 = time.perf_counter()
+    policy = governance_cutoff_policy(profile, len(results), requested_top_k, query=query)
+    if policy.query_shape == "broad_overview":
+        selected_count = min(policy.max_docs, _BROAD_OVERVIEW_SOURCE_COUNT)
+        mode = AnswerMode.ABSTAIN
+        reason = (
+            "Query is too broad for evidence sufficiency; returned representative "
+            "sources instead of a Pyrrho trustworthy verdict."
+        )
+        return GovernanceCutoffResult(
+            selected=results[:selected_count],
+            mode=mode,
+            reasons=[
+                reason,
+                "Refine the query with a topic, entity, timeframe, or document type for sufficiency.",
+            ],
+            timings=[("Governance", time.perf_counter() - t0)],
+            metadata={
+                **_governance_cutoff_metadata(
+                    policy,
+                    evaluated=0,
+                    selected=selected_count,
+                    mode=mode,
+                ),
+                "representative_sources": True,
+                "sufficiency_evaluated": False,
+            },
+        )
+
     last_reasons: list[str] = []
     last_decision: Any = None
     stable_disputed_decision: Any = None
@@ -157,14 +186,17 @@ def governance_cutoff_policy(
     profile: Any,
     result_count: int,
     requested_top_k: Any = None,
+    *,
+    query: str | None = None,
 ) -> GovernanceCutoffPolicy:
     """Build a deterministic policy for interpreting Pyrrho verdicts."""
     max_docs = _governance_cutoff_limit(result_count, requested_top_k)
-    query_shape = governance_query_shape(profile)
+    query_shape = governance_query_shape(profile, query=query)
     min_docs_by_shape = {
         "narrow": _NARROW_MIN_EVIDENCE,
         "comparison": _COMPARISON_MIN_EVIDENCE,
         "broad": _BROAD_MIN_EVIDENCE,
+        "broad_overview": _BROAD_MIN_EVIDENCE,
         "aggregation": _AGGREGATION_MIN_EVIDENCE,
     }
     min_trustworthy_docs = min(max_docs, min_docs_by_shape[query_shape])
@@ -178,7 +210,7 @@ def governance_cutoff_policy(
     )
 
 
-def governance_query_shape(profile: Any) -> str:
+def governance_query_shape(profile: Any, *, query: str | None = None) -> str:
     """Map retrieval profile signals to a cutoff policy shape."""
     if profile is None:
         return "narrow"
@@ -191,6 +223,8 @@ def governance_query_shape(profile: Any) -> str:
         return "comparison"
     if getattr(profile, "has_aggregation_intent", False):
         return "aggregation"
+    if _is_broad_overview_query(query or "", profile):
+        return "broad_overview"
     if (
         getattr(profile, "specificity", "") == "broad"
         or getattr(profile, "answer_type", "") == "exploratory"
@@ -198,6 +232,35 @@ def governance_query_shape(profile: Any) -> str:
     ):
         return "broad"
     return "narrow"
+
+
+def _is_broad_overview_query(query: str, profile: Any) -> bool:
+    """Return whether evidence sufficiency is ill-defined for a corpus overview."""
+    if not query:
+        return False
+    if (
+        getattr(profile, "specificity", "") != "broad"
+        and getattr(profile, "answer_type", "") != "exploratory"
+        and not getattr(profile, "inject_corpus_summaries", False)
+    ):
+        return False
+    if getattr(profile, "has_temporal_intent", False):
+        return False
+
+    lower = query.lower()
+    has_corpus_scope = bool(
+        re.search(
+            r"\b(corpus|collection|knowledge base|all documents|all docs|all files|all sources|whole repository|entire repository)\b",
+            lower,
+        )
+    )
+    has_open_overview_ask = bool(
+        re.search(
+            r"\b(key facts|overview|summari[sz]e|summary|main themes|survey|representative|which documents|what documents)\b",
+            lower,
+        )
+    )
+    return has_corpus_scope and has_open_overview_ask
 
 
 def _iter_prefix_decisions(

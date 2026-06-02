@@ -695,7 +695,7 @@ class TestEvidence:
         engine._expander.expand.assert_not_called()
 
     def test_broad_query_requires_minimum_trustworthy_window(self):
-        """Broad corpus queries do not stop on a top-1 trustworthy verdict."""
+        """Broad thematic queries do not stop on a top-1 trustworthy verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
@@ -708,7 +708,7 @@ class TestEvidence:
             _decision(AnswerMode.TRUSTWORTHY, "Broad window is enough."),
         ]
 
-        pack = engine.evidence(Query(text="What are the key facts in this corpus?"), top_k=4)
+        pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=4)
 
         assert pack.mode == AnswerMode.TRUSTWORTHY
         assert [item.file_path for item in pack.items] == [
@@ -721,6 +721,39 @@ class TestEvidence:
         cutoff = pack.metadata["governance_cutoff"]
         assert cutoff["policy"]["query_shape"] == "broad"
         assert cutoff["policy"]["min_trustworthy_docs"] == 4
+
+    def test_broad_overview_query_returns_representative_sources_without_pyrrho(self):
+        """Corpus-wide overview queries are representative, not Pyrrho-sufficient."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(4)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        engine._governance = MagicMock()
+        engine._governance.decide.side_effect = AssertionError("Pyrrho should not run")
+
+        pack = engine.evidence(Query(text="What are the key facts in this corpus?"), top_k=4)
+
+        assert pack.mode == AnswerMode.ABSTAIN
+        assert [item.file_path for item in pack.items] == [
+            "docs/1.md",
+            "docs/2.md",
+            "docs/3.md",
+            "docs/4.md",
+        ]
+        engine._governance.decide.assert_not_called()
+        cutoff = pack.metadata["governance_cutoff"]
+        assert cutoff["policy"]["query_shape"] == "broad_overview"
+        assert cutoff["evaluated"] == 0
+        assert cutoff["selected"] == 4
+        assert cutoff["representative_sources"] is True
+        assert cutoff["sufficiency_evaluated"] is False
+        assert pack.reasons == [
+            (
+                "Query is too broad for evidence sufficiency; returned representative "
+                "sources instead of a Pyrrho trustworthy verdict."
+            ),
+            "Refine the query with a topic, entity, timeframe, or document type for sufficiency.",
+        ]
 
     def test_comparison_query_stops_on_disputed_after_two_docs(self):
         """Comparison/conflict queries can stop on disputed once both sides exist."""
@@ -783,7 +816,7 @@ class TestEvidence:
             _decision(AnswerMode.DISPUTED, "Conflict four."),
         ]
 
-        pack = engine.evidence(Query(text="What are the key facts in this corpus?"), top_k=4)
+        pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=4)
 
         assert pack.mode == AnswerMode.DISPUTED
         assert len(pack.items) == 4

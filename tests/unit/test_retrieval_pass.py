@@ -99,6 +99,7 @@ class TestRetrievalPass:
         a2 = _addr(location="doc-a-section", source_id="doc-a")
         b1 = _addr(location="doc-b-file", source_id="doc-b")
         rp, _router, reranker, _reader = _build([a1, a2, b1])
+        reranker.rerank.side_effect = None
         reranker.rerank.return_value = [a1, a2, b1]
         profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
 
@@ -127,6 +128,7 @@ class TestRetrievalPass:
             summary="Q2 executive summary and key metrics",
         )
         rp, _router, reranker, _reader = _build([test_cases, roadmap, quarterly])
+        reranker.rerank.side_effect = None
         reranker.rerank.return_value = [test_cases, roadmap, quarterly]
         profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
 
@@ -155,6 +157,7 @@ class TestRetrievalPass:
             summary="Product roadmap and launch priorities",
         )
         rp, _router, reranker, _reader = _build([queries, q2, roadmap])
+        reranker.rerank.side_effect = None
         reranker.rerank.return_value = [queries, q2]
         profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
 
@@ -183,6 +186,7 @@ class TestRetrievalPass:
             summary="Product roadmap and launch priorities",
         )
         rp, _router, reranker, _reader = _build([feedback, q1, roadmap])
+        reranker.rerank.side_effect = None
         reranker.rerank.return_value = [feedback, q1, roadmap]
         profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
 
@@ -209,6 +213,7 @@ class TestRetrievalPass:
             summary="Customer comments",
         )
         rp, _router, reranker, _reader = _build([incident, feedback])
+        reranker.rerank.side_effect = None
         reranker.rerank.return_value = [incident, feedback]
         profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
 
@@ -248,10 +253,10 @@ class TestRetrievalPass:
             metadata={"source_path": "hierarchical_rag/feedback_march_2024.md"},
         )
         pdf = _addr(
-            location="84 5.3 Beurteilung",
+            location="Executive Summary",
             source_id="pdf-id",
-            summary="Bachelor thesis section",
-            metadata={"source_path": "pdf/1.0 BA Yan Fitzner.pdf"},
+            summary="Annual report executive summary",
+            metadata={"source_path": "pdf/annual_report_2024.pdf"},
         )
         glossary = _addr(
             location="A10 Glossary Internal Terms",
@@ -262,6 +267,7 @@ class TestRetrievalPass:
             },
         )
         rp, _router, reranker, _reader = _build([q2, q1, roadmap, feedback, pdf, glossary])
+        reranker.rerank.side_effect = None
         reranker.rerank.return_value = [q2, q1, roadmap, feedback, pdf, glossary]
         profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
 
@@ -274,7 +280,7 @@ class TestRetrievalPass:
             "roadmap-id",
         ]
 
-    def test_broad_corpus_query_rescues_neutral_non_control_family(self):
+    def test_broad_corpus_query_does_not_rescue_neutral_non_control_family(self):
         q2 = _addr(
             location="Key Metrics Progression",
             source_id="q2-id",
@@ -317,6 +323,7 @@ class TestRetrievalPass:
             metadata={"source_path": "pdf/1.0 BA Yan Fitzner.pdf"},
         )
         rp, _router, reranker, _reader = _build([q2, q1, queries, test_cases, formal_eval, pdf])
+        reranker.rerank.side_effect = None
         reranker.rerank.return_value = [q2, q1, formal_eval, queries, test_cases]
         profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
 
@@ -324,11 +331,10 @@ class TestRetrievalPass:
 
         assert [r.address.source_id for r in results] == [
             "q2-id",
-            "pdf-id",
             "q1-id",
+            "formal-eval-id",
             "queries-id",
             "test-cases-id",
-            "formal-eval-id",
         ]
 
     def test_broad_corpus_query_scores_follow_effective_rank(self):
@@ -345,6 +351,7 @@ class TestRetrievalPass:
             score=0.01,
         )
         rp, _router, reranker, _reader = _build([control, roadmap])
+        reranker.rerank.side_effect = None
         reranker.rerank.return_value = [control, roadmap]
         profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
 
@@ -371,6 +378,7 @@ class TestRetrievalPass:
             summary="Product roadmap and launch priorities",
         )
         rp, _router, reranker, _reader = _build([test_cases, roadmap])
+        reranker.rerank.side_effect = None
         reranker.rerank.return_value = [test_cases, roadmap]
         profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
 
