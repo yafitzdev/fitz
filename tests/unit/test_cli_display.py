@@ -75,7 +75,7 @@ def test_broad_overview_title_uses_representative_sources():
         }
     }
 
-    assert _evidence_title("abstain", metadata) == "Representative Sources (Broad Overview)"
+    assert _evidence_title("abstain", metadata) == "Evidence (Broad Overview)"
 
 
 def test_format_governance_metadata_shows_pyrrho_and_cutoff():

@@ -280,7 +280,7 @@ def _format_indexing_status(indexing_status: dict) -> str:
 def _evidence_title(mode_text: str, metadata: dict) -> str:
     """Return the evidence table title with Pyrrho verdict folded in."""
     if _is_broad_overview(metadata):
-        return "Representative Sources (Broad Overview)"
+        return "Evidence (Broad Overview)"
     pyrrho = _pyrrho_metadata(metadata)
     verdict = pyrrho.get("mode") if pyrrho else mode_text
     return f"Evidence (Pyrrho: {_format_verdict(verdict)})" if verdict else "Evidence"
