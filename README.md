@@ -751,6 +751,11 @@ MIT
 - [Changelog](CHANGELOG.md)
 
 **Documentation:**
+- [Docs Index](docs/README.md)
+- [Three-Stage Retrieval Strategy](docs/features/retrieval/three-stage-strategy.md)
+- [Query UX](docs/QUERY_UX.md)
+- [Evidence Pack Contract](docs/EVIDENCE_PACK.md)
+- [Managed Models](docs/MANAGED_MODELS.md)
 - [CLI Reference](docs/CLI.md)
 - [Python SDK](docs/SDK.md)
 - [REST API](docs/API.md)

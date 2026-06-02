@@ -238,6 +238,9 @@ that another application can trust, inspect, or pass into optional synthesis.
 See also:
 
 - [Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) for the end-to-end CLI and indexing flow.
+- [Query UX](../../QUERY_UX.md) for the one-command user journey.
+- [Evidence Pack](../../EVIDENCE_PACK.md) for the returned object contract.
+- [Managed Models](../../MANAGED_MODELS.md) for Qwen, reranker, and Pyrrho downloads.
 - [Reranking](reranking.md) for the ONNX cross-encoder details.
 - [Epistemic Honesty](../governance/epistemic-honesty.md) for Pyrrho governance.
 - [Sparse Search](sparse-search.md) for the BM25 recall layer.

@@ -10,4 +10,5 @@ Documentation for fitz-sage platform-level features.
 | `unified-storage.md` | SQLite + FTS5 storage (one `.db` per collection, zero install) |
 | `openai-compatible-endpoint.md` | Single-URL `endpoint` provider for optional OpenAI-compatible servers (vLLM, LM Studio, Together, etc.) |
 
-For engine configuration, see `docs/ENGINES.md` and `docs/CONFIG.md`.
+For the one-command CLI journey, see `docs/QUERY_UX.md`. For engine
+configuration, see `docs/ENGINES.md` and `docs/CONFIG.md`.

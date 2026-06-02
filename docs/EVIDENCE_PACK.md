@@ -1,0 +1,147 @@
+<!-- docs/EVIDENCE_PACK.md -->
+# Evidence Pack
+
+`EvidencePack` is the retrieval-first response contract. It is returned by:
+
+- `fitz query`
+- `fitz retrieve`
+- `fitz_sage.evidence()`
+
+It is intentionally not an answer. It is ranked, governed evidence that another
+application can inspect, display, or pass into optional synthesis.
+
+## Shape
+
+```python
+@dataclass
+class EvidencePack:
+    query: str
+    mode: AnswerMode | None
+    items: list[EvidenceItem]
+    reasons: list[str]
+    timings: dict[str, float]
+    indexing_status: dict[str, Any]
+    metadata: dict[str, Any]
+```
+
+```python
+@dataclass
+class EvidenceItem:
+    rank: int
+    source_id: str
+    file_path: str
+    address_kind: str
+    address_location: str
+    line_range: tuple[int, int] | None
+    score: float | None
+    excerpt: str
+    content: str
+    metadata: dict[str, Any]
+```
+
+Use `pack.to_dict()` or `pack.to_json()` for API responses.
+
+## Modes
+
+| Mode | Meaning |
+|---|---|
+| `TRUSTWORTHY` | Pyrrho judged the selected evidence prefix sufficient and consistent. |
+| `DISPUTED` | Pyrrho found meaningful conflict in the selected evidence prefix. |
+| `ABSTAIN` | Retrieved evidence was missing, incomplete, or insufficient. |
+| `null` | Governance did not run. This is not the default product path. |
+
+## Governance Metadata
+
+Pyrrho cutoff metadata lives in `metadata.governance_cutoff`.
+
+```json
+{
+  "metadata": {
+    "governance_cutoff": {
+      "evaluated": 3,
+      "selected": 3,
+      "max": 10,
+      "mode": "TRUSTWORTHY",
+      "policy": {
+        "query_shape": "broad",
+        "min_trustworthy_docs": 4,
+        "min_disputed_docs": 2,
+        "disputed_patience_docs": 2
+      },
+      "pyrrho": {
+        "mode": "TRUSTWORTHY",
+        "probabilities": {
+          "abstain": 0.08,
+          "disputed": 0.12,
+          "trustworthy": 0.80
+        },
+        "reason": "Pyrrho: sources support a confident answer (P=0.80)."
+      }
+    }
+  }
+}
+```
+
+Field meanings:
+
+| Field | Meaning |
+|---|---|
+| `evaluated` | How many ranked evidence prefixes Pyrrho evaluated. |
+| `selected` | How many evidence items were returned after cutoff. |
+| `max` | Maximum cutoff window for this query, capped at 10 by default. |
+| `mode` | Final governance mode for the selected prefix. |
+| `policy.query_shape` | Narrow, broad, comparison, or aggregation. |
+| `policy.min_trustworthy_docs` | Minimum prefix size before `TRUSTWORTHY` can stop. |
+| `policy.min_disputed_docs` | Minimum prefix size before comparison disputes can stop. |
+| `policy.disputed_patience_docs` | Additional patience for narrow disputes. |
+| `pyrrho.probabilities` | Softmax probabilities for abstain, disputed, trustworthy. |
+| `pyrrho.reason` | Human-readable one-line explanation. |
+
+## Indexing Status
+
+`indexing_status` describes whether the collection can answer retrieval queries
+and whether required deep enrichment is complete.
+
+```json
+{
+  "indexing_status": {
+    "total": 65,
+    "indexed": 64,
+    "pending": 1,
+    "complete": false,
+    "query_ready": false,
+    "deep_pending": 22,
+    "fully_enriched": false,
+    "by_state": {
+      "query_ready": 43,
+      "enriched": 21,
+      "registered": 1
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `total` | Files tracked by the collection manifest. |
+| `indexed` | Files in a query-ready state. |
+| `pending` | Files not query-ready yet. |
+| `complete` | `pending == 0`; the query-ready index is complete. |
+| `query_ready` | Same readiness signal as `complete`. |
+| `deep_pending` | Files still missing full required enrichment. |
+| `fully_enriched` | `deep_pending == 0`. |
+| `by_state` | Manifest state counts. |
+
+## Item Metadata
+
+Evidence items are typed retrieval units. `address_kind` identifies the unit:
+
+| Kind | Typical source |
+|---|---|
+| `section` | Markdown, PDF, DOCX, PPTX, HTML, text, or parsed prose section. |
+| `symbol` | Code function, class, method, constant, or module-level symbol. |
+| `table` | CSV/table metadata or extracted document table. |
+| `file` | Supplemental file-level match before full indexing. |
+
+`excerpt` is display text. `content` is the fuller text passed into Pyrrho and
+optional synthesis.

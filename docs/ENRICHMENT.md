@@ -5,6 +5,9 @@ Enrichment is required retrieval infrastructure. It is not a feature flag and
 it is not delegated to a user-selected endpoint. fitz-sage uses its managed
 Qwen3.5 0.8B ONNX runtime on CPU for the metadata that makes retrieval work.
 
+For the full local model inventory and download behavior, see
+[Managed Models](MANAGED_MODELS.md).
+
 The first query does not wait for every enrichment stage. It waits for a parsed
 search surface, returns governed evidence, and lets the background daemon finish
 keyword, entity, hierarchy, and demand-summary work.

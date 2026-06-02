@@ -8,6 +8,8 @@ Generated answers are optional and live behind `fitz answer` / `fitz_sage.query(
 
 For the retrieval strategy itself, see
 [Three-Stage Retrieval Strategy](features/retrieval/three-stage-strategy.md).
+For the no-flags CLI journey, see [Query UX](QUERY_UX.md). For the returned
+object shape, see [Evidence Pack](EVIDENCE_PACK.md).
 
 ---
 
