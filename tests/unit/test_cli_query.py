@@ -5,13 +5,15 @@ Tests for the query command.
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
 from fitz_sage.cli.cli import app
-from fitz_sage.core import Answer
+from fitz_sage.core import EvidencePack
+from fitz_sage.core.answer_mode import AnswerMode
 
 runner = CliRunner()
 
@@ -40,8 +42,12 @@ class TestQueryCommand:
         assert result.exit_code == 0
         assert "synthesis" in result.output.lower() or "answer" in result.output.lower()
 
-    def test_query_no_collections_exits(self):
-        """Test that query exits when no collections found."""
+    def test_query_defaults_to_current_directory(self, tmp_path):
+        """Query should register the current directory when no flags are supplied."""
+        pack = EvidencePack(query="test question", mode=AnswerMode.TRUSTWORTHY)
+        mock_engine = MagicMock()
+        mock_engine.evidence.return_value = pack
+
         mock_registry = MagicMock()
         mock_registry.list.return_value = ["fitz_krag"]
         mock_caps = MagicMock()
@@ -49,15 +55,29 @@ class TestQueryCommand:
         mock_caps.supports_persistent_ingest = True
         mock_caps.supports_collections = True
         mock_registry.get_capabilities.return_value = mock_caps
-        mock_registry.get_list_collections.return_value = []
 
         with (
-            patch("fitz_sage.cli.commands.query.get_engine_registry", return_value=mock_registry),
-            patch("fitz_sage.cli.commands.query.get_default_engine", return_value="fitz_krag"),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_default_engine",
+                return_value="fitz_krag",
+            ),
+            patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
+            patch("fitz_sage.cli.commands.retrieve.Path.cwd", return_value=tmp_path),
+            patch("fitz_sage.cli.commands.retrieve.display_evidence_pack") as mock_display,
         ):
             result = runner.invoke(app, ["query", "test question"])
 
-        assert "no" in result.output.lower() or "ingest" in result.output.lower()
+        assert result.exit_code == 0
+        mock_engine.point.assert_called_once()
+        assert mock_engine.point.call_args.args[0] == tmp_path
+        assert mock_engine.point.call_args.args[1] == tmp_path.name
+        mock_engine.wait_for_query_surface.assert_called_once()
+        mock_engine.evidence.assert_called_once()
+        mock_display.assert_called_once_with(pack, max_items=10)
 
 
 class TestQueryHelpers:
@@ -142,15 +162,10 @@ class TestQueryExecution:
     """Tests for query execution with mocked engine (persistent ingest path)."""
 
     def test_query_direct_mode(self):
-        """Test query with direct question argument via persistent ingest path."""
-        mock_answer = Answer(
-            text="This is the answer",
-            provenance=[],
-            mode="trustworthy",
-        )
-
+        """Test query with direct question argument via retrieval path."""
+        pack = EvidencePack(query="What is RAG?", mode=AnswerMode.TRUSTWORTHY)
         mock_engine = MagicMock()
-        mock_engine.answer.return_value = mock_answer
+        mock_engine.evidence.return_value = pack
 
         mock_registry = MagicMock()
         mock_registry.list.return_value = ["fitz_krag"]
@@ -161,19 +176,27 @@ class TestQueryExecution:
         mock_registry.get_list_collections.return_value = ["test"]
 
         with (
-            patch("fitz_sage.cli.commands.query.get_engine_registry", return_value=mock_registry),
-            patch("fitz_sage.cli.commands.query.get_default_engine", return_value="fitz_krag"),
-            patch("fitz_sage.cli.commands.query.create_engine", return_value=mock_engine),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_default_engine",
+                return_value="fitz_krag",
+            ),
+            patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
+            patch("fitz_sage.cli.commands.retrieve.Path.cwd", return_value=Path("docs")),
+            patch("fitz_sage.cli.commands.retrieve.display_evidence_pack"),
         ):
             result = runner.invoke(app, ["query", "What is RAG?"])
 
-        mock_engine.answer.assert_called_once()
+        mock_engine.evidence.assert_called_once()
         assert result.exit_code == 0
 
     def test_query_handles_error(self):
         """Test query handles errors gracefully."""
         mock_engine = MagicMock()
-        mock_engine.answer.side_effect = Exception("Test error")
+        mock_engine.evidence.side_effect = Exception("Test error")
 
         mock_registry = MagicMock()
         mock_registry.list.return_value = ["fitz_krag"]
@@ -184,9 +207,16 @@ class TestQueryExecution:
         mock_registry.get_list_collections.return_value = ["test"]
 
         with (
-            patch("fitz_sage.cli.commands.query.get_engine_registry", return_value=mock_registry),
-            patch("fitz_sage.cli.commands.query.get_default_engine", return_value="fitz_krag"),
-            patch("fitz_sage.cli.commands.query.create_engine", return_value=mock_engine),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_default_engine",
+                return_value="fitz_krag",
+            ),
+            patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
+            patch("fitz_sage.cli.commands.retrieve.Path.cwd", return_value=Path("docs")),
         ):
             result = runner.invoke(app, ["query", "What is RAG?"])
 
@@ -199,14 +229,9 @@ class TestQueryOptions:
 
     def test_query_with_collection_option(self):
         """Test query with --collection option."""
-        mock_answer = Answer(
-            text="Answer",
-            provenance=[],
-            mode="trustworthy",
-        )
-
+        pack = EvidencePack(query="question", mode=AnswerMode.TRUSTWORTHY)
         mock_engine = MagicMock()
-        mock_engine.answer.return_value = mock_answer
+        mock_engine.evidence.return_value = pack
 
         mock_registry = MagicMock()
         mock_registry.list.return_value = ["fitz_krag"]
@@ -217,14 +242,21 @@ class TestQueryOptions:
         mock_registry.get_list_collections.return_value = ["custom"]
 
         with (
-            patch("fitz_sage.cli.commands.query.get_engine_registry", return_value=mock_registry),
-            patch("fitz_sage.cli.commands.query.get_default_engine", return_value="fitz_krag"),
-            patch("fitz_sage.cli.commands.query.create_engine", return_value=mock_engine),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_default_engine",
+                return_value="fitz_krag",
+            ),
+            patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
+            patch("fitz_sage.cli.commands.retrieve.display_evidence_pack"),
         ):
             runner.invoke(app, ["query", "question", "-c", "custom"])
 
         mock_engine.load.assert_called_once_with("custom")
-        mock_engine.answer.assert_called_once()
+        mock_engine.evidence.assert_called_once()
 
     def test_query_collection_not_found(self):
         """Test query shows error when collection not found."""
@@ -237,8 +269,14 @@ class TestQueryOptions:
         mock_registry.get_list_collections.return_value = ["other"]
 
         with (
-            patch("fitz_sage.cli.commands.query.get_engine_registry", return_value=mock_registry),
-            patch("fitz_sage.cli.commands.query.get_default_engine", return_value="fitz_krag"),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_default_engine",
+                return_value="fitz_krag",
+            ),
         ):
             result = runner.invoke(app, ["query", "question", "-c", "nonexistent"])
 

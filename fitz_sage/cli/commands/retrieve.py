@@ -16,6 +16,21 @@ from fitz_sage.runtime import create_engine, get_default_engine, get_engine_regi
 logger = get_logger(__name__)
 
 
+def _default_source(source: Optional[Path], collection: Optional[str]) -> Optional[Path]:
+    """Use the current directory when the user did not choose a collection."""
+    if source is not None:
+        return source
+    if collection is None:
+        return Path.cwd()
+    return None
+
+
+def _collection_name_for_source(source: Path) -> str:
+    """Derive the default collection name from the selected source directory."""
+    name = source.resolve().name.strip()
+    return name or "default"
+
+
 def command(
     question: Optional[str],
     source: Optional[Path],
@@ -33,8 +48,9 @@ def command(
     if top_k is not None and top_k < 1:
         ui.error("--top-k must be greater than zero.")
         raise typer.Exit(1)
-    if source is not None and not source.exists():
-        ui.error(f"Path does not exist: {source}")
+    effective_source = _default_source(source, collection)
+    if effective_source is not None and not effective_source.exists():
+        ui.error(f"Path does not exist: {effective_source}")
         raise typer.Exit(1)
 
     registry = get_engine_registry()
@@ -48,17 +64,17 @@ def command(
         ui.error(f"Engine '{engine_name}' does not support retrieval evidence mode.")
         raise typer.Exit(1)
 
-    selected_collection = _select_collection(registry, engine_name, collection, source)
+    selected_collection = _select_collection(registry, engine_name, collection, effective_source)
     question_text = question if question is not None else ui.prompt_text("Question")
     metadata = {"top_k": top_k} if top_k is not None else {}
     progress = None if output_format == "json" else ui.info
 
     try:
         engine_instance = create_engine(engine_name)
-        if source is not None:
+        if effective_source is not None:
             if progress:
-                progress(f"Registering {source}...")
-            engine_instance.point(source, selected_collection, progress=progress)
+                progress(f"Registering {effective_source}...")
+            engine_instance.point(effective_source, selected_collection, progress=progress)
             engine_instance.wait_for_query_surface(progress=progress)
         else:
             if progress:
@@ -88,12 +104,12 @@ def _select_collection(
 ) -> str:
     """Resolve target collection for source or collection retrieval."""
     if source is not None:
-        return requested or "default"
+        return requested or _collection_name_for_source(source)
 
     collections = registry.get_list_collections(engine_name)
     if not collections:
         ui.warning("No collections found.")
-        ui.info("Run 'fitz retrieve \"question\" --source ./docs' to get started.")
+        ui.info("Run 'fitz query \"question\"' from your documents folder to get started.")
         raise typer.Exit(0)
 
     if requested is not None:

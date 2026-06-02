@@ -34,7 +34,7 @@ import typer  # noqa: E402
 
 app = typer.Typer(
     name="fitz",
-    help='Fitz - local-first retrieval. Start with: fitz retrieve "your question" --source ./docs',
+    help='Fitz - local-first retrieval. Start with: fitz query "your question"',
     no_args_is_help=True,
     add_completion=False,
 )
@@ -49,62 +49,31 @@ app = typer.Typer(
 
 @app.command("query")
 def query(
-    question: Optional[str] = typer.Argument(None, help="Question to ask."),
+    question: Optional[str] = typer.Argument(None, help="Question to retrieve evidence for."),
     source: Optional[Path] = typer.Option(
-        None, "--source", "-s", help="Path to documents (registers before querying)."
+        None,
+        "--source",
+        "-s",
+        help="Path to documents. Defaults to the current directory.",
     ),
-    collection: Optional[str] = typer.Option(None, "--collection", "-c", help="Collection name."),
+    collection: Optional[str] = typer.Option(
+        None,
+        "--collection",
+        "-c",
+        help="Collection name. Defaults to the source folder name.",
+    ),
     engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
-    chat: bool = typer.Option(False, "--chat", help="Interactive chat mode."),
-    endpoint: Optional[str] = typer.Option(
-        None,
-        "--endpoint",
-        help=(
-            "OpenAI-compatible chat endpoint URL "
-            "(e.g. http://localhost:8080/v1, https://api.openai.com/v1). "
-            "Overrides chat_base_url; pairs with --model or --synthesizer endpoint/<model>."
-        ),
-    ),
-    synthesizer: Optional[str] = typer.Option(
-        None,
-        "--synthesizer",
-        help=(
-            "Provider/model spec for answer synthesis " "(e.g. endpoint/qwen2.5-7b, openai/gpt-4o)."
-        ),
-    ),
-    model: Optional[str] = typer.Option(
-        None,
-        "--model",
-        "-m",
-        help=(
-            "Chat model name to send to --endpoint. "
-            "If --endpoint is set without --model, the engine's "
-            "configured synthesizer model is used when present."
-        ),
-    ),
-    api_key_env: Optional[str] = typer.Option(
-        None,
-        "--api-key-env",
-        help=(
-            "Environment variable name holding an API key for --endpoint "
-            "(e.g. OPENAI_API_KEY, TOGETHER_API_KEY). Omit for "
-            "unauthenticated local servers."
-        ),
-    ),
 ) -> None:
-    """Query the knowledge base. Use --source to register docs, --chat for interactive mode."""
-    from fitz_sage.cli.commands import query as mod
+    """Retrieve governed evidence. Defaults to indexing the current directory."""
+    from fitz_sage.cli.commands import retrieve as mod
 
     mod.command(
         question=question,
         source=source,
         collection=collection,
         engine=engine,
-        chat=chat,
-        endpoint=endpoint,
-        synthesizer=synthesizer,
-        model=model,
-        api_key_env=api_key_env,
+        output_format="text",
+        top_k=None,
     )
 
 
@@ -112,9 +81,17 @@ def query(
 def retrieve(
     question: Optional[str] = typer.Argument(None, help="Question to retrieve evidence for."),
     source: Optional[Path] = typer.Option(
-        None, "--source", "-s", help="Path to documents (registers before retrieval)."
+        None,
+        "--source",
+        "-s",
+        help="Path to documents. Defaults to the current directory.",
     ),
-    collection: Optional[str] = typer.Option(None, "--collection", "-c", help="Collection name."),
+    collection: Optional[str] = typer.Option(
+        None,
+        "--collection",
+        "-c",
+        help="Collection name. Defaults to the source folder name.",
+    ),
     engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
     output_format: str = typer.Option(
         "text",
