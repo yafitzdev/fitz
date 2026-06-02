@@ -6,7 +6,6 @@ Benchmark results and analysis for fitz-sage retrieval and governance.
 |---|---|
 | `beir-results.md` | BEIR benchmark scores for retrieval quality |
 | `fitz-gov-5.0-results.md` | Governance pipeline v5.0 evaluation results |
-| `archive/` | Historical results and working notes from earlier evaluation rounds |
 
 ## Benchmarks tracked
 
