@@ -663,6 +663,16 @@ class TestEvidence:
         assert pack.mode == AnswerMode.TRUSTWORTHY
         assert pack.reasons == ["Enough evidence at two docs."]
         assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
+        for timing_name in (
+            "Query prep",
+            "Qwen query keywords",
+            "Recall",
+            "Rerank",
+            "Read",
+            "Retrieval",
+            "Governance",
+        ):
+            assert timing_name in pack.timings
         cutoff = pack.metadata["governance_cutoff"]
         assert cutoff["evaluated"] == 2
         assert cutoff["selected"] == 2

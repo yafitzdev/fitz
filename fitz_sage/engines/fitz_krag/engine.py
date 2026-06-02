@@ -10,7 +10,6 @@ content is read on demand after ranking.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -31,7 +30,8 @@ from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
-    from fitz_sage.engines.fitz_krag.types import Address, ReadResult
+    from fitz_sage.engines.fitz_krag.query_pipeline import RetrievalOutcome
+    from fitz_sage.engines.fitz_krag.types import ReadResult
 
 logger = get_logger(__name__)
 
@@ -94,34 +94,6 @@ def _build_provider_config(
         cfg["auth"] = {"api_key_env": api_key_env}
 
     return cfg or None
-
-
-def _merge_query_keywords(*keyword_lists: list[str]) -> list[str]:
-    """Merge query keyword lists while preserving first occurrence."""
-    merged: list[str] = []
-    seen: set[str] = set()
-    for keywords in keyword_lists:
-        for keyword in keywords:
-            value = str(keyword).strip()
-            key = value.lower()
-            if value and key not in seen:
-                seen.add(key)
-                merged.append(value)
-    return merged
-
-
-@dataclass
-class _RetrievalOutcome:
-    """Carrier for the retrieval half of the KRAG pipeline.
-
-    Produced by ``_retrieve_core``; consumed by ``answer()`` and ``retrieve()``.
-    """
-
-    sanitized: str
-    expanded: list[ReadResult]
-    addresses: list[Address]
-    timings: list[tuple[str, float]]
-    profile: Any | None = None
 
 
 class FitzKragEngine:
@@ -462,6 +434,8 @@ class FitzKragEngine:
                 governance=self._governance,
                 max_hops=self._config.max_hops,
             )
+
+        self._query_pipeline = self._build_query_pipeline()
 
         _t4 = _t.perf_counter()
         logger.debug(f"[init] components: {(_t4-_t3)*1000:.0f}ms")
@@ -826,39 +800,6 @@ class FitzKragEngine:
             except Exception as e:
                 raise KnowledgeError(f"Evidence retrieval failed: {e}") from e
 
-    def _add_semantic_query_keywords(self, query: str, plan: Any) -> Any:
-        """Use local Qwen for keyword-only query expansion."""
-        batcher = getattr(self, "_semantic_keyword_batcher", None)
-        if batcher is None:
-            return plan
-
-        try:
-            batch_result = batcher.batch_classify(
-                query,
-                include_analysis=False,
-                include_detection=False,
-                include_rewriting=False,
-                include_extended=False,
-                include_keywords=True,
-            )
-        except Exception as e:
-            logger.debug(f"Semantic query keyword expansion failed: {e}")
-            return plan
-
-        if not batch_result.keywords:
-            return plan
-
-        from fitz_sage.engines.fitz_krag.query_planner import QueryPlan
-
-        return QueryPlan(
-            retrieval_query=plan.retrieval_query,
-            analysis=plan.analysis,
-            detection=plan.detection,
-            rewrite_result=plan.rewrite_result,
-            extended_signals=plan.extended_signals,
-            keywords=_merge_query_keywords(plan.keywords, batch_result.keywords),
-        )
-
     def _build_evidence_items(self, results: list["ReadResult"]) -> list[EvidenceItem]:
         """Convert KRAG read results into stable core evidence items."""
         items: list[EvidenceItem] = []
@@ -892,7 +833,7 @@ class FitzKragEngine:
             return text
         return text[: max_chars - 3].rstrip() + "..."
 
-    def _boost_queried_files(self, outcome: "_RetrievalOutcome") -> None:
+    def _boost_queried_files(self, outcome: "RetrievalOutcome") -> None:
         """Flag the files this query surfaced for the background worker.
 
         Bumps them to P1 so the worker prioritizes their eager indexing and,
@@ -959,6 +900,25 @@ class FitzKragEngine:
             if hasattr(router, "_allow_llm_agentic"):
                 router._allow_llm_agentic = original_allow_agentic
 
+    def _build_query_pipeline(self) -> Any:
+        """Build the query-side retrieval pipeline from current engine components."""
+        from fitz_sage.engines.fitz_krag.query_pipeline import QueryPipeline
+
+        return QueryPipeline(
+            config=self._config,
+            query_planner=getattr(self, "_query_planner", None),
+            query_batcher=self._query_batcher,
+            semantic_keyword_batcher=getattr(self, "_semantic_keyword_batcher", None),
+            retrieval_pass=self._retrieval_pass,
+            hop_controller=self._hop_controller,
+            expander=self._expander,
+            table_handler=self._table_handler,
+            retrieval_strategy_scope=self._retrieval_strategy_scope,
+            fast_analyze=self._fast_analyze,
+            needs_detection=self._needs_detection,
+            build_detection_summary=self._build_detection_summary,
+        )
+
     def _retrieve_core(
         self,
         query: Query,
@@ -968,164 +928,21 @@ class FitzKragEngine:
         allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
         expand_context: bool = True,
-    ) -> _RetrievalOutcome:
+    ) -> "RetrievalOutcome":
         """Run the retrieval half of the KRAG pipeline.
 
         Analyze + detect → retrieve → read → expand → table queries. Returns
         the expanded ReadResults (pre-governance, pre-compression). Callers
         guarantee non-empty query text and supply the query-scoped context.
         """
-        import re
-        import time
-
-        from fitz_sage.engines.fitz_krag.query_planner import (
-            DeterministicQueryPlanner,
-            plan_from_batch_result,
-        )
-        from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
-
-        # 0. Sanitize and normalize query
-        sanitized = re.sub(r"<[^>]+>", "", query.text).strip()
-        if not sanitized:
-            sanitized = query.text.strip()
-
-        # Truncate only pathologically long input — multi-query
-        # decomposition handles genuinely long queries downstream.
-        MAX_QUERY_LENGTH = 8000
-        if len(sanitized) > MAX_QUERY_LENGTH:
-            original_length = len(sanitized)
-            sanitized = sanitized[:MAX_QUERY_LENGTH]
-            logger.debug(
-                "Query truncated", original_length=original_length, new_length=MAX_QUERY_LENGTH
-            )
-
-        _progress = progress or (lambda _: None)
-        timings: list[tuple[str, float]] = []
-
-        _progress("Analyzing query...")
-        t0 = time.perf_counter()
-
-        if use_query_intelligence is None:
-            use_query_intelligence = self._config.query_intelligence is not None
-
-        planner = getattr(self, "_query_planner", None) or DeterministicQueryPlanner()
-        plan = planner.plan(sanitized, detection_enabled=True)
-
-        if use_query_intelligence:
-            # Query prep — one batched LLM call: rewrite + analysis +
-            # detection + keywords. Optional enhancement over the no-chat plan.
-            fast_analysis = self._fast_analyze(sanitized)
-            need_llm_analysis = fast_analysis is None
-            need_detection = self._needs_detection(sanitized)
-
-            try:
-                batch_result = self._query_batcher.batch_classify(
-                    sanitized,
-                    include_analysis=need_llm_analysis,
-                    include_detection=need_detection,
-                    include_rewriting=True,
-                    include_extended=True,
-                    include_keywords=True,
-                    conversation_context=query.metadata.get("conversation_context"),
-                )
-                llm_detection = (
-                    self._build_detection_summary(batch_result.detection_results)
-                    if need_detection and batch_result.detection_results is not None
-                    else plan.detection
-                )
-                plan = plan_from_batch_result(
-                    sanitized,
-                    batch_result,
-                    fallback_analysis=fast_analysis or plan.analysis,
-                    detection=llm_detection,
-                    fallback_plan=plan,
-                )
-                if plan.rewrite_result and plan.retrieval_query != sanitized:
-                    logger.debug(
-                        "Query rewritten",
-                        original_preview=sanitized[:50],
-                        rewritten_preview=plan.retrieval_query[:50],
-                    )
-            except Exception as e:
-                logger.warning(f"Batched query intelligence failed: {e}")
-        timings.append(("Query prep", time.perf_counter() - t0))
-
-        t0 = time.perf_counter()
-        plan = self._add_semantic_query_keywords(sanitized, plan)
-        timings.append(("Qwen query keywords", time.perf_counter() - t0))
-
-        # Build retrieval profile — single object with all gates and signals
-        profile = build_retrieval_profile(
-            plan.analysis,
-            plan.detection,
-            self._config,
-            extended_signals=plan.extended_signals,
-            keywords=plan.keywords,
-        )
-
-        # 2. Retrieve — one retrieval pass, or a multi-hop loop of passes.
-        #    A pass is Tiers 1-4: retrieve -> fuse -> rerank -> read.
-        _progress("Retrieving relevant sources...")
-        t0 = time.perf_counter()
-        use_multi_hop = (
-            allow_llm_strategies and self._hop_controller and self._config.enable_multi_hop
-        )
-        with self._retrieval_strategy_scope(allow_llm_strategies):
-            if use_multi_hop:
-                read_results = self._hop_controller.execute(plan.retrieval_query, profile)
-            else:
-                read_results = self._retrieval_pass.run(
-                    plan.retrieval_query,
-                    profile,
-                    rewrite_result=plan.rewrite_result,
-                    progress=progress,
-                )
-        addresses = [r.address for r in read_results]
-        retrieval_duration = time.perf_counter() - t0
-        if not use_multi_hop:
-            pass_timings = getattr(self._retrieval_pass, "last_timings", {})
-            timings.extend(
-                (label, pass_timings[key])
-                for key, label in (
-                    ("recall", "Recall"),
-                    ("rerank", "Rerank"),
-                    ("read", "Read"),
-                )
-                if key in pass_timings
-            )
-        timings.append(("Retrieval", retrieval_duration))
-
-        if not read_results:
-            return _RetrievalOutcome(
-                sanitized=sanitized,
-                expanded=[],
-                addresses=[],
-                timings=timings,
-                profile=profile,
-            )
-
-        if expand_context:
-            # 4. Expand with context
-            t0 = time.perf_counter()
-            expanded = self._expander.expand(
-                read_results, entity_expansion_limit=profile.entity_expansion_limit
-            )
-            timings.append(("Expand context", time.perf_counter() - t0))
-        else:
-            expanded = read_results
-
-        # 4.5. Execute table queries (SQL generation + execution)
-        if execute_table_queries:
-            t0 = time.perf_counter()
-            expanded = self._table_handler.process(sanitized, expanded)
-            timings.append(("Table queries", time.perf_counter() - t0))
-
-        return _RetrievalOutcome(
-            sanitized=sanitized,
-            expanded=expanded,
-            addresses=addresses,
-            timings=timings,
-            profile=profile,
+        pipeline = getattr(self, "_query_pipeline", None) or self._build_query_pipeline()
+        return pipeline.retrieve(
+            query,
+            progress=progress,
+            use_query_intelligence=use_query_intelligence,
+            allow_llm_strategies=allow_llm_strategies,
+            execute_table_queries=execute_table_queries,
+            expand_context=expand_context,
         )
 
     def _build_gap_context(
