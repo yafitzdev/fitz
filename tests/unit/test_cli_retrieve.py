@@ -201,3 +201,42 @@ class TestRetrieveCommand:
         assert mock_engine.point.call_args.args[1] == tmp_path.name
         mock_engine.wait_for_query_surface.assert_called_once()
         mock_engine.evidence.assert_called_once()
+
+    def test_retrieve_spawns_daemon_when_indexing_is_pending(self):
+        """CLI query returns evidence, then hands remaining enrichment to a daemon."""
+        pack = EvidencePack(
+            query="What changed?",
+            mode=AnswerMode.TRUSTWORTHY,
+            indexing_status={
+                "total": 3,
+                "complete": False,
+                "fully_enriched": False,
+            },
+        )
+
+        mock_engine = MagicMock()
+        mock_engine.evidence.return_value = pack
+
+        mock_registry = MagicMock()
+        mock_registry.list.return_value = ["fitz_krag"]
+        mock_caps = MagicMock()
+        mock_caps.supports_persistent_ingest = True
+        mock_registry.get_capabilities.return_value = mock_caps
+        mock_registry.get_list_collections.return_value = ["docs"]
+
+        with (
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry", return_value=mock_registry
+            ),
+            patch("fitz_sage.cli.commands.retrieve.get_default_engine", return_value="fitz_krag"),
+            patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
+            patch("fitz_sage.cli.commands.retrieve.display_evidence_pack"),
+            patch("fitz_sage.cli.commands.retrieve._spawn_index_daemon") as spawn,
+        ):
+            result = runner.invoke(app, ["retrieve", "What changed?", "--collection", "docs"])
+
+        assert result.exit_code == 0
+        mock_engine.stop_background_indexing.assert_called_once()
+        spawn.assert_called_once()
+        assert spawn.call_args.args[0] == "docs"
+        assert spawn.call_args.args[1] == "fitz_krag"

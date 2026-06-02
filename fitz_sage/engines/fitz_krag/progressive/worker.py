@@ -77,6 +77,32 @@ class BackgroundIngestWorker:
         self._thread.start()
         logger.info("Background ingestion worker started")
 
+    def run_until_deep_complete(self) -> None:
+        """Run query-ready and deep enrichment synchronously, then exit."""
+        query_ready = False
+        try:
+            self._parse_phase()
+            self._parse_done.set()
+            self._keyword_phase()
+            query_ready = True
+            self._eager_done.set()
+        except Exception as e:
+            self._failure = e
+            logger.error(f"Background worker failed: {e}")
+        finally:
+            self._parse_done.set()
+            self._eager_done.set()
+
+        if not query_ready or self._failure is not None or self._stop_event.is_set():
+            return
+
+        try:
+            self._deep_enrich_phase()
+            self._finalize_phase()
+        except Exception as e:
+            self._deep_failure = e
+            logger.error(f"Background deep enrichment failed: {e}")
+
     def stop(self) -> None:
         """Signal stop, join with timeout."""
         self._stop_event.set()

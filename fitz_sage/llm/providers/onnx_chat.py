@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 from dataclasses import asdict, dataclass
@@ -260,6 +261,7 @@ class OnnxChat:
 
     def _download_snapshot(self) -> Path:
         """Download the managed Qwen snapshot into the Hugging Face cache."""
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
         try:
             from huggingface_hub import snapshot_download
         except ImportError as e:

@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +17,84 @@ from fitz_sage.logging.logger import get_logger
 from fitz_sage.runtime import create_engine, get_default_engine, get_engine_registry
 
 logger = get_logger(__name__)
+
+
+def _indexing_needs_daemon(status: dict) -> bool:
+    """Return whether a detached worker should continue enrichment."""
+    if not status:
+        return False
+    if status.get("fully_enriched", status.get("complete", True)):
+        return False
+    return bool(status.get("total", 0))
+
+
+def _daemon_pid_path(collection: str, cwd: Path) -> Path:
+    """Return the PID file path for a collection's detached index worker."""
+    return cwd / ".fitz" / "collections" / collection / "index_daemon.pid"
+
+
+def _pid_is_running(pid: int) -> bool:
+    """Return whether a process id appears to still be alive."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _read_running_daemon_pid(pid_path: Path) -> int | None:
+    """Return an active daemon PID from a PID file, if one exists."""
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if _pid_is_running(pid) else None
+
+
+def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> bool:
+    """Start a detached process that continues indexing this collection."""
+    pid_path = _daemon_pid_path(collection, cwd)
+    if _read_running_daemon_pid(pid_path) is not None:
+        return True
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "fitz_sage.cli.cli",
+        "index-daemon",
+        "--collection",
+        collection,
+        "--engine",
+        engine_name,
+    ]
+
+    kwargs: dict = {
+        "cwd": str(cwd),
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = (
+            getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        kwargs["startupinfo"] = startupinfo
+    else:
+        kwargs["start_new_session"] = True
+
+    try:
+        process = subprocess.Popen(cmd, **kwargs)
+        pid_path.parent.mkdir(parents=True, exist_ok=True)
+        pid_path.write_text(str(process.pid), encoding="utf-8")
+        return True
+    except Exception as e:
+        logger.debug(f"Failed to spawn index daemon: {e}")
+        return False
 
 
 def _default_source(source: Optional[Path], collection: Optional[str]) -> Optional[Path]:
@@ -90,6 +171,16 @@ def command(
             print(pack.to_json())
         else:
             display_evidence_pack(pack, max_items=top_k or 10)
+        if _indexing_needs_daemon(pack.indexing_status):
+            stop_worker = getattr(engine_instance, "stop_background_indexing", None)
+            if callable(stop_worker):
+                stop_worker()
+            if output_format != "json" and _spawn_index_daemon(
+                selected_collection, engine_name, Path.cwd()
+            ):
+                ui.info("Indexing continues in the background.")
+            elif output_format == "json":
+                _spawn_index_daemon(selected_collection, engine_name, Path.cwd())
     except Exception as e:
         ui.error(f"Retrieve failed: {e}")
         logger.debug("Retrieve error", exc_info=True)

@@ -1535,19 +1535,7 @@ class FitzKragEngine:
         # implementation shared by the synchronous bootstrap below and the
         # background worker. Bound to the engine's collection so it writes
         # the same stores retrieval reads.
-        from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
-
-        core = KragIngestPipeline(
-            config=self._config,
-            chat=self._chat,
-            connection_manager=self._connection_manager,
-            collection=self._config.collection,
-            table_store=self._table_store,
-            sqlite_table_store=self._sqlite_table_store,
-            entity_graph_store=self._entity_graph_store,
-            enricher_chat=self._enricher_chat,
-            summarizer_chat=self._summarizer_chat,
-        )
+        core = self._build_ingest_core()
         core.delete_files_not_in_paths(set(manifest_entries))
 
         # Fast synchronous symbol indexing (AST only, no LLM) via the core's
@@ -1568,6 +1556,43 @@ class FitzKragEngine:
             self._bg_worker.start()
 
         return manifest
+
+    def continue_indexing(self) -> None:
+        """Continue persisted indexing for the loaded collection, then exit."""
+        if not self._manifest or not self._source_dir:
+            return
+
+        from fitz_sage.engines.fitz_krag.progressive.worker import BackgroundIngestWorker
+
+        core = self._build_ingest_core()
+        worker = BackgroundIngestWorker(
+            manifest=self._manifest,
+            source_dir=self._source_dir,
+            core=core,
+        )
+        worker.run_until_deep_complete()
+
+    def stop_background_indexing(self) -> None:
+        """Stop the in-process background worker if one is running."""
+        if self._bg_worker:
+            self._bg_worker.stop()
+            self._bg_worker = None
+
+    def _build_ingest_core(self) -> Any:
+        """Build the shared KRAG ingestion core for the current collection."""
+        from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
+
+        return KragIngestPipeline(
+            config=self._config,
+            chat=self._chat,
+            connection_manager=self._connection_manager,
+            collection=self._config.collection,
+            table_store=self._table_store,
+            sqlite_table_store=self._sqlite_table_store,
+            entity_graph_store=self._entity_graph_store,
+            enricher_chat=self._enricher_chat,
+            summarizer_chat=self._summarizer_chat,
+        )
 
     def _ensure_standard_llm_available(
         self,

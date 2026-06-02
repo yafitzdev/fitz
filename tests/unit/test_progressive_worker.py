@@ -233,6 +233,25 @@ class TestScheduling:
         core.finalize.assert_not_called()
         assert manifest.get("src/app.py").state == FileState.REGISTERED
 
+    def test_run_until_deep_complete_exits_after_finalize(self, tmp_path: Path) -> None:
+        """Detached daemon mode completes deep enrichment without warm-looping."""
+        manifest = FileManifest(tmp_path / "manifest.json")
+        manifest.add(_make_entry("docs/readme.md", file_type=".md"))
+
+        core = MagicMock()
+        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
+        worker._warm_loop = MagicMock()
+
+        worker.run_until_deep_complete()
+
+        core.parse_file.assert_called_once()
+        core.keyword_file.assert_called_once_with("id-docs/readme.md", ".md")
+        core.link_entities_file.assert_called_once_with("id-docs/readme.md", ".md")
+        core.build_hierarchy_file.assert_called_once_with("id-docs/readme.md", ".md")
+        core.finalize.assert_called_once()
+        worker._warm_loop.assert_not_called()
+        assert manifest.get("docs/readme.md").state == FileState.ENRICHED
+
 
 # -------------------------------------------------------------------------
 # 3. boost_files sets P1 on queried files, P2 on directory siblings

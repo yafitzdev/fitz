@@ -912,6 +912,25 @@ class TestPoint:
             {"README.md", "hierarchical_rag/feedback.md"}
         )
 
+    def test_continue_indexing_runs_worker_to_deep_completion(self, tmp_path):
+        """Persisted indexing resumes without rebuilding the manifest."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._manifest = MagicMock()
+        engine._source_dir = tmp_path / "docs"
+        engine._build_ingest_core = MagicMock(return_value=MagicMock())
+
+        with patch(
+            "fitz_sage.engines.fitz_krag.progressive.worker.BackgroundIngestWorker"
+        ) as worker_cls:
+            worker = worker_cls.return_value
+
+            engine.continue_indexing()
+
+        worker_cls.assert_called_once()
+        assert worker_cls.call_args.kwargs["manifest"] is engine._manifest
+        assert worker_cls.call_args.kwargs["source_dir"] == engine._source_dir
+        worker.run_until_deep_complete.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # TestConfig
