@@ -131,7 +131,7 @@ class RetrievalRouter:
 
             # Submit agentic search in the same pool
             agentic_future: Future | None = None
-            if self._agentic_strategy and run_agentic:
+            if self._agentic_strategy and run_agentic and self._has_agentic_pending_files():
                 _progress("Supplemental scan: checking files still awaiting enriched index...")
                 agentic_future = pool.submit(self._run_agentic, query, limit, _progress)
 
@@ -229,6 +229,14 @@ class RetrievalRouter:
         except Exception as e:
             logger.warning(f"Agentic strategy failed: {e}")
             return []
+
+    def _has_agentic_pending_files(self) -> bool:
+        """Check whether supplemental search has a not-query-ready file surface."""
+        try:
+            return bool(self._agentic_strategy.has_pending_files())
+        except Exception as e:
+            logger.debug(f"Agentic pending-file check failed: {e}")
+            return False
 
     def _tag_temporal(self, addresses: list[Address], ref_text: str) -> list[Address]:
         """Tag addresses with the temporal reference that produced them."""

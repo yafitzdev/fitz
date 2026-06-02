@@ -54,6 +54,12 @@ class AgenticSearchStrategy:
         self._config = config
         self._cache_dir = cache_dir
 
+    def has_pending_files(self) -> bool:
+        """Return whether supplemental disk search has any files to inspect."""
+        return any(
+            not is_query_ready_state(entry.state) for entry in self._manifest.entries().values()
+        )
+
     def retrieve(self, query: str, limit: int, *, allow_llm: bool = True) -> list[Address]:
         """Retrieve addresses for not-query-ready files via file selection.
 

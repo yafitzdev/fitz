@@ -33,7 +33,10 @@ from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.ingestion.import_graph_store import ImportGraphStore
 from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
 from fitz_sage.engines.fitz_krag.ingestion.schema import ensure_schema
-from fitz_sage.engines.fitz_krag.ingestion.section_store import SectionStore
+from fitz_sage.engines.fitz_krag.ingestion.section_store import (
+    CORPUS_SUMMARY_SCHEMA_VERSION,
+    SectionStore,
+)
 from fitz_sage.engines.fitz_krag.ingestion.strategies.base import IngestResult
 from fitz_sage.engines.fitz_krag.ingestion.strategies.python_code import (
     PythonCodeIngestStrategy,
@@ -825,11 +828,23 @@ class KragIngestPipeline:
     def _build_corpus_summary(self) -> None:
         """Roll L1 file summaries up into the L2 corpus summary and store it."""
         l1_summaries = self._section_store.get_hierarchy_summaries()
+        self._delete_corpus_summary()
         if not l1_summaries:
             return
+        source_signature = self._corpus_summary_source_signature(l1_summaries)
         corpus_summary = self._generate_corpus_summary(l1_summaries)
         if corpus_summary:
-            self._store_corpus_summary(corpus_summary)
+            self._store_corpus_summary(corpus_summary, source_signature)
+
+    def _delete_corpus_summary(self) -> None:
+        """Remove the synthetic L2 summary before regeneration."""
+        self._section_store.delete_by_file(_CORPUS_FILE_ID)
+        self._raw_store.delete(_CORPUS_FILE_ID)
+
+    def _corpus_summary_source_signature(self, l1_summaries: list[str]) -> str:
+        """Hash the L1 rollup inputs so stored L2 summaries are traceable."""
+        normalized = "\n".join(sorted(s.strip() for s in l1_summaries if s.strip()))
+        return hashlib.sha256(normalized.encode()).hexdigest()
 
     def _generate_corpus_summary(self, l1_summaries: list[str]) -> str | None:
         """Generate the L2 corpus-level summary from L1 summaries."""
@@ -851,7 +866,7 @@ class KragIngestPipeline:
             logger.warning(f"L2 corpus summary failed: {e}")
             return None
 
-    def _store_corpus_summary(self, summary: str) -> None:
+    def _store_corpus_summary(self, summary: str, source_signature: str) -> None:
         """Persist the L2 summary as a retrievable section under a synthetic raw file."""
         content_hash = hashlib.sha256(summary.encode()).hexdigest()
         self._raw_store.upsert(
@@ -877,7 +892,12 @@ class KragIngestPipeline:
                     "position": 0,
                     "keywords": [],
                     "entities": [],
-                    "metadata": {"is_corpus_summary": True, "is_hierarchy_summary": True},
+                    "metadata": {
+                        "is_corpus_summary": True,
+                        "is_hierarchy_summary": True,
+                        "corpus_summary_schema": CORPUS_SUMMARY_SCHEMA_VERSION,
+                        "source_signature": source_signature,
+                    },
                 }
             ]
         )

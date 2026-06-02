@@ -244,6 +244,28 @@ class TestNoLlmRetrieval:
         assert len(result) == 1
         assert result[0].location == "docs/raw.md"
 
+    def test_has_pending_files_tracks_query_ready_manifest_state(self):
+        """Supplemental search is needed only while at least one file is below query-ready."""
+        not_ready = _generic_entry("docs/raw.md")
+        ready = _generic_entry("docs/ready.md")
+        ready.state = "query_ready"
+        manifest = MagicMock()
+        manifest.entries.return_value = {
+            not_ready.rel_path: not_ready,
+            ready.rel_path: ready,
+        }
+        strategy = AgenticSearchStrategy(
+            manifest=manifest,
+            source_dir=Path("/project"),
+            chat_factory=None,
+            config=MagicMock(),
+        )
+
+        assert strategy.has_pending_files() is True
+
+        not_ready.state = "enriched"
+        assert strategy.has_pending_files() is False
+
 
 # ---------------------------------------------------------------------------
 # Tests: path-match fallback

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 TABLE = f"{TABLE_PREFIX}section_index"
 FTS = f"{TABLE_PREFIX}section_fts"
+CORPUS_SUMMARY_SCHEMA_VERSION = 2
 
 
 class SectionStore:
@@ -93,6 +94,13 @@ class SectionStore:
             FROM {FTS}
             JOIN {TABLE} s ON s.rowid = {FTS}.rowid
             WHERE {FTS} MATCH ?
+              AND (
+                  json_extract(s.metadata, '$.is_corpus_summary') IS NULL
+                  OR (
+                      json_extract(s.metadata, '$.is_corpus_summary') != 'true'
+                      AND json_extract(s.metadata, '$.is_corpus_summary') != 1
+                  )
+              )
             ORDER BY rank
             LIMIT ?
         """
@@ -192,11 +200,14 @@ class SectionStore:
             SELECT id, raw_file_id, title, level, page_start, page_end,
                    content, summary, parent_section_id, position, keywords, entities, metadata
             FROM {TABLE}
-            WHERE json_extract(metadata, '$.is_corpus_summary') = 'true'
-               OR json_extract(metadata, '$.is_corpus_summary') = 1
+            WHERE (
+                json_extract(metadata, '$.is_corpus_summary') = 'true'
+                OR json_extract(metadata, '$.is_corpus_summary') = 1
+            )
+            AND json_extract(metadata, '$.corpus_summary_schema') = ?
         """
         with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql).fetchall()
+            rows = conn.execute(sql, (CORPUS_SUMMARY_SCHEMA_VERSION,)).fetchall()
         return [_row_to_dict(row) for row in rows]
 
     def get_hierarchy_summaries(self) -> list[str]:

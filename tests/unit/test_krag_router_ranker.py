@@ -272,6 +272,7 @@ class TestRetrievalRouter:
         code_strat = MagicMock()
         code_strat.retrieve.return_value = []
         agentic = MagicMock()
+        agentic.has_pending_files.return_value = True
         agentic.retrieve.return_value = [
             _addr(
                 AddressKind.FILE,
@@ -302,6 +303,25 @@ class TestRetrievalRouter:
         progress.assert_any_call(
             "Supplemental scan: added 2 early candidate(s) from 2 file(s) (a.md, b.md)"
         )
+
+    def test_agentic_scan_is_skipped_without_pending_files(self):
+        """Fully query-ready collections do not emit supplemental scan noise."""
+        code_strat = MagicMock()
+        code_strat.retrieve.return_value = []
+        agentic = MagicMock()
+        agentic.has_pending_files.return_value = False
+        progress = MagicMock()
+
+        router = RetrievalRouter(
+            code_strategy=code_strat,
+            config=_make_config(top_addresses=10),
+            agentic_strategy=agentic,
+        )
+
+        router.retrieve("key facts", progress=progress)
+
+        agentic.retrieve.assert_not_called()
+        progress.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -127,6 +127,10 @@ class TestL2CorpusSummary:
 
     def test_finalize_stores_l2_corpus_summary(self):
         """finalize rolls L1 summaries into an L2 summary stored as a section."""
+        from fitz_sage.engines.fitz_krag.ingestion.section_store import (
+            CORPUS_SUMMARY_SCHEMA_VERSION,
+        )
+
         chat = MagicMock()
         chat.chat.return_value = "This corpus documents the system architecture."
         core = _make_core(chat=chat)
@@ -143,7 +147,11 @@ class TestL2CorpusSummary:
         stored = core._section_store.upsert_batch.call_args[0][0]
         assert len(stored) == 1
         assert stored[0]["metadata"]["is_corpus_summary"] is True
+        assert stored[0]["metadata"]["corpus_summary_schema"] == CORPUS_SUMMARY_SCHEMA_VERSION
+        assert stored[0]["metadata"]["source_signature"]
         assert stored[0]["content"] == "This corpus documents the system architecture."
+        core._section_store.delete_by_file.assert_called_once_with("__krag_corpus__")
+        core._raw_store.delete.assert_called_once_with("__krag_corpus__")
 
     def test_finalize_skips_l2_without_l1_summaries(self):
         """No L1 summaries means no L2 corpus summary is stored."""
@@ -156,6 +164,8 @@ class TestL2CorpusSummary:
         core.finalize()
 
         core._section_store.upsert_batch.assert_not_called()
+        core._section_store.delete_by_file.assert_called_once_with("__krag_corpus__")
+        core._raw_store.delete.assert_called_once_with("__krag_corpus__")
 
     def test_l2_failure_does_not_crash(self):
         """An LLM failure during L2 generation is caught; nothing is stored."""
@@ -171,3 +181,5 @@ class TestL2CorpusSummary:
         core.finalize()
 
         core._section_store.upsert_batch.assert_not_called()
+        core._section_store.delete_by_file.assert_called_once_with("__krag_corpus__")
+        core._raw_store.delete.assert_called_once_with("__krag_corpus__")

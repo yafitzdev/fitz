@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from fitz_sage.engines.fitz_krag.ingestion.section_store import SectionStore, _row_to_dict
+from fitz_sage.engines.fitz_krag.ingestion.section_store import (
+    CORPUS_SUMMARY_SCHEMA_VERSION,
+    SectionStore,
+    _row_to_dict,
+)
 
 
 @pytest.fixture
@@ -175,6 +180,99 @@ class TestGetByFile:
         assert len(results) == 2
         assert results[0]["id"] == "sec1"
         assert results[1]["id"] == "sec2"
+
+
+class TestGetCorpusSummaries:
+    def test_filters_stale_corpus_summary_schema(self, tmp_path: Path):
+        from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
+        from fitz_sage.engines.fitz_krag.ingestion.schema import ensure_schema
+        from fitz_sage.storage.config import StorageConfig
+        from fitz_sage.storage.sqlite import SqliteConnectionManager
+
+        cm = SqliteConnectionManager(StorageConfig(storage_path=tmp_path))
+        collection = "test_collection"
+        ensure_schema(cm, collection)
+        raw_store = RawFileStore(cm, collection)
+        store = SectionStore(cm, collection)
+        raw_store.upsert("old-file", "__corpus_summary__", "old", "old-hash", ".md", 3)
+        raw_store.upsert("new-file", "__corpus_summary__", "new", "new-hash", ".md", 3)
+        store.upsert_batch(
+            [
+                {
+                    "id": "old-summary",
+                    "raw_file_id": "old-file",
+                    "title": "Corpus Overview",
+                    "level": 0,
+                    "content": "old cybersecurity summary",
+                    "summary": "old cybersecurity summary",
+                    "position": 0,
+                    "metadata": {"is_corpus_summary": True},
+                },
+                {
+                    "id": "new-summary",
+                    "raw_file_id": "new-file",
+                    "title": "Corpus Overview",
+                    "level": 0,
+                    "content": "fresh corpus summary",
+                    "summary": "fresh corpus summary",
+                    "position": 1,
+                    "metadata": {
+                        "is_corpus_summary": True,
+                        "corpus_summary_schema": CORPUS_SUMMARY_SCHEMA_VERSION,
+                    },
+                },
+            ]
+        )
+
+        results = store.get_corpus_summaries()
+
+        assert [r["id"] for r in results] == ["new-summary"]
+        assert results[0]["content"] == "fresh corpus summary"
+
+    def test_bm25_excludes_synthetic_corpus_summaries(self, tmp_path: Path):
+        from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
+        from fitz_sage.engines.fitz_krag.ingestion.schema import ensure_schema
+        from fitz_sage.storage.config import StorageConfig
+        from fitz_sage.storage.sqlite import SqliteConnectionManager
+
+        cm = SqliteConnectionManager(StorageConfig(storage_path=tmp_path))
+        collection = "test_collection"
+        ensure_schema(cm, collection)
+        raw_store = RawFileStore(cm, collection)
+        store = SectionStore(cm, collection)
+        raw_store.upsert("corpus-file", "__corpus_summary__", "corpus", "corpus-hash", ".md", 6)
+        raw_store.upsert("doc-file", "docs/real.md", "corpus", "doc-hash", ".md", 6)
+        store.upsert_batch(
+            [
+                {
+                    "id": "corpus-summary",
+                    "raw_file_id": "corpus-file",
+                    "title": "Corpus Overview",
+                    "level": 0,
+                    "content": "corpus overview text",
+                    "summary": "corpus overview text",
+                    "position": 0,
+                    "metadata": {
+                        "is_corpus_summary": True,
+                        "corpus_summary_schema": CORPUS_SUMMARY_SCHEMA_VERSION,
+                    },
+                },
+                {
+                    "id": "real-section",
+                    "raw_file_id": "doc-file",
+                    "title": "Corpus Notes",
+                    "level": 1,
+                    "content": "corpus notes text",
+                    "summary": "corpus notes text",
+                    "position": 1,
+                    "metadata": {},
+                },
+            ]
+        )
+
+        results = store.search_bm25("corpus", limit=10)
+
+        assert [r["id"] for r in results] == ["real-section"]
 
 
 class TestDeleteByFile:
