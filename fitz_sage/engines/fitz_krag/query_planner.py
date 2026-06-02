@@ -364,7 +364,10 @@ def _specificity(query: str, detection: DetectionSummary | None) -> str:
         or detection.has_temporal_intent
     ):
         return "moderate"
-    if re.search(r"\b(overview|summarize|main themes|all|everything|survey)\b", lower):
+    if re.search(
+        r"\b(overview|summarize|summary|main themes|key facts|all|everything|survey)\b",
+        lower,
+    ):
         return "broad"
     if len(content_terms(query)) <= 4:
         return "narrow"
@@ -377,7 +380,7 @@ def _answer_type(query: str, detection: DetectionSummary | None) -> str:
         return "comparative"
     if re.search(r"\b(how do|how to|steps|procedure|workflow)\b", lower):
         return "procedural"
-    if re.search(r"\b(overview|summarize|explore|survey)\b", lower):
+    if re.search(r"\b(overview|summarize|summary|key facts|explore|survey)\b", lower):
         return "exploratory"
     return "factual"
 

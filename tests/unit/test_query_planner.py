@@ -41,6 +41,15 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.aggregation_type == AggregationType.COUNT
         assert plan.detection.fetch_multiplier == 4
 
+    def test_key_facts_query_is_broad_exploratory(self):
+        """Corpus key-facts queries should use the broad cutoff policy."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("What are the key facts in this corpus?")
+
+        assert plan.extended_signals["specificity"] == "broad"
+        assert plan.extended_signals["answer_type"] == "exploratory"
+
     def test_respects_disabled_detection(self):
         """Detection can be disabled while analysis and keywords still work."""
         planner = DeterministicQueryPlanner()

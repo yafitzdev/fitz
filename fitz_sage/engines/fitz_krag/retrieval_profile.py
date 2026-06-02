@@ -55,6 +55,9 @@ class RetrievalProfile:
 
     # Boost signals
     boost_recency: bool = False
+    has_aggregation_intent: bool = False
+    has_comparison_intent: bool = False
+    has_temporal_intent: bool = False
 
     # Context assembly
     entity_expansion_limit: int = 3
@@ -114,10 +117,16 @@ def build_retrieval_profile(
     comparison_queries: list[str] = []
     comparison_entities: list[str] = []
     boost_recency = False
+    has_aggregation_intent = False
+    has_comparison_intent = False
+    has_temporal_intent = False
 
     temporal_references: list[str] = []
 
     if detection:
+        has_aggregation_intent = bool(getattr(detection, "has_aggregation_intent", False))
+        has_comparison_intent = bool(getattr(detection, "has_comparison_intent", False))
+        has_temporal_intent = bool(getattr(detection, "has_temporal_intent", False))
         fetch_multiplier = getattr(detection, "fetch_multiplier", 1) or 1
         query_variations = list(getattr(detection, "query_variations", []) or [])
         comparison_queries = list(getattr(detection, "comparison_queries", []) or [])
@@ -188,6 +197,9 @@ def build_retrieval_profile(
         run_agentic=run_agentic,
         inject_corpus_summaries=inject_corpus_summaries,
         boost_recency=boost_recency,
+        has_aggregation_intent=has_aggregation_intent,
+        has_comparison_intent=has_comparison_intent,
+        has_temporal_intent=has_temporal_intent,
         entity_expansion_limit=entity_expansion_limit,
         specificity=specificity,
         answer_type=answer_type,

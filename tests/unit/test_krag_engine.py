@@ -58,6 +58,38 @@ def _make_query(text: str = "How does auth work?") -> MagicMock:
     return q
 
 
+def _decision(mode: AnswerMode, reason: str) -> MagicMock:
+    """Build a lightweight governance decision for cutoff tests."""
+    decision = MagicMock()
+    decision.mode = mode
+    decision.reasons = (reason,)
+    return decision
+
+
+def _evidence_results(count: int) -> tuple[list[Address], list[ReadResult]]:
+    """Build ranked address/read-result fixtures for evidence tests."""
+    addresses = [
+        Address(
+            kind=AddressKind.SECTION,
+            source_id=f"doc-{i}",
+            location=f"Section {i}",
+            summary=f"Section {i}",
+            score=1.0 - (i * 0.1),
+        )
+        for i in range(1, count + 1)
+    ]
+    results = [
+        ReadResult(
+            address=address,
+            content=f"Evidence body {i}",
+            file_path=f"docs/{i}.md",
+            line_range=(i, i),
+        )
+        for i, address in enumerate(addresses, start=1)
+    ]
+    return addresses, results
+
+
 # ---------------------------------------------------------------------------
 # TestEngineInit
 # ---------------------------------------------------------------------------
@@ -609,53 +641,122 @@ class TestEvidence:
     def test_evidence_uses_pyrrho_cutoff_over_reranked_results(self):
         """Evidence mode returns the smallest reranked prefix Pyrrho accepts."""
         engine = _make_engine()
-        addresses = [
-            Address(
-                kind=AddressKind.SECTION,
-                source_id=f"doc-{i}",
-                location=f"Section {i}",
-                summary=f"Section {i}",
-                score=1.0 - (i * 0.1),
-            )
-            for i in range(1, 4)
-        ]
-        results = [
-            ReadResult(
-                address=address,
-                content=f"Evidence body {i}",
-                file_path=f"docs/{i}.md",
-                line_range=(i, i),
-            )
-            for i, address in enumerate(addresses, start=1)
-        ]
+        addresses, results = _evidence_results(3)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
 
-        abstain = MagicMock()
-        abstain.mode = AnswerMode.ABSTAIN
-        abstain.reasons = ("Need more evidence.",)
-        trustworthy = MagicMock()
-        trustworthy.mode = AnswerMode.TRUSTWORTHY
-        trustworthy.reasons = ("Enough evidence at two docs.",)
         engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [abstain, trustworthy]
+        engine._governance.decide.side_effect = [
+            _decision(AnswerMode.ABSTAIN, "Need more evidence."),
+            _decision(AnswerMode.TRUSTWORTHY, "Enough evidence at two docs."),
+        ]
 
         pack = engine.evidence(Query(text="What happened?"), top_k=3)
 
         assert pack.mode == AnswerMode.TRUSTWORTHY
         assert pack.reasons == ["Enough evidence at two docs."]
         assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
-        assert pack.metadata["governance_cutoff"] == {
-            "evaluated": 2,
-            "selected": 2,
-            "max": 3,
-            "mode": "trustworthy",
-        }
+        cutoff = pack.metadata["governance_cutoff"]
+        assert cutoff["evaluated"] == 2
+        assert cutoff["selected"] == 2
+        assert cutoff["max"] == 3
+        assert cutoff["mode"] == "trustworthy"
+        assert cutoff["policy"]["query_shape"] == "narrow"
         first_contexts = engine._governance.decide.call_args_list[0].args[1]
         second_contexts = engine._governance.decide.call_args_list[1].args[1]
         assert len(first_contexts) == 1
         assert len(second_contexts) == 2
         engine._expander.expand.assert_not_called()
+
+    def test_broad_query_requires_minimum_trustworthy_window(self):
+        """Broad corpus queries do not stop on a top-1 trustworthy verdict."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(3)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        engine._governance = MagicMock()
+        engine._governance.decide.side_effect = [
+            _decision(AnswerMode.TRUSTWORTHY, "Top one is plausible."),
+            _decision(AnswerMode.TRUSTWORTHY, "Top two are plausible."),
+            _decision(AnswerMode.TRUSTWORTHY, "Broad window is enough."),
+        ]
+
+        pack = engine.evidence(Query(text="What are the key facts in this corpus?"), top_k=3)
+
+        assert pack.mode == AnswerMode.TRUSTWORTHY
+        assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md", "docs/3.md"]
+        assert engine._governance.decide.call_count == 3
+        cutoff = pack.metadata["governance_cutoff"]
+        assert cutoff["policy"]["query_shape"] == "broad"
+        assert cutoff["policy"]["min_trustworthy_docs"] == 3
+
+    def test_comparison_query_stops_on_disputed_after_two_docs(self):
+        """Comparison/conflict queries can stop on disputed once both sides exist."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(4)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        engine._governance = MagicMock()
+        engine._governance.decide.side_effect = [
+            _decision(AnswerMode.ABSTAIN, "Need another side."),
+            _decision(AnswerMode.DISPUTED, "Sources disagree."),
+        ]
+
+        pack = engine.evidence(Query(text="Compare React vs Vue performance"), top_k=4)
+
+        assert pack.mode == AnswerMode.DISPUTED
+        assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
+        assert engine._governance.decide.call_count == 2
+        assert pack.metadata["governance_cutoff"]["policy"]["query_shape"] == "comparison"
+
+    def test_narrow_query_disputed_needs_patience_window(self):
+        """Narrow queries keep going for two more docs before disputed stops."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(4)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        engine._governance = MagicMock()
+        engine._governance.decide.side_effect = [
+            _decision(AnswerMode.ABSTAIN, "Need evidence."),
+            _decision(AnswerMode.DISPUTED, "Conflict appears."),
+            _decision(AnswerMode.DISPUTED, "Conflict remains."),
+            _decision(AnswerMode.DISPUTED, "Conflict persisted."),
+        ]
+
+        pack = engine.evidence(Query(text="What happened to invoice 17?"), top_k=4)
+
+        assert pack.mode == AnswerMode.DISPUTED
+        assert [item.file_path for item in pack.items] == [
+            "docs/1.md",
+            "docs/2.md",
+            "docs/3.md",
+            "docs/4.md",
+        ]
+        assert engine._governance.decide.call_count == 4
+        cutoff = pack.metadata["governance_cutoff"]
+        assert cutoff["policy"]["query_shape"] == "narrow"
+        assert cutoff["policy"]["disputed_patience_docs"] == 2
+
+    def test_broad_query_disputed_continues_to_cutoff(self):
+        """Broad queries do not stop on disputed until the configured cutoff."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(4)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        engine._governance = MagicMock()
+        engine._governance.decide.side_effect = [
+            _decision(AnswerMode.DISPUTED, "Conflict one."),
+            _decision(AnswerMode.DISPUTED, "Conflict two."),
+            _decision(AnswerMode.DISPUTED, "Conflict three."),
+            _decision(AnswerMode.DISPUTED, "Conflict four."),
+        ]
+
+        pack = engine.evidence(Query(text="What are the key facts in this corpus?"), top_k=4)
+
+        assert pack.mode == AnswerMode.DISPUTED
+        assert len(pack.items) == 4
+        assert engine._governance.decide.call_count == 4
+        assert pack.metadata["governance_cutoff"]["policy"]["query_shape"] == "broad"
 
 
 # ---------------------------------------------------------------------------

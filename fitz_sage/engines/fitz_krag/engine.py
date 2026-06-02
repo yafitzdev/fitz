@@ -35,6 +35,12 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 _DEFAULT_GOVERNANCE_CUTOFF = 10
+_NARROW_MIN_EVIDENCE = 1
+_COMPARISON_MIN_EVIDENCE = 2
+_BROAD_MIN_EVIDENCE = 3
+_AGGREGATION_MIN_EVIDENCE = 5
+_DISPUTE_PATIENCE_DOCS = 2
+_STABLE_DISPUTE_DOCS = 2
 
 
 def _report_timings(
@@ -122,6 +128,18 @@ class _RetrievalOutcome:
     expanded: list[ReadResult]
     addresses: list[Address]
     timings: list[tuple[str, float]]
+    profile: Any | None = None
+
+
+@dataclass(frozen=True)
+class _GovernanceCutoffPolicy:
+    """Deterministic stop policy wrapped around Pyrrho verdicts."""
+
+    query_shape: str
+    max_docs: int
+    min_trustworthy_docs: int
+    min_disputed_docs: int
+    disputed_patience_docs: int
 
 
 class FitzKragEngine:
@@ -820,6 +838,7 @@ class FitzKragEngine:
                     self._apply_governance_cutoff(
                         outcome.sanitized,
                         outcome.expanded,
+                        profile=outcome.profile,
                         requested_top_k=requested_top_k,
                     )
                 )
@@ -849,6 +868,7 @@ class FitzKragEngine:
         query: str,
         results: list["ReadResult"],
         *,
+        profile: Any = None,
         requested_top_k: Any = None,
     ) -> tuple[list["ReadResult"], AnswerMode | None, list[str], list[tuple[str, float]], dict]:
         """Use Pyrrho to select the smallest sufficient prefix of ranked evidence."""
@@ -860,58 +880,194 @@ class FitzKragEngine:
                 AnswerMode.ABSTAIN,
                 ["No relevant evidence retrieved."],
                 [],
-                {"evaluated": 0, "selected": 0, "max": 0, "mode": AnswerMode.ABSTAIN.value},
+                self._governance_cutoff_metadata(
+                    None,
+                    evaluated=0,
+                    selected=0,
+                    mode=AnswerMode.ABSTAIN,
+                ),
             )
 
-        limit = self._governance_cutoff_limit(len(results), requested_top_k)
+        policy = self._governance_cutoff_policy(profile, len(results), requested_top_k)
         if self._governance is None:
-            selected = results[:limit]
+            selected = results[: policy.max_docs]
             return (
                 selected,
                 AnswerMode.ABSTAIN,
                 ["Pyrrho governance is unavailable; evidence sufficiency was not evaluated."],
                 [],
-                {
-                    "evaluated": 0,
-                    "selected": len(selected),
-                    "max": limit,
-                    "mode": AnswerMode.ABSTAIN.value,
-                },
+                self._governance_cutoff_metadata(
+                    policy,
+                    evaluated=0,
+                    selected=len(selected),
+                    mode=AnswerMode.ABSTAIN,
+                ),
             )
 
         t0 = time.perf_counter()
         last_reasons: list[str] = []
-        for size in range(1, limit + 1):
+        stable_disputed_decision: Any = None
+        consecutive_disputed = 0
+        for size in range(1, policy.max_docs + 1):
             decision = self._governance.decide(query, results[:size])
             last_reasons = list(decision.reasons)
-            if decision.mode is not AnswerMode.ABSTAIN:
-                return (
-                    results[:size],
-                    decision.mode,
-                    last_reasons,
-                    [("Governance", time.perf_counter() - t0)],
-                    {
-                        "evaluated": size,
-                        "selected": size,
-                        "max": limit,
-                        "mode": decision.mode.value,
-                    },
-                )
+
+            if decision.mode is AnswerMode.TRUSTWORTHY:
+                consecutive_disputed = 0
+                if size >= policy.min_trustworthy_docs:
+                    return (
+                        results[:size],
+                        decision.mode,
+                        last_reasons,
+                        [("Governance", time.perf_counter() - t0)],
+                        self._governance_cutoff_metadata(
+                            policy,
+                            evaluated=size,
+                            selected=size,
+                            mode=decision.mode,
+                        ),
+                    )
+                continue
+
+            if decision.mode is AnswerMode.DISPUTED:
+                consecutive_disputed += 1
+                if consecutive_disputed >= _STABLE_DISPUTE_DOCS:
+                    stable_disputed_decision = decision
+                if self._should_stop_on_disputed(policy, size, consecutive_disputed):
+                    return (
+                        results[:size],
+                        decision.mode,
+                        last_reasons,
+                        [("Governance", time.perf_counter() - t0)],
+                        self._governance_cutoff_metadata(
+                            policy,
+                            evaluated=size,
+                            selected=size,
+                            mode=decision.mode,
+                        ),
+                    )
+                continue
+
+            consecutive_disputed = 0
+
+        if stable_disputed_decision is not None:
+            disputed_reasons = list(stable_disputed_decision.reasons)
+            disputed_reasons.append(
+                f"Pyrrho found a stable dispute by the top {policy.max_docs} evidence item(s)."
+            )
+            return (
+                results[: policy.max_docs],
+                AnswerMode.DISPUTED,
+                disputed_reasons,
+                [("Governance", time.perf_counter() - t0)],
+                self._governance_cutoff_metadata(
+                    policy,
+                    evaluated=policy.max_docs,
+                    selected=policy.max_docs,
+                    mode=AnswerMode.DISPUTED,
+                ),
+            )
 
         reasons = list(last_reasons)
-        reasons.append(f"Pyrrho abstained after evaluating the top {limit} evidence item(s).")
+        reasons.append(
+            f"Pyrrho abstained after evaluating the top {policy.max_docs} evidence item(s)."
+        )
         return (
-            results[:limit],
+            results[: policy.max_docs],
             AnswerMode.ABSTAIN,
             reasons,
             [("Governance", time.perf_counter() - t0)],
-            {
-                "evaluated": limit,
-                "selected": limit,
-                "max": limit,
-                "mode": AnswerMode.ABSTAIN.value,
-            },
+            self._governance_cutoff_metadata(
+                policy,
+                evaluated=policy.max_docs,
+                selected=policy.max_docs,
+                mode=AnswerMode.ABSTAIN,
+            ),
         )
+
+    def _should_stop_on_disputed(
+        self,
+        policy: "_GovernanceCutoffPolicy",
+        size: int,
+        consecutive_disputed: int,
+    ) -> bool:
+        """Return whether a DISPUTED verdict is strong enough to stop."""
+        if policy.query_shape == "comparison":
+            return size >= policy.min_disputed_docs
+        if policy.query_shape == "narrow":
+            return consecutive_disputed >= policy.disputed_patience_docs + 1
+        return False
+
+    def _governance_cutoff_policy(
+        self,
+        profile: Any,
+        result_count: int,
+        requested_top_k: Any = None,
+    ) -> "_GovernanceCutoffPolicy":
+        """Build a deterministic policy for interpreting Pyrrho verdicts."""
+        max_docs = self._governance_cutoff_limit(result_count, requested_top_k)
+        query_shape = self._governance_query_shape(profile)
+        min_docs_by_shape = {
+            "narrow": _NARROW_MIN_EVIDENCE,
+            "comparison": _COMPARISON_MIN_EVIDENCE,
+            "broad": _BROAD_MIN_EVIDENCE,
+            "aggregation": _AGGREGATION_MIN_EVIDENCE,
+        }
+        min_trustworthy_docs = min(max_docs, min_docs_by_shape[query_shape])
+        min_disputed_docs = min(max_docs, _COMPARISON_MIN_EVIDENCE)
+        return _GovernanceCutoffPolicy(
+            query_shape=query_shape,
+            max_docs=max_docs,
+            min_trustworthy_docs=min_trustworthy_docs,
+            min_disputed_docs=min_disputed_docs,
+            disputed_patience_docs=_DISPUTE_PATIENCE_DOCS,
+        )
+
+    @staticmethod
+    def _governance_query_shape(profile: Any) -> str:
+        """Map retrieval profile signals to a cutoff policy shape."""
+        if profile is None:
+            return "narrow"
+        if (
+            getattr(profile, "has_comparison_intent", False)
+            or getattr(profile, "answer_type", "") == "comparative"
+            or getattr(profile, "comparison_queries", None)
+            or getattr(profile, "comparison_entities", None)
+        ):
+            return "comparison"
+        if getattr(profile, "has_aggregation_intent", False):
+            return "aggregation"
+        if (
+            getattr(profile, "specificity", "") == "broad"
+            or getattr(profile, "answer_type", "") == "exploratory"
+            or getattr(profile, "inject_corpus_summaries", False)
+        ):
+            return "broad"
+        return "narrow"
+
+    @staticmethod
+    def _governance_cutoff_metadata(
+        policy: "_GovernanceCutoffPolicy | None",
+        *,
+        evaluated: int,
+        selected: int,
+        mode: AnswerMode,
+    ) -> dict[str, Any]:
+        """Build serializable metadata for the cutoff loop."""
+        metadata = {
+            "evaluated": evaluated,
+            "selected": selected,
+            "max": policy.max_docs if policy else 0,
+            "mode": mode.value,
+        }
+        if policy is not None:
+            metadata["policy"] = {
+                "query_shape": policy.query_shape,
+                "min_trustworthy_docs": policy.min_trustworthy_docs,
+                "min_disputed_docs": policy.min_disputed_docs,
+                "disputed_patience_docs": policy.disputed_patience_docs,
+            }
+        return metadata
 
     @staticmethod
     def _governance_cutoff_limit(result_count: int, requested_top_k: Any = None) -> int:
@@ -1181,7 +1337,11 @@ class FitzKragEngine:
 
         if not read_results:
             return _RetrievalOutcome(
-                sanitized=sanitized, expanded=[], addresses=[], timings=timings
+                sanitized=sanitized,
+                expanded=[],
+                addresses=[],
+                timings=timings,
+                profile=profile,
             )
 
         if expand_context:
@@ -1199,7 +1359,11 @@ class FitzKragEngine:
             expanded = self._table_handler.process(sanitized, expanded)
 
         return _RetrievalOutcome(
-            sanitized=sanitized, expanded=expanded, addresses=addresses, timings=timings
+            sanitized=sanitized,
+            expanded=expanded,
+            addresses=addresses,
+            timings=timings,
+            profile=profile,
         )
 
     def _build_gap_context(
