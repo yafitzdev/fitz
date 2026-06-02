@@ -24,6 +24,11 @@ optimizes for high-recall candidate gathering first, lets the local ONNX
 cross-encoder impose precision, then asks Pyrrho whether the top-1,
 top-2, ... evidence prefix is enough to answer.
 
+**Pyrrho g1 → g3.** Governance moves to
+[`yafitzdev/pyrrho-nano-g3`](https://huggingface.co/yafitzdev/pyrrho-nano-g3)
+with `TAU = 0.60`. The model card reports 97.52% accuracy and 1.42%
+false-trustworthy on the fitz-gov V8.0.0 held-out test split.
+
 **Managed Qwen enrichment is standard.** Qwen3.5 0.8B ONNX is the
 required local runtime for semantic query keywords and ingestion
 enrichment. It is downloaded when missing and is not exposed as an
@@ -51,11 +56,8 @@ optional user flag.
 
 ### 🔄 Changed
 
-- **Pyrrho default model upgraded to
-  [`yafitzdev/pyrrho-nano-g3`](https://huggingface.co/yafitzdev/pyrrho-nano-g3).**
-  The calibrated `TRUSTWORTHY` threshold is now `TAU = 0.60`; the model
-  card reports 97.52% accuracy and 1.42% false-trustworthy on the
-  fitz-gov V8.0.0 held-out test split.
+- **Pyrrho docs, defaults, and calibration now target g3.** The default
+  governance repo and model-card links point at `pyrrho-nano-g3`.
 - **ONNX encoder loading handles external data sidecars.** Split ONNX
   exports such as `model_quantized.onnx` + `model_quantized.onnx.data`
   now load through the shared encoder backend.
