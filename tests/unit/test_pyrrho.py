@@ -12,17 +12,15 @@ from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.governance.pyrrho import Pyrrho
 
 
-def test_decide_many_batches_non_empty_prefixes():
-    """decide_many should tokenize/run non-empty prefixes as one batch."""
+def test_decide_many_runs_non_empty_prefixes_serially():
+    """decide_many should avoid batch execution for the current ONNX export."""
     pyrrho = Pyrrho.__new__(Pyrrho)
-    pyrrho._encode = MagicMock(return_value={"input_ids": np.array([[1], [2]])})
+    pyrrho._encode = MagicMock(return_value={"input_ids": np.array([[1]])})
     pyrrho._run = MagicMock(
-        return_value=np.array(
-            [
-                [3.0, 0.0, 0.0],
-                [0.0, 0.0, 3.0],
-            ]
-        )
+        side_effect=[
+            np.array([[3.0, 0.0, 0.0]]),
+            np.array([[0.0, 0.0, 3.0]]),
+        ]
     )
 
     decisions = pyrrho.decide_many(
@@ -42,6 +40,6 @@ def test_decide_many_batches_non_empty_prefixes():
         AnswerMode.ABSTAIN,
         AnswerMode.TRUSTWORTHY,
     ]
-    pyrrho._encode.assert_called_once()
-    assert len(pyrrho._encode.call_args.args[0]) == 2
-    pyrrho._run.assert_called_once()
+    assert pyrrho._encode.call_count == 2
+    assert pyrrho._run.call_count == 2
+    assert isinstance(pyrrho._encode.call_args_list[0].args[0], str)

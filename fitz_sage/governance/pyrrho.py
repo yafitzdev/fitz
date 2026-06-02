@@ -84,6 +84,8 @@ def _reason_for(mode: AnswerMode, probs: tuple[float, float, float]) -> str:
 class Pyrrho(OnnxEncoderBackend):
     """The pyrrho classifier — one INT8 ONNX forward pass per query."""
 
+    supports_batched_prefixes = False
+
     def __init__(self, model_id: str = MODEL_ID) -> None:
         super().__init__(model_id=model_id, onnx_file=ONNX_FILE)
 
@@ -98,40 +100,36 @@ class Pyrrho(OnnxEncoderBackend):
             A GovernanceDecision with the selected AnswerMode, the full softmax
             distribution, and a one-line human-readable reason.
         """
-        return self.decide_many(query, [contexts])[0]
+        return self._decide_one(query, contexts)
 
     def decide_many(
         self,
         query: str,
         contexts_by_prefix: list[list[EvidenceItem]],
     ) -> list[GovernanceDecision]:
-        """Classify several evidence prefixes in one tokenizer/ONNX batch."""
+        """Classify several evidence prefixes.
+
+        The current pyrrho-nano-g3 ONNX export is not batch-safe under
+        onnxruntime on Windows, so this API intentionally runs each prefix as a
+        single forward pass.
+        """
+        return [self._decide_one(query, contexts) for contexts in contexts_by_prefix]
+
+    def _decide_one(self, query: str, contexts: list[EvidenceItem]) -> GovernanceDecision:
+        """Classify one evidence prefix."""
         import numpy as np
 
-        if not contexts_by_prefix:
-            return []
+        if not contexts:
+            return GovernanceDecision(
+                mode=AnswerMode.ABSTAIN,
+                probs=(1.0, 0.0, 0.0),
+                reason="Pyrrho: no contexts retrieved.",
+            )
 
-        decisions: list[GovernanceDecision | None] = [None] * len(contexts_by_prefix)
-        text_indices: list[int] = []
-        texts: list[str] = []
-        for index, contexts in enumerate(contexts_by_prefix):
-            if not contexts:
-                decisions[index] = GovernanceDecision(
-                    mode=AnswerMode.ABSTAIN,
-                    probs=(1.0, 0.0, 0.0),
-                    reason="Pyrrho: no contexts retrieved.",
-                )
-                continue
-            texts.append(_format_input(query, (c.content for c in contexts)))
-            text_indices.append(index)
-
-        if texts:
-            enc = self._encode(texts, padding=True, truncation=True, max_length=MAX_LENGTH)
-            logits_batch = self._run(enc)
-            for index, logits in zip(text_indices, logits_batch, strict=True):
-                decisions[index] = _decision_from_logits(logits, np)
-
-        return [decision for decision in decisions if decision is not None]
+        text = _format_input(query, (context.content for context in contexts))
+        enc = self._encode(text, truncation=True, max_length=MAX_LENGTH)
+        logits = self._run(enc)[0]
+        return _decision_from_logits(logits, np)
 
 
 def _decision_from_logits(logits: Any, np: Any) -> GovernanceDecision:

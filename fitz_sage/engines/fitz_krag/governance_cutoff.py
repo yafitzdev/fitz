@@ -248,7 +248,11 @@ def _decide_prefix_batch(
 def _supports_decide_many(governance: Any) -> bool:
     """Return whether governance exposes a real batch API."""
     decide_many = getattr(governance, "decide_many", None)
-    return callable(decide_many) and not _is_mock_callable(decide_many)
+    return (
+        bool(getattr(governance, "supports_batched_prefixes", False))
+        and callable(decide_many)
+        and not _is_mock_callable(decide_many)
+    )
 
 
 def _is_mock_callable(value: Any) -> bool:
