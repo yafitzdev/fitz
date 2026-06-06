@@ -81,6 +81,17 @@ class GovernanceDecision:
         return (self.reason,) if self.reason else ()
 
 
+@dataclass(frozen=True)
+class QueryDecision:
+    """Pyrrho's query-only retrieval planning signals."""
+
+    query_contract: HeadDecision
+    route: HeadDecision
+    answerability_shape: HeadDecision | None = None
+    retrieval_modality: HeadDecision | None = None
+    heads: dict[str, HeadDecision] = field(default_factory=dict)
+
+
 def _format_input(query: str, contexts: Iterable[str]) -> str:
     """Build the full evidence-conditioned text the model was trained on."""
     sources = "\n".join(f"[{i}] {c}" for i, c in enumerate(contexts, start=1))
@@ -190,8 +201,8 @@ class Pyrrho:
         self._scalar_fields: tuple[str, ...] = ()
         self._trustworthy_threshold = TAU
 
-    def classify_query(self, query: str) -> HeadDecision:
-        """Classify the query contract before retrieval."""
+    def classify_query(self, query: str) -> QueryDecision:
+        """Classify query-only retrieval planning signals before retrieval."""
         return self._predict_query(query)
 
     def decide(self, query: str, contexts: list[EvidenceItem]) -> GovernanceDecision:
@@ -275,16 +286,35 @@ class Pyrrho:
             )
 
     @torch.no_grad()
-    def _predict_query(self, query: str) -> HeadDecision:
+    def _predict_query(self, query: str) -> QueryDecision:
         """Run query-only heads for one query."""
         self._load()
         outputs = self._run_batch(
             full_texts=[_format_input(query, ())],
             query_texts=[_format_query_input(query)],
         )
-        return _head_decision(
+        query_contract = _head_decision(
             outputs["query_contract_logits"][0],
             self._query_contract_id2label,
+        )
+        route = _head_decision(outputs["route_logits"][0], self._route_id2label)
+        optional_heads = {
+            name: _head_decision(outputs[f"{name}_logits"][0], id2label)
+            for name, id2label in self._optional_id2labels.items()
+            if _OPTIONAL_HEAD_SPECS.get(name, (None, None))[1] == "query"
+            and f"{name}_logits" in outputs
+        }
+        heads = {
+            "query_contract": query_contract,
+            "route": route,
+            **optional_heads,
+        }
+        return QueryDecision(
+            query_contract=query_contract,
+            route=route,
+            answerability_shape=optional_heads.get("answerability_shape"),
+            retrieval_modality=optional_heads.get("retrieval_modality"),
+            heads=heads,
         )
 
     @torch.no_grad()

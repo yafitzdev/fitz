@@ -1068,7 +1068,7 @@ class FitzKragEngine:
             config=self._config,
             query_planner=getattr(self, "_query_planner", None),
             query_batcher=self._query_batcher,
-            query_contract_classifier=self._governance,
+            query_signal_classifier=self._governance,
             semantic_keyword_batcher=getattr(self, "_semantic_keyword_batcher", None),
             retrieval_pass=self._retrieval_pass,
             hop_controller=self._hop_controller,

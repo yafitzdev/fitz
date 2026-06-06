@@ -16,7 +16,10 @@ from fitz_sage.engines.fitz_krag.query_planner import (
     QueryPlan,
     plan_from_batch_result,
 )
-from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
+from fitz_sage.engines.fitz_krag.retrieval_profile import (
+    apply_retrieval_modality_weights,
+    build_retrieval_profile,
+)
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -51,7 +54,7 @@ class QueryPipeline:
         config: "FitzKragConfig",
         query_planner: Any,
         query_batcher: Any,
-        query_contract_classifier: Any,
+        query_signal_classifier: Any,
         semantic_keyword_batcher: Any,
         retrieval_pass: Any,
         hop_controller: Any,
@@ -65,7 +68,7 @@ class QueryPipeline:
         self._config = config
         self._query_planner = query_planner
         self._query_batcher = query_batcher
-        self._query_contract_classifier = query_contract_classifier
+        self._query_signal_classifier = query_signal_classifier
         self._semantic_keyword_batcher = semantic_keyword_batcher
         self._retrieval_pass = retrieval_pass
         self._hop_controller = hop_controller
@@ -94,8 +97,8 @@ class QueryPipeline:
         _progress("Analyzing query...")
 
         t0 = time.perf_counter()
-        query_contract = self._classify_query_contract(sanitized)
-        timings.append(("Pyrrho query contract", time.perf_counter() - t0))
+        query_signals = self._classify_query_signals(sanitized)
+        timings.append(("Pyrrho query signals", time.perf_counter() - t0))
 
         t0 = time.perf_counter()
         plan = self._prepare_query_plan(
@@ -115,7 +118,7 @@ class QueryPipeline:
             self._config,
             extended_signals=plan.extended_signals,
             keywords=plan.keywords,
-            query_contract=query_contract,
+            query_signals=query_signals,
         )
 
         _progress("Retrieving relevant sources...")
@@ -293,9 +296,9 @@ class QueryPipeline:
 
         return plan
 
-    def _classify_query_contract(self, sanitized: str) -> Any:
-        """Classify the query contract when the governance backend exposes it."""
-        classifier = self._query_contract_classifier
+    def _classify_query_signals(self, sanitized: str) -> Any:
+        """Classify Pyrrho query-planning signals when the backend exposes them."""
+        classifier = self._query_signal_classifier
         classify_query = getattr(classifier, "classify_query", None)
         if not callable(classify_query) or _is_mock_callable(classify_query):
             return None
@@ -424,22 +427,8 @@ def _retry_profile(
             }
         )
 
-    _apply_modality_weights(weights, retrieval_modality)
+    apply_retrieval_modality_weights(weights, retrieval_modality)
     return replace(profile, **kwargs)
-
-
-def _apply_modality_weights(weights: dict[str, float], modality: str | None) -> None:
-    """Bias a retry profile toward Pyrrho's preferred retrieval modality."""
-    if modality == "structured_table":
-        weights["table"] = max(weights.get("table", 0.0), 0.55)
-    elif modality == "code":
-        weights["code"] = max(weights.get("code", 0.0), 0.60)
-    elif modality in {"configuration", "log_trace", "pdf_layout", "unstructured_text"}:
-        weights["section"] = max(weights.get("section", 0.0), 0.45)
-    elif modality == "mixed":
-        weights["code"] = max(weights.get("code", 0.0), 0.30)
-        weights["section"] = max(weights.get("section", 0.0), 0.30)
-        weights["table"] = max(weights.get("table", 0.0), 0.25)
 
 
 def _read_result_keys(results: list["ReadResult"]) -> set[tuple[str, str]]:

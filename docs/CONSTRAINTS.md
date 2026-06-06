@@ -115,8 +115,9 @@ if pred == TRUSTWORTHY and P(TRUSTWORTHY) < TAU:
 
 The `FitzKragEngine` uses Pyrrho twice:
 
-1. Before recall, Pyrrho classifies the query contract. That signal steers
-   recall profile and cutoff policy.
+1. Before recall, Pyrrho classifies query signals. The query contract steers
+   recall profile and cutoff policy, while newer packages can also provide
+   route, answerability shape, and preferred retrieval modality.
 2. After reranking, Pyrrho evaluates evidence prefixes.
 
 The cutoff loop:

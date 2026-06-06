@@ -18,6 +18,18 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
 
+_QUERY_SIGNAL_MIN_CONFIDENCE = 0.60
+
+_ROUTE_DOMAINS = {
+    "technology_computing": "technical",
+    "law_policy": "legal",
+    "science_medicine": "medical",
+    "economics_finance": "financial",
+    "history_geography": "general",
+    "culture_society": "general",
+    "general_commonsense": "general",
+}
+
 
 @dataclass(frozen=True)
 class RetrievalProfile:
@@ -46,10 +58,19 @@ class RetrievalProfile:
     # Semantic keyword expansion (from the query-prep bus)
     keywords: list[str] = field(default_factory=list)
 
-    # Pyrrho g3.1 pre-retrieval query contract
+    # Pyrrho pre-retrieval query signals
     query_contract: str | None = None
     query_contract_confidence: float | None = None
     query_contract_probabilities: dict[str, float] = field(default_factory=dict)
+    query_route: str | None = None
+    query_route_confidence: float | None = None
+    query_route_probabilities: dict[str, float] = field(default_factory=dict)
+    answerability_shape: str | None = None
+    answerability_shape_confidence: float | None = None
+    answerability_shape_probabilities: dict[str, float] = field(default_factory=dict)
+    retrieval_modality: str | None = None
+    retrieval_modality_confidence: float | None = None
+    retrieval_modality_probabilities: dict[str, float] = field(default_factory=dict)
 
     # Feature gates
     run_agentic: bool = True
@@ -84,7 +105,7 @@ def build_retrieval_profile(
     *,
     extended_signals: dict[str, Any] | None = None,
     keywords: list[str] | None = None,
-    query_contract: Any = None,
+    query_signals: Any = None,
 ) -> RetrievalProfile:
     """Build a RetrievalProfile from classification outputs + config.
 
@@ -102,9 +123,24 @@ def build_retrieval_profile(
     specificity = ext.get("specificity", "moderate")
     answer_type = ext.get("answer_type", "factual")
     domain = ext.get("domain", "general")
-    contract_label = _query_contract_label(query_contract)
-    contract_confidence = _query_contract_confidence(query_contract)
-    contract_probabilities = _query_contract_probabilities(query_contract)
+    query_contract = _query_signal_head(query_signals, "query_contract")
+    query_route = _query_signal_head(query_signals, "route")
+    answerability_shape = _query_signal_head(query_signals, "answerability_shape")
+    retrieval_modality = _query_signal_head(query_signals, "retrieval_modality")
+
+    contract_label = _head_label(query_contract)
+    contract_confidence = _head_confidence(query_contract)
+    contract_probabilities = _head_probabilities(query_contract)
+    route_label = _trusted_head_label(query_route)
+    route_confidence = _head_confidence(query_route)
+    route_probabilities = _head_probabilities(query_route)
+    shape_label = _trusted_head_label(answerability_shape)
+    shape_confidence = _head_confidence(answerability_shape)
+    shape_probabilities = _head_probabilities(answerability_shape)
+    modality_label = _trusted_head_label(retrieval_modality)
+    modality_confidence = _head_confidence(retrieval_modality)
+    modality_probabilities = _head_probabilities(retrieval_modality)
+    domain = _ROUTE_DOMAINS.get(route_label, domain)
 
     if contract_label == "representative_overview":
         specificity = "broad"
@@ -116,6 +152,22 @@ def build_retrieval_profile(
         answer_type = "comparative"
     elif contract_label == "structured_lookup":
         answer_type = "factual"
+
+    if shape_label == "synthesis_answer" and contract_label not in {
+        "comparison_coverage",
+        "structured_lookup",
+    }:
+        specificity = "broad"
+        answer_type = "exploratory"
+    elif shape_label == "set_answer" and contract_label != "structured_lookup":
+        specificity = "broad"
+        answer_type = "exploratory"
+    elif shape_label == "structured_reasoning" and contract_label not in {
+        "comparison_coverage",
+        "representative_overview",
+        "exhaustive_coverage",
+    }:
+        answer_type = "procedural"
 
     # --- Analysis-derived ---
     if analysis:
@@ -173,6 +225,8 @@ def build_retrieval_profile(
         boost_recency = True
     elif contract_label == "exhaustive_coverage":
         has_aggregation_intent = True
+    if shape_label == "set_answer":
+        has_aggregation_intent = True
 
     # --- top_k: base * fetch_multiplier * specificity adjustment ---
     top_k = config.top_addresses * fetch_multiplier
@@ -212,6 +266,8 @@ def build_retrieval_profile(
         top_k = max(top_k, config.top_addresses)
         top_read = max(top_read, config.top_read)
 
+    apply_retrieval_modality_weights(strategy_weights, modality_label)
+
     # --- Entity expansion limit (from engine._is_thematic) ---
     is_thematic = analysis is not None and primary_type not in ("code", "data") and confidence < 0.6
     entity_expansion_limit = 12 if is_thematic else 3
@@ -231,6 +287,15 @@ def build_retrieval_profile(
         query_contract=contract_label,
         query_contract_confidence=contract_confidence,
         query_contract_probabilities=contract_probabilities,
+        query_route=route_label,
+        query_route_confidence=route_confidence,
+        query_route_probabilities=route_probabilities,
+        answerability_shape=shape_label,
+        answerability_shape_confidence=shape_confidence,
+        answerability_shape_probabilities=shape_probabilities,
+        retrieval_modality=modality_label,
+        retrieval_modality_confidence=modality_confidence,
+        retrieval_modality_probabilities=modality_probabilities,
         run_agentic=run_agentic,
         inject_corpus_summaries=inject_corpus_summaries,
         boost_recency=boost_recency,
@@ -246,21 +311,55 @@ def build_retrieval_profile(
     )
 
 
-def _query_contract_label(query_contract: Any) -> str | None:
-    """Return Pyrrho's final query-contract label if available."""
-    label = getattr(query_contract, "final_label", None)
+def apply_retrieval_modality_weights(weights: dict[str, float], modality: str | None) -> None:
+    """Bias strategy weights toward Pyrrho's preferred retrieval modality."""
+    if modality == "structured_table":
+        weights["table"] = max(weights.get("table", 0.0), 0.55)
+    elif modality == "code":
+        weights["code"] = max(weights.get("code", 0.0), 0.60)
+    elif modality in {"configuration", "log_trace", "pdf_layout", "unstructured_text"}:
+        weights["section"] = max(weights.get("section", 0.0), 0.45)
+    elif modality == "mixed":
+        weights["code"] = max(weights.get("code", 0.0), 0.30)
+        weights["section"] = max(weights.get("section", 0.0), 0.30)
+        weights["table"] = max(weights.get("table", 0.0), 0.25)
+
+
+def _query_signal_head(query_signals: Any, name: str) -> Any:
+    """Return one head from a Pyrrho query decision."""
+    head = getattr(query_signals, name, None)
+    if head is not None:
+        return head
+    heads = getattr(query_signals, "heads", None)
+    if isinstance(heads, dict):
+        return heads.get(name)
+    return None
+
+
+def _trusted_head_label(head: Any) -> str | None:
+    """Return a label only when the head is confident enough to steer retrieval."""
+    label = _head_label(head)
+    confidence = _head_confidence(head)
+    if label is None or confidence is None:
+        return None
+    return label if confidence >= _QUERY_SIGNAL_MIN_CONFIDENCE else None
+
+
+def _head_label(head: Any) -> str | None:
+    """Return Pyrrho's final head label if available."""
+    label = getattr(head, "final_label", None)
     return str(label) if label else None
 
 
-def _query_contract_confidence(query_contract: Any) -> float | None:
-    """Return Pyrrho's query-contract confidence if available."""
-    confidence = getattr(query_contract, "confidence", None)
+def _head_confidence(head: Any) -> float | None:
+    """Return Pyrrho head confidence if available."""
+    confidence = getattr(head, "confidence", None)
     return float(confidence) if isinstance(confidence, int | float) else None
 
 
-def _query_contract_probabilities(query_contract: Any) -> dict[str, float]:
-    """Return serializable query-contract probabilities."""
-    probabilities = getattr(query_contract, "probabilities", None)
+def _head_probabilities(head: Any) -> dict[str, float]:
+    """Return serializable head probabilities."""
+    probabilities = getattr(head, "probabilities", None)
     if not isinstance(probabilities, dict):
         return {}
     return {str(key): float(value) for key, value in probabilities.items()}

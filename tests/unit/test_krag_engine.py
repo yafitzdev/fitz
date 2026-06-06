@@ -796,9 +796,26 @@ class TestEvidence:
         class QueryContractGovernance:
             def classify_query(self, query: str) -> SimpleNamespace:
                 return SimpleNamespace(
-                    final_label="comparison_coverage",
-                    confidence=0.91,
-                    probabilities={"comparison_coverage": 0.91},
+                    query_contract=SimpleNamespace(
+                        final_label="comparison_coverage",
+                        confidence=0.91,
+                        probabilities={"comparison_coverage": 0.91},
+                    ),
+                    route=SimpleNamespace(
+                        final_label="law_policy",
+                        confidence=0.87,
+                        probabilities={"law_policy": 0.87},
+                    ),
+                    answerability_shape=SimpleNamespace(
+                        final_label="structured_reasoning",
+                        confidence=0.86,
+                        probabilities={"structured_reasoning": 0.86},
+                    ),
+                    retrieval_modality=SimpleNamespace(
+                        final_label="structured_table",
+                        confidence=0.89,
+                        probabilities={"structured_table": 0.89},
+                    ),
                 )
 
             def decide(self, query: str, contexts: list[ReadResult]) -> MagicMock:
@@ -812,6 +829,11 @@ class TestEvidence:
         assert profile.query_contract == "comparison_coverage"
         assert profile.query_contract_confidence == 0.91
         assert profile.query_contract_probabilities == {"comparison_coverage": 0.91}
+        assert profile.query_route == "law_policy"
+        assert profile.domain == "legal"
+        assert profile.answerability_shape == "structured_reasoning"
+        assert profile.retrieval_modality == "structured_table"
+        assert profile.strategy_weights["table"] >= 0.55
         assert profile.has_comparison_intent is True
         assert profile.answer_type == "comparative"
 

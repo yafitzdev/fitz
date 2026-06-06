@@ -137,7 +137,7 @@ governance: pyrrho                  # default — the local Pyrrho g3.1 classifi
 # governance: pyrrho/<hf-model-id>  # a custom pyrrho fine-tune
 ```
 
-`governance: pyrrho` runs query-contract classification before recall and
+`governance: pyrrho` runs query-signal classification before recall and
 evidence-prefix checks in the cutoff loop. The v0.13.0 constraint+sklearn
 cascade it replaced is gone.
 

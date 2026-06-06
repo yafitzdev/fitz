@@ -19,17 +19,18 @@ config key declares which pyrrho classifier to use:
     # decision.mode in {TRUSTWORTHY, DISPUTED, ABSTAIN}
     # decision.probs is the governance softmax distribution
     # decision.query_contract / route / taxonomy expose head metadata
+    # governance.classify_query(query) returns pre-retrieval query signals
     # decision.reason is a one-line human-readable summary
 
 The legacy constraint+sklearn cascade was removed in v0.13.0. The pyrrho
-classifier is faster than the cascade it replaced and now also supplies the
-pre-retrieval query-contract signal used by the retrieval stack.
+classifier is faster than the cascade it replaced and now also supplies
+pre-retrieval query signals used by the retrieval stack.
 """
 
 from __future__ import annotations
 
 from .protocol import EvidenceItem
-from .pyrrho import GovernanceDecision, Pyrrho
+from .pyrrho import GovernanceDecision, Pyrrho, QueryDecision
 
 
 def create_governance(spec: str) -> Pyrrho:
@@ -63,5 +64,6 @@ __all__ = [
     "EvidenceItem",
     "GovernanceDecision",
     "Pyrrho",
+    "QueryDecision",
     "create_governance",
 ]

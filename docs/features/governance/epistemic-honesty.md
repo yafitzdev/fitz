@@ -33,7 +33,7 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 
 Pyrrho replaces the constraint+sklearn cascade that fitz-sage used
 through v0.12.x. Each decision is one local classifier call on CPU, no
-external LLM dependency. g3.1 also classifies the query contract before recall.
+external LLM dependency. Pyrrho also classifies query signals before recall.
 
 For evidence retrieval, Pyrrho runs incrementally:
 

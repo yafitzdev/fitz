@@ -24,7 +24,7 @@ coverage, temporal grounding, structured lookup, or a representative overview.
 
 ```mermaid
 flowchart LR
-    Q["User query"] --> QC["Pyrrho query contract"]
+    Q["User query"] --> QC["Pyrrho query signals"]
     QC --> R["1. Broad recall"]
     R --> C["Candidate evidence pool"]
     C --> K["2. ONNX rerank"]
@@ -33,7 +33,7 @@ flowchart LR
     S --> P["3. Pyrrho cutoff"]
     P --> E["EvidencePack"]
 
-    QC --> QC1["Recall + cutoff policy shape"]
+    QC --> QC1["Contract + route + answer shape + modality"]
 
     R --> R1["Real query keywords"]
     R --> R2["Managed-Qwen semantic keywords"]
@@ -65,7 +65,7 @@ Inputs:
 - the user's exact query terms
 - deterministic synonyms and acronyms
 - managed Qwen semantic keywords for the query
-- Pyrrho query contract: evidence sufficiency, structured lookup, temporal grounding, exhaustive coverage, comparison coverage, or representative overview
+- Pyrrho query signals: query contract, route/domain, answerability shape, and preferred retrieval modality
 - deterministic query shape: narrow, broad, comparison, temporal, aggregation, or freshness-sensitive
 - typed retrieval units from KRAG: sections, code symbols, tables, files, summaries
 
@@ -199,7 +199,7 @@ The old mental model was "many retrieval strategies." The new product model is
 | Sparse BM25 / FTS5 | Recall | Cheap candidate generation. |
 | Keyword vocabulary | Recall | Exact identifiers, codes, acronyms, test IDs. |
 | Managed Qwen semantic keywords | Recall | Adds semantic aliases without embeddings. |
-| Pyrrho query contract | Recall / governance policy | Adds a pre-retrieval shape signal. |
+| Pyrrho query signals | Recall / governance policy | Adds pre-retrieval contract, route, answer-shape, and modality signals. |
 | Query expansion | Recall | Deterministic synonyms and acronym expansion. |
 | Query rewriting | Recall | Fixes conversational or ambiguous phrasing before search. |
 | Multi-query decomposition | Recall | Bounded fanout for compound questions. |
@@ -213,7 +213,7 @@ The old mental model was "many retrieval strategies." The new product model is
 | ONNX reranker | Rerank | Sorts noisy recall candidates by relevance. |
 | Metric comparison prefixing | Governance policy | Promotes direct metric/table evidence before Pyrrho cutoff. |
 | Multi-hop | Post-cutoff fallback | Runs another retrieval pass when Pyrrho abstains and a bridge is available. |
-| Pyrrho | Governance | Classifies query contract and decides enough / disputed / not enough over ranked prefixes. |
+| Pyrrho | Governance | Classifies query signals and decides enough / disputed / not enough over ranked prefixes. |
 
 Nothing in this model makes enrichment optional. Required enrichment improves
 the recall surface and the evidence available to the reranker. The difference is

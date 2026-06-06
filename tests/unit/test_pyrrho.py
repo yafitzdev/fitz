@@ -12,6 +12,7 @@ from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.governance.pyrrho import (
     GovernanceDecision,
     Pyrrho,
+    QueryDecision,
     _decision_from_outputs,
     _head_decision,
     _load_trustworthy_threshold,
@@ -120,6 +121,38 @@ def test_decision_from_outputs_includes_optional_heads():
         "evidence_sufficiency": 0.75,
         "evidence_failure_severity": 0.25,
     }
+
+
+def test_predict_query_includes_query_only_heads():
+    """classify_query should return the full pre-retrieval Pyrrho query shape."""
+    pyrrho = Pyrrho.__new__(Pyrrho)
+    pyrrho._load = MagicMock()
+    pyrrho._run_batch = MagicMock(
+        return_value={
+            "query_contract_logits": torch.tensor([[0.0, 2.0]]),
+            "route_logits": torch.tensor([[2.0, 0.0]]),
+            "answerability_shape_logits": torch.tensor([[0.0, 2.0]]),
+            "retrieval_modality_logits": torch.tensor([[0.0, 2.0]]),
+            "retrieval_action_logits": torch.tensor([[0.0, 2.0]]),
+        }
+    )
+    pyrrho._query_contract_id2label = {0: "evidence_sufficiency", 1: "structured_lookup"}
+    pyrrho._route_id2label = {0: "technology_computing", 1: "general_commonsense"}
+    pyrrho._optional_id2labels = {
+        "retrieval_action": {0: "answer_now", 1: "retrieve_more"},
+        "answerability_shape": {0: "direct_answer", 1: "structured_reasoning"},
+        "retrieval_modality": {0: "unstructured_text", 1: "structured_table"},
+    }
+
+    decision = pyrrho.classify_query("Which benchmark row is lower?")
+
+    assert isinstance(decision, QueryDecision)
+    assert decision.query_contract.final_label == "structured_lookup"
+    assert decision.route.final_label == "technology_computing"
+    assert decision.answerability_shape.final_label == "structured_reasoning"
+    assert decision.retrieval_modality.final_label == "structured_table"
+    assert decision.heads["query_contract"] is decision.query_contract
+    assert "retrieval_action" not in decision.heads
 
 
 def test_load_trustworthy_threshold_reads_manifest(tmp_path):
