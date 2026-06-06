@@ -133,6 +133,54 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
     ]
 
 
+def test_format_governance_metadata_shows_query_profile():
+    """Pre-retrieval query signals should be visible separately from cutoff."""
+    metadata = {
+        "query_profile": {
+            "signals": {
+                "query_contract": {
+                    "final_label": "comparison_coverage",
+                    "confidence": 0.91,
+                    "used_for_retrieval": True,
+                },
+                "route": {
+                    "final_label": "law_policy",
+                    "confidence": 0.59,
+                    "used_for_retrieval": False,
+                },
+                "answerability_shape": {
+                    "final_label": "structured_reasoning",
+                    "confidence": 0.86,
+                    "used_for_retrieval": True,
+                },
+                "retrieval_modality": {
+                    "final_label": "structured_table",
+                    "confidence": 0.90,
+                    "used_for_retrieval": True,
+                },
+            },
+            "profile": {
+                "specificity": "moderate",
+                "answer_type": "comparative",
+                "domain": "technical",
+                "top_k": 20,
+                "top_read": 12,
+                "strategy_weights": {"section": 0.25, "code": 0.25, "table": 0.55},
+            },
+        }
+    }
+
+    assert _format_governance_metadata(metadata, []) == [
+        (
+            "Query profile: contract comparison_coverage (0.91); "
+            "route law_policy (0.59, ignored); "
+            "shape structured_reasoning (0.86); modality structured_table (0.90); "
+            "profile moderate/comparative/technical; top 20; read 12; "
+            "weights section 0.25, code 0.25, table 0.55"
+        )
+    ]
+
+
 def test_format_governance_metadata_shows_pyrrho_heads_and_scalars():
     """Pyrrho metadata should be visible without dumping raw JSON."""
     metadata = {

@@ -52,6 +52,43 @@ Use `pack.to_dict()` or `pack.to_json()` for API responses.
 
 ## Governance Metadata
 
+Pre-retrieval planning metadata lives in `metadata.query_profile`. It records
+what Pyrrho predicted from the query alone and which profile knobs Fitz applied
+before recall.
+
+```json
+{
+  "metadata": {
+    "query_profile": {
+      "signals": {
+        "query_contract": {
+          "final_label": "comparison_coverage",
+          "confidence": 0.97,
+          "used_for_retrieval": true
+        },
+        "retrieval_modality": {
+          "final_label": "structured_table",
+          "confidence": 0.61,
+          "used_for_retrieval": true
+        }
+      },
+      "profile": {
+        "specificity": "moderate",
+        "answer_type": "comparative",
+        "domain": "technical",
+        "top_k": 20,
+        "top_read": 12,
+        "strategy_weights": {
+          "code": 0.25,
+          "section": 0.25,
+          "table": 0.55
+        }
+      }
+    }
+  }
+}
+```
+
 Pyrrho cutoff metadata lives in `metadata.governance_cutoff`.
 
 ```json
@@ -96,6 +133,8 @@ Field meanings:
 | `policy.disputed_patience_docs` | Additional patience for narrow disputes. |
 | `pyrrho.probabilities` | Softmax probabilities for abstain, disputed, trustworthy. |
 | `pyrrho.reason` | Human-readable one-line explanation. |
+| `query_profile.signals.*.used_for_retrieval` | Whether the signal passed the confidence guard and changed the retrieval profile. |
+| `query_profile.profile` | The effective pre-retrieval profile knobs used by recall. |
 
 ## Indexing Status
 

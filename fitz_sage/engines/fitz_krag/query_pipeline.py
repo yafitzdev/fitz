@@ -7,7 +7,7 @@ import re
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
@@ -19,6 +19,7 @@ from fitz_sage.engines.fitz_krag.query_planner import (
 from fitz_sage.engines.fitz_krag.retrieval_profile import (
     apply_retrieval_modality_weights,
     build_retrieval_profile,
+    query_profile_metadata,
 )
 from fitz_sage.logging.logger import get_logger
 
@@ -43,6 +44,7 @@ class RetrievalOutcome:
     profile: Any | None = None
     retrieval_query: str = ""
     rewrite_result: Any = None
+    query_profile_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class QueryPipeline:
@@ -120,6 +122,7 @@ class QueryPipeline:
             keywords=plan.keywords,
             query_signals=query_signals,
         )
+        query_profile = query_profile_metadata(query_signals, profile)
 
         _progress("Retrieving relevant sources...")
         t0 = time.perf_counter()
@@ -151,6 +154,7 @@ class QueryPipeline:
                 profile=profile,
                 retrieval_query=plan.retrieval_query,
                 rewrite_result=plan.rewrite_result,
+                query_profile_metadata=query_profile,
             )
 
         if expand_context:
@@ -176,6 +180,7 @@ class QueryPipeline:
             profile=profile,
             retrieval_query=plan.retrieval_query,
             rewrite_result=plan.rewrite_result,
+            query_profile_metadata=query_profile,
         )
 
     def retry_retrieve(
@@ -240,6 +245,7 @@ class QueryPipeline:
             profile=profile,
             retrieval_query=query,
             rewrite_result=outcome.rewrite_result,
+            query_profile_metadata=outcome.query_profile_metadata,
         )
 
     def _prepare_query_plan(

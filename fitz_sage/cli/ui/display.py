@@ -306,6 +306,9 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
 
     lines: list[str] = []
     shown_reasons: set[str] = set()
+    query_profile_line = _format_query_profile(metadata)
+    if query_profile_line:
+        lines.append(query_profile_line)
     if _is_broad_overview(metadata):
         selected = cutoff.get("selected", "?")
         max_items = cutoff.get("max", "?")
@@ -374,6 +377,61 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
         lines.append(reason)
         shown_reasons.add(reason)
     return _append_unique_reasons(lines, reasons, shown_reasons=shown_reasons)
+
+
+def _format_query_profile(metadata: dict) -> str:
+    """Format pre-retrieval Pyrrho query signals and profile knobs."""
+    query_profile = metadata.get("query_profile", {}) if isinstance(metadata, dict) else {}
+    if not isinstance(query_profile, dict):
+        return ""
+    signals = query_profile.get("signals", {})
+    profile = query_profile.get("profile", {})
+    if not isinstance(signals, dict):
+        signals = {}
+    if not isinstance(profile, dict):
+        profile = {}
+
+    parts: list[str] = []
+    for key, label in (
+        ("query_contract", "contract"),
+        ("route", "route"),
+        ("answerability_shape", "shape"),
+        ("retrieval_modality", "modality"),
+    ):
+        signal = signals.get(key)
+        if not isinstance(signal, dict):
+            continue
+        final_label = signal.get("final_label")
+        if not final_label:
+            continue
+        ignored = "" if signal.get("used_for_retrieval", True) else ", ignored"
+        parts.append(f"{label} {final_label} ({_fmt_prob(signal.get('confidence'))}{ignored})")
+
+    if profile:
+        summary = "/".join(
+            str(value)
+            for value in (
+                profile.get("specificity"),
+                profile.get("answer_type"),
+                profile.get("domain"),
+            )
+            if value
+        )
+        if summary:
+            parts.append(f"profile {summary}")
+        if "top_k" in profile or "top_read" in profile:
+            parts.append(f"top {profile.get('top_k', '?')}; read {profile.get('top_read', '?')}")
+        weights = profile.get("strategy_weights")
+        if isinstance(weights, dict):
+            weight_parts = [
+                f"{key} {_fmt_prob(weights[key])}"
+                for key in ("section", "code", "table")
+                if key in weights
+            ]
+            if weight_parts:
+                parts.append("weights " + ", ".join(weight_parts))
+
+    return "Query profile: " + "; ".join(parts) if parts else ""
 
 
 def _append_unique_reasons(

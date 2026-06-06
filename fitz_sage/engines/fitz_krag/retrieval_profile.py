@@ -18,7 +18,12 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
 
-_QUERY_SIGNAL_MIN_CONFIDENCE = 0.60
+_QUERY_SIGNAL_MIN_CONFIDENCE = {
+    "query_contract": 0.55,
+    "route": 0.75,
+    "answerability_shape": 0.70,
+    "retrieval_modality": 0.60,
+}
 
 _ROUTE_DOMAINS = {
     "technology_computing": "technical",
@@ -128,16 +133,16 @@ def build_retrieval_profile(
     answerability_shape = _query_signal_head(query_signals, "answerability_shape")
     retrieval_modality = _query_signal_head(query_signals, "retrieval_modality")
 
-    contract_label = _head_label(query_contract)
+    contract_label = _trusted_head_label(query_contract, "query_contract")
     contract_confidence = _head_confidence(query_contract)
     contract_probabilities = _head_probabilities(query_contract)
-    route_label = _trusted_head_label(query_route)
+    route_label = _trusted_head_label(query_route, "route")
     route_confidence = _head_confidence(query_route)
     route_probabilities = _head_probabilities(query_route)
-    shape_label = _trusted_head_label(answerability_shape)
+    shape_label = _trusted_head_label(answerability_shape, "answerability_shape")
     shape_confidence = _head_confidence(answerability_shape)
     shape_probabilities = _head_probabilities(answerability_shape)
-    modality_label = _trusted_head_label(retrieval_modality)
+    modality_label = _trusted_head_label(retrieval_modality, "retrieval_modality")
     modality_confidence = _head_confidence(retrieval_modality)
     modality_probabilities = _head_probabilities(retrieval_modality)
     domain = _ROUTE_DOMAINS.get(route_label, domain)
@@ -325,6 +330,78 @@ def apply_retrieval_modality_weights(weights: dict[str, float], modality: str | 
         weights["table"] = max(weights.get("table", 0.0), 0.25)
 
 
+def query_profile_metadata(query_signals: Any, profile: RetrievalProfile | None) -> dict[str, Any]:
+    """Build serializable metadata for Pyrrho's pre-retrieval query plan."""
+    if profile is None:
+        return {}
+    signals = {
+        "query_contract": _query_signal_metadata(
+            _query_signal_head(query_signals, "query_contract"),
+            applied_label=profile.query_contract,
+        ),
+        "route": _query_signal_metadata(
+            _query_signal_head(query_signals, "route"),
+            applied_label=profile.query_route,
+        ),
+        "answerability_shape": _query_signal_metadata(
+            _query_signal_head(query_signals, "answerability_shape"),
+            applied_label=profile.answerability_shape,
+        ),
+        "retrieval_modality": _query_signal_metadata(
+            _query_signal_head(query_signals, "retrieval_modality"),
+            applied_label=profile.retrieval_modality,
+        ),
+    }
+    return {
+        "signals": {key: value for key, value in signals.items() if value},
+        "profile": _profile_metadata(profile),
+    }
+
+
+def _query_signal_metadata(head: Any, *, applied_label: str | None) -> dict[str, Any]:
+    """Serialize one Pyrrho query head with its retrieval-use decision."""
+    label = _head_label(head)
+    if label is None:
+        return {}
+    metadata = {
+        "final_label": label,
+        "confidence": _head_confidence(head),
+        "used_for_retrieval": applied_label == label,
+    }
+    raw_label = getattr(head, "raw_label", None)
+    if raw_label:
+        metadata["raw_label"] = str(raw_label)
+    probabilities = _head_probabilities(head)
+    if probabilities:
+        metadata["probabilities"] = probabilities
+    return metadata
+
+
+def _profile_metadata(profile: RetrievalProfile) -> dict[str, Any]:
+    """Serialize retrieval-profile knobs that materially affect recall."""
+    return {
+        "query_contract": profile.query_contract,
+        "query_route": profile.query_route,
+        "answerability_shape": profile.answerability_shape,
+        "retrieval_modality": profile.retrieval_modality,
+        "domain": profile.domain,
+        "specificity": profile.specificity,
+        "answer_type": profile.answer_type,
+        "top_k": profile.top_k,
+        "top_read": profile.top_read,
+        "strategy_weights": {
+            key: float(value) for key, value in sorted(profile.strategy_weights.items())
+        },
+        "run_agentic": profile.run_agentic,
+        "inject_corpus_summaries": profile.inject_corpus_summaries,
+        "boost_recency": profile.boost_recency,
+        "has_aggregation_intent": profile.has_aggregation_intent,
+        "has_comparison_intent": profile.has_comparison_intent,
+        "has_temporal_intent": profile.has_temporal_intent,
+        "entity_expansion_limit": profile.entity_expansion_limit,
+    }
+
+
 def _query_signal_head(query_signals: Any, name: str) -> Any:
     """Return one head from a Pyrrho query decision."""
     head = getattr(query_signals, name, None)
@@ -336,13 +413,14 @@ def _query_signal_head(query_signals: Any, name: str) -> Any:
     return None
 
 
-def _trusted_head_label(head: Any) -> str | None:
+def _trusted_head_label(head: Any, name: str) -> str | None:
     """Return a label only when the head is confident enough to steer retrieval."""
     label = _head_label(head)
     confidence = _head_confidence(head)
     if label is None or confidence is None:
         return None
-    return label if confidence >= _QUERY_SIGNAL_MIN_CONFIDENCE else None
+    threshold = _QUERY_SIGNAL_MIN_CONFIDENCE.get(name, 1.0)
+    return label if confidence >= threshold else None
 
 
 def _head_label(head: Any) -> str | None:

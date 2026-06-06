@@ -732,6 +732,7 @@ class FitzKragEngine:
                             "query": query.text,
                             "answer_mode": "abstain",
                             "gap_context": gap_context,
+                            "query_profile": outcome.query_profile_metadata,
                         },
                     )
 
@@ -817,6 +818,8 @@ class FitzKragEngine:
                 )
                 if pyrrho_metadata:
                     answer.metadata["pyrrho"] = pyrrho_metadata
+                if outcome.query_profile_metadata:
+                    answer.metadata["query_profile"] = outcome.query_profile_metadata
                 if retry_metadata:
                     answer.metadata["retrieval_retry"] = retry_metadata
                 timings.append(("Generation", time.perf_counter() - t0))
@@ -954,6 +957,7 @@ class FitzKragEngine:
                     metadata={
                         "engine": "fitz_krag",
                         "source_query": query.text,
+                        "query_profile": outcome.query_profile_metadata,
                         "governance_cutoff": cutoff.metadata,
                     },
                 )

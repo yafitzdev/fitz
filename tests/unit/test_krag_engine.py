@@ -397,6 +397,7 @@ class TestAnswer:
             "disputed": 0.1,
             "trustworthy": 0.8,
         }
+        assert result.metadata["query_profile"]["profile"]["top_k"] == engine._config.top_addresses
 
     def test_answer_retries_before_synthesis_when_pyrrho_requests_more_evidence(self):
         """Generated answers should retry retrieval before synthesis when g4 asks for it."""
@@ -823,7 +824,7 @@ class TestEvidence:
 
         engine._governance = QueryContractGovernance()
 
-        engine.evidence(Query(text="Compare React and Vue performance"), top_k=2)
+        pack = engine.evidence(Query(text="Compare React and Vue performance"), top_k=2)
 
         profile = engine._retrieval_router.retrieve.call_args.args[1]
         assert profile.query_contract == "comparison_coverage"
@@ -836,6 +837,11 @@ class TestEvidence:
         assert profile.strategy_weights["table"] >= 0.55
         assert profile.has_comparison_intent is True
         assert profile.answer_type == "comparative"
+        query_profile = pack.metadata["query_profile"]
+        assert query_profile["signals"]["query_contract"]["final_label"] == ("comparison_coverage")
+        assert query_profile["signals"]["route"]["used_for_retrieval"] is True
+        assert query_profile["profile"]["answer_type"] == "comparative"
+        assert query_profile["profile"]["strategy_weights"]["table"] >= 0.55
 
     def test_evidence_uses_pyrrho_cutoff_over_reranked_results(self):
         """Evidence mode returns the smallest reranked prefix Pyrrho accepts."""
