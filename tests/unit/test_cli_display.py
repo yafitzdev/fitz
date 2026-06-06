@@ -133,8 +133,8 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
     ]
 
 
-def test_format_governance_metadata_shows_pyrrho_g31_heads_and_scalars():
-    """g3.1 metadata should be visible without dumping raw JSON."""
+def test_format_governance_metadata_shows_pyrrho_heads_and_scalars():
+    """Pyrrho metadata should be visible without dumping raw JSON."""
     metadata = {
         "governance_cutoff": {
             "pyrrho": {
@@ -144,11 +144,16 @@ def test_format_governance_metadata_shows_pyrrho_g31_heads_and_scalars():
                 },
                 "route": {"final_label": "business_ops", "confidence": 0.81},
                 "taxonomy": {"final_label": "direct_evidence", "confidence": 0.77},
+                "retrieval_action": {"final_label": "answer_now", "confidence": 0.83},
+                "gap_type": {"final_label": "none", "confidence": 0.86},
+                "answerability_shape": {"final_label": "direct_answer", "confidence": 0.76},
+                "retrieval_modality": {"final_label": "unstructured_text", "confidence": 0.70},
                 "scalars": {
                     "evidence_sufficiency": 0.84,
                     "query_evidence_alignment": 0.79,
                     "retrieval_retry_value": 0.17,
                     "false_trustworthy_risk": 0.09,
+                    "evidence_failure_severity": 0.11,
                 },
             },
         }
@@ -157,9 +162,14 @@ def test_format_governance_metadata_shows_pyrrho_g31_heads_and_scalars():
     assert _format_governance_metadata(metadata, []) == [
         (
             "Pyrrho heads: contract structured_lookup (0.88); "
-            "route business_ops (0.81); taxonomy direct_evidence (0.77)"
+            "route business_ops (0.81); taxonomy direct_evidence (0.77); "
+            "action answer_now (0.83); gap none (0.86); "
+            "shape direct_answer (0.76); modality unstructured_text (0.70)"
         ),
-        ("Pyrrho signals: sufficiency 0.84; alignment 0.79; " "retry 0.17; false-trust risk 0.09"),
+        (
+            "Pyrrho signals: sufficiency 0.84; alignment 0.79; retry 0.17; "
+            "false-trust risk 0.09; failure severity 0.11"
+        ),
     ]
 
 

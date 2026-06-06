@@ -420,7 +420,7 @@ def _fmt_prob(value: object) -> str:
 
 
 def _format_pyrrho_heads(pyrrho: dict) -> str:
-    """Format compact g3.1 head labels."""
+    """Format compact Pyrrho head labels."""
     if not pyrrho:
         return ""
     parts: list[str] = []
@@ -428,6 +428,10 @@ def _format_pyrrho_heads(pyrrho: dict) -> str:
         ("query_contract", "contract"),
         ("route", "route"),
         ("taxonomy", "taxonomy"),
+        ("retrieval_action", "action"),
+        ("gap_type", "gap"),
+        ("answerability_shape", "shape"),
+        ("retrieval_modality", "modality"),
     ):
         head = pyrrho.get(key)
         if not isinstance(head, dict):
@@ -441,7 +445,7 @@ def _format_pyrrho_heads(pyrrho: dict) -> str:
 
 
 def _format_pyrrho_scalars(pyrrho: dict) -> str:
-    """Format the retrieval-relevant g3.1 scalar heads."""
+    """Format the retrieval-relevant Pyrrho scalar heads."""
     scalars = pyrrho.get("scalars") if isinstance(pyrrho, dict) else None
     if not isinstance(scalars, dict) or not scalars:
         return ""
@@ -452,6 +456,7 @@ def _format_pyrrho_scalars(pyrrho: dict) -> str:
         "conflict_density": "conflict",
         "retrieval_retry_value": "retry",
         "false_trustworthy_risk": "false-trust risk",
+        "evidence_failure_severity": "failure severity",
     }
     parts = [
         f"{label} {_fmt_prob(scalars[key])}" for key, label in labels.items() if key in scalars

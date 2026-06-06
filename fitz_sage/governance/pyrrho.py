@@ -4,8 +4,9 @@ Pyrrho governance backend.
 
 The standard model is ``yafitzdev/pyrrho-nano-g3.1``: a custom multitask
 ModernBERT encoder with governance, query-contract, route/domain, taxonomy,
-and scalar heads. It is a local CPU model loaded from Hugging Face; no LLM call
-is made on the governance path.
+and scalar heads. Newer Pyrrho packages may expose extra optional heads through
+``pyrrho_multitask_config.json``. The classifier runs locally on CPU; no LLM
+call is made on the governance path.
 """
 
 from __future__ import annotations
@@ -31,6 +32,13 @@ MAX_QUERY_LENGTH = 256
 TAU = 0.39
 
 LABELS = (AnswerMode.ABSTAIN, AnswerMode.DISPUTED, AnswerMode.TRUSTWORTHY)
+
+_OPTIONAL_HEAD_SPECS: dict[str, tuple[str, str]] = {
+    "retrieval_action": ("retrieval_action_id2label", "evidence"),
+    "gap_type": ("gap_type_id2label", "evidence"),
+    "answerability_shape": ("answerability_shape_id2label", "query"),
+    "retrieval_modality": ("retrieval_modality_id2label", "query"),
+}
 
 
 @dataclass(frozen=True)
@@ -60,6 +68,11 @@ class GovernanceDecision:
     query_contract: HeadDecision | None = None
     route: HeadDecision | None = None
     taxonomy: HeadDecision | None = None
+    retrieval_action: HeadDecision | None = None
+    gap_type: HeadDecision | None = None
+    answerability_shape: HeadDecision | None = None
+    retrieval_modality: HeadDecision | None = None
+    heads: dict[str, HeadDecision] = field(default_factory=dict)
     scalars: dict[str, float] = field(default_factory=dict)
 
     @property
@@ -89,7 +102,7 @@ def _reason_for(mode: AnswerMode, probs: tuple[float, float, float]) -> str:
 
 
 class _PyrrhoMultiTaskModernBert(nn.Module):
-    """Package-local copy of the g3.1 multitask architecture."""
+    """Package-local copy of the Pyrrho multitask architecture."""
 
     def __init__(self, model_dir: Path) -> None:
         super().__init__()
@@ -114,6 +127,13 @@ class _PyrrhoMultiTaskModernBert(nn.Module):
             int(self.pyrrho_config["num_taxonomy_patterns"]),
         )
         self.scalar_head = nn.Linear(hidden_size, len(self.pyrrho_config["scalar_fields"]))
+        for name, (label_key, _) in _OPTIONAL_HEAD_SPECS.items():
+            label_count = len(self.pyrrho_config.get(label_key) or {})
+            setattr(
+                self,
+                f"{name}_head",
+                nn.Linear(hidden_size, label_count) if label_count else None,
+            )
         self.load_state_dict(load_file(model_dir / "model.safetensors", device="cpu"))
 
     @staticmethod
@@ -135,17 +155,24 @@ class _PyrrhoMultiTaskModernBert(nn.Module):
     ) -> dict[str, Any]:
         evidence_state = self._encode(input_ids, attention_mask)
         query_state = self._encode(query_input_ids, query_attention_mask)
-        return {
+        outputs = {
             "governance_logits": self.governance_head(evidence_state),
             "query_contract_logits": self.query_contract_head(query_state),
             "route_logits": self.route_head(query_state),
             "taxonomy_logits": self.taxonomy_head(evidence_state),
             "scalar_preds": torch.sigmoid(self.scalar_head(evidence_state)),
         }
+        for name, (_, state_source) in _OPTIONAL_HEAD_SPECS.items():
+            head = getattr(self, f"{name}_head")
+            if head is None:
+                continue
+            state = query_state if state_source == "query" else evidence_state
+            outputs[f"{name}_logits"] = head(state)
+        return outputs
 
 
 class Pyrrho:
-    """The pyrrho g3.1 classifier."""
+    """The Pyrrho multitask classifier."""
 
     supports_batched_prefixes = True
 
@@ -159,7 +186,9 @@ class Pyrrho:
         self._query_contract_id2label: dict[int, str] = {}
         self._route_id2label: dict[int, str] = {}
         self._taxonomy_id2label: dict[int, str] = {}
+        self._optional_id2labels: dict[str, dict[int, str]] = {}
         self._scalar_fields: tuple[str, ...] = ()
+        self._trustworthy_threshold = TAU
 
     def classify_query(self, query: str) -> HeadDecision:
         """Classify the query contract before retrieval."""
@@ -216,12 +245,14 @@ class Pyrrho:
 
             from huggingface_hub import snapshot_download
 
-            model_dir = _model_cache_dir(self._model_id)
-            model_dir.mkdir(parents=True, exist_ok=True)
-            snapshot_download(
-                repo_id=self._model_id,
-                local_dir=model_dir,
-            )
+            model_dir = _resolve_model_dir(self._model_id)
+            if model_dir is None:
+                model_dir = _model_cache_dir(self._model_id)
+                model_dir.mkdir(parents=True, exist_ok=True)
+                snapshot_download(
+                    repo_id=self._model_id,
+                    local_dir=model_dir,
+                )
             model = _PyrrhoMultiTaskModernBert(model_dir).eval()
             config = model.pyrrho_config
 
@@ -232,7 +263,16 @@ class Pyrrho:
             self._query_contract_id2label = _id2label(config["query_contract_id2label"])
             self._route_id2label = _id2label(config["route_id2label"])
             self._taxonomy_id2label = _id2label(config["taxonomy_id2label"])
+            self._optional_id2labels = {
+                name: _id2label(config[label_key])
+                for name, (label_key, _) in _OPTIONAL_HEAD_SPECS.items()
+                if isinstance(config.get(label_key), dict) and config[label_key]
+            }
             self._scalar_fields = tuple(str(field) for field in config["scalar_fields"])
+            trustworthy_threshold = _load_trustworthy_threshold(model_dir)
+            self._trustworthy_threshold = (
+                TAU if trustworthy_threshold is None else trustworthy_threshold
+            )
 
     @torch.no_grad()
     def _predict_query(self, query: str) -> HeadDecision:
@@ -265,7 +305,7 @@ class Pyrrho:
         return decisions
 
     def _run_batch(self, *, full_texts: list[str], query_texts: list[str]) -> dict[str, Any]:
-        """Tokenize and run a g3.1 multitask batch."""
+        """Tokenize and run a Pyrrho multitask batch."""
         if self._tokenizer is None or self._model is None:
             raise RuntimeError("Pyrrho was not loaded before inference.")
 
@@ -303,6 +343,29 @@ def _model_cache_dir(model_id: str) -> Path:
     return FitzPaths.user_home() / "models" / "pyrrho" / safe_id
 
 
+def _resolve_model_dir(model_id: str) -> Path | None:
+    """Return a local Pyrrho package directory when the model spec names one."""
+    candidate = Path(model_id).expanduser()
+    if candidate.exists():
+        if not candidate.is_dir():
+            raise ValueError(f"Pyrrho model path must be a directory: {candidate}")
+        return candidate
+    return None
+
+
+def _load_trustworthy_threshold(model_dir: Path) -> float | None:
+    """Read the packaged release threshold when a Pyrrho manifest provides one."""
+    manifest_path = model_dir / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        value = manifest.get("release", {}).get("trustworthy_threshold")
+        return float(value) if value is not None else None
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def _load_tokenizer(model_dir: Path) -> Any:
     """Load the tokenizer without trusting the repo's tokenizer_class metadata."""
     from transformers import PreTrainedTokenizerFast
@@ -332,7 +395,7 @@ def _decision_from_outputs(
     governance = _head_decision(
         outputs["governance_logits"][index],
         pyrrho._id2label,
-        trustworthy_threshold=TAU,
+        trustworthy_threshold=pyrrho._trustworthy_threshold,
     )
     query_contract = _head_decision(
         outputs["query_contract_logits"][index],
@@ -343,6 +406,18 @@ def _decision_from_outputs(
         outputs["taxonomy_logits"][index],
         pyrrho._taxonomy_id2label,
     )
+    optional_heads = {
+        name: _head_decision(outputs[f"{name}_logits"][index], id2label)
+        for name, id2label in pyrrho._optional_id2labels.items()
+        if f"{name}_logits" in outputs
+    }
+    heads = {
+        "governance": governance,
+        "query_contract": query_contract,
+        "route": route,
+        "taxonomy": taxonomy,
+        **optional_heads,
+    }
     scalars = {
         field: float(value)
         for field, value in zip(
@@ -366,6 +441,11 @@ def _decision_from_outputs(
         query_contract=query_contract,
         route=route,
         taxonomy=taxonomy,
+        retrieval_action=optional_heads.get("retrieval_action"),
+        gap_type=optional_heads.get("gap_type"),
+        answerability_shape=optional_heads.get("answerability_shape"),
+        retrieval_modality=optional_heads.get("retrieval_modality"),
+        heads=heads,
         scalars=scalars,
     )
 

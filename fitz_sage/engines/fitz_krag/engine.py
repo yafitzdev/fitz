@@ -25,7 +25,10 @@ from fitz_sage.core import (
 )
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-from fitz_sage.engines.fitz_krag.governance_cutoff import apply_governance_cutoff
+from fitz_sage.engines.fitz_krag.governance_cutoff import (
+    apply_governance_cutoff,
+    pyrrho_decision_metadata,
+)
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -34,6 +37,14 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.types import ReadResult
 
 logger = get_logger(__name__)
+
+_PYRRHO_RETRY_ACTIONS = {
+    "retrieve_more",
+    "broaden_search",
+    "resolve_conflict",
+    "structured_lookup",
+}
+_PYRRHO_RETRY_MIN_CONFIDENCE = 0.70
 
 
 def _report_timings(
@@ -47,6 +58,67 @@ def _report_timings(
     total = time.perf_counter() - pipeline_start
     parts = "  ".join(f"{name}: {dur:.1f}s" for name, dur in timings)
     progress(f"Pipeline: {total:.1f}s total — {parts}")
+
+
+def _pyrrho_retry_request(
+    metadata: dict[str, Any],
+    *,
+    require_cutoff_stop: bool = True,
+) -> dict[str, str | None] | None:
+    """Return a Pyrrho-directed retry request from cutoff metadata, if any."""
+    if not isinstance(metadata, dict):
+        return None
+    if (
+        require_cutoff_stop
+        and metadata.get("stop_reason") != "retrieval_control_unsatisfied_at_cutoff"
+    ):
+        return None
+
+    pyrrho = metadata.get("pyrrho") if require_cutoff_stop else metadata
+    if not isinstance(pyrrho, dict) and isinstance(metadata.get("pyrrho"), dict):
+        pyrrho = metadata["pyrrho"]
+    if not isinstance(pyrrho, dict):
+        return None
+
+    action, confidence = _pyrrho_head_label_and_confidence(pyrrho, "retrieval_action")
+    if action not in _PYRRHO_RETRY_ACTIONS:
+        return None
+    if confidence < _PYRRHO_RETRY_MIN_CONFIDENCE:
+        return None
+
+    return {
+        "action": action,
+        "modality": _pyrrho_head_label_and_confidence(pyrrho, "retrieval_modality")[0],
+    }
+
+
+def _pyrrho_head_label_and_confidence(
+    pyrrho: dict[str, Any],
+    key: str,
+) -> tuple[str | None, float]:
+    """Return one serialized Pyrrho head's final label and confidence."""
+    head = pyrrho.get(key)
+    if not isinstance(head, dict):
+        return None, 0.0
+    label = head.get("final_label")
+    try:
+        confidence = float(head.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return (str(label) if label else None), confidence
+
+
+def _retry_control_reason(action: str | None) -> str:
+    """Return an abstain reason for an unresolved Pyrrho retrieval-control request."""
+    if action in {"retrieve_more", "broaden_search"}:
+        return f"Pyrrho retrieval action still requires more evidence: {action}."
+    if action == "resolve_conflict":
+        return (
+            "Pyrrho retrieval action still requires conflict resolution before trusting evidence."
+        )
+    if action == "structured_lookup":
+        return "Pyrrho retrieval action still requires structured lookup evidence."
+    return "Pyrrho retrieval control did not authorize a trustworthy answer."
 
 
 def _build_provider_config(
@@ -669,6 +741,50 @@ class FitzKragEngine:
                 governance = self._governance.decide(sanitized, expanded)
                 answer_mode = governance.mode
                 timings.append(("Governance", time.perf_counter() - t0))
+                pyrrho_metadata = pyrrho_decision_metadata(answer_mode, governance)
+                retry_metadata: dict[str, Any] | None = None
+
+                retry_request = _pyrrho_retry_request(
+                    pyrrho_metadata,
+                    require_cutoff_stop=False,
+                )
+                if retry_request is not None:
+                    initial_result_count = len(outcome.expanded)
+                    retried = self._build_query_pipeline().retry_retrieve(
+                        outcome,
+                        retrieval_action=retry_request["action"],
+                        retrieval_modality=retry_request.get("modality"),
+                        progress=progress,
+                        allow_llm_strategies=True,
+                        execute_table_queries=True,
+                        expand_context=True,
+                    )
+                    retry_metadata = {
+                        "action": retry_request["action"],
+                        "modality": retry_request.get("modality"),
+                        "initial_mode": answer_mode.value,
+                        "added": max(0, len(retried.expanded) - initial_result_count),
+                    }
+                    outcome = retried
+                    expanded = outcome.expanded
+                    timings = list(outcome.timings)
+                    if len(retried.expanded) > initial_result_count:
+                        t0 = time.perf_counter()
+                        governance = self._governance.decide(sanitized, expanded)
+                        answer_mode = governance.mode
+                        timings.append(("Retry governance", time.perf_counter() - t0))
+                        pyrrho_metadata = pyrrho_decision_metadata(answer_mode, governance)
+                        retry_metadata["final_mode"] = answer_mode.value
+
+                    unresolved_retry = _pyrrho_retry_request(
+                        pyrrho_metadata,
+                        require_cutoff_stop=False,
+                    )
+                    if answer_mode is AnswerMode.TRUSTWORTHY and unresolved_retry is not None:
+                        answer_mode = AnswerMode.ABSTAIN
+                        retry_metadata["final_mode"] = answer_mode.value
+                        retry_metadata["final_action"] = unresolved_retry["action"]
+                        retry_metadata["stop_reason"] = "retrieval_control_unsatisfied"
 
                 # 5.5. Compress code context (AST-based, ~50-70% token reduction)
                 expanded = compress_results(expanded)
@@ -683,6 +799,11 @@ class FitzKragEngine:
                 conflict_context = None
                 if answer_mode == AnswerMode.ABSTAIN:
                     governance_reasons = governance.reasons
+                    if retry_metadata and retry_metadata.get("stop_reason"):
+                        governance_reasons = (
+                            _retry_control_reason(str(retry_metadata.get("final_action"))),
+                            *governance_reasons,
+                        )
                     gap_context = self._build_gap_context(sanitized, governance_reasons)
                 elif answer_mode == AnswerMode.DISPUTED:
                     conflict_context = {"reason": governance.reason}
@@ -694,6 +815,10 @@ class FitzKragEngine:
                     gap_context=gap_context,
                     conflict_context=conflict_context,
                 )
+                if pyrrho_metadata:
+                    answer.metadata["pyrrho"] = pyrrho_metadata
+                if retry_metadata:
+                    answer.metadata["retrieval_retry"] = retry_metadata
                 timings.append(("Generation", time.perf_counter() - t0))
 
                 # Report timing breakdown
@@ -779,6 +904,41 @@ class FitzKragEngine:
                     profile=outcome.profile,
                     requested_top_k=requested_top_k,
                 )
+
+                retry_request = _pyrrho_retry_request(cutoff.metadata)
+                if retry_request is not None:
+                    initial_result_count = len(outcome.expanded)
+                    retried = self._build_query_pipeline().retry_retrieve(
+                        outcome,
+                        retrieval_action=retry_request["action"],
+                        retrieval_modality=retry_request.get("modality"),
+                        progress=progress,
+                        allow_llm_strategies=False,
+                        execute_table_queries=False,
+                        expand_context=False,
+                    )
+                    retry_metadata = {
+                        "action": retry_request["action"],
+                        "modality": retry_request.get("modality"),
+                        "initial_stop_reason": cutoff.metadata.get("stop_reason"),
+                        "initial_mode": cutoff.mode.value,
+                        "initial_evaluated": cutoff.metadata.get("evaluated"),
+                        "added": max(0, len(retried.expanded) - initial_result_count),
+                    }
+                    outcome = retried
+                    if len(retried.expanded) > initial_result_count:
+                        cutoff = apply_governance_cutoff(
+                            outcome.sanitized,
+                            outcome.expanded,
+                            self._governance,
+                            profile=outcome.profile,
+                            requested_top_k=requested_top_k,
+                        )
+                        retry_metadata["final_stop_reason"] = cutoff.metadata.get("stop_reason")
+                        retry_metadata["final_mode"] = cutoff.mode.value
+                    cutoff.metadata["retrieval_retry"] = retry_metadata
+
+                timings = list(outcome.timings)
                 timings.extend(cutoff.timings)
                 items = self._build_evidence_items(cutoff.selected)
 

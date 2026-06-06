@@ -93,7 +93,7 @@ def test_enable_guardrails_raises_migration_error():
             load_engine_config("fitz_krag")
 
 
-def test_create_governance_dispatch():
+def test_create_governance_dispatch(tmp_path):
     """`create_governance` maps a config spec to a classifier instance."""
     from fitz_sage.governance import Pyrrho, create_governance
     from fitz_sage.governance.pyrrho import MODEL_ID, TAU
@@ -107,6 +107,12 @@ def test_create_governance_dispatch():
     custom = create_governance("pyrrho/acme/custom-fine-tune")
     assert isinstance(custom, Pyrrho)
     assert custom._model_id == "acme/custom-fine-tune"
+
+    local_package = tmp_path / "pyrrho-nano-g4-alpha"
+    local_package.mkdir()
+    local = create_governance(f"pyrrho/{local_package}")
+    assert isinstance(local, Pyrrho)
+    assert local._model_id == str(local_package)
 
 
 def test_create_governance_unknown_provider():

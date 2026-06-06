@@ -7,7 +7,7 @@ answer (TRUSTWORTHY), contradict each other (DISPUTED), or simply don't
 contain enough information (ABSTAIN). The standard classifier is
 [pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1), a multitask
 ModernBERT model with governance, query-contract, route/domain, taxonomy,
-and scalar heads running locally on CPU.
+scalar, and optional release-specific heads running locally on CPU.
 
 Governance is mandatory in the standard product path. The ``governance:``
 config key declares which pyrrho classifier to use:
@@ -18,7 +18,7 @@ config key declares which pyrrho classifier to use:
     decision = governance.decide(query, retrieved_contexts)
     # decision.mode in {TRUSTWORTHY, DISPUTED, ABSTAIN}
     # decision.probs is the governance softmax distribution
-    # decision.query_contract / route / taxonomy expose g3.1 head metadata
+    # decision.query_contract / route / taxonomy expose head metadata
     # decision.reason is a one-line human-readable summary
 
 The legacy constraint+sklearn cascade was removed in v0.13.0. The pyrrho
@@ -36,8 +36,9 @@ def create_governance(spec: str) -> Pyrrho:
     """Build a governance classifier from a config spec.
 
     Args:
-        spec: ``"pyrrho"`` (the default classifier), or
-            ``"pyrrho/<hf-model-id>"`` (a custom pyrrho fine-tune).
+        spec: ``"pyrrho"`` (the default classifier),
+            ``"pyrrho/<hf-model-id>"`` (a custom pyrrho fine-tune), or
+            ``"pyrrho/<local-package-path>"`` (an unpacked pyrrho release).
 
     Returns:
         A ``Pyrrho`` instance.

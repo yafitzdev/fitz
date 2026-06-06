@@ -24,6 +24,16 @@ _DISPUTE_PATIENCE_DOCS = 2
 _STABLE_DISPUTE_DOCS = 2
 _FOLLOWUP_BATCH_SIZE = 2
 _BROAD_OVERVIEW_SOURCE_COUNT = 6
+_RETRIEVAL_CONTROL_MIN_CONFIDENCE = 0.70
+_ANSWER_NOW_MIN_CONFIDENCE = 0.70
+_RETRIEVAL_CONTROL_MORE_ACTIONS = {"retrieve_more", "broaden_search"}
+_RETRIEVAL_CONTROL_BLOCKING_ACTIONS = {
+    "retrieve_more",
+    "broaden_search",
+    "resolve_conflict",
+    "structured_lookup",
+    "ask_clarifying_question",
+}
 _MONTH_PATTERN = (
     r"\b(january|february|march|april|may|june|july|august|september|"
     r"october|november|december)(?:\s+(\d{4}))?\b"
@@ -173,6 +183,7 @@ def apply_governance_cutoff(
 
     last_reasons: list[str] = []
     last_decision: Any = None
+    last_retrieval_control_blocker: str | None = None
     stable_disputed_decision: Any = None
     trajectory: list[dict[str, Any]] = []
     consecutive_disputed = 0
@@ -188,6 +199,7 @@ def apply_governance_cutoff(
             profile,
             results[:size],
             policy,
+            decision=decision,
         )
         if structured_lookup_matches:
             trajectory.append(trace)
@@ -201,17 +213,30 @@ def apply_governance_cutoff(
                 started_at=t0,
             )
 
+        retrieval_control_blocker = _retrieval_control_blocker(decision)
+        last_retrieval_control_blocker = retrieval_control_blocker
+        if retrieval_control_blocker:
+            trace["retrieval_control_blocker"] = retrieval_control_blocker
+
         if mode is AnswerMode.TRUSTWORTHY:
             consecutive_disputed = 0
-            if size >= policy.min_trustworthy_docs:
-                contract_blocker = _query_contract_blocker(
-                    query,
-                    profile,
-                    results[:size],
-                    policy,
-                )
-                if contract_blocker:
-                    trace["contract_blocker"] = contract_blocker
+            contract_blocker = _query_contract_blocker(
+                query,
+                profile,
+                results[:size],
+                policy,
+            )
+            if contract_blocker:
+                trace["contract_blocker"] = contract_blocker
+
+            can_stop = size >= policy.min_trustworthy_docs
+            stop_reason = "trustworthy_min_evidence_met"
+            if not can_stop and _should_stop_on_answer_now(decision):
+                can_stop = True
+                stop_reason = "pyrrho_answer_now"
+
+            if can_stop:
+                if contract_blocker or retrieval_control_blocker:
                     trajectory.append(trace)
                     continue
                 trajectory.append(trace)
@@ -227,7 +252,9 @@ def apply_governance_cutoff(
                         mode=mode,
                         decision=decision,
                         trajectory=trajectory,
-                        stop_reason="trustworthy_min_evidence_met",
+                        stop_reason=stop_reason,
+                        contract_blocker=contract_blocker,
+                        retrieval_control_blocker=retrieval_control_blocker,
                     ),
                 )
             trajectory.append(trace)
@@ -259,7 +286,13 @@ def apply_governance_cutoff(
         trajectory.append(trace)
         consecutive_disputed = 0
 
-    structured_lookup_matches = _structured_lookup_exact_matches(query, profile, results, policy)
+    structured_lookup_matches = _structured_lookup_exact_matches(
+        query,
+        profile,
+        results,
+        policy,
+        decision=last_decision,
+    )
     if structured_lookup_matches:
         return _structured_lookup_cutoff_result(
             query,
@@ -298,12 +331,20 @@ def apply_governance_cutoff(
         reasons.insert(0, contract_blocker)
         reasons.append("Evidence did not satisfy the query contract within the cutoff.")
         stop_reason = "contract_unsatisfied_at_cutoff"
+        retrieval_control_blocker = None
+    elif last_retrieval_control_blocker:
+        reasons = list(last_reasons)
+        reasons.insert(0, last_retrieval_control_blocker)
+        reasons.append("Pyrrho retrieval control did not authorize an answer within the cutoff.")
+        stop_reason = "retrieval_control_unsatisfied_at_cutoff"
+        retrieval_control_blocker = last_retrieval_control_blocker
     else:
         reasons = list(last_reasons)
         reasons.append(
             f"Pyrrho abstained after evaluating the top {policy.max_docs} evidence item(s)."
         )
         stop_reason = "cutoff_exhausted"
+        retrieval_control_blocker = None
     return GovernanceCutoffResult(
         selected=results[: policy.max_docs],
         mode=AnswerMode.ABSTAIN,
@@ -318,6 +359,7 @@ def apply_governance_cutoff(
             trajectory=trajectory,
             stop_reason=stop_reason,
             contract_blocker=contract_blocker,
+            retrieval_control_blocker=retrieval_control_blocker,
         ),
     )
 
@@ -504,6 +546,47 @@ def _should_stop_on_disputed(
     return False
 
 
+def _should_stop_on_answer_now(decision: Any) -> bool:
+    """Return whether Pyrrho explicitly authorizes an early trustworthy stop."""
+    label, confidence = _head_label_and_confidence(decision, "retrieval_action")
+    return label == "answer_now" and confidence >= _ANSWER_NOW_MIN_CONFIDENCE
+
+
+def _retrieval_control_blocker(decision: Any) -> str | None:
+    """Return a reason to keep evaluating evidence from Pyrrho retrieval control."""
+    label, confidence = _head_label_and_confidence(decision, "retrieval_action")
+    if label not in _RETRIEVAL_CONTROL_BLOCKING_ACTIONS:
+        return None
+    if confidence < _RETRIEVAL_CONTROL_MIN_CONFIDENCE:
+        return None
+    if label in _RETRIEVAL_CONTROL_MORE_ACTIONS:
+        return f"Pyrrho retrieval action requested more evidence: {label}."
+    if label == "resolve_conflict":
+        return "Pyrrho retrieval action requested conflict resolution before trusting evidence."
+    if label == "structured_lookup":
+        return "Pyrrho retrieval action requested structured lookup evidence."
+    if label == "ask_clarifying_question":
+        return "Pyrrho retrieval action indicated the query needs clarification."
+    return None
+
+
+def _head_label_and_confidence(decision: Any, name: str) -> tuple[str | None, float]:
+    """Read one Pyrrho head's final label and confidence defensively."""
+    head = getattr(decision, name, None)
+    if head is None:
+        heads = getattr(decision, "heads", None)
+        if isinstance(heads, dict):
+            head = heads.get(name)
+    if head is None:
+        return None, 0.0
+    label = getattr(head, "final_label", None)
+    try:
+        confidence = float(getattr(head, "confidence", 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return str(label) if label else None, confidence
+
+
 def _decision_mode(decision: Any) -> AnswerMode:
     """Read a decision mode defensively."""
     mode = getattr(decision, "mode", AnswerMode.ABSTAIN)
@@ -531,6 +614,7 @@ def _governance_cutoff_metadata(
     trajectory: list[dict[str, Any]] | None = None,
     stop_reason: str | None = None,
     contract_blocker: str | None = None,
+    retrieval_control_blocker: str | None = None,
 ) -> dict[str, Any]:
     """Build serializable metadata for the cutoff loop."""
     metadata = {
@@ -543,6 +627,8 @@ def _governance_cutoff_metadata(
         metadata["stop_reason"] = stop_reason
     if contract_blocker:
         metadata["contract_blocker"] = contract_blocker
+    if retrieval_control_blocker:
+        metadata["retrieval_control_blocker"] = retrieval_control_blocker
     if policy is not None:
         metadata["policy"] = {
             "query_shape": policy.query_shape,
@@ -588,9 +674,15 @@ def _structured_lookup_exact_matches(
     profile: Any,
     results: list["ReadResult"],
     policy: GovernanceCutoffPolicy,
+    *,
+    decision: Any = None,
 ) -> list["ReadResult"]:
     """Return individual sources that satisfy an exact structured lookup."""
-    if getattr(profile, "query_contract", None) != "structured_lookup":
+    action_label, action_confidence = _head_label_and_confidence(decision, "retrieval_action")
+    if getattr(profile, "query_contract", None) != "structured_lookup" and not (
+        action_label == "structured_lookup"
+        and action_confidence >= _RETRIEVAL_CONTROL_MIN_CONFIDENCE
+    ):
         return []
 
     identifiers = _exact_identifiers(query)
@@ -910,16 +1002,39 @@ def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
     if isinstance(reason, str) and reason:
         metadata["reason"] = reason
 
-    for key in ("governance", "query_contract", "route", "taxonomy"):
+    for key in (
+        "governance",
+        "query_contract",
+        "route",
+        "taxonomy",
+        "retrieval_action",
+        "gap_type",
+        "answerability_shape",
+        "retrieval_modality",
+    ):
         head = _head_metadata(getattr(decision, key, None))
         if head:
             metadata[key] = head
+
+    heads = getattr(decision, "heads", None)
+    if isinstance(heads, dict):
+        for key, head in heads.items():
+            if not isinstance(key, str) or key in metadata:
+                continue
+            head_data = _head_metadata(head)
+            if head_data:
+                metadata[key] = head_data
 
     scalars = getattr(decision, "scalars", None)
     if isinstance(scalars, dict) and scalars:
         metadata["scalars"] = {str(key): float(value) for key, value in scalars.items()}
 
     return metadata
+
+
+def pyrrho_decision_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
+    """Serialize Pyrrho decision metadata for answer and evidence surfaces."""
+    return _pyrrho_metadata(mode, decision)
 
 
 def _prefix_trace(size: int, mode: AnswerMode, decision: Any) -> dict[str, Any]:
@@ -930,7 +1045,7 @@ def _prefix_trace(size: int, mode: AnswerMode, decision: Any) -> dict[str, Any]:
 
 
 def _head_metadata(head: Any) -> dict[str, Any]:
-    """Serialize a Pyrrho g3.1 head decision."""
+    """Serialize a Pyrrho head decision."""
     if head is None or isinstance(head, Mock):
         return {}
 
@@ -973,4 +1088,5 @@ __all__ = [
     "apply_governance_cutoff",
     "governance_cutoff_policy",
     "governance_query_shape",
+    "pyrrho_decision_metadata",
 ]

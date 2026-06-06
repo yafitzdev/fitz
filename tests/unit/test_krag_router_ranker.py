@@ -111,6 +111,24 @@ class TestRetrievalRouter:
         # Without profile, sorted by score descending
         assert result[0].score >= result[1].score
 
+    def test_retrieve_returns_profile_top_k_candidates(self):
+        """Profile top_k should control the final candidate list size."""
+        code_strat = MagicMock()
+        code_strat.retrieve.return_value = [
+            _addr(score=1.0 - (index * 0.01), location=f"mod.func{index}") for index in range(12)
+        ]
+
+        config = _make_config(top_addresses=5)
+        router = RetrievalRouter(
+            code_strategy=code_strat,
+            config=config,
+            section_strategy=None,
+        )
+
+        result = router.retrieve("find func", _code_profile(top_k=8))
+
+        assert len(result) == 8
+
     # -- test_retrieve_with_section_strategy ------------------------------
 
     def test_retrieve_with_section_strategy(self):

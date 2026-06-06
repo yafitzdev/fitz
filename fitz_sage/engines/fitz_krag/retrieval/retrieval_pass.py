@@ -151,7 +151,8 @@ class RetrievalPass:
         addresses = _enforce_broad_group_diversity(query, addresses, profile)
         addresses = _assign_broad_effective_scores(query, addresses, profile)
         t0 = time.perf_counter()
-        results = self._reader.read(addresses, self._config.top_read)
+        read_limit = getattr(profile, "top_read", self._config.top_read)
+        results = self._reader.read(addresses, read_limit)
         self.last_timings["read"] = time.perf_counter() - t0
         return results
 

@@ -184,7 +184,7 @@ class RetrievalRouter:
 
         # File diversity: prevent one file from monopolizing all read slots
         ranked = self._enforce_file_diversity(ranked)
-        return ranked[: self._config.top_addresses]
+        return ranked[:limit]
 
     def _run_strategy(
         self,

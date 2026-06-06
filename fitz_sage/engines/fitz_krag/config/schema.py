@@ -263,8 +263,9 @@ class FitzKragConfig(BasePluginConfig):
         default="pyrrho",
         description=(
             "Epistemic governance classifier. 'pyrrho' (default) labels each "
-            "answer TRUSTWORTHY / DISPUTED / ABSTAIN via an INT8 ONNX "
-            "classifier; 'pyrrho/<hf-model-id>' swaps in a custom fine-tune."
+            "answer TRUSTWORTHY / DISPUTED / ABSTAIN via a local Pyrrho "
+            "multitask classifier; 'pyrrho/<hf-model-id>' or "
+            "'pyrrho/<local-package-path>' swaps in a custom package."
         ),
     )
 

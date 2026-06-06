@@ -10,8 +10,13 @@ from fitz_sage.engines.fitz_krag.governance_cutoff import apply_governance_cutof
 from fitz_sage.governance.pyrrho import GovernanceDecision, HeadDecision
 
 
-def test_cutoff_serializes_pyrrho_g31_metadata():
-    """g3.1 head and scalar outputs should survive into evidence-pack metadata."""
+def test_cutoff_serializes_pyrrho_multitask_metadata():
+    """Pyrrho head and scalar outputs should survive into evidence-pack metadata."""
+    future_head = _head(
+        raw_label="future_signal",
+        final_label="future_signal",
+        probabilities={"future_signal": 0.91, "other": 0.09},
+    )
     decision = GovernanceDecision(
         mode=AnswerMode.TRUSTWORTHY,
         probs=(0.05, 0.10, 0.85),
@@ -36,7 +41,32 @@ def test_cutoff_serializes_pyrrho_g31_metadata():
             final_label="evidence_direct",
             probabilities={"evidence_direct": 0.72, "evidence_indirect": 0.28},
         ),
-        scalars={"retrieval_retry_value": 0.17, "false_trustworthy_risk": 0.09},
+        retrieval_action=_head(
+            raw_label="answer_now",
+            final_label="answer_now",
+            probabilities={"answer_now": 0.83, "retrieve_more": 0.17},
+        ),
+        gap_type=_head(
+            raw_label="none",
+            final_label="none",
+            probabilities={"none": 0.86, "missing_specific_fact": 0.14},
+        ),
+        answerability_shape=_head(
+            raw_label="direct_answer",
+            final_label="direct_answer",
+            probabilities={"direct_answer": 0.76, "structured_reasoning": 0.24},
+        ),
+        retrieval_modality=_head(
+            raw_label="unstructured_text",
+            final_label="unstructured_text",
+            probabilities={"unstructured_text": 0.70, "structured_table": 0.30},
+        ),
+        heads={"future_head": future_head},
+        scalars={
+            "retrieval_retry_value": 0.17,
+            "false_trustworthy_risk": 0.09,
+            "evidence_failure_severity": 0.11,
+        },
     )
 
     class Governance:
@@ -57,8 +87,14 @@ def test_cutoff_serializes_pyrrho_g31_metadata():
     assert pyrrho["query_contract"]["final_label"] == "structured_lookup"
     assert pyrrho["route"]["final_label"] == "business_ops"
     assert pyrrho["taxonomy"]["final_label"] == "evidence_direct"
+    assert pyrrho["retrieval_action"]["final_label"] == "answer_now"
+    assert pyrrho["gap_type"]["final_label"] == "none"
+    assert pyrrho["answerability_shape"]["final_label"] == "direct_answer"
+    assert pyrrho["retrieval_modality"]["final_label"] == "unstructured_text"
+    assert pyrrho["future_head"]["final_label"] == "future_signal"
     assert pyrrho["scalars"]["retrieval_retry_value"] == 0.17
     assert pyrrho["scalars"]["false_trustworthy_risk"] == 0.09
+    assert pyrrho["scalars"]["evidence_failure_severity"] == 0.11
 
 
 def test_contract_gate_waits_for_all_comparison_entities():
@@ -156,6 +192,119 @@ def test_metric_comparison_cutoff_prefers_exact_table_evidence():
     assert q1_conclusion not in result.selected
 
 
+def test_retrieval_action_answer_now_allows_early_broad_stop():
+    """A confident g4 answer_now action can override broad-shape minimum evidence."""
+    results = [
+        _result("The deployment guide says rollback requires `fitz deploy --rollback`.", "ops.md"),
+        _result("Release notes mention deployment automation.", "release.md"),
+        _result("The runbook lists monitoring alerts.", "alerts.md"),
+        _result("The changelog records CLI changes.", "changelog.md"),
+    ]
+    decision = _decision(
+        mode=AnswerMode.TRUSTWORTHY,
+        action="answer_now",
+        action_confidence=0.88,
+    )
+
+    result = apply_governance_cutoff(
+        "What should I know about deployment rollback?",
+        results,
+        _FixedGovernance(decision),
+        profile=SimpleNamespace(specificity="broad"),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [results[0]]
+    assert result.metadata["stop_reason"] == "pyrrho_answer_now"
+    assert result.metadata["policy"]["query_shape"] == "broad"
+
+
+def test_retrieval_action_retrieve_more_blocks_early_trustworthy_stop():
+    """A confident retrieve_more action should force another prefix evaluation."""
+    results = [
+        _result("The summary says the invoice failed validation.", "summary.md"),
+        _result("Invoice INV-17 failed retry validation in the audit log.", "audit.md"),
+    ]
+
+    result = apply_governance_cutoff(
+        "Which invoice failed retry validation?",
+        results,
+        _PrefixGovernance(
+            {
+                1: _decision(
+                    mode=AnswerMode.TRUSTWORTHY,
+                    action="retrieve_more",
+                    action_confidence=0.91,
+                    gap="missing_specific_fact",
+                ),
+                2: _decision(
+                    mode=AnswerMode.TRUSTWORTHY,
+                    action="answer_now",
+                    action_confidence=0.86,
+                ),
+            }
+        ),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == results
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+    assert "retrieval_control_blocker" in result.metadata["trajectory"][0]
+    assert result.metadata["trajectory"][0]["retrieval_action"]["final_label"] == "retrieve_more"
+
+
+def test_retrieval_action_blocks_trustworthy_at_cutoff():
+    """A final retrieve_more action should abstain instead of certifying weak evidence."""
+    decision = _decision(
+        mode=AnswerMode.TRUSTWORTHY,
+        action="retrieve_more",
+        action_confidence=0.91,
+        gap="missing_specific_fact",
+    )
+
+    result = apply_governance_cutoff(
+        "Which invoice failed retry validation?",
+        [_result("The summary says an invoice failed validation.", "summary.md")],
+        _FixedGovernance(decision),
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["stop_reason"] == "retrieval_control_unsatisfied_at_cutoff"
+    assert result.metadata["retrieval_control_blocker"] == (
+        "Pyrrho retrieval action requested more evidence: retrieve_more."
+    )
+    assert result.metadata["trajectory"][0]["retrieval_control_blocker"] == (
+        "Pyrrho retrieval action requested more evidence: retrieve_more."
+    )
+
+
+def test_retrieval_action_structured_lookup_satisfies_exact_identifier():
+    """g4 structured_lookup can trigger exact-match cutoff without profile support."""
+    exact_match = _result("The trace shows TC-0901 failed during export.", "trace.md")
+    noise = _result("Other trace entries passed.", "trace.md")
+
+    result = apply_governance_cutoff(
+        "Which document mentions TC-0901?",
+        [exact_match, noise],
+        _FixedGovernance(
+            _decision(
+                mode=AnswerMode.ABSTAIN,
+                action="structured_lookup",
+                action_confidence=0.90,
+                gap="missing_specific_fact",
+            )
+        ),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [exact_match]
+    assert result.metadata["stop_reason"] == "structured_lookup_exact_match"
+    assert result.metadata["structured_lookup_contract"] == {
+        "matched_identifiers": ["TC-0901"],
+        "matched_sources": 1,
+    }
+
+
 def test_structured_lookup_exact_identifier_satisfies_retrieval_contract():
     """Source-finding queries should trust exact identifier matches after Pyrrho abstains."""
     profile = SimpleNamespace(query_contract="structured_lookup")
@@ -203,6 +352,22 @@ class _AbstainingGovernance:
         )
 
 
+class _FixedGovernance:
+    def __init__(self, decision: GovernanceDecision) -> None:
+        self._decision = decision
+
+    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
+        return self._decision
+
+
+class _PrefixGovernance:
+    def __init__(self, decisions: dict[int, GovernanceDecision]) -> None:
+        self._decisions = decisions
+
+    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
+        return self._decisions[len(contexts)]
+
+
 def _result(content: str, file_path: str) -> SimpleNamespace:
     """Build a compact ReadResult-like fixture."""
     return SimpleNamespace(
@@ -210,6 +375,48 @@ def _result(content: str, file_path: str) -> SimpleNamespace:
         file_path=file_path,
         address=SimpleNamespace(location=file_path, summary=content),
         metadata={},
+    )
+
+
+def _decision(
+    *,
+    mode: AnswerMode,
+    action: str | None = None,
+    action_confidence: float = 0.0,
+    gap: str = "none",
+) -> GovernanceDecision:
+    """Build a governance decision with optional g4 retrieval-control heads."""
+    probs = {
+        AnswerMode.ABSTAIN: (0.85, 0.05, 0.10),
+        AnswerMode.DISPUTED: (0.05, 0.85, 0.10),
+        AnswerMode.TRUSTWORTHY: (0.05, 0.10, 0.85),
+    }[mode]
+    action_other = "retrieve_more" if action == "answer_now" else "answer_now"
+    retrieval_action = (
+        _head(
+            raw_label=action,
+            final_label=action,
+            probabilities={action: action_confidence, action_other: 1.0 - action_confidence},
+        )
+        if action
+        else None
+    )
+    gap_other = "missing_specific_fact" if gap == "none" else "none"
+    gap_type = _head(
+        raw_label=gap,
+        final_label=gap,
+        probabilities={gap: 0.90, gap_other: 0.10},
+    )
+    heads = {"gap_type": gap_type}
+    if retrieval_action is not None:
+        heads["retrieval_action"] = retrieval_action
+    return GovernanceDecision(
+        mode=mode,
+        probs=probs,
+        reason=f"Pyrrho: {mode.value}.",
+        retrieval_action=retrieval_action,
+        gap_type=gap_type,
+        heads=heads,
     )
 
 

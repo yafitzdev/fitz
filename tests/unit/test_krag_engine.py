@@ -59,7 +59,13 @@ def _make_query(text: str = "How does auth work?") -> MagicMock:
     return q
 
 
-def _decision(mode: AnswerMode, reason: str) -> MagicMock:
+def _decision(
+    mode: AnswerMode,
+    reason: str,
+    *,
+    retrieval_action: str | None = None,
+    retrieval_modality: str | None = None,
+) -> MagicMock:
     """Build a lightweight governance decision for cutoff tests."""
     decision = MagicMock()
     decision.mode = mode
@@ -71,6 +77,20 @@ def _decision(mode: AnswerMode, reason: str) -> MagicMock:
         decision.probs = (0.12, 0.68, 0.20)
     else:
         decision.probs = (0.69, 0.18, 0.13)
+    if retrieval_action:
+        decision.retrieval_action = SimpleNamespace(
+            raw_label=retrieval_action,
+            final_label=retrieval_action,
+            confidence=0.91,
+            probabilities={retrieval_action: 0.91},
+        )
+    if retrieval_modality:
+        decision.retrieval_modality = SimpleNamespace(
+            raw_label=retrieval_modality,
+            final_label=retrieval_modality,
+            confidence=0.88,
+            probabilities={retrieval_modality: 0.88},
+        )
     return decision
 
 
@@ -371,6 +391,126 @@ class TestAnswer:
         )
 
         assert result is expected_answer
+        assert result.metadata["pyrrho"]["mode"] == "trustworthy"
+        assert result.metadata["pyrrho"]["probabilities"] == {
+            "abstain": 0.1,
+            "disputed": 0.1,
+            "trustworthy": 0.8,
+        }
+
+    def test_answer_retries_before_synthesis_when_pyrrho_requests_more_evidence(self):
+        """Generated answers should retry retrieval before synthesis when g4 asks for it."""
+        engine = _make_engine()
+        query = Query(text="Which invoice failed retry validation?")
+        initial_address = Address(
+            kind=AddressKind.SECTION,
+            source_id="doc-1",
+            location="Summary",
+            summary="Invoice failed.",
+            score=0.91,
+        )
+        retry_address = Address(
+            kind=AddressKind.SECTION,
+            source_id="doc-2",
+            location="Audit",
+            summary="Invoice INV-17 failed retry validation.",
+            score=0.89,
+        )
+        initial_result = ReadResult(
+            address=initial_address,
+            content="The summary says an invoice failed validation.",
+            file_path="docs/summary.md",
+            line_range=(1, 2),
+        )
+        retry_result = ReadResult(
+            address=retry_address,
+            content="Invoice INV-17 failed retry validation in the audit log.",
+            file_path="docs/audit.md",
+            line_range=(8, 9),
+        )
+        engine._retrieval_router.retrieve.side_effect = [
+            [initial_address],
+            [initial_address, retry_address],
+        ]
+        engine._reader.read.side_effect = [[initial_result], [retry_result]]
+        engine._expander.expand.side_effect = [[initial_result], [retry_result]]
+        engine._governance.decide.side_effect = [
+            _decision(
+                AnswerMode.TRUSTWORTHY,
+                "Need the exact invoice.",
+                retrieval_action="retrieve_more",
+                retrieval_modality="unstructured_text",
+            ),
+            _decision(
+                AnswerMode.TRUSTWORTHY,
+                "Exact invoice found.",
+                retrieval_action="answer_now",
+                retrieval_modality="unstructured_text",
+            ),
+        ]
+        expected = Answer(text="Invoice INV-17 failed.", provenance=[], metadata={})
+        engine._synthesizer.generate.return_value = expected
+
+        result = engine.answer(query)
+
+        assert result is expected
+        assert engine._retrieval_router.retrieve.call_count == 2
+        assert engine._expander.expand.call_count == 2
+        assert engine._table_handler.process.call_count == 2
+        generated_results = engine._synthesizer.generate.call_args.args[2]
+        assert [result.file_path for result in generated_results] == [
+            "docs/summary.md",
+            "docs/audit.md",
+        ]
+        assert result.metadata["pyrrho"]["retrieval_action"]["final_label"] == "answer_now"
+        assert result.metadata["retrieval_retry"] == {
+            "action": "retrieve_more",
+            "modality": "unstructured_text",
+            "initial_mode": "trustworthy",
+            "added": 1,
+            "final_mode": "trustworthy",
+        }
+
+    def test_answer_abstains_when_retry_finds_no_new_evidence(self):
+        """A final unresolved retrieve_more signal should not synthesize as trustworthy."""
+        engine = _make_engine()
+        query = Query(text="Which invoice failed retry validation?")
+        address = Address(
+            kind=AddressKind.SECTION,
+            source_id="doc-1",
+            location="Summary",
+            summary="Invoice failed.",
+            score=0.91,
+        )
+        result = ReadResult(
+            address=address,
+            content="The summary says an invoice failed validation.",
+            file_path="docs/summary.md",
+            line_range=(1, 2),
+        )
+        engine._retrieval_router.retrieve.side_effect = [[address], [address]]
+        engine._reader.read.return_value = [result]
+        engine._expander.expand.return_value = [result]
+        engine._governance.decide.return_value = _decision(
+            AnswerMode.TRUSTWORTHY,
+            "Need the exact invoice.",
+            retrieval_action="retrieve_more",
+            retrieval_modality="unstructured_text",
+        )
+        expected = Answer(text="Need more evidence.", provenance=[], metadata={})
+        engine._synthesizer.generate.return_value = expected
+
+        answer = engine.answer(query)
+
+        assert answer is expected
+        assert engine._retrieval_router.retrieve.call_count == 2
+        assert engine._synthesizer.generate.call_args.kwargs["answer_mode"] is AnswerMode.ABSTAIN
+        assert answer.metadata["retrieval_retry"]["stop_reason"] == (
+            "retrieval_control_unsatisfied"
+        )
+        assert answer.metadata["retrieval_retry"]["added"] == 0
+        gap_context = engine._synthesizer.generate.call_args.kwargs["gap_context"]
+        assert "still requires more evidence" in gap_context["governance_reasons"][0]
 
     def test_answer_uses_no_chat_query_planner_by_default(self):
         """Default query prep is deterministic unless query_intelligence is configured."""
@@ -723,6 +863,85 @@ class TestEvidence:
         assert len(first_contexts) == 1
         assert len(second_contexts) == 2
         engine._expander.expand.assert_not_called()
+
+    def test_evidence_retries_when_pyrrho_requests_more_evidence(self):
+        """A g4 retrieve_more signal should trigger one deterministic retry pass."""
+        engine = _make_engine()
+        initial_address = Address(
+            kind=AddressKind.SECTION,
+            source_id="doc-1",
+            location="Summary",
+            summary="Invoice failed.",
+            score=0.91,
+        )
+        retry_address = Address(
+            kind=AddressKind.SECTION,
+            source_id="doc-2",
+            location="Audit",
+            summary="Invoice INV-17 failed retry validation.",
+            score=0.89,
+        )
+        initial_result = ReadResult(
+            address=initial_address,
+            content="The summary says an invoice failed validation.",
+            file_path="docs/summary.md",
+            line_range=(1, 2),
+        )
+        retry_result = ReadResult(
+            address=retry_address,
+            content="Invoice INV-17 failed retry validation in the audit log.",
+            file_path="docs/audit.md",
+            line_range=(8, 9),
+        )
+        engine._retrieval_router.retrieve.side_effect = [
+            [initial_address],
+            [initial_address, retry_address],
+        ]
+        engine._reader.read.side_effect = [[initial_result], [retry_result]]
+        engine._governance = MagicMock()
+        engine._governance.decide.side_effect = [
+            _decision(
+                AnswerMode.TRUSTWORTHY,
+                "Need the exact invoice.",
+                retrieval_action="retrieve_more",
+                retrieval_modality="unstructured_text",
+            ),
+            _decision(
+                AnswerMode.TRUSTWORTHY,
+                "Still need the exact invoice.",
+                retrieval_action="retrieve_more",
+                retrieval_modality="unstructured_text",
+            ),
+            _decision(
+                AnswerMode.TRUSTWORTHY,
+                "Exact invoice found.",
+                retrieval_action="answer_now",
+                retrieval_modality="unstructured_text",
+            ),
+        ]
+
+        pack = engine.evidence(Query(text="Which invoice failed retry validation?"), top_k=2)
+
+        assert pack.mode == AnswerMode.TRUSTWORTHY
+        assert [item.file_path for item in pack.items] == [
+            "docs/summary.md",
+            "docs/audit.md",
+        ]
+        assert engine._retrieval_router.retrieve.call_count == 2
+        retry_profile = engine._retrieval_router.retrieve.call_args_list[1].args[1]
+        assert (
+            retry_profile.top_k > engine._retrieval_router.retrieve.call_args_list[0].args[1].top_k
+        )
+        assert retry_profile.strategy_weights["section"] >= 0.45
+        assert engine._reader.read.call_args_list[1].args[1] > engine._config.top_read
+        retry_metadata = pack.metadata["governance_cutoff"]["retrieval_retry"]
+        assert retry_metadata["action"] == "retrieve_more"
+        assert retry_metadata["modality"] == "unstructured_text"
+        assert retry_metadata["added"] == 1
+        assert retry_metadata["initial_stop_reason"] == "retrieval_control_unsatisfied_at_cutoff"
+        assert retry_metadata["final_mode"] == "trustworthy"
+        assert "Retrieval retry" in pack.timings
+        assert "Retry Recall" in pack.timings
 
     def test_broad_query_requires_minimum_trustworthy_window(self):
         """Broad thematic queries do not stop on a top-1 trustworthy verdict."""

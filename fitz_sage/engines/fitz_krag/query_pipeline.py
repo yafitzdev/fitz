@@ -7,7 +7,7 @@ import re
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
@@ -38,6 +38,8 @@ class RetrievalOutcome:
     addresses: list["Address"]
     timings: list[tuple[str, float]]
     profile: Any | None = None
+    retrieval_query: str = ""
+    rewrite_result: Any = None
 
 
 class QueryPipeline:
@@ -144,6 +146,8 @@ class QueryPipeline:
                 addresses=[],
                 timings=timings,
                 profile=profile,
+                retrieval_query=plan.retrieval_query,
+                rewrite_result=plan.rewrite_result,
             )
 
         if expand_context:
@@ -167,6 +171,72 @@ class QueryPipeline:
             addresses=addresses,
             timings=timings,
             profile=profile,
+            retrieval_query=plan.retrieval_query,
+            rewrite_result=plan.rewrite_result,
+        )
+
+    def retry_retrieve(
+        self,
+        outcome: RetrievalOutcome,
+        *,
+        retrieval_action: str,
+        retrieval_modality: str | None = None,
+        progress: Callable[[str], None] | None = None,
+        allow_llm_strategies: bool = True,
+        execute_table_queries: bool = True,
+        expand_context: bool = True,
+    ) -> RetrievalOutcome:
+        """Run one Pyrrho-directed follow-up retrieval pass and merge new evidence."""
+        if outcome.profile is None:
+            return outcome
+
+        profile = _retry_profile(
+            outcome.profile,
+            self._config,
+            retrieval_action=retrieval_action,
+            retrieval_modality=retrieval_modality,
+        )
+        query = outcome.retrieval_query or outcome.sanitized
+        existing_keys = _read_result_keys(outcome.expanded)
+        timings = list(outcome.timings)
+
+        _progress = progress or (lambda _: None)
+        _progress("Retrieving additional evidence...")
+        t0 = time.perf_counter()
+        with self._retrieval_strategy_scope(allow_llm_strategies):
+            read_results = self._retrieval_pass.run(
+                query,
+                profile,
+                exclude=existing_keys,
+                rewrite_result=outcome.rewrite_result,
+                progress=progress,
+            )
+        retry_duration = time.perf_counter() - t0
+        timings.extend(_prefixed_retrieval_pass_timings(self._retrieval_pass, "Retry "))
+        timings.append(("Retrieval retry", retry_duration))
+
+        if expand_context and read_results:
+            t0 = time.perf_counter()
+            read_results = self._expander.expand(
+                read_results,
+                entity_expansion_limit=profile.entity_expansion_limit,
+            )
+            timings.append(("Retry expand context", time.perf_counter() - t0))
+
+        if execute_table_queries and read_results:
+            t0 = time.perf_counter()
+            read_results = self._table_handler.process(outcome.sanitized, read_results)
+            timings.append(("Retry table queries", time.perf_counter() - t0))
+
+        expanded = _merge_read_results(outcome.expanded, read_results)
+        return RetrievalOutcome(
+            sanitized=outcome.sanitized,
+            expanded=expanded,
+            addresses=[result.address for result in expanded],
+            timings=timings,
+            profile=profile,
+            retrieval_query=query,
+            rewrite_result=outcome.rewrite_result,
         )
 
     def _prepare_query_plan(
@@ -292,6 +362,113 @@ def _retrieval_pass_timings(retrieval_pass: Any) -> list[tuple[str, float]]:
         )
         if key in pass_timings
     ]
+
+
+def _prefixed_retrieval_pass_timings(retrieval_pass: Any, prefix: str) -> list[tuple[str, float]]:
+    """Read one-pass timings with a label prefix."""
+    return [
+        (f"{prefix}{name}", duration) for name, duration in _retrieval_pass_timings(retrieval_pass)
+    ]
+
+
+def _retry_profile(
+    profile: Any,
+    config: "FitzKragConfig",
+    *,
+    retrieval_action: str,
+    retrieval_modality: str | None,
+) -> Any:
+    """Build a broader profile for one Pyrrho-directed retry pass."""
+    weights = dict(getattr(profile, "strategy_weights", {}) or {})
+    top_k = max(int(getattr(profile, "top_k", config.top_addresses)), config.top_addresses)
+    top_read = max(int(getattr(profile, "top_read", config.top_read)), config.top_read)
+    kwargs: dict[str, Any] = {
+        "strategy_weights": weights,
+        "top_k": int(top_k * 2),
+        "top_read": int(top_read * 1.5),
+        "run_agentic": True,
+    }
+
+    if retrieval_action == "broaden_search":
+        weights.update(
+            {
+                "code": max(weights.get("code", 0.0), 0.25),
+                "section": max(weights.get("section", 0.0), 0.35),
+                "table": max(weights.get("table", 0.0), 0.20),
+            }
+        )
+        kwargs.update(
+            {
+                "specificity": "broad",
+                "answer_type": "exploratory",
+                "inject_corpus_summaries": True,
+                "entity_expansion_limit": max(
+                    int(getattr(profile, "entity_expansion_limit", 3)),
+                    12,
+                ),
+            }
+        )
+    elif retrieval_action == "resolve_conflict":
+        kwargs.update(
+            {
+                "has_comparison_intent": True,
+                "answer_type": "comparative",
+            }
+        )
+    elif retrieval_action == "structured_lookup":
+        weights["table"] = max(weights.get("table", 0.0), 0.45)
+        kwargs.update(
+            {
+                "query_contract": "structured_lookup",
+                "answer_type": "factual",
+            }
+        )
+
+    _apply_modality_weights(weights, retrieval_modality)
+    return replace(profile, **kwargs)
+
+
+def _apply_modality_weights(weights: dict[str, float], modality: str | None) -> None:
+    """Bias a retry profile toward Pyrrho's preferred retrieval modality."""
+    if modality == "structured_table":
+        weights["table"] = max(weights.get("table", 0.0), 0.55)
+    elif modality == "code":
+        weights["code"] = max(weights.get("code", 0.0), 0.60)
+    elif modality in {"configuration", "log_trace", "pdf_layout", "unstructured_text"}:
+        weights["section"] = max(weights.get("section", 0.0), 0.45)
+    elif modality == "mixed":
+        weights["code"] = max(weights.get("code", 0.0), 0.30)
+        weights["section"] = max(weights.get("section", 0.0), 0.30)
+        weights["table"] = max(weights.get("table", 0.0), 0.25)
+
+
+def _read_result_keys(results: list["ReadResult"]) -> set[tuple[str, str]]:
+    """Return address keys for already-read evidence."""
+    return {
+        (str(result.address.source_id), str(result.address.location))
+        for result in results
+        if getattr(result, "address", None) is not None
+    }
+
+
+def _merge_read_results(
+    current: list["ReadResult"],
+    additional: list["ReadResult"],
+) -> list["ReadResult"]:
+    """Merge read results by address key, preserving the original order."""
+    merged = list(current)
+    seen = _read_result_keys(merged)
+    for result in additional:
+        address = getattr(result, "address", None)
+        if address is None:
+            merged.append(result)
+            continue
+        key = (str(address.source_id), str(address.location))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(result)
+    return merged
 
 
 def _merge_query_keywords(*keyword_lists: list[str]) -> list[str]:
