@@ -1,0 +1,98 @@
+{
+  "mode": "query_profile",
+  "collection": "reval_query_profile",
+  "corpus_files": [
+    "fitz_sage/engines/fitz_krag/retrieval_profile.py",
+    "fitz_sage/engines/fitz_krag/query_pipeline.py",
+    "fitz_sage/engines/fitz_krag/engine.py",
+    "fitz_sage/engines/fitz_krag/config/schema.py",
+    "fitz_sage/cli/ui/display.py",
+    "fitz_sage/governance/pyrrho.py"
+  ],
+  "queries": [
+    {
+      "id": "query-profile-01",
+      "query": "Which function named build_retrieval_profile uses Pyrrho query signals before retrieval?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval_profile.py"}
+      ]
+    },
+    {
+      "id": "query-profile-02",
+      "query": "Which function named query_profile_metadata serializes Pyrrho query profile metadata?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval_profile.py"}
+      ]
+    },
+    {
+      "id": "query-profile-03",
+      "query": "Which function named _format_query_profile formats query_profile metadata?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/cli/ui/display.py"}
+      ]
+    },
+    {
+      "id": "query-profile-04",
+      "query": "Which method named evidence attaches query_profile metadata to EvidencePack metadata?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/engine.py"},
+        {"grade": 1, "path": "fitz_sage/engines/fitz_krag/retrieval_profile.py"}
+      ]
+    },
+    {
+      "id": "query-profile-05",
+      "query": "Where does Pyrrho classify query-only retrieval planning signals before retrieval?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/governance/pyrrho.py"}
+      ]
+    },
+    {
+      "id": "query-profile-06",
+      "query": "Where does the query pipeline classify Pyrrho query signals before retrieval?",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/query_pipeline.py"},
+        {"grade": 1, "path": "fitz_sage/governance/pyrrho.py"}
+      ]
+    },
+    {
+      "id": "query-profile-07",
+      "query": "Where does FitzKragConfig define the governance backend?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/config/schema.py"}
+      ]
+    },
+    {
+      "id": "query-profile-08",
+      "query": "Compare query_profile_metadata and _format_query_profile responsibilities.",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval_profile.py"},
+        {"grade": 2, "path": "fitz_sage/cli/ui/display.py"}
+      ]
+    },
+    {
+      "id": "query-profile-09",
+      "query": "List every Pyrrho query signal field stored in the query_profile metadata.",
+      "vocab_mismatch": true,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval_profile.py"},
+        {"grade": 1, "path": "fitz_sage/governance/pyrrho.py"}
+      ]
+    },
+    {
+      "id": "query-profile-10",
+      "query": "Which function named apply_retrieval_modality_weights handles retrieval modality routing?",
+      "vocab_mismatch": false,
+      "relevant": [
+        {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval_profile.py"}
+      ]
+    }
+  ]
+}

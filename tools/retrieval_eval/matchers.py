@@ -81,7 +81,12 @@ def _match_table(fields: dict, unit: dict) -> bool:
     return str(unit["value"]).lower() in str(fields["content"]).lower()
 
 
-_MATCHERS = {"code": _match_code, "section": _match_section, "table": _match_table}
+_MATCHERS = {
+    "code": _match_code,
+    "section": _match_section,
+    "table": _match_table,
+    "query_profile": _match_code,
+}
 
 
 def rank_units(mode: str, read_results: list, units: list[dict]) -> list[Unit]:

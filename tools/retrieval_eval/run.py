@@ -11,6 +11,7 @@ SKIP_INGEST = False  # True reuses the existing collection (skips re-indexing)
 UPDATE_BASELINE = False  # True stores this run's scores as the new baseline
 REPEATS = 3  # retrieval runs per query, metrics averaged — dampens LLM jitter
 VERBOSE = True  # list missed critical units per query
+GOVERNANCE = None  # e.g. r"pyrrho/C:\path\to\pyrrho-nano-g4-alpha"
 # -----------------
 
 if __name__ == "__main__":
@@ -29,5 +30,6 @@ if __name__ == "__main__":
                 update=UPDATE_BASELINE,
                 verbose=VERBOSE,
                 repeats=REPEATS,
+                governance=GOVERNANCE,
             )
         )

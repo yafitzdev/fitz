@@ -101,6 +101,7 @@ _EXPECTED_FEATURES = {
     "code": (),
     "section": ("entity_graph", "hierarchy_l1", "hierarchy_l2"),
     "table": (),
+    "query_profile": (),
 }
 
 
@@ -417,13 +418,12 @@ def run(
     update: bool = False,
     verbose: bool = False,
     repeats: int = DEFAULT_REPEATS,
+    governance: str | None = None,
 ) -> int:
     """Run the benchmark for the given modes. Returns a process exit code."""
-    from fitz_sage.runtime import create_engine
-
     baseline = load_baseline()
     try:
-        engine = create_engine("fitz_krag")
+        engine = _create_engine(governance)
     except Exception as e:  # noqa: BLE001
         print(f"could not create engine: {e}")
         print("the benchmark needs ~/.fitz/config/fitz_krag.yaml and a reachable chat model.")
@@ -463,6 +463,20 @@ def run(
     return exit_code
 
 
+def _create_engine(governance: str | None = None):
+    """Create the benchmark engine, optionally overriding governance only."""
+    from fitz_sage.config import load_engine_config
+    from fitz_sage.runtime import create_engine
+
+    if governance is None:
+        return create_engine("fitz_krag")
+
+    config = load_engine_config("fitz_krag")
+    values = config.model_dump()
+    values["governance"] = governance
+    return create_engine("fitz_krag", config=type(config)(**values))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="fitz-sage retrieval benchmark")
     parser.add_argument(
@@ -478,6 +492,10 @@ def main() -> None:
         default=DEFAULT_REPEATS,
         help=f"retrieval runs per query, metrics averaged (default {DEFAULT_REPEATS})",
     )
+    parser.add_argument(
+        "--governance",
+        help="override the governance model/provider for this benchmark run",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="list missed critical units")
     args = parser.parse_args()
     sys.exit(
@@ -487,6 +505,7 @@ def main() -> None:
             update=args.update_baseline,
             verbose=args.verbose,
             repeats=args.repeats,
+            governance=args.governance,
         )
     )
 
