@@ -189,10 +189,10 @@ ordinary BM25 section hits.
 
 ---
 
-## How Existing Retrieval Features Fit
+## How Retrieval Features Fit
 
-The old mental model was "many retrieval strategies." The new product model is
-"one pipeline with specialized tactics inside the right stage."
+The product model is one pipeline with specialized tactics inside the right
+stage.
 
 | Feature | Stage | Role |
 |---|---|---|

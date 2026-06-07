@@ -4,7 +4,7 @@
 One entry point — ``get_logger`` returns a standard-library ``logging.Logger``.
 ``configure_logging`` installs a single root handler; call it once at an
 application entrypoint (the CLI does). Libraries (the SDK) leave configuration
-to the embedding application.
+to the calling application.
 
 Per-query correlation: ``set_query_context`` stashes a query id in a contextvar
 that ``_QueryContextFilter`` injects into every record as ``query_id``, so the

@@ -1,138 +1,85 @@
-# Fitz-AI Test Suite
+# tests/README.md
+# fitz-sage Test Suite
 
-Comprehensive testing strategy for production-ready RAG.
+The test tree is split by risk and runtime cost. Unit tests are the default
+developer loop; E2E tests exercise KRAG ingestion, retrieval, reranking, and
+Pyrrho governance over fixture corpora.
 
 ## Test Categories
 
 | Category | Purpose | Marker | Run Command |
-|----------|---------|--------|-------------|
-| **Unit** | Test individual functions/classes | - | `pytest tests/unit/` |
-| **E2E** | Correctness across full pipeline | `e2e` | `pytest -m e2e` |
-| **Performance** | Latency, memory, throughput | `performance` | `pytest -m performance` |
-| **Scalability** | Large corpus, concurrent load | `scalability` | `pytest -m scalability` |
-| **Security** | Prompt injection, data leakage | `security` | `pytest -m security` |
-| **Chaos** | Failure modes, recovery | `chaos` | `pytest -m chaos` |
-| **Load** | Concurrent users (Locust) | - | `locust -f tests/load/locustfile.py` |
+|---|---|---|---|
+| Unit | Fast component tests | - | `pytest tests/unit/` |
+| KRAG E2E | End-to-end retrieval behavior | `e2e_krag` | `pytest tests/e2e_krag/` |
+| Parser E2E | PDF/DOCX/parser coverage | `e2e_krag_parser` | `pytest -m e2e_krag_parser` |
+| Format E2E | PPTX/XLSX/SQL/Go/Java/TS fixtures | `e2e_krag_formats` | `pytest -m e2e_krag_formats` |
+| Integration | Real-service or cross-layer tests | `integration` | `pytest -m integration` |
+| Performance | Latency and throughput benchmarks | `performance` | `pytest -m performance` |
+| Scalability | Large corpus and concurrent load | `scalability` | `pytest -m scalability` |
+| Security | Injection, leakage, validation | `security` | `pytest -m security` |
+| Chaos | Reliability and failure handling | `chaos` | `pytest -m chaos` |
 
 ## Quick Start
 
 ```bash
-# Run all fast tests (unit + e2e)
-pytest tests/unit/ tests/e2e/ -v
+# Fast local loop
+pytest tests/unit/ -v
 
-# Run specific categories
-pytest -m e2e              # Correctness (122 scenarios)
-pytest -m security         # Security tests
-pytest -m performance      # Benchmarks
-pytest -m chaos            # Failure handling
+# Unit tests plus KRAG E2E
+pytest tests/unit/ tests/e2e_krag/ -v
 
-# Run everything except slow tests
+# Everything except slow/scalability work
 pytest -m "not slow and not scalability"
 
-# Run with coverage
+# Coverage
 pytest --cov=fitz_sage --cov-report=html
 ```
 
 ## Test Structure
 
-```
+```text
 tests/
-├── test_config.yaml      # Unified test config (all tests use this)
-├── conftest.py           # Root fixtures and config loaders
-├── unit/                 # Fast, isolated unit tests (~80 files)
-│   ├── test_*.py         # Component/function tests
-│   └── tabular/          # Tabular data processing tests
-├── e2e/                  # End-to-end correctness tests
-│   ├── fixtures/         # Test documents (md, csv, py, etc.)
-│   ├── scenarios.py      # 122 test scenarios
-│   └── runner.py         # E2E test runner with tiered execution
-├── performance/          # Latency and throughput benchmarks
-│   ├── test_latency.py   # Query latency (p50/p95/p99)
-│   └── conftest.py       # Performance measurement fixtures
-├── load/                 # Concurrent load testing
-│   ├── locustfile.py     # Locust user simulation
-│   └── test_scalability.py  # Corpus size and concurrent queries
-├── security/             # Security and privacy tests
-│   ├── test_prompt_injection.py  # Injection attacks
-│   ├── test_data_leakage.py      # PII and access control
-│   └── test_input_validation.py  # Malformed input handling
-└── chaos/                # Reliability and failure tests
-    └── test_failure_modes.py     # LLM/DB failures, recovery
+├── test_config.yaml          # Shared endpoint config for tests that need chat
+├── conftest.py               # Root fixtures
+├── unit/                     # Fast isolated tests
+│   ├── llm/                  # Auth/provider/factory tests
+│   ├── property/             # Hypothesis strategies and property tests
+│   └── tabular/              # CSV/table parser/query/store tests
+├── e2e_krag/                 # KRAG end-to-end fixtures and scenarios
+│   ├── fixtures_formats/     # PPTX/XLSX/SQL/Go/Java/TypeScript samples
+│   ├── fixtures_parser/      # PDF/DOCX parser samples
+│   ├── fixtures_rag/         # Retrieval/governance fixture corpus
+│   ├── scenarios.py          # E2E scenario definitions
+│   └── runner.py             # E2E runner
+├── integration/              # Cross-layer integration tests
+├── performance/              # Latency benchmarks
+├── load/                     # Locust and scalability tests
+├── security/                 # Prompt injection, leakage, input validation
+└── chaos/                    # Failure-mode tests
 ```
 
-## E2E Test Scenarios (122 tests)
+## E2E Coverage Areas
 
-| Feature | Count | What It Tests |
-|---------|-------|---------------|
-| MULTI_HOP | 6 | Multi-step reasoning chains |
-| ENTITY_GRAPH | 6 | Entity relationship expansion |
-| COMPARISON | 7 | Product/entity comparisons |
-| MULTI_QUERY | 6 | Complex multi-part queries |
-| KEYWORD_EXACT | 6 | Exact term matching |
-| CONFLICT_AWARE | 6 | Contradictory source detection |
-| INSUFFICIENT_EVIDENCE | 6 | "I don't know" responses |
-| CAUSAL_ATTRIBUTION | 6 | Cause-effect claims |
-| TABLE_SCHEMA | 6 | CSV/table structure |
-| TABLE_QUERY | 8 | SQL-like queries |
-| CODE_SEARCH | 8 | Code comprehension |
-| LONG_DOC | 6 | Long document retrieval |
-| BASIC_RETRIEVAL | 13 | Simple fact lookup |
-| DEDUP | 6 | Cross-document deduplication |
-| FRESHNESS | 6 | Authoritative source preference |
-| HYBRID_SEARCH | 6 | Dense + sparse retrieval |
-| QUERY_EXPANSION | 6 | Synonym/acronym expansion |
-| TEMPORAL | 6 | Time-based queries |
-| AGGREGATION | 6 | List/count queries |
+The KRAG E2E suite covers:
+
+- exact identifier and sparse FTS5 retrieval;
+- code symbol retrieval and import graph expansion;
+- table schema retrieval and SQL-backed table querying;
+- comparison, temporal, aggregation, and multi-query behavior;
+- entity graph expansion and multi-hop retrieval;
+- insufficient-evidence and disputed-evidence governance;
+- PDF/DOCX/parser and mixed-format retrieval fixtures.
 
 ## Running Load Tests
 
 ```bash
-# Install load testing dependencies
-pip install -e ".[loadtest]"
-
-# Run with Locust (headless, 10 users, 60 seconds)
 cd tests/load
 locust -f locustfile.py --headless -u 10 -r 2 -t 60s
-
-# Or with web UI
-locust -f locustfile.py
-# Open http://localhost:8089
 ```
-
-## Performance Thresholds
-
-Default thresholds (configurable in `tests/performance/conftest.py`):
-
-| Metric | Threshold | Description |
-|--------|-----------|-------------|
-| query_p95_ms | 5000 | 95th percentile query latency |
-| query_p99_ms | 10000 | 99th percentile query latency |
-| retrieval_p95_ms | 500 | Retrieval-only (no LLM) |
-| ingestion_mb_per_doc | 50 | Memory per document |
-
-## Security Test Coverage
-
-- **Prompt Injection**: Direct attacks, roleplay, encoding bypasses
-- **Data Leakage**: PII fabrication, cross-collection access
-- **Input Validation**: Unicode, special chars, length limits
-- **Output Sanitization**: Raw dump prevention, source attribution
 
 ## Adding New Tests
 
-1. **E2E scenario**: Add to `tests/e2e/scenarios.py`
-2. **Security test**: Add to appropriate file in `tests/security/`
-3. **Performance benchmark**: Add to `tests/performance/test_latency.py`
-4. **Failure mode**: Add to `tests/chaos/test_failure_modes.py`
-
-## CI/CD Integration
-
-```yaml
-# Example GitHub Actions workflow
-jobs:
-  test:
-    steps:
-      - run: pytest tests/unit/ -v
-      - run: pytest -m e2e --tb=short
-      - run: pytest -m security
-      - run: pytest -m "performance and not slow"
-```
+1. Unit behavior: add `tests/unit/test_<feature>.py`.
+2. KRAG E2E scenario: add to `tests/e2e_krag/scenarios.py` and cover it in the runner/tests.
+3. Parser or format fixture: add under `tests/e2e_krag/fixtures_parser/` or `fixtures_formats/`.
+4. Security/performance/chaos: add to the matching top-level test directory.

@@ -28,9 +28,8 @@ Provider names are configuration knobs over those implementations:
               — separate path for OAuth2 + API-key composite auth
                 (kept for the day-job/automotive deployment flow).
 
-The legacy ``ollama``, ``cohere``, ``anthropic`` provider names have
-been removed. Migration paths are documented in the actionable error
-messages raised when those names are passed.
+The removed ``ollama``, ``cohere``, and ``anthropic`` provider names raise
+actionable errors with the current endpoint-based configuration.
 """
 
 from __future__ import annotations
@@ -155,7 +154,7 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
 
     Args:
         provider: Provider name. Must be one of ``ENV_VAR_MAP`` (or
-            ``enterprise``); legacy names raise migration errors.
+            ``enterprise``); removed names raise actionable errors.
         config: Optional config dict. May contain an ``auth`` block.
 
     Returns:

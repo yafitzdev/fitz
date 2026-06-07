@@ -50,7 +50,8 @@ fitz serve --reload
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/query` | Query knowledge base |
+| POST | `/query` | Query knowledge base and return an answer |
+| POST | `/evidence` | Retrieve governed evidence without answer synthesis |
 | POST | `/chat` | Multi-turn chat |
 | GET | `/collections` | List collections |
 | GET | `/collections/{name}` | Get collection stats |
@@ -63,7 +64,8 @@ fitz serve --reload
 
 ## POST /query
 
-Query the knowledge base with a single question.
+Query the knowledge base with a single question and return answer text plus
+source attribution.
 
 ### Request
 
@@ -86,7 +88,7 @@ Query the knowledge base with a single question.
 ```json
 {
   "text": "The refund policy allows returns within 30 days...",
-  "mode": "TRUSTWORTHY",
+  "mode": "trustworthy",
   "sources": [
     {
       "source_id": "policies/refund.md",
@@ -104,9 +106,9 @@ Query the knowledge base with a single question.
 | Field | Type | Description |
 |-------|------|-------------|
 | `text` | string | The answer text |
-| `mode` | string | `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN` |
+| `mode` | string | `trustworthy`, `disputed`, or `abstain` |
 | `sources` | array | Source attribution for the answer |
-| `metadata` | object | Extra answer metadata; on `ABSTAIN`, includes `gap_context` (what's missing and what to add) |
+| `metadata` | object | Extra answer metadata; on `abstain`, includes `gap_context` (what's missing and what to add) |
 
 ### Example
 
@@ -114,6 +116,69 @@ Query the knowledge base with a single question.
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{"question": "What is the refund policy?"}'
+```
+
+---
+
+## POST /evidence
+
+Retrieve a governed `EvidencePack` without answer synthesis. This is the REST
+equivalent of `fitz query`, `fitz retrieve`, and `fitz_sage.evidence()`.
+
+### Request
+
+```json
+{
+  "question": "What is the refund policy?",
+  "source": "./docs",
+  "collection": "default",
+  "conversation_history": []
+}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `question` | string | Yes | - | The question to retrieve evidence for |
+| `source` | string | No | null | Path to file or directory. If provided, registers documents before querying. |
+| `collection` | string | No | `"default"` | Collection to query |
+| `conversation_history` | array | No | `[]` | Optional chat history for query rewriting |
+
+### Response
+
+```json
+{
+  "query": "What is the refund policy?",
+  "mode": "trustworthy",
+  "items": [
+    {
+      "rank": 1,
+      "source_id": "policies/refund.md",
+      "file_path": "policies/refund.md",
+      "address_kind": "section",
+      "address_location": "Refund Policy",
+      "line_range": [4, 18],
+      "score": 0.91,
+      "excerpt": "Returns are accepted within 30 days of purchase...",
+      "content": "Returns are accepted within 30 days of purchase...",
+      "metadata": {}
+    }
+  ],
+  "reasons": ["Pyrrho: sources support a confident answer."],
+  "timings": {},
+  "indexing_status": {"complete": true},
+  "metadata": {}
+}
+```
+
+See [EVIDENCE_PACK.md](EVIDENCE_PACK.md) for field meanings and governance
+metadata.
+
+### Example
+
+```bash
+curl -X POST http://localhost:8000/evidence \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is the refund policy?", "source": "./docs"}'
 ```
 
 ---
@@ -156,7 +221,7 @@ Same as `/query`:
 ```json
 {
   "text": "For returns, you need to...",
-  "mode": "TRUSTWORTHY",
+  "mode": "trustworthy",
   "sources": [...]
 }
 ```
@@ -352,9 +417,9 @@ The `mode` field in responses indicates answer confidence:
 
 | Mode | Description | Typical Cause |
 |------|-------------|---------------|
-| `TRUSTWORTHY` | Strong evidence supports answer | Clear, unambiguous sources |
-| `DISPUTED` | Conflicting sources | Sources disagree |
-| `ABSTAIN` | Cannot answer | Insufficient evidence |
+| `trustworthy` | Strong evidence supports answer | Clear, unambiguous sources |
+| `disputed` | Conflicting sources | Sources disagree |
+| `abstain` | Cannot answer | Insufficient evidence |
 
 ---
 

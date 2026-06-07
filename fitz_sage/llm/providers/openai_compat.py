@@ -9,8 +9,8 @@ OpenRouter, etc. fitz-sage uses no embeddings, so there is no
 embedding provider here.
 
 The classes are the *single* implementation behind the ``endpoint``,
-``openai``, and ``azure_openai`` provider names. There is no legacy
-"OpenAI-only" client — OpenAI itself is just one URL preset.
+``openai``, and ``azure_openai`` provider names. OpenAI itself is just one URL
+preset.
 
 Authentication is delegated to the AuthProvider abstraction (see
 ``fitz_sage.llm.auth``):

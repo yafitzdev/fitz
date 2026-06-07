@@ -19,7 +19,7 @@ from __future__ import annotations
 from fitz_sage.logging import configure_logging
 
 # Install the root log handler early (WARNING keeps CLI output clean; set
-# FITZ_LOG_LEVEL via the embedding app for more). Must precede HF imports.
+# FITZ_LOG_LEVEL via the calling application for more). Must precede HF imports.
 configure_logging()
 
 # Platform configuration - must run before any HuggingFace imports

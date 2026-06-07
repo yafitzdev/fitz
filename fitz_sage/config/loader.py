@@ -83,10 +83,10 @@ def deep_merge(base: dict, override: dict) -> dict:
 # Removed Config Keys
 # =============================================================================
 
-# Config keys removed in past releases, mapped to actionable migration text.
+# Removed config keys mapped to actionable replacement text.
 _REMOVED_CONFIG_KEYS: dict[str, str] = {
     "enable_guardrails": (
-        "`enable_guardrails` was replaced by `governance` in v0.13.1.\n"
+        "`enable_guardrails` was replaced by `governance`.\n"
         "  enable_guardrails: true   ->  governance: pyrrho\n"
         "  enable_guardrails: false  ->  remove the key; governance is mandatory"
     ),

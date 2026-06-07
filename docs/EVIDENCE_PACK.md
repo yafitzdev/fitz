@@ -48,9 +48,9 @@ Use `pack.to_dict()` or `pack.to_json()` for API responses.
 
 | Mode | Meaning |
 |---|---|
-| `TRUSTWORTHY` | Pyrrho judged the selected evidence prefix sufficient and consistent. |
-| `DISPUTED` | Pyrrho found meaningful conflict in the selected evidence prefix. |
-| `ABSTAIN` | Retrieved evidence was missing, incomplete, or insufficient. |
+| `trustworthy` | Pyrrho judged the selected evidence prefix sufficient and consistent. |
+| `disputed` | Pyrrho found meaningful conflict in the selected evidence prefix. |
+| `abstain` | Retrieved evidence was missing, incomplete, or insufficient. |
 | `null` | Governance did not run. This is not the default product path. |
 
 ## Governance Metadata
@@ -101,7 +101,7 @@ Pyrrho cutoff metadata lives in `metadata.governance_cutoff`.
       "evaluated": 3,
       "selected": 3,
       "max": 10,
-      "mode": "TRUSTWORTHY",
+      "mode": "trustworthy",
       "policy": {
         "query_shape": "broad",
         "min_trustworthy_docs": 4,
@@ -109,7 +109,7 @@ Pyrrho cutoff metadata lives in `metadata.governance_cutoff`.
         "disputed_patience_docs": 2
       },
       "pyrrho": {
-        "mode": "TRUSTWORTHY",
+        "mode": "trustworthy",
         "probabilities": {
           "abstain": 0.08,
           "disputed": 0.12,

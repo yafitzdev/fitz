@@ -1,4 +1,4 @@
-# tests/e2e/scenarios.py
+# tests/e2e_krag/scenarios.py
 """
 E2E test scenario definitions.
 
@@ -31,12 +31,12 @@ class Feature(Enum):
     DEDUP = "dedup"
     BASIC_RETRIEVAL = "basic_retrieval"
     FRESHNESS = "freshness"
-    HYBRID_SEARCH = "hybrid_search"
+    SPARSE_SEARCH = "sparse_search"
     QUERY_EXPANSION = "query_expansion"
     TEMPORAL = "temporal"
     AGGREGATION = "aggregation"
     FIGURE_RETRIEVAL = "figure_retrieval"
-    HYDE = "hyde"
+    CONCEPTUAL_RETRIEVAL = "conceptual_retrieval"
     QUERY_REWRITING = "query_rewriting"
     PPTX_RETRIEVAL = "pptx_retrieval"
     XLSX_QUERY = "xlsx_query"
@@ -788,12 +788,12 @@ SCENARIOS: list[TestScenario] = [
         min_sources=1,
     ),
     # =========================================================================
-    # Hybrid Search (Dense + Sparse)
+    # Sparse Search (exact tokens, acronyms, and identifiers)
     # =========================================================================
     TestScenario(
         id="E67",
-        name="Hybrid: exact model number",
-        feature=Feature.HYBRID_SEARCH,
+        name="Sparse: exact model number",
+        feature=Feature.SPARSE_SEARCH,
         query="X100 battery capacity",
         # Exact model number should be matched by sparse search
         must_contain_any=["75 kWh", "75kWh", "X100"],
@@ -801,8 +801,8 @@ SCENARIOS: list[TestScenario] = [
     ),
     TestScenario(
         id="E68",
-        name="Hybrid: technical identifier",
-        feature=Feature.HYBRID_SEARCH,
+        name="Sparse: technical identifier",
+        feature=Feature.SPARSE_SEARCH,
         query="CCS Combo 1 charging standard",
         # Technical identifier from spec doc
         must_contain_any=["CCS", "DC Fast", "charging"],
@@ -810,8 +810,8 @@ SCENARIOS: list[TestScenario] = [
     ),
     TestScenario(
         id="E69",
-        name="Hybrid: specific department name",
-        feature=Feature.HYBRID_SEARCH,
+        name="Sparse: specific department name",
+        feature=Feature.SPARSE_SEARCH,
         query="employees in Engineering",
         # Department name should be exact matched
         must_contain_any=["Engineering", "employee"],
@@ -819,8 +819,8 @@ SCENARIOS: list[TestScenario] = [
     ),
     TestScenario(
         id="E70",
-        name="Hybrid: acronym lookup",
-        feature=Feature.HYBRID_SEARCH,
+        name="Sparse: acronym lookup",
+        feature=Feature.SPARSE_SEARCH,
         query="What is SAE Level 2+",
         # Technical acronym from spec
         must_contain_any=["SAE", "Level 2", "autonomous", "driving", "certified"],
@@ -1287,12 +1287,12 @@ SCENARIOS: list[TestScenario] = [
         min_sources=1,
     ),
     # =========================================================================
-    # Additional Hybrid Search - EDGE CASES
+    # Additional Sparse Search - EDGE CASES
     # =========================================================================
     TestScenario(
         id="E116",
-        name="Hybrid: rare technical term",
-        feature=Feature.HYBRID_SEARCH,
+        name="Sparse: rare technical term",
+        feature=Feature.SPARSE_SEARCH,
         query="What uses Apache Flink?",
         # Exact term from technical.txt - stream processing
         must_contain_any=["Flink", "stream", "telemetry", "processing"],
@@ -1300,8 +1300,8 @@ SCENARIOS: list[TestScenario] = [
     ),
     TestScenario(
         id="E117",
-        name="Hybrid: code identifier lookup",
-        feature=Feature.HYBRID_SEARCH,
+        name="Sparse: code identifier lookup",
+        feature=Feature.SPARSE_SEARCH,
         query="What does SessionExpiredError indicate?",
         # Exact exception class from code_sample.py
         must_contain_any=["session", "expired", "exception", "error"],
@@ -1362,59 +1362,59 @@ SCENARIOS: list[TestScenario] = [
         min_sources=1,
     ),
     # =========================================================================
-    # HyDE (Hypothetical Document Embeddings)
+    # Conceptual Retrieval (managed-Qwen keywords + exact evidence)
     # =========================================================================
     TestScenario(
         id="E150",
-        name="HyDE: abstract conceptual query",
-        feature=Feature.HYDE,
+        name="Conceptual: abstract sustainability query",
+        feature=Feature.CONCEPTUAL_RETRIEVAL,
         query="What is the philosophy behind TechCorp's approach to sustainable transportation?",
-        # HyDE helps bridge abstract query to concrete docs about EV mission
+        # Query keywords should bridge the abstract query to concrete EV docs.
         must_contain_any=["electric", "sustainable", "green", "emission", "environment"],
         min_sources=1,
     ),
     TestScenario(
         id="E151",
-        name="HyDE: how does it work explanation",
-        feature=Feature.HYDE,
+        name="Conceptual: how it works explanation",
+        feature=Feature.CONCEPTUAL_RETRIEVAL,
         query="How does the authentication flow ensure security?",
-        # HyDE generates explanatory passages about auth security
+        # Query keywords should surface concrete auth-security evidence.
         must_contain_any=["JWT", "token", "session", "password", "encrypt"],
         min_sources=1,
     ),
     TestScenario(
         id="E152",
-        name="HyDE: domain expertise bridge",
-        feature=Feature.HYDE,
+        name="Conceptual: domain expertise bridge",
+        feature=Feature.CONCEPTUAL_RETRIEVAL,
         query="What architectural patterns ensure high availability in the system?",
-        # HyDE bridges technical jargon to concrete microservices docs
+        # Query keywords should bridge technical jargon to microservices docs.
         must_contain_any=["replica", "failover", "redundan", "load", "cluster"],
         min_sources=1,
     ),
     TestScenario(
         id="E153",
-        name="HyDE: vague conceptual question",
-        feature=Feature.HYDE,
+        name="Conceptual: vague product question",
+        feature=Feature.CONCEPTUAL_RETRIEVAL,
         query="What makes TechCorp different from traditional automakers?",
-        # HyDE generates passages about EV vs traditional distinctions
+        # Query keywords should surface EV-vs-traditional distinctions.
         must_contain_any=["electric", "battery", "software", "AutoMotors", "gasoline"],
         min_sources=1,
     ),
     TestScenario(
         id="E154",
-        name="HyDE: implicit requirements query",
-        feature=Feature.HYDE,
+        name="Conceptual: implicit requirements query",
+        feature=Feature.CONCEPTUAL_RETRIEVAL,
         query="What would I need to know before buying a TechCorp vehicle?",
-        # HyDE generates buyer-focused passages about specs, price, warranty
+        # Query keywords should surface buyer-facing specs, price, and warranty.
         must_contain_any=["price", "range", "warranty", "charging", "battery"],
         min_sources=1,
     ),
     TestScenario(
         id="E155",
-        name="HyDE: edge case short abstract query",
-        feature=Feature.HYDE,
+        name="Conceptual: short abstract query",
+        feature=Feature.CONCEPTUAL_RETRIEVAL,
         query="TechCorp innovation strategy",
-        # HyDE helps even with short queries that need context expansion
+        # Short conceptual queries should still receive useful keyword expansion.
         must_contain_any=[
             "R&D",
             "research",

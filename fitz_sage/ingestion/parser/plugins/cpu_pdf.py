@@ -2,12 +2,12 @@
 """
 CPU-first PDF parser — pypdfium2 text layer, zero models, server-free.
 
-The v1 path of the CPU-first parser (roadmap v-0-13-05): for digital text
-PDFs — the common case — the text and its font metadata are already in the
-file. ``pypdfium2`` reads them and this parser reconstructs heading hierarchy
-from font-size clustering plus numbering patterns. No layout transformer, no
-OCR, no torch — so it cannot exhaust memory the way the docling pipeline does
-(it rasterizes every page) and it runs in seconds, not minutes.
+For digital text PDFs, the common case, the text and its font metadata are
+already in the file. ``pypdfium2`` reads them and this parser reconstructs
+heading hierarchy from font-size clustering plus numbering patterns. No layout
+transformer, no OCR, no torch — so it cannot exhaust memory the way the
+docling pipeline does (it rasterizes every page) and it runs in seconds, not
+minutes.
 
 Scanned / image-only PDFs have no text layer to read; this parser returns an
 empty document for them. Use ``parser: docling`` for OCR on those.

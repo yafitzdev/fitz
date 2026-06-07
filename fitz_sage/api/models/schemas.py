@@ -41,8 +41,38 @@ class QueryResponse(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Extra answer metadata, e.g. gap_context (what's missing / what to add) on ABSTAIN",
+        description="Extra answer metadata, e.g. gap_context (what's missing / what to add) on abstain",
     )
+
+
+class EvidenceItemResponse(BaseModel):
+    """One ranked evidence item returned by retrieval-first endpoints."""
+
+    rank: int = Field(..., description="Rank within the selected evidence prefix")
+    source_id: str = Field(..., description="Stable source identifier")
+    file_path: str = Field(..., description="Source file path")
+    address_kind: str = Field(..., description="Typed unit kind: section, symbol, table, or file")
+    address_location: str = Field(..., description="Location within the source")
+    line_range: Optional[List[int]] = Field(None, description="Line range when available")
+    score: Optional[float] = Field(None, description="Retrieval or rerank score")
+    excerpt: str = Field(..., description="Display excerpt")
+    content: str = Field(..., description="Fuller content passed to governance")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Item metadata")
+
+
+class EvidenceResponse(BaseModel):
+    """Retrieval-first response from the evidence endpoint."""
+
+    query: str = Field(..., description="Original query text")
+    mode: Optional[str] = Field(None, description="Governance mode")
+    items: List[EvidenceItemResponse] = Field(default_factory=list, description="Evidence items")
+    reasons: List[str] = Field(default_factory=list, description="Governance reasons")
+    timings: Dict[str, Any] = Field(default_factory=dict, description="Stage timings")
+    indexing_status: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Progressive indexing status for the collection",
+    )
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Governance metadata")
 
 
 class ChatMessage(BaseModel):

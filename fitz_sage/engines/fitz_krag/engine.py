@@ -355,7 +355,7 @@ class FitzKragEngine:
         _t3 = _t.perf_counter()
         logger.debug(f"[init] strategies: {(_t3-_ts1)*1000:.0f}ms")
 
-        # Chat factory for legacy tiered LLM paths. Retrieval-first defaults
+        # Chat factory for optional tiered LLM paths. Retrieval-first defaults
         # leave chat tiers unset, so this stays None unless the user opts in.
         from fitz_sage.llm.factory import get_chat_factory
 
@@ -469,7 +469,7 @@ class FitzKragEngine:
                 fallback_strategy=code_strategy,
             )
             self._retrieval_router._code_strategy = llm_strategy
-            code_strategy = llm_strategy  # so HyDE/raw_store wiring below reaches it
+            code_strategy = llm_strategy  # so raw_store wiring below reaches it
 
         # Wire raw_store for freshness boosting
         code_strategy._raw_store = self._raw_store
@@ -520,7 +520,7 @@ class FitzKragEngine:
         # Retrieval-first init intentionally does not create or warm chat clients.
 
     def _chat_tier_specs(self) -> dict[str, str] | None:
-        """Return complete tier specs when the legacy chat tiers are configured."""
+        """Return complete tier specs when optional chat tiers are configured."""
         configured = [
             spec
             for spec in (

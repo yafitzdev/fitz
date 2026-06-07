@@ -226,7 +226,7 @@ class KragE2ERunner:
         tier_collection = self._collection_for_tier(tier_name)
         self._tier_collections.add(tier_collection)
 
-        # Build KRAG config — post-v0.12.0 schema (no embedding / vector_db; BM25 + KRAG routing + LLM rerank)
+        # Build KRAG config: BM25 + KRAG routing + ONNX rerank.
         config_dict = {
             "chat_fast": chat_fast,
             "chat_balanced": chat_balanced,

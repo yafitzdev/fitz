@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 
-# Detect if we can use Unicode safely (not Windows legacy console)
+# Detect if we can use Unicode safely on the active Windows console.
 CAN_USE_UNICODE = sys.platform != "win32" or sys.stdout.encoding.lower() in (
     "utf-8",
     "utf8",

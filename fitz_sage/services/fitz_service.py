@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fitz_sage.core import Answer
+from fitz_sage.core import Answer, EvidencePack
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -171,6 +171,50 @@ class FitzService:
         except Exception as e:
             logger.error(f"Query failed (collection={collection}): {e}", exc_info=True)
             raise QueryError(f"Query failed: {e}") from e
+
+    def evidence(
+        self,
+        question: str,
+        collection: str,
+        *,
+        conversation_context: "ConversationContext | None" = None,
+        engine: str | None = None,
+    ) -> EvidencePack:
+        """
+        Retrieve governed evidence without answer synthesis.
+
+        Args:
+            question: The question to retrieve evidence for
+            collection: Collection to query
+            conversation_context: For query rewriting (pronoun resolution)
+            engine: Engine to use (None = user's default engine)
+
+        Returns:
+            EvidencePack with ranked source units and governance metadata
+
+        Raises:
+            QueryError: If evidence retrieval fails
+        """
+        from fitz_sage.core import Query
+        from fitz_sage.runtime import create_engine
+
+        if not question or not question.strip():
+            raise QueryError("Question cannot be empty")
+
+        try:
+            engine_instance = create_engine(engine)
+            engine_instance.load(collection)
+
+            metadata: dict[str, Any] = {}
+            if conversation_context is not None:
+                metadata["conversation_context"] = conversation_context
+
+            query_obj = Query(text=question, metadata=metadata)
+            return engine_instance.evidence(query_obj)
+
+        except Exception as e:
+            logger.error(f"Evidence retrieval failed (collection={collection}): {e}", exc_info=True)
+            raise QueryError(f"Evidence retrieval failed: {e}") from e
 
     # =========================================================================
     # Point Operations

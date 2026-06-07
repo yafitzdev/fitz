@@ -3,11 +3,11 @@
 
 ## Problem
 
-Identifier lookups need exact matching, not soft semantic similarity:
+Identifier lookups need exact matching, not soft similarity:
 
 - **Q:** "What happened with `TC_1000`?"
-- **Embedding search:** treats `TC_1000` ≈ `TC_2000` — they are
-  semantically near-identical, so the wrong test case comes back.
+- **Soft similarity:** treats `TC_1000` ≈ `TC_2000` — they look alike,
+  so the wrong test case can come back.
 - **Expected:** only `TC_1000`.
 
 Test case IDs, ticket numbers, version strings, error codes, function

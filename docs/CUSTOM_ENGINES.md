@@ -12,6 +12,10 @@ Fitz's pluggable architecture makes it easy to add custom engines. You just need
 2. Register with the engine registry
 3. (Optional) Add configuration support
 
+Retrieval-first engines can also implement `evidence(Query) -> EvidencePack`.
+The base engine protocol remains answer-compatible, while KRAG exposes both
+answer synthesis and governed evidence retrieval.
+
 ---
 
 ## Quick Start
@@ -388,8 +392,6 @@ def run_my_engine(
         documents: Documents to add (optional)
         config: Configuration object
         config_path: Path to config file
-        constraints: Query constraints
-        
     Returns:
         Answer object
     """
@@ -415,7 +417,7 @@ def run_my_engine(
     
     # Build query
     if isinstance(query, str):
-        query_obj = Query(text=query, constraints=constraints)
+        query_obj = Query(text=query)
     else:
         query_obj = query
     

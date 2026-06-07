@@ -1,11 +1,10 @@
-# tests/test_registry.py
+# tests/unit/test_registry.py
 """
 Tests for the centralized plugin registry system.
 
 Architecture:
 - Python-based registries use fitz_sage.core.registry.PluginRegistry
 - LLM providers use fitz_sage.llm (direct provider wrappers)
-- Vector DB plugins use fitz_sage.vector_db.registry (YAML-based)
 - Chunking plugins use fitz_sage.core.registry.CHUNKING_REGISTRY
 """
 

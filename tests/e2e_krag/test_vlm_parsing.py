@@ -137,9 +137,9 @@ def vlm_krag_engine(set_workspace):
 
     collection = f"e2e_vlm_{uuid.uuid4().hex[:8]}"
 
-    # Load base tier config for chat models + endpoint. Post-v0.12.0:
-    # no embedding / vector_db — retrieval is BM25 + KRAG routing + ONNX
-    # rerank, and the endpoint is carried by chat_base_url.
+    # Load base tier config for chat models + endpoint. Retrieval is BM25
+    # plus KRAG routing and ONNX rerank; the endpoint is carried by
+    # chat_base_url.
     e2e_config = load_e2e_config()
     tier_names = get_tier_names(e2e_config)
     tier_config = get_tier_config(tier_names[0], e2e_config)

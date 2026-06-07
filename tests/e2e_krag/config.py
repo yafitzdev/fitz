@@ -1,4 +1,4 @@
-# tests/e2e/config.py
+# tests/e2e_krag/config.py
 """E2E test configuration loader.
 
 Uses the centralized tests/test_config.yaml (same as all other tests).
@@ -32,7 +32,7 @@ def get_tier_config(tier_name: str, base_config: dict[str, Any] | None = None) -
         base_config: Base config (loaded if not provided)
 
     Returns:
-        Config dict with chat/embedding/vector_db settings for the tier
+        Config dict with chat endpoint settings for the tier
     """
     if base_config is None:
         base_config = load_test_config()
@@ -43,9 +43,8 @@ def get_tier_config(tier_name: str, base_config: dict[str, Any] | None = None) -
         available = [t["name"] for t in tiers]
         raise ValueError(f"Unknown tier: {tier_name}. Available: {available}")
 
-    # Build tier config matching the expected structure.
-    # Post-v0.12.0: embedding / vector_db removed; chat carries the endpoint
-    # provider + per-tier base_url + optional api_key_env.
+    # Build tier config matching the expected structure. Chat carries the
+    # endpoint provider, per-tier base_url, and optional api_key_env.
     return {
         "chat": {
             "plugin_name": tier["chat"],

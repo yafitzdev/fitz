@@ -218,7 +218,7 @@ Expected post-retrieval result:
 
 | Signal | Likely value |
 |---|---|
-| `mode` | `TRUSTWORTHY` |
+| `mode` | `trustworthy` |
 | `stop_reason` | `structured_lookup_exact_match` |
 | `retrieval_action` | `answer_now` |
 

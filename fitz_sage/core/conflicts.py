@@ -2,10 +2,9 @@
 """
 Conflict detection stub kept for hierarchy-enricher compatibility.
 
-Conflict detection moved to query time in v0.13.0: the pyrrho classifier
-(`fitz_sage.governance.pyrrho`) decides TRUSTWORTHY / DISPUTED / ABSTAIN
-in a single forward pass over (query, contexts). No ingest-time conflict
-extraction is needed.
+The pyrrho classifier (`fitz_sage.governance.pyrrho`) decides TRUSTWORTHY /
+DISPUTED / ABSTAIN at query time in a single forward pass over
+(query, contexts). No ingest-time conflict extraction is needed.
 """
 
 from __future__ import annotations

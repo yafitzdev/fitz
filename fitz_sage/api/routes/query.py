@@ -11,6 +11,7 @@ from fitz_sage.api.models.schemas import (
     ChatMessage,
     ChatRequest,
     ChatResponse,
+    EvidenceResponse,
     QueryRequest,
     QueryResponse,
     SourceInfo,
@@ -66,6 +67,31 @@ async def query(request: QueryRequest) -> QueryResponse:
         sources=sources,
         metadata=answer.metadata,
     )
+
+
+@router.post("/evidence", response_model=EvidenceResponse)
+@handle_api_errors
+async def evidence(request: QueryRequest) -> EvidenceResponse:
+    """
+    Retrieve governed evidence without answer synthesis.
+
+    This is the retrieval-first endpoint: it returns ranked source units,
+    Pyrrho mode/reasons, cutoff metadata, and indexing status.
+    """
+    service = get_service()
+
+    if request.source is not None:
+        service.point(source=request.source, collection=request.collection or "default")
+
+    context = _to_conversation_context(request.conversation_history)
+
+    pack = service.evidence(
+        question=request.question,
+        collection=request.collection or "default",
+        conversation_context=context,
+    )
+
+    return EvidenceResponse(**pack.to_dict())
 
 
 @router.post("/chat", response_model=ChatResponse)

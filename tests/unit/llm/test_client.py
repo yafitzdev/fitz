@@ -77,7 +77,7 @@ class TestUnknownProvider:
 
 
 class TestRemovedProviderErrors:
-    """The legacy provider names raise migration errors."""
+    """Removed provider names raise actionable errors."""
 
     @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
     def test_get_chat_raises(self, removed: str) -> None:

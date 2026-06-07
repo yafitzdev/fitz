@@ -87,7 +87,7 @@ class TestFitzKragConfig:
             FitzKragConfig(collection="test", nonexistent_field=True)
 
     def test_enrichment_provider_fields_are_removed(self):
-        """Qwen enrichment is internal; legacy provider knobs are invalid."""
+        """Qwen enrichment is internal; removed provider knobs are invalid."""
         with pytest.raises(Exception):
             FitzKragConfig(collection="test", enricher="onnx/qwen3.5-0.8b")
 

@@ -156,7 +156,7 @@ def test_predict_query_includes_query_only_heads():
 
 
 def test_load_trustworthy_threshold_reads_manifest(tmp_path):
-    """Packaged release thresholds should override the legacy constant."""
+    """Packaged release thresholds should override the default constant."""
     (tmp_path / "manifest.json").write_text(
         '{"release": {"trustworthy_threshold": 0.44}}',
         encoding="utf-8",

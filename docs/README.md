@@ -14,6 +14,7 @@ historical implementation notes.
 | `QUERY_UX.md` | One-command CLI user journey and background indexing behavior |
 | `EVIDENCE_PACK.md` | Governed evidence response contract |
 | `MANAGED_MODELS.md` | Local ONNX models, download behavior, and cache expectations |
+| `features/governance/modality-boundaries.md` | Pyrrho governance boundaries for text, tables, code, logs, and config |
 | `CLI.md` | Command reference |
 | `SDK.md` | Python SDK reference |
 | `API.md` | REST API reference |
@@ -30,6 +31,7 @@ historical implementation notes.
 | `CONFIG.md` | Runtime configuration |
 | `FEATURE_CONTROL.md` | Provider-presence feature control |
 | `TROUBLESHOOTING.md` | Common operational issues |
+| `evaluation/current.md` | Current measurement plan |
 
 ## Feature Areas
 

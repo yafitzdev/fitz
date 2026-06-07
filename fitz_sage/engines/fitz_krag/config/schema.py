@@ -46,17 +46,17 @@ class FitzKragConfig(BasePluginConfig):
 
     chat_fast: str | None = Field(
         default=None,
-        description="Optional fast-tier chat model for legacy tiered LLM work",
+        description="Optional fast-tier chat model for synthesis and query intelligence",
     )
 
     chat_balanced: str | None = Field(
         default=None,
-        description="Optional balanced-tier chat model for legacy tiered LLM work",
+        description="Optional balanced-tier chat model for synthesis and query intelligence",
     )
 
     chat_smart: str | None = Field(
         default=None,
-        description="Optional smart-tier chat model for legacy tiered LLM work",
+        description="Optional smart-tier chat model for synthesis and query intelligence",
     )
 
     # Per-role base URLs — used by the ``endpoint`` and ``enterprise``
@@ -145,7 +145,7 @@ class FitzKragConfig(BasePluginConfig):
         default="auto",
         description=(
             "Code search mode: 'auto' = LLM structural search when chat "
-            "available with hybrid fallback, 'hybrid' = BM25 + semantic only"
+            "is available with keyword+BM25 fallback, 'hybrid' = keyword+BM25 only"
         ),
     )
 

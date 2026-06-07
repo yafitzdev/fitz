@@ -22,9 +22,8 @@ config key declares which pyrrho classifier to use:
     # governance.classify_query(query) returns pre-retrieval query signals
     # decision.reason is a one-line human-readable summary
 
-The legacy constraint+sklearn cascade was removed in v0.13.0. The pyrrho
-classifier is faster than the cascade it replaced and now also supplies
-pre-retrieval query signals used by the retrieval stack.
+Pyrrho now supplies both evidence governance and pre-retrieval query signals
+used by the retrieval stack.
 """
 
 from __future__ import annotations

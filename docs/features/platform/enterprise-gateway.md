@@ -255,5 +255,5 @@ fitz query "What is the refund policy?" --source ./docs
 
 ## Related Features
 
-- [**Configuration**](../CONFIG.md) - Full configuration reference
-- [**Plugins**](../PLUGINS.md) - How providers are loaded
+- [**Configuration**](../../CONFIG.md) - Full configuration reference
+- [**Plugins**](../../PLUGINS.md) - How providers are loaded

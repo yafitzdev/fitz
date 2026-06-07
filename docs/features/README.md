@@ -4,7 +4,7 @@ In-depth design and implementation documentation for individual fitz-sage featur
 
 | Directory | Contents |
 |---|---|
-| `governance/` | Answer constraint system, epistemic honesty, benchmarking |
+| `governance/` | Pyrrho evidence governance, epistemic honesty, and modality boundaries |
 | `ingestion/` | Code symbol extraction, hierarchical chunking, tabular routing |
 | `platform/` | KRAG engine, enterprise gateway, progressive retrieval, unified storage |
 | `retrieval/` | Retrieval intelligence: FTS5 + bm25 sparse search, query rewriting/expansion, multi-hop, ONNX cross-encoder reranker, entity graph, and more |

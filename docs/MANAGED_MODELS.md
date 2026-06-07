@@ -39,6 +39,45 @@ Managed Qwen ready (<revision>).
 
 After the first download, subsequent runs reuse the cached snapshots.
 
+## Offline and Air-Gapped Use
+
+For disconnected deployments, warm the managed models on a connected machine,
+then copy the caches to the target machine before running queries.
+
+Warm the standard model set:
+
+```bash
+python -c "from fitz_sage.llm.providers.onnx_chat import OnnxChat; OnnxChat().ensure_available(include_checksum=True)"
+python -c "from fitz_sage.llm.providers.onnx_reranker import OnnxReranker; OnnxReranker().rerank('warmup', ['one', 'two'])"
+python -c "from fitz_sage.governance import create_governance; create_governance('pyrrho').classify_query('warmup')"
+```
+
+Copy both cache roots:
+
+| Cache | What it contains |
+|---|---|
+| Hugging Face cache (`HF_HOME`, or the platform default) | Qwen ONNX snapshot, reranker ONNX file, tokenizers, configs |
+| `~/.fitz/models/pyrrho/` | Managed Pyrrho safetensors package |
+
+On the target machine, point `HF_HOME` at the copied Hugging Face cache and set
+Hugging Face offline mode:
+
+```bash
+export HF_HOME=/opt/fitz/hf-cache
+export HF_HUB_OFFLINE=1
+```
+
+For Pyrrho, either copy `~/.fitz/models/pyrrho/` to the same Fitz home location
+or configure governance with the unpacked local package path:
+
+```yaml
+governance: pyrrho//opt/fitz/models/pyrrho/yafitzdev__pyrrho-nano-g3.1
+```
+
+The double slash after `pyrrho/` is intentional for absolute Unix paths. On
+Windows, use a normal absolute path after the provider prefix, for example
+`pyrrho/C:\fitz\models\pyrrho\yafitzdev__pyrrho-nano-g3.1`.
+
 ## Qwen Is Mandatory
 
 Qwen enrichment is not a user-selected optional provider. It is part of the

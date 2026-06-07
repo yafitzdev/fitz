@@ -1,5 +1,5 @@
 # tests/unit/test_cpu_pdf_parser.py
-"""Unit tests for the CPU-first PDF parser (roadmap v-0-13-05).
+"""Unit tests for the CPU-first PDF parser.
 
 The heading heuristics — numbering, font-size clustering, all-caps, keyword
 labels — are tested directly on reconstructed lines (deterministic, no PDF).

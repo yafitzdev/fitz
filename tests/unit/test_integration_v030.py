@@ -1,5 +1,6 @@
+# tests/unit/test_integration_v030.py
 """
-Integration Tests for v0.3.0 Architecture
+Integration tests for core architecture.
 
 These tests verify that the complete refactored system works end-to-end:
 - Core contracts are usable

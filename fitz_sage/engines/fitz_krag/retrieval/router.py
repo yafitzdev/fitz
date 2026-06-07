@@ -1,9 +1,9 @@
 # fitz_sage/engines/fitz_krag/retrieval/router.py
 """
 Retrieval router — dispatches queries to BM25/keyword strategies and merges
-results. fitz-sage has no dense embeddings: there is no HyDE leg, no chunk
-fallback, no per-query embedding pre-computation. The router reads gates
-and query expansions from the RetrievalProfile.
+results. fitz-sage has no dense embeddings: there is no generated hypothetical
+document leg, no chunk fallback, no per-query embedding pre-computation. The
+router reads gates and query expansions from the RetrievalProfile.
 """
 
 from __future__ import annotations
