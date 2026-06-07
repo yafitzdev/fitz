@@ -292,7 +292,7 @@ class TestBatchProcessing:
 
 
 class TestRequiredEnrichmentFailures:
-    """Tests for fail-closed behavior when required enrichment fails."""
+    """Tests for enrichment failure handling."""
 
     def test_llm_exception_raises(self):
         """When LLM raises, enrichment fails instead of storing empty metadata."""
@@ -307,17 +307,28 @@ class TestRequiredEnrichmentFailures:
             assert "keywords" not in s
             assert "entities" not in s
 
-    def test_malformed_json_raises(self):
-        """When LLM returns unparseable JSON, enrichment fails closed."""
+    def test_malformed_json_uses_deterministic_fallback(self):
+        """When model JSON is unusable, exact grounded identifiers still index."""
         chat = _make_chat(response="This is not JSON at all")
         enricher = KragEnricher(chat, batch_size=15)
-        symbols = _symbol_dicts(2)
+        symbols = [
+            {
+                "name": "OAuthClientV2",
+                "kind": "class",
+                "summary": "Handles TC-4812 retries for Acme Corp in v2.3.",
+            }
+        ]
 
-        with pytest.raises(KnowledgeError, match="invalid JSON"):
-            enricher.enrich_symbols(symbols)
+        enricher.enrich_symbols(symbols)
+
+        assert chat.chat.call_count == 2
+        assert symbols[0]["keywords"] == ["TC-4812", "v2.3"]
+        assert {"name": "TC-4812", "type": "identifier"} in symbols[0]["entities"]
+        assert {"name": "v2.3", "type": "identifier"} in symbols[0]["entities"]
+        assert {"name": "Acme Corp", "type": "entity"} in symbols[0]["entities"]
 
     def test_retries_once_when_first_response_is_invalid_json(self):
-        """A malformed first response gets one strict retry before failing closed."""
+        """A malformed first response gets one strict retry before fallback."""
         good_response = _make_enrichment_response([{"keywords": ["retry"], "entities": []}])
         chat = _make_chat()
         chat.chat.side_effect = ["truncated json", good_response]

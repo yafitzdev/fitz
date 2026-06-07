@@ -181,7 +181,15 @@ class KragEnricher:
                     max_tokens=_RETRY_ENRICHMENT_TOKENS,
                     temperature=0,
                 )
-                return self._parse_response(retry_response, len(items))
+                try:
+                    return self._parse_response(retry_response, len(items))
+                except ValueError:
+                    logger.warning(
+                        "Enrichment model returned invalid JSON twice; "
+                        "using deterministic fallback for %s item(s).",
+                        len(items),
+                    )
+                    return _deterministic_enrichments(items, strategy)
         except Exception as e:
             logger.error(f"Required enrichment batch failed: {e}")
             raise KnowledgeError(f"Required enrichment batch failed: {e}") from e
@@ -247,6 +255,23 @@ def _deterministic_entities(item: dict[str, str]) -> list[dict[str, str]]:
             return entities
 
     return entities
+
+
+def _deterministic_enrichments(
+    items: list[dict[str, str]],
+    strategy: EnrichmentStrategy,
+) -> list[dict[str, Any]]:
+    """Build grounded enrichment when model JSON is unusable."""
+    enrichments: list[dict[str, Any]] = []
+    for item in items:
+        enrichment: dict[str, Any] = {}
+        if strategy in (EnrichmentStrategy.KEYWORDS, EnrichmentStrategy.FULL):
+            enrichment["keywords"] = _deterministic_keywords(item)
+        if strategy in (EnrichmentStrategy.ENTITIES, EnrichmentStrategy.FULL):
+            enrichment["entities"] = _deterministic_entities(item)
+            enrichment["temporal"] = {"dates": [], "versions": [], "refs": []}
+        enrichments.append(enrichment)
+    return enrichments
 
 
 def _add_entity(
