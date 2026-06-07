@@ -39,7 +39,10 @@ _MONTH_PATTERN = (
     r"october|november|december)(?:\s+(\d{4}))?\b"
 )
 _EXACT_IDENTIFIER_PATTERN = re.compile(
-    r"\b[A-Za-z]{1,12}[-_][A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*\b|"
+    r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"
+    r"(?:[-_][A-Za-z0-9]+)*(?![A-Za-z0-9_])|"
+    r"(?<![A-Za-z0-9_])(?=[A-Za-z0-9-]*\d)[A-Za-z][A-Za-z0-9]*"
+    r"(?:-[A-Za-z0-9]+)+(?![A-Za-z0-9_])|"
     r"\b[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9_-]*\b"
 )
 _REQUIRED_QUERY_TERMS = {
@@ -652,7 +655,8 @@ def _query_contract_blocker(
 ) -> str | None:
     """Return a hard blocker when evidence misses explicit query requirements."""
     requirements = _contract_requirements(query, profile, policy)
-    if not requirements:
+    identifier_requirements = _contract_identifier_requirements(query, profile, policy)
+    if not requirements and not identifier_requirements:
         return None
 
     evidence = _normalized_evidence(results)
@@ -661,11 +665,17 @@ def _query_contract_blocker(
         for label, variants in requirements
         if not any(_contains_all_terms(evidence, variant) for variant in variants)
     ]
+    missing.extend(
+        label
+        for label in identifier_requirements
+        if not _evidence_contains_identifier(results, label)
+    )
     if not missing:
         return None
 
-    shown = ", ".join(missing[:4])
-    suffix = "" if len(missing) <= 4 else f", +{len(missing) - 4} more"
+    deduped_missing = list(dict.fromkeys(missing))
+    shown = ", ".join(deduped_missing[:4])
+    suffix = "" if len(deduped_missing) <= 4 else f", +{len(deduped_missing) - 4} more"
     return f"Query contract not satisfied: retrieved evidence is missing {shown}{suffix}."
 
 
@@ -691,14 +701,7 @@ def _structured_lookup_exact_matches(
 
     matches: list["ReadResult"] = []
     for result in results[: policy.max_docs]:
-        evidence = _normalized_evidence([result])
-        if all(
-            any(
-                _contains_all_terms(evidence, variant)
-                for variant in _identifier_variants(identifier)
-            )
-            for identifier in identifiers
-        ):
+        if all(_evidence_contains_identifier([result], identifier) for identifier in identifiers):
             matches.append(result)
     return matches
 
@@ -764,10 +767,7 @@ def _contract_requirements(
         for entity in getattr(profile, "comparison_entities", []) or []:
             normalized = _clean_requirement_label(str(entity))
             if normalized:
-                add(normalized, (_terms_variant(normalized),))
-
-    for identifier in _exact_identifiers(query):
-        add(identifier, _identifier_variants(identifier))
+                add(normalized, _comparison_entity_requirement_variants(str(entity)))
 
     lower = query.lower()
     for term, variants in _REQUIRED_QUERY_TERMS.items():
@@ -775,6 +775,32 @@ def _contract_requirements(
             add(term, tuple((variant,) for variant in variants))
 
     return requirements
+
+
+def _contract_identifier_requirements(
+    query: str,
+    profile: Any,
+    policy: GovernanceCutoffPolicy,
+) -> list[str]:
+    """Return exact identifiers that must appear as raw identifiers in evidence."""
+    identifiers: list[str] = []
+    seen: set[str] = set()
+
+    def add(identifier: str) -> None:
+        key = identifier.lower()
+        if key and key not in seen:
+            seen.add(key)
+            identifiers.append(identifier)
+
+    for identifier in _exact_identifiers(query):
+        add(identifier)
+
+    if policy.query_shape == "comparison" or getattr(profile, "has_comparison_intent", False):
+        for entity in getattr(profile, "comparison_entities", []) or []:
+            for identifier in _exact_identifiers(str(entity)):
+                add(identifier)
+
+    return identifiers
 
 
 def _prioritize_comparison_metric_evidence(
@@ -932,6 +958,25 @@ def _exact_identifiers(query: str) -> list[str]:
     return identifiers
 
 
+def _comparison_entity_requirement_variants(entity: str) -> tuple[tuple[str, ...], ...]:
+    """Return strict entity terms plus exact-identifier variants for comparison coverage."""
+    variants: list[tuple[str, ...]] = []
+    seen: set[tuple[str, ...]] = set()
+
+    def add_variant(variant: tuple[str, ...]) -> None:
+        if variant and variant not in seen:
+            seen.add(variant)
+            variants.append(variant)
+
+    normalized = _clean_requirement_label(entity)
+    add_variant(_terms_variant(normalized))
+    for identifier in _exact_identifiers(entity):
+        for variant in _identifier_variants(identifier):
+            add_variant(variant)
+
+    return tuple(variants)
+
+
 def _identifier_variants(identifier: str) -> tuple[tuple[str, ...], ...]:
     """Return tokenizer-tolerant variants for an exact identifier."""
     variants = {
@@ -945,6 +990,11 @@ def _identifier_variants(identifier: str) -> tuple[tuple[str, ...], ...]:
 
 def _normalized_evidence(results: list["ReadResult"]) -> str:
     """Combine selected evidence fields into normalized searchable text."""
+    return _normalize_text(_raw_evidence(results))
+
+
+def _raw_evidence(results: list["ReadResult"]) -> str:
+    """Combine selected evidence fields without destroying exact identifiers."""
     parts: list[str] = []
     for result in results:
         parts.append(str(getattr(result, "content", "")))
@@ -956,7 +1006,17 @@ def _normalized_evidence(results: list["ReadResult"]) -> str:
         metadata = getattr(result, "metadata", {}) or {}
         if isinstance(metadata, dict):
             parts.extend(str(value) for value in metadata.values() if isinstance(value, str))
-    return _normalize_text(" ".join(parts))
+    return " ".join(parts)
+
+
+def _evidence_contains_identifier(results: list["ReadResult"], identifier: str) -> bool:
+    """Return whether raw evidence contains an exact identifier or tokenizer variant."""
+    raw = _raw_evidence(results).lower()
+    for variant in _identifier_text_variants(identifier):
+        pattern = _identifier_text_pattern(variant)
+        if re.search(pattern, raw):
+            return True
+    return False
 
 
 def _contains_all_terms(evidence: str, terms: tuple[str, ...]) -> bool:
@@ -967,6 +1027,25 @@ def _contains_all_terms(evidence: str, terms: tuple[str, ...]) -> bool:
 def _terms_variant(value: str) -> tuple[str, ...]:
     """Normalize a requirement label into word-like evidence terms."""
     return tuple(part for part in _normalize_text(value).split() if part)
+
+
+def _identifier_text_variants(identifier: str) -> tuple[str, ...]:
+    """Return raw-text variants for exact identifier matching."""
+    normalized = identifier.strip().lower()
+    spaced = " ".join(part for part in re.split(r"[-_]+", normalized) if part)
+    variants = (
+        normalized,
+        normalized.replace("_", "-"),
+        normalized.replace("-", "_"),
+        spaced,
+    )
+    return tuple(dict.fromkeys(variant for variant in variants if variant))
+
+
+def _identifier_text_pattern(variant: str) -> str:
+    """Build a raw-text regex for one exact identifier variant."""
+    escaped = re.escape(variant).replace(r"\ ", r"\s+")
+    return rf"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])"
 
 
 def _clean_requirement_label(value: str) -> str:

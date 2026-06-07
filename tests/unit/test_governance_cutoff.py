@@ -334,6 +334,121 @@ def test_structured_lookup_exact_identifier_satisfies_retrieval_contract():
     ]
 
 
+def test_private_identifier_exact_match_satisfies_structured_lookup_contract():
+    """Private Python function names should count as exact structured identifiers."""
+    profile = SimpleNamespace(query_contract="structured_lookup")
+    exact_match = _result(
+        "def _format_query_profile(metadata: dict[str, object]) -> str:",
+        "fitz_sage/cli/ui/display.py",
+    )
+
+    result = apply_governance_cutoff(
+        "Which function named _format_query_profile formats query profile metadata?",
+        [exact_match],
+        _AbstainingGovernance(),
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [exact_match]
+    assert result.metadata["stop_reason"] == "structured_lookup_exact_match"
+    assert result.metadata["structured_lookup_contract"] == {
+        "matched_identifiers": ["_format_query_profile"],
+        "matched_sources": 1,
+    }
+
+
+def test_structured_lookup_does_not_match_identifier_as_loose_words():
+    """Exact lookup should not confuse a function argument with another identifier."""
+    profile = SimpleNamespace(query_contract="structured_lookup")
+    near_match = _result(
+        "def _format_query_profile(metadata: dict[str, object]) -> str:",
+        "fitz_sage/cli/ui/display.py",
+    )
+
+    result = apply_governance_cutoff(
+        "Which function named query_profile_metadata serializes Pyrrho query profile metadata?",
+        [near_match],
+        _AbstainingGovernance(),
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["stop_reason"] != "structured_lookup_exact_match"
+
+
+def test_contract_does_not_treat_natural_hyphen_term_as_exact_identifier():
+    """Natural hyphenated prose should not become a hard exact-identifier requirement."""
+    result = apply_governance_cutoff(
+        "How does pre-retrieval planning work?",
+        [_result("Planning runs before evidence retrieval.", "docs/planning.md")],
+        _TrustworthyGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+
+
+def test_comparison_contract_accepts_identifier_variant_without_trailing_topic():
+    """Comparison entities with code identifiers should not require trailing topic nouns."""
+    profile = SimpleNamespace(
+        has_comparison_intent=True,
+        comparison_entities=["query_profile_metadata", "_format_query_profile responsibilities"],
+        answer_type="comparative",
+    )
+    metadata_result = _result(
+        "def query_profile_metadata(query_signals, profile):",
+        "fitz_sage/engines/fitz_krag/retrieval_profile.py",
+    )
+    display_result = _result(
+        "def _format_query_profile(metadata: dict[str, object]) -> str:",
+        "fitz_sage/cli/ui/display.py",
+    )
+
+    result = apply_governance_cutoff(
+        "Compare query_profile_metadata and _format_query_profile responsibilities.",
+        [metadata_result, display_result],
+        _TrustworthyGovernance(),
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [metadata_result, display_result]
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+    assert "contract_blocker" not in result.metadata
+
+
+def test_comparison_contract_blocks_answer_now_when_identifier_side_is_missing():
+    """Pyrrho answer_now cannot certify one side of a comparison by loose word overlap."""
+    profile = SimpleNamespace(
+        has_comparison_intent=True,
+        comparison_entities=["query_profile_metadata", "_format_query_profile responsibilities"],
+        answer_type="comparative",
+    )
+    near_match = _result(
+        "def _format_query_profile(metadata: dict[str, object]) -> str:",
+        "fitz_sage/cli/ui/display.py",
+    )
+
+    result = apply_governance_cutoff(
+        "Compare query_profile_metadata and _format_query_profile responsibilities.",
+        [near_match],
+        _FixedGovernance(
+            _decision(
+                mode=AnswerMode.TRUSTWORTHY,
+                action="answer_now",
+                action_confidence=0.95,
+            )
+        ),
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["stop_reason"] == "contract_unsatisfied_at_cutoff"
+    assert "query_profile_metadata" in result.reasons[0]
+
+
 class _TrustworthyGovernance:
     def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
         return GovernanceDecision(
