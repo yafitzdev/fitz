@@ -48,20 +48,7 @@ It exposes:
 
 ---
 
-## What changed in v0.13.0
-
-The legacy constraint+sklearn cascade was removed entirely:
-
-- 5 constraint plugins (`InsufficientEvidence`, `ConflictAware`,
-  `CausalAttribution`, `SpecificInfoType`, `AnswerVerification`)
-- `feature_extractor.py` (108-dim feature vector)
-- `decider.py` (`GovernanceDecider` with the 4-question cascade
-  classifier)
-- `governor.py` (`AnswerGovernor`)
-- `model_v6_cascade.joblib` (the trained sklearn artifact)
-- `tools/governance/` (feature extraction + training scripts)
-
-What remains in `fitz_sage/governance/`:
+## Implementation
 
 - `pyrrho.py` — the local Pyrrho g3.1 inference module
 - `protocol.py` — the `EvidenceItem` protocol (any object with
@@ -137,19 +124,13 @@ standard retrieval pipeline.
 
 ---
 
-## Why a classifier and not constraints?
+## Why a classifier?
 
-The old cascade was a chain of small models + LLM judges + hand-coded
-heuristics over 108 features. It worked but was:
-
-- **Slow.** Each constraint did its own LLM call; total ~500–2000 ms.
-- **Brittle.** Constraint thresholds drifted with chat-model changes.
-- **Opaque.** Hard to debug: which signal moved the needle?
-- **Coupled to embeddings.** `SemanticMatcher` needed an embedder
-  fitz-sage no longer ships (v0.12.0 dropped the embedding API).
-
-A single fine-tuned classifier replaces all of that. It sees the
-same `(query, contexts)` pair and decides in one local forward pass.
+Governance has to judge the whole `(query, evidence prefix)` pair, not just
+individual keywords or source counts. Pyrrho gives the engine one calibrated
+local decision with mode probabilities, query-contract metadata, taxonomy
+labels, and scalar risk signals. That keeps the cutoff loop fast and makes the
+decision observable without adding endpoint calls to the retrieval path.
 
 ---
 
@@ -174,5 +155,4 @@ The model card calls out these known boundaries:
 - [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
 - [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov) — the evaluation dataset
 - [pyrrho training code](https://github.com/yafitzdev/pyrrho)
-- [`features/governance/governance-benchmarking.md`](features/governance/governance-benchmarking.md) — historical notes on the pre-v0.13.0 cascade
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — where governance fits in the engine pipeline

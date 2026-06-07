@@ -1,8 +1,8 @@
 <!-- docs/ENGINES.md -->
 # Engines
 
-fitz-sage **v0.14.1+**. The base engine protocol still supports
-`answer(Query) -> Answer`, but the production `fitz_krag` engine is
+The base engine protocol still supports `answer(Query) -> Answer`, but the
+production `fitz_krag` engine is
 retrieval-first: use `evidence(Query) -> EvidencePack` when you want the
 ranked source material without generation.
 

@@ -2,20 +2,16 @@
 
 ## Problem
 
-Embedding-based retrieval excels at meaning but fails on exact terms:
+Similarity-only retrieval can fail on exact terms:
 
 - **Q:** "Find documents mentioning X100"
-- **Embedding search:** returns Y200 docs (semantically similar
+- **Similarity-only search:** returns Y200 docs (semantically similar
   model numbers)
 - **Expected:** exact match on `X100`
 
-Compressing text into vectors loses lexical information. Product
-codes, error messages, and technical identifiers need keyword matching.
-
-This is one of several reasons fitz-sage **v0.12.0** dropped the
-embedding layer entirely. The system now runs on a sparse retrieval
-stack — and the structure / typed-units / ONNX cross-encoder reranker around it —
-without any vector backend.
+Product codes, error messages, and technical identifiers need lexical matching.
+fitz-sage handles that with a sparse retrieval stack wrapped in typed-unit
+routing, structural expansion, and ONNX cross-encoder reranking.
 
 ## Solution: SQLite FTS5 with native `bm25()`
 

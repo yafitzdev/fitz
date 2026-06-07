@@ -10,10 +10,8 @@ Users often use different terminology than what appears in documents:
 
 BM25 token matching catches *some* of this (shared stems, casing) but
 not enough — it doesn't know `fetch` ↔ `retrieve` or `db` ↔ `database`.
-With embeddings removed in v0.12.0, the bridging job falls on the
-query side instead of the index side: contribute synonym/acronym
-terms to the query's keyword set, which retrieval searches as one
-extra BM25 leg.
+The bridge lives on the query side: synonym and acronym terms are added to the
+query's keyword set, which retrieval searches as one extra BM25 leg.
 
 ## Solution: synonym/acronym term expansion
 

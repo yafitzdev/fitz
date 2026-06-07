@@ -5,6 +5,7 @@ Documentation for the fitz-sage governance and epistemic honesty system.
 | File | Contents |
 |---|---|
 | `epistemic-honesty.md` | How fitz-sage decides when to say "I don't know" |
-| `governance-benchmarking.md` | Methodology and results for governance evaluation |
 
-The governance system enforces answer constraints (confidence thresholds, source requirements, scope limits) defined in `fitz_sage/governance/`. See `docs/CONSTRAINTS.md` for usage.
+The governance system uses Pyrrho to classify retrieved evidence as
+`TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`. See `docs/CONSTRAINTS.md` for the
+runtime contract.

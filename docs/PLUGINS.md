@@ -1,11 +1,9 @@
 <!-- docs/PLUGINS.md -->
 # Plugin Development Guide
 
-fitz-sage **v0.14.1+** has a much smaller plugin surface than earlier
-versions: required enrichment is managed by the built-in ONNX provider,
-endpoint/cloud chat uses one OpenAI-compatible provider with sugar presets,
-embedding/vector-db are gone, and the remaining plugin types are Python modules
-wired by config.
+fitz-sage plugins are Python modules wired by config. Required enrichment is
+managed by the built-in ONNX provider, while optional endpoint/cloud chat uses
+one OpenAI-compatible provider with URL and auth presets.
 
 This guide covers what's pluggable and how to add a new one.
 
@@ -20,8 +18,8 @@ This guide covers what's pluggable and how to add a new one.
 | Chunker         | Python | `fitz_sage/ingestion/chunking/plugins/`        | `chunker:` / format auto-routing |
 | Source          | Python | `fitz_sage/ingestion/source/plugins/`          | source spec at ingest time       |
 
-There is **no embedding plugin, no vector-DB plugin, no rerank plugin**.
-The reranker that does run (`OnnxReranker`) is an INT8 ONNX cross-encoder
+Reranking is built into the engine rather than exposed as a plugin. The
+`OnnxReranker` is an INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base` by default) — see
 `fitz_sage/llm/providers/onnx_reranker.py`.
 
@@ -68,10 +66,9 @@ other names are URL+auth presets over `endpoint`:
 | `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |
 | `enterprise/<provider>/<model>`        | endpoint + M2M / mTLS / custom-CA auth                   |
 
-Removed in v0.12.0 (raise `ValueError` with migration text):
-`cohere`, `anthropic`, `ollama`. Point fitz-sage at the same model's
-OpenAI-compatible endpoint instead — e.g. Ollama exposes one at
-`http://localhost:11434/v1`.
+Provider specs must resolve to the OpenAI-compatible chat protocol. For local
+servers such as Ollama, configure `endpoint` with the server's `/v1` URL, for
+example `http://localhost:11434/v1`.
 
 ### Built-in providers
 
@@ -116,8 +113,8 @@ for the full M2M / mTLS story.
 
 The expected case is that you don't need to — any OpenAI-compatible
 server already works via `endpoint`. Add a new provider only when the
-wire protocol isn't OpenAI-compatible (e.g. legacy enterprise gateways
-with custom JSON shape). Then:
+wire protocol isn't OpenAI-compatible, such as a custom enterprise gateway
+with a nonstandard JSON shape. Then:
 
 1. Create `fitz_sage/llm/providers/myprovider.py`.
 2. Implement `ChatProvider`:
@@ -191,18 +188,11 @@ for the hierarchy details.
 ### Unknown Provider
 
 ```
-ValueError: Unknown chat provider: 'cohere'
+ValueError: Unknown chat provider: '<provider>'
 ```
 
-That provider was removed in v0.12.0. Use `endpoint` with the
-provider's OpenAI-compatible URL. Migration mapping for the most
-common cases:
-
-| Was              | Now                                                        |
-| ---------------- | ---------------------------------------------------------- |
-| `cohere`         | not available — pick an OpenAI-compatible model            |
-| `ollama`         | `endpoint` with `chat_base_url: http://localhost:11434/v1` |
-| `anthropic`      | not available — Claude isn't OpenAI-compatible             |
+Use `endpoint` with the configured server's OpenAI-compatible URL. For
+example, Ollama exposes `http://localhost:11434/v1`.
 
 ### Authentication Failed
 

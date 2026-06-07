@@ -223,34 +223,3 @@ print(pack.mode, [item.file_path for item in pack.items])
 
 Only `collection` is strictly required by the schema. Enrichment and
 summarization use the managed Qwen3.5 0.8B ONNX runtime automatically.
-
----
-
-## What's gone in v0.12.0
-
-If you're migrating from v0.11.x:
-
-| Removed key                    | Replacement                                              |
-| ------------------------------ | -------------------------------------------------------- |
-| `embedding: ...`               | (deleted — no embeddings anymore)                        |
-| `vector_db: pgvector`          | (deleted — SQLite + FTS5 is the only storage)            |
-| `vector_db_kwargs: ...`        | (deleted — no DB knobs)                                  |
-| `cloud: {enabled: true, ...}`  | (deleted — Fitz Cloud cache removed)                     |
-| `chat_smart: cohere/...`       | `synthesizer: endpoint/...`, point `chat_base_url` at the API |
-| `chat_smart: ollama/...`       | `synthesizer: endpoint/...`, `chat_base_url: http://localhost:11434/v1` |
-| `chat_smart: anthropic/...`    | not directly available — pick an OpenAI-compatible model |
-
-Loading a config with any of the deleted keys raises a `ValueError`
-with the migration message.
-
----
-
-## What's gone in v0.13.1
-
-| Removed key                  | Replacement          |
-| ---------------------------- | -------------------- |
-| `enable_guardrails: true`    | `governance: pyrrho` |
-| `enable_guardrails: false`   | remove the key; governance is mandatory |
-
-`enable_guardrails` is replaced by mandatory Pyrrho governance. Loading a
-config with the old key raises a `ValueError` with the migration message.

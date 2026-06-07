@@ -31,9 +31,8 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 
 ### Prefix cutoff classification
 
-Pyrrho replaces the constraint+sklearn cascade that fitz-sage used
-through v0.12.x. Each decision is one local classifier call on CPU, no
-external LLM dependency. Pyrrho also classifies query signals before recall.
+Each decision is one local classifier call on CPU, with no external LLM
+dependency. Pyrrho also classifies query signals before recall.
 
 For evidence retrieval, Pyrrho runs incrementally:
 

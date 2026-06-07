@@ -6,7 +6,7 @@ windows, that embeddings are the right index, and that all content
 types deserve the same search strategy — and replaces them with
 **typed-unit retrieval over a structural index**.
 
-This document explains why, and how it works in v0.14.1+.
+This document explains why and how it works.
 
 ---
 
@@ -83,15 +83,13 @@ Agentic RAG:
 GraphRAG:
   Document → LLM entity/relation extraction → graph → communities → answer
 
-KRAG (v0.14.1+):
+KRAG:
   Document → [symbols] [sections] [tables] → FTS5 + structure → routed search
            → ONNX rerank → Pyrrho g3.1 cutoff → EvidencePack
 ```
 
-Note what's *not* in KRAG's pipeline: vector similarity search.
-Embeddings were removed in v0.12.0 — they didn't earn their keep
-against the typed-unit + BM25 + reranker stack on
-[fitz-gov v5](../../../docs/evaluation/fitz-gov-5.0-results.md).
+KRAG does not use vector similarity search. The index is structural and lexical:
+typed units, FTS5/BM25, graph expansion, and ONNX cross-encoder reranking.
 
 ### Core ideas
 
@@ -164,7 +162,7 @@ ONNX, while Pyrrho g3.1 is a multitask safetensors checkpoint.
 
 ## Comparison
 
-| Dimension                | Traditional RAG    | Agentic RAG          | GraphRAG                       | KRAG (v0.14.1+)                  |
+| Dimension                | Traditional RAG    | Agentic RAG          | GraphRAG                       | KRAG                             |
 | ------------------------ | ------------------ | -------------------- | ------------------------------ | -------------------------------- |
 | Retrieval unit           | Fixed-size chunk   | Fixed-size chunk     | Entity / community node        | Symbols, sections, tables        |
 | Structure awareness      | None               | Reasoned per-query   | LLM-extracted graph            | Deterministic (AST + imports)    |

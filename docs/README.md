@@ -36,7 +36,6 @@ historical implementation notes.
 | Directory | Contents |
 |---|---|
 | `features/retrieval/` | Sparse search, query expansion, reranking, multi-hop, entity graph, freshness, temporal, aggregation, comparison |
-| `features/governance/` | Epistemic honesty and governance evaluation |
+| `features/governance/` | Epistemic honesty and Pyrrho governance |
 | `features/ingestion/` | Code symbols, tabular routing, hierarchy |
 | `features/platform/` | KRAG, progressive indexing, unified storage, endpoint integration |
-| `evaluation/` | Current benchmark results |

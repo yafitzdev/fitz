@@ -1,9 +1,8 @@
 # tests/test_config.yaml
 # Unified test configuration - ALL tests use this
 #
-# v0.12.0 migration: legacy providers (ollama / cohere / pgvector) were removed.
-# Chat now flows through the `endpoint` provider against an OpenAI-compatible URL.
-# fitz-sage no longer uses embeddings — retrieval is BM25 + KRAG routing + LLM rerank.
+# Chat flows through the `endpoint` provider against an OpenAI-compatible URL.
+# Retrieval is BM25 + KRAG routing + ONNX rerank.
 
 # Tiered execution (local -> cloud fallback)
 tiers:

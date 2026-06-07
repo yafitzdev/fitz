@@ -183,8 +183,7 @@ The enterprise provider expects **OpenAI-compatible API format**:
 Retrieval reranking runs locally via an INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base`) — see
 [features/retrieval/reranking.md](../retrieval/reranking.md). It does
-not consume the enterprise gateway. No `/embeddings` endpoint is ever
-called either; fitz-sage dropped the embedding API entirely in v0.12.0.
+not consume the enterprise gateway, and no `/embeddings` endpoint is called.
 
 Model strings are passed verbatim to the gateway. Common formats:
 - `openai/gpt-4o` - Provider-prefixed (BMW gateway style)
@@ -231,7 +230,7 @@ auth:
   client_cert_path: /etc/ssl/client.crt
   client_key_path: /etc/ssl/client.key
 
-# Storage: SQLite + FTS5 (auto-managed). No vector_db / pgvector knobs.
+# Storage: SQLite + FTS5 (auto-managed).
 ```
 
 ```bash

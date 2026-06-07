@@ -181,28 +181,7 @@ and retrieval.
 The quick path is keyword-first: exact query terms, Qwen semantic keywords, and BM25. Fully indexed collections add hierarchy,
 entity graph links, corpus summaries, and richer context expansion.
 
-Retrieval strategies have clear roles:
-
-| Strategy | Role in the pipeline |
-|----------|----------------------|
-| Keyword vocabulary, sparse BM25 | Broad recall backbone |
-| Pyrrho query contract | Sets the shape of the evidence requirement |
-| Pyrrho route/domain | Steers domain-sensitive retrieval profile knobs |
-| Pyrrho answerability shape | Distinguishes direct, set, synthesis, and structured reasoning queries |
-| Pyrrho retrieval modality | Weights code, tables, sections, text, configs, logs, PDFs, or mixed retrieval |
-| Query expansion | Broad recall keyword enrichment |
-| Query rewriting | Conversational or ambiguous query cleanup |
-| Multi-query decomposition | Bounded recall for compound questions |
-| Comparison, temporal, aggregation, freshness | Recall fanout and scoring hints |
-| Hierarchical summaries | Overview and fully indexed context |
-| Entity graph | Context expansion through shared entities |
-| Reranking | Precision before governance |
-| Multi-hop | Follow-up retrieval for questions needing bridge evidence |
-| Agentic manifest search | Fallback for files that are not query-ready yet |
-
-<br>
-
-Across those tiers, [built-in intelligence](docs/features/retrieval) handles the edge cases that break simple search:
+[Built-in intelligence](docs/features/retrieval) handles the edge cases that break simple search:
 
 <br>
 
@@ -717,8 +696,6 @@ MIT
 - [Ingestion Pipeline](docs/INGESTION.md)
 - [Enrichment (Hierarchies, Entities)](docs/ENRICHMENT.md)
 - [Epistemic Governance (Pyrrho)](docs/CONSTRAINTS.md)
-- [Governance Benchmarking (fitz-gov)](docs/features/governance/governance-benchmarking.md)
-- [BEIR Benchmark Results](docs/evaluation/beir-results.md)
 - [Plugin Development](docs/PLUGINS.md)
 - [Feature Control](docs/FEATURE_CONTROL.md)
 - [KRAG — Knowledge Routing Augmented Generation](docs/features/platform/krag.md)

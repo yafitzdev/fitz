@@ -1,7 +1,7 @@
 <!-- docs/ARCHITECTURE.md -->
 # Architecture Overview
 
-High-level system design of fitz-sage **v0.14.1+**.
+High-level system design of fitz-sage.
 
 The architecture has three load-bearing decisions:
 
@@ -135,8 +135,9 @@ and one canonical optional endpoint provider — **`endpoint`**:
 | `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |
 | `enterprise/<provider>/<model>`        | endpoint + M2M / mTLS / custom-CA auth                   |
 
-Legacy names `ollama`, `cohere`, `anthropic` were removed in v0.12.0
-and raise `ValueError` with migration text.
+Provider specs must resolve to the OpenAI-compatible chat protocol. Local
+servers such as Ollama are configured through `endpoint` plus their `/v1`
+base URL.
 
 The **`OnnxReranker`** is a separate INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base` by default) — same
@@ -175,7 +176,7 @@ table and joins back; the raw `bm25()` value (negative = better) is
 sign-flipped so downstream consumers treat higher as better.
 
 See [features/platform/unified-storage.md](features/platform/unified-storage.md)
-for the full schema-port notes (PostgreSQL → SQLite).
+for schema and runtime details.
 
 ---
 
@@ -291,8 +292,8 @@ fitz_sage/
    optional chat calls go through `endpoint` or its presets.
 3. **Structure-first retrieval.** Parse code/docs into typed units at
    ingest; route to the right strategy at query time.
-4. **No embeddings.** BM25 + KRAG routing + ONNX rerank covers the
-   ground the embedding stack used to. Confirmed against fitz-gov v5.
+4. **No embeddings.** BM25 + KRAG routing + ONNX rerank is the retrieval
+   backbone; there are no dense indexes or vector columns.
 5. **Honest over helpful.** Say `ABSTAIN` instead of hallucinating.
 6. **Files over frameworks.** Plugins are Python modules wired by config,
    not framework abstractions.

@@ -34,7 +34,7 @@ Paste any error messages or stack traces here
 
 - **OS**: [e.g., Ubuntu 22.04, Windows 11, macOS 14]
 - **Python version**: [e.g., 3.11.5]
-- **fitz version**: [e.g., 0.1.0]
+- **fitz version**: [output of `fitz --version`]
 - **Installation method**: [pip, source, etc.]
 
 ## Configuration

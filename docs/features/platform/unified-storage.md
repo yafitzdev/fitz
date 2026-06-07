@@ -6,20 +6,17 @@
 
 ## TL;DR
 
-As of **v0.12.0** fitz-sage stores everything — metadata, structured tables,
-keywords, full-text — in **SQLite with WAL mode and FTS5 indexes**.
-One `.db` file per collection under `<workspace>/sqlite/`. Zero install,
-stdlib only.
+fitz-sage stores metadata, structured tables, keywords, and full text in
+**SQLite with WAL mode and FTS5 indexes**. Each collection maps to one `.db`
+file under `<workspace>/sqlite/`. Zero install, stdlib only.
 
-- **No vector database.** Retrieval is BM25 over FTS5 external-content
-  tables, plus KRAG address routing and ONNX cross-encoder reranking — vectors were
-  removed in the same release as the embedding pipeline.
+- **One storage layer.** Retrieval is BM25 over FTS5 external-content tables,
+  plus KRAG address routing and ONNX cross-encoder reranking.
 - **No server.** SQLite is a file. Open it, query it, close it.
   Each call gets its own connection (microseconds to open).
 - **One file per collection.** `fitz_<collection>.db`. Delete a
   collection by `os.unlink`.
-- **Stdlib + nothing.** Drops the `psycopg`, `psycopg-pool`,
-  `fitz-pgserver`, `faiss-cpu`, `pgvector` chain of dependencies.
+- **Stdlib + nothing.** No database daemon and no separate search service.
 
 ---
 
@@ -109,27 +106,11 @@ treat higher as better — match this convention if you add a new store.
 
 ---
 
-## Schema port notes (PostgreSQL → SQLite)
-
-For anyone reading old code or migrating extensions:
-
-| PostgreSQL                                | SQLite                                      |
-| ----------------------------------------- | ------------------------------------------- |
-| `JSONB`                                   | `TEXT` + JSON1 (`json_extract`, `json_each`)|
-| `TEXT[]`                                  | JSON arrays + `json_each`                   |
-| `tsvector @@ to_tsquery(...) + ts_rank()` | FTS5 virtual table + `bm25()`               |
-| `ILIKE`                                   | `LIKE COLLATE NOCASE`                       |
-| `unnest(columns)`                         | `json_each(columns)`                        |
-| `%s` parameter binding                    | `?` parameter binding                       |
-| `DROP DATABASE`                           | `os.unlink(path)` (+ remove `-wal`/`-shm`)  |
-
----
-
 ## Trade-offs we accepted
 
 | Trade-off                                  | Why it's acceptable                                                                                          |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| **No native vector search**                | fitz-sage moved to a chat-only retrieval architecture in v0.11/v0.12 — vectors were never in the hot path.   |
+| **No native vector search**                | Retrieval works over typed units, FTS5/BM25, graph expansion, and ONNX reranking.                            |
 | **Single-writer concurrency**              | A knowledge-base workload is read-heavy; WAL handles it.                                                     |
 | **No multi-host shared storage**           | Workloads that need that need a real database — out of scope for fitz-sage's single-process target.          |
 | **No `DROP DATABASE` semantics**           | Collections map 1:1 to files. `delete_collection` is `os.unlink`.                                            |
@@ -155,5 +136,3 @@ Use a different tool if any of these apply:
   retrieval layer that sits on top of these stores.
 - [**Configuration Guide**](../../CONFIG.md) — the few storage knobs
   worth knowing about.
-- [**CHANGELOG**](../../../CHANGELOG.md) — the v0.12.0 entry covers the
-  storage swap and what got removed alongside it.

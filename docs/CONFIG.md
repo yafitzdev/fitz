@@ -1,7 +1,7 @@
 <!-- docs/CONFIG.md -->
 # Configuration Reference
 
-fitz-sage **v0.14.1+**. Engine config lives at
+Engine config lives at
 `~/.fitz/config/<engine>.yaml` (auto-created on first run).
 Storage lives at `~/.fitz/sqlite/fitz_<collection>.db` (auto-created
 on first ingest).
@@ -85,10 +85,9 @@ the cloud/enterprise presets:
 | `azure_openai/<deployment>`     | endpoint with Azure deployment URL                       |
 | `enterprise/<provider>/<model>` | endpoint + M2M / mTLS / custom-CA auth                   |
 
-Removed names (raise `ValueError` with migration text): `cohere`,
-`anthropic`, `ollama`. Point fitz-sage at the OpenAI-compatible URL
-for those backends instead (Ollama exposes one at
-`http://localhost:11434/v1`).
+Provider specs must resolve to the OpenAI-compatible chat protocol.
+For local servers such as Ollama, use `endpoint` with the server's
+`/v1` URL, for example `http://localhost:11434/v1`.
 
 ---
 
@@ -119,8 +118,7 @@ collection: default          # active collection
 That's the entire storage surface. SQLite + FTS5 + WAL, one `.db` per
 collection. Storage paths are derived automatically — one
 `fitz_<collection>.db` under the workspace `sqlite/` directory; there
-is no settable storage-path config key. No `vector_db`, no
-`connection_string`, no `pgvector_kwargs`.
+is no settable storage-path config key.
 See [features/platform/unified-storage.md](features/platform/unified-storage.md)
 for the schema and pragmas.
 

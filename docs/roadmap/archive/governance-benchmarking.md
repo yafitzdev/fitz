@@ -255,9 +255,9 @@ _Note: the paths and commands below describe the pre-v0.13.0 constraint-cascade 
 
 For the full experimental record with training history, ablation results, and what worked/failed:
 
-**[fitz-gov 3.0 results](../evaluation/fitz-gov-3.0-results.md)** — How we got from 26.9% (rules) to 90.9% (two-stage ML)
+**[fitz-gov 3.0 results](../../evaluation/fitz-gov-3.0-results.md)** — How we got from 26.9% (rules) to 90.9% (two-stage ML)
 
-**[fitz-gov 5.0 results](../evaluation/fitz-gov-5.0-results.md)** — 5-question cascade, 2,920 cases, 78.7% accuracy, 5.7% FT (v6, 5-fold CV)
+**[fitz-gov 5.0 results](../../evaluation/fitz-gov-5.0-results.md)** — 5-question cascade, 2,920 cases, 78.7% accuracy, 5.7% FT (v6, 5-fold CV)
 
 ## Why This Matters
 

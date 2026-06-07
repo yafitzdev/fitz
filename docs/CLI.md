@@ -1,9 +1,8 @@
 <!-- docs/CLI.md -->
 # CLI Reference
 
-fitz-sage **v0.14.1+**. The CLI is intentionally small: one command for the
-normal retrieval workflow, one command for explicit answer synthesis, and a few
-operational commands.
+The CLI is intentionally small: one command for the normal retrieval workflow,
+one command for explicit answer synthesis, and a few operational commands.
 
 ```bash
 fitz --help

@@ -1,9 +1,8 @@
 <!-- docs/TROUBLESHOOTING.md -->
 # Troubleshooting Guide
 
-Common issues and solutions for fitz-sage **v0.14.1+** (managed ONNX
-enrichment, optional OpenAI-compatible HTTP endpoints, SQLite + FTS5 storage,
-no embeddings, no vector DB).
+Common issues and solutions for fitz-sage: managed ONNX enrichment, optional
+OpenAI-compatible HTTP endpoints, and SQLite + FTS5 storage.
 
 ---
 
@@ -70,8 +69,8 @@ LLMError: Cannot connect to http://localhost:8080/v1
    ```
 
 3. If using Ollama, point fitz-sage at Ollama's OpenAI-compatible
-   endpoint (`http://localhost:11434/v1`). The legacy `ollama`
-   provider name was removed in v0.12.0 — use `endpoint` instead.
+   endpoint (`http://localhost:11434/v1`) with an `endpoint/...`
+   provider spec.
 
 ---
 

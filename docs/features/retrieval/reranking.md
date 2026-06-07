@@ -48,19 +48,14 @@ Override via `rerank: onnx/<hf-model-id>` — e.g.
 
 ## Why a cross-encoder, not the chat model?
 
-Before v0.13.0, fitz-sage served reranking via a chat-completion call
-(`LLMReranker`) — the model was asked to grade each candidate. That
-worked but cost one chat call per query on the hot path. v0.13.0
-swapped in a dedicated cross-encoder for three reasons:
+A dedicated cross-encoder is the right tool for `(query, document)` relevance
+scoring:
 
-1. **Latency.** ~30–100 ms CPU for 10–20 candidates vs ~500–2000 ms
-   for a 7B chat model.
-2. **No external dependency.** Inference is local — both the
-   governance and reranking paths went chat-free in v0.13.0.
+1. **Latency.** ~30–100 ms CPU for 10–20 candidates.
+2. **No external dependency.** Inference is local and does not call the
+   configured chat endpoint.
 3. **Stronger ranking signal.** Cross-encoders are the textbook
-   solution for `(query, doc)` relevance scoring and saturate the
-   benchmark — chat-based reranking was reinventing this with worse
-   inductive bias.
+   solution for pairwise relevance scoring.
 
 The same model family as the
 [Pyrrho governance classifier](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1):
@@ -86,8 +81,7 @@ taking `pos_logit - neg_logit`.
 ### Smart skip
 
 If the candidate pool is small (below `rerank_min_addresses`), the
-reranker step is bypassed — there's nothing meaningful to rank. Same
-behaviour as v0.13.x; the threshold is unchanged.
+reranker step is bypassed — there's nothing meaningful to rank.
 
 ### VIP preservation
 

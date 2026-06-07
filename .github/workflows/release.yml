@@ -11,7 +11,7 @@ name: Release
 #   Environment         pypi               (matches the environment below)
 #
 # After the pending publisher is registered, pushing a GitHub Release for a
-# tag like v0.11.0 triggers this workflow: it builds the sdist + wheel in a
+# `vX.Y.Z` tag triggers this workflow: it builds the sdist + wheel in a
 # clean CI environment, exchanges a short-lived OIDC token with PyPI, and
 # uploads. No long-lived API tokens, no .pypirc, no secrets stored in the
 # repo or on any developer machine.

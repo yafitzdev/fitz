@@ -30,15 +30,13 @@ result = feature.do_something()
 
 Any alternative solutions or features you've considered.
 
-## Plugin Type (if applicable)
+## Area (if applicable)
 
 - [ ] `chat` - LLM chat completion
-- [ ] `embedding` - Text embeddings
-- [ ] `rerank` - Result reranking
-- [ ] `vector_db` - Vector storage
-- [ ] `retrieval` - Retrieval strategy
-- [ ] `chunking` - Text chunking
-- [ ] `ingestion` - Document ingestion
+- [ ] `parser` - Document parsing
+- [ ] `chunking` - Format-specific chunking
+- [ ] `retrieval` - Retrieval intelligence
+- [ ] `ingestion` - Typed-unit ingestion
 - [ ] Other / Not a plugin
 
 ## Willingness to Contribute

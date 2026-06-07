@@ -22,14 +22,5 @@ and [Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) for the end-to-end flow.
 | `temporal-queries.md`      | Date-aware retrieval and freshness handling                      |
 | `freshness-authority.md`   | Source freshness and authority scoring                           |
 
-What's *not* here anymore (removed in v0.12.0):
-
-- **Hybrid search.** Embeddings + sparse fusion required a vector
-  layer that was removed; retrieval is now pure FTS5 + structural
-  routing + ONNX cross-encoder rerank.
-- **HyDE.** Hypothetical Document Embeddings was an
-  embeddings-only technique.
-- **Contextual embeddings.** Same — relied on the embedding stack.
-
 For the implementation, see `fitz_sage/retrieval/` and
 `fitz_sage/engines/fitz_krag/retrieval/`.

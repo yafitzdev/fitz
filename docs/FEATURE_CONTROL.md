@@ -1,8 +1,7 @@
 # Feature Control Architecture
 
 How provider-backed features (VLM in the parser, optional synthesis, optional
-query intelligence, and advanced model swaps) are declared in fitz-sage
-**v0.14.1+**.
+query intelligence, and advanced model swaps) are declared in fitz-sage.
 
 ---
 
@@ -138,8 +137,7 @@ governance: pyrrho                  # default — the local Pyrrho g3.1 classifi
 ```
 
 `governance: pyrrho` runs query-signal classification before recall and
-evidence-prefix checks in the cutoff loop. The v0.13.0 constraint+sklearn
-cascade it replaced is gone.
+evidence-prefix checks in the cutoff loop.
 
 ## Managed enrichment
 
