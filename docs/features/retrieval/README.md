@@ -8,6 +8,7 @@ and [Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) for the end-to-end flow.
 | File                       | Feature                                                          |
 | -------------------------- | ---------------------------------------------------------------- |
 | `three-stage-strategy.md`  | Recall → rerank → Pyrrho strategy and how all tactics fit        |
+| `evidence-signals.md`      | Pre-retrieval planning and post-retrieval evidence signals       |
 | `sparse-search.md`         | FTS5 + native `bm25()` over typed-unit stores                    |
 | `reranking.md`             | INT8 ONNX cross-encoder reranker (gte-reranker-modernbert-base)  |
 | `query-rewriting.md`       | Optional query-intelligence reformulation (pronouns, typos, intent) |

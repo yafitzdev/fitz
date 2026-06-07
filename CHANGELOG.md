@@ -13,27 +13,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🎉 Highlights
 
-**Retrieval-first fitz-sage.** The default product surface is now
-`fitz query "..."`: point it at a folder, or run it from a folder, and it
-returns governed evidence instead of a generated answer. `fitz answer`
-remains the explicit optional synthesis path for users who configure an
-OpenAI-compatible endpoint.
+**Retrieval-first fitz-sage, with `EvidencePack` as the user contract.**
+The default product surface is now `fitz query "..."`: point it at a folder,
+or run it from a folder, and it returns governed evidence instead of a
+generated answer. `fitz answer` remains the explicit optional synthesis path
+for users who configure an OpenAI-compatible endpoint.
 
 **Broad recall → ONNX rerank → Pyrrho cutoff.** Query execution now
 optimizes for high-recall candidate gathering first, lets the local ONNX
 cross-encoder impose precision, then asks Pyrrho whether the top-1,
 top-2, ... evidence prefix is enough to answer.
 
-**Pyrrho g1 → g3.1.** Governance moves to
-[`yafitzdev/pyrrho-nano-g3.1`](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
-with `TAU = 0.39`. The new multitask Pyrrho keeps the
-TRUSTWORTHY/DISPUTED/ABSTAIN cutoff head and adds query-contract,
-route/domain, taxonomy, and scalar heads.
+**Pyrrho g4-alpha contract wired end-to-end.** Fitz now loads Pyrrho
+packages from their `pyrrho_multitask_config.json` shape, so the local
+`pyrrho-nano-g4-alpha` package exposes the new query and evidence heads
+without another Fitz architecture change. The final Pyrrho g4 package should
+be a model/config swap, not another Fitz integration project.
+
+**Pre-retrieval Pyrrho planning is now real retrieval input.** Fitz asks
+Pyrrho for query-only signals before recall, turns `query_contract`, `route`,
+`answerability_shape`, and `retrieval_modality` into a `RetrievalProfile`, and
+stores the applied plan under `EvidencePack.metadata.query_profile`.
+Configured g4-alpha models also surface `retrieval_action`, `gap_type`, and
+`evidence_failure_severity` during the evidence cutoff.
 
 **Managed Qwen enrichment is standard.** Qwen3.5 0.8B ONNX is the
 required local runtime for semantic query keywords and ingestion
 enrichment. It is downloaded when missing and is not exposed as an
 optional user flag.
+
+**Retrieval quality now has a query-profile regression gate.** The release
+adds a focused query-profile benchmark and manual evidence sweep over a real
+code corpus. The current g4-alpha run hits `recall@10=1.00` and
+`nDCG@10=0.86` on the new query-profile eval.
 
 ### 🚀 Added
 
@@ -54,24 +66,50 @@ optional user flag.
 - **Pyrrho evidence metadata in CLI output** — evidence tables now expose
   the governance verdict, cutoff, probabilities, and reasons without a
   separate awkward metadata box.
-- **Pyrrho query-contract routing** — g3.1 classifies the query contract
+- **Pyrrho query-contract routing** — Pyrrho classifies the query contract
   before recall, so representative overviews, exhaustive coverage,
   comparisons, temporal grounding, and structured lookups can steer recall
   and cutoff policy before evidence is selected.
+- **Pyrrho g4-alpha optional heads** — the governance runtime now reads
+  optional `retrieval_action`, `gap_type`, `answerability_shape`, and
+  `retrieval_modality` heads, plus any configured scalar fields such as
+  `evidence_failure_severity`, from the model package.
+- **Pre-retrieval query profiles** — `QueryPipeline` now runs
+  `Pyrrho.classify_query()` before recall and passes those query-only
+  signals into `build_retrieval_profile()`.
+- **`EvidencePack.metadata.query_profile`** — evidence responses now include
+  the raw Pyrrho query heads, confidence/probability metadata, whether each
+  head was used for retrieval, and the final profile knobs applied to recall.
+- **Query-profile retrieval benchmark** — `tools.retrieval_eval` has a new
+  `query_profile` mode, a ten-query code corpus dataset, and a `--governance`
+  override for testing local Pyrrho packages such as g4-alpha.
 
 ### 🔄 Changed
 
-- **Pyrrho docs, defaults, and calibration now target g3.1.** The default
-  governance repo and model-card links point at `pyrrho-nano-g3.1`.
+- **Pyrrho loading now follows the model package shape.** Configured Pyrrho
+  packages can add optional heads through `pyrrho_multitask_config.json`
+  without changing Fitz code, which is what lets g4-alpha wire into the
+  existing governance provider.
+- **Query planning now uses Pyrrho before retrieval.** `query_contract`,
+  `route`, `answerability_shape`, and `retrieval_modality` influence
+  specificity, domain, answer type, strategy weights, `top_k`, and `top_read`
+  before the first evidence pass.
+- **Structured lookup keeps code retrieval eligible.** When Pyrrho says a
+  query is a structured lookup, code search remains available even if the
+  wording also mentions tables or sections.
+- **Pyrrho retry requests can reshape the second pass.** Confident
+  `retrieval_action` signals such as `retrieve_more`, `broaden_search`,
+  `resolve_conflict`, and `structured_lookup` now feed the retry profile, with
+  `retrieval_modality` applied to the retry strategy weights.
 - **ONNX encoder loading handles external data sidecars.** Split ONNX
   exports such as `model_quantized.onnx` + `model_quantized.onnx.data`
   now load through the shared encoder backend.
 - **ONNX encoder loading can fall back to `tokenizer.json`.** Hub repos
   whose tokenizer config names an unavailable wrapper still load through
   `PreTrainedTokenizerFast` when they ship a standard tokenizer JSON.
-- **Pyrrho uses Fitz's managed model cache.** The g3.1 checkpoint downloads
-  into `~/.fitz/models/pyrrho/...`, avoiding Windows Hugging Face symlink-cache
-  failures.
+- **Pyrrho uses Fitz's managed model cache.** Configured Pyrrho checkpoints
+  download into `~/.fitz/models/pyrrho/...`, avoiding Windows Hugging Face
+  symlink-cache failures.
 - **First-run config aligns with the product defaults.** Auto-created
   configs now write `parser: cpu`, `rerank: onnx`, and
   `governance: pyrrho`; `rerank: null` and `governance: null` are rejected
@@ -87,6 +125,10 @@ optional user flag.
 - **Qwen enrichment JSON hardening** — required enrichment now repairs or
   rejects malformed model output with clearer errors instead of silently
   corrupting the index.
+- **Qwen enrichment fail-closed fallback** — if the managed Qwen enrichment
+  runtime returns invalid JSON twice for one file, ingestion logs the failure
+  and falls back to deterministic grounded keywords/entities from the item
+  text instead of blocking the collection forever.
 - **Partial-corpus evidence consistency** — broad-corpus queries now align
   progress messages and evidence counts, avoid scanning fitz workspace
   files as user sources, and keep source-query rows from outranking real
@@ -100,6 +142,13 @@ optional user flag.
 - **Metric comparison cutoff** — Pyrrho cutoff now seeds comparison prefixes
   with direct metric/table evidence, so `Q1 vs Q2 total responses` selects both
   exact metric rows before stopping instead of stopping on weaker prose.
+- **Comparison evidence cutoff with code identifiers** — exact function-style
+  identifiers such as `query_profile_metadata` and `_format_query_profile` now
+  match raw evidence as identifiers, not as loose word bags, so Pyrrho
+  `answer_now` cannot certify a comparison after retrieving only one side.
+- **Private Python identifier lookup** — structured lookup now recognizes
+  leading-underscore names such as `_format_query_profile` while avoiding
+  natural hyphenated prose such as `pre-retrieval` as a hard identifier.
 
 ### 🗑 Removed
 

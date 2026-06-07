@@ -4,15 +4,15 @@
 
 # fitz-sage
 
-### The RAG library that says "I don't know" instead of hallucinating.
+### Local-first governed retrieval for code, documents, and tables.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/fitz-sage.svg)](https://pypi.org/project/fitz-sage/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.14.1-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.15.0-green.svg)](CHANGELOG.md)
 [![Coverage](https://img.shields.io/badge/coverage-99%25-brightgreen)](https://github.com/yafitzdev/fitz-sage)
 
-[Why `fitz-sage`?](#why-fitz) • [Retrieval Intelligence](#retrieval-intelligence) • [Governance](#governance--know-what-you-dont-know) • [Documentation](#links) • [GitHub](https://github.com/yafitzdev/fitz-sage)
+[EvidencePack](#evidencepack) • [Why `fitz-sage`?](#why-fitz-sage) • [Retrieval Intelligence](#retrieval-intelligence) • [Governance](#governance--know-what-you-dont-know) • [Documentation](#links) • [GitHub](https://github.com/yafitzdev/fitz-sage)
 
 </div>
 
@@ -40,62 +40,56 @@ A: "Germany won the 2024 FIFA World Cup,
       <strong>🛡️ fitz-sage</strong>
 <pre>
 A: "I don't have enough information
-    to answer this question.
+    to answer this question."
 </pre><pre>
     Related topics in the knowledge base:
-      - FIFA tournament history (4 mentions)
-      - 2022 World Cup coverage (7 mentions)
+      - FIFA tournament history
+      - 2022 World Cup coverage
 </pre><pre>
     To answer this, consider adding:
-      - Documents covering 2024 FIFA events."
+      - Documents covering 2024 FIFA events.
 </pre>
     </td>
   </tr>
 </table>
-  → Uncalibrated RAG hallucinates confidently when the answer isn't in your documents. 
-  
-  `fitz-sage` refuses, explains why, and tells you what to add.
+
+  → `fitz-sage` returns governed evidence, explains insufficiency, and shows what source coverage is missing.
 </div>
-
-
 
 ---
 
 ### Where to start 🚀
 
 > [!IMPORTANT]
-> Retrieval works with **no API key and no external inference server**. Required enrichment runs through managed
-> Qwen3.5 0.8B ONNX on CPU. Synthesis is optional through any OpenAI-compatible endpoint — local
-> ([vLLM](https://github.com/vllm-project/vllm), LM Studio, Ollama)
-> or cloud (OpenAI, Together, Groq, Fireworks, OpenRouter, …).
+> `fitz query` runs locally by default. SQLite stores the index, ONNX models handle reranking and enrichment,
+> and Pyrrho governs the returned evidence. An OpenAI-compatible endpoint is only needed when you choose
+> generated prose with `fitz answer`.
 
 ```bash
 pip install fitz-sage
 
-# Start with governed evidence. From a docs folder, --source is optional.
+# From a docs folder, --source is optional.
 fitz query "What is our refund policy?" --source ./docs
 ```
 
-That's it. Your documents are now searchable with governed provenance first.
-`fitz query` returns evidence, not a generated answer.
+The result is an `EvidencePack`: relevant source units, provenance, a governance verdict, and the signals needed to decide
+what your application should do next.
 
 ---
 
 ### About
 
-Existing RAG tools hallucinate. When the answer isn't in your documents, they invent one — confidently, fluently, wrongly. 
-In production, that's not a minor inconvenience. It's the reason you can't trust the system. I built fitz-sage to solve that 
-problem directly, while working as a Data Engineer in the automotive industry. No LangChain. No LlamaIndex. Every layer written from scratch.
+`fitz-sage` is a retrieval engine for local knowledge bases. It indexes code, documents, and tables into typed source units,
+retrieves the units relevant to a question, reranks them, and returns a governed `EvidencePack` that downstream software can
+inspect, display, store, or pass to a synthesizer.
 
-The retrieval architecture is [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md) — documents are parsed into typed units (
-code symbols, sections, tables) and each query is routed to the right search strategy, rather than searching flat chunks uniformly.
+⭐ The retrieval architecture is [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md). Code is parsed
+as symbols, documents as sections, tables as SQLite-backed data, and fallback text as chunks. Queries are routed across those
+typed surfaces with retrieval strategies that match the source structure.
 
-Honesty is enforced by [**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1) — a fine-tuned multitask ModernBERT encoder that classifies every `(query, retrieved contexts)` pair into
-`TRUSTWORTHY` / `DISPUTED` / `ABSTAIN` in a local CPU forward pass. No LLM dependency on the governance path.
-Validated against [fitz-gov](https://github.com/yafitzdev/fitz-gov), a purpose-built benchmark of 24,592 adversarial evidence-governance cases:
-**98.05% governance accuracy**, **0.95% false-trustworthy rate**, and **94.23% query-contract macro F1** in the g3.1 release selection.
-
-It runs in production today and powers [fitz-forge](https://github.com/yafitzdev/fitz-forge).
+⭐ Governance is enforced by [Pyrrho](https://huggingface.co/yafitzdev) in a local CPU forward pass. Pyrrho classifies the
+query before retrieval, helps shape the first recall pass, and evaluates the selected evidence prefix as
+`TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`.
 
 Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](https://github.com/yafitzdev), [HuggingFace](https://huggingface.co/yafitzdev)).
 
@@ -103,273 +97,245 @@ Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](
 
 ---
 
-<details>
-
-<summary><strong>📦 What is RAG?</strong></summary>
-
-<br>
-
-RAG is how ChatGPT's "file search," Notion AI, and enterprise knowledge tools actually work under the hood.
-Instead of sending all your documents to an AI, RAG:
-
-1. [X] **Indexes your documents** — Stores searchable source units in a database
-2. [X] **Retrieves only what's relevant** — When you ask a question, finds the best source units
-3. [X] **Optionally sends those sources to an LLM** — Generated answers are a layer on top of retrieval
-
-Traditional approach:
-```
-  [All 10,000 documents] → LLM → Answer
-  ❌ Impossible (too large)
-  ❌ Expensive (if possible)
-  ❌ Unfocused
-```
-RAG approach:
-```
-  Question → [Search index] → [5 relevant chunks] → LLM → Answer
-  ✅ Works at any scale
-  ✅ Costs pennies per query
-  ✅ Focused context = better answers
-```
-
-</details>
-
----
-
-<details>
-
-<summary><strong>📦 Why Can't I Just Send My Documents to ChatGPT directly?</strong></summary>
-
-<br>
-
-You can—but you'll hit walls fast.
-
-**Context window limits 🚨**
-> GPT-5 accepts ~272k tokens. That's roughly 600 pages. Your company wiki, codebase, or document archive is likely 5x-50x 
-> larger. You physically cannot paste it all.
-
-**Cost explosion 💥**
-> Even if you could fit everything, you'd pay for every token on every query. Sending 100k tokens costs ~\$1-3 per question. 
-> Ask 50 questions a day? That's $50-150 daily—for one user.
-
-**No selective retrieval ❌**
-> When you paste documents, the model reads everything equally. It can't focus on what's relevant. Ask about refund policies 
-> and it's also processing your hiring guidelines, engineering specs, and meeting notes—wasting context and degrading answers.
-
-**No persistence 💢**
-> Every conversation starts fresh. You re-upload, re-paste, re-explain. There's no knowledge base that accumulates and improves.
-
-</details>
-
----
-
-<details>
-
-<summary><strong>📦 How is this different from LangChain / LlamaIndex?</strong></summary>
-
-<br>
-
-They're frameworks — you assemble the chunker, embedder, vector store, retriever, and prompt chain yourself. fitz-sage is 
-a library — one function call that handles all of it with built-in intelligence.
-
-You trade flexibility for a pipeline that handles temporal queries, comparison queries, code symbol extraction, tabular 
-SQL, and epistemic honesty out of the box — without configuration.
-
-</details>
-
----
-
 ### Why `fitz-sage`?
 
+**EvidencePack as the contract 🧾**
+> Every query returns ranked source evidence, provenance, governance reasons, and retrieval metadata. Use it directly in
+> APIs, CLIs, dashboards, agents, or pass it to an LLM for answer generation with calibrated governance.
+
 **Asymmetric indexing 🗂️** → [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md)
-> Documents are parsed into typed retrieval units (symbols, sections, tables) with structural metadata, not flat chunks. 
-> Queries are routed to the right strategy per content type.
+> Source files become typed retrieval units: code symbols, document sections, tables, and fallback chunks. Each unit type
+> keeps the structure needed to retrieve it well.
 
 **Zero-wait querying 🐆** → [Progressive KRAG](docs/features/platform/progressive-krag-agentic-search.md)
-> Ask a question immediately — no ingestion command required. `fitz-sage` parses a searchable surface, returns governed
-> evidence, and then lets a background daemon finish managed Qwen keyword/entity/hierarchy enrichment.
+> Ask immediately. `fitz-sage` builds the query-ready search surface first, returns governed evidence, and lets the
+> background worker finish managed Qwen keyword/entity/hierarchy enrichment.
 
-**Honest answers ✅** → [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
-> Most RAG tools confidently answer even when the answer isn't in your documents. Ask "What was our Q4 revenue?" when
-> your docs only cover Q1-Q3, and typical RAG hallucinates a number. `fitz-sage` says: *"I cannot find Q4 revenue figures
-> in the provided documents."*
->
-> → Reaches **98.05% governance accuracy**, **0.95% false-trustworthy rate**, and **94.23% query-contract macro F1**
-> in the g3.1 release selection on [fitz-gov](https://github.com/yafitzdev/fitz-gov). One local encoder forward pass, no LLM call.
-
-**Actionable failures 🔍**
-> When `fitz-sage` can't answer, it doesn't just refuse — it explains what it searched for, shows related topics that *do* 
-> exist, and suggests what documents to add. When sources conflict, it tells you exactly which sources disagree and 
-> what the disagreement is about. Every failure mode is a feedback signal, not a dead end.
+**Pyrrho-governed retrieval 🧭** → [Pyrrho docs](docs/CONSTRAINTS.md)
+> Pyrrho profiles the query before retrieval, then judges the selected evidence after reranking. The query plan, 
+> reasons, and missing-evidence signals travel with the `EvidencePack`, so callers know whether to answer, show conflict, 
+> retrieve more, or ask for more source material.
 
 **Queries that actually work 📊**
-> Standard RAG fails silently on real queries. `fitz-sage` has built-in intelligence: hierarchical summaries for "What are the trends?", 
-> exact keyword matching for "Find TC-1000", multi-query decomposition for complex questions, address-based code retrieval with 
-> import graph traversal, and SQL execution for tabular data. No configuration—it just works.
+> Exact identifiers, temporal scopes, comparisons, aggregation requests, code lookups, table questions, and broad overview
+> queries all flow through retrieval intelligence built into the engine.
 
 **Tabular data that is actually searchable 📈** → [Unified Storage](docs/features/platform/unified-storage.md)
-> CSV and table data is a nightmare in most RAG systems—chunked arbitrarily, structure lost, queries fail. `fitz-sage` 
-> stores tables natively in SQLite alongside every other retrieval unit—one `.db` per collection, no sync issues. Auto-detects 
-> schema and runs real SQL. Ask "What's the average price by region?" and get an actual computed answer, not fragmented rows.
+> CSVs and extracted tables live in SQLite with schema detection and SQL execution. Table queries use table structure,
+> not arbitrary text fragments.
 
-**Fully local execution possible 🏠** → [OpenAI-Compatible Endpoint](docs/features/platform/openai-compatible-endpoint.md)
-> Embedded SQLite + managed ONNX enrichment. Optional synthesis can use any local OpenAI-compatible server (vLLM, LM Studio, Ollama) with no API key.
+**Fully local execution possible 🏠**
+> SQLite storage, ONNX reranking, managed Qwen enrichment, and Pyrrho governance all run locally. Optional synthesis can use
+> any local or cloud OpenAI-compatible endpoint.
 
 ####
 
 > [!TIP]
-> Any questions left? Try fitz on itself:
+> Try fitz on itself:
 >
 > ```bash
 > fitz query "How does the retrieval pipeline work?" --source ./fitz_sage
 > ```
->
-> The codebase speaks for itself.
 
 ---
 
 ### What You Can Search
 
-Traditional RAG chops every document into flat text blocks and searches them the same way. [FitzKRAG](docs/features/platform/krag.md) parses each 
-document by type — tree-sitter for code, heading hierarchy for docs, schema detection for CSVs — and produces typed retrieval 
-units, each with its own storage format and search strategy.
+Traditional documents, source code, and tables have different structure. FitzKRAG preserves that structure during indexing
+and retrieval.
 
 <br>
 
-| Retrieval Unit              | Extracted From | How It Works |
-|-----------------------------|----------------|-------------|
-| [**Symbols 🖌️**](docs/features/ingestion/code-symbol-extraction.md) | Code files | Tree-sitter parses functions, classes, and methods into addressable units with qualified names, references, and import graphs. Cross-file dependencies are graph traversals, not text searches. |
-| **Sections 📑** | Documents (PDF, markdown, text) | Headings and paragraphs are extracted with parent/child hierarchy. Deeply nested sections include parent context; top-level headings include child summaries. |
-| [**Tables 📅**](docs/features/ingestion/tabular-data-routing.md) | CSV files or tables within documents | Native SQLite storage with auto-detected schema. Real SQL execution from natural language — not chunked text. |
+| Retrieval Unit | Extracted From | How It Works |
+|----------------|----------------|--------------|
+| [**Symbols 🖌️**](docs/features/ingestion/code-symbol-extraction.md) | Code files | Tree-sitter parses functions, classes, and methods into addressable units with qualified names, references, and import graphs. |
+| **Sections 📑** | Documents (PDF, markdown, text) | Headings and paragraphs become hierarchical sections with parent/child context and summaries. |
+| [**Tables 📅**](docs/features/ingestion/tabular-data-routing.md) | CSV files or tables within documents | Native SQLite storage with schema detection and SQL execution from natural language. |
 | **Images 🖼️** | Figures and diagrams within documents | VLM-powered figure extraction and visual understanding. *(Coming soon)* |
-| **Chunks 🧩** | Any content as fallback | Traditional chunk-based retrieval when structured extraction doesn't apply. Automatic fallback — no configuration needed. |
+| **Chunks 🧩** | Any content as fallback | Fallback text retrieval when structured extraction does not apply. |
 
 <br>
 
 > [!NOTE]
-> All retrieval units share the same retrieval intelligence (temporal handling, comparison queries, multi-hop reasoning, etc.) 
-> and the same staged enrichment pipeline (query-ready keywords first; entities and hierarchy continue in the background).
+> All retrieval units share the same retrieval intelligence: Pyrrho query profiling, temporal handling, comparisons,
+> aggregation, keyword expansion, reranking, and governance cutoff.
 
 ---
 
 ### Retrieval Intelligence
 
-Most RAG implementations are naive vector search — they fail silently on real-world queries.
-`fitz-sage` runs retrieval as a **broad recall → rerank → Pyrrho cutoff** pipeline:
+[Retrieval Docs](docs/features/retrieval/README.md) • [Three-Stage Strategy](docs/features/retrieval/three-stage-strategy.md) • [Retrieval Pipeline](docs/RETRIEVAL_PIPELINE.md) • [Pre/Post Retrieval Signals](docs/features/retrieval/evidence-signals.md)
 
-<br>
-
-Full explanation: [Three-Stage Retrieval Strategy](docs/features/retrieval/three-stage-strategy.md).
+`fitz-sage` runs retrieval as a typed, governed pipeline:
 
 <br>
 
 | Stage | What it does | Main cost |
 |-------|--------------|-----------|
-| **1. Broad recall** | Extract real query terms, add semantic keywords, run BM25 over typed units, and fan out only when the query needs it (comparison, temporal, aggregation, multi-query). False positives are acceptable here. | Cheap SQLite FTS + deterministic query prep |
-| **2. Rerank** | INT8 ONNX cross-encoder reorders the broad candidate list by true query relevance. This is where precision belongs. | Local ONNX reranker |
-| **3. Pyrrho cutoff** | `pyrrho` evaluates `query + top 1`, then `query + top 2`, and so on until evidence is enough or the cutoff is reached. | Local g3.1 CPU classifier |
+| **1. Query profile + broad recall** | Pyrrho classifies the query contract, route, answerability shape, and modality. Fitz builds a retrieval profile, extracts query terms, adds semantic keywords, and searches typed units broadly. | SQLite FTS + deterministic planning + local Pyrrho query pass |
+| **2. Rerank** | INT8 ONNX cross-encoder reorders broad candidates by query relevance. | Local ONNX reranker |
+| **3. Pyrrho cutoff** | Pyrrho evaluates `query + top 1`, then `query + top 2`, and so on until the evidence prefix is trustworthy, disputed, or insufficient. | Local Pyrrho CPU classifier |
 
 <br>
 
-The quick path is keyword-first: real query keywords + Qwen semantic keywords + BM25. L1 summaries, entity graph links, and corpus hierarchy improve fully indexed retrieval, but they are not required before the first governed evidence pack can be returned.
+The quick path is keyword-first: exact query terms, Qwen semantic keywords, and BM25. Fully indexed collections add hierarchy,
+entity graph links, corpus summaries, and richer context expansion.
 
-Existing retrieval strategies are not deleted; they move into clear roles:
+Retrieval strategies have clear roles:
 
 | Strategy | Role in the pipeline |
 |----------|----------------------|
 | Keyword vocabulary, sparse BM25 | Broad recall backbone |
+| Pyrrho query contract | Sets the shape of the evidence requirement |
+| Pyrrho route/domain | Steers domain-sensitive retrieval profile knobs |
+| Pyrrho answerability shape | Distinguishes direct, set, synthesis, and structured reasoning queries |
+| Pyrrho retrieval modality | Weights code, tables, sections, text, configs, logs, PDFs, or mixed retrieval |
 | Query expansion | Broad recall keyword enrichment |
-| Query rewriting | Transform only when conversational context or ambiguity would harm recall |
-| Multi-query decomposition | Bounded broad recall for compound questions |
+| Query rewriting | Conversational or ambiguous query cleanup |
+| Multi-query decomposition | Bounded recall for compound questions |
 | Comparison, temporal, aggregation, freshness | Recall fanout and scoring hints |
-| Hierarchical summaries | Fully indexed recall and rerank evidence, not the instant gate |
-| Entity graph | Fully indexed context expansion after initial ranking |
-| Reranking | Mandatory precision stage before governance |
-| Multi-hop | Fallback bridge retrieval after the cutoff loop still abstains |
-| Agentic manifest search | Fallback only for files that are not query-ready yet |
+| Hierarchical summaries | Overview and fully indexed context |
+| Entity graph | Context expansion through shared entities |
+| Reranking | Precision before governance |
+| Multi-hop | Follow-up retrieval for questions needing bridge evidence |
+| Agentic manifest search | Fallback for files that are not query-ready yet |
 
 <br>
 
-Across those tiers, [built-in intelligence](docs/features/retrieval) handles the edge cases that break naive RAG:
+Across those tiers, [built-in intelligence](docs/features/retrieval) handles the edge cases that break simple search:
 
 <br>
 
-| Feature | Query | Naive RAG Problem | `fitz-sage` Solution |
-|---------|-------|-------------------|------------------|
-| [**epistemic-honesty**](docs/features/governance/epistemic-honesty.md) | "What was our Q4 revenue?" | ❌ Hallucinated number — Info doesn't exist, but LLM won't admit it | ✅ "I don't know" |
-| [**keyword-vocabulary**](docs/features/retrieval/keyword-vocabulary.md) | "Find TC_1000" | ❌ Wrong test case — Embeddings see TC_1000 ≈ TC_2000 (semantically similar) | ✅ Exact keyword matching |
-| [**sparse-search**](docs/features/retrieval/sparse-search.md) | "error code E_AUTH_401" | ❌ No exact match — Embeddings miss precise error codes | ✅ SQLite FTS5 + native `bm25()` |
-| [**multi-hop**](docs/features/retrieval/multi-hop-reasoning.md) | "Who wrote the paper cited by the 2023 review?" | ❌ Returns the review only — Single-step search can't traverse references | ✅ Iterative retrieval |
-| [**hierarchical-rag**](docs/features/ingestion/hierarchical-rag.md) | "What are the design principles?" | ❌ Random fragments — Answer is spread across docs; no single chunk contains it | ✅ Hierarchical summaries |
-| [**multi-query**](docs/features/retrieval/multi-query-rag.md) | *[User pastes 500-char test report]* "What failed and why?" | ❌ Vaguely related chunks — Long input gets averaged, matches nothing specifically | ✅ Multi-query decomposition |
-| [**comparison-queries**](docs/features/retrieval/comparison-queries.md) | "Compare React vs Vue performance" | ❌ Incomplete comparison — Only retrieves one entity, missing the other | ✅ Multi-entity retrieval |
-| [**entity-graph**](docs/features/retrieval/entity-graph.md) | "What else mentions AuthService?" | ❌ Isolated chunks — No awareness of shared entities across docs | ✅ Entity-based linking across sources |
-| [**temporal-queries**](docs/features/retrieval/temporal-queries.md) | "What changed between Q1 and Q2?" | ❌ Random chunks — No awareness of time periods in query | ✅ Temporal query handling |
-| [**aggregation-queries**](docs/features/retrieval/aggregation-queries.md) | "List all the test cases that failed" | ❌ Partial list — No mechanism for comprehensive retrieval | ✅ Aggregation query handling |
-| [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What's the latest status on feature X?" | ❌ Old docs rank equally — No awareness of how recent a document is | ✅ Recency boosting |
-| [**query-expansion**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | ❌ No matches — User says "fetch", docs say "retrieve"; "db" vs "database" | ✅ Dictionary + managed-Qwen keyword expansion (no embeddings) |
-| [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | ❌ Lost context — Pronouns like "it" reference nothing, retrieval fails | ✅ Conversational context resolution |
-| [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ❌ Imprecise ranking — BM25 ≠ true relevance; best answer buried | ✅ ONNX cross-encoder reranker, ~30 ms on CPU |
+| Feature | Query | What Fitz Uses |
+|---------|-------|----------------|
+| [**epistemic-honesty**](docs/features/governance/epistemic-honesty.md) | "What was our Q4 revenue?" | Pyrrho cutoff and abstain reasons |
+| [**keyword-vocabulary**](docs/features/retrieval/keyword-vocabulary.md) | "Find TC_1000" | Exact identifier matching |
+| [**sparse-search**](docs/features/retrieval/sparse-search.md) | "error code E_AUTH_401" | SQLite FTS5 + native `bm25()` |
+| [**multi-hop**](docs/features/retrieval/multi-hop-reasoning.md) | "Who wrote the paper cited by the 2023 review?" | Iterative retrieval |
+| [**hierarchical-rag**](docs/features/ingestion/hierarchical-rag.md) | "What are the design principles?" | Hierarchical summaries |
+| [**multi-query**](docs/features/retrieval/multi-query-rag.md) | *[User pastes 500-char test report]* "What failed and why?" | Multi-query decomposition |
+| [**comparison-queries**](docs/features/retrieval/comparison-queries.md) | "Compare React vs Vue performance" | Multi-entity coverage and comparison cutoff |
+| [**entity-graph**](docs/features/retrieval/entity-graph.md) | "What else mentions AuthService?" | Entity-based linking across sources |
+| [**temporal-queries**](docs/features/retrieval/temporal-queries.md) | "What changed between Q1 and Q2?" | Temporal scope detection |
+| [**aggregation-queries**](docs/features/retrieval/aggregation-queries.md) | "List all the test cases that failed" | Exhaustive/list query handling |
+| [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What's the latest status on feature X?" | Recency and authority scoring |
+| [**query-expansion**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | Dictionary + managed-Qwen keyword expansion |
+| [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | Conversational context resolution |
+| [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ONNX cross-encoder reranker |
 
 <br>
 
 > [!IMPORTANT]
-> These features are **always on**—no configuration needed. `fitz-sage` automatically detects when to use each capability.
+> Retrieval intelligence is baked in. Configuration declares providers; the engine decides which retrieval capabilities a
+> query needs.
 
 ---
 
-### Governance — Know What You Don't Know
+### EvidencePack
 
-[Feature docs](docs/CONSTRAINTS.md) • [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1) • [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov)
+[Evidence Pack Contract](docs/EVIDENCE_PACK.md) • [Pre/Post Retrieval Signals](docs/features/retrieval/evidence-signals.md)
 
-Most RAG systems hallucinate confidently. `fitz-sage` **measures and enforces** epistemic honesty using
-[**pyrrho**](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1) — a fine-tuned multitask ModernBERT-base encoder.
-One local CPU forward pass per query, no external LLM call.
+`EvidencePack` is the output contract of `fitz-sage`.
+
+It gives you the relevant sources and the governance signals around them. You can show it directly, pass it to a model,
+trigger a workflow from it, or store it as an audit artifact.
+
+An `EvidencePack` has three parts:
+
+| Part | Meaning | What you can do with it |
+|------|---------|-------------------------|
+| **Source evidence** | The documents, code symbols, table rows, sections, or chunks that matched the query. | Show citations, open source files, pass evidence into a model, or store provenance. |
+| **Pre-retrieval profile** | Pyrrho's read of the user query before search starts. | Understand what kind of evidence Fitz looked for and why retrieval favored code, tables, sections, broad coverage, exact lookup, comparison coverage, etc. |
+| **Post-retrieval verdict** | Pyrrho's judgment after seeing the retrieved evidence. | Decide whether to answer, abstain, retrieve more, ask for clarification, flag conflict, or request missing documents. |
+
+#### Pre-retrieval signals
+
+Before retrieval, Pyrrho classifies the query itself. These signals shape the first search.
+
+| Signal | What it means | Why it matters |
+|--------|---------------|----------------|
+| `query_contract` | What evidence the query requires: exact lookup, comparison coverage, temporal grounding, exhaustive coverage, overview, or ordinary sufficiency. | Prevents a query that needs two sides, a timeframe, or a complete list from stopping on one plausible source. |
+| `route` | The broad domain of the query: technical, legal, medical, financial, general, etc. | Tunes retrieval behavior to the kind of corpus and question. |
+| `answerability_shape` | Whether the query looks like a direct answer, a synthesis, a set/list, or structured reasoning. | Controls how broad the search should be and how much evidence should be read. |
+| `retrieval_modality` | The likely source surface: code, table, prose, config, logs, PDF layout, or mixed. | Pushes retrieval toward the source type most likely to contain the answer. |
+| `top_k` / `top_read` | How much candidate evidence Fitz should collect and read. | Makes narrow lookups fast while giving broad or comparative questions enough coverage. |
+
+#### Post-retrieval signals
+
+After retrieval and reranking, Pyrrho evaluates the evidence prefix. These signals tell you whether the result is usable.
+
+| Signal | What it means | What you can do with it |
+|--------|---------------|-------------------------|
+| `mode` | `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`. | Gate generated answers, UI display, automation, or human review. |
+| `reasons` | Plain-language explanation for the verdict. | Show users why Fitz trusted, disputed, or rejected the evidence. |
+| `stop_reason` | Why retrieval stopped: enough evidence, exact lookup match, missing contract coverage, retry exhausted, etc. | Route the next step: answer, retry, broaden search, or ask for more source material. |
+| `retrieval_action` | Pyrrho's next-action signal: answer now, retrieve more, broaden search, resolve conflict, ask clarification, or structured lookup. | Drive automatic second-pass retrieval or agent workflows. |
+| `gap_type` | What is missing or unsafe: missing fact, timeframe, comparison side, authority, conflicting values, incomplete enumeration, ambiguous query, etc. | Tell the user exactly what evidence is needed. |
+| `taxonomy` | The relationship between sources: direct answer, single authoritative source, consistent chain, conflict, partial overlap, wrong entity, and related cases. | Build better displays for agreement, conflict, authority, and source quality. |
+| `scalars` | Continuous scores for sufficiency, query-evidence alignment, answer coverage, conflict density, retry value, false-trustworthy risk, and failure severity. | Monitor quality, tune workflows, trigger review, or decide when to retry. |
+
+This is why `fitz-sage` is useful as infrastructure: the package returns source evidence plus enough judgment to decide the
+next action.
+
+---
+
+### Governance — `Pyrrho`
+
+[Feature docs](docs/CONSTRAINTS.md) • [Pyrrho on Hugging Face](https://huggingface.co/yafitzdev) • [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov)
+
+Pyrrho is the local governance model behind `fitz-sage`. It runs in two places:
+
+1. **Before retrieval** — classify `query_contract`, `route`, `answerability_shape`, and `retrieval_modality`.
+2. **After retrieval** — evaluate whether the selected evidence prefix is trustworthy, disputed, or insufficient.
 
 <br>
 
 ```
-  Query + Retrieved Contexts
-               │
-               ▼
-  ┌──────────────────────────┐
-  │  pyrrho g3.1             │   local CPU forward pass
-  │  multitask ModernBERT    │   safetensors checkpoint
-  └────────────┬─────────────┘
-               │ softmax → (p_abstain, p_disputed, p_trustworthy)
-               ▼
-  Calibrated threshold (TAU = 0.39 on P(TRUSTWORTHY))
-               │
-               ▼
-  TRUSTWORTHY  /  DISPUTED  /  ABSTAIN  →  EvidencePack / optional synthesis
+  Query
+    │
+    ▼
+  Pyrrho query profile
+    │  query_contract | route | answerability_shape | retrieval_modality
+    ▼
+  RetrievalProfile → broad recall → rerank
+    │
+    ▼
+  Query + ranked evidence prefix
+    │
+    ▼
+  Pyrrho evidence cutoff
+    │
+    ▼
+  TRUSTWORTHY / DISPUTED / ABSTAIN → EvidencePack
 ```
 
 <br>
 
-| Signal | g3.1 release metric |
-|--------|---------------------|
-| Governance accuracy | **98.05%** |
-| False-trustworthy rate | **0.95%** |
-| Query-contract macro F1 | **94.23%** |
-| Route accuracy | **92.96%** |
-| Taxonomy accuracy | **89.43%** |
-| Scalar MAE | **0.0587** |
+| Signal | Purpose |
+|--------|---------|
+| `query_contract` | Evidence requirement: structured lookup, comparison coverage, temporal grounding, exhaustive coverage, representative overview, or evidence sufficiency. |
+| `route` | Query domain for retrieval profile defaults. |
+| `answerability_shape` | Direct answer, synthesis answer, set answer, or structured reasoning. |
+| `retrieval_modality` | Expected source surface: text, table, code, config, log, PDF layout, or mixed. |
+| `retrieval_action` | Evidence-stage guidance such as answer now, retrieve more, broaden search, resolve conflict, or structured lookup. |
+| `gap_type` | Evidence-stage reason for missing or unsafe evidence. |
+| `evidence_failure_severity` | Scalar severity signal for insufficient or unsafe evidence. |
 
-g3.1 also exposes pre-retrieval query contract, route/domain, taxonomy, and scalar governance metadata.
+The g4-alpha Pyrrho shape exposes the query and evidence heads Fitz needs for the full pre-retrieval and cutoff path. The
+final g4 package should plug into the same model/config contract.
 
 <br>
 
 > [!NOTE]
-> Governance asks "given three relevant documents that partially contradict each other, should you flag a dispute, hedge
-> the answer, or trust the consensus?" That's a judgment call even humans disagree on. Pyrrho was trained on
-> fitz-gov V8.1 multitask data to make those calls reproducibly.
+> Governance is a source-evidence judgment. Pyrrho is trained to decide whether retrieved evidence supports trust,
+> conflict, or abstention, and Fitz records that judgment in the returned metadata.
 
 <strong>The system fails safe 🛡️</strong>
-> Threshold calibration is tuned on the `TRUSTWORTHY` probability: when pyrrho is uncertain, it falls back to the runner-up
-> between `ABSTAIN` and `DISPUTED`. Over-confidence is the rarest error mode.
+> Threshold calibration is tuned around avoiding false trustworthy decisions. When evidence is incomplete or conflicting,
+> the returned mode and reasons make that explicit.
 
 <strong>No LLM on the governance path ⏱️</strong>
-> Pyrrho replaces a 5-call constraint cascade with a single encoder forward pass — ~50× faster, zero external API
-> dependency for governance, and +7.43 pp more accurate than the cascade it replaced.
+> Pyrrho is a local encoder forward pass. Governance does not require an external chat model.
 
 ---
 
@@ -387,12 +353,12 @@ g3.1 also exposes pre-retrieval query contract, route/domain, taxonomy, and scal
 >fitz query "Your question here" --source ./docs
 >```
 >
->`fitz-sage` creates a retrieval-first config on first run:
->1. **Local OpenAI-compatible server running?** → Uses it automatically (probes ports 8080 / 8000 / 1234 / 11434 for `/v1/models`)
->2. **`OPENAI_API_KEY` set?** → Uses it automatically
->3. **Neither?** → Retrieval still works; synthesis stays disabled until you configure a provider
+>`fitz-sage` creates a local retrieval config on first run:
+>1. **SQLite storage** for collections.
+>2. **Managed ONNX models** for reranking and enrichment.
+>3. **Pyrrho governance** for query profile and evidence cutoff.
 >
->For one-off synthesized answers against any OpenAI-compatible URL, skip the config:
+>For generated prose from the governed evidence:
 >
 >```bash
 >fitz answer "..." --endpoint http://localhost:8080/v1 \
@@ -409,21 +375,21 @@ g3.1 also exposes pre-retrieval query contract, route/domain, taxonomy, and scal
 >```python
 >import fitz_sage
 >
->pack = fitz_sage.evidence("Your question here", source="./docs")
+>pack = fitz_sage.evidence("Where is classify_query implemented?", source="./fitz_sage")
 >
 >print(pack.mode)
 >for item in pack.items:
->    print(f"  - {item.file_path}: {item.excerpt[:50]}...")
+>    print(item.file_path, item.address_location)
 >```
 >
 >The SDK provides:
 >- Module-level `evidence()` matching `fitz query`
->- Module-level `query()` for optional synthesis
->- Retrieval-only auto-config creation
+>- Module-level `query()` for generated prose from evidence
+>- Local config creation
 >- Full provenance tracking
->- Same honest retrieval as the CLI
+>- Governance metadata
 >
->For advanced use (multiple collections), use the `fitz` class directly:
+>For advanced use with multiple collections:
 >```python
 >from fitz_sage import fitz
 >
@@ -441,11 +407,11 @@ g3.1 also exposes pre-retrieval query contract, route/domain, taxonomy, and scal
 >fitz query "Your question here" --source ./docs
 >```
 >
->Reranking, governance, and required enrichment run as local ONNX models on CPU — no separate embedding server, no second API key.
->No data leaves your machine.
+>Reranking, governance, and required enrichment run locally. No data leaves your machine for `fitz query`.
 >
->Other compatible servers: [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.ai) 
-> (in `/v1/` mode), [TabbyAPI](https://github.com/theroyallab/tabbyAPI). Anything that speaks the OpenAI HTTP protocol works.
+>Optional synthesis can use [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai),
+>[Ollama](https://ollama.ai) in `/v1/` mode, [TabbyAPI](https://github.com/theroyallab/tabbyAPI), OpenAI, Together,
+>Groq, Fireworks, OpenRouter, or any endpoint that speaks the OpenAI HTTP protocol.
 
 </details>
 
@@ -457,48 +423,46 @@ g3.1 also exposes pre-retrieval query contract, route/domain, taxonomy, and scal
 
 <br>
 
-`fitz-sage` is a foundation. It handles document indexing and grounded retrieval—you build whatever sits on top: chatbots, dashboards, alerts, or automation.
+`fitz-sage` is a retrieval foundation. It manages indexing, search, reranking, governance, and provenance so products can
+build on source evidence.
 
 <br>
 
 <strong>Chatbot Backend 🤖</strong>
 
-> Connect fitz to Slack, Discord, Teams, or your own UI. One function call returns an answer with sources—no 
-> hallucinations, full provenance. You handle the conversation flow; fitz handles the knowledge.
+> Connect fitz to Slack, Discord, Teams, or your own UI. The bot can show source-backed evidence, ask for more documents
+> when Pyrrho abstains, or call `fitz answer` for generated prose.
 >
-> *Example:* A SaaS company plugs fitz into their support bot. Tier-1 questions like "How do I reset my password?" get 
-> instant answers. Their support team focuses on edge cases while fitz deflects 60% of incoming tickets.
+> *Example:* A support bot retrieves policy sections, shows links to the relevant docs, and only synthesizes when the
+> evidence pack is trustworthy.
 
 <br>
 
 <strong>Internal Knowledge Base 📖</strong>
 
-> Point fitz at your company's wiki, policies, and runbooks. Employees ask natural language questions instead of hunting 
-> through folders or pinging colleagues on Slack.
+> Point fitz at your wiki, policies, runbooks, and repos. Employees ask natural-language questions and get source units
+> with provenance.
 >
-> *Example:* A 200-person startup points fitz at their Notion workspace and compliance docs. New hires find answers to 
-> "How do I request PTO?" on day one—no more waiting for someone in HR to respond.
+> *Example:* New hires ask "How do I request PTO?" and receive the exact policy section plus the governance verdict.
 
 <br>
 
 <strong>Continuous Intelligence & Alerting (Watchdog) 🐶</strong>
 
-> Pair fitz with cron, Airflow, or Lambda. Point at data on a schedule, run queries automatically, trigger alerts when 
-> conditions match. `fitz-sage` provides the retrieval primitive; you wire the automation.
+> Run scheduled queries over changing folders, logs, reports, or exports. Trigger alerts when the evidence pack contains
+> trusted sources, disputes, or missing-coverage signals.
 >
-> *Example:* A security team points fitz at SIEM logs nightly. Every morning, a scheduled job asks "Were there failed 
-> logins from unusual locations?" If fitz finds evidence, an alert fires to the on-call channel before anyone checks email.
+> *Example:* A nightly job asks "Were there failed logins from unusual locations?" and sends the evidence pack to the
+> on-call channel.
 
 <br>
 
 <strong>Web Knowledge Base 🌎</strong>
 
-> Scrape the web with Scrapy, BeautifulSoup, or Playwright. Save to disk, point fitz at it. The web becomes a queryable 
-> knowledge base.
+> Scrape web pages to disk, point fitz at the folder, and query the resulting corpus with provenance.
 >
-> *Example:* A football analytics hobbyist scrapes Premier League match reports. They point fitz at the folder and ask 
-> "How did Arsenal perform against top 6 teams?" or "What tactics did Liverpool use in away games?"—insights that would 
-> take hours to compile manually.
+> *Example:* A research workflow scrapes reports, stores them locally, and asks comparative or temporal questions across
+> the collected source set.
 
 <br>
 
@@ -506,13 +470,11 @@ g3.1 also exposes pre-retrieval query contract, route/domain, taxonomy, and scal
 
 > **Code retrieval:**
 >
-> tree-sitter parses your codebase into symbols (functions, classes, methods) with qualified names, 
-> references, and import graphs. No chunking—each symbol is a precise, addressable unit. Cross-file dependencies are 
-> tracked, so "what calls this function?" is a graph traversal, not a text search.
+> Tree-sitter parses your codebase into symbols with qualified names, references, and import graphs. Function and class
+> lookup is address-based, and dependency questions can use graph expansion.
 >
-> *Example:* A team inherits a legacy Django monolith—200k lines, sparse docs. They point fitz at the codebase and ask 
-> "Where is user authentication handled?" or "What depends on the billing module?" FitzKRAG returns specific functions with 
-> their callers and dependencies. New developers onboard in days instead of weeks.
+> *Example:* A team asks "Where is user authentication handled?" and receives specific functions, files, and symbol
+> addresses rather than generic file snippets.
 
 </details>
 
@@ -533,28 +495,23 @@ g3.1 also exposes pre-retrieval query contract, route/domain, taxonomy, and scal
 │  SDK: fitz_sage.evidence(source=...)                            │
 │  API: /query | /chat | /collections | /health                   │
 ├─────────────────────────────────────────────────────────────────┤
-│  Engines                                                        │
-│  ┌────────────┐  ┌────────────┐                                 │
-│  │  FitzKRAG  │  │  Custom... │  (extensible registry)          │
-│  └────────────┘  └────────────┘                                 │
+│  Engine                                                         │
+│  FitzKRAG: typed retrieval over code, docs, tables, chunks       │
 ├─────────────────────────────────────────────────────────────────┤
-│  Optional LLM Provider (single OpenAI-compatible HTTP protocol) │
-│  synthesis | query-intelligence | vision                        │
+│  Evidence Contract                                              │
+│  EvidencePack: items | mode | reasons | timings | metadata      │
 ├─────────────────────────────────────────────────────────────────┤
-│  Local CPU encoders (INT8 ONNX, no external calls)              │
-│  pyrrho (governance)  |  gte-reranker-modernbert-base           │
+│  Pyrrho                                                         │
+│  query profile | retrieval action | evidence cutoff             │
 ├─────────────────────────────────────────────────────────────────┤
-│  Storage (SQLite + FTS5, one .db per collection)                │
-│  symbols | sections | tables | full-text search (bm25)          │
+│  Local CPU Models                                               │
+│  ONNX reranker | managed Qwen enrichment | Pyrrho governance    │
 ├─────────────────────────────────────────────────────────────────┤
-│  Retrieval (address-based, baked-in intelligence)               │
-│  symbols | sections | tables | import graphs | reranking        │
+│  Storage                                                        │
+│  SQLite + FTS5, one .db per collection                          │
 ├─────────────────────────────────────────────────────────────────┤
-│  Managed Qwen enrichment (required, local ONNX)                 │
-│  semantic query keywords | entities | hierarchy | summaries     │
-├─────────────────────────────────────────────────────────────────┤
-│  Governance (epistemic safety)                                  │
-│  pyrrho encoder | TRUSTWORTHY / DISPUTED / ABSTAIN, local CPU   │
+│  Optional OpenAI-Compatible Endpoint                            │
+│  answer synthesis | query intelligence | vision                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -569,15 +526,16 @@ g3.1 also exposes pre-retrieval query contract, route/domain, taxonomy, and scal
 <br>
 
 ```bash
-fitz query "question" --source ./docs     # Point at docs and retrieve evidence
+fitz query "question" --source ./docs     # Return governed evidence
 fitz query "question"                     # Use current folder or existing collection
 fitz retrieve "question" --format json    # Evidence with script-friendly controls
-fitz answer "question" --synthesizer ...  # Optional synthesized answer
-fitz collections                       # List and delete knowledge collections
-fitz serve                             # Start REST API server
+fitz answer "question" --synthesizer ...  # Generated prose from evidence
+fitz collections                          # List and delete knowledge collections
+fitz serve                                # Start REST API server
 ```
 
-Config: `~/.fitz/config/fitz_krag.yaml` — auto-created on first run. Retrieval works with managed local ONNX models; edit config only for optional synthesis, query intelligence, or vision.
+Config: `~/.fitz/config/fitz_krag.yaml` — auto-created on first run. Edit it for optional synthesis, query intelligence,
+vision, or custom model/provider choices.
 
 </details>
 
@@ -616,13 +574,12 @@ legal_pack = legal.evidence("What are the payment terms?", source="./contracts")
 
 **Working with evidence:**
 ```python
-pack = fitz_sage.evidence("What is the refund policy?")
+pack = fitz_sage.evidence("Where is classify_query implemented?", source="./fitz_sage")
 
 print(pack.mode)  # TRUSTWORTHY, DISPUTED, or ABSTAIN
 
 for item in pack.items:
-    print(f"Source: {item.source_id}")
-    print(f"Excerpt: {item.excerpt}")
+    print(item.file_path, item.address_location, item.line_range)
 ```
 
 </details>
@@ -652,8 +609,8 @@ fitz serve --host 0.0.0.0     # all interfaces
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/query` | Query knowledge base |
-| POST | `/chat` | Multi-turn chat (stateless) |
+| POST | `/query` | Return a governed evidence response |
+| POST | `/chat` | Return generated prose from retrieved evidence |
 | GET | `/collections` | List all collections |
 | GET | `/collections/{name}` | Get collection stats |
 | DELETE | `/collections/{name}` | Delete a collection |
@@ -680,24 +637,24 @@ curl -X POST http://localhost:8000/query \
 <br>
 
 **`fitz` command not found after install**
-> Your Python Scripts directory isn't on PATH. Use `python -m fitz_sage.cli.cli` instead, or add the Scripts directory 
-> to your system PATH.
+> Your Python Scripts directory is not on PATH. Use `python -m fitz_sage.cli.cli`, or add the Scripts directory to PATH.
 
 **PDF/DOCX files are being skipped**
-> Document parsing requires docling, which is optional to keep the base install lightweight. Install it with: 
+> Document parsing requires the optional document parser dependencies. Install them with:
 > `pip install fitz-sage[docs]`
 
 **"Connection refused at localhost:8080" error**
-> This only applies to optional endpoint-backed synthesis or query intelligence. Use `fitz query "..."` for evidence without an endpoint server. For a one-off synthesized answer:
+> This applies to optional endpoint-backed synthesis or query intelligence. `fitz query "..."` returns evidence without an
+> endpoint server. For generated prose:
 > `fitz answer "..." --synthesizer openai/gpt-4o`.
 
 **"Model not found" error**
-> The model name in your config doesn't match what your server has loaded. Check `/v1/models` on your server:
-> `curl http://localhost:8080/v1/models`. Then update `synthesizer` in `~/.fitz/config/fitz_krag.yaml` to match.
+> The model name in your config does not match what your server has loaded. Check `/v1/models` on your server:
+> `curl http://localhost:8080/v1/models`. Then update `synthesizer` in `~/.fitz/config/fitz_krag.yaml`.
 
 **First query is slow**
-> First run initializes the database, downloads local ONNX models if needed, and indexes source files. Subsequent retrievals
-> are much faster. Optional synthesis can still be slow if a local chat model is cold.
+> First run initializes storage, downloads managed local models if needed, and builds the query-ready index. Later queries
+> reuse the collection.
 
 **How do I change my LLM endpoint or model?**
 > Edit `~/.fitz/config/fitz_krag.yaml`:
@@ -705,13 +662,13 @@ curl -X POST http://localhost:8000/query \
 > synthesizer: endpoint/gpt-oss-20b
 > chat_base_url: http://localhost:8080/v1
 > ```
-> Or override at the CLI without editing YAML:
+> Or override at the CLI:
 > ```bash
 > fitz answer "..." --endpoint http://localhost:8080/v1 --synthesizer endpoint/gpt-oss-20b
 > ```
 
 **How do I use a cloud provider?**
-> Either use the `openai` preset (built-in OpenAI URL):
+> Either use the `openai` preset:
 > ```yaml
 > synthesizer: openai/gpt-4o
 > # OPENAI_API_KEY in env
@@ -722,10 +679,10 @@ curl -X POST http://localhost:8000/query \
 > chat_base_url: https://api.together.xyz/v1
 > chat_api_key_env: TOGETHER_API_KEY
 > ```
-> See [docs/features/platform/openai-compatible-endpoint.md](docs/features/platform/openai-compatible-endpoint.md) for a migration table from the older Ollama / Cohere / Anthropic provider names.
+> See [docs/features/platform/openai-compatible-endpoint.md](docs/features/platform/openai-compatible-endpoint.md).
 
 **How do I reset everything?**
-> Delete the `.fitz/` directory in your project root. Next run will re-detect and re-configure.
+> Delete the `.fitz/` directory in your project root. Next run will initialize a fresh workspace.
 
 </details>
 
@@ -745,9 +702,10 @@ MIT
 
 **Documentation:**
 - [Docs Index](docs/README.md)
+- [Evidence Pack Contract](docs/EVIDENCE_PACK.md)
+- [Pre/Post Retrieval Signals](docs/features/retrieval/evidence-signals.md)
 - [Three-Stage Retrieval Strategy](docs/features/retrieval/three-stage-strategy.md)
 - [Query UX](docs/QUERY_UX.md)
-- [Evidence Pack Contract](docs/EVIDENCE_PACK.md)
 - [Managed Models](docs/MANAGED_MODELS.md)
 - [CLI Reference](docs/CLI.md)
 - [Python SDK](docs/SDK.md)
@@ -758,7 +716,7 @@ MIT
 - [Progressive KRAG & Agentic Search](docs/features/platform/progressive-krag-agentic-search.md)
 - [Ingestion Pipeline](docs/INGESTION.md)
 - [Enrichment (Hierarchies, Entities)](docs/ENRICHMENT.md)
-- [Epistemic Governance (pyrrho)](docs/CONSTRAINTS.md)
+- [Epistemic Governance (Pyrrho)](docs/CONSTRAINTS.md)
 - [Governance Benchmarking (fitz-gov)](docs/features/governance/governance-benchmarking.md)
 - [BEIR Benchmark Results](docs/evaluation/beir-results.md)
 - [Plugin Development](docs/PLUGINS.md)

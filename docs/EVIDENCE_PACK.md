@@ -10,6 +10,9 @@
 It is intentionally not an answer. It is ranked, governed evidence that another
 application can inspect, display, or pass into optional synthesis.
 
+For the meaning and product use of pre-retrieval and post-retrieval signals, see
+[Pre-Retrieval and Post-Retrieval Evidence Signals](features/retrieval/evidence-signals.md).
+
 ## Shape
 
 ```python

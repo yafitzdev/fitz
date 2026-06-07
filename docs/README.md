@@ -9,6 +9,7 @@ historical implementation notes.
 | File | Contents |
 |---|---|
 | `features/retrieval/three-stage-strategy.md` | Retrieval strategy: broad recall -> ONNX rerank -> Pyrrho cutoff |
+| `features/retrieval/evidence-signals.md` | Pre-retrieval planning and post-retrieval evidence signals |
 | `RETRIEVAL_PIPELINE.md` | End-to-end query and progressive indexing flow |
 | `QUERY_UX.md` | One-command CLI user journey and background indexing behavior |
 | `EVIDENCE_PACK.md` | Governed evidence response contract |
