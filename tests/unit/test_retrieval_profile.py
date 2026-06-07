@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
 from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
 
 
@@ -72,6 +73,19 @@ def test_low_confidence_optional_query_signals_do_not_steer_retrieval():
     assert profile.specificity == "moderate"
     assert profile.answer_type == "factual"
     assert profile.strategy_weights["code"] < 0.60
+
+
+def test_structured_lookup_keeps_code_search_eligible_for_data_phrasing():
+    """Exact lookups should still search code when prose mentions table/section terms."""
+    config = SimpleNamespace(top_addresses=20, top_read=10)
+    analysis = QueryAnalysis(primary_type=QueryType.DATA, confidence=0.80)
+    signals = SimpleNamespace(query_contract=_head("structured_lookup", 0.90))
+
+    profile = build_retrieval_profile(analysis, None, config, query_signals=signals)
+
+    assert profile.query_contract == "structured_lookup"
+    assert profile.strategy_weights["code"] > 0.05
+    assert profile.strategy_weights["table"] >= 0.35
 
 
 def _head(label: str, confidence: float) -> SimpleNamespace:

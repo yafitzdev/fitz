@@ -267,6 +267,7 @@ def build_retrieval_profile(
 
     if contract_label == "structured_lookup":
         strategy_weights = dict(strategy_weights)
+        strategy_weights["code"] = max(strategy_weights.get("code", 0.0), 0.25)
         strategy_weights["table"] = max(strategy_weights.get("table", 0.0), 0.35)
         top_k = max(top_k, config.top_addresses)
         top_read = max(top_read, config.top_read)

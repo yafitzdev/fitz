@@ -88,7 +88,7 @@
     },
     {
       "id": "query-profile-10",
-      "query": "Which function named apply_retrieval_modality_weights handles retrieval modality routing?",
+      "query": "Which function named apply_retrieval_modality_weights applies retrieval_modality weights to code, table, and section retrieval?",
       "vocab_mismatch": false,
       "relevant": [
         {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval_profile.py"}
