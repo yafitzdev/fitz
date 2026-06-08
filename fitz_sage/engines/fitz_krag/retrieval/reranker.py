@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace
 from fitz_sage.engines.fitz_krag.types import Address
 
 if TYPE_CHECKING:
@@ -33,6 +34,7 @@ class AddressReranker:
         self._reranker = reranker
         self._k = k
         self._min_addresses = min_addresses
+        self.last_trace: dict[str, object] = {}
 
     def rerank(self, query: str, addresses: list[Address]) -> list[Address]:
         """
@@ -48,6 +50,16 @@ class AddressReranker:
             Reranked (and possibly truncated) list of addresses
         """
         if len(addresses) < self._min_addresses:
+            selected = addresses[: self._k]
+            self.last_trace = {
+                "used": False,
+                "reason": "below_min_addresses",
+                "query": query,
+                "input_count": len(addresses),
+                "input": addresses_trace(addresses),
+                "output_count": len(selected),
+                "output": addresses_trace(selected),
+            }
             return addresses[: self._k]
 
         documents = [_rerank_document(addr) for addr in addresses]
@@ -56,25 +68,53 @@ class AddressReranker:
             ranked = self._reranker.rerank(query, documents, top_n=self._k)
 
             reranked: list[Address] = []
+            ranked_trace = []
             for result in ranked:
                 original = addresses[result.index]
-                reranked.append(
-                    Address(
-                        kind=original.kind,
-                        source_id=original.source_id,
-                        location=original.location,
-                        summary=original.summary,
-                        score=result.score,
-                        metadata=original.metadata,
-                    )
+                reranked_address = Address(
+                    kind=original.kind,
+                    source_id=original.source_id,
+                    location=original.location,
+                    summary=original.summary,
+                    score=result.score,
+                    metadata=original.metadata,
+                )
+                reranked.append(reranked_address)
+                ranked_trace.append(
+                    {
+                        "original_index": result.index,
+                        "score": result.score,
+                        "address": addresses_trace([reranked_address])[0],
+                    }
                 )
 
             logger.debug(f"Reranked {len(addresses)} addresses to top {len(reranked)}")
+            self.last_trace = {
+                "used": True,
+                "query": query,
+                "input_count": len(addresses),
+                "input": addresses_trace(addresses),
+                "documents": documents,
+                "output_count": len(reranked),
+                "output": addresses_trace(reranked),
+                "ranked": ranked_trace,
+            }
             return reranked
 
         except Exception as e:
             logger.warning(f"Reranking failed, using original order: {e}")
-            return addresses[: self._k]
+            selected = addresses[: self._k]
+            self.last_trace = {
+                "used": False,
+                "reason": "rerank_error",
+                "error": str(e),
+                "query": query,
+                "input_count": len(addresses),
+                "input": addresses_trace(addresses),
+                "output_count": len(selected),
+                "output": addresses_trace(selected),
+            }
+            return selected
 
 
 def _rerank_document(addr: Address) -> str:

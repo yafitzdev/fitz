@@ -93,3 +93,21 @@ class TestCodeSearchStrategy:
         assert addr.metadata["qualified_name"] == "pkg.my_func"
         assert addr.metadata["start_line"] == 1
         assert addr.metadata["end_line"] == 10
+
+    def test_prose_query_expands_to_symbol_name_variants(self, mock_symbol_store, config):
+        """Prose terms such as 'waive' should find identifier forms such as WAIVER_ENV."""
+
+        def search_by_name(query, limit):
+            if query == "waiver":
+                return [_make_symbol("s1", "WAIVER_ENV", "invoice.WAIVER_ENV", "constant")]
+            return []
+
+        mock_symbol_store.search_by_name.side_effect = search_by_name
+        mock_symbol_store.search_bm25.return_value = []
+        mock_symbol_store.search_by_keywords.return_value = []
+
+        strategy = CodeSearchStrategy(mock_symbol_store, config)
+        results = strategy.retrieve("Which environment variable can waive late fees?", limit=5)
+
+        assert len(results) == 1
+        assert results[0].metadata["qualified_name"] == "invoice.WAIVER_ENV"

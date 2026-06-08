@@ -13,6 +13,11 @@ import time as _time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable
 
+from fitz_sage.engines.fitz_krag.evidence_compiler import (
+    query_has_code_obligation,
+    query_has_table_obligation,
+)
+from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace
 from fitz_sage.engines.fitz_krag.types import Address
 
 if TYPE_CHECKING:
@@ -50,6 +55,7 @@ class RetrievalRouter:
         self._config = config
         self._agentic_strategy = agentic_strategy
         self._allow_llm_agentic = True
+        self.last_trace: dict[str, Any] = {}
 
     def retrieve(
         self,
@@ -70,6 +76,8 @@ class RetrievalRouter:
         limit = profile.top_k if profile else self._config.top_addresses
         weights = profile.strategy_weights if profile else None
         all_addresses: list[Address] = []
+        strategy_calls: list[dict[str, Any]] = []
+        agentic_trace: dict[str, Any] | None = None
 
         # Collect queries to run (original + profile expansions + multi-query)
         # Each entry is (query_text, tag) where tag is used for temporal metadata
@@ -114,20 +122,28 @@ class RetrievalRouter:
         _t_strategies = _time.perf_counter()
         _progress = progress or (lambda _: None)
         pool = ThreadPoolExecutor(max_workers=self._config.retrieval_workers)
-        futures: list[tuple[Future, str | None]] = []  # (future, temporal_tag)
+        futures: list[tuple[Future, str | None, str, str]] = []
         try:
             for q, temporal_tag in tagged_queries:
-                if not weights or weights.get("code", 1.0) > 0.05:
+                if (
+                    not weights
+                    or weights.get("code", 1.0) > 0.05
+                    or query_has_code_obligation(q, profile)
+                ):
                     fut = pool.submit(self._run_strategy, self._code_strategy, q, limit, profile)
-                    futures.append((fut, temporal_tag))
+                    futures.append((fut, temporal_tag, type(self._code_strategy).__name__, q))
 
                 if self._section_strategy and (not weights or weights.get("section", 1.0) > 0.05):
                     fut = pool.submit(self._run_strategy, self._section_strategy, q, limit, profile)
-                    futures.append((fut, temporal_tag))
+                    futures.append((fut, temporal_tag, type(self._section_strategy).__name__, q))
 
-                if self._table_strategy and (not weights or weights.get("table", 1.0) > 0.05):
+                if self._table_strategy and (
+                    not weights
+                    or weights.get("table", 1.0) > 0.05
+                    or query_has_table_obligation(q, profile)
+                ):
                     fut = pool.submit(self._run_strategy, self._table_strategy, q, limit, profile)
-                    futures.append((fut, temporal_tag))
+                    futures.append((fut, temporal_tag, type(self._table_strategy).__name__, q))
 
             # Submit agentic search in the same pool
             agentic_future: Future | None = None
@@ -136,13 +152,32 @@ class RetrievalRouter:
                 agentic_future = pool.submit(self._run_agentic, query, limit, _progress)
 
             # Collect strategy results
-            for fut, temporal_tag in futures:
+            for fut, temporal_tag, strategy_name, strategy_query in futures:
                 try:
                     batch = fut.result(timeout=600)
+                    strategy_call = {
+                        "strategy": strategy_name,
+                        "query": strategy_query,
+                        "temporal_tag": temporal_tag,
+                        "count": len(batch),
+                        "addresses": addresses_trace(batch),
+                    }
                     if temporal_tag:
                         batch = self._tag_temporal(batch, temporal_tag)
+                        strategy_call["tagged_addresses"] = addresses_trace(batch)
                     all_addresses.extend(batch)
+                    strategy_calls.append(strategy_call)
                 except Exception as e:
+                    strategy_calls.append(
+                        {
+                            "strategy": strategy_name,
+                            "query": strategy_query,
+                            "temporal_tag": temporal_tag,
+                            "count": 0,
+                            "error": str(e),
+                            "addresses": [],
+                        }
+                    )
                     logger.warning(f"Strategy failed: {e}")
 
             # Collect agentic results
@@ -150,8 +185,16 @@ class RetrievalRouter:
                 try:
                     agentic_addresses = agentic_future.result(timeout=600)
                     all_addresses.extend(agentic_addresses)
+                    agentic_trace = {
+                        "enabled": True,
+                        "count": len(agentic_addresses),
+                        "addresses": addresses_trace(agentic_addresses),
+                    }
                 except Exception as e:
+                    agentic_trace = {"enabled": True, "count": 0, "error": str(e), "addresses": []}
                     logger.warning(f"Agentic strategy failed: {e}")
+            else:
+                agentic_trace = {"enabled": False, "count": 0, "addresses": []}
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
 
@@ -171,6 +214,7 @@ class RetrievalRouter:
                 logger.debug(f"Corpus summary injection skipped: {e}")
 
         # Deduplicate
+        raw_addresses = list(all_addresses)
         deduped = self._deduplicate(all_addresses)
 
         # Rank using profile if available
@@ -184,7 +228,29 @@ class RetrievalRouter:
 
         # File diversity: prevent one file from monopolizing all read slots
         ranked = self._enforce_file_diversity(ranked)
-        return ranked[:limit]
+        final = ranked[:limit]
+        self.last_trace = {
+            "query": query,
+            "limit": limit,
+            "strategy_weights": dict(weights or {}),
+            "tagged_queries": [
+                {"query": query_text, "temporal_tag": temporal_tag}
+                for query_text, temporal_tag in tagged_queries
+            ],
+            "unique_query_count": len(unique_queries),
+            "strategy_calls": strategy_calls,
+            "agentic": agentic_trace,
+            "raw_candidate_count": len(raw_addresses),
+            "raw_candidates": addresses_trace(raw_addresses),
+            "deduped_count": len(deduped),
+            "deduped": addresses_trace(deduped),
+            "ranked_count": len(ranked),
+            "ranked": addresses_trace(ranked),
+            "final_count": len(final),
+            "final": addresses_trace(final),
+            "timings_ms": {"strategies": _strategies_ms},
+        }
+        return final
 
     def _run_strategy(
         self,

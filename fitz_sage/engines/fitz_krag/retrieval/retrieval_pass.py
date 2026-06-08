@@ -21,6 +21,8 @@ import time
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.engines.fitz_krag.evidence_compiler import order_addresses_for_contract
+from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace, read_results_trace
 from fitz_sage.engines.fitz_krag.types import ReadResult
 
 if TYPE_CHECKING:
@@ -100,6 +102,7 @@ class RetrievalPass:
         self._reader = reader
         self._config = config
         self.last_timings: dict[str, float] = {}
+        self.last_trace: dict[str, Any] = {}
 
     def run(
         self,
@@ -126,35 +129,104 @@ class RetrievalPass:
             reranker is configured).
         """
         self.last_timings = {}
+        self.last_trace = {"query": query}
 
         t0 = time.perf_counter()
         addresses = self._router.retrieve(
             query, profile, rewrite_result=rewrite_result, progress=progress
         )
         self.last_timings["recall"] = time.perf_counter() - t0
+        recall_addresses = list(addresses)
+        router_trace = dict(getattr(self._router, "last_trace", {}) or {})
         if exclude:
             addresses = [a for a in addresses if (a.source_id, a.location) not in exclude]
+        after_exclude = list(addresses)
         if not addresses:
             self.last_timings["rerank"] = 0.0
             self.last_timings["read"] = 0.0
+            self.last_trace = {
+                "query": query,
+                "profile": _profile_trace(profile),
+                "exclude_count": len(exclude or set()),
+                "router": router_trace,
+                "recall_count": len(recall_addresses),
+                "recall": addresses_trace(recall_addresses),
+                "after_exclude_count": len(after_exclude),
+                "after_exclude": addresses_trace(after_exclude),
+                "reranker": {"used": False, "reason": "no_addresses"},
+                "final_addresses": [],
+                "read_results": [],
+                "timings": dict(self.last_timings),
+            }
             return []
         if self._reranker is not None:
             candidates = addresses
             t0 = time.perf_counter()
             addresses = self._reranker.rerank(query, addresses)
             self.last_timings["rerank"] = time.perf_counter() - t0
+            reranker_trace = dict(getattr(self._reranker, "last_trace", {}) or {})
+            addresses = order_addresses_for_contract(query, candidates, addresses, profile)
             addresses = _ensure_broad_corpus_coverage(query, candidates, addresses, profile)
         else:
             self.last_timings["rerank"] = 0.0
+            reranker_trace = {"used": False, "reason": "no_reranker"}
         addresses = _apply_broad_corpus_prior(query, addresses, profile)
         addresses = _enforce_broad_file_diversity(addresses, profile)
         addresses = _enforce_broad_group_diversity(query, addresses, profile)
         addresses = _assign_broad_effective_scores(query, addresses, profile)
+        final_addresses = list(addresses)
         t0 = time.perf_counter()
         read_limit = getattr(profile, "top_read", self._config.top_read)
         results = self._reader.read(addresses, read_limit)
         self.last_timings["read"] = time.perf_counter() - t0
+        self.last_trace = {
+            "query": query,
+            "profile": _profile_trace(profile),
+            "exclude_count": len(exclude or set()),
+            "router": router_trace,
+            "recall_count": len(recall_addresses),
+            "recall": addresses_trace(recall_addresses),
+            "after_exclude_count": len(after_exclude),
+            "after_exclude": addresses_trace(after_exclude),
+            "reranker": reranker_trace,
+            "final_address_count": len(final_addresses),
+            "final_addresses": addresses_trace(final_addresses),
+            "read_limit": read_limit,
+            "read_result_count": len(results),
+            "read_results": read_results_trace(results),
+            "timings": dict(self.last_timings),
+        }
         return results
+
+
+def _profile_trace(profile: Any) -> dict[str, Any]:
+    """Serialize the retrieval profile fields most useful for benchmark analysis."""
+    if profile is None:
+        return {}
+    fields = (
+        "specificity",
+        "answer_type",
+        "analysis_type",
+        "analysis_confidence",
+        "domain",
+        "top_k",
+        "top_read",
+        "strategy_weights",
+        "keywords",
+        "entities",
+        "query_variations",
+        "comparison_queries",
+        "comparison_entities",
+        "temporal_references",
+        "run_agentic",
+        "inject_corpus_summaries",
+        "entity_expansion_limit",
+    )
+    trace: dict[str, Any] = {}
+    for field_name in fields:
+        if hasattr(profile, field_name):
+            trace[field_name] = getattr(profile, field_name)
+    return trace
 
 
 def _apply_broad_corpus_prior(query: str, addresses: list[Any], profile: Any = None) -> list[Any]:

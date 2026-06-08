@@ -52,17 +52,22 @@ class TableSearchStrategy:
 
     def _to_address(self, record: dict[str, Any]) -> Address:
         """Convert a table store row to an Address."""
+        columns = list(record["columns"])
+        summary = record.get("summary") or (
+            f"Table {record['name']} columns: {', '.join(columns)}. "
+            f"Rows: {record['row_count']}."
+        )
         return Address(
             kind=AddressKind.TABLE,
             source_id=record["raw_file_id"],
             location=record["name"],
-            summary=record.get("summary") or record["name"],
+            summary=summary,
             score=record.get("combined_score", 0.0),
             metadata={
                 "table_index_id": record["id"],
                 "table_id": record["table_id"],
                 "name": record["name"],
-                "columns": record["columns"],
+                "columns": columns,
                 "row_count": record["row_count"],
             },
         )

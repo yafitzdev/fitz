@@ -11,6 +11,7 @@ ONNX cross-encoder reranker (``OnnxReranker``) downstream.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import (
@@ -24,6 +25,34 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.ingestion.symbol_store import SymbolStore
 
 logger = logging.getLogger(__name__)
+
+_SYMBOL_QUERY_STOPWORDS = {
+    "and",
+    "are",
+    "can",
+    "does",
+    "ever",
+    "for",
+    "from",
+    "how",
+    "into",
+    "the",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "with",
+}
+_SYMBOL_QUERY_SYNONYMS = {
+    "back": ("rollback",),
+    "dataclass": ("class",),
+    "environment": ("env",),
+    "fees": ("fee",),
+    "variable": ("env",),
+    "variables": ("env",),
+    "waive": ("waiver",),
+}
 
 
 class CodeSearchStrategy:
@@ -55,7 +84,7 @@ class CodeSearchStrategy:
         fetch_limit = limit * 2
 
         # 1. Keyword search
-        keyword_results = self._symbol_store.search_by_name(query, limit=fetch_limit)
+        keyword_results = self._keyword_results(query, fetch_limit)
 
         # 2. BM25 search
         bm25_results: list[dict[str, Any]] = []
@@ -76,6 +105,19 @@ class CodeSearchStrategy:
 
         # 6. Convert to Address objects
         return [self._to_address(r) for r in merged[:limit]]
+
+    def _keyword_results(self, query: str, limit: int) -> list[dict[str, Any]]:
+        """Search symbol names with deterministic code-identifier query variants."""
+        results: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for name_query in _symbol_name_queries(query):
+            for result in self._symbol_store.search_by_name(name_query, limit=limit):
+                sid = str(result["id"])
+                if sid in seen:
+                    continue
+                seen.add(sid)
+                results.append(result)
+        return results
 
     def _merge_results(
         self,
@@ -136,3 +178,43 @@ class CodeSearchStrategy:
                 "signature": r.get("signature"),
             },
         )
+
+
+def _symbol_name_queries(query: str) -> list[str]:
+    """Return bounded name-search variants for prose-to-symbol matching."""
+    variants: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        normalized = value.strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            variants.append(normalized)
+
+    add(query)
+    normalized_query = _normalize_query(query)
+    tokens = [
+        token
+        for token in normalized_query.split()
+        if len(token) >= 3 and token not in _SYMBOL_QUERY_STOPWORDS
+    ]
+    for token in tokens:
+        if "_" in token:
+            add(token)
+    for first, second in zip(tokens, tokens[1:], strict=False):
+        add(f"{first}_{second}")
+    for token in tokens:
+        add(token)
+        for synonym in _SYMBOL_QUERY_SYNONYMS.get(token, ()):
+            add(synonym)
+    if "roll back" in normalized_query:
+        add("rollback")
+    if "late fee" in normalized_query:
+        add("late_fee")
+    return variants[:16]
+
+
+def _normalize_query(query: str) -> str:
+    """Normalize prose for deterministic symbol-name query derivation."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9_]+", " ", query.lower())).strip()

@@ -241,7 +241,8 @@ class ContentReader:
                     if col_info:
                         sanitized_cols, _ = col_info
                         cols_str = ", ".join(f'"{c}"' for c in sanitized_cols[:20])
-                        sql = f'SELECT {cols_str} FROM "{table_name}" LIMIT 3'
+                        sample_limit = self._table_sample_limit(row_count)
+                        sql = f'SELECT {cols_str} FROM "{table_name}" LIMIT {sample_limit}'
                         result = self._sqlite_table_store.execute_query(table_id, sql)
                         if result:
                             col_names, rows = result
@@ -264,6 +265,23 @@ class ContentReader:
             file_path=file_path,
             metadata={"table_id": table_id},
         )
+
+    def _table_sample_limit(self, row_count: int | None) -> int:
+        """Return the bounded number of table rows exposed as evidence text."""
+        configured = 20
+        if self._config is not None:
+            try:
+                configured = int(getattr(self._config, "max_table_results", configured))
+            except (TypeError, ValueError):
+                configured = 20
+        limit = min(max(1, configured), 20)
+        if row_count is None:
+            return limit
+        try:
+            count = int(row_count)
+        except (TypeError, ValueError):
+            return limit
+        return min(limit, max(1, count))
 
     def _build_breadcrumb(self, section: dict[str, Any]) -> str:
         """Walk up parent_section_id chain to build a breadcrumb path.
