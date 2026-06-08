@@ -1,0 +1,548 @@
+# tests/unit/test_evidence_compiler.py
+"""Tests for contract-aware evidence compilation."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+from fitz_sage.engines.fitz_krag.evidence_compiler import (
+    compile_evidence,
+    order_addresses_for_contract,
+    query_has_table_obligation,
+)
+from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
+from fitz_sage.governance.evidence_contract import build_query_contract
+
+
+def test_pyrrho_comparison_contract_sets_prefix_floor() -> None:
+    """Comparison coverage is a Pyrrho contract signal, not a numeric regex gate."""
+    finance = _result(
+        "The finance team reported Q1 revenue of 1.2 billion dollars.",
+        "unstructured/finance_q1_report.md",
+    )
+    audit = _result(
+        "The audit note disputes Q1 revenue and says it was 1.4 billion dollars.",
+        "unstructured/audit_q1_note.md",
+    )
+
+    compiled = compile_evidence(
+        "What was Q1 revenue?",
+        [finance, audit],
+        profile=_profile(query_contract="comparison_coverage"),
+    )
+
+    assert [result.file_path for result in compiled.results[:2]] == [
+        "unstructured/finance_q1_report.md",
+        "unstructured/audit_q1_note.md",
+    ]
+    assert compiled.results[0].metadata["evidence_compiler"]["min_sources"] == 2
+
+
+def test_compiler_filters_unaligned_hard_anchor_results() -> None:
+    """A missing named entity should not let unrelated conflicts reach Pyrrho."""
+    finance = _result(
+        "The finance team reported Q1 revenue of 1.2 billion dollars.",
+        "unstructured/finance_q1_report.md",
+    )
+    audit = _result(
+        "The audit note disputes Q1 revenue and says it was 1.4 billion dollars.",
+        "unstructured/audit_q1_note.md",
+    )
+
+    compiled = compile_evidence("What is the Project Nebula budget?", [audit, finance])
+
+    assert compiled.results == []
+    assert compiled.metadata["filtered_all"] is True
+    assert compiled.metadata["contract"]["phrase_anchors"] == ["Project Nebula"]
+
+
+def test_compiler_records_temporal_contract_without_date_reordering() -> None:
+    """Temporal policy is exposed to Pyrrho without local latest-date selection."""
+    january = _result(
+        "On 2026-01-15, Project Orion was still in private beta for the EU region.",
+        "unstructured/project_orion_status.md",
+        location="January Field Note",
+    )
+    may = _result(
+        "On 2026-05-20, Project Orion reached general availability in the EU region.",
+        "unstructured/project_orion_status.md",
+        location="May Launch Memo",
+    )
+
+    compiled = compile_evidence(
+        "What is the latest EU status for Project Orion?",
+        [january, may],
+        profile=_profile(query_contract="temporal_grounding"),
+    )
+
+    assert compiled.results[0].content.startswith("On 2026-01-15")
+    assert compiled.metadata["contract"]["temporal_policy"] == "temporal"
+
+
+def test_compiler_does_not_filter_final_estimates_without_pyrrho_verdict() -> None:
+    """Final/stale authority is Pyrrho governance, not compiler-side filtering."""
+    final = _result(
+        "The final postmortem confirmed that Search outage INC-101 recovered after 42 minutes.",
+        "unstructured/outage_postmortem.md",
+        location="Final Postmortem",
+    )
+    initial = _result(
+        "The initial status update estimated that Search outage INC-101 would recover in 20 minutes.",
+        "unstructured/outage_postmortem.md",
+        location="Initial Status Update",
+    )
+
+    compiled = compile_evidence(
+        "What was the final recovery duration for Search outage INC-101?",
+        [initial, final],
+    )
+
+    assert {result.content for result in compiled.results} == {initial.content, final.content}
+
+
+def test_compiler_promotes_required_code_symbol() -> None:
+    """An explicit Python symbol query should put symbol evidence before stale prose."""
+    stale = _result(
+        "The authentication documentation says expired sessions are never refreshed.",
+        "code/README.md",
+        kind=AddressKind.SECTION,
+        location="Authentication Notes",
+    )
+    symbol = _result(
+        "def refresh_expired_session(self, session_id: str) -> bool:\n"
+        "    return session_id.startswith('grace-')",
+        "code/auth_service.py",
+        kind=AddressKind.SYMBOL,
+        location="AuthService.refresh_expired_session",
+    )
+
+    compiled = compile_evidence(
+        "Which Python symbol implements expired session refresh inside the grace window?",
+        [stale, symbol],
+        profile=_profile(modality="code"),
+    )
+
+    assert compiled.results[0].file_path == "code/auth_service.py"
+    assert compiled.metadata["contract"]["required_modalities"] == ["symbol"]
+
+
+def test_address_rescue_preserves_required_table_candidate() -> None:
+    """Required table candidates dropped by reranking should be appended before read."""
+    prose = _address(
+        AddressKind.SECTION,
+        "mixed/release_notes.md",
+        "Release Notes",
+        "Release notes mention 17 flux capacitor units.",
+    )
+    table = _address(
+        AddressKind.TABLE,
+        "structured/warehouses.csv",
+        "Warehouses",
+        "Table Warehouses columns: warehouse_id, region, item, stock, unit.",
+    )
+
+    ordered = order_addresses_for_contract(
+        "How many flux capacitor units are in the west region?",
+        [prose, table],
+        [prose],
+        profile=_profile(modality="structured_table"),
+    )
+
+    assert ordered == [prose, table]
+    assert query_has_table_obligation(
+        "How many flux capacitor units are in the west region?",
+        profile=_profile(modality="structured_table"),
+    )
+    assert not query_has_table_obligation("How many flux capacitor units are in the west region?")
+
+
+def test_query_contract_does_not_make_question_prefix_an_entity() -> None:
+    """Question wording should not become a hard phrase anchor."""
+    contract = build_query_contract(
+        "Which Python symbol implements expired session refresh inside the grace window?"
+    )
+
+    assert contract.phrase_anchors == ()
+
+
+def test_compiler_splits_code_identifiers_for_keyword_alignment() -> None:
+    """Code constants should align with natural-language terms inside identifiers."""
+    constant = _result(
+        'REQUIRED_ENV_VARS = ("FITZ_API_TOKEN", "FITZ_WORKSPACE")',
+        "code/config_loader.py",
+        kind=AddressKind.SYMBOL,
+        location="code.config_loader.REQUIRED_ENV_VARS",
+    )
+    function = _result(
+        "def load_required_env() -> dict[str, str]:\n"
+        "    return {name: os.environ[name] for name in REQUIRED_ENV_VARS}",
+        "code/config_loader.py",
+        kind=AddressKind.SYMBOL,
+        location="code.config_loader.load_required_env",
+    )
+
+    compiled = compile_evidence(
+        "Which required environment variable stores the API token?",
+        [function, constant],
+    )
+
+    assert compiled.results[0].address.location == "code.config_loader.REQUIRED_ENV_VARS"
+    assert "FITZ_API_TOKEN" in compiled.results[0].content
+
+
+def test_compiler_treats_short_letter_digit_codes_as_identifiers() -> None:
+    """Codes such as S1 are exact anchors, not disposable short words."""
+    table = _result(
+        "incident_id | severity | owner | resolved_minutes\n" "INC-103 | S1 | Mina | 25",
+        "structured/incidents.csv",
+        kind=AddressKind.TABLE,
+        location="Incidents",
+    )
+    prose = _result(
+        "The final postmortem confirmed Search outage INC-101 recovered after 42 minutes.",
+        "unstructured/outage_postmortem.md",
+    )
+
+    compiled = compile_evidence(
+        "Which S1 incident had the shortest resolution time?",
+        [prose, table],
+    )
+
+    assert compiled.results[0].file_path == "structured/incidents.csv"
+    assert compiled.metadata["contract"]["identifiers"] == ["S1"]
+
+
+def test_compiler_does_not_invent_source_authority_roles() -> None:
+    """Source-authority roles are not inferred from 'using/from' query wording."""
+    playbook = _result(
+        "The west-region cache replay fix came from Search outage INC-101.",
+        "mixed/incident_playbook.md",
+        location="Incident Playbook",
+    )
+    table = _result(
+        "incident_id | owner | resolved_minutes\nINC-101 | Nora | 42",
+        "structured/incidents.csv",
+        kind=AddressKind.TABLE,
+        location="Incidents",
+    )
+    postmortem = _result(
+        "The final postmortem confirmed that Search outage INC-101 recovered after 42 minutes.",
+        "unstructured/outage_postmortem.md",
+    )
+
+    compiled = compile_evidence(
+        "Using the incident playbook, who owned the west-region cache replay fix "
+        "and how long did INC-101 take to recover?",
+        [postmortem, table, playbook],
+    )
+
+    assert compiled.results[0].file_path == "mixed/incident_playbook.md"
+    assert (
+        "source_anchor:incident playbook"
+        not in compiled.results[0].metadata["evidence_compiler"]["roles"]
+    )
+
+
+def test_compiler_chooses_required_table_by_fact_anchors() -> None:
+    """Required table selection should prefer concrete row facts over generic overlap."""
+    rollout = _result(
+        "feature | region | status | release | owner\n"
+        "warehouse_audit | west | enabled | 2026.05 | Inventory",
+        "structured/rollout_matrix.csv",
+        kind=AddressKind.TABLE,
+        location="Rollout Matrix",
+    )
+    warehouses = _result(
+        "warehouse_id | region | item | stock | unit\n" "WH-1 | west | flux capacitor | 17 | count",
+        "structured/warehouses.csv",
+        kind=AddressKind.TABLE,
+        location="Warehouses",
+    )
+    release = _result(
+        "Release 2026.05 added the west-region warehouse audit and confirmed "
+        "17 flux capacitor units in warehouse WH-1.",
+        "mixed/release_notes.md",
+        location="Release Notes",
+    )
+
+    compiled = compile_evidence(
+        "Which release mentioned the west-region warehouse audit and how many "
+        "flux capacitor units did it confirm?",
+        [rollout, release, warehouses],
+        profile=_profile(modality="structured_table"),
+    )
+
+    assert compiled.results[0].file_path == "structured/warehouses.csv"
+    assert compiled.results[0].metadata["evidence_compiler"]["roles"] == ["required_table"]
+
+
+def test_compiler_does_not_make_policy_terms_source_authority() -> None:
+    """Policy wording is lexical alignment unless Pyrrho supplies an authority signal."""
+    table = _result(
+        "feature | region | status | release\n" "token_rotation | eu | enabled | 2026.05",
+        "structured/rollout_matrix.csv",
+        kind=AddressKind.TABLE,
+        location="Rollout Matrix",
+    )
+    brief = _result(
+        "The token rotation rollout follows the Security Policy rotation interval. "
+        "The policy interval remains 45 days.",
+        "mixed/security_rollout.md",
+        location="Security Rollout Brief",
+    )
+    policy = _result(
+        "Security Policy: Service tokens must rotate every 45 days.",
+        "unstructured/security_policy.md",
+        location="Security Policy",
+    )
+
+    compiled = compile_evidence(
+        "For the EU token rotation rollout, which release enabled it and what "
+        "policy interval applies?",
+        [table, brief, policy],
+    )
+
+    roles = [
+        role
+        for result in compiled.results
+        for role in result.metadata["evidence_compiler"]["roles"]
+    ]
+    assert not any(role.startswith("source_anchor:") for role in roles)
+    assert compiled.metadata["contract"]["source_anchors"] == []
+
+
+def test_query_contract_does_not_force_table_for_generic_incident() -> None:
+    """Incident prose should not become a table obligation without row/table wording."""
+    contract = build_query_contract("Who owns the privacy incident response process?")
+
+    assert contract.required_modalities == ()
+
+
+def test_query_contract_requires_table_only_from_pyrrho_modality() -> None:
+    """Schema wording does not create table obligations without Pyrrho."""
+    contract = build_query_contract(
+        "Which service has the highest SLO percent?",
+        profile=_profile(modality="structured_table"),
+    )
+
+    assert contract.required_modalities == ("table",)
+    assert (
+        build_query_contract("Which service has the highest SLO percent?").required_modalities == ()
+    )
+
+
+def test_query_contract_keeps_code_export_window_as_symbol_only() -> None:
+    """Code symbol questions should not inherit table obligations from domain nouns."""
+    contract = build_query_contract(
+        "Which function returns the APAC export window of 16:00?",
+        profile=_profile(modality="code"),
+    )
+
+    assert contract.required_modalities == ("symbol",)
+
+
+def test_query_contract_treats_vendor_ids_as_structured_identifiers() -> None:
+    """Structured identifiers beyond the starter corpus should imply row evidence."""
+    contract = build_query_contract(
+        "What notice days are recorded for vendor VEN-301?",
+        profile=_profile(modality="structured_table"),
+    )
+
+    assert contract.identifiers == ("VEN-301",)
+    assert "table" in contract.required_modalities
+
+
+def test_query_contract_does_not_force_table_for_incident_postmortem_fact() -> None:
+    """Incident identifiers can be prose anchors unless row evidence is requested."""
+    contract = build_query_contract("What final outage duration was confirmed for INC-611?")
+
+    assert contract.identifiers == ("INC-611",)
+    assert contract.required_modalities == ()
+
+
+def test_compiler_keeps_temporal_candidates_for_pyrrho_review() -> None:
+    """The compiler no longer drops older dated candidates before Pyrrho sees them."""
+    deprecation = _result(
+        "The legacy_sync deprecation date is 2026-09-30.",
+        "unstructured/project_atlas_status.md",
+        location="Project Atlas Deprecations",
+    )
+    apac = _result(
+        "On 2026-07-18, Project Atlas APAC moved to limited GA.",
+        "unstructured/project_atlas_status.md",
+        location="APAC Status",
+    )
+
+    compiled = compile_evidence(
+        "What is the latest APAC status for Project Atlas?",
+        [deprecation, apac],
+    )
+
+    assert compiled.results[0].content.startswith("On 2026-07-18")
+    assert any("legacy_sync" in result.content for result in compiled.results)
+
+
+def test_compiler_does_not_make_single_unit_multi_number_fact_a_conflict() -> None:
+    """Multiple numeric facts inside one aligned source are not conflicting sources."""
+    sla = _result(
+        "Platinum SEV0 pages after 30 minutes and requires acknowledgement within 5 minutes.",
+        "unstructured/observability_sla.md",
+        location="Observability SLA",
+    )
+
+    compiled = compile_evidence("What is the Platinum SEV0 acknowledgement time?", [sla])
+
+    assert compiled.results[0].metadata["evidence_compiler"]["min_sources"] == 1
+    assert "conflict_value" not in compiled.results[0].metadata["evidence_compiler"]["roles"]
+
+
+def test_compiler_prefers_requested_symbol_granularity() -> None:
+    """Method/function queries should select the method over the enclosing class."""
+    class_symbol = _result(
+        "class FeatureGate:\n    def is_eligible(self, account): ...",
+        "code/flags.py",
+        kind=AddressKind.SYMBOL,
+        location="flags.FeatureGate",
+        address_metadata={
+            "kind": "class",
+            "name": "FeatureGate",
+            "qualified_name": "flags.FeatureGate",
+        },
+    )
+    method_symbol = _result(
+        "def is_eligible(self, account):\n    return account.flag_enabled",
+        "code/flags.py",
+        kind=AddressKind.SYMBOL,
+        location="flags.FeatureGate.is_eligible",
+        address_metadata={
+            "kind": "method",
+            "name": "is_eligible",
+            "qualified_name": "flags.FeatureGate.is_eligible",
+        },
+    )
+
+    compiled = compile_evidence(
+        "Which method handles feature flag eligibility?",
+        [class_symbol, method_symbol],
+    )
+
+    assert compiled.results[0].address.location == "flags.FeatureGate.is_eligible"
+
+
+def test_behavioral_code_query_does_not_infer_documentation_conflict() -> None:
+    """Code/doc conflict labels belong to Pyrrho, not compiler polarity regex."""
+    symbol = _result(
+        "if user.get('archived') == 'true':\n    return False",
+        "code/feature_flag_service.py",
+        kind=AddressKind.SYMBOL,
+        location="code.feature_flag_service.FlagEvaluator.is_eligible",
+        address_metadata={
+            "kind": "method",
+            "name": "is_eligible",
+            "qualified_name": "code.feature_flag_service.FlagEvaluator.is_eligible",
+        },
+    )
+    notes = _result(
+        "The stale feature-flag note says archived users remain eligible for beta flags.",
+        "code/README.md",
+        location="Feature Flags",
+    )
+
+    compiled = compile_evidence(
+        "Are archived users eligible for beta feature flags?",
+        [symbol, notes],
+        profile=_profile(modality="code"),
+    )
+
+    roles_by_file = {
+        result.file_path: result.metadata["evidence_compiler"]["roles"]
+        for result in compiled.results
+    }
+    assert "required_symbol" in roles_by_file["code/feature_flag_service.py"]
+    assert "conflict_value" not in roles_by_file["code/feature_flag_service.py"]
+    assert "conflict_companion:documentation" not in roles_by_file["code/README.md"]
+
+
+def test_code_notes_export_claim_conflict_is_not_compiler_owned() -> None:
+    """Opposing code/prose claims are evidence for Pyrrho, not compiler verdicts."""
+    symbol = _result(
+        'if user.get("type") == "guest":\n    return False',
+        "code/access_control.py",
+        kind=AddressKind.SYMBOL,
+        location="code.access_control.AccessPolicy.can_export_data",
+        address_metadata={
+            "kind": "method",
+            "name": "can_export_data",
+            "qualified_name": "code.access_control.AccessPolicy.can_export_data",
+        },
+    )
+    notes = _result(
+        "The legacy access guide says guest collaborators can export Amber project data.",
+        "code/README.md",
+        location="Holdout2 Code Notes",
+    )
+
+    compiled = compile_evidence(
+        "Can guest collaborators export Amber project data according to the code and code notes?",
+        [symbol, notes],
+        profile=_profile(modality="code"),
+    )
+
+    roles_by_file = {
+        result.file_path: result.metadata["evidence_compiler"]["roles"]
+        for result in compiled.results
+    }
+    assert "conflict_value" not in roles_by_file["code/access_control.py"]
+    assert "conflict_value" not in roles_by_file["code/README.md"]
+    assert "conflict_companion:documentation" not in roles_by_file["code/README.md"]
+
+
+def _profile(
+    *,
+    query_contract: str | None = None,
+    modality: str | None = None,
+    shape: str | None = None,
+) -> SimpleNamespace:
+    """Build a Pyrrho-derived profile fixture."""
+    return SimpleNamespace(
+        query_contract=query_contract,
+        retrieval_modality=modality,
+        answerability_shape=shape,
+    )
+
+
+def _result(
+    content: str,
+    file_path: str,
+    *,
+    kind: AddressKind = AddressKind.SECTION,
+    location: str = "Section",
+    address_metadata: dict | None = None,
+) -> ReadResult:
+    """Build a read result fixture."""
+    address = Address(
+        kind=kind,
+        source_id=file_path,
+        location=location,
+        summary=content,
+        score=1.0,
+        metadata={"source_path": file_path, **(address_metadata or {})},
+    )
+    return ReadResult(address=address, content=content, file_path=file_path)
+
+
+def _address(
+    kind: AddressKind,
+    source_id: str,
+    location: str,
+    summary: str,
+) -> Address:
+    """Build an address fixture."""
+    return Address(
+        kind=kind,
+        source_id=source_id,
+        location=location,
+        summary=summary,
+        score=1.0,
+        metadata={"source_path": source_id},
+    )

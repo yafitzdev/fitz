@@ -11,21 +11,31 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
+from fitz_sage.engines.fitz_krag.evidence_closure import (
+    EvidenceClosureRequest,
+    annotate_closure_result,
+    plan_evidence_closure,
+    request_metadata,
+)
 from fitz_sage.engines.fitz_krag.query_planner import (
     DeterministicQueryPlanner,
     QueryPlan,
     plan_from_batch_result,
 )
+from fitz_sage.engines.fitz_krag.retrieval.trace import read_results_trace
 from fitz_sage.engines.fitz_krag.retrieval_profile import (
+    RetrievalProfile,
     apply_retrieval_modality_weights,
     build_retrieval_profile,
     query_profile_metadata,
 )
+from fitz_sage.governance.evidence_contract import build_query_contract
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
     from fitz_sage.core import Query
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+    from fitz_sage.engines.fitz_krag.evidence_compiler import EvidenceCompilation
     from fitz_sage.engines.fitz_krag.types import Address, ReadResult
 
 logger = get_logger(__name__)
@@ -45,6 +55,7 @@ class RetrievalOutcome:
     retrieval_query: str = ""
     rewrite_result: Any = None
     query_profile_metadata: dict[str, Any] = field(default_factory=dict)
+    retrieval_trace: dict[str, Any] = field(default_factory=dict)
 
 
 class QueryPipeline:
@@ -89,6 +100,7 @@ class QueryPipeline:
         use_query_intelligence: bool | None = None,
         allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
+        allow_table_sql_generation: bool = True,
         expand_context: bool = True,
     ) -> RetrievalOutcome:
         """Run the retrieval half of the KRAG pipeline."""
@@ -132,6 +144,7 @@ class QueryPipeline:
         with self._retrieval_strategy_scope(allow_llm_strategies):
             if use_multi_hop:
                 read_results = self._hop_controller.execute(plan.retrieval_query, profile)
+                retrieval_trace = {"multi_hop": True}
             else:
                 read_results = self._retrieval_pass.run(
                     plan.retrieval_query,
@@ -139,6 +152,7 @@ class QueryPipeline:
                     rewrite_result=plan.rewrite_result,
                     progress=progress,
                 )
+                retrieval_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
         addresses = [result.address for result in read_results]
         retrieval_duration = time.perf_counter() - t0
         if not use_multi_hop:
@@ -155,6 +169,7 @@ class QueryPipeline:
                 retrieval_query=plan.retrieval_query,
                 rewrite_result=plan.rewrite_result,
                 query_profile_metadata=query_profile,
+                retrieval_trace=retrieval_trace,
             )
 
         if expand_context:
@@ -169,7 +184,11 @@ class QueryPipeline:
 
         if execute_table_queries:
             t0 = time.perf_counter()
-            expanded = self._table_handler.process(sanitized, expanded)
+            expanded = self._table_handler.process(
+                sanitized,
+                expanded,
+                allow_sql_generation=allow_table_sql_generation,
+            )
             timings.append(("Table queries", time.perf_counter() - t0))
 
         return RetrievalOutcome(
@@ -181,6 +200,7 @@ class QueryPipeline:
             retrieval_query=plan.retrieval_query,
             rewrite_result=plan.rewrite_result,
             query_profile_metadata=query_profile,
+            retrieval_trace=retrieval_trace,
         )
 
     def retry_retrieve(
@@ -192,6 +212,7 @@ class QueryPipeline:
         progress: Callable[[str], None] | None = None,
         allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
+        allow_table_sql_generation: bool = True,
         expand_context: bool = True,
     ) -> RetrievalOutcome:
         """Run one Pyrrho-directed follow-up retrieval pass and merge new evidence."""
@@ -219,6 +240,7 @@ class QueryPipeline:
                 rewrite_result=outcome.rewrite_result,
                 progress=progress,
             )
+        retry_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
         retry_duration = time.perf_counter() - t0
         timings.extend(_prefixed_retrieval_pass_timings(self._retrieval_pass, "Retry "))
         timings.append(("Retrieval retry", retry_duration))
@@ -233,10 +255,24 @@ class QueryPipeline:
 
         if execute_table_queries and read_results:
             t0 = time.perf_counter()
-            read_results = self._table_handler.process(outcome.sanitized, read_results)
+            read_results = self._table_handler.process(
+                outcome.sanitized,
+                read_results,
+                allow_sql_generation=allow_table_sql_generation,
+            )
             timings.append(("Retry table queries", time.perf_counter() - t0))
 
         expanded = _merge_read_results(outcome.expanded, read_results)
+        retrieval_trace = dict(outcome.retrieval_trace)
+        retries = list(retrieval_trace.get("retries", []))
+        retries.append(
+            {
+                "retrieval_action": retrieval_action,
+                "retrieval_modality": retrieval_modality,
+                "trace": retry_trace,
+            }
+        )
+        retrieval_trace["retries"] = retries
         return RetrievalOutcome(
             sanitized=outcome.sanitized,
             expanded=expanded,
@@ -246,6 +282,123 @@ class QueryPipeline:
             retrieval_query=query,
             rewrite_result=outcome.rewrite_result,
             query_profile_metadata=outcome.query_profile_metadata,
+            retrieval_trace=retrieval_trace,
+        )
+
+    def close_evidence(
+        self,
+        outcome: RetrievalOutcome,
+        compilation: "EvidenceCompilation",
+        *,
+        progress: Callable[[str], None] | None = None,
+        allow_llm_strategies: bool = True,
+        execute_table_queries: bool = True,
+        allow_table_sql_generation: bool = True,
+        expand_context: bool = True,
+    ) -> RetrievalOutcome:
+        """Run contract-driven follow-up retrieval for unresolved evidence obligations."""
+        plan = plan_evidence_closure(
+            outcome.sanitized,
+            outcome.expanded,
+            compilation,
+            profile=outcome.profile,
+        )
+        retrieval_trace = dict(outcome.retrieval_trace)
+        closure_trace = dict(plan.metadata)
+        closure_trace["runs"] = []
+        if not plan.requests:
+            retrieval_trace["evidence_closure"] = closure_trace
+            return replace(outcome, retrieval_trace=retrieval_trace)
+
+        contract = build_query_contract(outcome.sanitized, outcome.profile)
+        expanded = list(outcome.expanded)
+        timings = list(outcome.timings)
+        total_added = 0
+        total_replaced = 0
+        _progress = progress or (lambda _: None)
+
+        for run_index, request in enumerate(plan.requests, start=1):
+            _progress("Closing evidence obligations...")
+            profile = _closure_profile(outcome.profile, self._config, request)
+
+            t0 = time.perf_counter()
+            with self._retrieval_strategy_scope(allow_llm_strategies):
+                read_results = self._retrieval_pass.run(
+                    request.query,
+                    profile,
+                    exclude=None,
+                    rewrite_result=None,
+                    progress=progress,
+                )
+            closure_duration = time.perf_counter() - t0
+            timings.extend(
+                _prefixed_retrieval_pass_timings(
+                    self._retrieval_pass,
+                    f"Evidence closure {run_index} ",
+                )
+            )
+            timings.append((f"Evidence closure {run_index}", closure_duration))
+
+            retrieval_pass_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
+            if expand_context and read_results:
+                t0 = time.perf_counter()
+                read_results = self._expander.expand(
+                    read_results,
+                    entity_expansion_limit=profile.entity_expansion_limit,
+                )
+                timings.append((f"Evidence closure {run_index} expand", time.perf_counter() - t0))
+
+            if execute_table_queries and read_results:
+                t0 = time.perf_counter()
+                read_results = self._table_handler.process(
+                    request.query,
+                    read_results,
+                    allow_sql_generation=allow_table_sql_generation,
+                )
+                timings.append(
+                    (f"Evidence closure {run_index} table queries", time.perf_counter() - t0)
+                )
+
+            annotated = [
+                annotate_closure_result(
+                    result,
+                    request,
+                    contract=contract,
+                    run_index=run_index,
+                )
+                for result in read_results
+            ]
+            expanded, added, replaced = _merge_closure_results(
+                expanded,
+                annotated,
+                allow_replace=True,
+            )
+            total_added += added
+            total_replaced += replaced
+            closure_trace["runs"].append(
+                {
+                    "request": request_metadata(request),
+                    "trace": retrieval_pass_trace,
+                    "read_count": len(read_results),
+                    "added": added,
+                    "replaced": replaced,
+                    "results": read_results_trace(annotated),
+                }
+            )
+
+        closure_trace["added"] = total_added
+        closure_trace["replaced"] = total_replaced
+        retrieval_trace["evidence_closure"] = closure_trace
+        return RetrievalOutcome(
+            sanitized=outcome.sanitized,
+            expanded=expanded,
+            addresses=[result.address for result in expanded],
+            timings=timings,
+            profile=outcome.profile,
+            retrieval_query=outcome.retrieval_query,
+            rewrite_result=outcome.rewrite_result,
+            query_profile_metadata=outcome.query_profile_metadata,
+            retrieval_trace=retrieval_trace,
         )
 
     def _prepare_query_plan(
@@ -395,6 +548,7 @@ def _retry_profile(
         "strategy_weights": weights,
         "top_k": int(top_k * 2),
         "top_read": int(top_read * 1.5),
+        "retrieval_modality": retrieval_modality or getattr(profile, "retrieval_modality", None),
         "run_agentic": True,
     }
 
@@ -437,6 +591,52 @@ def _retry_profile(
     return replace(profile, **kwargs)
 
 
+def _closure_profile(
+    profile: Any,
+    config: "FitzKragConfig",
+    request: EvidenceClosureRequest,
+) -> RetrievalProfile:
+    """Build a tight retrieval profile for one evidence-closure request."""
+    base = profile or RetrievalProfile(
+        top_k=config.top_addresses,
+        top_read=config.top_read,
+    )
+    top_k = max(12, min(int(getattr(base, "top_k", config.top_addresses)), 32))
+    top_read = max(6, min(int(getattr(base, "top_read", config.top_read)), 12))
+    weights = {
+        "code": 0.01,
+        "section": 0.01,
+        "table": 0.01,
+        "chunk": 0.0,
+    }
+    retrieval_modality: str | None = None
+    query_contract = getattr(base, "query_contract", None)
+    if request.modality == "table":
+        weights.update({"table": 1.0, "section": 0.12})
+        retrieval_modality = "structured_table"
+        query_contract = "structured_lookup"
+    elif request.modality == "symbol":
+        weights.update({"code": 1.0, "section": 0.12})
+        retrieval_modality = "code"
+    else:
+        weights.update({"section": 1.0, "code": 0.04, "table": 0.04})
+        retrieval_modality = "unstructured_text"
+
+    return replace(
+        base,
+        strategy_weights=weights,
+        top_k=top_k,
+        top_read=top_read,
+        query_contract=query_contract,
+        retrieval_modality=retrieval_modality,
+        run_agentic=False,
+        inject_corpus_summaries=False,
+        entity_expansion_limit=min(int(getattr(base, "entity_expansion_limit", 3)), 3),
+        specificity="narrow",
+        answer_type="factual",
+    )
+
+
 def _read_result_keys(results: list["ReadResult"]) -> set[tuple[str, str]]:
     """Return address keys for already-read evidence."""
     return {
@@ -464,6 +664,64 @@ def _merge_read_results(
         seen.add(key)
         merged.append(result)
     return merged
+
+
+def _merge_closure_results(
+    current: list["ReadResult"],
+    additional: list["ReadResult"],
+    *,
+    allow_replace: bool,
+) -> tuple[list["ReadResult"], int, int]:
+    """Merge closure results while allowing bridge-grounded table refreshes."""
+    merged = list(current)
+    positions = {
+        (str(result.address.source_id), str(result.address.location)): index
+        for index, result in enumerate(merged)
+        if getattr(result, "address", None) is not None
+    }
+    added = 0
+    replaced = 0
+    for result in additional:
+        address = getattr(result, "address", None)
+        if address is None:
+            merged.append(result)
+            added += 1
+            continue
+        key = (str(address.source_id), str(address.location))
+        if key in positions:
+            if allow_replace and _closure_result_should_replace(merged[positions[key]], result):
+                merged[positions[key]] = result
+                replaced += 1
+            continue
+        positions[key] = len(merged)
+        merged.append(result)
+        added += 1
+    return merged, added, replaced
+
+
+def _closure_result_should_replace(existing: "ReadResult", candidate: "ReadResult") -> bool:
+    """Return whether closure produced a more specific version of an existing result."""
+    if candidate.metadata.get("evidence_closure") and not existing.metadata.get("evidence_closure"):
+        return True
+    if candidate.content == existing.content:
+        return False
+    if candidate.metadata.get("deterministic_table_filter") and not existing.metadata.get(
+        "deterministic_table_filter"
+    ):
+        return True
+    candidate_count = _metadata_int(candidate.metadata.get("result_count"))
+    existing_count = _metadata_int(existing.metadata.get("result_count"))
+    if candidate_count > 0 and (existing_count == 0 or candidate_count < existing_count):
+        return True
+    return False
+
+
+def _metadata_int(value: Any) -> int:
+    """Return an integer metadata value, or zero when absent."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _merge_query_keywords(*keyword_lists: list[str]) -> list[str]:

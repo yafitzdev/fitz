@@ -25,6 +25,7 @@ from fitz_sage.core import (
 )
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+from fitz_sage.engines.fitz_krag.evidence_compiler import compile_evidence
 from fitz_sage.engines.fitz_krag.governance_cutoff import (
     apply_governance_cutoff,
     pyrrho_decision_metadata,
@@ -387,8 +388,7 @@ class FitzKragEngine:
         self._enricher_chat = standard_chat
         self._summarizer_chat = standard_chat
 
-        # Governance — mandatory Pyrrho g3.1 local classifier.
-        # The model lazily loads on first decide() so engine init stays fast.
+        # Governance — mandatory Pyrrho g4-alpha local classifier.
         # The model lazily loads on first decide() so engine init stays fast.
         from fitz_sage.governance import create_governance
 
@@ -894,15 +894,38 @@ class FitzKragEngine:
                     progress=progress,
                     use_query_intelligence=False,
                     allow_llm_strategies=False,
-                    execute_table_queries=False,
+                    execute_table_queries=True,
+                    allow_table_sql_generation=False,
                     expand_context=False,
                 )
                 timings = list(outcome.timings)
+                compilation = compile_evidence(
+                    outcome.sanitized,
+                    outcome.expanded,
+                    profile=outcome.profile,
+                )
+                query_pipeline = self._build_query_pipeline()
+                outcome = query_pipeline.close_evidence(
+                    outcome,
+                    compilation,
+                    progress=progress,
+                    allow_llm_strategies=False,
+                    execute_table_queries=True,
+                    allow_table_sql_generation=False,
+                    expand_context=False,
+                )
+                closure_metadata = outcome.retrieval_trace.get("evidence_closure", {})
+                if closure_metadata.get("added") or closure_metadata.get("replaced"):
+                    compilation = compile_evidence(
+                        outcome.sanitized,
+                        outcome.expanded,
+                        profile=outcome.profile,
+                    )
 
                 requested_top_k = top_k or query.metadata.get("top_k")
                 cutoff = apply_governance_cutoff(
                     outcome.sanitized,
-                    outcome.expanded,
+                    compilation.results,
                     self._governance,
                     profile=outcome.profile,
                     requested_top_k=requested_top_k,
@@ -911,13 +934,14 @@ class FitzKragEngine:
                 retry_request = _pyrrho_retry_request(cutoff.metadata)
                 if retry_request is not None:
                     initial_result_count = len(outcome.expanded)
-                    retried = self._build_query_pipeline().retry_retrieve(
+                    retried = query_pipeline.retry_retrieve(
                         outcome,
                         retrieval_action=retry_request["action"],
                         retrieval_modality=retry_request.get("modality"),
                         progress=progress,
                         allow_llm_strategies=False,
-                        execute_table_queries=False,
+                        execute_table_queries=True,
+                        allow_table_sql_generation=False,
                         expand_context=False,
                     )
                     retry_metadata = {
@@ -930,9 +954,30 @@ class FitzKragEngine:
                     }
                     outcome = retried
                     if len(retried.expanded) > initial_result_count:
-                        cutoff = apply_governance_cutoff(
+                        compilation = compile_evidence(
                             outcome.sanitized,
                             outcome.expanded,
+                            profile=outcome.profile,
+                        )
+                        outcome = query_pipeline.close_evidence(
+                            outcome,
+                            compilation,
+                            progress=progress,
+                            allow_llm_strategies=False,
+                            execute_table_queries=True,
+                            allow_table_sql_generation=False,
+                            expand_context=False,
+                        )
+                        closure_metadata = outcome.retrieval_trace.get("evidence_closure", {})
+                        if closure_metadata.get("added") or closure_metadata.get("replaced"):
+                            compilation = compile_evidence(
+                                outcome.sanitized,
+                                outcome.expanded,
+                                profile=outcome.profile,
+                            )
+                        cutoff = apply_governance_cutoff(
+                            outcome.sanitized,
+                            compilation.results,
                             self._governance,
                             profile=outcome.profile,
                             requested_top_k=requested_top_k,
@@ -958,6 +1003,9 @@ class FitzKragEngine:
                         "engine": "fitz_krag",
                         "source_query": query.text,
                         "query_profile": outcome.query_profile_metadata,
+                        "retrieval_trace": outcome.retrieval_trace,
+                        "evidence_closure": outcome.retrieval_trace.get("evidence_closure", {}),
+                        "evidence_compiler": compilation.metadata,
                         "governance_cutoff": cutoff.metadata,
                     },
                 )
@@ -1092,6 +1140,7 @@ class FitzKragEngine:
         use_query_intelligence: bool | None = None,
         allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
+        allow_table_sql_generation: bool = True,
         expand_context: bool = True,
     ) -> "RetrievalOutcome":
         """Run the retrieval half of the KRAG pipeline.
@@ -1107,6 +1156,7 @@ class FitzKragEngine:
             use_query_intelligence=use_query_intelligence,
             allow_llm_strategies=allow_llm_strategies,
             execute_table_queries=execute_table_queries,
+            allow_table_sql_generation=allow_table_sql_generation,
             expand_context=expand_context,
         )
 

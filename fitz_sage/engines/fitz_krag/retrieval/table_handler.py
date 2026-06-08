@@ -12,6 +12,10 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.engines.fitz_krag.retrieval.table_plan import (
+    build_table_query_plan,
+    execute_table_query_plan,
+)
 from fitz_sage.engines.fitz_krag.types import AddressKind, ReadResult
 
 if TYPE_CHECKING:
@@ -21,6 +25,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_SCAN_ROW_LIMIT = 500
 SQL_PROMPT = """Generate a SQLite query to answer this question.
 
 Table name: {table_name}
@@ -60,21 +65,28 @@ class TableQueryHandler:
         self._sqlite_table_store = sqlite_table_store
         self._config = config
 
-    def process(self, query: str, read_results: list[ReadResult]) -> list[ReadResult]:
+    def process(
+        self,
+        query: str,
+        read_results: list[ReadResult],
+        *,
+        allow_sql_generation: bool = True,
+    ) -> list[ReadResult]:
         """Identify TABLE results, generate SQL, execute, augment content."""
         table_results = [r for r in read_results if r.address.kind == AddressKind.TABLE]
         non_table_results = [r for r in read_results if r.address.kind != AddressKind.TABLE]
 
         if not table_results:
             return read_results
-        if self._chat is None:
-            logger.debug("Table SQL generation skipped: no chat provider configured")
-            return read_results
 
         augmented: list[ReadResult] = []
         for result in table_results:
             try:
-                aug = self._process_table_result(query, result)
+                if self._chat is None or not allow_sql_generation:
+                    logger.debug("Table SQL generation skipped; using deterministic row grounding")
+                    aug = self._process_table_result_deterministic(query, result)
+                else:
+                    aug = self._process_table_result(query, result)
                 augmented.append(aug)
             except Exception as e:
                 logger.warning(f"Table query failed for {result.address.location}: {e}")
@@ -105,21 +117,20 @@ class TableQueryHandler:
             query, table_name, sanitized_cols, sample_rows
         )
         if not rows:
-            return result
+            return self._process_table_result_deterministic(query, result)
 
         name = result.address.metadata.get("name", result.address.location)
         columns = result.address.metadata.get("columns", original_cols)
 
-        results_md = self._format_as_markdown(col_names, rows)
-        content = (
-            f"Table: {name}\n"
-            f"Columns: {', '.join(columns)}\n"
-            f"Total rows: {row_count}\n\n"
-            f"--- SQL Query Results ---\n"
-            f"Query: {sql}\n"
-            f"Results ({len(rows)} rows):\n"
-            f"{results_md}\n\n"
-            f"Note: Results computed from all {row_count} rows."
+        content = self._format_table_evidence(
+            name=name,
+            columns=columns,
+            row_count=row_count,
+            heading="SQL Query Results",
+            query_label=f"Query: {sql}",
+            col_names=col_names,
+            rows=rows,
+            note=f"Results computed from all {row_count} rows.",
         )
 
         return ReadResult(
@@ -127,6 +138,56 @@ class TableQueryHandler:
             content=content,
             file_path=result.file_path,
             metadata={**result.metadata, "sql_executed": sql, "result_count": len(rows)},
+        )
+
+    def _process_table_result_deterministic(self, query: str, result: ReadResult) -> ReadResult:
+        """Return query-grounded table evidence without relying on generated SQL."""
+        table_id = result.metadata.get("table_id") or result.address.metadata.get("table_id")
+        if not table_id:
+            return result
+
+        table_name = self._sqlite_table_store.get_table_name(table_id)
+        if not table_name:
+            return result
+
+        col_info = self._sqlite_table_store.get_columns(table_id)
+        if not col_info:
+            return result
+
+        sanitized_cols, original_cols = col_info
+        row_count = self._sqlite_table_store.get_row_count(table_id)
+        rows = self._get_scan_data(table_name, sanitized_cols)
+        plan = build_table_query_plan(query, sanitized_cols, rows)
+        selected_rows = execute_table_query_plan(plan, rows)
+        if not selected_rows:
+            return result
+
+        name = result.address.metadata.get("name", result.address.location)
+        columns = result.address.metadata.get("columns", original_cols)
+        content = self._format_table_evidence(
+            name=name,
+            columns=columns,
+            row_count=row_count,
+            heading="Deterministic Table Matches",
+            query_label="Selection: query-grounded row filter",
+            col_names=columns,
+            rows=selected_rows,
+            note=(
+                f"Rows selected from a bounded scan of {len(rows)} row(s)"
+                f" out of {row_count} total row(s)."
+            ),
+        )
+
+        return ReadResult(
+            address=result.address,
+            content=content,
+            file_path=result.file_path,
+            metadata={
+                **result.metadata,
+                "deterministic_table_filter": True,
+                "result_count": len(selected_rows),
+                "table_query_plan": plan.metadata,
+            },
         )
 
     def _get_sample_data(
@@ -139,6 +200,20 @@ class TableQueryHandler:
         if result:
             _, rows = result
             return [[str(v) if v is not None else "" for v in row] for row in rows]
+        return []
+
+    def _get_scan_data(self, table_name: str, columns: list[str]) -> list[list[Any]]:
+        """Fetch a bounded row scan for deterministic table grounding."""
+        limit = max(
+            self._config.max_table_results,
+            min(_SCAN_ROW_LIMIT, self._config.max_table_results * 10),
+        )
+        cols_str = ", ".join(f'"{c}"' for c in columns)
+        sql = f'SELECT {cols_str} FROM "{table_name}" ORDER BY _row_num LIMIT {limit}'
+        result = self._sqlite_table_store.execute_query("", sql)
+        if result:
+            _, rows = result
+            return rows
         return []
 
     def _generate_and_execute_sql(
@@ -245,6 +320,32 @@ class TableQueryHandler:
             lines.append(f"\n... and {len(rows) - max_results} more rows")
 
         return "\n".join(lines)
+
+    def _format_table_evidence(
+        self,
+        *,
+        name: str,
+        columns: list[str],
+        row_count: int | None,
+        heading: str,
+        query_label: str,
+        col_names: list[str],
+        rows: list[list[Any]],
+        note: str,
+    ) -> str:
+        """Format table evidence with a stable provenance envelope."""
+        results_md = self._format_as_markdown(col_names, rows)
+        total_rows = row_count if row_count is not None else "unknown"
+        return (
+            f"Table: {name}\n"
+            f"Columns: {', '.join(columns)}\n"
+            f"Total rows: {total_rows}\n\n"
+            f"--- {heading} ---\n"
+            f"{query_label}\n"
+            f"Results ({len(rows)} rows):\n"
+            f"{results_md}\n\n"
+            f"Note: {note}"
+        )
 
     def _extract_sql(self, response: str) -> str:
         """Extract SQL from LLM response."""

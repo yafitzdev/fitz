@@ -374,7 +374,11 @@ class TestAnswer:
             engine._config.top_read,
         )
         engine._expander.expand.assert_called_once_with([read_1], entity_expansion_limit=3)
-        engine._table_handler.process.assert_called_once_with(query.text, expanded)
+        engine._table_handler.process.assert_called_once_with(
+            query.text,
+            expanded,
+            allow_sql_generation=True,
+        )
         engine._assembler.assemble.assert_called_once_with(
             query.text,
             expanded,
@@ -699,7 +703,11 @@ class TestAnswer:
 
         engine.answer(query)
 
-        engine._table_handler.process.assert_called_once_with(query.text, expanded)
+        engine._table_handler.process.assert_called_once_with(
+            query.text,
+            expanded,
+            allow_sql_generation=True,
+        )
         engine._assembler.assemble.assert_called_once_with(query.text, augmented)
 
 
@@ -716,7 +724,13 @@ class TestEvidence:
         engine = _make_engine()
         engine._query_batcher.batch_classify.side_effect = AssertionError("chat prep called")
         engine._synthesizer.generate.side_effect = AssertionError("synthesis called")
-        engine._table_handler.process.side_effect = AssertionError("table SQL called")
+
+        def _deterministic_table_only(query, results, *, allow_sql_generation=True):
+            if allow_sql_generation:
+                raise AssertionError("table SQL called")
+            return results
+
+        engine._table_handler.process.side_effect = _deterministic_table_only
 
         address = Address(
             kind=AddressKind.SECTION,
@@ -750,7 +764,11 @@ class TestEvidence:
         assert pack.items[0].address_kind == "section"
         engine._query_batcher.batch_classify.assert_not_called()
         engine._synthesizer.generate.assert_not_called()
-        engine._table_handler.process.assert_not_called()
+        engine._table_handler.process.assert_called_once_with(
+            "Which test case failed in Sprint 47?",
+            [result],
+            allow_sql_generation=False,
+        )
 
     def test_evidence_adds_semantic_keywords_to_broad_recall_profile(self):
         """Evidence mode enriches broad recall keywords without full chat prep."""
@@ -783,7 +801,7 @@ class TestEvidence:
 
         engine._query_batcher.batch_classify.assert_not_called()
         engine._semantic_keyword_batcher.batch_classify.assert_called_once()
-        profile = engine._retrieval_router.retrieve.call_args.args[1]
+        profile = engine._retrieval_router.retrieve.call_args_list[0].args[1]
         assert "payment retry" in profile.keywords
         assert "timeout failure" in profile.keywords
 
@@ -826,7 +844,7 @@ class TestEvidence:
 
         pack = engine.evidence(Query(text="Compare React and Vue performance"), top_k=2)
 
-        profile = engine._retrieval_router.retrieve.call_args.args[1]
+        profile = engine._retrieval_router.retrieve.call_args_list[0].args[1]
         assert profile.query_contract == "comparison_coverage"
         assert profile.query_contract_confidence == 0.91
         assert profile.query_contract_probabilities == {"comparison_coverage": 0.91}
@@ -923,10 +941,24 @@ class TestEvidence:
         )
         engine._retrieval_router.retrieve.side_effect = [
             [initial_address],
+            [],
             [initial_address, retry_address],
+            [],
         ]
         engine._reader.read.side_effect = [[initial_result], [retry_result]]
         engine._governance = MagicMock()
+        engine._governance.classify_query = lambda _: SimpleNamespace(
+            query_contract=SimpleNamespace(
+                final_label="structured_lookup",
+                confidence=0.90,
+                probabilities={"structured_lookup": 0.90},
+            ),
+            retrieval_modality=SimpleNamespace(
+                final_label="structured_table",
+                confidence=0.90,
+                probabilities={"structured_table": 0.90},
+            ),
+        )
         engine._governance.decide.side_effect = [
             _decision(
                 AnswerMode.TRUSTWORTHY,
@@ -952,11 +984,13 @@ class TestEvidence:
 
         assert pack.mode == AnswerMode.TRUSTWORTHY
         assert [item.file_path for item in pack.items] == [
-            "docs/summary.md",
             "docs/audit.md",
+            "docs/summary.md",
         ]
-        assert engine._retrieval_router.retrieve.call_count == 2
-        retry_profile = engine._retrieval_router.retrieve.call_args_list[1].args[1]
+        assert engine._retrieval_router.retrieve.call_count == 3
+        closure_profile = engine._retrieval_router.retrieve.call_args_list[1].args[1]
+        assert closure_profile.strategy_weights["table"] >= 1.0
+        retry_profile = engine._retrieval_router.retrieve.call_args_list[2].args[1]
         assert (
             retry_profile.top_k > engine._retrieval_router.retrieve.call_args_list[0].args[1].top_k
         )

@@ -318,19 +318,6 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
         )
         return _append_unique_reasons(lines, reasons)
 
-    structured_lookup = cutoff.get("structured_lookup_contract")
-    if isinstance(structured_lookup, dict):
-        identifiers = structured_lookup.get("matched_identifiers", [])
-        identifier_text = ", ".join(str(identifier) for identifier in identifiers) or "identifier"
-        selected = structured_lookup.get("matched_sources", cutoff.get("selected", "?"))
-        lines.append(
-            "Structured lookup: retrieval contract satisfied by exact match for "
-            f"{identifier_text}; selected {selected} source(s)."
-        )
-        shown_reasons.add(
-            f"Structured lookup contract satisfied by exact identifier match: {identifier_text}."
-        )
-
     pyrrho = _pyrrho_metadata(metadata)
     probs = pyrrho.get("probabilities", {}) if pyrrho else {}
     if isinstance(probs, dict) and probs:
@@ -373,7 +360,7 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
         lines.append("Cutoff: " + "; ".join(parts))
 
     reason = pyrrho.get("reason") if pyrrho else None
-    if isinstance(reason, str) and reason and not isinstance(structured_lookup, dict):
+    if isinstance(reason, str) and reason:
         lines.append(reason)
         shown_reasons.add(reason)
     return _append_unique_reasons(lines, reasons, shown_reasons=shown_reasons)

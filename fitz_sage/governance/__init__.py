@@ -5,9 +5,10 @@ Epistemic governance.
 A single classifier decides whether retrieved sources support a confident
 answer (TRUSTWORTHY), contradict each other (DISPUTED), or simply don't
 contain enough information (ABSTAIN). The standard classifier is
-[pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1), a multitask
+[pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g4-alpha), a multitask
 ModernBERT model with governance, query-contract, route/domain, taxonomy,
-scalar, and optional release-specific heads running locally on CPU.
+retrieval-action, gap-type, answerability-shape, retrieval-modality, and scalar
+heads running locally on CPU.
 
 Governance is mandatory in the standard product path. The ``governance:``
 config key declares which pyrrho classifier to use:
@@ -18,7 +19,7 @@ config key declares which pyrrho classifier to use:
     decision = governance.decide(query, retrieved_contexts)
     # decision.mode in {TRUSTWORTHY, DISPUTED, ABSTAIN}
     # decision.probs is the governance softmax distribution
-    # decision.query_contract / route / taxonomy expose head metadata
+    # decision query, evidence, route, taxonomy, action, gap, modality heads expose metadata
     # governance.classify_query(query) returns pre-retrieval query signals
     # decision.reason is a one-line human-readable summary
 
@@ -28,6 +29,7 @@ used by the retrieval stack.
 
 from __future__ import annotations
 
+from .evidence_contract import QueryContract, build_query_contract
 from .protocol import EvidenceItem
 from .pyrrho import GovernanceDecision, Pyrrho, QueryDecision
 
@@ -36,9 +38,9 @@ def create_governance(spec: str) -> Pyrrho:
     """Build a governance classifier from a config spec.
 
     Args:
-        spec: ``"pyrrho"`` (the default classifier),
-            ``"pyrrho/<hf-model-id>"`` (a custom pyrrho fine-tune), or
-            ``"pyrrho/<local-package-path>"`` (an unpacked pyrrho release).
+        spec: ``"pyrrho"`` (the default g4-alpha classifier),
+            ``"pyrrho/<hf-model-id>"`` (a compatible Pyrrho g4 package), or
+            ``"pyrrho/<local-package-path>"`` (an unpacked compatible package).
 
     Returns:
         A ``Pyrrho`` instance.
@@ -47,7 +49,9 @@ def create_governance(spec: str) -> Pyrrho:
         ValueError: if ``spec`` names an unknown governance provider.
     """
     if not isinstance(spec, str) or not spec.strip():
-        raise ValueError("Governance must be 'pyrrho' or 'pyrrho/<hf-model-id>'.")
+        raise ValueError(
+            "Governance must be 'pyrrho' or 'pyrrho/<compatible-g4-package>'."
+        )
 
     provider, _, model = spec.partition("/")
     provider, model = provider.strip(), model.strip()
@@ -55,7 +59,7 @@ def create_governance(spec: str) -> Pyrrho:
         return Pyrrho(model_id=model) if model else Pyrrho()
     raise ValueError(
         f"Unknown governance provider: {provider!r}. "
-        f"Supported: 'pyrrho' or 'pyrrho/<hf-model-id>'."
+        f"Supported: 'pyrrho' or 'pyrrho/<compatible-g4-package>'."
     )
 
 
@@ -63,6 +67,8 @@ __all__ = [
     "EvidenceItem",
     "GovernanceDecision",
     "Pyrrho",
+    "QueryContract",
     "QueryDecision",
+    "build_query_contract",
     "create_governance",
 ]

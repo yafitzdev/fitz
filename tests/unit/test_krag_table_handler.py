@@ -182,6 +182,185 @@ class TestTableQueryHandler:
         # Original result returned on failure
         assert results[0].address.kind == AddressKind.TABLE
 
+    def test_process_without_chat_returns_query_grounded_rows(self):
+        """No-chat table handling should still return relevant row evidence."""
+        sqlite_table_store = MagicMock(name="sqlite_table_store")
+        sqlite_table_store.get_table_name.return_value = "tbl_assets"
+        sqlite_table_store.get_columns.return_value = (
+            ["asset_id", "environment", "encrypted_at_rest"],
+            ["asset_id", "environment", "encrypted_at_rest"],
+        )
+        sqlite_table_store.get_row_count.return_value = 3
+        sqlite_table_store.execute_query.return_value = (
+            ["asset_id", "environment", "encrypted_at_rest"],
+            [
+                ["AST-22", "Prod", "no"],
+                ["AST-23", "Prod", "yes"],
+                ["AST-24", "Stage", "no"],
+            ],
+        )
+        config = MagicMock(name="config")
+        config.max_table_results = 100
+        handler = TableQueryHandler(None, sqlite_table_store, config)
+        table_result = _make_table_read_result(name="Assets")
+
+        results = handler.process("Which Prod assets are unencrypted?", [table_result])
+
+        assert "Deterministic Table Matches" in results[0].content
+        assert "AST-22" in results[0].content
+        assert "AST-23" not in results[0].content
+        assert results[0].metadata["deterministic_table_filter"] is True
+
+    def test_deterministic_table_filter_scopes_superlative_to_row_values(self):
+        """Superlative row selection should filter to entity-matching rows before sorting."""
+        sqlite_table_store = MagicMock(name="sqlite_table_store")
+        sqlite_table_store.get_table_name.return_value = "tbl_experiments"
+        sqlite_table_store.get_columns.return_value = (
+            ["experiment_id", "project", "conversion_rate"],
+            ["experiment_id", "project", "conversion_rate"],
+        )
+        sqlite_table_store.get_row_count.return_value = 3
+        sqlite_table_store.execute_query.return_value = (
+            ["experiment_id", "project", "conversion_rate"],
+            [
+                ["EXP-21", "Atlas", "6.2"],
+                ["EXP-22", "Atlas", "7.4"],
+                ["EXP-99", "Zephyr", "9.9"],
+            ],
+        )
+        config = MagicMock(name="config")
+        config.max_table_results = 100
+        handler = TableQueryHandler(None, sqlite_table_store, config)
+        table_result = _make_table_read_result(name="Experiments")
+
+        results = handler.process(
+            "Which Atlas experiment had the highest conversion rate?",
+            [table_result],
+        )
+
+        assert "EXP-22" in results[0].content
+        assert "EXP-99" not in results[0].content
+
+    def test_process_can_disable_sql_generation_for_evidence_mode(self):
+        """Evidence mode can ground table rows without calling the chat SQL generator."""
+        handler, chat, sqlite_table_store = _make_handler(
+            execute_result=(
+                ["invoice_id", "vendor", "late_fee_percent"],
+                [["INV-702", "Cobalt CDN", "2.0"], ["INV-703", "Skyline Labs", "0.0"]],
+            ),
+            table_name="tbl_invoices",
+            columns=(
+                ["invoice_id", "vendor", "late_fee_percent"],
+                ["invoice_id", "vendor", "late_fee_percent"],
+            ),
+            row_count=2,
+        )
+        table_result = _make_table_read_result(name="Invoices")
+
+        results = handler.process(
+            "Which vendor owns INV-702?",
+            [table_result],
+            allow_sql_generation=False,
+        )
+
+        chat.chat.assert_not_called()
+        assert "Deterministic Table Matches" in results[0].content
+        assert "Cobalt CDN" in results[0].content
+
+    def test_deterministic_table_filter_keeps_exact_identifier_for_boolean_question(self):
+        """Exact row lookup should not discard a row because the boolean answer is false."""
+        sqlite_table_store = MagicMock(name="sqlite_table_store")
+        sqlite_table_store.get_table_name.return_value = "tbl_assets"
+        sqlite_table_store.get_columns.return_value = (
+            ["asset_id", "encrypted", "owner"],
+            ["asset_id", "encrypted", "owner"],
+        )
+        sqlite_table_store.get_row_count.return_value = 2
+        sqlite_table_store.execute_query.return_value = (
+            ["asset_id", "encrypted", "owner"],
+            [["AST-22", "no", "Data Platform"], ["AST-31", "yes", "Search Platform"]],
+        )
+        config = MagicMock(name="config")
+        config.max_table_results = 100
+        handler = TableQueryHandler(None, sqlite_table_store, config)
+        table_result = _make_table_read_result(name="Assets")
+
+        results = handler.process("Is asset AST-22 encrypted?", [table_result])
+
+        assert "AST-22" in results[0].content
+        assert "Data Platform" in results[0].content
+        assert "AST-31" not in results[0].content
+
+    def test_deterministic_table_plan_does_not_sort_on_identifier_columns(self):
+        """Metric superlatives should bind to metric columns, not numeric-looking IDs."""
+        sqlite_table_store = MagicMock(name="sqlite_table_store")
+        sqlite_table_store.get_table_name.return_value = "tbl_exports"
+        sqlite_table_store.get_columns.return_value = (
+            ["export_id", "dataset", "rows"],
+            ["export_id", "dataset", "rows"],
+        )
+        sqlite_table_store.get_row_count.return_value = 3
+        sqlite_table_store.execute_query.return_value = (
+            ["export_id", "dataset", "rows"],
+            [
+                ["EXP-501", "customer_export_logs", "120000"],
+                ["EXP-504", "audit_trail", "990000"],
+                ["EXP-505", "biometric_artifacts", "1200"],
+            ],
+        )
+        config = MagicMock(name="config")
+        config.max_table_results = 100
+        handler = TableQueryHandler(None, sqlite_table_store, config)
+        table_result = _make_table_read_result(name="Exports")
+
+        results = handler.process("Which export has the most rows?", [table_result])
+
+        assert "EXP-504" in results[0].content
+        assert "audit_trail" in results[0].content
+        assert "EXP-501" not in results[0].content
+        assert results[0].metadata["table_query_plan"]["sort"] == {
+            "column": "rows",
+            "direction": "max",
+        }
+
+    def test_deterministic_table_plan_applies_boolean_predicate_before_superlative(self):
+        """Boolean column predicates should scope the candidate set before ordering."""
+        sqlite_table_store = MagicMock(name="sqlite_table_store")
+        sqlite_table_store.get_table_name.return_value = "tbl_incidents"
+        sqlite_table_store.get_columns.return_value = (
+            ["incident_id", "duration_minutes", "customer_visible"],
+            ["incident_id", "duration_minutes", "customer_visible"],
+        )
+        sqlite_table_store.get_row_count.return_value = 3
+        sqlite_table_store.execute_query.return_value = (
+            ["incident_id", "duration_minutes", "customer_visible"],
+            [
+                ["INC-611", "42", "yes"],
+                ["INC-724", "26", "no"],
+                ["INC-744", "88", "no"],
+            ],
+        )
+        config = MagicMock(name="config")
+        config.max_table_results = 100
+        handler = TableQueryHandler(None, sqlite_table_store, config)
+        table_result = _make_table_read_result(name="Incidents")
+
+        results = handler.process(
+            "Which customer-visible incident has the longest duration?",
+            [table_result],
+        )
+
+        assert "INC-611" in results[0].content
+        assert "INC-744" not in results[0].content
+        predicates = results[0].metadata["table_query_plan"]["predicates"]
+        assert predicates == [
+            {
+                "column": "customer_visible",
+                "accepted_values": ["1", "active", "enabled", "on", "true", "yes"],
+                "source": "boolean_column",
+            }
+        ]
+
 
 class TestHelperMethods:
     def test_format_as_markdown_empty(self):
