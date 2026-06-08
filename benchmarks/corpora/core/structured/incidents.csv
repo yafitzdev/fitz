@@ -1,0 +1,6 @@
+incident_id,service,severity,owner,opened_date,resolved_minutes,region
+INC-101,search,S1,Nora,2026-05-01,42,west
+INC-102,billing,S2,Ivan,2026-05-03,130,east
+INC-103,auth,S1,Mina,2026-05-05,25,west
+INC-104,warehouse,S3,Omar,2026-05-07,240,north
+

@@ -1,0 +1,6 @@
+warehouse_id,region,item,stock,unit
+WH-1,west,flux capacitor,17,count
+WH-2,east,flux capacitor,4,count
+WH-3,west,torque wrench,22,count
+WH-4,north,calibration strips,0,count
+

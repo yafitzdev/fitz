@@ -1,0 +1,6 @@
+rollout_id,flag_key,service_id,region,status,rollout_percent,expires_on
+ROL-401,vega_private_beta,SVC-202,emea,active,35,2026-09-30
+ROL-402,identity_stepup,SVC-204,global,active,80,2026-12-31
+ROL-403,pdf_async_queue,SVC-203,us,paused,15,2026-08-15
+ROL-404,analytics_cache_v2,SVC-205,us,disabled,0,2026-07-31
+ROL-405,payment_replay_guard,SVC-201,eu,active,100,2027-01-15

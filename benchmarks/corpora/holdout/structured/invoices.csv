@@ -1,0 +1,6 @@
+invoice_id,vendor,status,amount_usd,due_date,owner,late_fee_percent
+INV-700,Skyline Labs,overdue,18400,2026-06-15,Finance Ops,1.5
+INV-701,Northstar Data,paid,9200,2026-05-31,Finance Ops,0
+INV-702,Cobalt CDN,overdue,27100,2026-06-20,Infrastructure,2.0
+INV-703,Harbor Legal,pending,7600,2026-07-01,Legal Ops,0
+INV-704,Blue Peak,overdue,14300,2026-06-10,Procurement,1.0

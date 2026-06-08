@@ -1,0 +1,6 @@
+experiment_id,product,variant,conversion_rate,lift_percent,owner,status
+EXP-17,mobile_checkout,control,4.2,0,Nina,complete
+EXP-17,mobile_checkout,variant_b,5.1,21.4,Nina,complete
+EXP-22,atlas_search,control,9.8,0,Rowan,active
+EXP-22,atlas_search,semantic_ranker,11.4,16.3,Rowan,active
+EXP-31,pdf_export,compact_toolbar,7.5,8.1,Mateo,paused

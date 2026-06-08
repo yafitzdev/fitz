@@ -1,0 +1,591 @@
+# benchmarks/cases/holdout2.yaml
+- id: holdout2_service_token_rotation
+  domain: unstructured
+  query: "How often do service accounts rotate API tokens?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/access_policy.md
+        kind: section
+        contains: ["Service accounts", "45 days"]
+  tags: [holdout2, unstructured, policy, exact_fact]
+
+- id: holdout2_break_glass_expiry
+  domain: unstructured
+  query: "How long does break-glass access last?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/access_policy.md
+        contains: ["Break-glass", "4 hours", "incident ticket"]
+  tags: [holdout2, unstructured, policy, exact_fact]
+
+- id: holdout2_guest_export_policy
+  domain: unstructured
+  query: "Can guest collaborators export customer data from Amber project boards?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/access_policy.md
+        contains: ["Guest collaborators", "Amber", "cannot export"]
+  tags: [holdout2, unstructured, policy, exact_fact]
+
+- id: holdout2_latest_mfa_exception_status
+  domain: unstructured
+  query: "What is the current MFA exception status for customer data systems?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/access_policy.md
+        contains: ["2026-08-02", "no active MFA exceptions"]
+    forbidden_evidence:
+      - file: unstructured/access_policy.md
+        contains: ["2026-03-10", "may skip hardware keys"]
+  tags: [holdout2, unstructured, temporal, freshness]
+
+- id: holdout2_inc611_final_outage
+  domain: unstructured
+  query: "What final customer-visible outage duration was confirmed for INC-611?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/incident_review.md
+        contains: ["Final review", "INC-611", "42 minutes"]
+    forbidden_evidence:
+      - file: unstructured/incident_review.md
+        contains: ["estimated", "18 minutes"]
+  tags: [holdout2, unstructured, temporal, final_fact]
+
+- id: holdout2_inc611_commander_root_cause
+  domain: unstructured
+  query: "Who commanded INC-611 and what was the root cause?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/incident_review.md
+        contains: ["Dana Ortiz", "replay worker", "idempotency queue"]
+  tags: [holdout2, unstructured, incident, exact_fact]
+
+- id: holdout2_vendor_security_review_threshold
+  domain: unstructured
+  query: "Which vendors require Security review before renewal?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/procurement_policy.md
+        contains: ["annual spend above 50000 USD", "Security review"]
+  tags: [holdout2, unstructured, policy, exact_fact]
+
+- id: holdout2_meridian_notice_policy
+  domain: unstructured
+  query: "How much written notice is required to cancel MeridianAI auto-renewal?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/procurement_policy.md
+        contains: ["MeridianAI", "75 days written notice"]
+  tags: [holdout2, unstructured, contract, exact_fact]
+
+- id: holdout2_project_vega_latest_status
+  domain: unstructured
+  query: "What is the latest Project Vega EMEA status?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/roadmap_status.md
+        contains: ["2026-07-12", "private beta", "12 design partners"]
+    forbidden_evidence:
+      - file: unstructured/roadmap_status.md
+        contains: ["2026-02-01", "paused pending legal review"]
+  tags: [holdout2, unstructured, temporal, freshness]
+
+- id: holdout2_nimbus_owner_ga
+  domain: unstructured
+  query: "Who owns Project Nimbus and what is its GA target?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/roadmap_status.md
+        contains: ["Mei Rao", "2026-11-30"]
+  tags: [holdout2, unstructured, roadmap, exact_fact]
+
+- id: holdout2_comet_budget_missing
+  domain: unstructured
+  query: "What exact budget amount has Project Comet been approved for?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/roadmap_status.md
+        contains: ["Project Comet", "budget has not been approved"]
+  tags: [holdout2, unstructured, negative_fact, exact_fact]
+
+- id: holdout2_enterprise_critical_ack
+  domain: unstructured
+  query: "What acknowledgement time applies to Enterprise Critical cases?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/support_handbook.md
+        contains: ["Enterprise Critical", "7 minutes"]
+  tags: [holdout2, unstructured, sla, exact_fact]
+
+- id: holdout2_standard_p3_response
+  domain: unstructured
+  query: "What first response time applies to Standard P3 support cases?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/support_handbook.md
+        contains: ["Standard P3", "6 hours"]
+  tags: [holdout2, unstructured, sla, exact_fact]
+
+- id: holdout2_vega_pipeline_conflict
+  domain: unstructured
+  query: "What Vega pipeline ARR estimate should we trust?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: unstructured/risk_finance_memo.md
+        contains: ["2.1 million ARR"]
+      - file: unstructured/risk_audit_note.md
+        contains: ["2.8 million ARR"]
+  tags: [holdout2, unstructured, conflict, governance]
+
+- id: holdout2_rsk81_latest_residual_score
+  domain: unstructured
+  query: "What is the final residual score for risk RSK-81?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/risk_audit_note.md
+        contains: ["RSK-81", "final residual score", "18"]
+    forbidden_evidence:
+      - file: unstructured/risk_finance_memo.md
+        contains: ["RSK-81", "12"]
+  tags: [holdout2, unstructured, temporal, final_fact]
+
+- id: holdout2_service_svc204_owner_slo
+  domain: structured
+  query: "Who owns service SVC-204 and what SLO is recorded?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/services.csv
+        kind: table
+        contains: ["SVC-204", "Identity", "99.99"]
+  tags: [holdout2, structured, table, exact_fact]
+
+- id: holdout2_gold_apac_service
+  domain: structured
+  query: "Which gold APAC service is listed in the service catalog?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/services.csv
+        kind: table
+        contains: ["SVC-202", "search-index", "gold", "apac"]
+  tags: [holdout2, structured, table, filtered_lookup]
+
+- id: holdout2_highest_slo_service
+  domain: structured
+  query: "Which service has the highest SLO percent?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/services.csv
+        kind: table
+        contains: ["SVC-204", "identity-core", "99.99"]
+  tags: [holdout2, structured, table, comparison]
+
+- id: holdout2_incident_inc730_status_commander
+  domain: structured
+  query: "What status and commander are recorded for incident INC-730?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/incidents.csv
+        kind: table
+        contains: ["INC-730", "open", "Mira Chen"]
+  tags: [holdout2, structured, table, exact_fact]
+
+- id: holdout2_longest_customer_visible_incident
+  domain: structured
+  query: "Which customer-visible incident has the longest duration?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/incidents.csv
+        kind: table
+        contains: ["INC-611", "yes", "42"]
+  tags: [holdout2, structured, table, comparison]
+
+- id: holdout2_vendor_meridian_spend_notice
+  domain: structured
+  query: "What annual spend and notice days are recorded for vendor VEN-301?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/vendors.csv
+        kind: table
+        contains: ["VEN-301", "64000", "75"]
+  tags: [holdout2, structured, table, exact_fact]
+
+- id: holdout2_highest_spend_vendor
+  domain: structured
+  query: "Which vendor has the highest annual spend?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/vendors.csv
+        kind: table
+        contains: ["VEN-303", "Northwind CDN", "112000"]
+  tags: [holdout2, structured, table, comparison]
+
+- id: holdout2_legal_vendor_soc2
+  domain: structured
+  query: "Which legal vendor lacks SOC 2?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/vendors.csv
+        kind: table
+        contains: ["VEN-302", "Quartz Legal", "no"]
+  tags: [holdout2, structured, table, filtered_lookup]
+
+- id: holdout2_rollout_rol401_status_expiry
+  domain: structured
+  query: "What status, percent, and expiry are recorded for rollout ROL-401?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/rollouts.csv
+        kind: table
+        contains: ["ROL-401", "active", "35", "2026-09-30"]
+  tags: [holdout2, structured, table, exact_fact]
+
+- id: holdout2_disabled_rollout
+  domain: structured
+  query: "Which rollout is disabled for analytics_cache_v2?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/rollouts.csv
+        kind: table
+        contains: ["ROL-404", "analytics_cache_v2", "disabled"]
+  tags: [holdout2, structured, table, filtered_lookup]
+
+- id: holdout2_export_exp502_encryption_owner
+  domain: structured
+  query: "Is export EXP-502 encrypted and who owns it?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/exports.csv
+        kind: table
+        contains: ["EXP-502", "no", "Data Platform"]
+  tags: [holdout2, structured, table, exact_fact]
+
+- id: holdout2_largest_export_dataset
+  domain: structured
+  query: "Which export has the most rows?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/exports.csv
+        kind: table
+        contains: ["EXP-504", "audit_trail", "990000"]
+  tags: [holdout2, structured, table, comparison]
+
+- id: holdout2_control_ctl601_status_due
+  domain: structured
+  query: "What status and due date are recorded for control CTL-601?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/controls.csv
+        kind: table
+        contains: ["CTL-601", "needs_retest", "2026-08-01"]
+  tags: [holdout2, structured, table, exact_fact]
+
+- id: holdout2_blocked_control
+  domain: structured
+  query: "Which control is blocked for risk RSK-83?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/controls.csv
+        kind: table
+        contains: ["CTL-603", "RSK-83", "blocked"]
+  tags: [holdout2, structured, table, filtered_lookup]
+
+- id: holdout2_code_export_data_method
+  domain: code
+  query: "Which Python method decides whether a user may export customer data?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/access_control.py
+        kind: symbol
+        location_contains: "can_export_data"
+        contains: ["archived", "guest", "ADMIN_OVERRIDE_ENV"]
+  tags: [holdout2, code, symbol_lookup]
+
+- id: holdout2_code_admin_override_env
+  domain: code
+  query: "Which Python constant contains the admin override environment variable?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/access_control.py
+        kind: symbol
+        location_contains: "ADMIN_OVERRIDE_ENV"
+        contains: ["FITZ_HOLDOUT2_ADMIN_OVERRIDE"]
+  tags: [holdout2, code, symbol_lookup, exact_fact]
+
+- id: holdout2_code_guest_export_conflict
+  domain: code
+  query: "Can guest collaborators export Amber project data according to the code and code notes?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: code/access_control.py
+        contains: ["guest", "return False"]
+      - file: code/README.md
+        contains: ["guest collaborators can export Amber project data"]
+  tags: [holdout2, code, stale_docs, conflict]
+
+- id: holdout2_code_token_rotation_days
+  domain: code
+  query: "Which method returns token rotation days for service accounts?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/access_control.py
+        kind: symbol
+        location_contains: "token_rotation_days"
+        contains: ["SERVICE_TOKEN_ROTATION_DAYS", "HUMAN_TOKEN_ROTATION_DAYS"]
+  tags: [holdout2, code, symbol_lookup]
+
+- id: holdout2_code_export_job_dataclass
+  domain: code
+  query: "Which dataclass represents a scheduled export job?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/export_scheduler.py
+        kind: symbol
+        location_contains: "ExportJob"
+        contains: ["export_id", "dataset", "window_utc"]
+  tags: [holdout2, code, symbol_lookup]
+
+- id: holdout2_code_apac_export_window
+  domain: code
+  query: "Which function returns the APAC export window of 16:00?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/export_scheduler.py
+        kind: symbol
+        location_contains: "next_export_window_utc"
+        contains: ["apac", "16:00"]
+  tags: [holdout2, code, symbol_lookup]
+
+- id: holdout2_code_skip_unencrypted_large_export
+  domain: code
+  query: "Which function skips large unencrypted exports?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/export_scheduler.py
+        kind: symbol
+        location_contains: "should_skip_export"
+        contains: ["row_count > 100000", "not encrypted"]
+  tags: [holdout2, code, symbol_lookup]
+
+- id: holdout2_code_escalation_channel_s0
+  domain: code
+  query: "Which function maps S0 incidents to the incident command channel?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/incident_triage.py
+        kind: symbol
+        location_contains: "escalation_channel"
+        contains: ["ESCALATION_CHANNELS", "#incident-command"]
+  tags: [holdout2, code, symbol_lookup]
+
+- id: holdout2_code_major_incident_conflict
+  domain: code
+  query: "Are major incidents never declared before 60 minutes?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: code/incident_triage.py
+        contains: ["should_declare_major", "duration_minutes >= 30"]
+      - file: code/README.md
+        contains: ["never declared before 60"]
+  tags: [holdout2, code, stale_docs, conflict]
+
+- id: holdout2_code_enterprise_discount
+  domain: code
+  query: "Which function returns an 18 percent discount for platinum accounts with at least 1000 seats?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/pricing_engine.py
+        kind: symbol
+        location_contains: "enterprise_discount"
+        contains: ["platinum", "1000", "0.18"]
+  tags: [holdout2, code, symbol_lookup]
+
+- id: holdout2_code_pricing_override_env
+  domain: code
+  query: "Which Python constant controls pricing discount override environment variables?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/pricing_engine.py
+        kind: symbol
+        location_contains: "DISCOUNT_OVERRIDE_ENV"
+        contains: ["FITZ_HOLDOUT2_DISCOUNT_OVERRIDE"]
+  tags: [holdout2, code, symbol_lookup, exact_fact]
+
+- id: holdout2_mixed_vega_rollout_service_owner
+  domain: mixed
+  query: "Using the release brief, which rollout and service owner apply to Project Vega EMEA?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/release_brief.md
+        contains: ["Project Vega EMEA", "ROL-401", "SVC-202"]
+      - file: structured/rollouts.csv
+        contains: ["ROL-401", "SVC-202", "35"]
+      - file: structured/services.csv
+        contains: ["SVC-202", "Search"]
+  tags: [holdout2, mixed, table, unstructured, multi_hop]
+
+- id: holdout2_mixed_vega_latest_status_rollout
+  domain: mixed
+  query: "Using the release brief, what is Vega's latest roadmap status and rollout expiry?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/release_brief.md
+        contains: ["roadmap status document", "rollout table"]
+      - file: unstructured/roadmap_status.md
+        contains: ["2026-07-12", "private beta"]
+      - file: structured/rollouts.csv
+        contains: ["ROL-401", "2026-09-30"]
+  tags: [holdout2, mixed, table, unstructured, temporal, multi_hop]
+
+- id: holdout2_mixed_access_guest_conflict
+  domain: mixed
+  query: "Using the access brief, compare current guest export behavior against the legacy code notes."
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: mixed/access_brief.md
+        contains: ["Amber project", "access_control.py"]
+      - file: unstructured/access_policy.md
+        contains: ["Guest collaborators", "cannot export"]
+      - file: code/access_control.py
+        contains: ["can_export_data", "guest", "return False"]
+      - file: code/README.md
+        contains: ["guest collaborators can export Amber project data"]
+  tags: [holdout2, mixed, code, unstructured, stale_docs, conflict]
+
+- id: holdout2_mixed_export_exp502_skip
+  domain: mixed
+  query: "Using the export brief, should EXP-502 be skipped by the export scheduler?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/export_brief.md
+        contains: ["EXP-502", "skip logic"]
+      - file: structured/exports.csv
+        contains: ["EXP-502", "840000", "no"]
+      - file: code/export_scheduler.py
+        contains: ["should_skip_export", "row_count > 100000", "not encrypted"]
+  tags: [holdout2, mixed, table, code, multi_hop]
+
+- id: holdout2_mixed_biometric_export_retention
+  domain: mixed
+  query: "Using the export brief, what deletion rule applies to EXP-505?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/export_brief.md
+        contains: ["EXP-505", "biometric artifacts"]
+      - file: structured/exports.csv
+        contains: ["EXP-505", "biometric_artifacts"]
+      - file: unstructured/data_policy.md
+        contains: ["Biometric artifacts", "24 hours"]
+  tags: [holdout2, mixed, table, unstructured, multi_hop]
+
+- id: holdout2_mixed_rsk81_control_latest_score
+  domain: mixed
+  query: "Using the risk brief, what control tracks RSK-81 and what final residual score did audit record?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/risk_brief.md
+        contains: ["RSK-81", "CTL-601"]
+      - file: structured/controls.csv
+        contains: ["CTL-601", "needs_retest"]
+      - file: unstructured/risk_audit_note.md
+        contains: ["RSK-81", "final residual score", "18"]
+  tags: [holdout2, mixed, table, unstructured, temporal, multi_hop]
+
+- id: holdout2_mixed_vega_pipeline_dispute
+  domain: mixed
+  query: "Using the risk brief, what conflicting Vega pipeline estimates are present?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: mixed/risk_brief.md
+        contains: ["finance memo", "audit note", "disagree"]
+      - file: unstructured/risk_finance_memo.md
+        contains: ["2.1 million ARR"]
+      - file: unstructured/risk_audit_note.md
+        contains: ["2.8 million ARR"]
+  tags: [holdout2, mixed, unstructured, conflict, governance]
+
+- id: holdout2_mixed_meridian_vendor_policy_code
+  domain: mixed
+  query: "Using the pricing brief, what notice applies to MeridianAI and which code path mirrors model_eval renewal notice?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/pricing_brief.md
+        contains: ["MeridianAI", "VEN-301", "model_eval"]
+      - file: structured/vendors.csv
+        contains: ["VEN-301", "MeridianAI", "75"]
+      - file: unstructured/procurement_policy.md
+        contains: ["MeridianAI", "75 days written notice"]
+      - file: code/pricing_engine.py
+        contains: ["renewal_notice_days", "model_eval", "75"]
+  tags: [holdout2, mixed, table, unstructured, code, multi_hop]
+
+- id: holdout2_mixed_inc611_table_review
+  domain: mixed
+  query: "Which incident had the 42 minute outage in the review, and what service id does the table record?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/incident_review.md
+        contains: ["INC-611", "42 minutes"]
+      - file: structured/incidents.csv
+        contains: ["INC-611", "SVC-201", "Dana Ortiz"]
+  tags: [holdout2, mixed, table, unstructured, multi_hop]
+
+- id: holdout2_mixed_s0_escalation_code
+  domain: mixed
+  query: "Which open S0 incident is in the table and which code function maps S0 to incident command?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/incidents.csv
+        contains: ["INC-730", "S0", "open"]
+      - file: code/incident_triage.py
+        contains: ["escalation_channel", "S0", "#incident-command"]
+  tags: [holdout2, mixed, table, code, multi_hop]

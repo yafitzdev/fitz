@@ -1,0 +1,6 @@
+asset_id,service,environment,region,encrypted,owner,rotation_days
+AST-17,ledger-db,prod,eu,yes,Payments,30
+AST-22,analytics-cache,prod,us,no,Data Platform,90
+AST-31,atlas-index,prod,apac,yes,Search Platform,45
+AST-44,sandbox-ml,dev,eu,no,Research,180
+AST-58,claims-vault,prod,eu,yes,Compliance,24

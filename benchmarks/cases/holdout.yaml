@@ -1,0 +1,576 @@
+# benchmarks/cases/holdout.yaml
+- id: holdout_contractor_pto
+  domain: unstructured
+  query: "How many PTO days do independent contractors accrue?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/hr_policy.md
+        kind: section
+        contains: ["Independent contractors", "do not accrue", "PTO"]
+  tags: [holdout, unstructured, policy, exact_fact]
+
+- id: holdout_primary_caregiver_leave
+  domain: unstructured
+  query: "How much paid parental leave do primary caregivers receive?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/hr_policy.md
+        contains: ["Primary caregivers", "16 weeks"]
+  tags: [holdout, unstructured, policy, exact_fact]
+
+- id: holdout_travel_meal_cap
+  domain: unstructured
+  query: "What is the travel meal cap and receipt threshold?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/hr_policy.md
+        contains: ["65 USD", "25 USD"]
+  tags: [holdout, unstructured, policy, exact_fact]
+
+- id: holdout_platinum_sev0_ack
+  domain: unstructured
+  query: "What acknowledgement time applies to Platinum Severity 0 incidents?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/observability_sla.md
+        contains: ["Platinum", "Severity 0", "5 minutes"]
+  tags: [holdout, unstructured, sla, exact_fact]
+
+- id: holdout_gold_sev2_response
+  domain: unstructured
+  query: "What first response time do Gold customers get for Severity 2 incidents?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/observability_sla.md
+        contains: ["Gold", "Severity 2", "2 hours"]
+  tags: [holdout, unstructured, sla, exact_fact]
+
+- id: holdout_gar_acronym_expiry
+  domain: unstructured
+  query: "What does GAR mean and when do GAR reports expire?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/observability_sla.md
+        contains: ["Global Access Review", "21 days"]
+  tags: [holdout, unstructured, acronym, exact_fact]
+
+- id: holdout_latest_atlas_apac_status
+  domain: unstructured
+  query: "What is the latest APAC status for Project Atlas?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/product_launch_status.md
+        contains: ["2026-07-18", "limited general availability", "APAC"]
+    forbidden_evidence:
+      - file: unstructured/product_launch_status.md
+        contains: ["2026-03-04", "pilot"]
+  tags: [holdout, unstructured, temporal, freshness]
+
+- id: holdout_missing_helios_budget
+  domain: unstructured
+  query: "What is the Project Helios budget?"
+  expected:
+    mode: abstain
+    forbidden_evidence:
+      - file: unstructured/finance_forecast.md
+        contains: ["7.8 million"]
+  tags: [holdout, unstructured, abstain, missing_fact]
+
+- id: holdout_pay209_final_duration
+  domain: unstructured
+  query: "What was the final recovery duration for incident PAY-209?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/payments_postmortem.md
+        contains: ["final postmortem", "PAY-209", "37 minutes"]
+    forbidden_evidence:
+      - file: unstructured/payments_postmortem.md
+        contains: ["estimated", "12 minutes"]
+  tags: [holdout, unstructured, temporal, final_fact]
+
+- id: holdout_privacy_incident_owner
+  domain: unstructured
+  query: "Who owned privacy incident PRI-88 and what notification window applied?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/payments_postmortem.md
+        contains: ["DPO Lena", "PRI-88", "72-hour"]
+  tags: [holdout, unstructured, exact_fact]
+
+- id: holdout_vendor_skyline_notice
+  domain: unstructured
+  query: "How much notice is required to cancel Skyline Labs auto-renewal?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/vendor_contract.md
+        contains: ["Skyline Labs", "60 days"]
+  tags: [holdout, unstructured, contract, exact_fact]
+
+- id: holdout_cobalt_security_addendum
+  domain: unstructured
+  query: "What security addendum obligations apply to Cobalt CDN?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/vendor_contract.md
+        contains: ["Cobalt CDN", "annual SOC 2", "30-day breach notice"]
+  tags: [holdout, unstructured, contract, exact_fact]
+
+- id: holdout_biometric_retention
+  domain: unstructured
+  query: "How quickly must biometric verification artifacts be deleted?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/data_retention_policy.md
+        contains: ["Biometric verification artifacts", "24 hours"]
+  tags: [holdout, unstructured, policy, exact_fact]
+
+- id: holdout_export_log_retention
+  domain: unstructured
+  query: "How long are EU customer export logs retained?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/data_retention_policy.md
+        contains: ["EU customer export logs", "180 days"]
+  tags: [holdout, unstructured, policy, exact_fact]
+
+- id: holdout_atlas_pipeline_conflict
+  domain: unstructured
+  query: "What is the Project Atlas FY27 pipeline?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: unstructured/finance_forecast.md
+        contains: ["7.8 million ARR"]
+      - file: unstructured/finance_audit.md
+        contains: ["8.4 million ARR"]
+  tags: [holdout, unstructured, conflict, governance]
+
+- id: holdout_asset_ast22_encryption
+  domain: structured
+  query: "Is asset AST-22 encrypted and who owns it?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/cloud_assets.csv
+        kind: table
+        contains: ["AST-22", "no", "Data Platform"]
+  tags: [holdout, structured, table, exact_fact]
+
+- id: holdout_asset_ast58_rotation
+  domain: structured
+  query: "What rotation_days value is recorded for asset AST-58?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/cloud_assets.csv
+        kind: table
+        contains: ["AST-58", "24"]
+  tags: [holdout, structured, table, exact_fact]
+
+- id: holdout_prod_unencrypted_assets
+  domain: structured
+  query: "Which production asset is unencrypted?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/cloud_assets.csv
+        kind: table
+        contains: ["AST-22", "prod", "no"]
+  tags: [holdout, structured, table, filtered_lookup]
+
+- id: holdout_alert_alt504_owner_ack
+  domain: structured
+  query: "Who owns alert ALT-504 and what is its acknowledgement time?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/alerts.csv
+        kind: table
+        contains: ["ALT-504", "Priya", "3"]
+  tags: [holdout, structured, table, exact_fact]
+
+- id: holdout_p2_search_route
+  domain: structured
+  query: "What route is recorded for the search P2 alert?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/alerts.csv
+        kind: table
+        contains: ["ALT-502", "search", "slack"]
+  tags: [holdout, structured, table, exact_fact]
+
+- id: holdout_experiment_exp17_variant_b
+  domain: structured
+  query: "What conversion rate did EXP-17 variant_b record?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/experiments.csv
+        kind: table
+        contains: ["EXP-17", "variant_b", "5.1"]
+  tags: [holdout, structured, table, exact_fact]
+
+- id: holdout_experiment_highest_atlas_conversion
+  domain: structured
+  query: "Which EXP-22 variant has the highest conversion rate?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/experiments.csv
+        kind: table
+        contains: ["EXP-22", "semantic_ranker", "11.4"]
+  tags: [holdout, structured, table, comparison]
+
+- id: holdout_invoice_inv702_amount_owner
+  domain: structured
+  query: "What amount and owner are recorded for invoice INV-702?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/invoices.csv
+        kind: table
+        contains: ["INV-702", "27100", "Infrastructure"]
+  tags: [holdout, structured, table, exact_fact]
+
+- id: holdout_overdue_bluepeak_invoice
+  domain: structured
+  query: "Which overdue invoice belongs to Blue Peak?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/invoices.csv
+        kind: table
+        contains: ["INV-704", "Blue Peak", "overdue"]
+  tags: [holdout, structured, table, filtered_lookup]
+
+- id: holdout_deployment_dep902_rollback
+  domain: structured
+  query: "What rollback status and error rate are recorded for deployment DEP-902?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/deployments.csv
+        kind: table
+        contains: ["DEP-902", "3.7", "yes"]
+  tags: [holdout, structured, table, exact_fact]
+
+- id: holdout_feature_atlas_owner_expiry
+  domain: structured
+  query: "Who owns the atlas_search flag and when does it expire?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/feature_flags.csv
+        kind: table
+        contains: ["atlas_search", "Search Platform", "2026-09-15"]
+  tags: [holdout, structured, table, exact_fact]
+
+- id: holdout_legacy_sync_disabled_release
+  domain: structured
+  query: "Which release disabled legacy_sync?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/feature_flags.csv
+        kind: table
+        contains: ["legacy_sync", "disabled", "2026.05"]
+  tags: [holdout, structured, table, exact_fact]
+
+- id: holdout_shortest_alert_mttr
+  domain: structured
+  query: "Which alert has the shortest MTTR?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/alerts.csv
+        kind: table
+        contains: ["ALT-504", "19", "atlas"]
+  tags: [holdout, structured, table, comparison]
+
+- id: holdout_code_flag_eligibility_symbol
+  domain: code
+  query: "Which Python method evaluates whether a user is eligible for a feature flag?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/feature_flag_service.py
+        kind: symbol
+        location_contains: "is_eligible"
+        contains: ["archived", "KILL_SWITCH_ENV", "rollout_bucket"]
+  tags: [holdout, code, symbol_lookup]
+
+- id: holdout_code_kill_switch_constant
+  domain: code
+  query: "Which Python constant stores the feature flag kill switch environment variable?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/feature_flag_service.py
+        kind: symbol
+        location_contains: "KILL_SWITCH_ENV"
+        contains: ["FITZ_HOLDOUT_KILL_SWITCH"]
+  tags: [holdout, code, symbol_lookup, exact_fact]
+
+- id: holdout_code_archived_user_conflict
+  domain: code
+  query: "Are archived users eligible for beta feature flags?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: code/feature_flag_service.py
+        contains: ["archived", "return False"]
+      - file: code/README.md
+        contains: ["archived users remain eligible"]
+  tags: [holdout, code, stale_docs, conflict]
+
+- id: holdout_code_rollout_bucket_hash
+  domain: code
+  query: "Which method computes the stable rollout bucket with sha256?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/feature_flag_service.py
+        kind: symbol
+        location_contains: "rollout_bucket"
+        contains: ["sha256", "modulo", "100"]
+  tags: [holdout, code, symbol_lookup]
+
+- id: holdout_code_alert_route_p2
+  domain: code
+  query: "Which function routes P2 alerts to the Slack channel?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/alert_router.py
+        kind: symbol
+        location_contains: "route_for_severity"
+        contains: ["P2", "DEFAULT_SLACK_CHANNEL"]
+  tags: [holdout, code, symbol_lookup]
+
+- id: holdout_code_alert_route_dataclass
+  domain: code
+  query: "Which dataclass represents a resolved alert route?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/alert_router.py
+        kind: symbol
+        location_contains: "AlertRoute"
+        contains: ["target", "notify_owner"]
+  tags: [holdout, code, symbol_lookup]
+
+- id: holdout_code_invoice_late_fee_symbol
+  domain: code
+  query: "Which Python function calculates late fees for overdue invoices?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/invoice_rules.py
+        kind: symbol
+        location_contains: "calculate_late_fee"
+        contains: ["late_fee_percent", "days_overdue"]
+  tags: [holdout, code, symbol_lookup]
+
+- id: holdout_code_late_fee_waiver_env
+  domain: code
+  query: "Which environment variable can waive holdout late fees?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/invoice_rules.py
+        kind: symbol
+        location_contains: "WAIVER_ENV"
+        contains: ["FITZ_HOLDOUT_WAIVE_LATE_FEES"]
+  tags: [holdout, code, symbol_lookup, exact_fact]
+
+- id: holdout_code_deploy_env_vars
+  domain: code
+  query: "Which required deployment environment variables are enforced by rollout_guard?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/rollout_guard.py
+        kind: symbol
+        location_contains: "REQUIRED_DEPLOY_ENV"
+        contains: ["FITZ_DEPLOY_APPROVER", "FITZ_CHANGE_TICKET"]
+  tags: [holdout, code, symbol_lookup, exact_fact]
+
+- id: holdout_code_auto_rollback_conflict
+  domain: code
+  query: "Does Fitz ever automatically roll back a deployment?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: code/rollout_guard.py
+        contains: ["should_auto_rollback", "error_rate_percent"]
+      - file: code/README.md
+        contains: ["never automatically rolls back"]
+  tags: [holdout, code, stale_docs, conflict]
+
+- id: holdout_code_canary_apac_window
+  domain: code
+  query: "Which function returns a 45 minute canary window for APAC?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/rollout_guard.py
+        kind: symbol
+        location_contains: "canary_window_minutes"
+        contains: ["apac", "45"]
+  tags: [holdout, code, symbol_lookup]
+
+- id: holdout_code_page_owner
+  domain: code
+  query: "Which function decides whether an alert owner should be paged?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/alert_router.py
+        kind: symbol
+        location_contains: "should_page_owner"
+        contains: ["route_for_severity", "pager"]
+  tags: [holdout, code, symbol_lookup]
+
+- id: holdout_mixed_atlas_launch_flag_table
+  domain: mixed
+  query: "Using the Atlas launch brief, who owns the atlas_search flag and when does it expire?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/launch_brief.md
+        contains: ["Project Atlas APAC", "atlas_search"]
+      - file: structured/feature_flags.csv
+        contains: ["atlas_search", "Search Platform", "2026-09-15"]
+  tags: [holdout, mixed, table, unstructured, multi_hop]
+
+- id: holdout_mixed_atlas_experiment
+  domain: mixed
+  query: "Which experiment does the Atlas launch brief name and which variant has the higher conversion rate?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/launch_brief.md
+        contains: ["semantic ranker", "EXP-22"]
+      - file: structured/experiments.csv
+        contains: ["EXP-22", "semantic_ranker", "11.4"]
+  tags: [holdout, mixed, table, unstructured, comparison]
+
+- id: holdout_mixed_pay209_alert_postmortem
+  domain: mixed
+  query: "Using the operations brief, what alert maps to PAY-209 and what recovery duration did the final postmortem confirm?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/operations_brief.md
+        contains: ["PAY-209", "ALT-501"]
+      - file: structured/alerts.csv
+        contains: ["ALT-501", "37"]
+      - file: unstructured/payments_postmortem.md
+        contains: ["PAY-209", "37 minutes"]
+  tags: [holdout, mixed, table, unstructured, temporal, multi_hop]
+
+- id: holdout_mixed_dep902_guard
+  domain: mixed
+  query: "Using the operations brief, which deployment rolled back and which code function decides automatic rollback?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/operations_brief.md
+        contains: ["DEP-902", "rolled back"]
+      - file: structured/deployments.csv
+        contains: ["DEP-902", "3.7", "yes"]
+      - file: code/rollout_guard.py
+        contains: ["should_auto_rollback", "2.5"]
+  tags: [holdout, mixed, table, code, multi_hop]
+
+- id: holdout_mixed_ast22_retention
+  domain: mixed
+  query: "Using the compliance brief, which asset is the unencrypted production analytics cache and what retention period applies?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/compliance_brief.md
+        contains: ["AST-22", "unencrypted production analytics cache"]
+      - file: structured/cloud_assets.csv
+        contains: ["AST-22", "analytics-cache", "no"]
+      - file: unstructured/data_retention_policy.md
+        contains: ["Analytics caches", "90 days"]
+  tags: [holdout, mixed, table, unstructured, multi_hop]
+
+- id: holdout_mixed_ast58_biometric
+  domain: mixed
+  query: "Using the compliance brief, what biometric deletion rule applies to AST-58?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/compliance_brief.md
+        contains: ["AST-58", "biometric"]
+      - file: structured/cloud_assets.csv
+        contains: ["AST-58", "claims-vault"]
+      - file: unstructured/data_retention_policy.md
+        contains: ["Biometric verification artifacts", "24 hours"]
+  tags: [holdout, mixed, table, unstructured, multi_hop]
+
+- id: holdout_mixed_inv702_late_fee
+  domain: mixed
+  query: "Using the billing brief, which vendor owns INV-702 and which code function calculates its late fee?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/billing_brief.md
+        contains: ["INV-702", "Cobalt CDN"]
+      - file: structured/invoices.csv
+        contains: ["INV-702", "Cobalt CDN", "2.0"]
+      - file: code/invoice_rules.py
+        contains: ["calculate_late_fee", "late_fee_percent"]
+  tags: [holdout, mixed, table, code, multi_hop]
+
+- id: holdout_mixed_skyline_contract_invoice_scope
+  domain: mixed
+  query: "Using the billing brief, what Skyline Labs cancellation notice applies and is it an invoice status field?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/billing_brief.md
+        contains: ["Skyline Labs", "contractual", "not an invoice status field"]
+      - file: unstructured/vendor_contract.md
+        contains: ["Skyline Labs", "60 days"]
+  tags: [holdout, mixed, unstructured, contract]
+
+- id: holdout_mixed_observability_alert_route
+  domain: mixed
+  query: "For ALT-502, what route does the alerts table record and what does the Observability SLA say P2 alerts use?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/alerts.csv
+        contains: ["ALT-502", "slack"]
+      - file: unstructured/observability_sla.md
+        contains: ["P2 alerts", "Slack"]
+  tags: [holdout, mixed, table, unstructured]
+
+- id: holdout_mixed_privacy_banner_deployment_policy
+  domain: mixed
+  query: "Which deployment covers privacy_banner in EU and what retention policy applies to EU customer export logs?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/deployments.csv
+        contains: ["DEP-903", "privacy_banner", "eu"]
+      - file: unstructured/data_retention_policy.md
+        contains: ["EU customer export logs", "180 days"]
+  tags: [holdout, mixed, table, unstructured]

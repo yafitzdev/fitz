@@ -1,0 +1,297 @@
+- id: unstructured_refund_policy
+  domain: unstructured
+  query: "What is the refund window for Acme Tools?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/refund_policy.md
+        kind: section
+        contains:
+          - "30 days"
+          - "order number"
+  tags: [smoke, unstructured, policy, exact_fact]
+
+- id: unstructured_revenue_conflict
+  domain: unstructured
+  query: "What was Q1 revenue?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: unstructured/finance_q1_report.md
+        contains: ["1.2 billion"]
+      - file: unstructured/audit_q1_note.md
+        contains: ["1.4 billion"]
+  tags: [diagnostic, unstructured, governance, conflict]
+
+- id: unstructured_missing_budget
+  domain: unstructured
+  query: "What is the Project Nebula budget?"
+  expected:
+    mode: abstain
+    forbidden_evidence:
+      - file: unstructured/refund_policy.md
+        contains: ["30 days"]
+  tags: [diagnostic, unstructured, abstain, missing_fact]
+
+- id: unstructured_support_sla_gold_response
+  domain: unstructured
+  query: "What is the Gold support first response time for Severity 1 incidents?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/support_sla.md
+        kind: section
+        contains:
+          - "Gold support"
+          - "15 minutes"
+          - "Severity 1"
+  tags: [smoke, unstructured, sla, exact_fact]
+
+- id: unstructured_rma_acronym
+  domain: unstructured
+  query: "What does RMA mean and when do Gold-tier RMA labels expire?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/support_sla.md
+        contains:
+          - "Return Material Authorization"
+          - "14 days"
+  tags: [diagnostic, unstructured, acronym, exact_fact]
+
+- id: unstructured_project_orion_latest_status
+  domain: unstructured
+  query: "What is the latest EU status for Project Orion?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/project_orion_status.md
+        contains:
+          - "2026-05-20"
+          - "general availability"
+          - "EU"
+    forbidden_evidence:
+      - file: unstructured/project_orion_status.md
+        contains:
+          - "2026-01-15"
+          - "private beta"
+  tags: [diagnostic, unstructured, temporal, freshness]
+
+- id: unstructured_search_outage_final_duration
+  domain: unstructured
+  query: "What was the final recovery duration for Search outage INC-101?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: unstructured/outage_postmortem.md
+        contains:
+          - "final postmortem"
+          - "42 minutes"
+          - "INC-101"
+    forbidden_evidence:
+      - file: unstructured/outage_postmortem.md
+        contains:
+          - "estimated"
+          - "20 minutes"
+  tags: [diagnostic, unstructured, temporal, final_fact]
+
+- id: structured_warehouse_stock
+  domain: structured
+  query: "How many flux capacitor units are in the west region?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/warehouses.csv
+        kind: table
+        contains:
+          - "flux capacitor"
+          - "17"
+          - "west"
+  tags: [diagnostic, structured, table, exact_fact]
+
+- id: structured_incident_owner
+  domain: structured
+  query: "Who owns incident INC-103?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/incidents.csv
+        kind: table
+        contains:
+          - "INC-103"
+          - "auth"
+          - "Mina"
+  tags: [smoke, structured, table, exact_fact]
+
+- id: structured_s1_west_incidents
+  domain: structured
+  query: "Which S1 incidents are in the west region?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/incidents.csv
+        kind: table
+        contains:
+          - "INC-101"
+          - "west"
+      - file: structured/incidents.csv
+        kind: table
+        contains:
+          - "INC-103"
+          - "west"
+  tags: [diagnostic, structured, table, filtered_lookup]
+
+- id: structured_s1_shortest_resolution
+  domain: structured
+  query: "Which S1 incident had the shortest resolution time?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/incidents.csv
+        kind: table
+        contains:
+          - "INC-103"
+          - "25"
+          - "Mina"
+  tags: [diagnostic, structured, table, comparison]
+
+- id: structured_token_rotation_rollout
+  domain: structured
+  query: "Which release enabled token rotation in the EU region?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: structured/rollout_matrix.csv
+        kind: table
+        contains:
+          - "token_rotation"
+          - "eu"
+          - "2026.05"
+  tags: [smoke, structured, table, exact_fact]
+
+- id: code_symbol_lookup
+  domain: code
+  query: "Which Python symbol implements expired session refresh inside the grace window?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/auth_service.py
+        kind: symbol
+        location_contains: "refresh_expired_session"
+        contains:
+          - "refresh_expired_session"
+          - "grace"
+  tags: [diagnostic, code, symbol_lookup]
+
+- id: code_doc_conflict
+  domain: code
+  query: "Are expired sessions ever refreshed?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: code/auth_service.py
+        contains: ["refresh_expired_session"]
+      - file: code/README.md
+        contains: ["expired sessions are never refreshed"]
+  tags: [diagnostic, code, stale_docs, conflict]
+
+- id: code_billing_symbol_lookup
+  domain: code
+  query: "Which Python method implements the volume discount?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/billing_service.py
+        kind: symbol
+        location_contains: "apply_volume_discount"
+        contains:
+          - "quantity >= 100"
+          - "0.90"
+  tags: [diagnostic, code, symbol_lookup]
+
+- id: code_env_var_lookup
+  domain: code
+  query: "Which required environment variable stores the API token?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: code/config_loader.py
+        kind: symbol
+        location_contains: "REQUIRED_ENV_VARS"
+        contains:
+          - "FITZ_API_TOKEN"
+          - "FITZ_WORKSPACE"
+  tags: [smoke, code, symbol_lookup, exact_fact]
+
+- id: code_billing_doc_conflict
+  domain: code
+  query: "Do bulk orders receive a discount?"
+  expected:
+    mode: disputed
+    required_evidence:
+      - file: code/billing_service.py
+        contains:
+          - "apply_volume_discount"
+          - "quantity >= 100"
+      - file: code/billing_notes.md
+        contains:
+          - "bulk orders never receive discounts"
+  tags: [diagnostic, code, stale_docs, conflict]
+
+- id: mixed_release_and_table
+  domain: mixed
+  query: "Which release mentioned the west-region warehouse audit and how many flux capacitor units did it confirm?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/release_notes.md
+        contains:
+          - "Release 2026.05"
+          - "17"
+      - file: structured/warehouses.csv
+        contains:
+          - "WH-1"
+          - "17"
+  tags: [diagnostic, mixed, table, unstructured]
+
+- id: mixed_security_rollout_policy_interval
+  domain: mixed
+  query: "For the EU token rotation rollout, which release enabled it and what policy interval applies?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/security_rollout.md
+        contains:
+          - "token_rotation"
+          - "release 2026.05"
+      - file: unstructured/security_policy.md
+        contains:
+          - "45 days"
+          - "Service tokens"
+      - file: structured/rollout_matrix.csv
+        contains:
+          - "token_rotation"
+          - "eu"
+          - "2026.05"
+  tags: [diagnostic, mixed, table, unstructured, multi_hop]
+
+- id: mixed_incident_playbook_to_table
+  domain: mixed
+  query: "Using the incident playbook, who owned the west-region cache replay fix and how long did INC-101 take to recover?"
+  expected:
+    mode: trustworthy
+    required_evidence:
+      - file: mixed/incident_playbook.md
+        contains:
+          - "west-region cache replay fix"
+          - "INC-101"
+      - file: structured/incidents.csv
+        contains:
+          - "INC-101"
+          - "Nora"
+          - "42"
+      - file: unstructured/outage_postmortem.md
+        contains:
+          - "Nora"
+          - "42 minutes"
+  tags: [diagnostic, mixed, table, unstructured, multi_hop]

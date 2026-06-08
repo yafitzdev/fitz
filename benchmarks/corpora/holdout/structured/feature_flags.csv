@@ -1,0 +1,6 @@
+flag_key,region,status,release,owner,rollout_percent,expires_on
+mobile_checkout_v2,na,enabled,2026.08,Growth,35,2026-10-01
+atlas_search,apac,limited_ga,2026.07,Search Platform,60,2026-09-15
+export_pdf,eu,beta,2026.06,Documents,20,2026-08-30
+legacy_sync,global,disabled,2026.05,Core Infra,0,2026-06-30
+privacy_banner,eu,enabled,2026.04,Privacy,100,2027-01-01

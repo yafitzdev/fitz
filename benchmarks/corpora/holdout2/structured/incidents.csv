@@ -1,0 +1,6 @@
+incident_id,service_id,severity,status,duration_minutes,commander,customer_visible
+INC-611,SVC-201,S1,resolved,42,Dana Ortiz,yes
+INC-724,SVC-202,S2,resolved,26,Rowan Vale,no
+INC-730,SVC-204,S0,open,9,Mira Chen,yes
+INC-744,SVC-203,S3,resolved,88,Theo Park,no
+INC-751,SVC-205,S2,monitoring,33,Imani Cole,yes

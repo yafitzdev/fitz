@@ -1,0 +1,6 @@
+deploy_id,service,region,status,release,error_rate_percent,rollback
+DEP-901,atlas_search,apac,canary,2026.07,0.8,no
+DEP-902,mobile_checkout,na,rolled_back,2026.08,3.7,yes
+DEP-903,privacy_banner,eu,stable,2026.04,0.1,no
+DEP-904,ledger,eu,blocked,2026.06,2.2,yes
+DEP-905,pdf_export,eu,beta,2026.06,0.4,no

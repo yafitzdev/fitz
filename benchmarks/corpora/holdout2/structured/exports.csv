@@ -1,0 +1,6 @@
+export_id,region,dataset,rows,destination,encrypted,owner
+EXP-501,eu,customer_export_logs,120000,s3://fitz-eu-exports,yes,Privacy
+EXP-502,us,analytics_cache,840000,gcs://fitz-us-analytics,no,Data Platform
+EXP-503,apac,search_feedback,45000,s3://fitz-apac-search,yes,Search
+EXP-504,global,audit_trail,990000,blob://fitz-audit,yes,Compliance
+EXP-505,eu,biometric_artifacts,1200,s3://fitz-bio-delete,yes,Compliance

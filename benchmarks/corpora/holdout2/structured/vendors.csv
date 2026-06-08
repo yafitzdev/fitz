@@ -1,0 +1,6 @@
+vendor_id,vendor,category,annual_spend_usd,notice_days,soc2,owner
+VEN-301,MeridianAI,model_eval,64000,75,yes,Research
+VEN-302,Quartz Legal,legal,24000,30,no,Legal Ops
+VEN-303,Northwind CDN,edge,112000,90,yes,Infrastructure
+VEN-304,Bluebird Labs,design,18000,45,no,Product
+VEN-305,Aurora Metrics,observability,52000,60,yes,SRE

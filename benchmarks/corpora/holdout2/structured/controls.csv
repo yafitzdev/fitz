@@ -1,0 +1,6 @@
+control_id,risk_id,status,evidence_count,owner,due_date
+CTL-601,RSK-81,needs_retest,4,Risk Ops,2026-08-01
+CTL-602,RSK-82,passed,7,Security,2026-07-10
+CTL-603,RSK-83,blocked,2,Infrastructure,2026-07-22
+CTL-604,RSK-84,passed,10,Compliance,2026-09-05
+CTL-605,RSK-85,needs_retest,5,Identity,2026-08-18

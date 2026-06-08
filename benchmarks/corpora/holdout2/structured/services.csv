@@ -1,0 +1,6 @@
+service_id,service,tier,region,owner,slo_percent,dr_tier
+SVC-201,payments-api,platinum,eu,Payments,99.95,tier1
+SVC-202,search-index,gold,apac,Search,99.90,tier2
+SVC-203,pdf-render,silver,us,Documents,99.50,tier3
+SVC-204,identity-core,platinum,global,Identity,99.99,tier1
+SVC-205,analytics-lake,gold,us,Data Platform,99.70,tier2

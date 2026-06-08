@@ -1,0 +1,7 @@
+feature,region,status,release,owner
+session_revocation,west,enabled,2026.04,Auth Platform
+warehouse_audit,west,enabled,2026.05,Inventory
+warehouse_audit,east,planned,2026.06,Inventory
+token_rotation,eu,enabled,2026.05,Security
+project_orion,eu,general_availability,2026.05,Product
+

@@ -7,6 +7,8 @@
 !.github/**
 !docs/
 !docs/**
+!benchmarks/
+!benchmarks/**
 !examples/
 !examples/**
 !fitz_sage/
@@ -51,3 +53,5 @@ build/
 dist/
 tools/retrieval_eval/results/
 tools/retrieval_eval/results/**
+benchmarks/results/
+benchmarks/results/**
