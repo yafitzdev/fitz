@@ -16,6 +16,8 @@ first encoder call.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -23,12 +25,26 @@ import pytest
 pytestmark = pytest.mark.slow
 
 
+def _pyrrho_smoke_spec() -> str:
+    """Use the local canonical g4-alpha package when this checkout has it."""
+    env_path = os.environ.get("PYRRHO_G4_ALPHA_PACKAGE")
+    if env_path and Path(env_path).is_dir():
+        return f"pyrrho/{env_path}"
+
+    repo_root = Path(__file__).resolve().parents[2]
+    sibling_package = repo_root.parent / "pyrrho" / "models" / "pyrrho-nano-g4-alpha"
+    if sibling_package.is_dir():
+        return f"pyrrho/{sibling_package}"
+
+    return "pyrrho"
+
+
 def test_pyrrho_loads_and_decides():
-    """create_governance('pyrrho') -> a real local Pyrrho decide() call."""
+    """Canonical Pyrrho g4-alpha package -> a real local decide() call."""
     from fitz_sage.core.answer_mode import AnswerMode
     from fitz_sage.governance import create_governance
 
-    governance = create_governance("pyrrho")
+    governance = create_governance(_pyrrho_smoke_spec())
     assert governance is not None
 
     contexts = [SimpleNamespace(content="The capital of France is Paris.", metadata={})]

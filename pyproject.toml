@@ -70,7 +70,7 @@ dependencies = [
     "python-docx>=1.0",
     "python-pptx>=0.6",
     # Local CPU encoders:
-    #   pyrrho-nano-g3.1 — custom multitask ModernBERT checkpoint
+    #   pyrrho-nano-g4-alpha — custom multitask ModernBERT checkpoint
     #   gte-reranker     — pre-built INT8 ONNX cross-encoder
     "transformers>=4.50",
     "torch>=2.1",

@@ -16,6 +16,7 @@ from fitz_sage.governance.pyrrho import (
     _decision_from_outputs,
     _head_decision,
     _load_trustworthy_threshold,
+    _required_label_map,
 )
 
 
@@ -63,6 +64,54 @@ def test_decide_many_batches_non_empty_prefixes():
     )
 
 
+def test_decide_many_passes_evidence_ledger_to_model():
+    """Compiler and closure metadata should be visible to Pyrrho as evidence text."""
+    pyrrho = Pyrrho.__new__(Pyrrho)
+    pyrrho._predict_context_batches = MagicMock(
+        return_value=[
+            GovernanceDecision(
+                mode=AnswerMode.TRUSTWORTHY,
+                probs=(0.05, 0.05, 0.9),
+                reason="Enough evidence.",
+            )
+        ]
+    )
+
+    pyrrho.decide_many(
+        "How many units are in WH-1?",
+        [
+            [
+                SimpleNamespace(
+                    content="WH-1 | west | flux capacitor | 17",
+                    metadata={
+                        "evidence_compiler": {
+                            "roles": ["required_table"],
+                            "min_sources": 1,
+                            "contract": {
+                                "required_modalities": ["table"],
+                                "identifiers": ["WH-1"],
+                            },
+                        },
+                        "evidence_closure": {
+                            "role": "required_table",
+                            "reason": "missing_table_modality",
+                            "bridges": ["WH-1"],
+                        },
+                    },
+                )
+            ]
+        ],
+    )
+
+    contexts = pyrrho._predict_context_batches.call_args.args[1]
+    serialized = contexts[0][0]
+    assert "Pyrrho evidence ledger:" in serialized
+    assert "compiler roles: required_table" in serialized
+    assert "compiler minimum sources: 1" in serialized
+    assert "contract required_modalities: table" in serialized
+    assert "closure role: required_table" in serialized
+
+
 def test_head_decision_threshold_falls_back_from_weak_trustworthy():
     """Weak TRUSTWORTHY predictions should expose the threshold fallback."""
     decision = _head_decision(
@@ -80,14 +129,14 @@ def test_head_decision_threshold_falls_back_from_weak_trustworthy():
     assert decision.probabilities.keys() == {"ABSTAIN", "DISPUTED", "TRUSTWORTHY"}
 
 
-def test_decision_from_outputs_includes_optional_heads():
-    """g4-style optional heads should survive conversion into GovernanceDecision."""
+def test_decision_from_outputs_requires_g4_heads():
+    """g4-alpha heads should survive conversion into GovernanceDecision."""
     pyrrho = Pyrrho.__new__(Pyrrho)
     pyrrho._id2label = {0: "ABSTAIN", 1: "DISPUTED", 2: "TRUSTWORTHY"}
     pyrrho._query_contract_id2label = {0: "evidence_sufficiency", 1: "structured_lookup"}
     pyrrho._route_id2label = {0: "technology_computing", 1: "general_commonsense"}
     pyrrho._taxonomy_id2label = {0: "direct_answer", 1: "evidence_absent"}
-    pyrrho._optional_id2labels = {
+    pyrrho._g4_head_id2labels = {
         "retrieval_action": {0: "answer_now", 1: "retrieve_more"},
         "gap_type": {0: "none", 1: "missing_specific_fact"},
         "answerability_shape": {0: "direct_answer", 1: "structured_reasoning"},
@@ -138,7 +187,7 @@ def test_predict_query_includes_query_only_heads():
     )
     pyrrho._query_contract_id2label = {0: "evidence_sufficiency", 1: "structured_lookup"}
     pyrrho._route_id2label = {0: "technology_computing", 1: "general_commonsense"}
-    pyrrho._optional_id2labels = {
+    pyrrho._g4_head_id2labels = {
         "retrieval_action": {0: "answer_now", 1: "retrieve_more"},
         "answerability_shape": {0: "direct_answer", 1: "structured_reasoning"},
         "retrieval_modality": {0: "unstructured_text", 1: "structured_table"},
@@ -163,3 +212,13 @@ def test_load_trustworthy_threshold_reads_manifest(tmp_path):
     )
 
     assert _load_trustworthy_threshold(tmp_path) == 0.44
+
+
+def test_required_label_map_rejects_legacy_packages():
+    """Packages without the required g4-alpha heads are not supported."""
+    try:
+        _required_label_map({"retrieval_action_id2label": None}, "retrieval_action_id2label")
+    except ValueError as exc:
+        assert "Pyrrho g4-alpha package is required" in str(exc)
+    else:
+        raise AssertionError("Expected stale Pyrrho package rejection.")

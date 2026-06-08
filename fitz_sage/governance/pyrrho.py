@@ -2,11 +2,11 @@
 """
 Pyrrho governance backend.
 
-The standard model is ``yafitzdev/pyrrho-nano-g3.1``: a custom multitask
+The standard model is ``yafitzdev/pyrrho-nano-g4-alpha``: a custom multitask
 ModernBERT encoder with governance, query-contract, route/domain, taxonomy,
-and scalar heads. Newer Pyrrho packages may expose extra optional heads through
-``pyrrho_multitask_config.json``. The classifier runs locally on CPU; no LLM
-call is made on the governance path.
+retrieval action, gap type, answerability shape, retrieval modality, and scalar
+heads. The classifier runs locally on CPU; no LLM call is made on the governance
+path.
 """
 
 from __future__ import annotations
@@ -26,14 +26,14 @@ from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.core.paths import FitzPaths
 from fitz_sage.governance.protocol import EvidenceItem
 
-MODEL_ID = "yafitzdev/pyrrho-nano-g3.1"
+MODEL_ID = "yafitzdev/pyrrho-nano-g4-alpha"
 MAX_LENGTH = 4096
 MAX_QUERY_LENGTH = 256
-TAU = 0.39
+TAU = 0.44
 
 LABELS = (AnswerMode.ABSTAIN, AnswerMode.DISPUTED, AnswerMode.TRUSTWORTHY)
 
-_OPTIONAL_HEAD_SPECS: dict[str, tuple[str, str]] = {
+_REQUIRED_G4_HEAD_SPECS: dict[str, tuple[str, str]] = {
     "retrieval_action": ("retrieval_action_id2label", "evidence"),
     "gap_type": ("gap_type_id2label", "evidence"),
     "answerability_shape": ("answerability_shape_id2label", "query"),
@@ -87,8 +87,8 @@ class QueryDecision:
 
     query_contract: HeadDecision
     route: HeadDecision
-    answerability_shape: HeadDecision | None = None
-    retrieval_modality: HeadDecision | None = None
+    answerability_shape: HeadDecision
+    retrieval_modality: HeadDecision
     heads: dict[str, HeadDecision] = field(default_factory=dict)
 
 
@@ -138,13 +138,9 @@ class _PyrrhoMultiTaskModernBert(nn.Module):
             int(self.pyrrho_config["num_taxonomy_patterns"]),
         )
         self.scalar_head = nn.Linear(hidden_size, len(self.pyrrho_config["scalar_fields"]))
-        for name, (label_key, _) in _OPTIONAL_HEAD_SPECS.items():
-            label_count = len(self.pyrrho_config.get(label_key) or {})
-            setattr(
-                self,
-                f"{name}_head",
-                nn.Linear(hidden_size, label_count) if label_count else None,
-            )
+        for name, (label_key, _) in _REQUIRED_G4_HEAD_SPECS.items():
+            labels = _required_label_map(self.pyrrho_config, label_key)
+            setattr(self, f"{name}_head", nn.Linear(hidden_size, len(labels)))
         self.load_state_dict(load_file(model_dir / "model.safetensors", device="cpu"))
 
     @staticmethod
@@ -173,10 +169,8 @@ class _PyrrhoMultiTaskModernBert(nn.Module):
             "taxonomy_logits": self.taxonomy_head(evidence_state),
             "scalar_preds": torch.sigmoid(self.scalar_head(evidence_state)),
         }
-        for name, (_, state_source) in _OPTIONAL_HEAD_SPECS.items():
+        for name, (_, state_source) in _REQUIRED_G4_HEAD_SPECS.items():
             head = getattr(self, f"{name}_head")
-            if head is None:
-                continue
             state = query_state if state_source == "query" else evidence_state
             outputs[f"{name}_logits"] = head(state)
         return outputs
@@ -197,7 +191,7 @@ class Pyrrho:
         self._query_contract_id2label: dict[int, str] = {}
         self._route_id2label: dict[int, str] = {}
         self._taxonomy_id2label: dict[int, str] = {}
-        self._optional_id2labels: dict[str, dict[int, str]] = {}
+        self._g4_head_id2labels: dict[str, dict[int, str]] = {}
         self._scalar_fields: tuple[str, ...] = ()
         self._trustworthy_threshold = TAU
 
@@ -228,7 +222,7 @@ class Pyrrho:
                 )
                 continue
             non_empty_positions.append(index)
-            non_empty_contexts.append([context.content for context in contexts])
+            non_empty_contexts.append([_format_evidence_item(context) for context in contexts])
 
         if non_empty_contexts:
             for index, decision in zip(
@@ -274,10 +268,9 @@ class Pyrrho:
             self._query_contract_id2label = _id2label(config["query_contract_id2label"])
             self._route_id2label = _id2label(config["route_id2label"])
             self._taxonomy_id2label = _id2label(config["taxonomy_id2label"])
-            self._optional_id2labels = {
-                name: _id2label(config[label_key])
-                for name, (label_key, _) in _OPTIONAL_HEAD_SPECS.items()
-                if isinstance(config.get(label_key), dict) and config[label_key]
+            self._g4_head_id2labels = {
+                name: _id2label(_required_label_map(config, label_key))
+                for name, (label_key, _) in _REQUIRED_G4_HEAD_SPECS.items()
             }
             self._scalar_fields = tuple(str(field) for field in config["scalar_fields"])
             trustworthy_threshold = _load_trustworthy_threshold(model_dir)
@@ -298,22 +291,21 @@ class Pyrrho:
             self._query_contract_id2label,
         )
         route = _head_decision(outputs["route_logits"][0], self._route_id2label)
-        optional_heads = {
+        g4_query_heads = {
             name: _head_decision(outputs[f"{name}_logits"][0], id2label)
-            for name, id2label in self._optional_id2labels.items()
-            if _OPTIONAL_HEAD_SPECS.get(name, (None, None))[1] == "query"
-            and f"{name}_logits" in outputs
+            for name, id2label in self._g4_head_id2labels.items()
+            if _REQUIRED_G4_HEAD_SPECS[name][1] == "query"
         }
         heads = {
             "query_contract": query_contract,
             "route": route,
-            **optional_heads,
+            **g4_query_heads,
         }
         return QueryDecision(
             query_contract=query_contract,
             route=route,
-            answerability_shape=optional_heads.get("answerability_shape"),
-            retrieval_modality=optional_heads.get("retrieval_modality"),
+            answerability_shape=g4_query_heads["answerability_shape"],
+            retrieval_modality=g4_query_heads["retrieval_modality"],
             heads=heads,
         )
 
@@ -367,6 +359,17 @@ def _load_multitask_config(model_dir: Path) -> dict[str, Any]:
         return json.load(f)
 
 
+def _required_label_map(config: dict[str, Any], key: str) -> dict[str, str]:
+    """Read a required g4-alpha label map and fail fast when a package is stale."""
+    labels = config.get(key)
+    if not isinstance(labels, dict) or not labels:
+        raise ValueError(
+            f"Pyrrho g4-alpha package is required; missing non-empty {key!r} in "
+            "pyrrho_multitask_config.json."
+        )
+    return labels
+
+
 def _model_cache_dir(model_id: str) -> Path:
     """Return Fitz's managed local cache directory for a Pyrrho model."""
     safe_id = model_id.replace("/", "__")
@@ -411,6 +414,104 @@ def _load_tokenizer(model_dir: Path) -> Any:
     )
 
 
+def _format_evidence_item(item: EvidenceItem) -> str:
+    """Return evidence content plus a compact ledger Pyrrho can govern over."""
+    content = str(getattr(item, "content", "") or "")
+    metadata = getattr(item, "metadata", None)
+    if not isinstance(metadata, dict):
+        return content
+
+    ledger_lines = _evidence_ledger_lines(metadata)
+    if not ledger_lines:
+        return content
+    return "\n".join(
+        [
+            content,
+            "",
+            "Pyrrho evidence ledger:",
+            *ledger_lines,
+        ]
+    )
+
+
+def _evidence_ledger_lines(metadata: dict[str, Any]) -> list[str]:
+    """Serialize retrieval/compiler facts as bounded natural-language lines."""
+    lines: list[str] = []
+
+    compiler = metadata.get("evidence_compiler")
+    if isinstance(compiler, dict):
+        roles = _bounded_values(compiler.get("roles"))
+        if roles:
+            lines.append(f"- compiler roles: {', '.join(roles)}")
+        min_sources = compiler.get("min_sources")
+        if min_sources is not None:
+            lines.append(f"- compiler minimum sources: {min_sources}")
+        content_scope = compiler.get("content_scope")
+        if content_scope:
+            lines.append(f"- compiler content scope: {content_scope}")
+        contract = compiler.get("contract")
+        if isinstance(contract, dict):
+            for key in (
+                "identifiers",
+                "phrase_anchors",
+                "source_anchors",
+                "required_modalities",
+                "temporal_policy",
+            ):
+                values = _bounded_values(contract.get(key))
+                if values:
+                    lines.append(f"- contract {key}: {', '.join(values)}")
+
+    closure = metadata.get("evidence_closure")
+    if isinstance(closure, dict):
+        role = closure.get("role")
+        if role:
+            lines.append(f"- closure role: {role}")
+        reason = closure.get("reason")
+        if reason:
+            lines.append(f"- closure reason: {reason}")
+        bridges = _bounded_values(closure.get("bridges"))
+        if bridges:
+            lines.append(f"- closure bridges: {', '.join(bridges)}")
+
+    table_plan = metadata.get("table_query_plan")
+    if isinstance(table_plan, dict):
+        identifiers = _bounded_values(table_plan.get("identifiers"))
+        if identifiers:
+            lines.append(f"- table identifiers: {', '.join(identifiers)}")
+        predicates = _bounded_values(table_plan.get("predicates"))
+        if predicates:
+            lines.append(f"- table predicates: {', '.join(predicates)}")
+        sort = _bounded_values(table_plan.get("sort"))
+        if sort:
+            lines.append(f"- table sort: {', '.join(sort)}")
+
+    return lines[:16]
+
+
+def _bounded_values(value: Any, *, limit: int = 8) -> list[str]:
+    """Return short serializable ledger values."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, dict):
+        values = [f"{key}={item}" for key, item in value.items()]
+    elif isinstance(value, Iterable):
+        values = [str(item) for item in value]
+    else:
+        values = [str(value)]
+    bounded: list[str] = []
+    for item in values:
+        normalized = " ".join(str(item).split())
+        if not normalized:
+            continue
+        bounded.append(normalized[:120])
+        if len(bounded) >= limit:
+            break
+    return bounded
+
+
 def _id2label(raw: dict[str, str]) -> dict[int, str]:
     """Normalize JSON id->label mappings."""
     return {int(key): str(value) for key, value in raw.items()}
@@ -436,17 +537,16 @@ def _decision_from_outputs(
         outputs["taxonomy_logits"][index],
         pyrrho._taxonomy_id2label,
     )
-    optional_heads = {
+    g4_heads = {
         name: _head_decision(outputs[f"{name}_logits"][index], id2label)
-        for name, id2label in pyrrho._optional_id2labels.items()
-        if f"{name}_logits" in outputs
+        for name, id2label in pyrrho._g4_head_id2labels.items()
     }
     heads = {
         "governance": governance,
         "query_contract": query_contract,
         "route": route,
         "taxonomy": taxonomy,
-        **optional_heads,
+        **g4_heads,
     }
     scalars = {
         field: float(value)
@@ -471,10 +571,10 @@ def _decision_from_outputs(
         query_contract=query_contract,
         route=route,
         taxonomy=taxonomy,
-        retrieval_action=optional_heads.get("retrieval_action"),
-        gap_type=optional_heads.get("gap_type"),
-        answerability_shape=optional_heads.get("answerability_shape"),
-        retrieval_modality=optional_heads.get("retrieval_modality"),
+        retrieval_action=g4_heads["retrieval_action"],
+        gap_type=g4_heads["gap_type"],
+        answerability_shape=g4_heads["answerability_shape"],
+        retrieval_modality=g4_heads["retrieval_modality"],
         heads=heads,
         scalars=scalars,
     )
@@ -533,5 +633,6 @@ __all__ = [
     "HeadDecision",
     "MODEL_ID",
     "Pyrrho",
+    "QueryDecision",
     "TAU",
 ]
