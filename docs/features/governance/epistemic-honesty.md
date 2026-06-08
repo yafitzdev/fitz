@@ -14,7 +14,7 @@ The system cannot distinguish between "I have evidence" and "I'm making an educa
 
 Every `(query, retrieved evidence prefix)` pair runs through the **pyrrho**
 fine-tuned classifier
-([`yafitzdev/pyrrho-nano-g3.1`](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1),
+([`yafitzdev/pyrrho-nano-g4-alpha`](https://huggingface.co/yafitzdev/pyrrho-nano-g4-alpha),
 a multitask ModernBERT-base model trained on the fitz-gov benchmark). A
 single local CPU forward pass
 returns one of `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`:
@@ -72,8 +72,8 @@ Every `EvidencePack` includes a **mode** indicating confidence level:
 Governance is selected by the `governance:` field:
 
 ```yaml
-governance: pyrrho  # default local Pyrrho g3.1 classifier
-# governance: pyrrho/<hf-model-id>  # custom pyrrho fine-tune
+governance: pyrrho  # default local Pyrrho g4-alpha classifier
+# governance: pyrrho/<hf-model-id>  # compatible Pyrrho g4 package
 ```
 
 ## Files

@@ -242,7 +242,7 @@ the query contract/profile calls for a representative corpus overview.
 |---------------|-----------|----------|
 | Managed Qwen3.5 0.8B ONNX | yes | ingestion keywords/entities/hierarchy and default semantic query keywords |
 | ONNX reranker | default | candidate precision after broad recall |
-| Pyrrho g3.1+ | default product governance | query signals, evidence sufficiency, dispute, abstention, route/taxonomy/scalar metadata |
+| Pyrrho g4-alpha | default product governance | query signals, evidence sufficiency, dispute, abstention, route/taxonomy/action/gap/modality/scalar metadata |
 | OpenAI-compatible endpoint | optional | answer synthesis, optional query intelligence, optional vision parser |
 
 No dense embedding model and no vector database are used.

@@ -58,9 +58,9 @@ scoring:
    solution for pairwise relevance scoring.
 
 The same model family as the
-[Pyrrho governance classifier](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1):
+[Pyrrho governance classifier](https://huggingface.co/yafitzdev/pyrrho-nano-g4-alpha):
 ModernBERT-base, local CPU inference, lazy-loaded on first call, and cached for
-the process lifetime. The reranker remains ONNX; Pyrrho g3.1 is a multitask
+the process lifetime. The reranker remains ONNX; Pyrrho g4-alpha is a multitask
 safetensors checkpoint.
 
 ## How it works

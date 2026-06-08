@@ -13,10 +13,11 @@ The retrieval strategy is deliberately split into three jobs:
 
 This split matters because each stage optimizes a different failure mode. Recall
 is allowed to be noisy. Reranking is where precision belongs. Pyrrho decides
-whether the ranked evidence is sufficient, disputed, or incomplete. Pyrrho g3.1
-also runs a query-only contract head before recall so the stack knows whether
-the user is asking for a narrow answer, comparison coverage, exhaustive
-coverage, temporal grounding, structured lookup, or a representative overview.
+whether the ranked evidence is sufficient, disputed, or incomplete. Pyrrho g4-alpha
+also runs query-only heads before recall so the stack knows whether the user is
+asking for a narrow answer, comparison coverage, exhaustive coverage, temporal
+grounding, structured lookup, a representative overview, and which evidence
+surface is preferred.
 
 ---
 

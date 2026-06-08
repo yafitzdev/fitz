@@ -85,7 +85,7 @@ GraphRAG:
 
 KRAG:
   Document → [symbols] [sections] [tables] → FTS5 + structure → routed search
-           → ONNX rerank → Pyrrho g3.1 cutoff → EvidencePack
+           → ONNX rerank → Pyrrho g4-alpha cutoff → EvidencePack
 ```
 
 KRAG does not use vector similarity search. The index is structural and lexical:
@@ -155,8 +155,8 @@ The final ranking step is a dedicated INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base` by default). It scores
 `(query, candidate)` pairs in a single batched forward pass — ~30 ms
 on CPU. No external LLM call, no embedding model. It uses the same
-ModernBERT family as the Pyrrho g3.1 governance classifier; the reranker is
-ONNX, while Pyrrho g3.1 is a multitask safetensors checkpoint.
+ModernBERT family as the Pyrrho g4-alpha governance classifier; the reranker is
+ONNX, while Pyrrho g4-alpha is a multitask safetensors checkpoint.
 
 ---
 

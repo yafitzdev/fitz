@@ -24,11 +24,9 @@ optimizes for high-recall candidate gathering first, lets the local ONNX
 cross-encoder impose precision, then asks Pyrrho whether the top-1,
 top-2, ... evidence prefix is enough to answer.
 
-**Pyrrho g4-alpha contract wired end-to-end.** Fitz now loads Pyrrho
-packages from their `pyrrho_multitask_config.json` shape, so the local
-`pyrrho-nano-g4-alpha` package exposes the new query and evidence heads
-without another Fitz architecture change. The final Pyrrho g4 package should
-be a model/config swap, not another Fitz integration project.
+**Pyrrho g4-alpha contract wired end-to-end.** Fitz now uses
+`pyrrho-nano-g4-alpha` as the canonical governance model and requires its query
+and evidence heads from `pyrrho_multitask_config.json`.
 
 **Pre-retrieval Pyrrho planning is now real retrieval input.** Fitz asks
 Pyrrho for query-only signals before recall, turns `query_contract`, `route`,
@@ -70,9 +68,9 @@ code corpus. The current g4-alpha run hits `recall@10=1.00` and
   before recall, so representative overviews, exhaustive coverage,
   comparisons, temporal grounding, and structured lookups can steer recall
   and cutoff policy before evidence is selected.
-- **Pyrrho g4-alpha optional heads** — the governance runtime now reads
-  optional `retrieval_action`, `gap_type`, `answerability_shape`, and
-  `retrieval_modality` heads, plus any configured scalar fields such as
+- **Pyrrho g4-alpha required heads** — the governance runtime now requires
+  `retrieval_action`, `gap_type`, `answerability_shape`, and
+  `retrieval_modality` heads, plus configured scalar fields such as
   `evidence_failure_severity`, from the model package.
 - **Pre-retrieval query profiles** — `QueryPipeline` now runs
   `Pyrrho.classify_query()` before recall and passes those query-only
@@ -86,10 +84,9 @@ code corpus. The current g4-alpha run hits `recall@10=1.00` and
 
 ### 🔄 Changed
 
-- **Pyrrho loading now follows the model package shape.** Configured Pyrrho
-  packages can add optional heads through `pyrrho_multitask_config.json`
-  without changing Fitz code, which is what lets g4-alpha wire into the
-  existing governance provider.
+- **Pyrrho loading now follows the g4-alpha package shape.** Configured Pyrrho
+  packages must expose the required g4-alpha heads through
+  `pyrrho_multitask_config.json`.
 - **Query planning now uses Pyrrho before retrieval.** `query_contract`,
   `route`, `answerability_shape`, and `retrieval_modality` influence
   specificity, domain, answer type, strategy weights, `top_k`, and `top_read`

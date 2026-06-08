@@ -10,10 +10,10 @@ The standard retrieval path uses local CPU models.
 |---|---|---|---|
 | Enrichment and semantic query keywords | `onnx-community/Qwen3.5-0.8B-Text-ONNX` (`qwen3.5-0.8b`) | raw `onnxruntime`, CPU | Required metadata backbone for better recall. |
 | Reranking | `Alibaba-NLP/gte-reranker-modernbert-base` | raw `onnxruntime`, CPU | Cross-encoder precision over broad recall candidates. |
-| Governance + query signals | `yafitzdev/pyrrho-nano-g3.1` | `torch` + `safetensors`, CPU | Sufficiency/conflict classifier for ranked evidence prefixes plus pre-retrieval query metadata. |
+| Governance + query signals | `yafitzdev/pyrrho-nano-g4-alpha` | `torch` + `safetensors`, CPU | Sufficiency/conflict classifier for ranked evidence prefixes plus pre-retrieval query and evidence signal metadata. |
 
 None of these models require `optimum`, `llama.cpp`, GGUF, or an
-OpenAI-compatible server. Pyrrho g3.1 currently uses `torch` because the
+OpenAI-compatible server. Pyrrho g4-alpha uses `torch` because the
 published multitask checkpoint is a safetensors model; Qwen and the reranker
 remain ONNX-only.
 
@@ -28,7 +28,7 @@ symlink privileges.
 |---|---|
 | Qwen3.5 0.8B ONNX | First query or ingest that needs required enrichment or semantic query keywords. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
-| Pyrrho g3.1 | First query-signal classification or governance cutoff evaluation. |
+| Pyrrho g4-alpha | First query-signal classification or governance cutoff evaluation. |
 
 The CLI may print messages such as:
 
@@ -71,12 +71,12 @@ For Pyrrho, either copy `~/.fitz/models/pyrrho/` to the same Fitz home location
 or configure governance with the unpacked local package path:
 
 ```yaml
-governance: pyrrho//opt/fitz/models/pyrrho/yafitzdev__pyrrho-nano-g3.1
+governance: pyrrho//opt/fitz/models/pyrrho/yafitzdev__pyrrho-nano-g4-alpha
 ```
 
 The double slash after `pyrrho/` is intentional for absolute Unix paths. On
 Windows, use a normal absolute path after the provider prefix, for example
-`pyrrho/C:\fitz\models\pyrrho\yafitzdev__pyrrho-nano-g3.1`.
+`pyrrho/C:\fitz\models\pyrrho\yafitzdev__pyrrho-nano-g4-alpha`.
 
 ## Qwen Is Mandatory
 

@@ -219,10 +219,11 @@ Expected post-retrieval result:
 | Signal | Likely value |
 |---|---|
 | `mode` | `trustworthy` |
-| `stop_reason` | `structured_lookup_exact_match` |
+| `stop_reason` | `trustworthy_min_evidence_met` or `pyrrho_answer_now` |
 | `retrieval_action` | `answer_now` |
 
-Product behavior: show the exact code symbol and source path.
+Product behavior: show the exact code symbol and source path after Pyrrho
+certifies the selected evidence prefix.
 
 ### Comparison Query
 

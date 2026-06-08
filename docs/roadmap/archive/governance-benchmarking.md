@@ -3,10 +3,10 @@
 > **Note.** This document describes the **constraint+sklearn cascade**
 > that served as fitz-sage's governance backend through v0.12.x. As of
 > v0.13.0 the cascade has been removed and replaced by the
-> [pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
+> [pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g4-alpha)
 > classifier — see [`docs/CONSTRAINTS.md`](../../CONSTRAINTS.md) for
 > the current architecture. The fitz-gov benchmark dataset itself is
-> still active, and the current pyrrho-nano-g3.1 release reports
+> still active, and the current pyrrho-nano-g4-alpha release reports
 > 98.05% governance accuracy, 0.95% false-trustworthy, and 94.23%
 > query-contract macro F1.
 

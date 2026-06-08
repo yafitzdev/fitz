@@ -122,6 +122,73 @@ Pyrrho cutoff metadata lives in `metadata.governance_cutoff`.
 }
 ```
 
+Retrieval trace metadata lives in `metadata.retrieval_trace`. It is always
+included so benchmark and analysis tools can inspect how a pack was produced:
+
+```json
+{
+  "metadata": {
+    "retrieval_trace": {
+      "query": "Where is expired session refresh implemented?",
+      "profile": {},
+      "router": {
+        "tagged_queries": [],
+        "strategy_calls": [],
+        "raw_candidates": [],
+        "deduped": [],
+        "ranked": [],
+        "final": []
+      },
+      "reranker": {
+        "used": true,
+        "input": [],
+        "output": []
+      },
+      "final_addresses": [],
+      "read_results": [],
+      "retries": []
+    }
+  }
+}
+```
+
+The trace is not a separate debug API. It is part of the retrieval-first
+contract because benchmark reports need candidate frontiers, strategy scores,
+reranker order, and retry behavior alongside the selected evidence.
+
+Evidence compiler metadata lives in `metadata.evidence_compiler`. It records the
+Pyrrho query contract projected into retrieval, literal anchors used for
+mechanical evidence matching, how many evidence items entered and left
+compilation, the minimum source count required before governance may stop, and
+the selected evidence roles:
+
+```json
+{
+  "metadata": {
+    "evidence_compiler": {
+      "contract": {
+        "query_contract": "temporal_grounding",
+        "route": "technology_computing",
+        "answerability_shape": "direct_answer",
+        "retrieval_modality": "structured_table",
+        "identifiers": ["INC-101"],
+        "phrase_anchors": ["Project Orion"],
+        "source_anchors": [],
+        "keyword_anchors": ["latest", "status"],
+        "metric_terms": [],
+        "required_modalities": ["table"],
+        "temporal_policy": "temporal"
+      },
+      "input_count": 4,
+      "output_count": 2,
+      "min_sources": 2,
+      "filtered_all": false,
+      "selected": []
+    }
+  }
+}
+```
+
 Field meanings:
 
 | Field | Meaning |

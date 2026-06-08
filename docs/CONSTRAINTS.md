@@ -23,7 +23,7 @@ User query
 Retrieve via KRAG + FTS5
   │
   ▼
-Pyrrho g3.1 classifier (local CPU forward pass)
+Pyrrho g4-alpha classifier (local CPU forward pass)
   │
   ▼
 TRUSTWORTHY / DISPUTED / ABSTAIN
@@ -33,9 +33,9 @@ EvidencePack is returned; optional synthesizer can use the mode
 ```
 
 The classifier is
-[`yafitzdev/pyrrho-nano-g3.1`](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
+[`yafitzdev/pyrrho-nano-g4-alpha`](https://huggingface.co/yafitzdev/pyrrho-nano-g4-alpha)
 on Hugging Face. It is a multitask `answerdotai/ModernBERT-base`
-classifier trained from fitz-gov V8 data plus query-contract labels.
+classifier trained from fitz-gov data plus query and evidence signal labels.
 It exposes:
 
 | Head | Purpose |
@@ -44,13 +44,17 @@ It exposes:
 | Query contract | Pre-retrieval shape: evidence sufficiency, structured lookup, temporal grounding, exhaustive coverage, comparison coverage, representative overview. |
 | Route/domain | Broad domain label for observability. |
 | Taxonomy | Evidence-pattern label such as direct answer, conflict, missing evidence, wrong specificity. |
-| Scalars | Evidence sufficiency, alignment, coverage, conflict density, retry value, false-trustworthy risk. |
+| Retrieval action | Evidence-conditioned action: answer now, retrieve more, broaden, resolve conflict, clarify, or structured lookup. |
+| Gap type | Evidence gap label such as missing fact, missing timeframe, conflicting values, wrong entity, wrong scope, or unsupported inference. |
+| Answerability shape | Query-only answer shape: direct, synthesis, set, or structured reasoning. |
+| Retrieval modality | Query-only preferred evidence surface: text, table, code, config, logs, PDF layout, or mixed. |
+| Scalars | Evidence sufficiency, alignment, coverage, conflict density, retry value, false-trustworthy risk, and failure severity. |
 
 ---
 
 ## Implementation
 
-- `pyrrho.py` — the local Pyrrho g3.1 inference module
+- `pyrrho.py` — the local Pyrrho g4-alpha inference module
 - `protocol.py` — the `EvidenceItem` protocol (any object with
   `.content` + `.metadata`)
 - `instructions.py` — the small `AnswerMode → prompt instruction` map
@@ -67,7 +71,7 @@ decision = governance.decide(query, retrieved_contexts)
 # decision.mode    → AnswerMode (TRUSTWORTHY / DISPUTED / ABSTAIN)
 # decision.probs   → (p_abstain, p_disputed, p_trustworthy)
 # decision.reason  → one-line human-readable explanation
-# decision.query_contract / route / taxonomy expose g3.1 head metadata
+# decision exposes g4-alpha query, evidence, route, taxonomy, action, gap, and modality head metadata
 # decision.scalars exposes the retrieval-relevant scalar heads
 ```
 
@@ -94,7 +98,7 @@ if pred == TRUSTWORTHY and P(TRUSTWORTHY) < TAU:
     pred = argmax over (ABSTAIN, DISPUTED)
 ```
 
-`TAU = 0.39` is the default for g3.1.
+`TAU = 0.44` is the default for g4-alpha.
 
 ---
 
@@ -102,9 +106,9 @@ if pred == TRUSTWORTHY and P(TRUSTWORTHY) < TAU:
 
 The `FitzKragEngine` uses Pyrrho twice:
 
-1. Before recall, Pyrrho classifies query signals. The query contract steers
-   recall profile and cutoff policy, while newer packages can also provide
-   route, answerability shape, and preferred retrieval modality.
+1. Before recall, Pyrrho classifies query signals. The query contract, route,
+   answerability shape, and preferred retrieval modality steer recall profile
+   and cutoff policy.
 2. After reranking, Pyrrho evaluates evidence prefixes.
 
 The cutoff loop:
@@ -152,7 +156,7 @@ The model card calls out these known boundaries:
 
 ## See Also
 
-- [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g3.1)
+- [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-nano-g4-alpha)
 - [fitz-gov benchmark](https://github.com/yafitzdev/fitz-gov) — the evaluation dataset
 - [pyrrho training code](https://github.com/yafitzdev/pyrrho)
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — where governance fits in the engine pipeline
