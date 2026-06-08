@@ -97,8 +97,8 @@ def test_cutoff_serializes_pyrrho_multitask_metadata():
     assert pyrrho["scalars"]["evidence_failure_severity"] == 0.11
 
 
-def test_contract_gate_waits_for_all_comparison_entities():
-    """A comparison verdict cannot stop while one explicit side is missing."""
+def test_pyrrho_controls_when_comparison_coverage_is_complete():
+    """Comparison coverage is complete only when Pyrrho returns a trustworthy prefix."""
     profile = SimpleNamespace(
         has_temporal_intent=True,
         has_comparison_intent=True,
@@ -114,34 +114,40 @@ def test_contract_gate_waits_for_all_comparison_entities():
     result = apply_governance_cutoff(
         "What changed between Q1 and Q2 2024?",
         results,
-        _TrustworthyGovernance(),
+        _PrefixGovernance(
+            {
+                1: _decision(mode=AnswerMode.ABSTAIN),
+                2: _decision(mode=AnswerMode.ABSTAIN),
+                3: _decision(mode=AnswerMode.TRUSTWORTHY),
+            }
+        ),
         profile=profile,
     )
 
     assert result.mode is AnswerMode.TRUSTWORTHY
     assert len(result.selected) == 3
     assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-    assert "contract_blocker" in result.metadata["trajectory"][1]
+    assert "contract_blocker" not in result.metadata["trajectory"][1]
 
 
-def test_contract_gate_abstains_when_temporal_scope_is_missing():
-    """Pyrrho confidence should not certify evidence from the wrong month."""
+def test_pyrrho_abstention_is_final_at_cutoff():
+    """Missing-evidence judgments come from Pyrrho, not from a sidecar contract gate."""
     profile = SimpleNamespace(has_temporal_intent=True, has_comparison_intent=False)
 
     result = apply_governance_cutoff(
         "What changed in March 2024?",
         [_result("April feedback improved after the beta release.", "feedback_april_2024.md")],
-        _TrustworthyGovernance(),
+        _AbstainingGovernance(),
         profile=profile,
     )
 
     assert result.mode is AnswerMode.ABSTAIN
-    assert result.metadata["stop_reason"] == "contract_unsatisfied_at_cutoff"
-    assert "march 2024" in result.reasons[0]
+    assert result.metadata["stop_reason"] == "cutoff_exhausted"
+    assert result.metadata["pyrrho"]["mode"] == "abstain"
 
 
-def test_contract_gate_abstains_when_required_metric_is_missing():
-    """Metric questions need evidence containing the metric, not just the period."""
+def test_cutoff_does_not_override_pyrrho_trust_with_metric_gate():
+    """The cutoff wrapper must not add its own metric sufficiency verdict."""
     profile = SimpleNamespace(has_temporal_intent=True, has_comparison_intent=False)
 
     result = apply_governance_cutoff(
@@ -151,9 +157,9 @@ def test_contract_gate_abstains_when_required_metric_is_missing():
         profile=profile,
     )
 
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.metadata["contract_blocker"]
-    assert "revenue" in result.reasons[0]
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+    assert "contract_blocker" not in result.metadata
 
 
 def test_metric_comparison_cutoff_prefers_exact_table_evidence():
@@ -278,8 +284,8 @@ def test_retrieval_action_blocks_trustworthy_at_cutoff():
     )
 
 
-def test_retrieval_action_structured_lookup_satisfies_exact_identifier():
-    """g4 structured_lookup can trigger exact-match cutoff without profile support."""
+def test_retrieval_action_structured_lookup_blocks_trust_without_pyrrho_trust():
+    """structured_lookup is a Pyrrho retrieval-control request, not a trust verdict."""
     exact_match = _result("The trace shows TC-0901 failed during export.", "trace.md")
     noise = _result("Other trace entries passed.", "trace.md")
 
@@ -296,17 +302,14 @@ def test_retrieval_action_structured_lookup_satisfies_exact_identifier():
         ),
     )
 
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [exact_match]
-    assert result.metadata["stop_reason"] == "structured_lookup_exact_match"
-    assert result.metadata["structured_lookup_contract"] == {
-        "matched_identifiers": ["TC-0901"],
-        "matched_sources": 1,
-    }
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.selected == [exact_match, noise]
+    assert result.metadata["stop_reason"] == "retrieval_control_unsatisfied_at_cutoff"
+    assert "structured_lookup_contract" not in result.metadata
 
 
-def test_structured_lookup_exact_identifier_satisfies_retrieval_contract():
-    """Source-finding queries should trust exact identifier matches after Pyrrho abstains."""
+def test_structured_lookup_exact_identifier_does_not_override_pyrrho_abstention():
+    """Source-finding exact matches are evidence for Pyrrho, not final governance."""
     profile = SimpleNamespace(query_contract="structured_lookup")
     exact_match = _result(
         "All regression tests passed. TC-0901: Data export - PASSED.",
@@ -321,21 +324,15 @@ def test_structured_lookup_exact_identifier_satisfies_retrieval_contract():
         profile=profile,
     )
 
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [exact_match]
-    assert result.metadata["stop_reason"] == "structured_lookup_exact_match"
-    assert result.metadata["structured_lookup_contract"] == {
-        "matched_identifiers": ["TC-0901"],
-        "matched_sources": 1,
-    }
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.selected == [exact_match, noise]
+    assert result.metadata["stop_reason"] == "cutoff_exhausted"
+    assert "structured_lookup_contract" not in result.metadata
     assert result.metadata["pyrrho"]["mode"] == "abstain"
-    assert result.reasons == [
-        "Structured lookup contract satisfied by exact identifier match: TC-0901."
-    ]
 
 
-def test_private_identifier_exact_match_satisfies_structured_lookup_contract():
-    """Private Python function names should count as exact structured identifiers."""
+def test_private_identifier_exact_match_does_not_bypass_pyrrho():
+    """Private Python function names cannot certify trust without Pyrrho."""
     profile = SimpleNamespace(query_contract="structured_lookup")
     exact_match = _result(
         "def _format_query_profile(metadata: dict[str, object]) -> str:",
@@ -349,17 +346,14 @@ def test_private_identifier_exact_match_satisfies_structured_lookup_contract():
         profile=profile,
     )
 
-    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.mode is AnswerMode.ABSTAIN
     assert result.selected == [exact_match]
-    assert result.metadata["stop_reason"] == "structured_lookup_exact_match"
-    assert result.metadata["structured_lookup_contract"] == {
-        "matched_identifiers": ["_format_query_profile"],
-        "matched_sources": 1,
-    }
+    assert result.metadata["stop_reason"] == "cutoff_exhausted"
+    assert "structured_lookup_contract" not in result.metadata
 
 
 def test_structured_lookup_does_not_match_identifier_as_loose_words():
-    """Exact lookup should not confuse a function argument with another identifier."""
+    """Exact lookup matching is no longer a cutoff-level governance path."""
     profile = SimpleNamespace(query_contract="structured_lookup")
     near_match = _result(
         "def _format_query_profile(metadata: dict[str, object]) -> str:",
@@ -391,7 +385,7 @@ def test_contract_does_not_treat_natural_hyphen_term_as_exact_identifier():
 
 
 def test_comparison_contract_accepts_identifier_variant_without_trailing_topic():
-    """Comparison entities with code identifiers should not require trailing topic nouns."""
+    """Pyrrho trustworthy verdicts still use comparison-shaped prefix sizing."""
     profile = SimpleNamespace(
         has_comparison_intent=True,
         comparison_entities=["query_profile_metadata", "_format_query_profile responsibilities"],
@@ -419,8 +413,8 @@ def test_comparison_contract_accepts_identifier_variant_without_trailing_topic()
     assert "contract_blocker" not in result.metadata
 
 
-def test_comparison_contract_blocks_answer_now_when_identifier_side_is_missing():
-    """Pyrrho answer_now cannot certify one side of a comparison by loose word overlap."""
+def test_pyrrho_answer_now_is_authoritative_for_comparison_prefix():
+    """A confident Pyrrho answer_now head is authoritative at cutoff time."""
     profile = SimpleNamespace(
         has_comparison_intent=True,
         comparison_entities=["query_profile_metadata", "_format_query_profile responsibilities"],
@@ -444,9 +438,170 @@ def test_comparison_contract_blocks_answer_now_when_identifier_side_is_missing()
         profile=profile,
     )
 
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [near_match]
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+
+
+def test_compiler_required_table_does_not_override_pyrrho_abstention():
+    """Compiler-required table evidence is ledger input, not final governance."""
+    table = _result(
+        "Table: Warehouses\n"
+        "warehouse_id | region | item | stock | unit\n"
+        "WH-1 | west | flux capacitor | 17 | count",
+        "structured/warehouses.csv",
+    )
+    table.metadata["evidence_compiler"] = {
+        "rank": 1,
+        "alignment_score": 4,
+        "roles": ["required_table"],
+        "min_sources": 1,
+    }
+
+    result = apply_governance_cutoff(
+        "How many flux capacitor units are in the west region?",
+        [table],
+        _AbstainingGovernance(),
+        profile=SimpleNamespace(),
+    )
+
     assert result.mode is AnswerMode.ABSTAIN
-    assert result.metadata["stop_reason"] == "contract_unsatisfied_at_cutoff"
-    assert "query_profile_metadata" in result.reasons[0]
+    assert result.selected == [table]
+    assert result.metadata["stop_reason"] == "cutoff_exhausted"
+
+
+def test_evidence_contract_does_not_trust_conflict_roles():
+    """A single compiler conflict role is not enough to force a dispute."""
+    conflict = _result("Q1 revenue was 1.2 billion.", "finance.md")
+    conflict.metadata["evidence_compiler"] = {
+        "rank": 1,
+        "alignment_score": 2,
+        "roles": ["conflict_value"],
+        "min_sources": 2,
+    }
+
+    result = apply_governance_cutoff(
+        "What was Q1 revenue?",
+        [conflict],
+        _AbstainingGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["stop_reason"] == "cutoff_exhausted"
+
+
+def test_pyrrho_dispute_owns_conflict_verdict():
+    """Compiler-labeled conflicts need Pyrrho's DISPUTED verdict to govern."""
+    code = _result("if user.get('archived') == 'true': return False", "feature_flags.py")
+    code.metadata["evidence_compiler"] = {
+        "rank": 1,
+        "alignment_score": 5,
+        "roles": ["conflict_value", "required_symbol"],
+        "min_sources": 2,
+    }
+    docs = _result("Archived users remain eligible for beta flags.", "README.md")
+    docs.metadata["evidence_compiler"] = {
+        "rank": 2,
+        "alignment_score": 4,
+        "roles": ["conflict_value", "conflict_companion:documentation"],
+        "min_sources": 2,
+    }
+
+    result = apply_governance_cutoff(
+        "Are archived users eligible for beta feature flags?",
+        [code, docs],
+        _FixedGovernance(_decision(mode=AnswerMode.DISPUTED)),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.DISPUTED
+    assert result.selected == [code, docs]
+    assert result.metadata["stop_reason"] == "stable_dispute_at_cutoff"
+
+
+def test_phrase_anchor_contract_does_not_override_pyrrho_abstention():
+    """Phrase-anchor compiler roles cannot create a trustworthy result by themselves."""
+    evidence = _result(
+        "Enterprise Critical cases receive acknowledgement within 7 minutes.",
+        "support_handbook.md",
+    )
+    evidence.metadata["evidence_compiler"] = {
+        "rank": 1,
+        "alignment_score": 6,
+        "roles": ["anchor:Enterprise Critical"],
+        "min_sources": 1,
+    }
+
+    result = apply_governance_cutoff(
+        "What acknowledgement time applies to Enterprise Critical cases?",
+        [evidence],
+        _AbstainingGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.selected == [evidence]
+    assert result.metadata["stop_reason"] == "cutoff_exhausted"
+
+
+def test_compiler_min_sources_do_not_create_trustworthy_mode():
+    """Compiler min_sources can assemble the prefix but cannot decide the mode."""
+    table = _result("warehouse_id | item | stock\nWH-1 | flux capacitor | 17", "warehouses.csv")
+    table.metadata["evidence_compiler"] = {
+        "rank": 1,
+        "alignment_score": 5,
+        "roles": ["required_table"],
+        "min_sources": 2,
+    }
+    release = _result("Release 2026.05 confirmed 17 flux capacitor units.", "release_notes.md")
+    release.metadata["evidence_compiler"] = {
+        "rank": 2,
+        "alignment_score": 5,
+        "roles": ["aligned"],
+        "min_sources": 2,
+    }
+
+    result = apply_governance_cutoff(
+        "Which release mentioned flux capacitor units and how many did it confirm?",
+        [table, release],
+        _AbstainingGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.selected == [table, release]
+    assert result.metadata["stop_reason"] == "cutoff_exhausted"
+
+
+def test_compiler_min_sources_define_pyrrho_prefix_floor():
+    """Pyrrho should not be asked to trust before the contract ledger bundle is visible."""
+    table = _result("warehouse_id | item | stock\nWH-1 | flux capacitor | 17", "warehouses.csv")
+    table.metadata["evidence_compiler"] = {
+        "rank": 1,
+        "alignment_score": 5,
+        "roles": ["required_table"],
+        "min_sources": 2,
+    }
+    release = _result("Release 2026.05 confirmed 17 flux capacitor units.", "release_notes.md")
+    release.metadata["evidence_compiler"] = {
+        "rank": 2,
+        "alignment_score": 5,
+        "roles": ["aligned"],
+        "min_sources": 2,
+    }
+
+    result = apply_governance_cutoff(
+        "Which release mentioned flux capacitor units and how many did it confirm?",
+        [table, release],
+        _TrustworthyGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [table, release]
+    assert result.metadata["trajectory"][0]["pyrrho_contract_prefix_min"] == 2
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
 
 
 class _TrustworthyGovernance:

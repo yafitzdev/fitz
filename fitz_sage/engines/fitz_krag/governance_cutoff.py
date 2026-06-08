@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
 from fitz_sage.core.answer_mode import AnswerMode
-
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.types import ReadResult
 
@@ -37,13 +36,6 @@ _RETRIEVAL_CONTROL_BLOCKING_ACTIONS = {
 _MONTH_PATTERN = (
     r"\b(january|february|march|april|may|june|july|august|september|"
     r"october|november|december)(?:\s+(\d{4}))?\b"
-)
-_EXACT_IDENTIFIER_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"
-    r"(?:[-_][A-Za-z0-9]+)*(?![A-Za-z0-9_])|"
-    r"(?<![A-Za-z0-9_])(?=[A-Za-z0-9-]*\d)[A-Za-z][A-Za-z0-9]*"
-    r"(?:-[A-Za-z0-9]+)+(?![A-Za-z0-9_])|"
-    r"\b[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9_-]*\b"
 )
 _REQUIRED_QUERY_TERMS = {
     "revenue": ("revenue", "revenues"),
@@ -107,7 +99,7 @@ _METRIC_MODIFIER_TERMS = {"average", "avg", "count", "mean", "number", "sum", "t
 
 @dataclass(frozen=True)
 class GovernanceCutoffPolicy:
-    """Deterministic stop policy wrapped around Pyrrho verdicts."""
+    """Prefix stop policy for Pyrrho verdict evaluation."""
 
     query_shape: str
     max_docs: int
@@ -183,6 +175,7 @@ def apply_governance_cutoff(
         )
 
     results = _prioritize_comparison_metric_evidence(query, profile, results, policy)
+    pyrrho_contract_prefix_min = _pyrrho_contract_prefix_min(results)
 
     last_reasons: list[str] = []
     last_decision: Any = None
@@ -197,25 +190,6 @@ def apply_governance_cutoff(
         last_reasons = _decision_reasons(decision)
         trace = _prefix_trace(size, mode, decision)
 
-        structured_lookup_matches = _structured_lookup_exact_matches(
-            query,
-            profile,
-            results[:size],
-            policy,
-            decision=decision,
-        )
-        if structured_lookup_matches:
-            trajectory.append(trace)
-            return _structured_lookup_cutoff_result(
-                query,
-                structured_lookup_matches,
-                policy,
-                evaluated=size,
-                decision=decision,
-                trajectory=trajectory,
-                started_at=t0,
-            )
-
         retrieval_control_blocker = _retrieval_control_blocker(decision)
         last_retrieval_control_blocker = retrieval_control_blocker
         if retrieval_control_blocker:
@@ -223,23 +197,19 @@ def apply_governance_cutoff(
 
         if mode is AnswerMode.TRUSTWORTHY:
             consecutive_disputed = 0
-            contract_blocker = _query_contract_blocker(
-                query,
-                profile,
-                results[:size],
-                policy,
-            )
-            if contract_blocker:
-                trace["contract_blocker"] = contract_blocker
-
-            can_stop = size >= policy.min_trustworthy_docs
+            required_trustworthy_docs = pyrrho_contract_prefix_min or policy.min_trustworthy_docs
+            can_stop = size >= required_trustworthy_docs
             stop_reason = "trustworthy_min_evidence_met"
-            if not can_stop and _should_stop_on_answer_now(decision):
+            if (
+                not can_stop
+                and not pyrrho_contract_prefix_min
+                and _should_stop_on_answer_now(decision)
+            ):
                 can_stop = True
                 stop_reason = "pyrrho_answer_now"
 
             if can_stop:
-                if contract_blocker or retrieval_control_blocker:
+                if retrieval_control_blocker:
                     trajectory.append(trace)
                     continue
                 trajectory.append(trace)
@@ -256,10 +226,11 @@ def apply_governance_cutoff(
                         decision=decision,
                         trajectory=trajectory,
                         stop_reason=stop_reason,
-                        contract_blocker=contract_blocker,
                         retrieval_control_blocker=retrieval_control_blocker,
                     ),
                 )
+            if pyrrho_contract_prefix_min > size:
+                trace["pyrrho_contract_prefix_min"] = pyrrho_contract_prefix_min
             trajectory.append(trace)
             continue
 
@@ -289,24 +260,6 @@ def apply_governance_cutoff(
         trajectory.append(trace)
         consecutive_disputed = 0
 
-    structured_lookup_matches = _structured_lookup_exact_matches(
-        query,
-        profile,
-        results,
-        policy,
-        decision=last_decision,
-    )
-    if structured_lookup_matches:
-        return _structured_lookup_cutoff_result(
-            query,
-            structured_lookup_matches,
-            policy,
-            evaluated=policy.max_docs,
-            decision=last_decision,
-            trajectory=trajectory,
-            started_at=t0,
-        )
-
     if stable_disputed_decision is not None:
         disputed_reasons = _decision_reasons(stable_disputed_decision)
         disputed_reasons.append(
@@ -328,14 +281,7 @@ def apply_governance_cutoff(
             ),
         )
 
-    contract_blocker = _query_contract_blocker(query, profile, results[: policy.max_docs], policy)
-    if contract_blocker:
-        reasons = list(last_reasons)
-        reasons.insert(0, contract_blocker)
-        reasons.append("Evidence did not satisfy the query contract within the cutoff.")
-        stop_reason = "contract_unsatisfied_at_cutoff"
-        retrieval_control_blocker = None
-    elif last_retrieval_control_blocker:
+    if last_retrieval_control_blocker:
         reasons = list(last_reasons)
         reasons.insert(0, last_retrieval_control_blocker)
         reasons.append("Pyrrho retrieval control did not authorize an answer within the cutoff.")
@@ -361,7 +307,6 @@ def apply_governance_cutoff(
             decision=last_decision,
             trajectory=trajectory,
             stop_reason=stop_reason,
-            contract_blocker=contract_blocker,
             retrieval_control_blocker=retrieval_control_blocker,
         ),
     )
@@ -374,7 +319,7 @@ def governance_cutoff_policy(
     *,
     query: str | None = None,
 ) -> GovernanceCutoffPolicy:
-    """Build a deterministic policy for interpreting Pyrrho verdicts."""
+    """Build the prefix policy used to ask Pyrrho for governance verdicts."""
     max_docs = _governance_cutoff_limit(result_count, requested_top_k)
     query_shape = governance_query_shape(profile, query=query)
     min_docs_by_shape = {
@@ -616,7 +561,6 @@ def _governance_cutoff_metadata(
     decision: Any = None,
     trajectory: list[dict[str, Any]] | None = None,
     stop_reason: str | None = None,
-    contract_blocker: str | None = None,
     retrieval_control_blocker: str | None = None,
 ) -> dict[str, Any]:
     """Build serializable metadata for the cutoff loop."""
@@ -628,8 +572,6 @@ def _governance_cutoff_metadata(
     }
     if stop_reason:
         metadata["stop_reason"] = stop_reason
-    if contract_blocker:
-        metadata["contract_blocker"] = contract_blocker
     if retrieval_control_blocker:
         metadata["retrieval_control_blocker"] = retrieval_control_blocker
     if policy is not None:
@@ -645,162 +587,6 @@ def _governance_cutoff_metadata(
     if pyrrho_metadata:
         metadata["pyrrho"] = pyrrho_metadata
     return metadata
-
-
-def _query_contract_blocker(
-    query: str,
-    profile: Any,
-    results: list["ReadResult"],
-    policy: GovernanceCutoffPolicy,
-) -> str | None:
-    """Return a hard blocker when evidence misses explicit query requirements."""
-    requirements = _contract_requirements(query, profile, policy)
-    identifier_requirements = _contract_identifier_requirements(query, profile, policy)
-    if not requirements and not identifier_requirements:
-        return None
-
-    evidence = _normalized_evidence(results)
-    missing = [
-        label
-        for label, variants in requirements
-        if not any(_contains_all_terms(evidence, variant) for variant in variants)
-    ]
-    missing.extend(
-        label
-        for label in identifier_requirements
-        if not _evidence_contains_identifier(results, label)
-    )
-    if not missing:
-        return None
-
-    deduped_missing = list(dict.fromkeys(missing))
-    shown = ", ".join(deduped_missing[:4])
-    suffix = "" if len(deduped_missing) <= 4 else f", +{len(deduped_missing) - 4} more"
-    return f"Query contract not satisfied: retrieved evidence is missing {shown}{suffix}."
-
-
-def _structured_lookup_exact_matches(
-    query: str,
-    profile: Any,
-    results: list["ReadResult"],
-    policy: GovernanceCutoffPolicy,
-    *,
-    decision: Any = None,
-) -> list["ReadResult"]:
-    """Return individual sources that satisfy an exact structured lookup."""
-    action_label, action_confidence = _head_label_and_confidence(decision, "retrieval_action")
-    if getattr(profile, "query_contract", None) != "structured_lookup" and not (
-        action_label == "structured_lookup"
-        and action_confidence >= _RETRIEVAL_CONTROL_MIN_CONFIDENCE
-    ):
-        return []
-
-    identifiers = _exact_identifiers(query)
-    if not identifiers:
-        return []
-
-    matches: list["ReadResult"] = []
-    for result in results[: policy.max_docs]:
-        if all(_evidence_contains_identifier([result], identifier) for identifier in identifiers):
-            matches.append(result)
-    return matches
-
-
-def _structured_lookup_cutoff_result(
-    query: str,
-    matches: list["ReadResult"],
-    policy: GovernanceCutoffPolicy,
-    *,
-    evaluated: int,
-    decision: Any,
-    trajectory: list[dict[str, Any]],
-    started_at: float,
-) -> GovernanceCutoffResult:
-    """Build a cutoff result for an exact structured lookup match."""
-    identifiers = _exact_identifiers(query)
-    identifier_text = ", ".join(identifiers)
-    mode = AnswerMode.TRUSTWORTHY
-    return GovernanceCutoffResult(
-        selected=matches,
-        mode=mode,
-        reasons=[
-            f"Structured lookup contract satisfied by exact identifier match: {identifier_text}."
-        ],
-        timings=[("Governance", time.perf_counter() - started_at)],
-        metadata={
-            **_governance_cutoff_metadata(
-                policy,
-                evaluated=evaluated,
-                selected=len(matches),
-                mode=mode,
-                decision=decision,
-                trajectory=trajectory,
-                stop_reason="structured_lookup_exact_match",
-            ),
-            "structured_lookup_contract": {
-                "matched_identifiers": identifiers,
-                "matched_sources": len(matches),
-            },
-        },
-    )
-
-
-def _contract_requirements(
-    query: str,
-    profile: Any,
-    policy: GovernanceCutoffPolicy,
-) -> list[tuple[str, tuple[tuple[str, ...], ...]]]:
-    """Build explicit coverage requirements from the query and retrieval profile."""
-    requirements: list[tuple[str, tuple[tuple[str, ...], ...]]] = []
-    seen: set[str] = set()
-
-    def add(label: str, variants: tuple[tuple[str, ...], ...]) -> None:
-        key = label.lower()
-        if key and key not in seen:
-            seen.add(key)
-            requirements.append((label, variants))
-
-    for label, variants in _required_temporal_requirements(query):
-        add(label, variants)
-
-    if policy.query_shape == "comparison" or getattr(profile, "has_comparison_intent", False):
-        for entity in getattr(profile, "comparison_entities", []) or []:
-            normalized = _clean_requirement_label(str(entity))
-            if normalized:
-                add(normalized, _comparison_entity_requirement_variants(str(entity)))
-
-    lower = query.lower()
-    for term, variants in _REQUIRED_QUERY_TERMS.items():
-        if re.search(rf"\b{re.escape(term)}s?\b", lower):
-            add(term, tuple((variant,) for variant in variants))
-
-    return requirements
-
-
-def _contract_identifier_requirements(
-    query: str,
-    profile: Any,
-    policy: GovernanceCutoffPolicy,
-) -> list[str]:
-    """Return exact identifiers that must appear as raw identifiers in evidence."""
-    identifiers: list[str] = []
-    seen: set[str] = set()
-
-    def add(identifier: str) -> None:
-        key = identifier.lower()
-        if key and key not in seen:
-            seen.add(key)
-            identifiers.append(identifier)
-
-    for identifier in _exact_identifiers(query):
-        add(identifier)
-
-    if policy.query_shape == "comparison" or getattr(profile, "has_comparison_intent", False):
-        for entity in getattr(profile, "comparison_entities", []) or []:
-            for identifier in _exact_identifiers(str(entity)):
-                add(identifier)
-
-    return identifiers
 
 
 def _prioritize_comparison_metric_evidence(
@@ -945,49 +731,6 @@ def _required_temporal_requirements(query: str) -> list[tuple[str, tuple[tuple[s
     return requirements
 
 
-def _exact_identifiers(query: str) -> list[str]:
-    """Extract exact identifiers from the user query."""
-    identifiers: list[str] = []
-    seen: set[str] = set()
-    for match in _EXACT_IDENTIFIER_PATTERN.finditer(query):
-        value = match.group(0).strip(".,;:()[]{}")
-        if not value or value.lower() in seen:
-            continue
-        seen.add(value.lower())
-        identifiers.append(value)
-    return identifiers
-
-
-def _comparison_entity_requirement_variants(entity: str) -> tuple[tuple[str, ...], ...]:
-    """Return strict entity terms plus exact-identifier variants for comparison coverage."""
-    variants: list[tuple[str, ...]] = []
-    seen: set[tuple[str, ...]] = set()
-
-    def add_variant(variant: tuple[str, ...]) -> None:
-        if variant and variant not in seen:
-            seen.add(variant)
-            variants.append(variant)
-
-    normalized = _clean_requirement_label(entity)
-    add_variant(_terms_variant(normalized))
-    for identifier in _exact_identifiers(entity):
-        for variant in _identifier_variants(identifier):
-            add_variant(variant)
-
-    return tuple(variants)
-
-
-def _identifier_variants(identifier: str) -> tuple[tuple[str, ...], ...]:
-    """Return tokenizer-tolerant variants for an exact identifier."""
-    variants = {
-        _terms_variant(identifier),
-        _terms_variant(identifier.replace("_", "-")),
-        _terms_variant(identifier.replace("-", "_")),
-        _terms_variant(identifier.replace("_", " ").replace("-", " ")),
-    }
-    return tuple(variant for variant in variants if variant)
-
-
 def _normalized_evidence(results: list["ReadResult"]) -> str:
     """Combine selected evidence fields into normalized searchable text."""
     return _normalize_text(_raw_evidence(results))
@@ -1009,16 +752,6 @@ def _raw_evidence(results: list["ReadResult"]) -> str:
     return " ".join(parts)
 
 
-def _evidence_contains_identifier(results: list["ReadResult"], identifier: str) -> bool:
-    """Return whether raw evidence contains an exact identifier or tokenizer variant."""
-    raw = _raw_evidence(results).lower()
-    for variant in _identifier_text_variants(identifier):
-        pattern = _identifier_text_pattern(variant)
-        if re.search(pattern, raw):
-            return True
-    return False
-
-
 def _contains_all_terms(evidence: str, terms: tuple[str, ...]) -> bool:
     """Return whether all normalized terms are present in selected evidence."""
     return all(re.search(rf"\b{re.escape(term)}\b", evidence) for term in terms if term)
@@ -1027,30 +760,6 @@ def _contains_all_terms(evidence: str, terms: tuple[str, ...]) -> bool:
 def _terms_variant(value: str) -> tuple[str, ...]:
     """Normalize a requirement label into word-like evidence terms."""
     return tuple(part for part in _normalize_text(value).split() if part)
-
-
-def _identifier_text_variants(identifier: str) -> tuple[str, ...]:
-    """Return raw-text variants for exact identifier matching."""
-    normalized = identifier.strip().lower()
-    spaced = " ".join(part for part in re.split(r"[-_]+", normalized) if part)
-    variants = (
-        normalized,
-        normalized.replace("_", "-"),
-        normalized.replace("-", "_"),
-        spaced,
-    )
-    return tuple(dict.fromkeys(variant for variant in variants if variant))
-
-
-def _identifier_text_pattern(variant: str) -> str:
-    """Build a raw-text regex for one exact identifier variant."""
-    escaped = re.escape(variant).replace(r"\ ", r"\s+")
-    return rf"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])"
-
-
-def _clean_requirement_label(value: str) -> str:
-    """Normalize a profile/entity label without destroying temporal tokens."""
-    return re.sub(r"\s+", " ", value.strip(" ?.,;:()[]{}")).lower()
 
 
 def _normalize_text(value: str) -> str:
@@ -1159,6 +868,47 @@ def _governance_cutoff_limit(result_count: int, requested_top_k: Any = None) -> 
         except (TypeError, ValueError):
             pass
     return max(1, min(result_count, limit))
+
+
+def _pyrrho_contract_prefix_min(results: list["ReadResult"]) -> int:
+    """Return how many compiler-ledger sources Pyrrho should see before trust."""
+    required = 0
+    for result in results:
+        metadata = getattr(result, "metadata", {}) or {}
+        if not isinstance(metadata, dict):
+            continue
+        compiler = metadata.get("evidence_compiler")
+        if not isinstance(compiler, dict):
+            continue
+        if not _compiler_metadata_requires_prefix_floor(compiler):
+            continue
+        try:
+            required = max(required, int(compiler.get("min_sources", 0)))
+        except (TypeError, ValueError):
+            continue
+    return min(len(results), required)
+
+
+def _compiler_metadata_requires_prefix_floor(compiler: dict[str, Any]) -> bool:
+    """Return whether compiler metadata represents a real Pyrrho evidence obligation."""
+    roles = compiler.get("roles", [])
+    if isinstance(roles, list):
+        for role in roles:
+            role_text = str(role)
+            if (
+                role_text.startswith("required_")
+                or role_text.startswith("source_anchor:")
+                or role_text.startswith("bridge:")
+                or role_text.startswith("bridge_document:")
+                or role_text in {"conflict_value", "latest", "final"}
+            ):
+                return True
+    contract = compiler.get("contract")
+    if not isinstance(contract, dict):
+        return False
+    if contract.get("required_modalities") or contract.get("source_anchors"):
+        return True
+    return bool(contract.get("temporal_policy") in {"latest", "final"})
 
 
 __all__ = [
