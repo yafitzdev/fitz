@@ -64,13 +64,17 @@ def compile_evidence(
 
     working = aligned if aligned else units
     ordered = _compile_order(contract, working)
+    ordered, suppressed = _suppress_superseded_units(contract, ordered)
     min_sources = _minimum_sources(contract, ordered)
     compiled = [
         _with_compiler_metadata(unit.result, unit, rank, min_sources, contract)
         for rank, unit in enumerate(ordered, start=1)
         if unit.result is not None
     ]
-    return EvidenceCompilation(compiled, _metadata(contract, units, ordered, min_sources))
+    return EvidenceCompilation(
+        compiled,
+        _metadata(contract, units, ordered, min_sources, suppressed=suppressed),
+    )
 
 
 def order_addresses_for_contract(
@@ -340,9 +344,7 @@ def _span_score(
 
     query_terms = set(_normalize_text(contract.query).split())
     normalized = _normalize_text(block)
-    if "final" in query_terms and (
-        "final" in normalized or "confirmed" in normalized
-    ):
+    if "final" in query_terms and ("final" in normalized or "confirmed" in normalized):
         score += 20
     if query_terms.intersection({"latest", "current"}):
         if "current" in normalized:
@@ -398,6 +400,7 @@ def _metadata(
     min_sources: int,
     *,
     filtered_all: bool = False,
+    suppressed: list[EvidenceUnit] | None = None,
 ) -> dict[str, Any]:
     """Build serializable compiler trace metadata."""
     return {
@@ -416,6 +419,17 @@ def _metadata(
                 "roles": list(unit.roles),
             }
             for index, unit in enumerate(ordered, start=1)
+        ],
+        "suppressed": [
+            {
+                "kind": unit.kind,
+                "file_path": unit.file_path,
+                "location": unit.location,
+                "alignment_score": unit.alignment_score,
+                "roles": list(unit.roles),
+                "reason": "superseded_temporal_evidence",
+            }
+            for unit in (suppressed or [])
         ],
     }
 
@@ -461,7 +475,9 @@ def _hard_anchor_score(contract: _QueryContract, text: str) -> int:
 
 def _identity_hard_anchor_score(contract: _QueryContract, unit: EvidenceUnit) -> int:
     """Score hard anchors only against evidence body and source identity."""
-    return _hard_anchor_score(contract, _unit_text(unit.content_text, unit.location, unit.file_path))
+    return _hard_anchor_score(
+        contract, _unit_text(unit.content_text, unit.location, unit.file_path)
+    )
 
 
 def _closure_bridge_content_score(unit: EvidenceUnit) -> int:
@@ -531,6 +547,140 @@ def _content_alignment_score(contract: _QueryContract, unit: EvidenceUnit) -> in
         if _contains_term_variant(unit.content_text, term):
             score += 1
     return score
+
+
+def _suppress_superseded_units(
+    contract: _QueryContract,
+    units: list[EvidenceUnit],
+) -> tuple[list[EvidenceUnit], list[EvidenceUnit]]:
+    """Drop older same-anchor status evidence once final/current evidence is selected."""
+    if len(units) < 2 or not _has_temporal_selection_intent(contract):
+        return units, []
+
+    authoritative = _authoritative_temporal_signatures(contract, units)
+    if not authoritative:
+        return units, []
+
+    retained: list[EvidenceUnit] = []
+    suppressed: list[EvidenceUnit] = []
+    for unit in units:
+        unit_signatures = _unit_temporal_signatures(contract, unit)
+        matching = unit_signatures & set(authoritative)
+        if matching and _is_superseded_temporal_unit(contract, unit, authoritative, matching):
+            suppressed.append(unit)
+            continue
+        retained.append(unit)
+    return retained, suppressed
+
+
+def _has_temporal_selection_intent(contract: _QueryContract) -> bool:
+    """Return whether literal query anchors request one status over another."""
+    query_terms = set(contract.keyword_anchors)
+    if "final" in query_terms:
+        return True
+    return contract.temporal_policy == "temporal" and bool(
+        {"current", "latest"}.intersection(query_terms)
+    )
+
+
+def _authoritative_temporal_signatures(
+    contract: _QueryContract,
+    units: list[EvidenceUnit],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Return source-thread signatures that have selected final/current evidence."""
+    max_dates = _max_dates_by_signature(contract, units)
+    authoritative: dict[tuple[str, str], dict[str, Any]] = {}
+    query_terms = set(contract.keyword_anchors)
+    for unit in units:
+        signatures = _unit_temporal_signatures(contract, unit)
+        if not signatures:
+            continue
+        text = _normalize_text(_unit_text(unit.content_text, unit.location))
+        date_value = _latest_date_value(unit.content_text)
+        for signature in signatures:
+            reason: str | None = None
+            if "final" in query_terms and ("final" in text or "confirmed" in text):
+                reason = "final"
+            elif query_terms.intersection({"current", "latest"}):
+                if "current" in text:
+                    reason = "current"
+                elif date_value is not None and date_value == max_dates.get(signature):
+                    reason = "latest_date"
+            if reason is None:
+                continue
+            entry = authoritative.setdefault(
+                signature,
+                {
+                    "reason": reason,
+                    "date": date_value,
+                    "indices": set(),
+                },
+            )
+            entry["indices"].add(unit.index)
+            if date_value is not None and (entry.get("date") is None or date_value > entry["date"]):
+                entry["reason"] = reason
+                entry["date"] = date_value
+    return authoritative
+
+
+def _max_dates_by_signature(
+    contract: _QueryContract,
+    units: list[EvidenceUnit],
+) -> dict[tuple[str, str], int]:
+    """Return the latest observed date for each source-thread signature."""
+    max_dates: dict[tuple[str, str], int] = {}
+    for unit in units:
+        date_value = _latest_date_value(unit.content_text)
+        if date_value is None:
+            continue
+        for signature in _unit_temporal_signatures(contract, unit):
+            max_dates[signature] = max(date_value, max_dates.get(signature, 0))
+    return max_dates
+
+
+def _unit_temporal_signatures(contract: _QueryContract, unit: EvidenceUnit) -> set[tuple[str, str]]:
+    """Return source-thread signatures for same-file temporal supersession."""
+    identity_text = _unit_text(unit.content_text, unit.location, unit.file_path)
+    signatures: set[tuple[str, str]] = set()
+    file_path = unit.file_path.lower()
+    for identifier in contract.identifiers:
+        if _contains_identifier(identity_text, identifier):
+            signatures.add((file_path, f"id:{identifier.lower()}"))
+    for phrase in contract.phrase_anchors:
+        if _contains_phrase(identity_text, phrase):
+            signatures.add((file_path, f"phrase:{_normalize_text(phrase)}"))
+    return signatures
+
+
+def _is_superseded_temporal_unit(
+    contract: _QueryContract,
+    unit: EvidenceUnit,
+    authoritative: dict[tuple[str, str], dict[str, Any]],
+    matching_signatures: set[tuple[str, str]],
+) -> bool:
+    """Return whether a unit is older or competing evidence for a selected source thread."""
+    query_terms = set(contract.keyword_anchors)
+    text = _normalize_text(_unit_text(unit.content_text, unit.location))
+    if "final" in query_terms and ("final" in text or "confirmed" in text):
+        return False
+    if query_terms.intersection({"current", "latest"}) and "current" in text:
+        return False
+
+    unit_date = _latest_date_value(unit.content_text)
+    for signature in matching_signatures:
+        if unit.index in authoritative[signature].get("indices", set()):
+            return False
+        authoritative_date = authoritative[signature].get("date")
+        if (
+            unit_date is not None
+            and authoritative_date is not None
+            and unit_date < authoritative_date
+        ):
+            return True
+
+    if "final" in query_terms:
+        return bool(unit.numbers)
+    return False
 
 
 def _unit_order_key(contract: _QueryContract, unit: EvidenceUnit) -> tuple[int, int, int, int]:

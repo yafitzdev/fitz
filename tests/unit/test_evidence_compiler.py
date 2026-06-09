@@ -99,6 +99,32 @@ def test_compiler_focuses_current_span_inside_multi_fact_section() -> None:
     assert compiled.results[0].metadata["evidence_span"]["selected_index"] == 2
 
 
+def test_compiler_keeps_authoritative_latest_section_when_it_contains_old_history() -> None:
+    """A latest section can contain older history without being suppressed as stale."""
+    status = _result(
+        "On 2026-03-04, Project Atlas entered a pilot in Singapore and Seoul.\n\n"
+        "On 2026-07-18, Project Atlas reached limited general availability in APAC.",
+        "unstructured/product_launch_status.md",
+        location="Project Atlas APAC",
+    )
+    finance = _result(
+        "Project Atlas FY27 pipeline is expected to reach 7.8 million ARR.",
+        "unstructured/finance_forecast.md",
+        location="Finance Forecast",
+    )
+
+    compiled = compile_evidence(
+        "What is the latest APAC status for Project Atlas?",
+        [finance, status],
+        profile=_profile(query_contract="temporal_grounding"),
+    )
+
+    assert compiled.results[0].address.location == "Project Atlas APAC"
+    assert "limited general availability" in compiled.results[0].content
+    assert "entered a pilot" not in compiled.results[0].content
+    assert compiled.metadata["suppressed"] == []
+
+
 def test_compiler_does_not_count_parser_toc_as_evidence_body() -> None:
     """File comments and child TOCs should not outrank factual subsections."""
     index = _result(
@@ -168,8 +194,8 @@ def test_compiler_orders_temporal_candidates_from_pyrrho_contract() -> None:
     assert compiled.metadata["contract"]["temporal_policy"] == "temporal"
 
 
-def test_compiler_does_not_filter_final_estimates_without_pyrrho_verdict() -> None:
-    """Final/stale authority is Pyrrho governance, not compiler-side filtering."""
+def test_compiler_suppresses_same_source_initial_estimate_after_final_evidence() -> None:
+    """Final same-anchor evidence supersedes earlier estimates in the compiler prefix."""
     final = _result(
         "The final postmortem confirmed that Search outage INC-101 recovered after 42 minutes.",
         "unstructured/outage_postmortem.md",
@@ -186,7 +212,8 @@ def test_compiler_does_not_filter_final_estimates_without_pyrrho_verdict() -> No
         [initial, final],
     )
 
-    assert {result.content for result in compiled.results} == {initial.content, final.content}
+    assert [result.content for result in compiled.results] == [final.content]
+    assert compiled.metadata["suppressed"][0]["location"] == "Initial Status Update"
 
 
 def test_compiler_promotes_required_code_symbol() -> None:
@@ -618,7 +645,9 @@ def _result(
         score=1.0,
         metadata={"source_path": file_path, **(address_metadata or {})},
     )
-    return ReadResult(address=address, content=content, file_path=file_path, metadata=metadata or {})
+    return ReadResult(
+        address=address, content=content, file_path=file_path, metadata=metadata or {}
+    )
 
 
 def _address(
