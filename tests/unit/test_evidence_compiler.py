@@ -56,8 +56,97 @@ def test_compiler_filters_unaligned_hard_anchor_results() -> None:
     assert compiled.metadata["contract"]["phrase_anchors"] == ["Project Nebula"]
 
 
-def test_compiler_records_temporal_contract_without_date_reordering() -> None:
-    """Temporal policy is exposed to Pyrrho without local latest-date selection."""
+def test_compiler_requires_anchor_in_evidence_not_closure_metadata() -> None:
+    """Closure bridge metadata should not make unrelated text satisfy a hard anchor."""
+    closure_result = _result(
+        "The finance report says Q1 revenue was 1.2 billion dollars.",
+        "unstructured/finance_q1_report.md",
+        metadata={
+            "evidence_closure": {
+                "role": "bridge_document:finance report",
+                "contract_phrase_anchors": ["Project Nebula"],
+                "bridges": ["Q1"],
+            }
+        },
+    )
+
+    compiled = compile_evidence("What is the Project Nebula budget?", [closure_result])
+
+    assert compiled.results == []
+    assert compiled.metadata["filtered_all"] is True
+
+
+def test_compiler_focuses_current_span_inside_multi_fact_section() -> None:
+    """EvidencePack content should not mix stale and current facts from one section."""
+    status = _result(
+        "[Introduction]\n"
+        "2026-03-10: Pilot users under exception MFA-CX-13 may skip hardware keys until "
+        "renewal.\n\n"
+        "2026-08-02: Current rule: no active MFA exceptions remain for customer data "
+        "systems.",
+        "unstructured/access_policy.md",
+        location="MFA Exceptions",
+    )
+
+    compiled = compile_evidence(
+        "What is the current MFA exception status for customer data systems?",
+        [status],
+        profile=_profile(query_contract="temporal_grounding"),
+    )
+
+    assert "Current rule" in compiled.results[0].content
+    assert "may skip hardware keys" not in compiled.results[0].content
+    assert compiled.results[0].metadata["evidence_span"]["selected_index"] == 2
+
+
+def test_compiler_does_not_count_parser_toc_as_evidence_body() -> None:
+    """File comments and child TOCs should not outrank factual subsections."""
+    index = _result(
+        "<!-- benchmarks/corpora/core/unstructured/project_orion_status.md -->\n\n"
+        "Subsections:\n"
+        "  - January Field Note\n"
+        "  - May Launch Memo",
+        "unstructured/project_orion_status.md",
+        location="Introduction",
+    )
+    may = _result(
+        "On 2026-05-20, Project Orion reached general availability in the EU region.",
+        "unstructured/project_orion_status.md",
+        location="Introduction > May Launch Memo",
+    )
+
+    compiled = compile_evidence(
+        "What is the latest EU status for Project Orion?",
+        [index, may],
+        profile=_profile(query_contract="temporal_grounding"),
+    )
+
+    assert compiled.results[0].address.location == "Introduction > May Launch Memo"
+
+
+def test_compiler_focuses_final_span_inside_multi_fact_section() -> None:
+    """Final-answer spans should be packaged without earlier estimates."""
+    status = _result(
+        "The first status update estimated that incident PAY-209 would recover in "
+        "12 minutes.\n\n"
+        "The final postmortem confirmed that incident PAY-209 recovered after "
+        "37 minutes.",
+        "unstructured/payments_postmortem.md",
+        location="PAY-209 Postmortems",
+    )
+
+    compiled = compile_evidence(
+        "What was the final recovery duration for incident PAY-209?",
+        [status],
+    )
+
+    assert "final postmortem" in compiled.results[0].content
+    assert "estimated" not in compiled.results[0].content
+    assert compiled.results[0].metadata["evidence_span"]["selected_index"] == 2
+
+
+def test_compiler_orders_temporal_candidates_from_pyrrho_contract() -> None:
+    """Temporal policy should prefer the latest equally anchored evidence first."""
     january = _result(
         "On 2026-01-15, Project Orion was still in private beta for the EU region.",
         "unstructured/project_orion_status.md",
@@ -75,7 +164,7 @@ def test_compiler_records_temporal_contract_without_date_reordering() -> None:
         profile=_profile(query_contract="temporal_grounding"),
     )
 
-    assert compiled.results[0].content.startswith("On 2026-01-15")
+    assert compiled.results[0].content.startswith("On 2026-05-20")
     assert compiled.metadata["contract"]["temporal_policy"] == "temporal"
 
 
@@ -518,6 +607,7 @@ def _result(
     kind: AddressKind = AddressKind.SECTION,
     location: str = "Section",
     address_metadata: dict | None = None,
+    metadata: dict | None = None,
 ) -> ReadResult:
     """Build a read result fixture."""
     address = Address(
@@ -528,7 +618,7 @@ def _result(
         score=1.0,
         metadata={"source_path": file_path, **(address_metadata or {})},
     )
-    return ReadResult(address=address, content=content, file_path=file_path)
+    return ReadResult(address=address, content=content, file_path=file_path, metadata=metadata or {})
 
 
 def _address(

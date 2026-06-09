@@ -23,6 +23,12 @@ The JSON report is also the debug artifact. Each record includes:
 python -m benchmarks.fitz_bench.runner
 ```
 
+To run against an unpacked local Pyrrho package:
+
+```bash
+python -m benchmarks.fitz_bench.runner --governance "pyrrho/C:\path\to\pyrrho-nano-g4-alpha"
+```
+
 Defaults:
 
 - corpus: `benchmarks/corpora/core`

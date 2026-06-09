@@ -17,6 +17,7 @@ import yaml
 
 from benchmarks.fitz_bench.models import BenchmarkCase
 from benchmarks.fitz_bench.validators import validate_case
+from fitz_sage.config.loader import load_engine_config
 from fitz_sage.core import Query
 from fitz_sage.core.paths import FitzPaths
 from fitz_sage.runtime import create_engine
@@ -41,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     started = time.perf_counter()
 
-    engine = create_engine(args.engine)
+    engine = _create_engine(args.engine, governance=args.governance)
     engine.load(collection)
     records = []
     try:
@@ -83,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
             "corpus": str(corpus),
             "cases": str(cases_path),
             "index_mode": args.index_mode,
+            "governance_override": args.governance,
             "duration_seconds": time.perf_counter() - started,
         },
         "summary": _summary(records),
@@ -115,6 +117,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--collection", default=None, help="Collection name. Defaults unique.")
     parser.add_argument("--workspace", default=None, help="Optional FITZ workspace path.")
     parser.add_argument("--engine", default=None, help="Engine name passed to create_engine.")
+    parser.add_argument(
+        "--governance",
+        default=None,
+        help=(
+            "Optional governance provider override, e.g. "
+            "'pyrrho/C:\\path\\to\\pyrrho-nano-g4-alpha'."
+        ),
+    )
     parser.add_argument("--limit", type=int, default=None, help="Limit number of cases.")
     parser.add_argument(
         "--index-mode",
@@ -131,6 +141,20 @@ def _load_cases(path: Path) -> list[BenchmarkCase]:
     if not isinstance(raw, list):
         raise ValueError(f"Benchmark cases must be a YAML list: {path}")
     return [BenchmarkCase.from_dict(item) for item in raw]
+
+
+def _create_engine(engine: str | None, *, governance: str | None) -> Any:
+    """Create a benchmark engine, optionally overriding the governance provider."""
+    if governance is None:
+        return create_engine(engine)
+
+    engine_name = engine or "fitz_krag"
+    config = load_engine_config(engine_name)
+    values = config.model_dump()
+    if "governance" not in values:
+        raise ValueError(f"Engine '{engine_name}' does not expose a governance config field.")
+    values["governance"] = governance
+    return create_engine(engine_name, config=type(config)(**values))
 
 
 def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:
