@@ -13,6 +13,7 @@ import re
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.exceptions import EnrichmentError
 from fitz_sage.core.json_utils import parse_llm_json
 
 if TYPE_CHECKING:
@@ -153,33 +154,44 @@ class KragEnricher:
             },
             {"role": "user", "content": prompt},
         ]
-        response = self._chat.chat(
-            messages,
-            max_tokens=_enrichment_max_tokens(len(items)),
-            temperature=0,
-        )
+        try:
+            response = self._chat.chat(
+                messages,
+                max_tokens=_enrichment_max_tokens(len(items)),
+                temperature=0,
+            )
+        except EnrichmentError:
+            raise
+        except Exception as e:
+            raise EnrichmentError(f"enrichment model call failed: {e}") from e
+
         try:
             return self._parse_response(response, len(items))
         except ValueError:
-            retry_response = self._chat.chat(
-                [
-                    *messages,
-                    {
-                        "role": "user",
-                        "content": (
-                            "Retry the same enrichment. The previous response was not valid "
-                            f"JSON for exactly {len(items)} item block(s). Return only the "
-                            "JSON array, with no markdown and no extra objects."
-                        ),
-                    },
-                ],
-                max_tokens=_RETRY_ENRICHMENT_TOKENS,
-                temperature=0,
-            )
+            try:
+                retry_response = self._chat.chat(
+                    [
+                        *messages,
+                        {
+                            "role": "user",
+                            "content": (
+                                "Retry the same enrichment. The previous response was not valid "
+                                f"JSON for exactly {len(items)} item block(s). Return only the "
+                                "JSON array, with no markdown and no extra objects."
+                            ),
+                        },
+                    ],
+                    max_tokens=_RETRY_ENRICHMENT_TOKENS,
+                    temperature=0,
+                )
+            except EnrichmentError:
+                raise
+            except Exception as e:
+                raise EnrichmentError(f"enrichment model retry failed: {e}") from e
             try:
                 return self._parse_response(retry_response, len(items))
             except ValueError as e:
-                raise ValueError(
+                raise EnrichmentError(
                     "enrichment model returned invalid JSON twice; required "
                     f"{len(items)} item block(s)"
                 ) from e
@@ -245,23 +257,6 @@ def _deterministic_entities(item: dict[str, str]) -> list[dict[str, str]]:
             return entities
 
     return entities
-
-
-def _deterministic_enrichments(
-    items: list[dict[str, str]],
-    strategy: EnrichmentStrategy,
-) -> list[dict[str, Any]]:
-    """Build grounded enrichment when model JSON is unusable."""
-    enrichments: list[dict[str, Any]] = []
-    for item in items:
-        enrichment: dict[str, Any] = {}
-        if strategy in (EnrichmentStrategy.KEYWORDS, EnrichmentStrategy.FULL):
-            enrichment["keywords"] = _deterministic_keywords(item)
-        if strategy in (EnrichmentStrategy.ENTITIES, EnrichmentStrategy.FULL):
-            enrichment["entities"] = _deterministic_entities(item)
-            enrichment["temporal"] = {"dates": [], "versions": [], "refs": []}
-        enrichments.append(enrichment)
-    return enrichments
 
 
 def _add_entity(

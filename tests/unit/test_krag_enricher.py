@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from fitz_sage.core.exceptions import EnrichmentError
 from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
 # ---------------------------------------------------------------------------
@@ -305,7 +306,7 @@ class TestEnrichmentFailureHandling:
             }
         ]
 
-        with pytest.raises(RuntimeError, match="LLM unreachable"):
+        with pytest.raises(EnrichmentError, match="LLM unreachable"):
             enricher.enrich_symbols(symbols)
 
         assert "keywords" not in symbols[0]
@@ -322,7 +323,7 @@ class TestEnrichmentFailureHandling:
             }
         ]
 
-        with pytest.raises(ValueError, match="invalid JSON twice"):
+        with pytest.raises(EnrichmentError, match="invalid JSON twice"):
             enricher.enrich_symbols(symbols)
 
         assert chat.chat.call_count == 2
@@ -357,7 +358,7 @@ class TestEnrichmentFailureHandling:
             {"name": "second", "kind": "function", "summary": "Handles TC-9001."},
         ]
 
-        with pytest.raises(RuntimeError, match="timeout"):
+        with pytest.raises(EnrichmentError, match="timeout"):
             enricher.enrich_symbols(symbols)
 
         assert symbols[0]["keywords"] == ["good"]
@@ -375,7 +376,7 @@ class TestEnrichmentFailureHandling:
             }
         ]
 
-        with pytest.raises(RuntimeError, match="API error"):
+        with pytest.raises(EnrichmentError, match="API error"):
             enricher.enrich_sections(sections)
 
         assert "keywords" not in sections[0]

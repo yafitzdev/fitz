@@ -21,6 +21,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from fitz_sage.core.exceptions import ManagedModelError
+
 DEFAULT_QWEN_MODEL_ALIAS = "qwen3-0.6b"
 DEFAULT_QWEN_MODEL_ID = "onnx-community/Qwen3-0.6B-DQ-ONNX"
 DEFAULT_QWEN_ONNX_SUBFOLDER = "onnx"
@@ -40,7 +42,7 @@ _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 logger = logging.getLogger(__name__)
 
 
-class OnnxChatModelError(RuntimeError):
+class OnnxChatModelError(ManagedModelError):
     """Managed Qwen model download, validation, or runtime initialization failed."""
 
 
@@ -64,6 +66,253 @@ class OnnxChatModelInfo:
     def as_dict(self) -> dict[str, Any]:
         """Return JSON-serializable model metadata."""
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class ManagedQwenSpec:
+    """Resolved managed Qwen model identity and ONNX artifact names."""
+
+    name: str
+    repo_id: str
+    onnx_subfolder: str
+    onnx_file: str
+
+
+class ManagedQwenSnapshot:
+    """Download and validate the Hugging Face snapshot for managed Qwen."""
+
+    def __init__(self, spec: ManagedQwenSpec) -> None:
+        self._spec = spec
+
+    @property
+    def spec(self) -> ManagedQwenSpec:
+        """Return the resolved model spec."""
+        return self._spec
+
+    def download(self) -> Path:
+        """Download the managed Qwen snapshot into the Hugging Face cache."""
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError as e:
+            raise OnnxChatModelError(
+                "Managed Qwen enrichment requires `huggingface_hub` to download "
+                "the ONNX model. Install fitz-sage with its runtime dependencies "
+                "and retry."
+            ) from e
+
+        logger.info(
+            "Ensuring managed Qwen3 0.6B ONNX GenAI is available from %s (%s/%s)",
+            self._spec.repo_id,
+            self._spec.onnx_subfolder,
+            self._spec.onnx_file,
+        )
+        try:
+            return Path(
+                snapshot_download(
+                    repo_id=self._spec.repo_id,
+                    allow_patterns=self.allow_patterns(),
+                )
+            )
+        except Exception as e:
+            raise OnnxChatModelError(
+                "Could not download Fitz's managed Qwen3 0.6B ONNX GenAI model "
+                f"from Hugging Face repo `{self._spec.repo_id}`. Check network "
+                "access or pre-populate the Hugging Face cache, then retry."
+            ) from e
+
+    def allow_patterns(self) -> list[str]:
+        """Return the minimal HF snapshot file set for the managed runtime."""
+        return [
+            "added_tokens.json",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "vocab.json",
+            "chat_template.jinja",
+            "config.json",
+            "generation_config.json",
+            "genai_config.json",
+            f"{self._spec.onnx_subfolder}/{self._spec.onnx_file}",
+            f"{self._spec.onnx_subfolder}/{self._spec.onnx_file}_data*",
+        ]
+
+    def build_model_info(
+        self,
+        snapshot_dir: Path,
+        *,
+        include_checksum: bool,
+    ) -> OnnxChatModelInfo:
+        """Validate required files and construct inspectable snapshot metadata."""
+        onnx_path = snapshot_dir / self._spec.onnx_subfolder / self._spec.onnx_file
+        external_data_paths = sorted(onnx_path.parent.glob(f"{self._spec.onnx_file}_data*"))
+        tokenizer_path = snapshot_dir / "tokenizer.json"
+        genai_config_path = snapshot_dir / "genai_config.json"
+        missing = [
+            str(path)
+            for path in (onnx_path, tokenizer_path, genai_config_path)
+            if not path.exists()
+        ]
+        if missing:
+            raise OnnxChatModelError(
+                "Fitz's managed Qwen3 0.6B ONNX GenAI snapshot is incomplete. "
+                f"Missing required file(s): {', '.join(missing)}"
+            )
+
+        model_paths = [onnx_path, *external_data_paths]
+        checksum = _bundle_sha256(model_paths) if include_checksum else None
+        total_bytes = sum(path.stat().st_size for path in model_paths)
+        return OnnxChatModelInfo(
+            name=self._spec.name,
+            repo_id=self._spec.repo_id,
+            revision=snapshot_dir.name,
+            snapshot_dir=str(snapshot_dir),
+            onnx_path=str(onnx_path),
+            onnx_subfolder=self._spec.onnx_subfolder,
+            onnx_file=self._spec.onnx_file,
+            onnx_bytes=onnx_path.stat().st_size,
+            external_data_paths=[str(path) for path in external_data_paths],
+            total_bytes=total_bytes,
+            tokenizer_path=str(tokenizer_path),
+            bundle_sha256=checksum,
+        )
+
+
+class GenAiRuntimeBundle:
+    """Prepare the Fitz-owned CPU ONNX GenAI runtime directory."""
+
+    def __init__(self, spec: ManagedQwenSpec) -> None:
+        self._spec = spec
+
+    @staticmethod
+    def require_genai() -> Any:
+        """Import ONNX Runtime GenAI with an actionable product error."""
+        try:
+            import onnxruntime_genai as og
+
+            return og
+        except ImportError as e:
+            raise OnnxChatModelError(
+                "Managed Qwen enrichment requires `onnxruntime-genai`. "
+                "Install fitz-sage with its runtime dependencies and retry."
+            ) from e
+
+    def prepare(self, info: OnnxChatModelInfo) -> Path:
+        """Materialize Fitz's CPU GenAI config without mutating the HF snapshot."""
+        from fitz_sage.core.paths import FitzPaths
+
+        snapshot_dir = Path(info.snapshot_dir)
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", info.name)
+        runtime_dir = FitzPaths.user_home() / "models" / "qwen" / safe_name / info.revision
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        (runtime_dir / self._spec.onnx_subfolder).mkdir(parents=True, exist_ok=True)
+
+        for name in (
+            "added_tokens.json",
+            "chat_template.jinja",
+            "config.json",
+            "generation_config.json",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "vocab.json",
+        ):
+            source = snapshot_dir / name
+            if source.exists():
+                _link_or_copy(source, runtime_dir / name)
+
+        for source in (Path(info.onnx_path), *(Path(path) for path in info.external_data_paths)):
+            _link_or_copy(source, runtime_dir / self._spec.onnx_subfolder / source.name)
+
+        config = json.loads((snapshot_dir / "genai_config.json").read_text(encoding="utf-8"))
+        decoder = config.setdefault("model", {}).setdefault("decoder", {})
+        decoder["filename"] = f"{self._spec.onnx_subfolder}/{self._spec.onnx_file}"
+        decoder.setdefault("session_options", {})["provider_options"] = []
+        search = config.setdefault("search", {})
+        search["do_sample"] = False
+        search["temperature"] = 0
+        search["max_length"] = min(int(search.get("max_length", 8192) or 8192), 8192)
+        (runtime_dir / "genai_config.json").write_text(
+            json.dumps(config, indent=2),
+            encoding="utf-8",
+        )
+        return runtime_dir
+
+
+class OnnxGenAiGenerator:
+    """Loaded ONNX GenAI session plus Qwen tokenizer formatting."""
+
+    def __init__(
+        self,
+        *,
+        tokenizer: Any,
+        genai_model: Any,
+        genai_tokenizer: Any,
+    ) -> None:
+        self._tokenizer = tokenizer
+        self._genai_model = genai_model
+        self._genai_tokenizer = genai_tokenizer
+
+    def format_messages(self, messages: list[dict[str, Any]]) -> str:
+        """Apply the model chat template, disabling Qwen thinking by default."""
+        if getattr(self._tokenizer, "chat_template", None):
+            return self._tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+        rendered: list[str] = []
+        for message in messages:
+            rendered.append(f"{message.get('role', 'user')}: {message.get('content', '')}")
+        rendered.append("assistant:")
+        return "\n".join(rendered)
+
+    def generate(
+        self,
+        *,
+        prompt: str,
+        max_new_tokens: int,
+        temperature: float,
+        top_p: float,
+    ) -> str:
+        """Run ONNX GenAI generation and return generated text."""
+        input_tokens = self._genai_tokenizer.encode(prompt)
+        params = self._make_generator_params(
+            max_length=len(input_tokens) + max(1, max_new_tokens),
+            temperature=temperature,
+            top_p=top_p,
+        )
+        og = GenAiRuntimeBundle.require_genai()
+        token_stream = self._genai_tokenizer.create_stream()
+        generated = og.Generator(self._genai_model, params)
+        generated.append_tokens(input_tokens)
+
+        chunks: list[str] = []
+        while not generated.is_done():
+            generated.generate_next_token()
+            chunks.append(token_stream.decode(generated.get_next_tokens()[0]))
+        return "".join(chunks)
+
+    def _make_generator_params(
+        self,
+        *,
+        max_length: int,
+        temperature: float,
+        top_p: float,
+    ) -> Any:
+        """Build ORT GenAI search parameters for greedy default generation."""
+        og = GenAiRuntimeBundle.require_genai()
+        params = og.GeneratorParams(self._genai_model)
+        options: dict[str, Any] = {
+            "max_length": max_length,
+            "do_sample": temperature > 0,
+        }
+        if temperature > 0:
+            options["temperature"] = temperature
+            options["top_p"] = top_p
+        params.set_search_options(**options)
+        return params
 
 
 def _strip_thinking(text: str) -> str:
@@ -99,6 +348,31 @@ def _bundle_sha256(paths: list[Path]) -> str:
     return digest.hexdigest()
 
 
+def _resolve_qwen_spec(
+    model_id: str,
+    *,
+    onnx_subfolder: str | None,
+    onnx_file: str | None,
+) -> ManagedQwenSpec:
+    """Resolve a public provider spec into a managed Qwen model spec."""
+    resolved = _MODEL_ALIASES.get(model_id)
+    if resolved:
+        repo_id, default_subfolder, default_file = resolved
+        name = model_id
+    else:
+        repo_id = model_id
+        default_subfolder = DEFAULT_QWEN_ONNX_SUBFOLDER
+        default_file = DEFAULT_QWEN_ONNX_FILE
+        name = model_id
+
+    return ManagedQwenSpec(
+        name=name,
+        repo_id=repo_id,
+        onnx_subfolder=onnx_subfolder if onnx_subfolder is not None else default_subfolder,
+        onnx_file=onnx_file if onnx_file is not None else default_file,
+    )
+
+
 class OnnxChat:
     """Greedy CPU generation over the Fitz-managed Qwen3 0.6B ONNX GenAI graph."""
 
@@ -110,25 +384,19 @@ class OnnxChat:
         onnx_file: str | None = None,
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
     ) -> None:
-        resolved = _MODEL_ALIASES.get(model_id)
-        if resolved:
-            self._model_id, default_subfolder, default_file = resolved
-            self._model_name = model_id
-        else:
-            self._model_id = model_id
-            default_subfolder = DEFAULT_QWEN_ONNX_SUBFOLDER
-            default_file = DEFAULT_QWEN_ONNX_FILE
-            self._model_name = model_id
-
-        self._onnx_subfolder = onnx_subfolder if onnx_subfolder is not None else default_subfolder
-        self._onnx_file = onnx_file if onnx_file is not None else default_file
+        spec = _resolve_qwen_spec(
+            model_id,
+            onnx_subfolder=onnx_subfolder,
+            onnx_file=onnx_file,
+        )
+        self._snapshot = ManagedQwenSnapshot(spec)
+        self._runtime = GenAiRuntimeBundle(spec)
         self._max_new_tokens = max_new_tokens
         self._load_lock = threading.RLock()
         self._run_lock = threading.Lock()
         self._model_info: OnnxChatModelInfo | None = None
         self._tokenizer: Any = None
-        self._genai_model: Any = None
-        self._genai_tokenizer: Any = None
+        self._generator: OnnxGenAiGenerator | None = None
         self._runtime_dir: Path | None = None
 
     def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> str:
@@ -141,10 +409,12 @@ class OnnxChat:
         top_p = float(kwargs.pop("top_p", 1.0) or 1.0)
         stop = kwargs.pop("stop", None)
 
-        prompt = self._format_messages(messages)
+        if self._generator is None:
+            raise OnnxChatModelError("Managed Qwen runtime was not loaded.")
+        prompt = self._generator.format_messages(messages)
 
         with self._run_lock:
-            text = self._generate_text(
+            text = self._generator.generate(
                 prompt=prompt,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
@@ -161,13 +431,13 @@ class OnnxChat:
         checks can verify the exact managed model snapshot before inference.
         """
         with self._load_lock:
-            self._require_genai()
+            GenAiRuntimeBundle.require_genai()
             if self._model_info is not None:
                 if not include_checksum or self._model_info.bundle_sha256 is not None:
                     return self._model_info
 
-            snapshot_dir = self._download_snapshot()
-            self._model_info = self._build_model_info(
+            snapshot_dir = self._snapshot.download()
+            self._model_info = self._snapshot.build_model_info(
                 snapshot_dir,
                 include_checksum=include_checksum,
             )
@@ -186,27 +456,20 @@ class OnnxChat:
 
     def _load(self) -> None:
         """Load tokenizer and ONNX GenAI model once per process."""
-        if (
-            self._tokenizer is not None
-            and self._genai_model is not None
-            and self._genai_tokenizer is not None
-        ):
+        if self._tokenizer is not None and self._generator is not None:
             return
         with self._load_lock:
-            if (
-                self._tokenizer is not None
-                and self._genai_model is not None
-                and self._genai_tokenizer is not None
-            ):
+            if self._tokenizer is not None and self._generator is not None:
                 return
 
-            og = self._require_genai()
+            og = GenAiRuntimeBundle.require_genai()
+            spec = self._snapshot.spec
 
             logger.info(
                 "Loading ONNX GenAI chat model %s (%s/%s)",
-                self._model_id,
-                self._onnx_subfolder,
-                self._onnx_file,
+                spec.repo_id,
+                spec.onnx_subfolder,
+                spec.onnx_file,
             )
             info = self.ensure_available()
             snapshot_dir = Path(info.snapshot_dir)
@@ -218,10 +481,15 @@ class OnnxChat:
                     f"ONNX model from {snapshot_dir}."
                 ) from e
 
-            runtime_dir = self._prepare_genai_runtime(info)
+            runtime_dir = self._runtime.prepare(info)
             try:
-                self._genai_model = og.Model(str(runtime_dir))
-                self._genai_tokenizer = og.Tokenizer(self._genai_model)
+                genai_model = og.Model(str(runtime_dir))
+                genai_tokenizer = og.Tokenizer(genai_model)
+                self._generator = OnnxGenAiGenerator(
+                    tokenizer=self._tokenizer,
+                    genai_model=genai_model,
+                    genai_tokenizer=genai_tokenizer,
+                )
             except Exception as e:
                 raise OnnxChatModelError(
                     "Could not initialize ONNX Runtime GenAI for Fitz's managed "
@@ -232,55 +500,11 @@ class OnnxChat:
     @staticmethod
     def _require_genai() -> Any:
         """Import ONNX Runtime GenAI with an actionable product error."""
-        try:
-            import onnxruntime_genai as og
-
-            return og
-        except ImportError as e:
-            raise OnnxChatModelError(
-                "Managed Qwen enrichment requires `onnxruntime-genai`. "
-                "Install fitz-sage with its runtime dependencies and retry."
-            ) from e
+        return GenAiRuntimeBundle.require_genai()
 
     def _download_snapshot(self) -> Path:
         """Download the managed Qwen snapshot into the Hugging Face cache."""
-        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-        try:
-            from huggingface_hub import snapshot_download
-        except ImportError as e:
-            raise OnnxChatModelError(
-                "Managed Qwen enrichment requires `huggingface_hub` to download "
-                "the ONNX model. Install fitz-sage with its runtime dependencies "
-                "and retry."
-            ) from e
-
-        allow_patterns = [
-            "added_tokens.json",
-            "special_tokens_map.json",
-            "tokenizer.json",
-            "tokenizer_config.json",
-            "vocab.json",
-            "chat_template.jinja",
-            "config.json",
-            "generation_config.json",
-            "genai_config.json",
-            f"{self._onnx_subfolder}/{self._onnx_file}",
-            f"{self._onnx_subfolder}/{self._onnx_file}_data*",
-        ]
-        logger.info(
-            "Ensuring managed Qwen3 0.6B ONNX GenAI is available from %s (%s/%s)",
-            self._model_id,
-            self._onnx_subfolder,
-            self._onnx_file,
-        )
-        try:
-            return Path(snapshot_download(repo_id=self._model_id, allow_patterns=allow_patterns))
-        except Exception as e:
-            raise OnnxChatModelError(
-                "Could not download Fitz's managed Qwen3 0.6B ONNX GenAI model "
-                f"from Hugging Face repo `{self._model_id}`. Check network "
-                "access or pre-populate the Hugging Face cache, then retry."
-            ) from e
+        return self._snapshot.download()
 
     def _build_model_info(
         self,
@@ -289,79 +513,14 @@ class OnnxChat:
         include_checksum: bool,
     ) -> OnnxChatModelInfo:
         """Validate required files and construct inspectable snapshot metadata."""
-        onnx_path = snapshot_dir / self._onnx_subfolder / self._onnx_file
-        external_data_paths = sorted(onnx_path.parent.glob(f"{self._onnx_file}_data*"))
-        tokenizer_path = snapshot_dir / "tokenizer.json"
-        genai_config_path = snapshot_dir / "genai_config.json"
-        missing = [
-            str(path)
-            for path in (onnx_path, tokenizer_path, genai_config_path)
-            if not path.exists()
-        ]
-        if missing:
-            raise OnnxChatModelError(
-                "Fitz's managed Qwen3 0.6B ONNX GenAI snapshot is incomplete. "
-                f"Missing required file(s): {', '.join(missing)}"
-            )
-
-        model_paths = [onnx_path, *external_data_paths]
-        checksum = _bundle_sha256(model_paths) if include_checksum else None
-        total_bytes = sum(path.stat().st_size for path in model_paths)
-        return OnnxChatModelInfo(
-            name=self._model_name,
-            repo_id=self._model_id,
-            revision=snapshot_dir.name,
-            snapshot_dir=str(snapshot_dir),
-            onnx_path=str(onnx_path),
-            onnx_subfolder=self._onnx_subfolder,
-            onnx_file=self._onnx_file,
-            onnx_bytes=onnx_path.stat().st_size,
-            external_data_paths=[str(path) for path in external_data_paths],
-            total_bytes=total_bytes,
-            tokenizer_path=str(tokenizer_path),
-            bundle_sha256=checksum,
+        return self._snapshot.build_model_info(
+            snapshot_dir,
+            include_checksum=include_checksum,
         )
 
     def _prepare_genai_runtime(self, info: OnnxChatModelInfo) -> Path:
         """Materialize Fitz's CPU GenAI config without mutating the HF snapshot."""
-        from fitz_sage.core.paths import FitzPaths
-
-        snapshot_dir = Path(info.snapshot_dir)
-        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", info.name)
-        runtime_dir = FitzPaths.user_home() / "models" / "qwen" / safe_name / info.revision
-        runtime_dir.mkdir(parents=True, exist_ok=True)
-        (runtime_dir / self._onnx_subfolder).mkdir(parents=True, exist_ok=True)
-
-        for name in (
-            "added_tokens.json",
-            "chat_template.jinja",
-            "config.json",
-            "generation_config.json",
-            "special_tokens_map.json",
-            "tokenizer.json",
-            "tokenizer_config.json",
-            "vocab.json",
-        ):
-            source = snapshot_dir / name
-            if source.exists():
-                _link_or_copy(source, runtime_dir / name)
-
-        for source in (Path(info.onnx_path), *(Path(path) for path in info.external_data_paths)):
-            _link_or_copy(source, runtime_dir / self._onnx_subfolder / source.name)
-
-        config = json.loads((snapshot_dir / "genai_config.json").read_text(encoding="utf-8"))
-        decoder = config.setdefault("model", {}).setdefault("decoder", {})
-        decoder["filename"] = f"{self._onnx_subfolder}/{self._onnx_file}"
-        decoder.setdefault("session_options", {})["provider_options"] = []
-        search = config.setdefault("search", {})
-        search["do_sample"] = False
-        search["temperature"] = 0
-        search["max_length"] = min(int(search.get("max_length", 8192) or 8192), 8192)
-        (runtime_dir / "genai_config.json").write_text(
-            json.dumps(config, indent=2),
-            encoding="utf-8",
-        )
-        return runtime_dir
+        return self._runtime.prepare(info)
 
     def _load_tokenizer(self, snapshot_dir: Path) -> Any:
         """Load Qwen tokenizer without requiring a model-specific Python class."""
@@ -383,67 +542,6 @@ class OnnxChat:
             )
             tokenizer.chat_template = config.get("chat_template")
             return tokenizer
-
-    def _format_messages(self, messages: list[dict[str, Any]]) -> str:
-        """Apply the model chat template, disabling Qwen thinking by default."""
-        if getattr(self._tokenizer, "chat_template", None):
-            return self._tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
-            )
-        rendered: list[str] = []
-        for message in messages:
-            rendered.append(f"{message.get('role', 'user')}: {message.get('content', '')}")
-        rendered.append("assistant:")
-        return "\n".join(rendered)
-
-    def _generate_text(
-        self,
-        *,
-        prompt: str,
-        max_new_tokens: int,
-        temperature: float,
-        top_p: float,
-    ) -> str:
-        """Run ONNX GenAI generation and return generated text."""
-        input_tokens = self._genai_tokenizer.encode(prompt)
-        params = self._make_generator_params(
-            max_length=len(input_tokens) + max(1, max_new_tokens),
-            temperature=temperature,
-            top_p=top_p,
-        )
-        og = self._require_genai()
-        token_stream = self._genai_tokenizer.create_stream()
-        generated = og.Generator(self._genai_model, params)
-        generated.append_tokens(input_tokens)
-
-        chunks: list[str] = []
-        while not generated.is_done():
-            generated.generate_next_token()
-            chunks.append(token_stream.decode(generated.get_next_tokens()[0]))
-        return "".join(chunks)
-
-    def _make_generator_params(
-        self,
-        *,
-        max_length: int,
-        temperature: float,
-        top_p: float,
-    ) -> Any:
-        """Build ORT GenAI search parameters for greedy default generation."""
-        og = self._require_genai()
-        params = og.GeneratorParams(self._genai_model)
-        options: dict[str, Any] = {
-            "max_length": max_length,
-            "do_sample": temperature > 0,
-        }
-        if temperature > 0:
-            options["temperature"] = temperature
-            options["top_p"] = top_p
-        params.set_search_options(**options)
-        return params
 
     @staticmethod
     def _apply_stop(text: str, stop: Any) -> str:
@@ -478,7 +576,11 @@ __all__ = [
     "DEFAULT_QWEN_MODEL_ALIAS",
     "DEFAULT_QWEN_MODEL_ID",
     "DEFAULT_QWEN_ONNX_FILE",
+    "GenAiRuntimeBundle",
+    "ManagedQwenSnapshot",
+    "ManagedQwenSpec",
     "OnnxChat",
+    "OnnxGenAiGenerator",
     "OnnxChatModelError",
     "OnnxChatModelInfo",
 ]

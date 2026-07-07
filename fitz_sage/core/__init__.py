@@ -54,10 +54,13 @@ from .evidence import EvidenceItem, EvidencePack
 # Core exceptions
 from .exceptions import (
     ConfigurationError,
+    EnrichmentError,
     EngineError,
     GenerationError,
     KnowledgeError,
+    ManagedModelError,
     QueryError,
+    QueryIntelligenceError,
     TimeoutError,
     UnsupportedOperationError,
 )
@@ -92,6 +95,9 @@ __all__ = [
     "QueryError",
     "KnowledgeError",
     "GenerationError",
+    "QueryIntelligenceError",
+    "EnrichmentError",
+    "ManagedModelError",
     "ConfigurationError",
     "TimeoutError",
     "UnsupportedOperationError",

@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.exceptions import QueryIntelligenceError
 from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.query_analyzer import (
     QueryAnalysis,
@@ -26,6 +27,16 @@ if TYPE_CHECKING:
     from fitz_sage.llm.factory import ChatFactory
     from fitz_sage.retrieval.detection.modules.base import DetectionModule
     from fitz_sage.retrieval.detection.protocol import DetectionCategory, DetectionResult
+
+
+@dataclass(frozen=True)
+class _QuerySectionSpec:
+    """Prompt contract for one query-intelligence JSON section."""
+
+    name: str
+    json_fragment: str
+    instructions: str
+
 
 _PROMPT_TEMPLATE = """Analyze this search query. Return a single JSON object with {section_list}.
 {history_section}
@@ -111,6 +122,62 @@ _KEYWORD_PLACEHOLDERS = {
     "terms",
 }
 
+_ANALYSIS_SPEC = _QuerySectionSpec("analysis", _ANALYSIS_JSON, _ANALYSIS_INSTRUCTIONS)
+_REWRITING_SPEC = _QuerySectionSpec("rewriting", _REWRITING_JSON, _REWRITING_INSTRUCTIONS)
+_EXTENDED_SPEC = _QuerySectionSpec("extended", _EXTENDED_JSON, _EXTENDED_INSTRUCTIONS)
+_KEYWORDS_SPEC = _QuerySectionSpec("keywords", _KEYWORDS_JSON, _KEYWORDS_INSTRUCTIONS)
+
+
+def _active_section_specs(
+    *,
+    include_analysis: bool,
+    include_detection: bool,
+    active_modules: list["DetectionModule"],
+    include_rewriting: bool,
+    include_extended: bool,
+    include_keywords: bool,
+) -> list[_QuerySectionSpec]:
+    """Return prompt sections in the order expected by the batcher contract."""
+    specs: list[_QuerySectionSpec] = []
+    if include_analysis:
+        specs.append(_ANALYSIS_SPEC)
+    if include_detection and active_modules:
+        fragments = [module.prompt_fragment() for module in active_modules]
+        combined = ",\n    ".join(fragments)
+        specs.append(
+            _QuerySectionSpec(
+                "detection",
+                f'  "detection": {{\n    {combined}\n  }}',
+                (
+                    "## detection\n"
+                    "Only set detected=true when the query CLEARLY matches. Default to false."
+                ),
+            )
+        )
+    if include_rewriting:
+        specs.append(_REWRITING_SPEC)
+    if include_keywords:
+        specs.append(_KEYWORDS_SPEC)
+    if include_extended:
+        specs.append(_EXTENDED_SPEC)
+    return specs
+
+
+def _required_object(raw: dict[str, Any], section: str) -> dict[str, Any]:
+    """Return a required JSON object section or raise a typed query error."""
+    data = raw.get(section)
+    if not isinstance(data, dict):
+        raise QueryIntelligenceError(f"batched query intelligence missing `{section}` object")
+    return data
+
+
+def _required_array(raw: dict[str, Any], section: str) -> list[Any]:
+    """Return a required JSON array section or raise a typed query error."""
+    data = raw.get(section)
+    if not isinstance(data, list):
+        raise QueryIntelligenceError(f"batched query intelligence missing `{section}` array")
+    return data
+
 
 @dataclass
 class BatchResult:
@@ -170,11 +237,17 @@ class QueryBatcher:
             conversation_context=conversation_context,
         )
 
-        chat = self.chat_factory("fast")
-        response = chat.chat([{"role": "user", "content": prompt}])
+        try:
+            chat = self.chat_factory("fast")
+            response = chat.chat([{"role": "user", "content": prompt}])
+        except QueryIntelligenceError:
+            raise
+        except Exception as e:
+            raise QueryIntelligenceError(f"query intelligence provider failed: {e}") from e
+
         raw = parse_llm_json(response)
         if not isinstance(raw, dict):
-            raise ValueError("batched query intelligence returned non-object JSON")
+            raise QueryIntelligenceError("batched query intelligence returned non-object JSON")
 
         return self._distribute(
             raw,
@@ -200,39 +273,17 @@ class QueryBatcher:
         conversation_context: Any = None,
     ) -> str:
         """Build the combined prompt from active sections."""
-        section_names = []
-        json_parts = []
-        instruction_parts = []
-
-        if include_analysis:
-            section_names.append("analysis")
-            json_parts.append(_ANALYSIS_JSON)
-            instruction_parts.append(_ANALYSIS_INSTRUCTIONS)
-
-        if include_detection and active_modules:
-            section_names.append("detection")
-            fragments = [m.prompt_fragment() for m in active_modules]
-            combined = ",\n    ".join(fragments)
-            json_parts.append(f'  "detection": {{\n    {combined}\n  }}')
-            instruction_parts.append(
-                "## detection\n"
-                "Only set detected=true when the query CLEARLY matches. Default to false."
-            )
-
-        if include_rewriting:
-            section_names.append("rewriting")
-            json_parts.append(_REWRITING_JSON)
-            instruction_parts.append(_REWRITING_INSTRUCTIONS)
-
-        if include_keywords:
-            section_names.append("keywords")
-            json_parts.append(_KEYWORDS_JSON)
-            instruction_parts.append(_KEYWORDS_INSTRUCTIONS)
-
-        if include_extended:
-            section_names.append("extended")
-            json_parts.append(_EXTENDED_JSON)
-            instruction_parts.append(_EXTENDED_INSTRUCTIONS)
+        specs = _active_section_specs(
+            include_analysis=include_analysis,
+            include_detection=include_detection,
+            active_modules=active_modules,
+            include_rewriting=include_rewriting,
+            include_extended=include_extended,
+            include_keywords=include_keywords,
+        )
+        section_names = [spec.name for spec in specs]
+        json_parts = [spec.json_fragment for spec in specs]
+        instruction_parts = [spec.instructions for spec in specs]
 
         if include_rewriting and (include_analysis or include_detection or include_keywords):
             instruction_parts.append(
@@ -279,43 +330,38 @@ class QueryBatcher:
         result = BatchResult()
 
         if include_analysis:
-            analysis_data = raw.get("analysis")
-            if not isinstance(analysis_data, dict):
-                raise ValueError("batched query intelligence missing `analysis` object")
+            analysis_data = _required_object(raw, "analysis")
             try:
                 result.analysis = parse_analysis_dict(analysis_data, query)
             except Exception as e:
-                raise ValueError("batched query intelligence returned invalid `analysis`") from e
+                raise QueryIntelligenceError(
+                    "batched query intelligence returned invalid `analysis`"
+                ) from e
 
         if include_detection and active_modules:
-            detection_data = raw.get("detection")
-            if not isinstance(detection_data, dict):
-                raise ValueError("batched query intelligence missing `detection` object")
+            detection_data = _required_object(raw, "detection")
             try:
                 result.detection_results = distribute_to_modules(detection_data, active_modules)
             except Exception as e:
-                raise ValueError("batched query intelligence returned invalid `detection`") from e
+                raise QueryIntelligenceError(
+                    "batched query intelligence returned invalid `detection`"
+                ) from e
 
         if include_rewriting:
-            rewrite_data = raw.get("rewriting")
-            if not isinstance(rewrite_data, dict):
-                raise ValueError("batched query intelligence missing `rewriting` object")
+            rewrite_data = _required_object(raw, "rewriting")
             try:
                 result.rewrite_result = parse_rewrite_dict(rewrite_data, query)
             except Exception as e:
-                raise ValueError("batched query intelligence returned invalid `rewriting`") from e
+                raise QueryIntelligenceError(
+                    "batched query intelligence returned invalid `rewriting`"
+                ) from e
 
         if include_extended:
-            extended_data = raw.get("extended")
-            if not isinstance(extended_data, dict):
-                raise ValueError("batched query intelligence missing `extended` object")
-            result.extended_signals = extended_data
+            result.extended_signals = _required_object(raw, "extended")
 
         if include_keywords:
             llm_keywords: list[str] = []
-            kw_data = raw.get("keywords")
-            if not isinstance(kw_data, list):
-                raise ValueError("batched query intelligence missing `keywords` array")
+            kw_data = _required_array(raw, "keywords")
             llm_keywords = [
                 value
                 for value in (str(k).strip() for k in kw_data if isinstance(k, str))

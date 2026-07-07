@@ -88,6 +88,40 @@ class GenerationError(EngineError):
     pass
 
 
+class QueryIntelligenceError(GenerationError):
+    """
+    Query-preparation model failure.
+
+    Raised when a configured query-intelligence provider cannot run or returns
+    unusable output. This is intentionally distinct from deterministic query
+    planning: if a user configured a query model, failures must be visible.
+    """
+
+    pass
+
+
+class EnrichmentError(KnowledgeError):
+    """
+    Required ingestion enrichment failure.
+
+    Raised when managed enrichment cannot run or returns unusable metadata for
+    the indexing contract.
+    """
+
+    pass
+
+
+class ManagedModelError(EngineError):
+    """
+    Local managed model download, validation, or runtime failure.
+
+    Covers model lifecycle errors for Fitz-owned local CPU models such as the
+    managed Qwen ONNX GenAI bundle.
+    """
+
+    pass
+
+
 class ConfigurationError(EngineError):
     """
     Engine configuration error.

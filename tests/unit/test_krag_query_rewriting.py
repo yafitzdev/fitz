@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from fitz_sage.core import Answer, Provenance
-from fitz_sage.core.exceptions import GenerationError
+from fitz_sage.core.exceptions import QueryIntelligenceError
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 from tests.unit.mock_engine import build_mock_engine
 
@@ -149,11 +149,11 @@ class TestQueryRewriting:
         )
 
         assert engine._query_rewriter is None
-        engine._query_batcher.batch_classify.side_effect = RuntimeError("LLM timeout")
+        engine._query_batcher.batch_classify.side_effect = QueryIntelligenceError("LLM timeout")
 
         _wire_happy_path(engine, query.text)
 
-        with pytest.raises(GenerationError, match="LLM timeout"):
+        with pytest.raises(QueryIntelligenceError, match="LLM timeout"):
             engine.answer(query)
         engine._query_batcher.batch_classify.assert_called_once()
         engine._retrieval_router.retrieve.assert_not_called()

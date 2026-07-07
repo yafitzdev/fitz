@@ -150,7 +150,7 @@ class TestUnknownProvider:
 
         chat = create_chat_provider("onnx/qwen3-0.6b")
         assert isinstance(chat, OnnxChat)
-        assert chat._model_id == DEFAULT_QWEN_MODEL_ID
+        assert chat._snapshot.spec.repo_id == DEFAULT_QWEN_MODEL_ID
 
     def test_unknown_rerank_provider_raises(self) -> None:
         """Unknown rerank provider raises with the supported list."""

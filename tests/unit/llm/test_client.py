@@ -69,7 +69,7 @@ class TestUnknownProvider:
 
         chat = get_chat("onnx/qwen3-0.6b")
         assert isinstance(chat, OnnxChat)
-        assert chat._model_id == DEFAULT_QWEN_MODEL_ID
+        assert chat._snapshot.spec.repo_id == DEFAULT_QWEN_MODEL_ID
 
     def test_unknown_vision_provider_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown vision provider"):

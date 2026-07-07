@@ -2,9 +2,9 @@
 # Enrichment
 
 Enrichment is retrieval infrastructure. It is not a feature flag and it is not
-delegated to a user-selected endpoint. fitz-sage uses its managed Qwen3 0.6B
-ONNX GenAI runtime on CPU. Runtime failures are surfaced as product errors
-because enrichment is part of the retrieval contract.
+delegated to a user-selected endpoint. fitz-sage uses its managed local Qwen
+runtime on CPU. Runtime failures are surfaced as product errors because
+enrichment is part of the retrieval contract.
 
 For the full local model inventory and download behavior, see
 [Managed Models](MANAGED_MODELS.md).
@@ -125,7 +125,7 @@ To inspect the exact managed model snapshot:
 from fitz_sage.llm.providers.onnx_chat import OnnxChat
 
 info = OnnxChat().model_info(include_checksum=True)
-print(info.repo_id, info.revision, info.onnx_path, info.checksum)
+print(info.repo_id, info.revision, info.onnx_path, info.bundle_sha256)
 ```
 
 ---

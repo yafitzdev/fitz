@@ -17,12 +17,15 @@ import pytest
 # Core imports
 from fitz_sage.core import (
     Answer,
+    EnrichmentError,
     GenerationError,
     KnowledgeEngine,
     KnowledgeError,
+    ManagedModelError,
     Provenance,
     Query,
     QueryError,
+    QueryIntelligenceError,
 )
 
 # Runtime imports
@@ -291,6 +294,9 @@ class TestErrorHandling:
         assert issubclass(QueryError, EngineError)
         assert issubclass(KnowledgeError, EngineError)
         assert issubclass(GenerationError, EngineError)
+        assert issubclass(QueryIntelligenceError, GenerationError)
+        assert issubclass(EnrichmentError, KnowledgeError)
+        assert issubclass(ManagedModelError, EngineError)
 
     def test_query_error_can_be_raised(self):
         """Test that errors can be raised and caught."""

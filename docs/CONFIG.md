@@ -23,8 +23,8 @@ chat_base_url: http://127.0.0.1:8080/v1
 
 This is enough for `fitz query`, `fitz retrieve`, and `fitz_sage.evidence(...)` with local
 enrichment: no hosted API key and no external inference server are required.
-On first ingestion, fitz-sage downloads the managed Qwen3 0.6B ONNX GenAI weights
-into the Hugging Face cache and runs them on CPU.
+For exact local model IDs, runtimes, cache locations, and the smoke command,
+see [Managed Models](MANAGED_MODELS.md).
 
 To enable synthesized answers through a hosted endpoint:
 
@@ -53,10 +53,10 @@ Role-specific provider fields bind LLM-backed stages:
 | `synthesizer`        | Optional answer generation                       |
 
 Required keyword/entity enrichment, hierarchy summaries, and default semantic
-query keywords always use Fitz's managed Qwen3 0.6B ONNX GenAI runtime. There is no
-config key for that internal model. Optional LLM-backed roles take a provider/model spec. For `endpoint`,
-the model name is the part after the slash and `chat_base_url` supplies the
-OpenAI-compatible URL:
+query keywords always use Fitz's managed local Qwen runtime. There is no config
+key for that internal model. Optional LLM-backed roles take a provider/model
+spec. For `endpoint`, the model name is the part after the slash and
+`chat_base_url` supplies the OpenAI-compatible URL:
 
 ```yaml
 synthesizer: endpoint/qwen2.5-32b
@@ -72,8 +72,8 @@ factory directly.
 
 ## Chat provider model
 
-Required enrichment uses Qwen3 0.6B through an in-process CPU ONNX GenAI runtime
-managed by fitz-sage. The model is downloaded on first ingest if missing.
+Required enrichment uses Fitz's managed local Qwen runtime. See
+[Managed Models](MANAGED_MODELS.md) for the exact model package and runtime.
 Optional synthesis, query intelligence, and vision can use **`endpoint`** or
 the cloud/enterprise presets:
 

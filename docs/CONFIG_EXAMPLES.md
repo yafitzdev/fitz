@@ -29,9 +29,9 @@ chat_base_url: http://127.0.0.1:8080/v1
 ```
 
 No hosted API key or external inference server is needed for `fitz query`,
-`fitz retrieve`, or `fitz_sage.evidence(...)`. On first ingestion,
-fitz-sage downloads the managed Qwen3 0.6B ONNX GenAI weights into the Hugging Face
-cache and runs them locally on CPU.
+`fitz retrieve`, or `fitz_sage.evidence(...)`. See
+[Managed Models](MANAGED_MODELS.md) for exact local model IDs, runtimes, cache
+locations, and the smoke command.
 
 ---
 
@@ -153,9 +153,10 @@ collection: my_docs
 summary_batch_size: 15
 ```
 
-Qwen3 0.6B ONNX GenAI is the standard local enrichment model. Fitz downloads it
-on first ingest if missing and runs it on CPU through `onnxruntime-genai`.
-Runtime failures are surfaced instead of silently weakening the retrieval index.
+The managed local Qwen runtime is the standard enrichment model. Fitz downloads
+it on first use if missing. Runtime failures are surfaced instead of silently
+weakening the retrieval index. Exact model/runtime details live in
+[Managed Models](MANAGED_MODELS.md).
 
 ---
 
@@ -221,4 +222,4 @@ print(pack.mode, [item.file_path for item in pack.items])
 ```
 
 Only `collection` is strictly required by the schema. Enrichment and
-summarization use the managed Qwen3 0.6B ONNX GenAI runtime automatically.
+summarization use the managed local Qwen runtime automatically.

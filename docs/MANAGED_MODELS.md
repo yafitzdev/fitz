@@ -40,6 +40,18 @@ Managed Qwen snapshot ready (<revision>).
 
 After the first download, subsequent runs reuse the cached snapshots.
 
+## Local Smoke Check
+
+Run the standard local CPU path against a tiny generated corpus:
+
+```bash
+python tools/smoke_local_retrieval.py
+```
+
+The script initializes managed Qwen, indexes the corpus, and runs governed
+evidence queries so the reranker and Pyrrho path execute as well. It is a
+runtime smoke check, not a retrieval-quality benchmark.
+
 ## Offline and Air-Gapped Use
 
 For disconnected deployments, warm the managed models on a connected machine,

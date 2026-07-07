@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from fitz_sage.core import (
     Answer,
     ConfigurationError,
+    EngineError,
     EvidenceItem,
     EvidencePack,
     GenerationError,
@@ -719,7 +720,12 @@ class FitzKragEngine:
                 pipeline_start = time.perf_counter()
 
                 # 1-4. Analyze, detect, retrieve, read, expand, table queries
-                outcome = self._retrieve_core(query, progress=progress)
+                try:
+                    outcome = self._retrieve_core(query, progress=progress)
+                except EngineError:
+                    raise
+                except Exception as e:
+                    raise KnowledgeError(f"Retrieval failed: {e}") from e
                 sanitized = outcome.sanitized
                 expanded = outcome.expanded
                 timings = outcome.timings
@@ -812,14 +818,19 @@ class FitzKragEngine:
                     gap_context = self._build_gap_context(sanitized, governance_reasons)
                 elif answer_mode == AnswerMode.DISPUTED:
                     conflict_context = {"reason": governance.reason}
-                answer = self._synthesizer.generate(
-                    sanitized,
-                    context,
-                    expanded,
-                    answer_mode=answer_mode,
-                    gap_context=gap_context,
-                    conflict_context=conflict_context,
-                )
+                try:
+                    answer = self._synthesizer.generate(
+                        sanitized,
+                        context,
+                        expanded,
+                        answer_mode=answer_mode,
+                        gap_context=gap_context,
+                        conflict_context=conflict_context,
+                    )
+                except EngineError:
+                    raise
+                except Exception as e:
+                    raise GenerationError(f"Generation failed: {e}") from e
                 if pyrrho_metadata:
                     answer.metadata["pyrrho"] = pyrrho_metadata
                 if outcome.query_profile_metadata:
@@ -836,14 +847,10 @@ class FitzKragEngine:
 
                 return answer
 
+            except EngineError:
+                raise
             except Exception as e:
-                error_msg = str(e).lower()
-                if "retriev" in error_msg or "search" in error_msg:
-                    raise KnowledgeError(f"Retrieval failed: {e}") from e
-                elif "generat" in error_msg or "llm" in error_msg:
-                    raise GenerationError(f"Generation failed: {e}") from e
-                else:
-                    raise KnowledgeError(f"KRAG pipeline error: {e}") from e
+                raise KnowledgeError(f"KRAG pipeline error: {e}") from e
 
     def retrieve(
         self, query: Query, *, progress: Callable[[str], None] | None = None
@@ -876,6 +883,8 @@ class FitzKragEngine:
                 if not outcome.expanded:
                     return []
                 return compress_results(outcome.expanded)
+            except EngineError:
+                raise
             except Exception as e:
                 raise KnowledgeError(f"Retrieval failed: {e}") from e
 
@@ -1013,6 +1022,8 @@ class FitzKragEngine:
                         "governance_cutoff": cutoff.metadata,
                     },
                 )
+            except EngineError:
+                raise
             except Exception as e:
                 raise KnowledgeError(f"Evidence retrieval failed: {e}") from e
 

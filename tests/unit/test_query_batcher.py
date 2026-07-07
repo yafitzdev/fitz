@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from fitz_sage.core.exceptions import QueryIntelligenceError
 from fitz_sage.engines.fitz_krag.query_batcher import QueryBatcher
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryType
 from fitz_sage.retrieval.rewriter.types import RewriteType
@@ -77,7 +78,7 @@ def test_batch_classify_parses_requested_sections() -> None:
 def test_batch_classify_propagates_provider_errors() -> None:
     batcher = QueryBatcher(chat_factory=_factory(RuntimeError("provider unavailable")))
 
-    with pytest.raises(RuntimeError, match="provider unavailable"):
+    with pytest.raises(QueryIntelligenceError, match="provider unavailable"):
         batcher.batch_classify(
             "refund policy",
             include_analysis=False,
@@ -91,7 +92,7 @@ def test_batch_classify_propagates_provider_errors() -> None:
 def test_batch_classify_rejects_missing_requested_sections() -> None:
     batcher = QueryBatcher(chat_factory=_factory("{}"))
 
-    with pytest.raises(ValueError, match="missing `keywords` array"):
+    with pytest.raises(QueryIntelligenceError, match="missing `keywords` array"):
         batcher.batch_classify(
             "refund policy",
             include_analysis=False,

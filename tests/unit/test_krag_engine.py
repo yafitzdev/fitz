@@ -558,9 +558,9 @@ class TestAnswer:
         engine._query_batcher.batch_classify.assert_not_called()
         call_args = engine._retrieval_router.retrieve.call_args
         profile = call_args[0][1]
-        assert profile.comparison_queries == []
-        assert profile.temporal_references == []
-        assert profile.planning_owner == "pyrrho"
+        assert "q1 2024" in profile.temporal_references
+        assert "q2 2024" in profile.temporal_references
+        assert profile.planning_owner == "deterministic_fallback"
 
     def test_answer_empty_query_raises(self):
         """Empty or whitespace-only query text raises QueryError."""
@@ -646,8 +646,7 @@ class TestAnswer:
 
     def test_answer_generation_error_raises(self):
         """
-        When the synthesizer raises an error whose message contains
-        'generation', it is wrapped as GenerationError.
+        Synthesizer failures are wrapped as GenerationError at the generation boundary.
         """
         engine = _make_engine()
         query = _make_query()
@@ -665,7 +664,7 @@ class TestAnswer:
 
     def test_answer_llm_error_raises_generation_error(self):
         """
-        Error message containing 'llm' maps to GenerationError.
+        LLM provider failures from the synthesizer are generation failures.
         """
         engine = _make_engine()
         query = _make_query()
@@ -679,11 +678,9 @@ class TestAnswer:
         with pytest.raises(GenerationError, match="Generation failed"):
             engine.answer(query)
 
-    def test_answer_unknown_error_raises_knowledge_error(self):
+    def test_answer_unknown_synthesis_error_raises_generation_error(self):
         """
-        Errors that don't match 'retriev', 'search', 'generat',
-        or 'llm' are wrapped as KnowledgeError with 'KRAG pipeline
-        error' message.
+        Synthesizer failures do not depend on error-message keywords.
         """
         engine = _make_engine()
         query = _make_query()
@@ -694,7 +691,7 @@ class TestAnswer:
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError("unexpected null pointer")
 
-        with pytest.raises(KnowledgeError, match="KRAG pipeline error"):
+        with pytest.raises(GenerationError, match="Generation failed"):
             engine.answer(query)
 
     def test_answer_with_table_results(self):
