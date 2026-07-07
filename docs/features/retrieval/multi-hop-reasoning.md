@@ -21,23 +21,24 @@ classifier whether the accumulated evidence is enough:
 
 ```
 Query → RetrievalPass (retrieve → rerank → read) → pyrrho verdict
-          TRUSTWORTHY / DISPUTED  → stop — return governed evidence
-          ABSTAIN                 → extract a bridge question, loop
+          SUFFICIENT / DISPUTED    → stop — return governed evidence
+          INSUFFICIENT             → extract a bridge question, loop
 ```
 
-- `TRUSTWORTHY` / `DISPUTED` → **stop.** The evidence answers the
+- `SUFFICIENT` / `DISPUTED` → **stop.** The evidence answers the
   question, or the sources disagree and more retrieval won't resolve it.
-- `ABSTAIN` → **keep going.** Extract a bridge question from what's been
+- `INSUFFICIENT` → **keep going.** Extract a bridge question from what's been
   read, and run another pass with it.
 
 The sufficiency check is the Pyrrho verdict — a local CPU classifier forward
 pass, **no chat call**. In paths that allow LLM strategies, the only chat call
-multi-hop adds is bridge extraction, spent only on the `ABSTAIN` path.
+multi-hop adds is bridge extraction, spent only when the evidence is still
+`INSUFFICIENT`.
 
 ## On by default
 
 `enable_multi_hop` defaults to `true`. A single hop is the common case:
-for most queries pyrrho returns `TRUSTWORTHY` after the first pass and
+for most queries pyrrho returns `SUFFICIENT` after the first pass and
 the loop exits. The cost on that path is one local Pyrrho call for the
 sufficiency check — no chat call. `max_hops` (default `2`) caps the loop.
 
@@ -49,10 +50,11 @@ sufficiency check — no chat call. `max_hops` (default `2`) caps the loop.
 2. **Rerank inside every pass.** Each hop runs a full `RetrievalPass`,
    so the cross-encoder reranks every hop's candidates.
 3. **Bridge extraction stays a chat call.** Writing a focused follow-up
-   query is genuine text generation; it runs only when pyrrho `ABSTAIN`s.
+   query is genuine text generation; it runs only when Pyrrho marks evidence
+   `INSUFFICIENT`.
 4. **Deduplicated across hops.** Each pass skips the addresses earlier
    hops already read.
-5. **Graceful stop.** The loop ends on a `TRUSTWORTHY` / `DISPUTED`
+5. **Graceful stop.** The loop ends on a `SUFFICIENT` / `DISPUTED`
    verdict, an empty pass, no bridge question, or `max_hops`.
 
 ## Configuration
@@ -76,10 +78,10 @@ max_hops: 2              # default — hop cap (1-5)
 
 **Query:** "Who wrote the paper cited by the 2023 review?"
 
-- **Hop 1** — retrieve the 2023 review. Pyrrho `ABSTAIN`: the review
+- **Hop 1** — retrieve the 2023 review. Pyrrho `INSUFFICIENT`: the review
   cites the paper but doesn't name its author. Bridge question:
   *"Find the paper Smith et al. cited in the 2023 review."*
-- **Hop 2** — retrieve the cited paper. Pyrrho `TRUSTWORTHY`: the author
+- **Hop 2** — retrieve the cited paper. Pyrrho `SUFFICIENT`: the author
   is in the evidence. Stop and return that evidence.
 
 ## Related

@@ -11,7 +11,7 @@ but they are not the product contract.
 |---|---|---|
 | Retrieval recall | Hit@K / nDCG over fixture corpora | Broad recall must surface the right typed units before reranking. |
 | Reranking | Hit@1 / MRR after ONNX rerank | The reranker should move the answerable source near the top. |
-| Governance cutoff | False-trustworthy rate, abstain recall, disputed recall | Pyrrho must avoid trusting weak or contradictory evidence. |
+| Governance cutoff | False-sufficient rate, insufficient recall, disputed recall | Pyrrho must avoid trusting weak or contradictory evidence. |
 | Progressive indexing | time-to-first-evidence, query-ready latency, full-enrichment latency | The user experience depends on useful evidence before deep indexing completes. |
 | Modality routing | accuracy by text/table/code/log/config route | Bad routing makes good retrieval strategies invisible. |
 | Structured/table evidence | SQL correctness, aggregation completeness, unit/filter correctness | Table evidence has failure modes that text governance does not cover. |

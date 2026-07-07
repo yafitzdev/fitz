@@ -65,7 +65,7 @@ the richer index in the background.
 
 ```mermaid
 flowchart TD
-    Q["User query"] --> C["Pyrrho query-signal classification"]
+    Q["User query"] --> C["Query profiling"]
     C --> P["Query prep"]
     P --> R["Broad recall"]
     R --> X["Cross-strategy fusion"]
@@ -73,7 +73,7 @@ flowchart TD
     K --> G["Pyrrho cutoff loop"]
     G --> E["EvidencePack"]
 
-    C --> C1["contract / route / answer shape / modality"]
+    C --> C1["deterministic signals / optional trained query heads"]
 
     P --> P1["Deterministic terms, query type, intent detection"]
     P --> P2["Managed Qwen semantic keywords"]
@@ -86,7 +86,7 @@ flowchart TD
 
     G --> G1["Shape-aware evidence prefix"]
     G1 --> G2["Evaluate query + top 1"]
-    G2 --> G3{"TRUSTWORTHY?"}
+    G2 --> G3{"SUFFICIENT?"}
     G3 -->|"yes"| E
     G3 -->|"no"| G4["Evaluate query + top 2"]
     G4 --> G5{"Enough evidence or max cutoff?"}
@@ -100,12 +100,11 @@ Broad recall is intentionally permissive. It uses real query terms, dictionary
 synonyms/acronyms, managed Qwen semantic keywords, and intent fanout for
 comparison, temporal, aggregation, and freshness queries. False positives are
 acceptable because the reranker and governance cutoff handle precision.
-Pyrrho adds early query signals before recall. The query-contract head steers
-representative overviews, comparison coverage, temporal grounding, exhaustive
-coverage, and structured lookups. Newer multitask packages also expose route,
-answerability shape, and preferred retrieval modality, which tune domain
-boosts, recall breadth, and section/code/table weights before the first
-evidence pass.
+The default Pyrrho v2 package is evidence-conditioned and does not add
+pre-retrieval query heads. Query profiling comes from deterministic signals,
+managed Qwen semantic keywords, and optional query-intelligence providers.
+Explicit Pyrrho packages that actually train query heads may still contribute
+query metadata, but v2 does not project those labels.
 
 Primary stores:
 
@@ -132,13 +131,13 @@ flowchart TD
     A["Reranked candidates"] --> B["Take prefix of size 1"]
     B --> C["Pyrrho(query, prefix)"]
     C --> D{"Verdict"}
-    D -->|"TRUSTWORTHY"| T["Stop: enough evidence"]
-    D -->|"ABSTAIN"| E{"Reached max cutoff?"}
+    D -->|"SUFFICIENT"| T["Stop: enough evidence"]
+    D -->|"INSUFFICIENT"| E{"Reached max cutoff?"}
     D -->|"DISPUTED"| F{"Dispute stable enough?"}
     F -->|"yes"| U["Stop: return disputed evidence"]
     F -->|"no"| N["Add next document"]
     E -->|"no"| N
-    E -->|"yes"| A0["Stop: abstain"]
+    E -->|"yes"| A0["Stop: insufficient"]
     N --> C
 ```
 
@@ -218,7 +217,7 @@ the configured synthesizer. This is separate from the retrieval package default.
 |----------|------|
 | Sparse BM25 / keyword vocabulary | Broad recall backbone. |
 | Managed Qwen semantic query keywords | Broad recall expansion in the default no-endpoint path. |
-| Pyrrho query signals | Pre-retrieval contract, route, answer shape, and modality signals that steer recall and cutoff policy. |
+| Optional Pyrrho query heads | Pre-retrieval signals only when the configured Pyrrho package actually trains query heads. |
 | Dictionary query expansion | Fast synonyms/acronyms, no LLM call. |
 | Query rewriting | Optional `query_intelligence` enhancement for conversational context or ambiguous phrasing. |
 | Multi-query decomposition | Optional `query_intelligence` enhancement for compound questions. |
@@ -227,8 +226,8 @@ the configured synthesizer. This is separate from the retrieval package default.
 | Hierarchical summaries | Fully indexed recall for broad analytical questions. |
 | Unindexed scan | Temporary bridge while files are not query-ready. |
 | ONNX reranker | Precision stage before governance. |
-| Pyrrho | Mandatory query-signal classification plus sufficiency and dispute cutoff for evidence packs. Comparison-shaped metric queries seed cutoff with direct metric/table evidence before Pyrrho can stop. |
-| Multi-hop | Bounded bridge retrieval when the first pass still abstains and the answer appears one hop away. |
+| Pyrrho | Mandatory sufficiency, dispute, and insufficiency cutoff for evidence packs. Comparison-shaped metric queries seed cutoff with direct metric/table evidence before Pyrrho can stop. |
+| Multi-hop | Bounded bridge retrieval when the first pass is still insufficient and the answer appears one hop away. |
 
 Synthetic corpus summaries are not normal section hits. They are schema-versioned,
 deleted before regeneration, excluded from ordinary BM25, and injected only when
@@ -242,7 +241,7 @@ the query contract/profile calls for a representative corpus overview.
 |---------------|-----------|----------|
 | Managed Qwen3.5 0.8B ONNX | yes | ingestion keywords/entities/hierarchy and default semantic query keywords |
 | ONNX reranker | default | candidate precision after broad recall |
-| Pyrrho g4-alpha | default product governance | query signals, evidence sufficiency, dispute, abstention, route/taxonomy/action/gap/modality/scalar metadata |
+| Pyrrho v2 nano g1 | default product governance | native evidence verdict, failure mode, retrieval intents, and evidence-kind metadata |
 | OpenAI-compatible endpoint | optional | answer synthesis, optional query intelligence, optional vision parser |
 
 No dense embedding model and no vector database are used.

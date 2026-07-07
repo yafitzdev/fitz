@@ -45,7 +45,7 @@ The architecture has three load-bearing decisions:
 │  - Expander (import graph, entity links, same-file refs, hierarchy)         │
 │  - ONNX cross-encoder reranker (gte-reranker-modernbert-base)               │
 │  - Optional synthesizer (chat call that writes the answer)                  │
-│  - Governance (pyrrho → TRUSTWORTHY / DISPUTED / ABSTAIN)                   │
+│  - Governance (pyrrho → SUFFICIENT / DISPUTED / INSUFFICIENT)               │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
           ┌─────────────────────────┼─────────────────────────┐
@@ -211,7 +211,7 @@ class Query:
 @dataclass
 class Answer:
     text: str
-    mode: AnswerMode              # TRUSTWORTHY | DISPUTED | ABSTAIN
+    mode: AnswerMode              # runtime: TRUSTWORTHY | DISPUTED | ABSTAIN
     provenance: list[Provenance]  # source attribution chain
     metadata: dict
 ```
@@ -294,7 +294,7 @@ fitz_sage/
    ingest; route to the right strategy at query time.
 4. **No embeddings.** BM25 + KRAG routing + ONNX rerank is the retrieval
    backbone; there are no dense indexes or vector columns.
-5. **Honest over helpful.** Say `ABSTAIN` instead of hallucinating.
+5. **Honest over helpful.** Mark evidence insufficient instead of hallucinating.
 6. **Files over frameworks.** Plugins are Python modules wired by config,
    not framework abstractions.
 7. **Local-first.** SQLite + ONNX enrichment works offline after the model is

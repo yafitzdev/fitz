@@ -26,9 +26,9 @@ sufficiency signal, not as a formal verifier. The caller should still surface
 the ranked evidence, source locations, table query metadata, and code/test
 context so a developer can inspect the result.
 
-`ABSTAIN` is especially useful for these modalities: it means the retrieved
-prefix did not satisfy the query contract, and fitz-sage should either broaden
-retrieval or tell the user which source surface appears missing.
+`INSUFFICIENT` is especially useful for these modalities: it means the
+retrieved prefix did not satisfy the query contract, and fitz-sage should either
+broaden retrieval or tell the user which source surface appears missing.
 
 ## Future Direction
 

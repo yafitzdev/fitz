@@ -40,7 +40,7 @@ class Query:
 @dataclass
 class Answer:
     text: str
-    mode: AnswerMode                  # TRUSTWORTHY | DISPUTED | ABSTAIN
+    mode: AnswerMode                  # runtime: TRUSTWORTHY | DISPUTED | ABSTAIN
     provenance: list[Provenance]
     metadata: dict
 ```
@@ -73,7 +73,7 @@ Query
  ├─► Router (symbol search · section search · table metadata)
 │    └─► FTS5 + bm25() over per-collection .db
  ├─► OnnxReranker (ONNX cross-encoder, ~30 ms CPU)
- ├─► Governance cutoff (pyrrho → TRUSTWORTHY / DISPUTED / ABSTAIN)
+ ├─► Governance cutoff (Pyrrho v2 → SUFFICIENT / DISPUTED / INSUFFICIENT)
  ├─► EvidencePack
  └─► Optional synthesizer → Answer (+ provenance + mode)
 ```
@@ -132,7 +132,7 @@ query intelligence, or vision parsing. Managed Qwen enrichment is internal.
 | Hierarchical summaries  | L1 file summaries and L2 corpus overview built during enrichment |
 | Multi-hop retrieval     | Iterative bridge extraction for compound questions            |
 | ONNX reranker           | INT8 cross-encoder, single forward pass on CPU                |
-| Epistemic governance    | Query signals plus TRUSTWORTHY / DISPUTED / ABSTAIN via Pyrrho |
+| Epistemic governance    | Pyrrho v2 sufficient / disputed / insufficient evidence verdicts |
 | Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
 | Progressive ingestion   | Parse first, return evidence, continue Qwen enrichment in daemon |
 
@@ -174,7 +174,7 @@ class MyEngine:
     def answer(self, query: Query) -> Answer:
         return Answer(
             text="...",
-            mode=AnswerMode.TRUSTWORTHY,
+            mode=AnswerMode.TRUSTWORTHY,  # runtime mode for sufficient evidence
             provenance=[],
             metadata={},
         )

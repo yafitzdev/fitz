@@ -8,10 +8,11 @@
 - `fitz_sage.evidence()`
 
 It is intentionally not an answer. It is ranked, governed evidence that another
-application can inspect, display, or pass into optional synthesis.
+application can inspect, display, store as audit data, or pass into optional
+synthesis.
 
-For the meaning and product use of pre-retrieval and post-retrieval signals, see
-[Pre-Retrieval and Post-Retrieval Evidence Signals](features/retrieval/evidence-signals.md).
+For the product use of retrieval and governance metadata, see
+[Evidence Signals](features/retrieval/evidence-signals.md).
 
 ## Shape
 
@@ -46,53 +47,63 @@ Use `pack.to_dict()` or `pack.to_json()` for API responses.
 
 ## Modes
 
-| Mode | Meaning |
+| Runtime mode | Meaning |
 |---|---|
-| `trustworthy` | Pyrrho judged the selected evidence prefix sufficient and consistent. |
-| `disputed` | Pyrrho found meaningful conflict in the selected evidence prefix. |
-| `abstain` | Retrieved evidence was missing, incomplete, or insufficient. |
+| `trustworthy` | Runtime API mode for a Pyrrho `SUFFICIENT` verdict. |
+| `disputed` | Runtime API mode for a Pyrrho `DISPUTED` verdict. |
+| `abstain` | Runtime API mode for a Pyrrho `INSUFFICIENT` verdict. |
 | `null` | Governance did not run. This is not the default product path. |
 
-## Governance Metadata
+## Metadata
 
-Pre-retrieval planning metadata lives in `metadata.query_profile`. It records
-what Pyrrho predicted from the query alone and which profile knobs Fitz applied
-before recall.
+The most important metadata blocks are:
+
+| Block | Meaning |
+|---|---|
+| `query_profile` | The effective retrieval profile used before recall. |
+| `retrieval_trace` | Candidate generation, reranking, final reads, and retries. |
+| `evidence_compiler` | Mechanical evidence roles, anchors, and source-count constraints. |
+| `governance_cutoff` | Pyrrho v2 prefix evaluation and final governance decision. |
+
+### Query Profile
+
+`metadata.query_profile` records how Fitz searched before governance ran. It
+contains query-shape metadata, managed Qwen query keywords, strategy weights,
+fetch limits, and intent flags.
 
 ```json
 {
   "metadata": {
     "query_profile": {
-      "signals": {
-        "query_contract": {
-          "final_label": "comparison_coverage",
-          "confidence": 0.97,
-          "used_for_retrieval": true
-        },
-        "retrieval_modality": {
-          "final_label": "structured_table",
-          "confidence": 0.61,
-          "used_for_retrieval": true
-        }
-      },
+      "signals": {},
       "profile": {
+        "domain": "technical",
         "specificity": "moderate",
         "answer_type": "comparative",
-        "domain": "technical",
-        "top_k": 20,
-        "top_read": 12,
+        "top_k": 50,
+        "top_read": 50,
         "strategy_weights": {
           "code": 0.25,
           "section": 0.25,
-          "table": 0.55
-        }
+          "table": 0.55,
+          "chunk": 0.35
+        },
+        "keywords": ["incident", "eu", "release"],
+        "comparison_entities": ["EU token rotation", "policy interval"],
+        "has_comparison_intent": true,
+        "has_temporal_intent": true
       }
     }
   }
 }
 ```
 
-Pyrrho cutoff metadata lives in `metadata.governance_cutoff`.
+### Governance Cutoff
+
+`metadata.governance_cutoff` records how Pyrrho evaluated ranked evidence
+prefixes. The runtime `mode` stays in the `trustworthy` / `disputed` /
+`abstain` vocabulary, while Pyrrho v2 heads expose the model's native evidence
+metadata.
 
 ```json
 {
@@ -102,28 +113,66 @@ Pyrrho cutoff metadata lives in `metadata.governance_cutoff`.
       "selected": 3,
       "max": 10,
       "mode": "trustworthy",
+      "stop_reason": "trustworthy_min_evidence_met",
       "policy": {
-        "query_shape": "broad",
-        "min_trustworthy_docs": 4,
+        "query_shape": "comparison",
+        "min_trustworthy_docs": 2,
         "min_disputed_docs": 2,
         "disputed_patience_docs": 2
       },
       "pyrrho": {
         "mode": "trustworthy",
         "probabilities": {
-          "abstain": 0.08,
-          "disputed": 0.12,
-          "trustworthy": 0.80
+          "abstain": 0.03,
+          "disputed": 0.04,
+          "trustworthy": 0.93
         },
-        "reason": "Pyrrho: sources support a confident answer (P=0.80)."
+        "reason": "Pyrrho: sources support a confident answer (P=0.93).",
+        "evidence_verdict": {
+          "final_label": "SUFFICIENT",
+          "confidence": 0.93
+        },
+        "failure_mode": {
+          "final_label": "none",
+          "confidence": 0.91
+        },
+        "retrieval_intents": {
+          "final_labels": ["needs_comparison_or_set"],
+          "confidence": 0.82
+        },
+        "evidence_kinds": {
+          "final_labels": ["needs_text", "needs_table_or_record"],
+          "confidence": 0.88
+        }
       }
     }
   }
 }
 ```
 
-Retrieval trace metadata lives in `metadata.retrieval_trace`. It is always
-included so benchmark and analysis tools can inspect how a pack was produced:
+Field meanings:
+
+| Field | Meaning |
+|---|---|
+| `evaluated` | How many ranked evidence prefixes Pyrrho evaluated. |
+| `selected` | How many evidence items were returned after cutoff. |
+| `max` | Maximum cutoff window for this query, capped at 10 by default. |
+| `mode` | Final runtime governance mode for the selected prefix. |
+| `stop_reason` | Why the cutoff loop stopped. |
+| `policy.query_shape` | Narrow, broad, comparison, or aggregation. |
+| `policy.min_trustworthy_docs` | Minimum prefix size before the runtime `trustworthy` mode can stop. |
+| `policy.min_disputed_docs` | Minimum prefix size before comparison disputes can stop. |
+| `policy.disputed_patience_docs` | Additional patience for narrow disputes. |
+| `pyrrho.probabilities` | Runtime probabilities for `abstain`, `disputed`, and `trustworthy` modes. |
+| `pyrrho.evidence_verdict` | Native v2 verdict head. |
+| `pyrrho.failure_mode` | Native v2 failure-mode head. |
+| `pyrrho.retrieval_intents` | Native v2 retrieval-intent head. |
+| `pyrrho.evidence_kinds` | Native v2 evidence-kind head. |
+
+### Retrieval Trace
+
+`metadata.retrieval_trace` is included so benchmark and analysis tools can
+inspect how a pack was produced:
 
 ```json
 {
@@ -156,21 +205,17 @@ The trace is not a separate debug API. It is part of the retrieval-first
 contract because benchmark reports need candidate frontiers, strategy scores,
 reranker order, and retry behavior alongside the selected evidence.
 
-Evidence compiler metadata lives in `metadata.evidence_compiler`. It records the
-Pyrrho query contract projected into retrieval, literal anchors used for
-mechanical evidence matching, how many evidence items entered and left
-compilation, the minimum source count required before governance may stop, and
-the selected evidence roles:
+### Evidence Compiler
+
+`metadata.evidence_compiler` records mechanical evidence constraints before
+Pyrrho cutoff: literal anchors, required source count, how many evidence items
+entered and left compilation, and selected evidence roles.
 
 ```json
 {
   "metadata": {
     "evidence_compiler": {
       "contract": {
-        "query_contract": "temporal_grounding",
-        "route": "technology_computing",
-        "answerability_shape": "direct_answer",
-        "retrieval_modality": "structured_table",
         "identifiers": ["INC-101"],
         "phrase_anchors": ["Project Orion"],
         "source_anchors": [],
@@ -188,23 +233,6 @@ the selected evidence roles:
   }
 }
 ```
-
-Field meanings:
-
-| Field | Meaning |
-|---|---|
-| `evaluated` | How many ranked evidence prefixes Pyrrho evaluated. |
-| `selected` | How many evidence items were returned after cutoff. |
-| `max` | Maximum cutoff window for this query, capped at 10 by default. |
-| `mode` | Final governance mode for the selected prefix. |
-| `policy.query_shape` | Narrow, broad, comparison, or aggregation. |
-| `policy.min_trustworthy_docs` | Minimum prefix size before `TRUSTWORTHY` can stop. |
-| `policy.min_disputed_docs` | Minimum prefix size before comparison disputes can stop. |
-| `policy.disputed_patience_docs` | Additional patience for narrow disputes. |
-| `pyrrho.probabilities` | Softmax probabilities for abstain, disputed, trustworthy. |
-| `pyrrho.reason` | Human-readable one-line explanation. |
-| `query_profile.signals.*.used_for_retrieval` | Whether the signal passed the confidence guard and changed the retrieval profile. |
-| `query_profile.profile` | The effective pre-retrieval profile knobs used by recall. |
 
 ## Indexing Status
 

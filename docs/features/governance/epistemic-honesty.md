@@ -14,17 +14,16 @@ The system cannot distinguish between "I have evidence" and "I'm making an educa
 
 Every `(query, retrieved evidence prefix)` pair runs through the **pyrrho**
 fine-tuned classifier
-([`yafitzdev/pyrrho-nano-g4-alpha`](https://huggingface.co/yafitzdev/pyrrho-nano-g4-alpha),
-a multitask ModernBERT-base model trained on the fitz-gov benchmark). A
-single local CPU forward pass
-returns one of `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`:
+([`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1),
+a ModernBERT model trained on fitz-gov-v2 evidence data). A single local CPU forward pass
+returns one of `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`:
 
 ```
 Q: "What was our Q4 revenue?"
 A: "I cannot find Q4 revenue figures in the provided documents.
     The available financial data covers Q1-Q3 only."
 
-   Mode: ABSTAIN
+   Verdict: INSUFFICIENT
 ```
 
 ## How It Works
@@ -32,28 +31,29 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 ### Prefix cutoff classification
 
 Each decision is one local classifier call on CPU, with no external LLM
-dependency. Pyrrho also classifies query signals before recall.
+dependency. The default v2 model is evidence-conditioned; it does not project
+pre-retrieval query heads.
 
 For evidence retrieval, Pyrrho runs incrementally:
 
 1. classify `query + top 1 evidence item`;
-2. if it abstains, classify `query + top 2`;
-3. continue until the evidence is trustworthy, a dispute is stable, or the
+2. if evidence is insufficient, classify `query + top 2`;
+3. continue until the evidence is sufficient, a dispute is stable, or the
    cutoff is reached.
 
 | Case it catches              | Resulting mode | Example                                                                        |
 | ---------------------------- | -------------- | ------------------------------------------------------------------------------ |
 | Sources disagree             | `DISPUTED`     | "Document A says X, but Document B says Y. The sources disagree."              |
-| Insufficient evidence        | `ABSTAIN`      | "I cannot find information about X in the provided documents."                 |
-| Sufficient supporting evidence | `TRUSTWORTHY` | Direct answer with citations.                                                  |
+| Insufficient evidence        | `INSUFFICIENT` | "I cannot find information about X in the provided documents."                 |
+| Sufficient supporting evidence | `SUFFICIENT` | Direct answer with citations.                                                  |
 
 ### Evidence Modes
 
 Every `EvidencePack` includes a **mode** indicating confidence level:
 
-- `TRUSTWORTHY` — Strong evidence supports downstream answering
+- `SUFFICIENT` — Strong evidence supports downstream answering
 - `DISPUTED` — Sources conflict; both views are presented
-- `ABSTAIN` — Insufficient evidence; downstream systems should not answer
+- `INSUFFICIENT` — Insufficient evidence; downstream systems should not answer
 
 ## Key Design Decisions
 
@@ -63,17 +63,17 @@ Every `EvidencePack` includes a **mode** indicating confidence level:
 
 3. **Explicit modes** - The mode field is first-class in the Answer dataclass, not a hidden flag.
 
-4. **Fail-safe defaults** - When in doubt, ABSTAIN. Better to return insufficient evidence than to invite hallucination.
+4. **Fail-safe defaults** - When in doubt, mark evidence insufficient. Better to return insufficient evidence than to invite hallucination.
 
-5. **Transparent reasoning** - When abstaining or disputing, the system explains why.
+5. **Transparent reasoning** - When evidence is insufficient or disputed, the system explains why.
 
 ## Configuration
 
 Governance is selected by the `governance:` field:
 
 ```yaml
-governance: pyrrho  # default local Pyrrho g4-alpha classifier
-# governance: pyrrho/<hf-model-id>  # compatible Pyrrho g4 package
+governance: pyrrho  # default local Pyrrho v2 classifier
+# governance: pyrrho/<hf-model-id>  # Pyrrho package
 ```
 
 ## Files
@@ -100,7 +100,7 @@ governance: pyrrho  # default local Pyrrho g4-alpha classifier
 Answer: The Q4 sales decline was primarily caused by increased competition
 and seasonal factors.
 
-Mode: TRUSTWORTHY
+Verdict: SUFFICIENT
 ```
 
 **With the pyrrho classifier:**
@@ -109,7 +109,7 @@ Answer: Q4 sales declined by 15% compared to Q3. However, I cannot determine
 the causal factors from the available data. The documents mention increased
 competition and seasonal patterns, but these are correlations, not confirmed causes.
 
-Mode: TRUSTWORTHY
+Verdict: INSUFFICIENT
 ```
 
 ## Dependencies
@@ -120,6 +120,6 @@ Mode: TRUSTWORTHY
 
 ## Related Features
 
-- **Multi-Hop Reasoning** - Iterative retrieval can gather more evidence, reducing ABSTAIN rate
+- **Multi-Hop Reasoning** - Iterative retrieval can gather more evidence, reducing insufficient verdicts
 - **Hierarchical RAG** - Corpus summaries help detect when information is genuinely missing
 - **Aggregation Queries** - Comprehensive retrieval reduces false negatives

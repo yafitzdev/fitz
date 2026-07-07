@@ -108,9 +108,9 @@ response = chat.chat([{"role": "user", "content": "Hello"}])
 
 ## Why this matters
 
-The honest-RAG thesis is that *lower recall plus correct abstention*
+The honest-RAG thesis is that *lower recall plus correct insufficiency decisions*
 beats *higher recall plus occasional hallucination*. BM25 + ONNX
 cross-encoder rerank favors source evidence that is lexically and jointly
 relevant to the query. Cases that fall off the recall curve are exactly the
-queries where `ABSTAIN` is the right answer, which is what the Pyrrho classifier
-is built to enforce.
+queries where `INSUFFICIENT` is the right evidence verdict, which is what the
+Pyrrho classifier is built to enforce.

@@ -10,12 +10,13 @@ The standard retrieval path uses local CPU models.
 |---|---|---|---|
 | Enrichment and semantic query keywords | `onnx-community/Qwen3.5-0.8B-Text-ONNX` (`qwen3.5-0.8b`) | raw `onnxruntime`, CPU | Required metadata backbone for better recall. |
 | Reranking | `Alibaba-NLP/gte-reranker-modernbert-base` | raw `onnxruntime`, CPU | Cross-encoder precision over broad recall candidates. |
-| Governance + query signals | `yafitzdev/pyrrho-nano-g4-alpha` | `torch` + `safetensors`, CPU | Sufficiency/conflict classifier for ranked evidence prefixes plus pre-retrieval query and evidence signal metadata. |
+| Governance | `yafitzdev/pyrrho-v2-nano-g1` | raw `onnxruntime`, CPU | Sufficiency/conflict/insufficiency classifier for ranked evidence prefixes with native v2 metadata. |
 
 None of these models require `optimum`, `llama.cpp`, GGUF, or an
-OpenAI-compatible server. Pyrrho g4-alpha uses `torch` because the
-published multitask checkpoint is a safetensors model; Qwen and the reranker
-remain ONNX-only.
+OpenAI-compatible server. Qwen, the reranker, and Pyrrho v2 all load pre-built
+ONNX graphs in the standard retrieval path. `torch` and `safetensors` are only
+needed for old custom Pyrrho packages installed through the `legacy-pyrrho`
+extra.
 
 ## Download Behavior
 
@@ -28,7 +29,7 @@ symlink privileges.
 |---|---|
 | Qwen3.5 0.8B ONNX | First query or ingest that needs required enrichment or semantic query keywords. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
-| Pyrrho g4-alpha | First query-signal classification or governance cutoff evaluation. |
+| Pyrrho v2 | First governance cutoff evaluation. |
 
 The CLI may print messages such as:
 
@@ -57,7 +58,7 @@ Copy both cache roots:
 | Cache | What it contains |
 |---|---|
 | Hugging Face cache (`HF_HOME`, or the platform default) | Qwen ONNX snapshot, reranker ONNX file, tokenizers, configs |
-| `~/.fitz/models/pyrrho/` | Managed Pyrrho safetensors package |
+| `~/.fitz/models/pyrrho/` | Managed Pyrrho ONNX package |
 
 On the target machine, point `HF_HOME` at the copied Hugging Face cache and set
 Hugging Face offline mode:
@@ -71,12 +72,12 @@ For Pyrrho, either copy `~/.fitz/models/pyrrho/` to the same Fitz home location
 or configure governance with the unpacked local package path:
 
 ```yaml
-governance: pyrrho//opt/fitz/models/pyrrho/yafitzdev__pyrrho-nano-g4-alpha
+governance: pyrrho//opt/fitz/models/pyrrho/yafitzdev__pyrrho-v2-nano-g1
 ```
 
 The double slash after `pyrrho/` is intentional for absolute Unix paths. On
 Windows, use a normal absolute path after the provider prefix, for example
-`pyrrho/C:\fitz\models\pyrrho\yafitzdev__pyrrho-nano-g4-alpha`.
+`pyrrho/C:\fitz\models\pyrrho\yafitzdev__pyrrho-v2-nano-g1`.
 
 ## Qwen Is Mandatory
 

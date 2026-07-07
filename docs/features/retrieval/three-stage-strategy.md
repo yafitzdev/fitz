@@ -13,11 +13,9 @@ The retrieval strategy is deliberately split into three jobs:
 
 This split matters because each stage optimizes a different failure mode. Recall
 is allowed to be noisy. Reranking is where precision belongs. Pyrrho decides
-whether the ranked evidence is sufficient, disputed, or incomplete. Pyrrho g4-alpha
-also runs query-only heads before recall so the stack knows whether the user is
-asking for a narrow answer, comparison coverage, exhaustive coverage, temporal
-grounding, structured lookup, a representative overview, and which evidence
-surface is preferred.
+whether the ranked evidence is sufficient, disputed, or incomplete. The default
+Pyrrho v2 package is evidence-conditioned only; pre-retrieval Pyrrho query heads
+are used only when a configured package actually trains them.
 
 ---
 
@@ -25,7 +23,7 @@ surface is preferred.
 
 ```mermaid
 flowchart LR
-    Q["User query"] --> QC["Pyrrho query signals"]
+    Q["User query"] --> QC["Query profiling"]
     QC --> R["1. Broad recall"]
     R --> C["Candidate evidence pool"]
     C --> K["2. ONNX rerank"]
@@ -34,7 +32,7 @@ flowchart LR
     S --> P["3. Pyrrho cutoff"]
     P --> E["EvidencePack"]
 
-    QC --> QC1["Contract + route + answer shape + modality"]
+    QC --> QC1["Deterministic signals + optional trained query heads"]
 
     R --> R1["Real query keywords"]
     R --> R2["Managed-Qwen semantic keywords"]
@@ -44,9 +42,9 @@ flowchart LR
     K --> K1["Cross-encoder scores query + candidate"]
     K --> K2["False positives pushed down"]
 
-    P --> P1["TRUSTWORTHY"]
+    P --> P1["SUFFICIENT"]
     P --> P2["DISPUTED"]
-    P --> P3["ABSTAIN"]
+    P --> P3["INSUFFICIENT"]
 ```
 
 The core rule is simple:
@@ -66,7 +64,7 @@ Inputs:
 - the user's exact query terms
 - deterministic synonyms and acronyms
 - managed Qwen semantic keywords for the query
-- Pyrrho query signals: query contract, route/domain, answerability shape, and preferred retrieval modality
+- optional Pyrrho query heads when the configured package actually trains them
 - deterministic query shape: narrow, broad, comparison, temporal, aggregation, or freshness-sensitive
 - typed retrieval units from KRAG: sections, code symbols, tables, files, summaries
 
@@ -144,14 +142,14 @@ For a ranked list, fitz-sage evaluates prefixes:
 flowchart TD
     A["Ranked evidence list"] --> B["query + top 1"]
     B --> C["Pyrrho verdict"]
-    C -->|"TRUSTWORTHY"| D{"Enough docs for query shape?"}
-    D -->|"yes"| T["Stop: return trustworthy evidence"]
+    C -->|"SUFFICIENT"| D{"Enough docs for query shape?"}
+    D -->|"yes"| T["Stop: return sufficient evidence"]
     D -->|"no"| N["Add next evidence item"]
     C -->|"DISPUTED"| U{"Stable / query shape allows stop?"}
     U -->|"yes"| V["Stop: return disputed evidence"]
     U -->|"no"| N
-    C -->|"ABSTAIN"| W{"Cutoff reached?"}
-    W -->|"yes"| X["Stop: return abstain evidence"]
+    C -->|"INSUFFICIENT"| W{"Cutoff reached?"}
+    W -->|"yes"| X["Stop: return insufficient evidence"]
     W -->|"no"| N
     N --> C
 ```
@@ -165,16 +163,16 @@ Verdicts:
 
 | Verdict | Meaning for retrieval |
 |---|---|
-| `TRUSTWORTHY` | The evidence prefix is sufficient and internally consistent. |
+| `SUFFICIENT` | The evidence prefix is sufficient and internally consistent. |
 | `DISPUTED` | The evidence prefix contains a meaningful conflict. |
-| `ABSTAIN` | The evidence prefix is incomplete or does not answer the query. |
+| `INSUFFICIENT` | The evidence prefix is incomplete or does not answer the query. |
 
 Policy varies by query shape:
 
 | Query shape | Cutoff behavior |
 |---|---|
-| Narrow lookup | Can stop with fewer documents once Pyrrho trusts the evidence. |
-| Broad corpus overview | Requires a wider trustworthy window before stopping. |
+| Narrow lookup | Can stop with fewer documents once Pyrrho finds sufficient evidence. |
+| Broad corpus overview | Requires a wider sufficient-evidence window before stopping. |
 | Comparison | Needs enough evidence to represent both sides. |
 | Aggregation | Needs a larger evidence window because completeness matters. |
 | Dispute | Stops only when conflict is stable enough for the shape. |
@@ -184,7 +182,7 @@ requests fewer.
 
 Corpus overview queries are a special case: evidence sufficiency is not
 well-defined for "key facts in this corpus" style prompts, so Pyrrho returns
-representative sources instead of a trustworthy verdict. Synthetic corpus
+representative sources instead of a sufficient verdict. Synthetic corpus
 summaries are injected only through this overview path and are excluded from
 ordinary BM25 section hits.
 
@@ -200,7 +198,7 @@ stage.
 | Sparse BM25 / FTS5 | Recall | Cheap candidate generation. |
 | Keyword vocabulary | Recall | Exact identifiers, codes, acronyms, test IDs. |
 | Managed Qwen semantic keywords | Recall | Adds semantic aliases without embeddings. |
-| Pyrrho query signals | Recall / governance policy | Adds pre-retrieval contract, route, answer-shape, and modality signals. |
+| Optional Pyrrho query heads | Recall / governance policy | Adds pre-retrieval metadata only when the configured package trains query heads. |
 | Query expansion | Recall | Deterministic synonyms and acronym expansion. |
 | Query rewriting | Recall | Fixes conversational or ambiguous phrasing before search. |
 | Multi-query decomposition | Recall | Bounded fanout for compound questions. |
@@ -213,8 +211,8 @@ stage.
 | Supplemental scan | Recall | Covers registered files that are not fully query-ready yet. |
 | ONNX reranker | Rerank | Sorts noisy recall candidates by relevance. |
 | Metric comparison prefixing | Governance policy | Promotes direct metric/table evidence before Pyrrho cutoff. |
-| Multi-hop | Post-cutoff fallback | Runs another retrieval pass when Pyrrho abstains and a bridge is available. |
-| Pyrrho | Governance | Classifies query signals and decides enough / disputed / not enough over ranked prefixes. |
+| Multi-hop | Post-cutoff fallback | Runs another retrieval pass when Pyrrho marks evidence insufficient and a bridge is available. |
+| Pyrrho | Governance | Decides enough / disputed / not enough over ranked evidence prefixes. |
 
 Nothing in this model makes enrichment optional. Required enrichment improves
 the recall surface and the evidence available to the reranker. The difference is

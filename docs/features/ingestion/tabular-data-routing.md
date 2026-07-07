@@ -171,4 +171,4 @@ WHERE d.dept_name = 'R&D'
 
 - **Keyword Vocabulary** - Exact matching helps find table names and column names
 - **Multi-Hop Reasoning** - Can traverse table → references → other tables
-- **Epistemic Honesty** - ABSTAIN if table doesn't contain requested data
+- **Epistemic Honesty** - Mark evidence insufficient if the table does not contain requested data

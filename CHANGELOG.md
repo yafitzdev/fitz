@@ -24,26 +24,19 @@ optimizes for high-recall candidate gathering first, lets the local ONNX
 cross-encoder impose precision, then asks Pyrrho whether the top-1,
 top-2, ... evidence prefix is enough to answer.
 
-**Pyrrho g4-alpha contract wired end-to-end.** Fitz now uses
-`pyrrho-nano-g4-alpha` as the canonical governance model and requires its query
-and evidence heads from `pyrrho_multitask_config.json`.
-
-**Pre-retrieval Pyrrho planning is now real retrieval input.** Fitz asks
-Pyrrho for query-only signals before recall, turns `query_contract`, `route`,
-`answerability_shape`, and `retrieval_modality` into a `RetrievalProfile`, and
-stores the applied plan under `EvidencePack.metadata.query_profile`.
-Configured g4-alpha models also surface `retrieval_action`, `gap_type`, and
-`evidence_failure_severity` during the evidence cutoff.
+**New Pyrrho v2 nano g1 wired end-to-end.** Fitz now uses
+`yafitzdev/pyrrho-v2-nano-g1` as the canonical governance model. The default
+model uses the new v2 heads: `evidence_verdict`, `failure_mode`,
+`retrieval_intents`, and `evidence_kinds`.
 
 **Managed Qwen enrichment is standard.** Qwen3.5 0.8B ONNX is the
 required local runtime for semantic query keywords and ingestion
 enrichment. It is downloaded when missing and is not exposed as an
 optional user flag.
 
-**Retrieval quality now has a query-profile regression gate.** The release
-adds a focused query-profile benchmark and manual evidence sweep over a real
-code corpus. The current g4-alpha run hits `recall@10=1.00` and
-`nDCG@10=0.86` on the new query-profile eval.
+**Governance quality now has fixed-evidence and live retrieval gates.** The
+release adds governance-specific benchmark runners and balanced sufficiency /
+insufficiency / dispute checks for the v2 model.
 
 ### 🚀 Added
 
@@ -64,40 +57,28 @@ code corpus. The current g4-alpha run hits `recall@10=1.00` and
 - **Pyrrho evidence metadata in CLI output** — evidence tables now expose
   the governance verdict, cutoff, probabilities, and reasons without a
   separate awkward metadata box.
-- **Pyrrho query-contract routing** — Pyrrho classifies the query contract
-  before recall, so representative overviews, exhaustive coverage,
-  comparisons, temporal grounding, and structured lookups can steer recall
-  and cutoff policy before evidence is selected.
-- **Pyrrho g4-alpha required heads** — the governance runtime now requires
-  `retrieval_action`, `gap_type`, `answerability_shape`, and
-  `retrieval_modality` heads, plus configured scalar fields such as
-  `evidence_failure_severity`, from the model package.
-- **Pre-retrieval query profiles** — `QueryPipeline` now runs
-  `Pyrrho.classify_query()` before recall and passes those query-only
-  signals into `build_retrieval_profile()`.
-- **`EvidencePack.metadata.query_profile`** — evidence responses now include
-  the raw Pyrrho query heads, confidence/probability metadata, whether each
-  head was used for retrieval, and the final profile knobs applied to recall.
-- **Query-profile retrieval benchmark** — `tools.retrieval_eval` has a new
-  `query_profile` mode, a ten-query code corpus dataset, and a `--governance`
-  override for testing local Pyrrho packages such as g4-alpha.
+- **Native Pyrrho v2 metadata** — evidence responses now expose the v2
+  verdict, failure mode, retrieval intents, and evidence-kind heads directly.
+- **Pyrrho package loader for v2** — the governance runtime can load the
+  released v2 sequence-classification package as the default local CPU model.
+- **New Pyrrho v2 head shape** — governance metadata now follows the
+  `evidence_verdict`, `failure_mode`, `retrieval_intents`, and
+  `evidence_kinds` heads from the released v2 model.
+- **Governance benchmark runner** — `benchmarks.fitz_bench.governance_runner`
+  evaluates fixed evidence cases without retrieval noise.
 
 ### 🔄 Changed
 
-- **Pyrrho loading now follows the g4-alpha package shape.** Configured Pyrrho
-  packages must expose the required g4-alpha heads through
-  `pyrrho_multitask_config.json`.
-- **Query planning now uses Pyrrho before retrieval.** `query_contract`,
-  `route`, `answerability_shape`, and `retrieval_modality` influence
-  specificity, domain, answer type, strategy weights, `top_k`, and `top_read`
-  before the first evidence pass.
+- **Pyrrho loading now supports the v2 package shape.** The default package is
+  the v2 native sequence classifier; older multitask packages can still load
+  when explicitly configured.
+- **Governance metadata follows the new Pyrrho heads.** Runtime metadata uses
+  the v2 head names from the released model package.
 - **Structured lookup keeps code retrieval eligible.** When Pyrrho says a
   query is a structured lookup, code search remains available even if the
   wording also mentions tables or sections.
-- **Pyrrho retry requests can reshape the second pass.** Confident
-  `retrieval_action` signals such as `retrieve_more`, `broaden_search`,
-  `resolve_conflict`, and `structured_lookup` now feed the retry profile, with
-  `retrieval_modality` applied to the retry strategy weights.
+- **Pyrrho retry metadata follows the configured package.** Runtime retry
+  behavior reads the metadata supplied by the selected Pyrrho model.
 - **ONNX encoder loading handles external data sidecars.** Split ONNX
   exports such as `model_quantized.onnx` + `model_quantized.onnx.data`
   now load through the shared encoder backend.

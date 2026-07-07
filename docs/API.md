@@ -106,9 +106,9 @@ source attribution.
 | Field | Type | Description |
 |-------|------|-------------|
 | `text` | string | The answer text |
-| `mode` | string | `trustworthy`, `disputed`, or `abstain` |
+| `mode` | string | Runtime mode: `trustworthy`, `disputed`, or `abstain` |
 | `sources` | array | Source attribution for the answer |
-| `metadata` | object | Extra answer metadata; on `abstain`, includes `gap_context` (what's missing and what to add) |
+| `metadata` | object | Extra answer metadata; on runtime `abstain`, includes `gap_context` (what's missing and what to add) |
 
 ### Example
 
@@ -411,15 +411,17 @@ All endpoints return standard HTTP error codes:
 
 ---
 
-## Answer Modes
+## Runtime Answer Modes
 
-The `mode` field in responses indicates answer confidence:
+The `mode` field is the runtime API value. Pyrrho v2's native model verdict is
+available in governance metadata as `evidence_verdict` with
+`SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT` semantics.
 
 | Mode | Description | Typical Cause |
 |------|-------------|---------------|
-| `trustworthy` | Strong evidence supports answer | Clear, unambiguous sources |
-| `disputed` | Conflicting sources | Sources disagree |
-| `abstain` | Cannot answer | Insufficient evidence |
+| `trustworthy` | Runtime mode for sufficient evidence | Clear, unambiguous sources |
+| `disputed` | Runtime mode for disputed evidence | Sources disagree |
+| `abstain` | Runtime mode for insufficient evidence | Missing or incomplete evidence |
 
 ---
 

@@ -128,16 +128,18 @@ rerank: onnx
 
 ## Governance
 
-Epistemic governance (TRUSTWORTHY / DISPUTED / ABSTAIN) follows the
-same declaration pattern — the `governance:` key declares the classifier:
+Epistemic governance (SUFFICIENT / DISPUTED / INSUFFICIENT in Pyrrho v2)
+follows the same declaration pattern — the `governance:` key declares the
+classifier:
 
 ```yaml
-governance: pyrrho                  # default — the local Pyrrho g4-alpha classifier
-# governance: pyrrho/<hf-model-id>  # a compatible Pyrrho g4 package
+governance: pyrrho                  # default — the local Pyrrho v2 classifier
+# governance: pyrrho/<hf-model-id>  # a Pyrrho package
 ```
 
-`governance: pyrrho` runs query-signal classification before recall and
-evidence-prefix checks in the cutoff loop.
+`governance: pyrrho` runs evidence-prefix checks in the cutoff loop.
+Pre-retrieval Pyrrho query heads are available only for packages that actually
+train them.
 
 ## Managed enrichment
 

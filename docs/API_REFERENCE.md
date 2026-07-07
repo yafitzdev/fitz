@@ -175,12 +175,13 @@ answer against source material. For retrieval-first workflows, prefer
 `EvidencePack.items`, which include file path, location, score, excerpt, and
 full content.
 
-**Answer Mode:**
+**Runtime AnswerMode:**
 
-Indicates how certain the answer should be interpreted (3-class system):
-- `TRUSTWORTHY`: Evidence clearly supports this answer
-- `DISPUTED`: Sources disagree; answer presents multiple perspectives
-- `ABSTAIN`: Insufficient evidence to answer definitively
+Indicates how the runtime should treat the answer. Pyrrho v2's native model
+verdict is exposed in governance metadata as `evidence_verdict`:
+- `TRUSTWORTHY`: runtime mode for `SUFFICIENT` evidence
+- `DISPUTED`: runtime mode for `DISPUTED` evidence
+- `ABSTAIN`: runtime mode for `INSUFFICIENT` evidence
 
 If `None`, no epistemic assessment was performed.
 
