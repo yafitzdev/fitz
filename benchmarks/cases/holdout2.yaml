@@ -480,7 +480,7 @@
 
 - id: holdout2_mixed_access_guest_conflict
   domain: mixed
-  query: "Using the access brief, compare current guest export behavior against the legacy code notes."
+  query: "Using the access brief, compare guest export behavior against the code notes."
   expected:
     mode: disputed
     required_evidence:

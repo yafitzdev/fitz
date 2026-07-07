@@ -84,3 +84,121 @@ def test_validate_case_reports_mode_and_forbidden_failures() -> None:
     assert result.metrics.mode_match is False
     assert result.metrics.forbidden_count == 1
     assert len(result.failures) == 2
+
+
+def test_validate_case_accepts_v2_mode_aliases() -> None:
+    case = BenchmarkCase.from_dict(
+        {
+            "id": "case_3",
+            "domain": "unstructured",
+            "query": "What is supported?",
+            "expected": {"mode": "sufficient"},
+        }
+    )
+    pack = {"mode": "trustworthy", "items": []}
+
+    result = validate_case(case, pack)
+
+    assert case.expected_mode == "sufficient"
+    assert result.passed is True
+    assert result.metrics.mode_match is True
+
+
+def test_validate_case_accepts_insufficient_alias_for_abstain() -> None:
+    case = BenchmarkCase.from_dict(
+        {
+            "id": "case_4",
+            "domain": "unstructured",
+            "query": "What is absent?",
+            "expected": {"mode": "insufficient"},
+        }
+    )
+    pack = {"mode": "abstain", "items": []}
+
+    result = validate_case(case, pack)
+
+    assert case.expected_mode == "insufficient"
+    assert result.passed is True
+    assert result.metrics.mode_match is True
+
+
+def test_validate_case_matches_wrapped_markdown_phrase() -> None:
+    """YAML phrases should match normal Markdown hard wraps."""
+    case = BenchmarkCase.from_dict(
+        {
+            "id": "case_wrapped",
+            "domain": "mixed",
+            "query": "What does the release brief say?",
+            "expected": {
+                "required_evidence": [
+                    {
+                        "file": "mixed/release_brief.md",
+                        "contains": ["roadmap status document"],
+                    }
+                ],
+            },
+        }
+    )
+    pack = {
+        "items": [
+            {
+                "rank": 1,
+                "file_path": "mixed/release_brief.md",
+                "address_kind": "section",
+                "address_location": "Release Brief",
+                "excerpt": "The roadmap\nstatus document is authoritative.",
+                "content": "",
+            }
+        ]
+    }
+
+    result = validate_case(case, pack)
+
+    assert result.passed is True
+
+
+def test_validate_case_allows_forbidden_text_inside_required_temporal_section() -> None:
+    """A coarse section can contain old and current paragraphs without false failure."""
+    case = BenchmarkCase.from_dict(
+        {
+            "id": "case_temporal_section",
+            "domain": "unstructured",
+            "query": "What is the current status?",
+            "expected": {
+                "mode": "sufficient",
+                "required_evidence": [
+                    {
+                        "file": "status.md",
+                        "contains": ["2026-08-02", "no active MFA exceptions"],
+                    }
+                ],
+                "forbidden_evidence": [
+                    {
+                        "file": "status.md",
+                        "contains": ["2026-03-10", "may skip hardware keys"],
+                    }
+                ],
+            },
+        }
+    )
+    pack = {
+        "mode": "sufficient",
+        "items": [
+            {
+                "rank": 1,
+                "file_path": "status.md",
+                "address_kind": "section",
+                "address_location": "MFA Exceptions",
+                "excerpt": "",
+                "content": (
+                    "2026-03-10: Pilot users may skip hardware keys.\n\n"
+                    "2026-08-02: Current rule: no active MFA exceptions remain."
+                ),
+            }
+        ],
+    }
+
+    result = validate_case(case, pack)
+
+    assert result.passed is True
+    assert result.metrics.forbidden_count == 0

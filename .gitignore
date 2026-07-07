@@ -55,3 +55,5 @@ tools/retrieval_eval/results/
 tools/retrieval_eval/results/**
 benchmarks/results/
 benchmarks/results/**
+.bench_workspace/
+.bench_workspace/**

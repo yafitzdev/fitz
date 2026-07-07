@@ -3,12 +3,12 @@
 
 ## Feature Flags
 
-The stale feature-flag note says archived users remain eligible for beta flags.
+The feature-flag note says archived users remain eligible for beta flags.
 It also says mobile checkout has no kill switch.
 
 ## Deployment Guard
 
-The stale deployment note says Fitz never automatically rolls back a deployment.
+The deployment note says Fitz never automatically rolls back a deployment.
 
 ## Invoice Rules
 

@@ -11,8 +11,8 @@ The JSON report is also the debug artifact. Each record includes:
 - query-profile signals
 - retrieval trace: strategy calls, candidate frontier, reranker input/output,
   final read set, retry traces
-- evidence compiler trace: Pyrrho query contract, Pyrrho-required modalities,
-  literal anchors, evidence roles, minimum source count
+- evidence compiler trace: Pyrrho v2 verdict, failure, intent, and
+  evidence-kind metadata, literal anchors, evidence roles, minimum source count
 - governance cutoff metadata, including Pyrrho prefix trajectory
 - deterministic validation metrics and failures
 - aggregate pass-rate summaries by domain and tag
@@ -26,7 +26,7 @@ python -m benchmarks.fitz_bench.runner
 To run against an unpacked local Pyrrho package:
 
 ```bash
-python -m benchmarks.fitz_bench.runner --governance "pyrrho/C:\path\to\pyrrho-nano-g4-alpha"
+python -m benchmarks.fitz_bench.runner --governance "pyrrho/C:\Users\yanfi\PycharmProjects\pyrrho\outputs\modernbert_base_v2_alpha\best_model"
 ```
 
 Defaults:
@@ -35,6 +35,7 @@ Defaults:
 - cases: `benchmarks/cases/core.yaml`
 - JSON report: `benchmarks/results/latest.json`
 - Markdown summary: `benchmarks/results/latest.md`
+- workspace: `.bench_workspace/<collection>`
 - index mode: `complete`
 
 For a quick smoke run:
@@ -43,7 +44,8 @@ For a quick smoke run:
 python -m benchmarks.fitz_bench.runner --limit 2 --index-mode progressive
 ```
 
-Generated reports under `benchmarks/results/` are ignored by git.
+Generated reports under `benchmarks/results/` and benchmark workspaces under
+`.bench_workspace/` are ignored by git.
 
 ## Case Shape
 
@@ -52,7 +54,7 @@ Generated reports under `benchmarks/results/` are ignored by git.
   domain: code
   query: "Where is expired session refresh implemented?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/auth_service.py
         kind: symbol
@@ -63,6 +65,10 @@ Generated reports under `benchmarks/results/` are ignored by git.
         contains: ["old behavior"]
   tags: [code, symbol_lookup]
 ```
+
+New cases should use the v2 evidence-verdict names (`sufficient`, `disputed`,
+`insufficient`). The validator also accepts runtime names (`trustworthy`,
+`disputed`, `abstain`) and normalizes them before validation.
 
 The validator checks evidence items, not generated text. A required evidence
 entry passes when any returned evidence item matches the file/kind/location and
@@ -76,7 +82,7 @@ The starter corpus covers:
 - structured CSV/table evidence
 - code symbols
 - mixed table/prose cases
-- conflicts and abstention
+- conflicts and insufficient evidence
 - temporal freshness and stale evidence
 - acronym expansion
 - filtered table lookups and comparisons
@@ -97,3 +103,18 @@ python -m benchmarks.fitz_bench.runner --corpus benchmarks/corpora/holdout2 --ca
 
 Grow this by adding more files under `benchmarks/corpora/` and YAML cases under
 `benchmarks/cases/`.
+
+## Balanced Governance
+
+The retrieval suites above are product/integration benchmarks. They are not
+class-balanced: most cases are expected to be sufficient. To compare Pyrrho
+governance models directly, use the fixed-evidence balanced benchmark:
+
+```bash
+python -m benchmarks.fitz_bench.governance_runner --governance "pyrrho/C:\path\to\pyrrho\best_model" --output benchmarks/results/governance_balanced_model.json --markdown benchmarks/results/governance_balanced_model.md
+```
+
+This suite bypasses live retrieval and feeds Pyrrho 120 fixed evidence packs:
+40 sufficient, 40 disputed, and 40 insufficient. It reports accuracy, macro
+recall, per-class recall, false-sufficient rate, and false-reject-sufficient
+rate.

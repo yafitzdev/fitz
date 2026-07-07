@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -37,11 +38,11 @@ def test_create_engine_applies_governance_override(monkeypatch):
     monkeypatch.setattr(runner, "load_engine_config", fake_load_engine_config)
     monkeypatch.setattr(runner, "create_engine", fake_create_engine)
 
-    runner._create_engine("fitz_krag", governance=r"pyrrho/C:\models\pyrrho-nano-g4-alpha")
+    runner._create_engine("fitz_krag", governance=r"pyrrho/C:\models\pyrrho-v2-nano-g1")
 
     assert captured["loaded_engine"] == "fitz_krag"
     assert captured["created_engine"] == "fitz_krag"
-    assert captured["created_config"].governance == r"pyrrho/C:\models\pyrrho-nano-g4-alpha"
+    assert captured["created_config"].governance == r"pyrrho/C:\models\pyrrho-v2-nano-g1"
 
 
 def test_create_engine_uses_default_config_when_governance_is_not_overridden(monkeypatch):
@@ -63,3 +64,29 @@ def test_create_engine_uses_default_config_when_governance_is_not_overridden(mon
     runner._create_engine(None, governance=None)
 
     assert captured["created_engine"] is None
+
+
+def test_benchmark_workspace_defaults_under_cluster_dir(tmp_path):
+    """Benchmark runs should not create many top-level workspace directories."""
+    from benchmarks.fitz_bench import runner
+
+    assert runner._benchmark_workspace(tmp_path, None, "bench_123") == (
+        tmp_path / ".bench_workspace" / "bench_123"
+    ).resolve()
+
+
+def test_benchmark_workspace_resolves_relative_override_under_repo_root(tmp_path):
+    """Relative workspace overrides should resolve from the benchmark repo root."""
+    from benchmarks.fitz_bench import runner
+
+    assert runner._benchmark_workspace(tmp_path, "custom/workspace", "bench_123") == (
+        tmp_path / "custom" / "workspace"
+    ).resolve()
+
+
+def test_benchmark_workspace_preserves_absolute_override(tmp_path):
+    """Absolute workspace overrides are still supported for manual debugging."""
+    from benchmarks.fitz_bench import runner
+
+    override = Path("C:/tmp/fitz-bench-workspace").resolve()
+    assert runner._benchmark_workspace(tmp_path, str(override), "bench_123") == override

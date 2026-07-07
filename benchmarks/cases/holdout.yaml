@@ -346,7 +346,7 @@
       - file: code/feature_flag_service.py
         kind: symbol
         location_contains: "rollout_bucket"
-        contains: ["sha256", "modulo", "100"]
+        contains: ["sha256", "% 100"]
   tags: [holdout, code, symbol_lookup]
 
 - id: holdout_code_alert_route_p2

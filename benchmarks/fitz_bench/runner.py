@@ -31,9 +31,8 @@ def main(argv: list[str] | None = None) -> int:
     cases_path = (root / args.cases).resolve()
     output = (root / args.output).resolve()
     collection = args.collection or f"bench_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-
-    if args.workspace:
-        FitzPaths.set_workspace(Path(args.workspace).resolve())
+    workspace = _benchmark_workspace(root, args.workspace, collection)
+    FitzPaths.set_workspace(workspace)
 
     cases = _load_cases(cases_path)
     if args.limit is not None:
@@ -85,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
             "cases": str(cases_path),
             "index_mode": args.index_mode,
             "governance_override": args.governance,
+            "workspace": str(workspace),
             "duration_seconds": time.perf_counter() - started,
         },
         "summary": _summary(records),
@@ -115,14 +115,18 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="Optional Markdown summary path. Use empty string to skip.",
     )
     parser.add_argument("--collection", default=None, help="Collection name. Defaults unique.")
-    parser.add_argument("--workspace", default=None, help="Optional FITZ workspace path.")
+    parser.add_argument(
+        "--workspace",
+        default=None,
+        help="Optional FITZ workspace path. Defaults to .bench_workspace/<collection>.",
+    )
     parser.add_argument("--engine", default=None, help="Engine name passed to create_engine.")
     parser.add_argument(
         "--governance",
         default=None,
         help=(
             "Optional governance provider override, e.g. "
-            "'pyrrho/C:\\path\\to\\pyrrho-nano-g4-alpha'."
+            "'pyrrho/C:\\path\\to\\pyrrho-v2-nano-g1'."
         ),
     )
     parser.add_argument("--limit", type=int, default=None, help="Limit number of cases.")
@@ -133,6 +137,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="Complete indexing before queries, or query while the worker runs.",
     )
     return parser.parse_args(argv)
+
+
+def _benchmark_workspace(root: Path, workspace: str | None, collection: str) -> Path:
+    """Return the isolated Fitz workspace for one benchmark run."""
+    if workspace:
+        path = Path(workspace)
+        return path.resolve() if path.is_absolute() else (root / path).resolve()
+    return (root / ".bench_workspace" / collection).resolve()
 
 
 def _load_cases(path: Path) -> list[BenchmarkCase]:

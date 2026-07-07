@@ -6,6 +6,23 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+_MODE_ALIASES = {
+    "sufficient": "sufficient",
+    "trustworthy": "sufficient",
+    "insufficient": "insufficient",
+    "abstain": "insufficient",
+    "disputed": "disputed",
+}
+
+
+def normalize_mode(value: Any) -> str | None:
+    """Normalize old and v2 governance label names to v2 benchmark labels."""
+    if value is None:
+        return None
+    raw = getattr(value, "value", value)
+    normalized = str(raw).strip().lower()
+    return _MODE_ALIASES.get(normalized, normalized)
+
 
 @dataclass(frozen=True)
 class EvidenceExpectation:
@@ -52,7 +69,7 @@ class BenchmarkCase:
             case_id=str(raw["id"]),
             domain=str(raw["domain"]),
             query=str(raw["query"]),
-            expected_mode=expected.get("mode"),
+            expected_mode=normalize_mode(expected.get("mode")),
             required_evidence=tuple(
                 EvidenceExpectation.from_dict(item)
                 for item in expected.get("required_evidence", [])
@@ -117,4 +134,5 @@ __all__ = [
     "CaseMetrics",
     "EvidenceExpectation",
     "ValidationResult",
+    "normalize_mode",
 ]
