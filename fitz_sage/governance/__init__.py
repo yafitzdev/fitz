@@ -5,10 +5,10 @@ Epistemic governance.
 A single classifier decides whether retrieved sources support a confident
 answer (TRUSTWORTHY), contradict each other (DISPUTED), or simply don't
 contain enough information (ABSTAIN). The standard classifier is
-[pyrrho](https://huggingface.co/yafitzdev/pyrrho-nano-g4-alpha), a multitask
-ModernBERT model with governance, query-contract, route/domain, taxonomy,
-retrieval-action, gap-type, answerability-shape, retrieval-modality, and scalar
-heads running locally on CPU.
+[pyrrho](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1), a ModernBERT
+classifier with v2 evidence-verdict, failure-mode, retrieval-intent, and
+evidence-kind heads. V2 g1 is evidence-conditioned; query-only v2 planning
+remains inactive until a query-trained v2 head is available.
 
 Governance is mandatory in the standard product path. The ``governance:``
 config key declares which pyrrho classifier to use:
@@ -19,12 +19,12 @@ config key declares which pyrrho classifier to use:
     decision = governance.decide(query, retrieved_contexts)
     # decision.mode in {TRUSTWORTHY, DISPUTED, ABSTAIN}
     # decision.probs is the governance softmax distribution
-    # decision query, evidence, route, taxonomy, action, gap, modality heads expose metadata
-    # governance.classify_query(query) returns pre-retrieval query signals
+    # v2 verdict, failure, retrieval-intent, and evidence-kind heads expose metadata
+    # governance.classify_query(query) returns pre-retrieval query signals when supported
     # decision.reason is a one-line human-readable summary
 
-Pyrrho now supplies both evidence governance and pre-retrieval query signals
-used by the retrieval stack.
+Pyrrho supplies evidence governance. Pre-retrieval query signals remain
+available only for packages that actually train query heads.
 """
 
 from __future__ import annotations
@@ -38,9 +38,9 @@ def create_governance(spec: str) -> Pyrrho:
     """Build a governance classifier from a config spec.
 
     Args:
-        spec: ``"pyrrho"`` (the default g4-alpha classifier),
-            ``"pyrrho/<hf-model-id>"`` (a compatible Pyrrho g4 package), or
-            ``"pyrrho/<local-package-path>"`` (an unpacked compatible package).
+        spec: ``"pyrrho"`` (the default v2 classifier),
+            ``"pyrrho/<hf-model-id>"`` (a Pyrrho package), or
+            ``"pyrrho/<local-package-path>"`` (an unpacked Pyrrho package).
 
     Returns:
         A ``Pyrrho`` instance.
@@ -49,9 +49,7 @@ def create_governance(spec: str) -> Pyrrho:
         ValueError: if ``spec`` names an unknown governance provider.
     """
     if not isinstance(spec, str) or not spec.strip():
-        raise ValueError(
-            "Governance must be 'pyrrho' or 'pyrrho/<compatible-g4-package>'."
-        )
+        raise ValueError("Governance must be 'pyrrho' or 'pyrrho/<package>'.")
 
     provider, _, model = spec.partition("/")
     provider, model = provider.strip(), model.strip()
@@ -59,7 +57,7 @@ def create_governance(spec: str) -> Pyrrho:
         return Pyrrho(model_id=model) if model else Pyrrho()
     raise ValueError(
         f"Unknown governance provider: {provider!r}. "
-        f"Supported: 'pyrrho' or 'pyrrho/<compatible-g4-package>'."
+        f"Supported: 'pyrrho' or 'pyrrho/<package>'."
     )
 
 

@@ -26,13 +26,13 @@ pytestmark = pytest.mark.slow
 
 
 def _pyrrho_smoke_spec() -> str:
-    """Use the local canonical g4-alpha package when this checkout has it."""
-    env_path = os.environ.get("PYRRHO_G4_ALPHA_PACKAGE")
+    """Use the local canonical v2 package when this checkout has it."""
+    env_path = os.environ.get("PYRRHO_V2_PACKAGE")
     if env_path and Path(env_path).is_dir():
         return f"pyrrho/{env_path}"
 
     repo_root = Path(__file__).resolve().parents[2]
-    sibling_package = repo_root.parent / "pyrrho" / "models" / "pyrrho-nano-g4-alpha"
+    sibling_package = repo_root.parent / "pyrrho" / "models" / "pyrrho-v2-nano-g1"
     if sibling_package.is_dir():
         return f"pyrrho/{sibling_package}"
 
@@ -40,7 +40,7 @@ def _pyrrho_smoke_spec() -> str:
 
 
 def test_pyrrho_loads_and_decides():
-    """Canonical Pyrrho g4-alpha package -> a real local decide() call."""
+    """Canonical Pyrrho v2 package -> a real local decide() call."""
     from fitz_sage.core.answer_mode import AnswerMode
     from fitz_sage.governance import create_governance
 

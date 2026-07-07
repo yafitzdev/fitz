@@ -101,14 +101,14 @@ def test_create_governance_dispatch(tmp_path):
     default = create_governance("pyrrho")
     assert isinstance(default, Pyrrho)
     assert default._model_id == MODEL_ID
-    assert MODEL_ID == "yafitzdev/pyrrho-nano-g4-alpha"
-    assert TAU == 0.44
+    assert MODEL_ID == "yafitzdev/pyrrho-v2-nano-g1"
+    assert TAU == 0.34
 
     custom = create_governance("pyrrho/acme/custom-fine-tune")
     assert isinstance(custom, Pyrrho)
     assert custom._model_id == "acme/custom-fine-tune"
 
-    local_package = tmp_path / "pyrrho-nano-g4-alpha"
+    local_package = tmp_path / "pyrrho-v2-nano-g1"
     local_package.mkdir()
     local = create_governance(f"pyrrho/{local_package}")
     assert isinstance(local, Pyrrho)

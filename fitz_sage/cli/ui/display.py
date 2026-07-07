@@ -367,7 +367,7 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
 
 
 def _format_query_profile(metadata: dict) -> str:
-    """Format pre-retrieval Pyrrho query signals and profile knobs."""
+    """Format pre-retrieval query profile signals and profile knobs."""
     query_profile = metadata.get("query_profile", {}) if isinstance(metadata, dict) else {}
     if not isinstance(query_profile, dict):
         return ""
@@ -384,6 +384,7 @@ def _format_query_profile(metadata: dict) -> str:
         ("route", "route"),
         ("answerability_shape", "shape"),
         ("retrieval_modality", "modality"),
+        ("retrieval_obligation", "obligation"),
     ):
         signal = signals.get(key)
         if not isinstance(signal, dict):
@@ -470,6 +471,25 @@ def _format_pyrrho_heads(pyrrho: dict) -> str:
         return ""
     parts: list[str] = []
     for key, label in (
+        ("evidence_verdict", "verdict"),
+        ("failure_mode", "failure"),
+        ("retrieval_intents", "intents"),
+        ("evidence_kinds", "evidence"),
+    ):
+        head = pyrrho.get(key)
+        if not isinstance(head, dict):
+            continue
+        final_labels = head.get("final_labels")
+        if isinstance(final_labels, list) and final_labels:
+            final_label = ", ".join(str(item) for item in final_labels if item)
+        else:
+            final_label = head.get("final_label")
+        if not final_label:
+            continue
+        confidence = _fmt_prob(head.get("confidence"))
+        parts.append(f"{label} {final_label} ({confidence})")
+
+    for key, label in (
         ("query_contract", "contract"),
         ("route", "route"),
         ("taxonomy", "taxonomy"),
@@ -477,6 +497,7 @@ def _format_pyrrho_heads(pyrrho: dict) -> str:
         ("gap_type", "gap"),
         ("answerability_shape", "shape"),
         ("retrieval_modality", "modality"),
+        ("retrieval_obligation", "obligation"),
     ):
         head = pyrrho.get(key)
         if not isinstance(head, dict):

@@ -221,6 +221,36 @@ def test_format_governance_metadata_shows_pyrrho_heads_and_scalars():
     ]
 
 
+def test_format_governance_metadata_shows_native_v2_heads():
+    """v2 metadata should show native heads only."""
+    metadata = {
+        "governance_cutoff": {
+            "pyrrho": {
+                "evidence_verdict": {"final_label": "SUFFICIENT", "confidence": 0.92},
+                "failure_mode": {"final_label": "none", "confidence": 0.88},
+                "retrieval_intents": {
+                    "final_label": "needs_lookup",
+                    "final_labels": ["needs_lookup", "needs_temporal_resolution"],
+                    "confidence": 0.96,
+                },
+                "evidence_kinds": {
+                    "final_label": "needs_text",
+                    "final_labels": ["needs_text"],
+                    "confidence": 0.81,
+                },
+            },
+        }
+    }
+
+    assert _format_governance_metadata(metadata, []) == [
+        (
+            "Pyrrho heads: verdict SUFFICIENT (0.92); failure none (0.88); "
+            "intents needs_lookup, needs_temporal_resolution (0.96); "
+            "evidence needs_text (0.81)"
+        )
+    ]
+
+
 def test_format_governance_metadata_preserves_extra_reasons():
     """Additional governance reasons should not be hidden by Pyrrho metadata."""
     metadata = {
