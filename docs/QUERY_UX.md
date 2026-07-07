@@ -60,7 +60,7 @@ flags:
 | Message | Meaning |
 |---|---|
 | `Registering ...` | fitz-sage found a source directory and collection target. |
-| `Preparing managed Qwen3.5 0.8B ONNX enrichment model...` | Required local enrichment model is being downloaded or verified. |
+| `Preparing managed Qwen3.5 0.8B ONNX enrichment snapshot...` | Local enrichment model files are being downloaded or verified. |
 | `Parsing documents...` | Foreground indexing is building the query-ready surface. |
 | `Search surface ready; enrichment continues.` | Retrieval can run while deeper enrichment proceeds. |
 | `Analyzing query...` | Query profile and semantic keywords are being prepared. |

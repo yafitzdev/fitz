@@ -252,9 +252,16 @@ class OnnxChat:
                     providers=["CPUExecutionProvider"],
                 )
             except Exception as e:
+                hint = ""
+                message = str(e)
+                if "not a registered function/op" in message or "CausalConvWithState" in message:
+                    hint = (
+                        " The cached ONNX graph uses custom operators that the installed "
+                        "`onnxruntime` package does not provide."
+                    )
                 raise OnnxChatModelError(
                     "Could not initialize ONNX Runtime for Fitz's managed Qwen3.5 "
-                    f"0.8B model at {onnx_path}."
+                    f"0.8B model at {onnx_path}.{hint}"
                 ) from e
             self._input_args = list(self._session.get_inputs())
             self._output_names = [output.name for output in self._session.get_outputs()]

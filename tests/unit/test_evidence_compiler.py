@@ -426,6 +426,30 @@ def test_query_contract_does_not_make_question_prefix_an_entity() -> None:
     assert contract.phrase_anchors == ()
 
 
+def test_compiler_does_not_treat_question_auxiliary_as_entity_anchor() -> None:
+    """Question auxiliaries such as 'Do Acme' must not filter aligned evidence."""
+    current = _result(
+        "Current Acme Support refund policy: customers can request refunds within 30 days.",
+        "unstructured/refund_policy.md",
+    )
+    legacy = _result(
+        "Archived Acme refund note from 2021: customers could request refunds within 14 days.",
+        "unstructured/legacy_refund_note.md",
+    )
+
+    compiled = compile_evidence(
+        "Do Acme refund notes agree on the refund window?",
+        [legacy, current],
+    )
+
+    assert compiled.metadata["contract"]["phrase_anchors"] == []
+    assert compiled.metadata.get("filtered_all") is not True
+    assert [result.file_path for result in compiled.results] == [
+        "unstructured/legacy_refund_note.md",
+        "unstructured/refund_policy.md",
+    ]
+
+
 def test_compiler_splits_code_identifiers_for_keyword_alignment() -> None:
     """Code constants should align with natural-language terms inside identifiers."""
     constant = _result(

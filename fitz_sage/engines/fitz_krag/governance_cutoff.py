@@ -46,6 +46,23 @@ _SINGLE_SOURCE_TRUST_RISK_PATTERN = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_CONFLICT_QUERY_PATTERN = re.compile(
+    r"\b("
+    r"agree|agrees|agreement|disagree|disagrees|conflict|conflicts|"
+    r"contradict|contradicts|contradiction|consistent|inconsistent|"
+    r"differ|differs|different|same|compare|compared|versus|vs"
+    r")\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_VALUE_PATTERN = re.compile(
+    r"\b\d+(?:\.\d+)?\s*(?:"
+    r"%|percent|percentage|"
+    r"days?|weeks?|months?|years?|hours?|minutes?|mins?|"
+    r"usd|eur|gbp|dollars?|euros?|"
+    r"items?|users?|seats?|licenses?|tickets?|requests?"
+    r")?\b",
+    re.IGNORECASE,
+)
 _MONTH_PATTERN = (
     r"\b(january|february|march|april|may|june|july|august|september|"
     r"october|november|december)(?:\s+(\d{4}))?\b"
@@ -108,6 +125,41 @@ _METRIC_STOP_TERMS = {
     "why",
 }
 _METRIC_MODIFIER_TERMS = {"average", "avg", "count", "mean", "number", "sum", "total"}
+_ANCHOR_STOP_TERMS = _METRIC_STOP_TERMS | {
+    "answer",
+    "available",
+    "based",
+    "briefly",
+    "can",
+    "could",
+    "current",
+    "currently",
+    "describe",
+    "detail",
+    "details",
+    "does",
+    "evidence",
+    "explain",
+    "give",
+    "list",
+    "mention",
+    "mentions",
+    "need",
+    "notes",
+    "provide",
+    "question",
+    "record",
+    "records",
+    "relevant",
+    "say",
+    "says",
+    "show",
+    "shows",
+    "source",
+    "sources",
+    "support",
+    "tell",
+}
 
 
 @dataclass(frozen=True)
@@ -235,6 +287,7 @@ def apply_governance_cutoff(
                     continue
                 selected_size = max(full_prefix_size, pyrrho_return_prefix_min or full_prefix_size)
                 trustworthy_risk_blocker = _trustworthy_risk_blocker(
+                    query=query,
                     decision=decision,
                     policy=policy,
                     governance_prefix_size=size,
@@ -245,6 +298,28 @@ def apply_governance_cutoff(
                     last_trustworthy_risk_blocker = trustworthy_risk_blocker
                     trajectory.append(trace)
                     continue
+                deterministic_conflict = _deterministic_dispute_signal(
+                    query,
+                    results[:selected_size],
+                )
+                if deterministic_conflict:
+                    trace["deterministic_conflict_signal"] = deterministic_conflict
+                    trajectory.append(trace)
+                    return GovernanceCutoffResult(
+                        selected=results[:selected_size],
+                        mode=AnswerMode.DISPUTED,
+                        reasons=[deterministic_conflict],
+                        timings=[("Governance", time.perf_counter() - t0)],
+                        metadata=_governance_cutoff_metadata(
+                            policy,
+                            evaluated=size,
+                            selected=selected_size,
+                            mode=AnswerMode.DISPUTED,
+                            decision=decision,
+                            trajectory=trajectory,
+                            stop_reason="deterministic_conflict_signal",
+                        ),
+                    )
                 trajectory.append(trace)
                 return GovernanceCutoffResult(
                     selected=results[:selected_size],
@@ -323,6 +398,31 @@ def apply_governance_cutoff(
                 decision=stable_disputed_decision,
                 trajectory=trajectory,
                 stop_reason="stable_dispute_at_cutoff",
+            ),
+        )
+
+    deterministic_dispute_prefix = _deterministic_dispute_prefix_count(
+        query,
+        results[: policy.max_docs],
+    )
+    if deterministic_dispute_prefix:
+        selected_count = max(deterministic_dispute_prefix, pyrrho_return_prefix_min)
+        selected = results[:selected_count]
+        deterministic_conflict = _deterministic_dispute_signal(query, selected)
+        reasons = [deterministic_conflict] if deterministic_conflict else []
+        return GovernanceCutoffResult(
+            selected=selected,
+            mode=AnswerMode.DISPUTED,
+            reasons=reasons,
+            timings=[("Governance", time.perf_counter() - t0)],
+            metadata=_governance_cutoff_metadata(
+                policy,
+                evaluated=min(policy.max_docs, len(governance_results)),
+                selected=selected_count,
+                mode=AnswerMode.DISPUTED,
+                decision=last_decision,
+                trajectory=trajectory,
+                stop_reason="deterministic_conflict_signal",
             ),
         )
 
@@ -512,12 +612,21 @@ def _should_stop_on_answer_now(decision: Any) -> bool:
 
 def _trustworthy_risk_blocker(
     *,
+    query: str,
     decision: Any,
     policy: GovernanceCutoffPolicy,
     governance_prefix_size: int,
     selected_results: list["ReadResult"],
 ) -> str | None:
-    """Block one-source trust on stale or forecast-like evidence unless Pyrrho is emphatic."""
+    """Block brittle trustworthy verdicts that deterministic checks can disprove."""
+    anchor_blocker = _trustworthy_anchor_blocker(
+        query=query,
+        policy=policy,
+        selected_results=selected_results,
+    )
+    if anchor_blocker:
+        return anchor_blocker
+
     if policy.query_shape != "narrow" or governance_prefix_size != 1 or len(selected_results) != 1:
         return None
     evidence = _raw_evidence(selected_results)
@@ -534,6 +643,127 @@ def _trustworthy_risk_blocker(
     ):
         return None
     return "Single-source evidence has stale, legacy, or forecast markers; require corroboration."
+
+
+def _trustworthy_anchor_blocker(
+    *,
+    query: str,
+    policy: GovernanceCutoffPolicy,
+    selected_results: list["ReadResult"],
+) -> str | None:
+    """Reject trustworthy verdicts when the selected evidence is lexically off-topic."""
+    if policy.query_shape != "narrow":
+        return None
+    anchors = _query_anchor_terms(query)
+    if len(anchors) < 3:
+        return None
+
+    evidence = _normalized_evidence(selected_results)
+    matched = [term for term in anchors if _contains_term_or_variant(evidence, term)]
+    coverage = len(matched) / len(anchors)
+    if not matched or (len(anchors) >= 4 and coverage <= 0.25):
+        return (
+            "Selected evidence matches too few query anchors "
+            f"({len(matched)}/{len(anchors)}); require more relevant evidence."
+        )
+    return None
+
+
+def _deterministic_dispute_prefix_count(
+    query: str,
+    results: list["ReadResult"],
+) -> int | None:
+    """Return the first prefix with an explicit deterministic conflict signal."""
+    for count in range(2, len(results) + 1):
+        if _deterministic_dispute_signal(query, results[:count]):
+            return count
+    return None
+
+
+def _deterministic_dispute_signal(
+    query: str,
+    selected_results: list["ReadResult"],
+) -> str | None:
+    """Detect simple explicit-value conflicts for agreement/comparison queries."""
+    if len(selected_results) < 2 or not _CONFLICT_QUERY_PATTERN.search(query):
+        return None
+
+    anchors = _query_anchor_terms(query)
+    evidence = _normalized_evidence(selected_results)
+    if anchors and not any(_contains_term_or_variant(evidence, term) for term in anchors):
+        return None
+
+    values_by_result: list[set[str]] = []
+    for result in selected_results:
+        raw = _raw_evidence([result])
+        values = {
+            _normalize_explicit_value(match.group(0))
+            for match in _EXPLICIT_VALUE_PATTERN.finditer(raw)
+        }
+        values.discard("")
+        if values:
+            values_by_result.append(values)
+
+    if len(values_by_result) < 2:
+        return None
+    distinct_values = set().union(*values_by_result)
+    if len(distinct_values) < 2:
+        return None
+
+    return (
+        "Evidence contains conflicting explicit values for an agreement or "
+        "comparison query; treat the answer as disputed."
+    )
+
+
+def _query_anchor_terms(query: str) -> tuple[str, ...]:
+    """Extract stable content anchors from a user query."""
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for token in _normalize_text(query).split():
+        if len(token) < 4 or token in _ANCHOR_STOP_TERMS:
+            continue
+        if token.isdigit() or re.fullmatch(r"q[1-4]|\d{4}", token):
+            continue
+        normalized = _anchor_stem(token)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            anchors.append(normalized)
+    return tuple(anchors)
+
+
+def _contains_term_or_variant(evidence: str, term: str) -> bool:
+    """Return whether normalized evidence contains the term or a simple inflection."""
+    return any(re.search(rf"\b{re.escape(variant)}\b", evidence) for variant in _term_variants(term))
+
+
+def _term_variants(term: str) -> tuple[str, ...]:
+    """Return a compact set of singular/plural variants for anchor matching."""
+    variants = {term}
+    stem = _anchor_stem(term)
+    variants.add(stem)
+    if stem.endswith("y") and len(stem) > 3:
+        variants.add(stem[:-1] + "ies")
+    if stem.endswith(("s", "x", "z", "ch", "sh")):
+        variants.add(stem + "es")
+    variants.add(stem + "s")
+    return tuple(sorted(value for value in variants if value))
+
+
+def _anchor_stem(token: str) -> str:
+    """Normalize common English plural forms without depending on NLP packages."""
+    if len(token) > 5 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 4 and token.endswith("es"):
+        return token[:-2]
+    if len(token) > 4 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _normalize_explicit_value(value: str) -> str:
+    """Normalize a numeric value phrase for conflict comparison."""
+    return re.sub(r"\s+", " ", value.lower()).strip(" .,:;()[]{}")
 
 
 def _is_strong_dispute(decision: Any) -> bool:

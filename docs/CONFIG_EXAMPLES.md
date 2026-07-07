@@ -154,9 +154,9 @@ summary_batch_size: 15
 ```
 
 Qwen3.5 0.8B ONNX is the standard local enrichment model. Fitz downloads it on
-first ingest if missing and runs it on CPU. Ingestion fails closed if the
-managed runtime cannot load, so the collection is not treated as ready with
-missing metadata.
+first ingest if missing and runs it on CPU when the local ONNX runtime supports
+the cached graph. If that runtime cannot initialize, ingestion keeps going with
+deterministic grounded metadata instead of requiring an external endpoint.
 
 ---
 

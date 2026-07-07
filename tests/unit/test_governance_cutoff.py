@@ -843,6 +843,51 @@ def test_mismatched_required_role_does_not_extend_pyrrho_prefix_floor():
     assert "pyrrho_contract_prefix_min" not in result.metadata["trajectory"][0]
 
 
+def test_trustworthy_off_topic_evidence_is_blocked_by_anchor_guard():
+    """Pyrrho cannot certify evidence that barely overlaps the query anchors."""
+    refund = _result(
+        "Current Acme Support refund policy: refunds are available for 30 days. "
+        "Request code RF-30.",
+        "refund_policy.md",
+    )
+
+    result = apply_governance_cutoff(
+        "What is Acme vacation allowance for employees?",
+        [refund],
+        _TrustworthyGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["stop_reason"] == "trustworthy_risk_unsatisfied_at_cutoff"
+    assert "too few query anchors" in result.reasons[0]
+    assert "trustworthy_risk_blocker" in result.metadata["trajectory"][0]
+
+
+def test_agreement_query_with_conflicting_values_is_disputed_even_when_pyrrho_abstains():
+    """Simple explicit-value conflicts should not be hidden behind abstain."""
+    current = _result(
+        "Current Acme refund policy: refunds are available for 30 days.",
+        "refund_policy.md",
+    )
+    legacy = _result(
+        "Archived 2021 Acme refund note: refunds are available for 14 days.",
+        "legacy_refund_note.md",
+    )
+
+    result = apply_governance_cutoff(
+        "Do Acme refund notes agree on the refund window?",
+        [current, legacy],
+        _AbstainingGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.DISPUTED
+    assert result.selected == [current, legacy]
+    assert result.metadata["stop_reason"] == "deterministic_conflict_signal"
+    assert "conflicting explicit values" in result.reasons[0]
+
+
 class _TrustworthyGovernance:
     def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
         return GovernanceDecision(

@@ -122,6 +122,7 @@ class QueryBatcher:
 
     chat_factory: "ChatFactory"
     detection_modules: list["DetectionModule"] = field(default_factory=list)
+    fallback_only: bool = False
 
     def batch_classify(
         self,
@@ -163,13 +164,17 @@ class QueryBatcher:
             conversation_context=conversation_context,
         )
 
-        try:
-            chat = self.chat_factory("fast")
-            response = chat.chat([{"role": "user", "content": prompt}])
-            raw = parse_llm_json(response)
-        except Exception as e:
-            logger.warning(f"Batched query intelligence failed: {e}")
+        if self.fallback_only:
             raw = {}
+        else:
+            try:
+                chat = self.chat_factory("fast")
+                response = chat.chat([{"role": "user", "content": prompt}])
+                raw = parse_llm_json(response)
+            except Exception as e:
+                self.fallback_only = True
+                logger.warning(f"Batched query intelligence failed: {e}")
+                raw = {}
 
         return self._distribute(
             raw,

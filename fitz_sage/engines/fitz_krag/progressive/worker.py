@@ -301,7 +301,7 @@ class BackgroundIngestWorker:
         self._manifest.save()
         if failures:
             raise RuntimeError(
-                "Required keyword enrichment failed; indexing stopped before query-ready. "
+                "Keyword indexing failed before query-ready. "
                 + failures[0]
             )
 

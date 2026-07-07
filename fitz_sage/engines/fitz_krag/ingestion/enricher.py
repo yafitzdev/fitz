@@ -14,7 +14,6 @@ import re
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from fitz_sage.core import KnowledgeError
 from fitz_sage.core.json_utils import parse_llm_json
 
 if TYPE_CHECKING:
@@ -58,6 +57,7 @@ class KragEnricher:
     def __init__(self, chat: "ChatProvider", batch_size: int = 15):
         self._chat = chat
         self._batch_size = batch_size
+        self._fallback_only = False
 
     def enrich_symbols(self, symbol_dicts: list[dict[str, Any]]) -> None:
         """Enrich symbol dicts in-place with keywords, entities, and temporal metadata."""
@@ -139,6 +139,9 @@ class KragEnricher:
         strategy: EnrichmentStrategy,
     ) -> list[dict[str, Any]]:
         """Run a single LLM call to extract keywords + entities for a batch."""
+        if self._fallback_only:
+            return _deterministic_enrichments(items, strategy)
+
         parts = []
         for i, item in enumerate(items):
             parts.append(
@@ -191,8 +194,13 @@ class KragEnricher:
                     )
                     return _deterministic_enrichments(items, strategy)
         except Exception as e:
-            logger.error(f"Required enrichment batch failed: {e}")
-            raise KnowledgeError(f"Required enrichment batch failed: {e}") from e
+            self._fallback_only = True
+            logger.warning(
+                "Enrichment model call failed; using deterministic fallback for %s item(s): %s",
+                len(items),
+                e,
+            )
+            return _deterministic_enrichments(items, strategy)
 
     def _parse_response(self, response: str, expected_count: int) -> list[dict[str, Any]]:
         """Parse LLM response into list of enrichment dicts."""

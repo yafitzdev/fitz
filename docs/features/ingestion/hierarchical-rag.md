@@ -91,7 +91,8 @@ Q: "What did users say about the async tutorial?"
 
 The feature is built into the KRAG ingestion pipeline and is not
 user-configurable. If the managed Qwen ONNX runtime cannot load, ingestion
-fails closed before the collection is treated as ready.
+keeps retrieval queryable with deterministic grounded metadata; hierarchy
+summaries remain best-effort local enrichment.
 
 ## Files
 

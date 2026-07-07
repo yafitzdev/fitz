@@ -49,18 +49,26 @@ _STOPWORDS = {
     "with",
 }
 _QUESTION_TITLE_WORDS = {
+    "Are",
     "Can",
     "Compare",
+    "Could",
+    "Did",
+    "Do",
     "Does",
     "For",
     "How",
     "Is",
+    "Should",
     "Using",
+    "Was",
     "What",
     "When",
     "Where",
     "Which",
     "Who",
+    "Will",
+    "Would",
 }
 
 EXACT_IDENTIFIER_PATTERN = re.compile(
@@ -255,7 +263,7 @@ def _capitalized_phrases(query: str) -> list[str]:
     phrases: list[str] = []
     for match in re.finditer(r"\b[A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)+\b", query):
         words = match.group(0).strip().split()
-        while words and words[0] in _QUESTION_TITLE_WORDS:
+        while words and (words[0] in _QUESTION_TITLE_WORDS or words[0].lower() in _STOPWORDS):
             words = words[1:]
         phrase = " ".join(words)
         if len(words) < 2:

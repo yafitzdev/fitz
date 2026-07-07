@@ -11,9 +11,6 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-import pytest
-
-from fitz_sage.core import KnowledgeError
 from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
 # ---------------------------------------------------------------------------
@@ -291,21 +288,26 @@ class TestBatchProcessing:
 # ---------------------------------------------------------------------------
 
 
-class TestRequiredEnrichmentFailures:
+class TestEnrichmentFallback:
     """Tests for enrichment failure handling."""
 
-    def test_llm_exception_raises(self):
-        """When LLM raises, enrichment fails instead of storing empty metadata."""
+    def test_llm_exception_uses_deterministic_fallback(self):
+        """When the managed model cannot run, exact grounded metadata still indexes."""
         chat = _make_chat(side_effect=RuntimeError("LLM unreachable"))
         enricher = KragEnricher(chat, batch_size=15)
-        symbols = _symbol_dicts(2)
+        symbols = [
+            {
+                "name": "OAuthClientV2",
+                "kind": "class",
+                "summary": "Handles TC-4812 retries for Acme Corp in v2.3.",
+            }
+        ]
 
-        with pytest.raises(KnowledgeError, match="Required enrichment batch failed"):
-            enricher.enrich_symbols(symbols)
+        enricher.enrich_symbols(symbols)
 
-        for s in symbols:
-            assert "keywords" not in s
-            assert "entities" not in s
+        assert symbols[0]["keywords"] == ["TC-4812", "v2.3"]
+        assert {"name": "TC-4812", "type": "identifier"} in symbols[0]["entities"]
+        assert {"name": "Acme Corp", "type": "entity"} in symbols[0]["entities"]
 
     def test_malformed_json_uses_deterministic_fallback(self):
         """When model JSON is unusable, exact grounded identifiers still index."""
@@ -342,8 +344,8 @@ class TestRequiredEnrichmentFailures:
         retry_messages = chat.chat.call_args.args[0]
         assert "Retry the same enrichment" in retry_messages[-1]["content"]
 
-    def test_partial_batch_failure(self):
-        """First batch succeeds, second fails; ingestion raises before completion."""
+    def test_partial_batch_failure_falls_back_for_failed_batch(self):
+        """First batch can use model output while a later batch falls back."""
         good_response = _make_enrichment_response([{"keywords": ["good"], "entities": []}])
         chat = _make_chat()
         chat.chat.side_effect = [
@@ -351,23 +353,33 @@ class TestRequiredEnrichmentFailures:
             RuntimeError("timeout"),
         ]
         enricher = KragEnricher(chat, batch_size=1)
-        symbols = _symbol_dicts(2)
+        symbols = [
+            {"name": "first", "kind": "function", "summary": "Does one thing."},
+            {"name": "second", "kind": "function", "summary": "Handles TC-9001."},
+        ]
 
-        with pytest.raises(KnowledgeError, match="Required enrichment batch failed"):
-            enricher.enrich_symbols(symbols)
+        enricher.enrich_symbols(symbols)
 
         assert symbols[0]["keywords"] == ["good"]
-        assert "keywords" not in symbols[1]
-        assert "entities" not in symbols[1]
+        assert symbols[1]["keywords"] == ["TC-9001"]
+        assert {"name": "TC-9001", "type": "identifier"} in symbols[1]["entities"]
 
-    def test_sections_raise_on_failure(self):
-        """Sections also fail closed when LLM enrichment fails."""
+    def test_sections_fall_back_on_failure(self):
+        """Sections also get deterministic metadata when the model call fails."""
         chat = _make_chat(side_effect=RuntimeError("API error"))
         enricher = KragEnricher(chat, batch_size=15)
-        sections = _section_dicts(2)
+        sections = [
+            {
+                "title": "Incident SOP",
+                "content": "Escalate INC-7000 to Acme Support within 15 minutes.",
+                "summary": None,
+            }
+        ]
 
-        with pytest.raises(KnowledgeError, match="Required enrichment batch failed"):
-            enricher.enrich_sections(sections)
+        enricher.enrich_sections(sections)
+
+        assert "INC-7000" in sections[0]["keywords"]
+        assert {"name": "INC-7000", "type": "identifier"} in sections[0]["entities"]
 
     def test_response_with_code_fence(self):
         """LLM response wrapped in markdown code fence is parsed correctly."""

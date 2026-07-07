@@ -27,15 +27,15 @@ symlink privileges.
 
 | Model | Trigger |
 |---|---|
-| Qwen3.5 0.8B ONNX | First query or ingest that needs required enrichment or semantic query keywords. |
+| Qwen3.5 0.8B ONNX | First query or ingest that can use local enrichment or semantic query keywords. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
 | Pyrrho v2 | First governance cutoff evaluation. |
 
 The CLI may print messages such as:
 
 ```text
-Preparing managed Qwen3.5 0.8B ONNX enrichment model...
-Managed Qwen ready (<revision>).
+Preparing managed Qwen3.5 0.8B ONNX enrichment snapshot...
+Managed Qwen snapshot ready (<revision>).
 ```
 
 After the first download, subsequent runs reuse the cached snapshots.
@@ -79,10 +79,10 @@ The double slash after `pyrrho/` is intentional for absolute Unix paths. On
 Windows, use a normal absolute path after the provider prefix, for example
 `pyrrho/C:\fitz\models\pyrrho\yafitzdev__pyrrho-v2-nano-g1`.
 
-## Qwen Is Mandatory
+## Qwen Enrichment
 
-Qwen enrichment is not a user-selected optional provider. It is part of the
-retrieval product:
+Qwen enrichment is not a user-selected endpoint provider. It is part of the
+local retrieval product when the managed ONNX runtime can initialize:
 
 - query-time semantic keyword expansion
 - file keyword and alias extraction
@@ -91,8 +91,10 @@ retrieval product:
 - L2 corpus hierarchy
 - demand summaries for surfaced files
 
-The foreground query path can return before all deep enrichment is complete, but
-the background daemon must continue the required enrichment work.
+If the local Qwen runtime cannot initialize, deterministic grounded extraction
+keeps keywords, identifiers, and entities available so retrieval remains CPU
+local and queryable. The foreground query path can return before all deep
+enrichment is complete.
 
 ## Optional Synthesis Is Separate
 

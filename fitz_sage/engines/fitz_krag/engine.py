@@ -1402,11 +1402,11 @@ class FitzKragEngine:
             return
 
         _progress = progress or (lambda _: None)
-        _progress("Preparing managed Qwen3.5 0.8B ONNX enrichment model...")
+        _progress("Preparing managed Qwen3.5 0.8B ONNX enrichment snapshot...")
         info = ensure_available()
         revision = getattr(info, "revision", "")
         short_revision = revision[:12] if revision else "unknown"
-        _progress(f"Managed Qwen ready ({short_revision}).")
+        _progress(f"Managed Qwen snapshot ready ({short_revision}).")
 
     def _fast_index_code_files(
         self,

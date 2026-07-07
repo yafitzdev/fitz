@@ -1268,8 +1268,8 @@ class TestPoint:
         build_manifest_path = builder_cls.return_value.build.call_args.args[1]
         assert build_manifest_path == workspace / "collections" / "custom" / "manifest.json"
 
-    def test_point_prepares_managed_qwen_for_sources(self, tmp_path):
-        """Source registration validates the mandatory managed Qwen runtime early."""
+    def test_point_prepares_managed_qwen_snapshot_for_sources(self, tmp_path):
+        """Source registration validates managed Qwen model files early."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._config = _make_config(collection="default")
         engine._bg_worker = None
@@ -1312,8 +1312,8 @@ class TestPoint:
             engine.point(source, start_worker=False, progress=progress)
 
         engine._enricher_chat.ensure_available.assert_called_once()
-        progress.assert_any_call("Preparing managed Qwen3.5 0.8B ONNX enrichment model...")
-        progress.assert_any_call("Managed Qwen ready (abc123456789).")
+        progress.assert_any_call("Preparing managed Qwen3.5 0.8B ONNX enrichment snapshot...")
+        progress.assert_any_call("Managed Qwen snapshot ready (abc123456789).")
 
     def test_point_deletes_stale_files_outside_current_manifest(self, tmp_path):
         """Re-pointing cleans previously indexed files that the scanner now excludes."""

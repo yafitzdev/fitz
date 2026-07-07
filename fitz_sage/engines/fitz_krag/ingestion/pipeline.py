@@ -234,8 +234,9 @@ class KragIngestPipeline:
         Populates the vocabulary store and entity graph (incremental, per
         file) and — for document files — the L1 hierarchy summary stored on
         each section's metadata. Enrichment is part of the ingestion contract;
-        missing providers fail ingestion instead of producing an under-enriched
-        index. Table files are summarized separately and are not entity-enriched.
+        if the managed model cannot run, deterministic grounded extraction keeps
+        the retrieval index queryable. Table files are summarized separately and
+        are not entity-enriched.
         """
         if file_type in EXTENSION_MAP:
             self._enrich_code_file(file_id)
