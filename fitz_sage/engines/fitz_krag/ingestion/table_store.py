@@ -112,6 +112,18 @@ class TableStore:
             return None
         return _row_to_dict(row)
 
+    def get_by_table_id(self, table_id: str) -> dict[str, Any] | None:
+        sql = f"""
+            SELECT id, raw_file_id, table_id, name, columns, row_count,
+                   summary, metadata
+            FROM {TABLE} WHERE table_id = ?
+        """
+        with self._cm.connection(self._collection) as conn:
+            row = conn.execute(sql, (table_id,)).fetchone()
+        if not row:
+            return None
+        return _row_to_dict(row)
+
     def get_by_file(self, raw_file_id: str) -> list[dict[str, Any]]:
         sql = f"""
             SELECT id, raw_file_id, table_id, name, columns, row_count,

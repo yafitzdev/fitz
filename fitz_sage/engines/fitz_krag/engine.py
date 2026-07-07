@@ -332,7 +332,11 @@ class FitzKragEngine:
             self._raw_store,
             self._config,
         )
-        table_strategy = TableSearchStrategy(self._table_store, self._config)
+        table_strategy = TableSearchStrategy(
+            self._table_store,
+            self._config,
+            self._sqlite_table_store,
+        )
         self._retrieval_router = RetrievalRouter(
             code_strategy=code_strategy,
             config=self._config,
@@ -388,7 +392,7 @@ class FitzKragEngine:
         self._enricher_chat = standard_chat
         self._summarizer_chat = standard_chat
 
-        # Governance — mandatory Pyrrho g4-alpha local classifier.
+        # Governance — mandatory Pyrrho g5 local classifier.
         # The model lazily loads on first decide() so engine init stays fast.
         from fitz_sage.governance import create_governance
 

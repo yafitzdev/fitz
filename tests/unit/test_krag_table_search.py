@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from fitz_sage.engines.fitz_krag.retrieval.strategies.table_search import (
@@ -17,13 +18,16 @@ from fitz_sage.engines.fitz_krag.types import AddressKind
 
 def _make_strategy(
     keyword_results: list[dict] | None = None,
+    *,
+    sqlite_table_store: MagicMock | None = None,
 ) -> TableSearchStrategy:
     table_store = MagicMock(name="table_store")
     table_store.search_by_name.return_value = keyword_results or []
+    table_store.get_by_table_id.return_value = None
 
     config = MagicMock(name="config")
 
-    return TableSearchStrategy(table_store, config)
+    return TableSearchStrategy(table_store, config, sqlite_table_store)
 
 
 def _make_table_record(
@@ -107,3 +111,31 @@ class TestTableSearchStrategy:
         addresses = strategy.retrieve("table", limit=3)
 
         assert len(addresses) == 3
+
+    def test_retrieve_uses_bounded_row_lookup_for_table_obligation(self):
+        """Row identifiers should surface the matching table, not only schema words."""
+        record = _make_table_record(
+            record_id="rec-vendors",
+            table_id="tbl_vendors",
+            name="Vendors",
+            columns=["vendor_id", "vendor", "notice_days"],
+            row_count=1,
+        )
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.catalog.return_value = [{"table_id": "tbl_vendors"}]
+        sqlite_store.scan_rows.return_value = (
+            ["vendor_id", "vendor", "notice_days"],
+            [["VEN-301", "MeridianAI", "75"]],
+        )
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+        strategy._table_store.get_by_table_id.return_value = record
+
+        addresses = strategy.retrieve(
+            "What notice days are recorded for vendor VEN-301?",
+            limit=5,
+            detection=SimpleNamespace(required_modalities=("table",)),
+        )
+
+        assert len(addresses) == 1
+        assert addresses[0].location == "Vendors"
+        assert addresses[0].metadata["row_match"]["matched_rows"] == 1

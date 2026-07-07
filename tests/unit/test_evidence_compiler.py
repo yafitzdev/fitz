@@ -151,7 +151,29 @@ def test_compiler_does_not_count_parser_toc_as_evidence_body() -> None:
 
 
 def test_compiler_focuses_final_span_inside_multi_fact_section() -> None:
-    """Final-answer spans should be packaged without earlier estimates."""
+    """Pyrrho temporal grounding should package final spans without earlier estimates."""
+    status = _result(
+        "The first status update estimated that incident PAY-209 would recover in "
+        "12 minutes.\n\n"
+        "The final postmortem confirmed that incident PAY-209 recovered after "
+        "37 minutes.",
+        "unstructured/payments_postmortem.md",
+        location="PAY-209 Postmortems",
+    )
+
+    compiled = compile_evidence(
+        "What was the final recovery duration for incident PAY-209?",
+        [status],
+        profile=_profile(query_contract="temporal_grounding"),
+    )
+
+    assert "final postmortem" in compiled.results[0].content
+    assert "estimated" not in compiled.results[0].content
+    assert compiled.results[0].metadata["evidence_span"]["selected_index"] == 2
+
+
+def test_compiler_does_not_focus_final_span_without_pyrrho_temporal() -> None:
+    """Final/current wording alone must not trigger sidecar temporal cleanup."""
     status = _result(
         "The first status update estimated that incident PAY-209 would recover in "
         "12 minutes.\n\n"
@@ -166,9 +188,83 @@ def test_compiler_focuses_final_span_inside_multi_fact_section() -> None:
         [status],
     )
 
+    assert "estimated" in compiled.results[0].content
     assert "final postmortem" in compiled.results[0].content
-    assert "estimated" not in compiled.results[0].content
-    assert compiled.results[0].metadata["evidence_span"]["selected_index"] == 2
+    assert "evidence_span" not in compiled.results[0].metadata
+
+
+def test_compiler_keeps_non_temporal_section_proof_paragraph() -> None:
+    """Focusing should not drop a second paragraph when the query is not temporal."""
+    brief = _result(
+        """Project Atlas APAC uses the `atlas_search` feature flag.
+
+The semantic ranker experiment is EXP-22.""",
+        "mixed/launch_brief.md",
+        location="Atlas Launch Brief",
+    )
+
+    compiled = compile_evidence(
+        "Which experiment is the semantic ranker experiment?",
+        [brief],
+    )
+
+    assert "semantic ranker experiment is EXP-22" in compiled.results[0].content
+    assert "evidence_span" not in compiled.results[0].metadata
+
+
+def test_compiler_keeps_table_rows_when_packaging_evidence() -> None:
+    """Table evidence is already structural; paragraph focusing must not drop rows."""
+    table = _result(
+        """Table: Cloud Assets
+Columns: asset_id, service, environment, encrypted
+Total rows: 5
+
+--- Deterministic Table Matches ---
+Selection: query-grounded row filter
+Results (1 rows):
+| asset_id | service | environment | encrypted |
+| --- | --- | --- | --- |
+| AST-22 | analytics-cache | prod | no |
+
+Note: Rows selected from a bounded scan.""",
+        "structured/cloud_assets.csv",
+        kind=AddressKind.TABLE,
+        location="Cloud Assets",
+    )
+
+    compiled = compile_evidence(
+        "Which production asset is unencrypted?",
+        [table],
+        profile=_profile(modality="structured_table"),
+    )
+
+    assert "AST-22" in compiled.results[0].content
+    assert "analytics-cache" in compiled.results[0].content
+    assert "evidence_span" not in compiled.results[0].metadata
+
+
+def test_compiler_keeps_symbol_body_fields_when_packaging_evidence() -> None:
+    """Code symbols are structural evidence; focusing must not strip class fields."""
+    symbol = _result(
+        '''class AlertRoute:
+    """Resolved routing target for an alert."""
+
+    target: str
+    notify_owner: bool''',
+        "code/alert_router.py",
+        kind=AddressKind.SYMBOL,
+        location="code.alert_router.AlertRoute",
+    )
+
+    compiled = compile_evidence(
+        "Which dataclass represents a resolved alert route?",
+        [symbol],
+        profile=_profile(modality="code"),
+    )
+
+    assert "target: str" in compiled.results[0].content
+    assert "notify_owner: bool" in compiled.results[0].content
+    assert "evidence_span" not in compiled.results[0].metadata
 
 
 def test_compiler_orders_temporal_candidates_from_pyrrho_contract() -> None:
@@ -195,7 +291,7 @@ def test_compiler_orders_temporal_candidates_from_pyrrho_contract() -> None:
 
 
 def test_compiler_suppresses_same_source_initial_estimate_after_final_evidence() -> None:
-    """Final same-anchor evidence supersedes earlier estimates in the compiler prefix."""
+    """Pyrrho temporal grounding lets final evidence supersede earlier estimates."""
     final = _result(
         "The final postmortem confirmed that Search outage INC-101 recovered after 42 minutes.",
         "unstructured/outage_postmortem.md",
@@ -210,10 +306,34 @@ def test_compiler_suppresses_same_source_initial_estimate_after_final_evidence()
     compiled = compile_evidence(
         "What was the final recovery duration for Search outage INC-101?",
         [initial, final],
+        profile=_profile(query_contract="temporal_grounding"),
     )
 
     assert [result.content for result in compiled.results] == [final.content]
     assert compiled.metadata["suppressed"][0]["location"] == "Initial Status Update"
+
+
+def test_compiler_suppresses_cross_source_stale_fact_after_final_evidence() -> None:
+    """Pyrrho temporal grounding lets final evidence supersede cross-source stale facts."""
+    final = _result(
+        "Risk RSK-81 final residual score is 18 after reclassification.",
+        "unstructured/risk_audit_note.md",
+        location="Audit Risk Note",
+    )
+    stale = _result(
+        "Risk RSK-81 residual score was listed as 12 before remediation.",
+        "unstructured/risk_finance_memo.md",
+        location="Finance Risk Memo",
+    )
+
+    compiled = compile_evidence(
+        "What is the final residual score for risk RSK-81?",
+        [final, stale],
+        profile=_profile(query_contract="temporal_grounding"),
+    )
+
+    assert [result.file_path for result in compiled.results] == ["unstructured/risk_audit_note.md"]
+    assert compiled.metadata["suppressed"][0]["file_path"] == ("unstructured/risk_finance_memo.md")
 
 
 def test_compiler_promotes_required_code_symbol() -> None:
@@ -270,6 +390,31 @@ def test_address_rescue_preserves_required_table_candidate() -> None:
         profile=_profile(modality="structured_table"),
     )
     assert not query_has_table_obligation("How many flux capacitor units are in the west region?")
+
+
+def test_address_rescue_uses_pyrrho_obligation_for_companion_table() -> None:
+    """A prose-plus-table Pyrrho obligation should preserve both evidence kinds."""
+    prose = _address(
+        AddressKind.SECTION,
+        "mixed/security_rollout.md",
+        "Security Rollout Brief",
+        "The EU token rotation rollout follows the Security Policy.",
+    )
+    table = _address(
+        AddressKind.TABLE,
+        "structured/rollout_matrix.csv",
+        "Rollout Matrix",
+        "Table Rollout Matrix columns: feature, region, status, release.",
+    )
+
+    ordered = order_addresses_for_contract(
+        "Which EU token rotation release and policy interval apply?",
+        [prose, table],
+        [prose],
+        profile=_profile(modality="unstructured_text", obligation="prose_plus_table"),
+    )
+
+    assert ordered == [prose, table]
 
 
 def test_query_contract_does_not_make_question_prefix_an_entity() -> None:
@@ -392,6 +537,89 @@ def test_compiler_chooses_required_table_by_fact_anchors() -> None:
     assert compiled.results[0].metadata["evidence_compiler"]["roles"] == ["required_table"]
 
 
+def test_compiler_prioritizes_literal_identifier_before_generic_required_modality() -> None:
+    """Exact row evidence should not sit behind a generic Pyrrho-required section."""
+    note = _result(
+        "Incident INC-103 appears in the operations status note.",
+        "unstructured/status.md",
+        kind=AddressKind.SECTION,
+        location="Status Note",
+    )
+    table = _result(
+        "incident_id | service | owner\nINC-103 | auth | Mina",
+        "structured/incidents.csv",
+        kind=AddressKind.TABLE,
+        location="Incidents",
+    )
+
+    compiled = compile_evidence(
+        "Who is the owner for incident INC-103?",
+        [note, table],
+        profile=_profile(obligation="error_signature"),
+    )
+
+    assert compiled.results[0].file_path == "structured/incidents.csv"
+    assert compiled.results[0].metadata["evidence_compiler"]["roles"] == [
+        "anchor_identifier:INC-103"
+    ]
+
+
+def test_compiler_promotes_bridge_companion_from_pyrrho_multi_modality() -> None:
+    """Bridge IDs in selected prose should pull tables only under Pyrrho companion need."""
+    postmortem = _result(
+        "Final PAY-209 postmortem confirms alert ALT-501. Use the alerts table for duration.",
+        "unstructured/payments_postmortem.md",
+        location="Final PAY-209 Postmortem",
+    )
+    alerts = _result(
+        """Table: Alerts
+Columns: alert_id, duration_minutes
+
+| alert_id | duration_minutes |
+| --- | --- |
+| ALT-501 | 37 |""",
+        "structured/alerts.csv",
+        kind=AddressKind.TABLE,
+        location="Alerts",
+    )
+
+    compiled = compile_evidence(
+        "Which alert maps to PAY-209 and what was the final duration?",
+        [postmortem, alerts],
+        profile=_profile(obligation="prose_plus_table"),
+    )
+
+    assert [result.file_path for result in compiled.results[:2]] == [
+        "unstructured/payments_postmortem.md",
+        "structured/alerts.csv",
+    ]
+    assert "bridge:ALT-501" in compiled.results[1].metadata["evidence_compiler"]["roles"]
+
+
+def test_compiler_does_not_promote_bridge_companion_without_pyrrho_multi_modality() -> None:
+    """Bridge companion pulls are not fitz-sage-owned when Pyrrho asks for one modality."""
+    postmortem = _result(
+        "Final PAY-209 postmortem confirms alert ALT-501. Use the alerts table for duration.",
+        "unstructured/payments_postmortem.md",
+        location="Final PAY-209 Postmortem",
+    )
+    alerts = _result(
+        "ALT-501 | 37",
+        "structured/alerts.csv",
+        kind=AddressKind.TABLE,
+        location="Alerts",
+    )
+
+    compiled = compile_evidence(
+        "Which alert maps to PAY-209 and what was the final duration?",
+        [postmortem, alerts],
+    )
+
+    assert [result.file_path for result in compiled.results] == [
+        "unstructured/payments_postmortem.md"
+    ]
+
+
 def test_compiler_does_not_make_policy_terms_source_authority() -> None:
     """Policy wording is lexical alignment unless Pyrrho supplies an authority signal."""
     table = _result(
@@ -445,6 +673,27 @@ def test_query_contract_requires_table_only_from_pyrrho_modality() -> None:
     assert (
         build_query_contract("Which service has the highest SLO percent?").required_modalities == ()
     )
+
+
+def test_query_contract_requires_modalities_from_pyrrho_obligation() -> None:
+    """Pyrrho retrieval_obligation is part of the evidence contract."""
+    contract = build_query_contract(
+        "For the EU token rotation rollout, which release enabled it?",
+        profile=_profile(modality="unstructured_text", obligation="prose_plus_table"),
+    )
+
+    assert contract.retrieval_obligation == "prose_plus_table"
+    assert contract.required_modalities == ("section", "table")
+
+
+def test_query_contract_mixed_modality_requires_mixed_evidence_coverage() -> None:
+    """Pyrrho mixed modality should not collapse to a single evidence kind."""
+    contract = build_query_contract(
+        "Using the billing brief, which vendor owns INV-702 and which code function calculates it?",
+        profile=_profile(modality="mixed"),
+    )
+
+    assert contract.required_modalities == ("section", "table", "symbol")
 
 
 def test_query_contract_keeps_code_export_window_as_symbol_only() -> None:
@@ -617,12 +866,14 @@ def _profile(
     *,
     query_contract: str | None = None,
     modality: str | None = None,
+    obligation: str | None = None,
     shape: str | None = None,
 ) -> SimpleNamespace:
     """Build a Pyrrho-derived profile fixture."""
     return SimpleNamespace(
         query_contract=query_contract,
         retrieval_modality=modality,
+        retrieval_obligation=obligation,
         answerability_shape=shape,
     )
 

@@ -42,8 +42,9 @@ fitz_krag:
   # heavier opt-in parsers for scanned PDFs, figures, and complex tables.
   parser: cpu
 
-  # Governance. 'pyrrho' = local Pyrrho multitask classifier that labels query
-  # contracts and evidence prefixes as TRUSTWORTHY / DISPUTED / ABSTAIN.
+  # Governance. 'pyrrho' = local Pyrrho v2 evidence classifier that evaluates
+  # evidence prefixes as SUFFICIENT / DISPUTED / INSUFFICIENT, bridged to
+  # TRUSTWORTHY / DISPUTED / ABSTAIN for the runtime.
   # 'pyrrho/<hf-model-id>' or 'pyrrho/<local-package-path>' to swap packages.
   governance: pyrrho
 

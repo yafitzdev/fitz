@@ -63,7 +63,7 @@ def compile_evidence(
         return EvidenceCompilation([], _metadata(contract, units, [], 0, filtered_all=True))
 
     working = aligned if aligned else units
-    ordered = _compile_order(contract, working)
+    ordered = _compile_order(contract, working, all_units=units)
     ordered, suppressed = _suppress_superseded_units(contract, ordered)
     min_sources = _minimum_sources(contract, ordered)
     compiled = [
@@ -126,8 +126,14 @@ def query_has_code_obligation(query: str, profile: Any = None) -> bool:
     return "symbol" in contract.required_modalities
 
 
-def _compile_order(contract: _QueryContract, units: list[EvidenceUnit]) -> list[EvidenceUnit]:
+def _compile_order(
+    contract: _QueryContract,
+    units: list[EvidenceUnit],
+    *,
+    all_units: list[EvidenceUnit] | None = None,
+) -> list[EvidenceUnit]:
     """Build evidence order from Pyrrho obligations and literal alignment."""
+    search_units = all_units or units
     selected: list[EvidenceUnit] = []
     selected_positions: dict[tuple[str, str, str], int] = {}
 
@@ -142,6 +148,22 @@ def _compile_order(contract: _QueryContract, units: list[EvidenceUnit]) -> list[
         selected_positions[key] = len(selected)
         selected.append(_with_role(unit, role))
 
+    for identifier in contract.identifiers:
+        identifier_units = [
+            unit
+            for unit in units
+            if _contains_identifier(_unit_text(unit.content_text, unit.location), identifier)
+        ]
+        match = _best_unit(contract, identifier_units)
+        if match is not None:
+            add(match, f"anchor_identifier:{identifier}")
+
+    for phrase in contract.phrase_anchors:
+        phrase_units = [unit for unit in units if _contains_phrase(unit.text, phrase)]
+        match = _best_unit(contract, phrase_units)
+        if match is not None:
+            add(match, f"anchor_phrase:{phrase}")
+
     for unit in units:
         for role in unit.roles:
             if _role_is_contract_obligation(role):
@@ -155,11 +177,8 @@ def _compile_order(contract: _QueryContract, units: list[EvidenceUnit]) -> list[
         if match is not None:
             add(match, f"required_{modality}")
 
-    for phrase in contract.phrase_anchors:
-        phrase_units = [unit for unit in units if _contains_phrase(unit.text, phrase)]
-        match = _best_unit(contract, phrase_units)
-        if match is not None:
-            add(match, f"anchor:{phrase}")
+    for unit, term in _bridge_companion_units(contract, search_units, selected):
+        add(unit, f"bridge:{term}")
 
     for unit in sorted(
         units,
@@ -198,10 +217,13 @@ def _minimum_sources(contract: _QueryContract, units: list[EvidenceUnit]) -> int
         required = max(required, 3)
     if contract.retrieval_modality == "mixed":
         required = max(required, 2)
-    obligation_roles = {
-        role for unit in units for role in unit.roles if _role_is_contract_obligation(role)
+    floor_roles = {
+        role
+        for unit in units
+        for role in unit.roles
+        if _role_requires_prefix_floor(role, unit.kind)
     }
-    required = max(required, len(obligation_roles))
+    required = max(required, len(floor_roles))
     return min(required, len(units))
 
 
@@ -266,7 +288,7 @@ def _with_compiler_metadata(
     """Return a copy of a read result annotated with compiler metadata."""
     if result is None:
         return None
-    content, span_metadata = _focused_content(result.content, contract)
+    content, span_metadata = _focused_content(result.content, contract, kind=unit.kind)
     metadata = dict(result.metadata)
     metadata["evidence_compiler"] = {
         "rank": rank,
@@ -286,8 +308,18 @@ def _with_compiler_metadata(
     )
 
 
-def _focused_content(content: str, contract: _QueryContract) -> tuple[str, dict[str, Any] | None]:
+def _focused_content(
+    content: str,
+    contract: _QueryContract,
+    *,
+    kind: str | None = None,
+) -> tuple[str, dict[str, Any] | None]:
     """Return a narrower evidence span when one addressed unit contains separable facts."""
+    if kind in {"table", "symbol"}:
+        return content, None
+    if not _should_focus_text(contract):
+        return content, None
+
     prefix, body = _content_prefix(content)
     blocks = _paragraph_blocks(body)
     if len(blocks) < 2:
@@ -312,6 +344,11 @@ def _focused_content(content: str, contract: _QueryContract) -> tuple[str, dict[
         "original_char_count": len(content),
         "focused_char_count": len(focused),
     }
+
+
+def _should_focus_text(contract: _QueryContract) -> bool:
+    """Return whether Pyrrho requested temporal paragraph focusing."""
+    return contract.temporal_policy == "temporal"
 
 
 def _content_prefix(content: str) -> tuple[str, str]:
@@ -441,6 +478,7 @@ def _contract_snapshot(contract: _QueryContract) -> dict[str, Any]:
         "route": contract.route,
         "answerability_shape": contract.answerability_shape,
         "retrieval_modality": contract.retrieval_modality,
+        "retrieval_obligation": contract.retrieval_obligation,
         "identifiers": list(contract.identifiers),
         "phrase_anchors": list(contract.phrase_anchors),
         "source_anchors": list(contract.source_anchors),
@@ -574,13 +612,11 @@ def _suppress_superseded_units(
 
 
 def _has_temporal_selection_intent(contract: _QueryContract) -> bool:
-    """Return whether literal query anchors request one status over another."""
+    """Return whether Pyrrho requested temporal/finality selection."""
+    if contract.temporal_policy != "temporal":
+        return False
     query_terms = set(contract.keyword_anchors)
-    if "final" in query_terms:
-        return True
-    return contract.temporal_policy == "temporal" and bool(
-        {"current", "latest"}.intersection(query_terms)
-    )
+    return bool({"current", "final", "latest"}.intersection(query_terms))
 
 
 def _authoritative_temporal_signatures(
@@ -643,12 +679,13 @@ def _unit_temporal_signatures(contract: _QueryContract, unit: EvidenceUnit) -> s
     identity_text = _unit_text(unit.content_text, unit.location, unit.file_path)
     signatures: set[tuple[str, str]] = set()
     file_path = unit.file_path.lower()
+    signature_scope = "*" if _has_temporal_selection_intent(contract) else file_path
     for identifier in contract.identifiers:
         if _contains_identifier(identity_text, identifier):
-            signatures.add((file_path, f"id:{identifier.lower()}"))
+            signatures.add((signature_scope, f"id:{identifier.lower()}"))
     for phrase in contract.phrase_anchors:
         if _contains_phrase(identity_text, phrase):
-            signatures.add((file_path, f"phrase:{_normalize_text(phrase)}"))
+            signatures.add((signature_scope, f"phrase:{_normalize_text(phrase)}"))
     return signatures
 
 
@@ -754,11 +791,167 @@ def _needs_candidate_rescue(contract: _QueryContract) -> bool:
 
 
 def _role_is_contract_obligation(role: str) -> bool:
-    """Return whether closure/compiler role contributes to a Pyrrho prefix floor."""
+    """Return whether closure/compiler role should be ordered before residual evidence."""
     return (
         role.startswith("required_")
+        or role.startswith("anchor_identifier:")
+        or role.startswith("anchor_phrase:")
         or role.startswith("bridge:")
         or role.startswith("bridge_document:")
+    )
+
+
+def _bridge_companion_units(
+    contract: _QueryContract,
+    units: list[EvidenceUnit],
+    selected: list[EvidenceUnit],
+) -> list[tuple[EvidenceUnit, str]]:
+    """Return exact bridge companions from the full read set."""
+    if not _contract_allows_bridge_companions(contract):
+        return []
+    selected_keys = {(unit.kind, unit.file_path, unit.location) for unit in selected}
+    companions: list[tuple[EvidenceUnit, str]] = []
+    companion_keys: set[tuple[str, str, str]] = set()
+
+    for term in _bridge_companion_terms(contract, selected):
+        matches = [
+            unit
+            for unit in units
+            if (unit.kind, unit.file_path, unit.location) not in selected_keys
+            and (unit.kind, unit.file_path, unit.location) not in companion_keys
+            and _bridge_term_matches_unit(term, unit)
+        ]
+        if not matches:
+            continue
+
+        by_kind: dict[str, list[EvidenceUnit]] = {}
+        for match in matches:
+            by_kind.setdefault(match.kind, []).append(match)
+
+        for kind in ("table", "symbol", "section"):
+            kind_matches = by_kind.get(kind)
+            if not kind_matches:
+                continue
+            match = _best_bridge_companion(contract, term, kind_matches)
+            key = (match.kind, match.file_path, match.location)
+            companion_keys.add(key)
+            companions.append((match, term))
+            if len(companions) >= 6:
+                return companions
+    return companions
+
+
+def _contract_allows_bridge_companions(contract: _QueryContract) -> bool:
+    """Return whether Pyrrho requested cross-source companion coverage."""
+    return contract.retrieval_modality == "mixed" or len(contract.required_modalities) > 1
+
+
+def _bridge_companion_terms(
+    contract: _QueryContract,
+    selected: list[EvidenceUnit],
+) -> tuple[str, ...]:
+    """Extract bridge terms worth using for companion-source selection."""
+    terms: list[str] = []
+    for unit in selected:
+        for role in unit.roles:
+            if role.startswith("bridge:"):
+                terms.append(role.removeprefix("bridge:"))
+        text = _unit_text(unit.content_text, unit.location, unit.file_path)
+        terms.extend(
+            match.group(0).strip(".,;:()[]{}") for match in _EXACT_IDENTIFIER_PATTERN.finditer(text)
+        )
+        terms.extend(_table_hint_terms(text))
+
+    query_terms = set(_normalize_text(contract.query).split())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        normalized = _normalize_text(term)
+        if not normalized or normalized in seen:
+            continue
+        if normalized in query_terms and not _EXACT_IDENTIFIER_PATTERN.fullmatch(term):
+            continue
+        if not _is_bridge_companion_term(term):
+            continue
+        seen.add(normalized)
+        deduped.append(term)
+    return tuple(deduped)
+
+
+def _table_hint_terms(text: str) -> tuple[str, ...]:
+    """Return table-name hints such as 'alerts table' from bridge prose."""
+    hints: list[str] = []
+    for match in re.finditer(r"\b([A-Za-z][A-Za-z0-9_-]{2,})\s+table\b", text, re.IGNORECASE):
+        hints.append(f"{match.group(1)} table")
+    return tuple(hints)
+
+
+def _is_bridge_companion_term(term: str) -> bool:
+    """Return whether a bridge token is specific enough to pull a companion."""
+    value = term.strip()
+    normalized = _normalize_text(value)
+    if len(normalized) < 3:
+        return False
+    if _EXACT_IDENTIFIER_PATTERN.fullmatch(value):
+        return True
+    return bool(re.search(r"[\d_-]", value) or normalized.endswith("table"))
+
+
+def _bridge_term_matches_unit(term: str, unit: EvidenceUnit) -> bool:
+    """Return whether a unit contains a bridge term in source identity or body."""
+    text = _unit_text(unit.content_text, unit.location, unit.file_path)
+    if _EXACT_IDENTIFIER_PATTERN.fullmatch(term):
+        return _contains_identifier(text, term)
+    return _contains_phrase(text, term) or _contains_term_variant(text, term)
+
+
+def _best_bridge_companion(
+    contract: _QueryContract,
+    term: str,
+    units: list[EvidenceUnit],
+) -> EvidenceUnit:
+    """Return the strongest companion for a bridge term within one modality."""
+    return sorted(
+        units,
+        key=lambda item: (
+            -_bridge_companion_score(term, item),
+            -item.alignment_score,
+            -_content_alignment_score(contract, item),
+            item.index,
+        ),
+    )[0]
+
+
+def _bridge_companion_score(term: str, unit: EvidenceUnit) -> int:
+    """Score exact bridge evidence without relying on rank alone."""
+    identity = _unit_text(unit.location, unit.file_path)
+    body = unit.content_text
+    score = 0
+    if _EXACT_IDENTIFIER_PATTERN.fullmatch(term):
+        if _contains_identifier(body, term):
+            score += 8
+        if _contains_identifier(identity, term):
+            score += 4
+    else:
+        if _contains_phrase(body, term) or _contains_term_variant(body, term):
+            score += 4
+        if _contains_phrase(identity, term) or _contains_term_variant(identity, term):
+            score += 2
+    if unit.kind in {"table", "symbol"}:
+        score += 2
+    return score
+
+
+def _role_requires_prefix_floor(role: str, kind: str | None = None) -> bool:
+    """Return whether a compiler role should force Pyrrho to wait for this source."""
+    if role.startswith("required_"):
+        modality = role.removeprefix("required_")
+        return kind is None or kind == modality
+    return (
+        role.startswith("anchor_identifier:")
+        or role.startswith("anchor_phrase:")
+        or role.startswith("source_anchor:")
+        or role in {"conflict_value", "latest", "final"}
     )
 
 

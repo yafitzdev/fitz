@@ -255,6 +255,69 @@ class SqliteTableStore:
                 logger.warning(f"{STORAGE} Multi-table query failed: {e}")
                 return None
 
+    def catalog(self) -> list[dict[str, Any]]:
+        """Return metadata for every stored table."""
+        self._ensure_schema()
+
+        with self._manager.connection(self.collection) as conn:
+            rows = conn.execute(
+                """
+                SELECT table_id, table_name, columns, column_names_original,
+                       row_count, source_file
+                FROM _table_metadata
+                ORDER BY source_file, table_id
+                """
+            ).fetchall()
+
+        catalog: list[dict[str, Any]] = []
+        for row in rows:
+            sanitized = json.loads(row[2]) if row[2] else []
+            original = json.loads(row[3]) if row[3] else []
+            catalog.append(
+                {
+                    "table_id": row[0],
+                    "table_name": row[1],
+                    "columns": list(sanitized),
+                    "original_columns": list(original),
+                    "row_count": row[4],
+                    "source_file": row[5] or "",
+                }
+            )
+        return catalog
+
+    def scan_rows(
+        self,
+        table_id: str,
+        *,
+        limit: int = 500,
+    ) -> tuple[list[str], list[list[Any]]] | None:
+        """Return a bounded row scan for deterministic retrieval planning."""
+        self._ensure_schema()
+
+        with self._manager.connection(self.collection) as conn:
+            result = conn.execute(
+                """
+                SELECT table_name, columns, column_names_original
+                FROM _table_metadata
+                WHERE table_id = ?
+                """,
+                (table_id,),
+            ).fetchone()
+            if not result:
+                return None
+            table_name, sanitized_json, original_json = result
+            sanitized_cols = json.loads(sanitized_json) if sanitized_json else []
+            original_cols = json.loads(original_json) if original_json else []
+            if not sanitized_cols:
+                return list(original_cols), []
+            cols_str = ", ".join(f'"{column}"' for column in sanitized_cols)
+            bounded_limit = max(1, int(limit))
+            rows = conn.execute(
+                f'SELECT {cols_str} FROM "{table_name}" ORDER BY _row_num LIMIT ?',
+                (bounded_limit,),
+            ).fetchall()
+        return list(original_cols), [list(row) for row in rows]
+
     def get_row_count(self, table_id: str) -> int | None:
         self._ensure_schema()
         with self._manager.connection(self.collection) as conn:

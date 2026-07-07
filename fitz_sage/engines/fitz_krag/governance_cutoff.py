@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
 from fitz_sage.core.answer_mode import AnswerMode
+
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.types import ReadResult
 
@@ -25,6 +26,10 @@ _FOLLOWUP_BATCH_SIZE = 2
 _BROAD_OVERVIEW_SOURCE_COUNT = 6
 _RETRIEVAL_CONTROL_MIN_CONFIDENCE = 0.70
 _ANSWER_NOW_MIN_CONFIDENCE = 0.70
+_NARROW_STRONG_DISPUTE_MIN_CONFIDENCE = 0.60
+_NARROW_STRONG_DISPUTE_MIN_MARGIN = 0.15
+_SINGLE_SOURCE_RISK_TRUST_MIN_CONFIDENCE = 0.85
+_SINGLE_SOURCE_RISK_ANSWER_NOW_MIN_CONFIDENCE = 0.85
 _RETRIEVAL_CONTROL_MORE_ACTIONS = {"retrieve_more", "broaden_search"}
 _RETRIEVAL_CONTROL_BLOCKING_ACTIONS = {
     "retrieve_more",
@@ -33,6 +38,14 @@ _RETRIEVAL_CONTROL_BLOCKING_ACTIONS = {
     "structured_lookup",
     "ask_clarifying_question",
 }
+_SINGLE_SOURCE_TRUST_RISK_PATTERN = re.compile(
+    r"\b("
+    r"stale|legacy|outdated|superseded|deprecated|"
+    r"planning\s+forecast|forecast\s+says|forecast\s+lists|"
+    r"draft|preliminary|intentionally\s+stale"
+    r")\b",
+    re.IGNORECASE,
+)
 _MONTH_PATTERN = (
     r"\b(january|february|march|april|may|june|july|august|september|"
     r"october|november|december)(?:\s+(\d{4}))?\b"
@@ -175,20 +188,28 @@ def apply_governance_cutoff(
         )
 
     results = _prioritize_comparison_metric_evidence(query, profile, results, policy)
-    pyrrho_contract_prefix_min = _pyrrho_contract_prefix_min(results)
+    governance_results = _pyrrho_governance_results(results)
+    pyrrho_contract_prefix_min = min(
+        _pyrrho_contract_prefix_min(governance_results), policy.max_docs
+    )
+    pyrrho_return_prefix_min = min(_pyrrho_contract_return_prefix_min(results), policy.max_docs)
 
     last_reasons: list[str] = []
     last_decision: Any = None
     last_retrieval_control_blocker: str | None = None
+    last_trustworthy_risk_blocker: str | None = None
     stable_disputed_decision: Any = None
     trajectory: list[dict[str, Any]] = []
     consecutive_disputed = 0
 
-    for size, decision in _iter_prefix_decisions(governance, query, results, policy):
+    for size, decision in _iter_prefix_decisions(governance, query, governance_results, policy):
         mode = _decision_mode(decision)
         last_decision = decision
         last_reasons = _decision_reasons(decision)
         trace = _prefix_trace(size, mode, decision)
+        full_prefix_size = _full_prefix_size_for_governance_prefix(
+            results, governance_results[:size]
+        )
 
         retrieval_control_blocker = _retrieval_control_blocker(decision)
         last_retrieval_control_blocker = retrieval_control_blocker
@@ -212,16 +233,28 @@ def apply_governance_cutoff(
                 if retrieval_control_blocker:
                     trajectory.append(trace)
                     continue
+                selected_size = max(full_prefix_size, pyrrho_return_prefix_min or full_prefix_size)
+                trustworthy_risk_blocker = _trustworthy_risk_blocker(
+                    decision=decision,
+                    policy=policy,
+                    governance_prefix_size=size,
+                    selected_results=results[:selected_size],
+                )
+                if trustworthy_risk_blocker:
+                    trace["trustworthy_risk_blocker"] = trustworthy_risk_blocker
+                    last_trustworthy_risk_blocker = trustworthy_risk_blocker
+                    trajectory.append(trace)
+                    continue
                 trajectory.append(trace)
                 return GovernanceCutoffResult(
-                    selected=results[:size],
+                    selected=results[:selected_size],
                     mode=mode,
                     reasons=last_reasons,
                     timings=[("Governance", time.perf_counter() - t0)],
                     metadata=_governance_cutoff_metadata(
                         policy,
                         evaluated=size,
-                        selected=size,
+                        selected=selected_size,
                         mode=mode,
                         decision=decision,
                         trajectory=trajectory,
@@ -239,20 +272,27 @@ def apply_governance_cutoff(
             consecutive_disputed += 1
             if consecutive_disputed >= _STABLE_DISPUTE_DOCS:
                 stable_disputed_decision = decision
-            if _should_stop_on_disputed(policy, size, consecutive_disputed):
+            dispute_stop_reason = _disputed_stop_reason(
+                policy,
+                size,
+                consecutive_disputed,
+                decision,
+            )
+            if dispute_stop_reason:
+                selected_size = max(full_prefix_size, pyrrho_return_prefix_min or full_prefix_size)
                 return GovernanceCutoffResult(
-                    selected=results[:size],
+                    selected=results[:selected_size],
                     mode=mode,
                     reasons=last_reasons,
                     timings=[("Governance", time.perf_counter() - t0)],
                     metadata=_governance_cutoff_metadata(
                         policy,
                         evaluated=size,
-                        selected=size,
+                        selected=selected_size,
                         mode=mode,
                         decision=decision,
                         trajectory=trajectory,
-                        stop_reason="dispute_policy_met",
+                        stop_reason=dispute_stop_reason,
                     ),
                 )
             continue
@@ -265,15 +305,20 @@ def apply_governance_cutoff(
         disputed_reasons.append(
             f"Pyrrho found a stable dispute by the top {policy.max_docs} evidence item(s)."
         )
+        evaluated = min(policy.max_docs, len(governance_results))
+        selected_count = max(
+            _full_prefix_size_for_governance_prefix(results, governance_results[:evaluated]),
+            pyrrho_return_prefix_min,
+        )
         return GovernanceCutoffResult(
-            selected=results[: policy.max_docs],
+            selected=results[:selected_count],
             mode=AnswerMode.DISPUTED,
             reasons=disputed_reasons,
             timings=[("Governance", time.perf_counter() - t0)],
             metadata=_governance_cutoff_metadata(
                 policy,
-                evaluated=policy.max_docs,
-                selected=policy.max_docs,
+                evaluated=evaluated,
+                selected=selected_count,
                 mode=AnswerMode.DISPUTED,
                 decision=stable_disputed_decision,
                 trajectory=trajectory,
@@ -287,6 +332,12 @@ def apply_governance_cutoff(
         reasons.append("Pyrrho retrieval control did not authorize an answer within the cutoff.")
         stop_reason = "retrieval_control_unsatisfied_at_cutoff"
         retrieval_control_blocker = last_retrieval_control_blocker
+    elif last_trustworthy_risk_blocker:
+        reasons = list(last_reasons)
+        reasons.insert(0, last_trustworthy_risk_blocker)
+        reasons.append("Pyrrho did not see enough non-stale evidence to certify trust.")
+        stop_reason = "trustworthy_risk_unsatisfied_at_cutoff"
+        retrieval_control_blocker = None
     else:
         reasons = list(last_reasons)
         reasons.append(
@@ -294,15 +345,20 @@ def apply_governance_cutoff(
         )
         stop_reason = "cutoff_exhausted"
         retrieval_control_blocker = None
+    evaluated = min(policy.max_docs, len(governance_results))
+    selected_count = max(
+        _full_prefix_size_for_governance_prefix(results, governance_results[:evaluated]),
+        pyrrho_return_prefix_min,
+    )
     return GovernanceCutoffResult(
-        selected=results[: policy.max_docs],
+        selected=results[:selected_count],
         mode=AnswerMode.ABSTAIN,
         reasons=reasons,
         timings=[("Governance", time.perf_counter() - t0)],
         metadata=_governance_cutoff_metadata(
             policy,
-            evaluated=policy.max_docs,
-            selected=policy.max_docs,
+            evaluated=evaluated,
+            selected=selected_count,
             mode=AnswerMode.ABSTAIN,
             decision=last_decision,
             trajectory=trajectory,
@@ -341,7 +397,7 @@ def governance_cutoff_policy(
 
 
 def governance_query_shape(profile: Any, *, query: str | None = None) -> str:
-    """Map retrieval profile signals to a cutoff policy shape."""
+    """Map Pyrrho-owned profile signals to a cutoff policy shape."""
     if profile is None:
         return "narrow"
     query_contract = getattr(profile, "query_contract", None)
@@ -358,12 +414,8 @@ def governance_query_shape(profile: Any, *, query: str | None = None) -> str:
         or getattr(profile, "comparison_entities", None)
     ):
         return "comparison"
-    if _looks_like_temporal_comparison(query or "", profile):
-        return "comparison"
     if getattr(profile, "has_aggregation_intent", False):
         return "aggregation"
-    if _is_broad_overview_query(query or "", profile):
-        return "broad_overview"
     if (
         getattr(profile, "specificity", "") == "broad"
         or getattr(profile, "answer_type", "") == "exploratory"
@@ -371,52 +423,6 @@ def governance_query_shape(profile: Any, *, query: str | None = None) -> str:
     ):
         return "broad"
     return "narrow"
-
-
-def _looks_like_temporal_comparison(query: str, profile: Any) -> bool:
-    """Return whether temporal range wording needs comparison-style coverage."""
-    if not query:
-        return False
-    lower = query.lower()
-    if not getattr(profile, "has_temporal_intent", False):
-        return False
-    if len(_required_temporal_requirements(query)) < 2:
-        return False
-    return bool(
-        re.search(
-            r"\b(between|compare|comparison|versus|vs|higher|lower|changed|changes|change)\b",
-            lower,
-        )
-    )
-
-
-def _is_broad_overview_query(query: str, profile: Any) -> bool:
-    """Return whether evidence sufficiency is ill-defined for a corpus overview."""
-    if not query:
-        return False
-    if (
-        getattr(profile, "specificity", "") != "broad"
-        and getattr(profile, "answer_type", "") != "exploratory"
-        and not getattr(profile, "inject_corpus_summaries", False)
-    ):
-        return False
-    if getattr(profile, "has_temporal_intent", False):
-        return False
-
-    lower = query.lower()
-    has_corpus_scope = bool(
-        re.search(
-            r"\b(corpus|collection|knowledge base|all documents|all docs|all files|all sources|whole repository|entire repository)\b",
-            lower,
-        )
-    )
-    has_open_overview_ask = bool(
-        re.search(
-            r"\b(key facts|overview|summari[sz]e|summary|main themes|survey|representative|which documents|what documents)\b",
-            lower,
-        )
-    )
-    return has_corpus_scope and has_open_overview_ask
 
 
 def _iter_prefix_decisions(
@@ -481,23 +487,92 @@ def _is_mock_callable(value: Any) -> bool:
     return isinstance(getattr(value, "__self__", None), Mock)
 
 
-def _should_stop_on_disputed(
+def _disputed_stop_reason(
     policy: GovernanceCutoffPolicy,
     size: int,
     consecutive_disputed: int,
-) -> bool:
+    decision: Any,
+) -> str | None:
     """Return whether a DISPUTED verdict is strong enough to stop."""
     if policy.query_shape == "comparison":
-        return size >= policy.min_disputed_docs
+        return "dispute_policy_met" if size >= policy.min_disputed_docs else None
     if policy.query_shape == "narrow":
-        return consecutive_disputed >= policy.disputed_patience_docs + 1
-    return False
+        if size >= policy.min_disputed_docs and _is_strong_dispute(decision):
+            return "narrow_strong_dispute_met"
+        if consecutive_disputed >= policy.disputed_patience_docs + 1:
+            return "dispute_policy_met"
+    return None
 
 
 def _should_stop_on_answer_now(decision: Any) -> bool:
     """Return whether Pyrrho explicitly authorizes an early trustworthy stop."""
     label, confidence = _head_label_and_confidence(decision, "retrieval_action")
     return label == "answer_now" and confidence >= _ANSWER_NOW_MIN_CONFIDENCE
+
+
+def _trustworthy_risk_blocker(
+    *,
+    decision: Any,
+    policy: GovernanceCutoffPolicy,
+    governance_prefix_size: int,
+    selected_results: list["ReadResult"],
+) -> str | None:
+    """Block one-source trust on stale or forecast-like evidence unless Pyrrho is emphatic."""
+    if policy.query_shape != "narrow" or governance_prefix_size != 1 or len(selected_results) != 1:
+        return None
+    evidence = _raw_evidence(selected_results)
+    if not _SINGLE_SOURCE_TRUST_RISK_PATTERN.search(evidence):
+        return None
+
+    probabilities = _decision_probabilities(decision)
+    trust = probabilities.get("trustworthy", 0.0)
+    action_label, action_confidence = _head_label_and_confidence(decision, "retrieval_action")
+    if (
+        trust >= _SINGLE_SOURCE_RISK_TRUST_MIN_CONFIDENCE
+        and action_label == "answer_now"
+        and action_confidence >= _SINGLE_SOURCE_RISK_ANSWER_NOW_MIN_CONFIDENCE
+    ):
+        return None
+    return "Single-source evidence has stale, legacy, or forecast markers; require corroboration."
+
+
+def _is_strong_dispute(decision: Any) -> bool:
+    """Return whether a narrow DISPUTED prefix has enough probability mass to stop."""
+    probabilities = _decision_probabilities(decision)
+    disputed = probabilities.get("disputed", 0.0)
+    runner_up = max(probabilities.get("abstain", 0.0), probabilities.get("trustworthy", 0.0))
+    return (
+        disputed >= _NARROW_STRONG_DISPUTE_MIN_CONFIDENCE
+        and disputed - runner_up >= _NARROW_STRONG_DISPUTE_MIN_MARGIN
+    )
+
+
+def _decision_probabilities(decision: Any) -> dict[str, float]:
+    """Return normalized governance probabilities from Pyrrho-style decisions."""
+    probs = getattr(decision, "probs", None)
+    if isinstance(probs, (list, tuple)) and len(probs) == 3:
+        try:
+            return {
+                "abstain": float(probs[0]),
+                "disputed": float(probs[1]),
+                "trustworthy": float(probs[2]),
+            }
+        except (TypeError, ValueError):
+            return {}
+
+    governance = getattr(decision, "governance", None)
+    probabilities = getattr(governance, "probabilities", None)
+    if isinstance(probabilities, dict):
+        return {
+            "abstain": float(probabilities.get("ABSTAIN", probabilities.get("abstain", 0.0))),
+            "disputed": float(
+                probabilities.get("DISPUTED", probabilities.get("disputed", 0.0))
+            ),
+            "trustworthy": float(
+                probabilities.get("TRUSTWORTHY", probabilities.get("trustworthy", 0.0))
+            ),
+        }
+    return {}
 
 
 def _retrieval_control_blocker(decision: Any) -> str | None:
@@ -799,6 +874,7 @@ def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
         "gap_type",
         "answerability_shape",
         "retrieval_modality",
+        "retrieval_obligation",
     ):
         head = _head_metadata(getattr(decision, key, None))
         if head:
@@ -841,6 +917,7 @@ def _head_metadata(head: Any) -> dict[str, Any]:
     for key in (
         "raw_label",
         "final_label",
+        "final_labels",
         "used_threshold_fallback",
         "threshold",
         "confidence",
@@ -851,7 +928,7 @@ def _head_metadata(head: Any) -> dict[str, Any]:
     ):
         value = getattr(head, key, None)
         if value is not None:
-            metadata[key] = value
+            metadata[key] = list(value) if isinstance(value, tuple) else value
 
     probabilities = getattr(head, "probabilities", None)
     if isinstance(probabilities, dict) and probabilities:
@@ -870,33 +947,101 @@ def _governance_cutoff_limit(result_count: int, requested_top_k: Any = None) -> 
     return max(1, min(result_count, limit))
 
 
+def _pyrrho_governance_results(results: list["ReadResult"]) -> list["ReadResult"]:
+    """Return the compact evidence sequence Pyrrho should judge."""
+    filtered = [result for result in results if not _is_return_only_bridge_result(result)]
+    return filtered or results
+
+
+def _is_return_only_bridge_result(result: "ReadResult") -> bool:
+    """Return whether a compiler source should be returned but not judged by Pyrrho."""
+    metadata = getattr(result, "metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        return False
+    compiler = metadata.get("evidence_compiler")
+    if not isinstance(compiler, dict):
+        return False
+    return _compiler_metadata_requires_return_floor(
+        compiler
+    ) and not _compiler_metadata_requires_prefix_floor(compiler, result)
+
+
+def _full_prefix_size_for_governance_prefix(
+    results: list["ReadResult"],
+    governance_prefix: list["ReadResult"],
+) -> int:
+    """Map a compact Pyrrho prefix back to its full evidence-pack prefix size."""
+    if not governance_prefix:
+        return 0
+    result_positions = {id(result): index for index, result in enumerate(results, start=1)}
+    return max(result_positions.get(id(result), 0) for result in governance_prefix)
+
+
 def _pyrrho_contract_prefix_min(results: list["ReadResult"]) -> int:
     """Return how many compiler-ledger sources Pyrrho should see before trust."""
     required = 0
-    for result in results:
+    for index, result in enumerate(results, start=1):
         metadata = getattr(result, "metadata", {}) or {}
         if not isinstance(metadata, dict):
             continue
         compiler = metadata.get("evidence_compiler")
         if not isinstance(compiler, dict):
             continue
-        if not _compiler_metadata_requires_prefix_floor(compiler):
+        if not _compiler_metadata_requires_prefix_floor(compiler, result):
             continue
         try:
-            required = max(required, int(compiler.get("min_sources", 0)))
+            required = max(required, int(compiler.get("min_sources", 0)), index)
         except (TypeError, ValueError):
-            continue
+            required = max(required, index)
     return min(len(results), required)
 
 
-def _compiler_metadata_requires_prefix_floor(compiler: dict[str, Any]) -> bool:
+def _pyrrho_contract_return_prefix_min(results: list["ReadResult"]) -> int:
+    """Return how many sources should remain in the public evidence pack."""
+    required = 0
+    for index, result in enumerate(results, start=1):
+        metadata = getattr(result, "metadata", {}) or {}
+        if not isinstance(metadata, dict):
+            continue
+        compiler = metadata.get("evidence_compiler")
+        if not isinstance(compiler, dict):
+            continue
+        if not _compiler_metadata_requires_return_floor(compiler):
+            continue
+        try:
+            required = max(required, int(compiler.get("min_sources", 0)), index)
+        except (TypeError, ValueError):
+            required = max(required, index)
+    return min(len(results), required)
+
+
+def _compiler_metadata_requires_prefix_floor(compiler: dict[str, Any], result: Any = None) -> bool:
     """Return whether compiler metadata represents a real Pyrrho evidence obligation."""
+    kind = _result_kind(result)
+    roles = compiler.get("roles", [])
+    if isinstance(roles, list):
+        for role in roles:
+            role_text = str(role)
+            if _compiler_role_requires_prefix_floor(role_text, kind):
+                return True
+    contract = compiler.get("contract")
+    if not isinstance(contract, dict):
+        return False
+    if contract.get("source_anchors"):
+        return True
+    return bool(contract.get("temporal_policy") in {"latest", "final"})
+
+
+def _compiler_metadata_requires_return_floor(compiler: dict[str, Any]) -> bool:
+    """Return whether compiler metadata should remain in the returned evidence pack."""
     roles = compiler.get("roles", [])
     if isinstance(roles, list):
         for role in roles:
             role_text = str(role)
             if (
                 role_text.startswith("required_")
+                or role_text.startswith("anchor_identifier:")
+                or role_text.startswith("anchor_phrase:")
                 or role_text.startswith("source_anchor:")
                 or role_text.startswith("bridge:")
                 or role_text.startswith("bridge_document:")
@@ -909,6 +1054,28 @@ def _compiler_metadata_requires_prefix_floor(compiler: dict[str, Any]) -> bool:
     if contract.get("required_modalities") or contract.get("source_anchors"):
         return True
     return bool(contract.get("temporal_policy") in {"latest", "final"})
+
+
+def _compiler_role_requires_prefix_floor(role: str, kind: str | None) -> bool:
+    """Return whether this compiler role is a concrete source Pyrrho must inspect."""
+    if role.startswith("required_"):
+        modality = role.removeprefix("required_")
+        return kind is None or kind == modality
+    return (
+        role.startswith("anchor_identifier:")
+        or role.startswith("anchor_phrase:")
+        or role.startswith("source_anchor:")
+        or role in {"conflict_value", "latest", "final"}
+    )
+
+
+def _result_kind(result: Any) -> str | None:
+    """Return a normalized ReadResult address kind when present."""
+    address = getattr(result, "address", None)
+    kind = getattr(address, "kind", None)
+    if kind is None:
+        return None
+    return str(getattr(kind, "value", kind))
 
 
 __all__ = [

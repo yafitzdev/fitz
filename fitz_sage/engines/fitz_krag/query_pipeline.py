@@ -25,11 +25,15 @@ from fitz_sage.engines.fitz_krag.query_planner import (
 from fitz_sage.engines.fitz_krag.retrieval.trace import read_results_trace
 from fitz_sage.engines.fitz_krag.retrieval_profile import (
     RetrievalProfile,
+    apply_required_modality_weights,
     apply_retrieval_modality_weights,
     build_retrieval_profile,
     query_profile_metadata,
 )
-from fitz_sage.governance.evidence_contract import build_query_contract
+from fitz_sage.governance.evidence_contract import (
+    build_query_contract,
+    required_modalities_from_pyrrho,
+)
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -112,7 +116,7 @@ class QueryPipeline:
 
         t0 = time.perf_counter()
         query_signals = self._classify_query_signals(sanitized)
-        timings.append(("Pyrrho query signals", time.perf_counter() - t0))
+        timings.append(("Query profile signals", time.perf_counter() - t0))
 
         t0 = time.perf_counter()
         plan = self._prepare_query_plan(
@@ -540,31 +544,31 @@ def _retry_profile(
     retrieval_action: str,
     retrieval_modality: str | None,
 ) -> Any:
-    """Build a broader profile for one Pyrrho-directed retry pass."""
+    """Build one Pyrrho-directed retry pass without fitz-sage semantic replanning."""
     weights = dict(getattr(profile, "strategy_weights", {}) or {})
     top_k = max(int(getattr(profile, "top_k", config.top_addresses)), config.top_addresses)
     top_read = max(int(getattr(profile, "top_read", config.top_read)), config.top_read)
+    obligation = getattr(profile, "retrieval_obligation", None)
+    modality = retrieval_modality or getattr(profile, "retrieval_modality", None)
+    required_modalities = required_modalities_from_pyrrho(modality, obligation)
     kwargs: dict[str, Any] = {
         "strategy_weights": weights,
         "top_k": int(top_k * 2),
         "top_read": int(top_read * 1.5),
-        "retrieval_modality": retrieval_modality or getattr(profile, "retrieval_modality", None),
+        "retrieval_modality": modality,
+        "required_modalities": required_modalities,
         "run_agentic": True,
     }
 
     if retrieval_action == "broaden_search":
-        weights.update(
-            {
-                "code": max(weights.get("code", 0.0), 0.25),
-                "section": max(weights.get("section", 0.0), 0.35),
-                "table": max(weights.get("table", 0.0), 0.20),
-            }
-        )
         kwargs.update(
             {
                 "specificity": "broad",
-                "answer_type": "exploratory",
-                "inject_corpus_summaries": True,
+                "inject_corpus_summaries": getattr(
+                    profile,
+                    "inject_corpus_summaries",
+                    False,
+                ),
                 "entity_expansion_limit": max(
                     int(getattr(profile, "entity_expansion_limit", 3)),
                     12,
@@ -575,19 +579,17 @@ def _retry_profile(
         kwargs.update(
             {
                 "has_comparison_intent": True,
-                "answer_type": "comparative",
             }
         )
     elif retrieval_action == "structured_lookup":
-        weights["table"] = max(weights.get("table", 0.0), 0.45)
         kwargs.update(
             {
                 "query_contract": "structured_lookup",
-                "answer_type": "factual",
             }
         )
 
-    apply_retrieval_modality_weights(weights, retrieval_modality)
+    apply_retrieval_modality_weights(weights, modality)
+    apply_required_modality_weights(weights, required_modalities)
     return replace(profile, **kwargs)
 
 
@@ -596,7 +598,7 @@ def _closure_profile(
     config: "FitzKragConfig",
     request: EvidenceClosureRequest,
 ) -> RetrievalProfile:
-    """Build a tight retrieval profile for one evidence-closure request."""
+    """Build a tight executor profile for one Pyrrho-contract closure request."""
     base = profile or RetrievalProfile(
         top_k=config.top_addresses,
         top_read=config.top_read,
@@ -609,31 +611,27 @@ def _closure_profile(
         "table": 0.01,
         "chunk": 0.0,
     }
-    retrieval_modality: str | None = None
-    query_contract = getattr(base, "query_contract", None)
     if request.modality == "table":
         weights.update({"table": 1.0, "section": 0.12})
-        retrieval_modality = "structured_table"
-        query_contract = "structured_lookup"
     elif request.modality == "symbol":
         weights.update({"code": 1.0, "section": 0.12})
-        retrieval_modality = "code"
     else:
         weights.update({"section": 1.0, "code": 0.04, "table": 0.04})
-        retrieval_modality = "unstructured_text"
 
     return replace(
         base,
         strategy_weights=weights,
         top_k=top_k,
         top_read=top_read,
-        query_contract=query_contract,
-        retrieval_modality=retrieval_modality,
+        query_contract=getattr(base, "query_contract", None),
+        retrieval_modality=getattr(base, "retrieval_modality", None),
+        retrieval_obligation=getattr(base, "retrieval_obligation", None),
+        required_modalities=(request.modality,),
         run_agentic=False,
         inject_corpus_summaries=False,
         entity_expansion_limit=min(int(getattr(base, "entity_expansion_limit", 3)), 3),
-        specificity="narrow",
-        answer_type="factual",
+        specificity=getattr(base, "specificity", "moderate"),
+        answer_type=getattr(base, "answer_type", "factual"),
     )
 
 

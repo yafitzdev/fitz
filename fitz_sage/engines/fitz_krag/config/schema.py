@@ -262,10 +262,11 @@ class FitzKragConfig(BasePluginConfig):
     governance: str = Field(
         default="pyrrho",
         description=(
-            "Epistemic governance classifier. 'pyrrho' (default) labels each "
-            "answer TRUSTWORTHY / DISPUTED / ABSTAIN via a local Pyrrho "
-            "multitask classifier; 'pyrrho/<hf-model-id>' or "
-            "'pyrrho/<local-package-path>' swaps in a custom package."
+            "Epistemic governance classifier. 'pyrrho' (default) evaluates "
+            "evidence prefixes with the local Pyrrho v2 classifier and maps "
+            "SUFFICIENT / DISPUTED / INSUFFICIENT to the runtime modes; "
+            "'pyrrho/<hf-model-id>' or 'pyrrho/<local-package-path>' swaps in "
+            "a custom package."
         ),
     )
 

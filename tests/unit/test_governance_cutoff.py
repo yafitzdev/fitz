@@ -517,7 +517,106 @@ def test_pyrrho_dispute_owns_conflict_verdict():
 
     assert result.mode is AnswerMode.DISPUTED
     assert result.selected == [code, docs]
-    assert result.metadata["stop_reason"] == "stable_dispute_at_cutoff"
+    assert result.metadata["stop_reason"] == "narrow_strong_dispute_met"
+
+
+def test_narrow_strong_dispute_stops_at_two_sources():
+    """A strong two-source dispute should not be downgraded to abstain at cutoff."""
+    finance_report = _result("The Q1 revenue report says revenue was 1.2B.", "finance.md")
+    audit_report = _result("The audit report disputes Q1 revenue and says it was 1.4B.", "audit.md")
+
+    result = apply_governance_cutoff(
+        "What was Q1 revenue?",
+        [finance_report, audit_report],
+        _PrefixGovernance(
+            {
+                1: _decision(mode=AnswerMode.ABSTAIN, probs=(0.65, 0.04, 0.31)),
+                2: _decision(mode=AnswerMode.DISPUTED, probs=(0.29, 0.67, 0.04)),
+            }
+        ),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.DISPUTED
+    assert result.selected == [finance_report, audit_report]
+    assert result.metadata["evaluated"] == 2
+    assert result.metadata["stop_reason"] == "narrow_strong_dispute_met"
+
+
+def test_narrow_strong_dispute_beats_later_noisy_trust():
+    """Once the top two sources form a strong dispute, later noise should not flip trust."""
+    stale_note = _result("Legacy guide says major incidents are never declared before 60 minutes.", "README.md")
+    implementation = _result(
+        "def should_declare_major(duration_minutes, affected_customers): "
+        "return duration_minutes >= 30 or affected_customers >= 5000",
+        "incident_triage.py",
+    )
+    incident_note = _result("Final recovery duration was 26 minutes.", "incident.md")
+    table = _result("incident_id | duration_minutes | customer_visible\nINC-730 | 26 | no", "incidents.csv")
+
+    result = apply_governance_cutoff(
+        "Are major incidents never declared before 60 minutes?",
+        [stale_note, implementation, incident_note, table],
+        _PrefixGovernance(
+            {
+                1: _decision(mode=AnswerMode.ABSTAIN, probs=(0.84, 0.11, 0.05)),
+                2: _decision(mode=AnswerMode.DISPUTED, probs=(0.09, 0.86, 0.05)),
+                3: _decision(mode=AnswerMode.DISPUTED, probs=(0.43, 0.52, 0.05)),
+                4: _decision(mode=AnswerMode.TRUSTWORTHY, probs=(0.13, 0.05, 0.82)),
+            }
+        ),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.DISPUTED
+    assert result.selected == [stale_note, implementation]
+    assert result.metadata["stop_reason"] == "narrow_strong_dispute_met"
+
+
+def test_single_stale_source_blocks_weak_trustworthy_stop():
+    """One stale answer-looking source should require corroboration before trust."""
+    stale_note = _result(
+        "The stale deployment note says Fitz never automatically rolls back a deployment.",
+        "deployment_note.md",
+    )
+
+    result = apply_governance_cutoff(
+        "Does Fitz ever automatically roll back a deployment?",
+        [stale_note],
+        _FixedGovernance(
+            _decision(mode=AnswerMode.TRUSTWORTHY, probs=(0.41, 0.08, 0.51))
+        ),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["stop_reason"] == "trustworthy_risk_unsatisfied_at_cutoff"
+    assert "trustworthy_risk_blocker" in result.metadata["trajectory"][0]
+
+
+def test_single_stale_source_allows_emphatic_answer_now():
+    """Pyrrho can still certify a risky-looking single source when it is emphatic."""
+    source = _result(
+        "The current forecast says Project Atlas FY27 pipeline is 8.4 million ARR.",
+        "current_forecast.md",
+    )
+
+    result = apply_governance_cutoff(
+        "What is the Project Atlas FY27 pipeline?",
+        [source],
+        _FixedGovernance(
+            _decision(
+                mode=AnswerMode.TRUSTWORTHY,
+                action="answer_now",
+                action_confidence=0.91,
+                probs=(0.03, 0.04, 0.93),
+            )
+        ),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
 
 
 def test_phrase_anchor_contract_does_not_override_pyrrho_abstention():
@@ -604,8 +703,161 @@ def test_compiler_min_sources_define_pyrrho_prefix_floor():
     assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
 
 
+def test_compiler_required_later_source_extends_pyrrho_prefix_floor():
+    """A required compiler source at rank N must be visible before Pyrrho can stop."""
+    intro = _result("Incident INC-611 is discussed in the support overview.", "overview.md")
+    timeline = _result("The support timeline mentions INC-611 follow-up work.", "timeline.md")
+    required = _result(
+        "INC-611 root cause: cache invalidation race in worker pool.", "incidents.csv"
+    )
+    required.metadata["evidence_compiler"] = {
+        "rank": 3,
+        "alignment_score": 5,
+        "roles": ["anchor_identifier:INC-611"],
+        "min_sources": 1,
+    }
+
+    result = apply_governance_cutoff(
+        "What caused INC-611?",
+        [intro, timeline, required],
+        _TrustworthyGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [intro, timeline, required]
+    assert result.metadata["trajectory"][0]["pyrrho_contract_prefix_min"] == 3
+    assert result.metadata["trajectory"][1]["pyrrho_contract_prefix_min"] == 3
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+
+
+def test_compiler_prefix_floor_is_capped_at_policy_cutoff():
+    """A required source beyond the cutoff must not convert trusted top evidence into abstain."""
+    results = [_result(f"Evidence item {index}.", f"evidence_{index}.md") for index in range(12)]
+    results[11].metadata["evidence_compiler"] = {
+        "rank": 12,
+        "alignment_score": 5,
+        "roles": ["anchor_identifier:INC-612"],
+        "min_sources": 1,
+    }
+
+    result = apply_governance_cutoff(
+        "What caused INC-612?",
+        results,
+        _TrustworthyGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == results[:10]
+    assert result.metadata["trajectory"][0]["pyrrho_contract_prefix_min"] == 10
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+
+
+def test_compiler_bridge_roles_do_not_extend_pyrrho_prefix_floor():
+    """Bridge artifacts return to users but should not force noisy sources into governance."""
+    proof = _result("INC-611 root cause: cache invalidation race.", "incidents.csv")
+    proof.metadata["evidence_compiler"] = {
+        "rank": 1,
+        "alignment_score": 5,
+        "roles": ["anchor_identifier:INC-611"],
+        "min_sources": 1,
+    }
+    bridge = _result("Incident overview mentions a related review document.", "review.md")
+    bridge.metadata["evidence_compiler"] = {
+        "rank": 2,
+        "alignment_score": 2,
+        "roles": ["bridge_document:incident review"],
+        "min_sources": 4,
+    }
+
+    result = apply_governance_cutoff(
+        "What caused INC-611?",
+        [proof, bridge],
+        _TrustworthyGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [proof, bridge]
+    assert result.metadata["evaluated"] == 1
+    assert result.metadata["selected"] == 2
+    assert "pyrrho_contract_prefix_min" not in result.metadata["trajectory"][0]
+
+
+def test_compiler_bridge_roles_are_return_only_for_pyrrho_governance():
+    """Bridge artifacts should be returned without entering Pyrrho's judged prefix."""
+    proof = _result("Final PAY-209 postmortem confirms alert ALT-501.", "postmortem.md")
+    proof.metadata["evidence_compiler"] = {
+        "rank": 1,
+        "alignment_score": 5,
+        "roles": ["anchor_identifier:PAY-209"],
+        "min_sources": 1,
+    }
+    bridge = _result("ALT-501 duration was 37 minutes.", "alerts.csv")
+    bridge.metadata["evidence_compiler"] = {
+        "rank": 2,
+        "alignment_score": 4,
+        "roles": ["bridge:ALT-501"],
+        "min_sources": 1,
+    }
+    governance = _RecordingTrustworthyGovernance()
+
+    result = apply_governance_cutoff(
+        "Which alert maps to PAY-209?",
+        [proof, bridge],
+        governance,
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [proof, bridge]
+    assert result.metadata["evaluated"] == 1
+    assert result.metadata["selected"] == 2
+    assert governance.seen_file_paths == [["postmortem.md"]]
+
+
+def test_mismatched_required_role_does_not_extend_pyrrho_prefix_floor():
+    """A required-symbol closure role on a section is not a concrete required symbol."""
+    section = _result(
+        "The support overview mentions incident INC-612.",
+        "overview.md",
+        kind="section",
+    )
+    section.metadata["evidence_compiler"] = {
+        "rank": 1,
+        "alignment_score": 2,
+        "roles": ["required_symbol"],
+        "min_sources": 4,
+    }
+
+    result = apply_governance_cutoff(
+        "What mentions INC-612?",
+        [section],
+        _TrustworthyGovernance(),
+        profile=SimpleNamespace(),
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.selected == [section]
+    assert "pyrrho_contract_prefix_min" not in result.metadata["trajectory"][0]
+
+
 class _TrustworthyGovernance:
     def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
+        return GovernanceDecision(
+            mode=AnswerMode.TRUSTWORTHY,
+            probs=(0.05, 0.05, 0.90),
+            reason="Pyrrho: sources support a confident answer (P=0.90).",
+        )
+
+
+class _RecordingTrustworthyGovernance:
+    def __init__(self) -> None:
+        self.seen_file_paths: list[list[str]] = []
+
+    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
+        self.seen_file_paths.append([context.file_path for context in contexts])
         return GovernanceDecision(
             mode=AnswerMode.TRUSTWORTHY,
             probs=(0.05, 0.05, 0.90),
@@ -638,12 +890,12 @@ class _PrefixGovernance:
         return self._decisions[len(contexts)]
 
 
-def _result(content: str, file_path: str) -> SimpleNamespace:
+def _result(content: str, file_path: str, *, kind: str | None = None) -> SimpleNamespace:
     """Build a compact ReadResult-like fixture."""
     return SimpleNamespace(
         content=content,
         file_path=file_path,
-        address=SimpleNamespace(location=file_path, summary=content),
+        address=SimpleNamespace(kind=kind, location=file_path, summary=content),
         metadata={},
     )
 
@@ -654,13 +906,16 @@ def _decision(
     action: str | None = None,
     action_confidence: float = 0.0,
     gap: str = "none",
+    probs: tuple[float, float, float] | None = None,
 ) -> GovernanceDecision:
     """Build a governance decision with optional g4 retrieval-control heads."""
-    probs = {
+    default_probs = {
         AnswerMode.ABSTAIN: (0.85, 0.05, 0.10),
         AnswerMode.DISPUTED: (0.05, 0.85, 0.10),
         AnswerMode.TRUSTWORTHY: (0.05, 0.10, 0.85),
     }[mode]
+    if probs is None:
+        probs = default_probs
     action_other = "retrieve_more" if action == "answer_now" else "answer_now"
     retrieval_action = (
         _head(

@@ -33,6 +33,10 @@ _SOURCE_PHRASE_PATTERN = re.compile(
     r"readme|report|rules?|sla|table))\b",
     re.IGNORECASE,
 )
+_SOURCE_FILE_TOKEN_PATTERN = re.compile(
+    r"\b[A-Za-z0-9_.-]+\.(?:py|js|ts|tsx|jsx|java|go|rs|rb|php|cs|cpp|c|h|hpp|md|csv|json|yaml|yml|toml)\b",
+    re.IGNORECASE,
+)
 _TABLE_HINTS = {
     "alert",
     "alerts",
@@ -198,6 +202,7 @@ def plan_evidence_closure(
             "query_contract": contract.query_contract,
             "answerability_shape": contract.answerability_shape,
             "retrieval_modality": contract.retrieval_modality,
+            "retrieval_obligation": contract.retrieval_obligation,
             "identifiers": list(contract.identifiers),
             "source_anchors": list(contract.source_anchors),
             "required_modalities": list(contract.required_modalities),
@@ -323,6 +328,8 @@ def _bridge_terms(
             add(match.group(0))
         for match in _SOURCE_PHRASE_PATTERN.finditer(text):
             add(match.group(1))
+        for match in _SOURCE_FILE_TOKEN_PATTERN.finditer(text):
+            add(match.group(0))
         for hint in (*_TABLE_HINTS, *_DOCUMENT_HINTS):
             if re.search(rf"\b{re.escape(hint)}\b", _normalize(text)):
                 add(hint)
@@ -388,8 +395,6 @@ def _symbol_request_query(
     terms: list[str] = []
     add = _term_adder(terms)
     for value in primary_terms:
-        add(value)
-    for value in _preferred_code_terms(bridge_terms):
         add(value)
     for value in _code_terms(bridge_terms):
         add(value)
@@ -469,18 +474,6 @@ def _code_terms(terms: list[str]) -> list[str]:
     return values
 
 
-def _preferred_code_terms(terms: list[str]) -> list[str]:
-    values = []
-    for term in terms:
-        normalized = _normalize(term)
-        if any(
-            token in normalized
-            for token in ("calculate", "late_fee", "rollback", "eligible", "scheduler")
-        ):
-            values.append(term)
-    return values
-
-
 def _document_terms(terms: list[str]) -> list[str]:
     values: list[str] = []
     for term in terms:
@@ -496,20 +489,12 @@ def _acronym_terms(terms: list[str]) -> list[str]:
     return [term for term in terms if _ACRONYM_PATTERN.fullmatch(term)]
 
 
-def _identifier_prefix(value: str) -> str:
-    match = re.match(r"([A-Za-z_]+)", value)
-    if not match:
-        return ""
-    return match.group(1).strip("_").lower()
-
-
 def _structured_bridge_identifiers(terms: list[str]) -> list[str]:
     values: list[str] = []
     for term in terms:
         if not _BRIDGE_IDENTIFIER_PATTERN.fullmatch(term):
             continue
-        prefix = _identifier_prefix(term)
-        if prefix not in {"alt", "ast", "ctl", "dep", "exp", "inv", "rol", "rsk", "svc", "ven"}:
+        if not any(char.isdigit() for char in term):
             continue
         values.append(term)
     return list(dict.fromkeys(values))

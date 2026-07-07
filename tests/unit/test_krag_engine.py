@@ -63,6 +63,7 @@ def _decision(
     mode: AnswerMode,
     reason: str,
     *,
+    probs: tuple[float, float, float] | None = None,
     retrieval_action: str | None = None,
     retrieval_modality: str | None = None,
 ) -> MagicMock:
@@ -71,7 +72,9 @@ def _decision(
     decision.mode = mode
     decision.reasons = (reason,)
     decision.reason = reason
-    if mode is AnswerMode.TRUSTWORTHY:
+    if probs is not None:
+        decision.probs = probs
+    elif mode is AnswerMode.TRUSTWORTHY:
         decision.probs = (0.11, 0.22, 0.67)
     elif mode is AnswerMode.DISPUTED:
         decision.probs = (0.12, 0.68, 0.20)
@@ -92,6 +95,23 @@ def _decision(
             probabilities={retrieval_modality: 0.88},
         )
     return decision
+
+
+def _head(label: str, confidence: float = 0.90) -> SimpleNamespace:
+    """Build a Pyrrho query-head fixture."""
+    return SimpleNamespace(
+        raw_label=label,
+        final_label=label,
+        confidence=confidence,
+        probabilities={label: confidence},
+    )
+
+
+def _install_query_signals(engine: FitzKragEngine, **labels: str) -> None:
+    """Install explicit Pyrrho query heads on the mock governance backend."""
+    engine._governance.classify_query = lambda _: SimpleNamespace(
+        **{name: _head(label) for name, label in labels.items() if label}
+    )
 
 
 def _evidence_results(count: int) -> tuple[list[Address], list[ReadResult]]:
@@ -538,8 +558,9 @@ class TestAnswer:
         engine._query_batcher.batch_classify.assert_not_called()
         call_args = engine._retrieval_router.retrieve.call_args
         profile = call_args[0][1]
-        assert profile.comparison_queries
-        assert profile.temporal_references
+        assert profile.comparison_queries == []
+        assert profile.temporal_references == []
+        assert profile.planning_owner == "pyrrho"
 
     def test_answer_empty_query_raises(self):
         """Empty or whitespace-only query text raises QueryError."""
@@ -1006,12 +1027,17 @@ class TestEvidence:
         assert "Retry Recall" in pack.timings
 
     def test_broad_query_requires_minimum_trustworthy_window(self):
-        """Broad thematic queries do not stop on a top-1 trustworthy verdict."""
+        """Pyrrho broad-answer plans do not stop on a top-1 trustworthy verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
+        _install_query_signals(
+            engine,
+            query_contract="evidence_sufficiency",
+            answerability_shape="synthesis_answer",
+        )
         engine._governance.decide.side_effect = [
             _decision(AnswerMode.TRUSTWORTHY, "Top one is plausible."),
             _decision(AnswerMode.TRUSTWORTHY, "Top two are plausible."),
@@ -1033,13 +1059,14 @@ class TestEvidence:
         assert cutoff["policy"]["query_shape"] == "broad"
         assert cutoff["policy"]["min_trustworthy_docs"] == 4
 
-    def test_broad_overview_query_returns_representative_sources_without_pyrrho(self):
-        """Corpus-wide overview queries are representative, not Pyrrho-sufficient."""
+    def test_pyrrho_broad_overview_returns_representative_sources_without_cutoff(self):
+        """Pyrrho representative-overview plans are representative, not sufficient."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
+        _install_query_signals(engine, query_contract="representative_overview")
         engine._governance.decide.side_effect = AssertionError("Pyrrho should not run")
 
         pack = engine.evidence(Query(text="What are the key facts in this corpus?"), top_k=4)
@@ -1067,12 +1094,13 @@ class TestEvidence:
         ]
 
     def test_comparison_query_stops_on_disputed_after_two_docs(self):
-        """Comparison/conflict queries can stop on disputed once both sides exist."""
+        """Pyrrho comparison plans can stop on disputed once both sides exist."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
+        _install_query_signals(engine, query_contract="comparison_coverage")
         engine._governance.decide.side_effect = [
             _decision(AnswerMode.ABSTAIN, "Need another side."),
             _decision(AnswerMode.DISPUTED, "Sources disagree."),
@@ -1086,7 +1114,7 @@ class TestEvidence:
         assert pack.metadata["governance_cutoff"]["policy"]["query_shape"] == "comparison"
 
     def test_comparative_or_query_requires_both_temporal_sides(self):
-        """Queries like `Q1 or Q2` should not stop on one quarterly document."""
+        """Pyrrho comparison plans should not stop on one quarterly document."""
         engine = _make_engine()
         addresses, results = _evidence_results(2)
         results[0].content = "Q1 total revenue was 100."
@@ -1110,6 +1138,7 @@ class TestEvidence:
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
+        _install_query_signals(engine, query_contract="comparison_coverage")
         engine._governance.decide.side_effect = [
             _decision(AnswerMode.TRUSTWORTHY, "Top one is not enough."),
             _decision(AnswerMode.TRUSTWORTHY, "Both quarters represented."),
@@ -1136,9 +1165,9 @@ class TestEvidence:
         engine._governance = MagicMock()
         engine._governance.decide.side_effect = [
             _decision(AnswerMode.ABSTAIN, "Need evidence."),
-            _decision(AnswerMode.DISPUTED, "Conflict appears."),
-            _decision(AnswerMode.DISPUTED, "Conflict remains."),
-            _decision(AnswerMode.DISPUTED, "Conflict persisted."),
+            _decision(AnswerMode.DISPUTED, "Conflict appears.", probs=(0.26, 0.55, 0.19)),
+            _decision(AnswerMode.DISPUTED, "Conflict remains.", probs=(0.26, 0.55, 0.19)),
+            _decision(AnswerMode.DISPUTED, "Conflict persisted.", probs=(0.26, 0.55, 0.19)),
         ]
 
         pack = engine.evidence(Query(text="What happened to invoice 17?"), top_k=4)
@@ -1156,12 +1185,17 @@ class TestEvidence:
         assert cutoff["policy"]["disputed_patience_docs"] == 2
 
     def test_broad_query_disputed_continues_to_cutoff(self):
-        """Broad queries do not stop on disputed until the configured cutoff."""
+        """Pyrrho broad-answer plans do not stop on disputed until the cutoff."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
+        _install_query_signals(
+            engine,
+            query_contract="evidence_sufficiency",
+            answerability_shape="synthesis_answer",
+        )
         engine._governance.decide.side_effect = [
             _decision(AnswerMode.DISPUTED, "Conflict one."),
             _decision(AnswerMode.DISPUTED, "Conflict two."),
