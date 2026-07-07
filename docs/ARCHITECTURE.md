@@ -6,7 +6,7 @@ High-level system design of fitz-sage.
 The architecture has three load-bearing decisions:
 
 1. **Managed enrichment, optional endpoints.** Required enrichment runs through
-   the in-process Qwen3.5 0.8B ONNX runtime on CPU. Fitz downloads the model on
+   the in-process Qwen3 0.6B ONNX GenAI runtime on CPU. Fitz downloads the model on
    first ingest if missing. Optional synthesis, query intelligence, and vision
    use OpenAI-compatible HTTP endpoints or cloud/enterprise presets.
 2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
@@ -53,7 +53,7 @@ The architecture has three load-bearing decisions:
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────────┐
 │  LLM / ONNX         │  │  Storage (SQLite)   │  │  Ingestion Pipeline     │
 ├─────────────────────┤  ├─────────────────────┤  ├─────────────────────────┤
-│  Qwen3.5 0.8B ONNX  │  │  WAL + FTS5         │  │  Parse (CPU / Docling)  │
+│  Qwen3 0.6B ONNX GenAI  │  │  WAL + FTS5         │  │  Parse (CPU / Docling)  │
 │  enrichment + query │  │  one .db per        │  │  typed units: symbols,  │
 │  endpoint/cloud     │  │  collection         │  │   sections, tables      │
 │  for optional chat  │  │  bm25() ranking     │  │  Required staged        │
@@ -124,12 +124,12 @@ Files → Register manifest
 
 ## Chat Provider Model
 
-The LLM layer has one managed local enrichment runtime — Qwen3.5 0.8B ONNX —
+The LLM layer has one managed local enrichment runtime — Qwen3 0.6B ONNX GenAI —
 and one canonical optional endpoint provider — **`endpoint`**:
 
 | Spec                                   | Resolves to                                              |
 | -------------------------------------- | -------------------------------------------------------- |
-| `onnx/qwen3.5-0.8b`                    | managed Qwen3.5 0.8B ONNX generation on CPU             |
+| `onnx/qwen3-0.6b`                    | managed Qwen3 0.6B ONNX GenAI generation on CPU             |
 | `endpoint/<URL>/<model>` or YAML triple | `chat_base_url` + `model` + optional `chat_api_key_env` |
 | `openai/<model>`                       | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |

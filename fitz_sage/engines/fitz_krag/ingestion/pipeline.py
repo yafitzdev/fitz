@@ -122,7 +122,7 @@ class KragIngestPipeline:
         # Enricher
         from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
-        # The managed 0.8B Qwen path is most reliable when each enrichment
+        # The managed Qwen path is most reliable when each enrichment
         # response contains one compact JSON object. Summary batching remains
         # controlled by config.summary_batch_size.
         self._enricher: Any = KragEnricher(
@@ -234,9 +234,9 @@ class KragIngestPipeline:
         Populates the vocabulary store and entity graph (incremental, per
         file) and — for document files — the L1 hierarchy summary stored on
         each section's metadata. Enrichment is part of the ingestion contract;
-        if the managed model cannot run, deterministic grounded extraction keeps
-        the retrieval index queryable. Table files are summarized separately and
-        are not entity-enriched.
+        model runtime failures are surfaced instead of silently weakening the
+        retrieval index. Table files are summarized separately and are not
+        entity-enriched.
         """
         if file_type in EXTENSION_MAP:
             self._enrich_code_file(file_id)

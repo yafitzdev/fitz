@@ -2,7 +2,7 @@
 """
 LLM provider implementations.
 
-``OnnxChat`` is the managed local Qwen3.5 0.8B enrichment runtime.
+``OnnxChat`` is the managed local Qwen3 0.6B ONNX GenAI enrichment runtime.
 ``OpenAICompatChat`` / ``OpenAICompatVision`` are optional OpenAI HTTP
 clients for user-supplied endpoints such as OpenAI itself, Azure OpenAI,
 vLLM, LM Studio, Together, Fireworks, Groq, OpenRouter, and any other

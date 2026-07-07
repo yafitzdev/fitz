@@ -143,7 +143,7 @@ train them.
 
 ## Managed enrichment
 
-Qwen3.5 0.8B ONNX enrichment does not follow provider presence because it is
+Qwen3 0.6B ONNX GenAI enrichment does not follow provider presence because it is
 part of the product path. It is the standard local runtime for:
 
 - ingestion keywords and aliases;
@@ -151,9 +151,9 @@ part of the product path. It is the standard local runtime for:
 - hierarchy summaries;
 - default semantic query keywords.
 
-There is no `enrichment:` provider key. If the managed runtime cannot load,
-fitz-sage falls back to deterministic grounded metadata extraction and keeps
-retrieval queryable without a GPU or external API.
+There is no `enrichment:` provider key. The managed runtime is local CPU
+infrastructure; if it cannot load, fitz-sage raises an error instead of routing
+to an external API or silently weakening the retrieval index.
 
 ---
 
@@ -196,7 +196,7 @@ answer_expander: endpoint/expander
 
 | Feature | Config key | Product default |
 |---------|------------|-----------------|
-| Managed Qwen enrichment | internal | local runtime when available; deterministic fallback otherwise |
+| Managed Qwen enrichment | internal | local CPU runtime |
 | Pyrrho governance | `governance:` | `governance: pyrrho` |
 | ONNX reranker | `rerank:` | `rerank: onnx` |
 | Answer synthesis | `synthesizer:` | `null`, enabled only by explicit provider |

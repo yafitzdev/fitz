@@ -30,7 +30,7 @@ Query routing is automatic — summaries match analytical queries via the BM25 +
 The `KragIngestPipeline` builds the hierarchy itself — there is no
 separate hierarchy enricher. L1 summaries are produced during the
 per-file `enrich` step; the L2 summary during the corpus `finalize`
-step. Both use the managed Qwen3.5 0.8B ONNX runtime.
+step. Both use the managed Qwen3 0.6B ONNX GenAI runtime.
 
 ### At Ingestion
 
@@ -166,7 +166,7 @@ Hierarchy only activates when BM25 + the ONNX cross-encoder reranker promote a s
 
 ## Dependencies
 
-- Managed Qwen3.5 0.8B ONNX runtime
+- Managed Qwen3 0.6B ONNX GenAI runtime
 - Summaries stored in the same SQLite collection as sections
 
 ## Performance Considerations

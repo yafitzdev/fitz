@@ -9,27 +9,23 @@ One batched call takes ~20s.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.query_analyzer import (
     QueryAnalysis,
-    QueryType,
     parse_analysis_dict,
 )
 from fitz_sage.retrieval.detection.detectors.expansion import expand_terms
 from fitz_sage.retrieval.detection.modules import distribute_to_modules
 from fitz_sage.retrieval.rewriter.rewriter import parse_rewrite_dict
-from fitz_sage.retrieval.rewriter.types import RewriteResult, RewriteType
+from fitz_sage.retrieval.rewriter.types import RewriteResult
 
 if TYPE_CHECKING:
     from fitz_sage.llm.factory import ChatFactory
     from fitz_sage.retrieval.detection.modules.base import DetectionModule
     from fitz_sage.retrieval.detection.protocol import DetectionCategory, DetectionResult
-
-logger = logging.getLogger(__name__)
 
 _PROMPT_TEMPLATE = """Analyze this search query. Return a single JSON object with {section_list}.
 {history_section}
@@ -95,14 +91,25 @@ _EXTENDED_INSTRUCTIONS = """\
 - domain: primary domain vocabulary of the query"""
 
 _KEYWORDS_JSON = """\
-  "keywords": ["term", "term", ...]"""
+  "keywords": []"""
 
 _KEYWORDS_INSTRUCTIONS = """\
 ## keywords
-- 5-10 terms a relevant document would use to discuss this query:
-  synonyms, acronym expansions, sibling concepts, domain vocabulary
-- Single words or short phrases — broaden the query's vocabulary,
-  do not just repeat the words already in the query"""
+- Produce 5-10 concrete retrieval keywords or short search phrases.
+- Use real synonyms, acronym expansions, sibling concepts, and domain vocabulary.
+- Do not copy schema placeholders such as "term", "keyword", or "actual phrase".
+- Avoid repeating the exact query unless it is itself a useful search phrase."""
+
+_KEYWORD_PLACEHOLDERS = {
+    "...",
+    "actual phrase",
+    "keyword",
+    "keywords",
+    "phrase",
+    "search phrase",
+    "term",
+    "terms",
+}
 
 
 @dataclass
@@ -122,7 +129,6 @@ class QueryBatcher:
 
     chat_factory: "ChatFactory"
     detection_modules: list["DetectionModule"] = field(default_factory=list)
-    fallback_only: bool = False
 
     def batch_classify(
         self,
@@ -164,17 +170,11 @@ class QueryBatcher:
             conversation_context=conversation_context,
         )
 
-        if self.fallback_only:
-            raw = {}
-        else:
-            try:
-                chat = self.chat_factory("fast")
-                response = chat.chat([{"role": "user", "content": prompt}])
-                raw = parse_llm_json(response)
-            except Exception as e:
-                self.fallback_only = True
-                logger.warning(f"Batched query intelligence failed: {e}")
-                raw = {}
+        chat = self.chat_factory("fast")
+        response = chat.chat([{"role": "user", "content": prompt}])
+        raw = parse_llm_json(response)
+        if not isinstance(raw, dict):
+            raise ValueError("batched query intelligence returned non-object JSON")
 
         return self._distribute(
             raw,
@@ -270,56 +270,57 @@ class QueryBatcher:
         include_extended: bool = False,
         include_keywords: bool = False,
     ) -> BatchResult:
-        """Distribute parsed JSON to per-section parsers with independent fallbacks."""
+        """Distribute parsed JSON to per-section parsers.
+
+        The caller already chose to use an LLM-backed batcher. Missing sections
+        or parser failures are treated as model output errors instead of
+        silently converting the call into deterministic query prep.
+        """
         result = BatchResult()
 
         if include_analysis:
             analysis_data = raw.get("analysis")
-            if isinstance(analysis_data, dict):
-                try:
-                    result.analysis = parse_analysis_dict(analysis_data, query)
-                except Exception:
-                    pass
-            if result.analysis is None:
-                result.analysis = QueryAnalysis(
-                    primary_type=QueryType.GENERAL, confidence=0.3, refined_query=query
-                )
+            if not isinstance(analysis_data, dict):
+                raise ValueError("batched query intelligence missing `analysis` object")
+            try:
+                result.analysis = parse_analysis_dict(analysis_data, query)
+            except Exception as e:
+                raise ValueError("batched query intelligence returned invalid `analysis`") from e
 
         if include_detection and active_modules:
             detection_data = raw.get("detection")
-            if isinstance(detection_data, dict):
-                try:
-                    result.detection_results = distribute_to_modules(detection_data, active_modules)
-                except Exception:
-                    pass
-            if result.detection_results is None:
-                result.detection_results = {m.category: m.not_detected() for m in active_modules}
+            if not isinstance(detection_data, dict):
+                raise ValueError("batched query intelligence missing `detection` object")
+            try:
+                result.detection_results = distribute_to_modules(detection_data, active_modules)
+            except Exception as e:
+                raise ValueError("batched query intelligence returned invalid `detection`") from e
 
         if include_rewriting:
             rewrite_data = raw.get("rewriting")
-            if isinstance(rewrite_data, dict):
-                try:
-                    result.rewrite_result = parse_rewrite_dict(rewrite_data, query)
-                except Exception:
-                    pass
-            if result.rewrite_result is None:
-                result.rewrite_result = RewriteResult(
-                    original_query=query,
-                    rewritten_query=query,
-                    rewrite_type=RewriteType.NONE,
-                    confidence=0.0,
-                )
+            if not isinstance(rewrite_data, dict):
+                raise ValueError("batched query intelligence missing `rewriting` object")
+            try:
+                result.rewrite_result = parse_rewrite_dict(rewrite_data, query)
+            except Exception as e:
+                raise ValueError("batched query intelligence returned invalid `rewriting`") from e
 
         if include_extended:
             extended_data = raw.get("extended")
-            if isinstance(extended_data, dict):
-                result.extended_signals = extended_data
+            if not isinstance(extended_data, dict):
+                raise ValueError("batched query intelligence missing `extended` object")
+            result.extended_signals = extended_data
 
         if include_keywords:
             llm_keywords: list[str] = []
             kw_data = raw.get("keywords")
-            if isinstance(kw_data, list):
-                llm_keywords = [str(k).strip() for k in kw_data if isinstance(k, str) and k.strip()]
+            if not isinstance(kw_data, list):
+                raise ValueError("batched query intelligence missing `keywords` array")
+            llm_keywords = [
+                value
+                for value in (str(k).strip() for k in kw_data if isinstance(k, str))
+                if value and value.lower() not in _KEYWORD_PLACEHOLDERS
+            ]
             # Fuse deterministic dict expansion (synonyms / acronyms) — always
             # available, independent of whether the LLM section parsed.
             seen: set[str] = set()

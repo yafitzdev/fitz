@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from hashlib import sha256
 
 import pytest
@@ -20,6 +21,22 @@ def _snapshot(tmp_path, *, with_model: bool = True):
     snapshot = tmp_path / "models--qwen" / "snapshots" / "abc123"
     (snapshot / DEFAULT_QWEN_ONNX_SUBFOLDER).mkdir(parents=True)
     (snapshot / "tokenizer.json").write_text("{}", encoding="utf-8")
+    (snapshot / "genai_config.json").write_text(
+        json.dumps(
+            {
+                "model": {
+                    "decoder": {
+                        "filename": "model.onnx",
+                        "session_options": {
+                            "provider_options": [{"webgpu": {"forceCpuNodeNames": "x"}}]
+                        },
+                    }
+                },
+                "search": {"do_sample": True, "temperature": 1, "max_length": 40960},
+            }
+        ),
+        encoding="utf-8",
+    )
     model_bytes = b"fake-onnx"
     data_bytes = b"fake-weights"
     if with_model:
@@ -50,7 +67,8 @@ def test_ensure_available_returns_inspectable_snapshot_metadata(monkeypatch, tmp
     assert (
         f"{DEFAULT_QWEN_ONNX_SUBFOLDER}/{DEFAULT_QWEN_ONNX_FILE}_data*" in calls["allow_patterns"]
     )
-    assert info.name == "qwen3.5-0.8b"
+    assert "genai_config.json" in calls["allow_patterns"]
+    assert info.name == "qwen3-0.6b"
     assert info.repo_id == DEFAULT_QWEN_MODEL_ID
     assert info.revision == "abc123"
     model_path = snapshot / DEFAULT_QWEN_ONNX_SUBFOLDER / DEFAULT_QWEN_ONNX_FILE
@@ -65,6 +83,36 @@ def test_ensure_available_returns_inspectable_snapshot_metadata(monkeypatch, tmp
         digest.update(content)
     assert info.bundle_sha256 == digest.hexdigest()
     assert info.as_dict()["repo_id"] == DEFAULT_QWEN_MODEL_ID
+
+
+def test_prepare_genai_runtime_writes_cpu_config(monkeypatch, tmp_path):
+    """The managed runtime uses a CPU GenAI config without mutating the HF snapshot."""
+    snapshot, _, _ = _snapshot(tmp_path)
+
+    def fake_snapshot_download(*, repo_id, allow_patterns):
+        return str(snapshot)
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", fake_snapshot_download)
+    monkeypatch.setattr(
+        "fitz_sage.core.paths.FitzPaths.user_home",
+        classmethod(lambda cls: tmp_path / ".fitz"),
+    )
+
+    chat = OnnxChat()
+    info = chat.ensure_available()
+    runtime_dir = chat._prepare_genai_runtime(info)
+
+    runtime_config = json.loads((runtime_dir / "genai_config.json").read_text(encoding="utf-8"))
+    assert runtime_config["model"]["decoder"]["filename"] == (
+        f"{DEFAULT_QWEN_ONNX_SUBFOLDER}/{DEFAULT_QWEN_ONNX_FILE}"
+    )
+    assert runtime_config["model"]["decoder"]["session_options"]["provider_options"] == []
+    assert runtime_config["search"]["do_sample"] is False
+    assert runtime_config["search"]["temperature"] == 0
+    assert runtime_config["search"]["max_length"] == 8192
+    assert (runtime_dir / DEFAULT_QWEN_ONNX_SUBFOLDER / DEFAULT_QWEN_ONNX_FILE).exists()
+    source_config = json.loads((snapshot / "genai_config.json").read_text(encoding="utf-8"))
+    assert source_config["model"]["decoder"]["filename"] == "model.onnx"
 
 
 def test_ensure_available_rejects_incomplete_snapshot(monkeypatch, tmp_path):

@@ -8,15 +8,15 @@ The standard retrieval path uses local CPU models.
 
 | Job | Model | Runtime | Why it exists |
 |---|---|---|---|
-| Enrichment and semantic query keywords | `onnx-community/Qwen3.5-0.8B-Text-ONNX` (`qwen3.5-0.8b`) | raw `onnxruntime`, CPU | Required metadata backbone for better recall. |
+| Enrichment and semantic query keywords | `onnx-community/Qwen3-0.6B-DQ-ONNX` (`qwen3-0.6b`) | `onnxruntime-genai`, CPU | Required metadata backbone for better recall. |
 | Reranking | `Alibaba-NLP/gte-reranker-modernbert-base` | raw `onnxruntime`, CPU | Cross-encoder precision over broad recall candidates. |
 | Governance | `yafitzdev/pyrrho-v2-nano-g1` | raw `onnxruntime`, CPU | Sufficiency/conflict/insufficiency classifier for ranked evidence prefixes with native v2 metadata. |
 
 None of these models require `optimum`, `llama.cpp`, GGUF, or an
-OpenAI-compatible server. Qwen, the reranker, and Pyrrho v2 all load pre-built
-ONNX graphs in the standard retrieval path. `torch` and `safetensors` are only
-needed for old custom Pyrrho packages installed through the `legacy-pyrrho`
-extra.
+OpenAI-compatible server. Qwen uses ONNX Runtime GenAI; the reranker and Pyrrho
+v2 load pre-built ONNX graphs through plain ONNX Runtime. `torch` and
+`safetensors` are only needed for old custom Pyrrho packages installed through
+the `legacy-pyrrho` extra.
 
 ## Download Behavior
 
@@ -27,14 +27,14 @@ symlink privileges.
 
 | Model | Trigger |
 |---|---|
-| Qwen3.5 0.8B ONNX | First query or ingest that can use local enrichment or semantic query keywords. |
+| Qwen3 0.6B ONNX GenAI | First query or ingest that can use local enrichment or semantic query keywords. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
 | Pyrrho v2 | First governance cutoff evaluation. |
 
 The CLI may print messages such as:
 
 ```text
-Preparing managed Qwen3.5 0.8B ONNX enrichment snapshot...
+Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...
 Managed Qwen snapshot ready (<revision>).
 ```
 
@@ -82,7 +82,7 @@ Windows, use a normal absolute path after the provider prefix, for example
 ## Qwen Enrichment
 
 Qwen enrichment is not a user-selected endpoint provider. It is part of the
-local retrieval product when the managed ONNX runtime can initialize:
+local retrieval product:
 
 - query-time semantic keyword expansion
 - file keyword and alias extraction
@@ -91,10 +91,9 @@ local retrieval product when the managed ONNX runtime can initialize:
 - L2 corpus hierarchy
 - demand summaries for surfaced files
 
-If the local Qwen runtime cannot initialize, deterministic grounded extraction
-keeps keywords, identifiers, and entities available so retrieval remains CPU
-local and queryable. The foreground query path can return before all deep
-enrichment is complete.
+If the local Qwen runtime cannot initialize, fitz-sage raises an error instead
+of silently weakening the retrieval index. The foreground query path can return
+before all deep enrichment is complete after the managed runtime is available.
 
 ## Optional Synthesis Is Separate
 

@@ -426,36 +426,33 @@ class QueryPipeline:
         need_llm_analysis = fast_analysis is None
         need_detection = self._needs_detection(sanitized)
 
-        try:
-            batch_result = self._query_batcher.batch_classify(
-                sanitized,
-                include_analysis=need_llm_analysis,
-                include_detection=need_detection,
-                include_rewriting=True,
-                include_extended=True,
-                include_keywords=True,
-                conversation_context=metadata.get("conversation_context"),
+        batch_result = self._query_batcher.batch_classify(
+            sanitized,
+            include_analysis=need_llm_analysis,
+            include_detection=need_detection,
+            include_rewriting=True,
+            include_extended=True,
+            include_keywords=True,
+            conversation_context=metadata.get("conversation_context"),
+        )
+        llm_detection = (
+            self._build_detection_summary(batch_result.detection_results)
+            if need_detection and batch_result.detection_results is not None
+            else plan.detection
+        )
+        plan = plan_from_batch_result(
+            sanitized,
+            batch_result,
+            fallback_analysis=fast_analysis or plan.analysis,
+            detection=llm_detection,
+            fallback_plan=plan,
+        )
+        if plan.rewrite_result and plan.retrieval_query != sanitized:
+            logger.debug(
+                "Query rewritten",
+                original_preview=sanitized[:50],
+                rewritten_preview=plan.retrieval_query[:50],
             )
-            llm_detection = (
-                self._build_detection_summary(batch_result.detection_results)
-                if need_detection and batch_result.detection_results is not None
-                else plan.detection
-            )
-            plan = plan_from_batch_result(
-                sanitized,
-                batch_result,
-                fallback_analysis=fast_analysis or plan.analysis,
-                detection=llm_detection,
-                fallback_plan=plan,
-            )
-            if plan.rewrite_result and plan.retrieval_query != sanitized:
-                logger.debug(
-                    "Query rewritten",
-                    original_preview=sanitized[:50],
-                    rewritten_preview=plan.retrieval_query[:50],
-                )
-        except Exception as e:
-            logger.warning(f"Batched query intelligence failed: {e}")
 
         return plan
 
@@ -473,18 +470,14 @@ class QueryPipeline:
         if batcher is None:
             return plan
 
-        try:
-            batch_result = batcher.batch_classify(
-                query,
-                include_analysis=False,
-                include_detection=False,
-                include_rewriting=False,
-                include_extended=False,
-                include_keywords=True,
-            )
-        except Exception as e:
-            logger.debug(f"Semantic query keyword expansion failed: {e}")
-            return plan
+        batch_result = batcher.batch_classify(
+            query,
+            include_analysis=False,
+            include_detection=False,
+            include_rewriting=False,
+            include_extended=False,
+            include_keywords=True,
+        )
 
         if not batch_result.keywords:
             return plan

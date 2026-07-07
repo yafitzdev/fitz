@@ -5,7 +5,7 @@ Configuration parser for LLM providers.
 There are two chat paths in fitz-sage:
 
 ``OnnxChat``
-              the managed in-process Qwen3.5 0.8B enrichment runtime.
+              the managed in-process Qwen3 0.6B ONNX GenAI enrichment runtime.
               This is the default for ingestion enrichment and needs no
               external inference server.
 ``OpenAICompatChat`` / ``OpenAICompatVision``
@@ -18,7 +18,7 @@ Provider names are configuration knobs over those implementations:
 
     endpoint  — bring your own URL + model. Default (and only) auth is
                 NoAuth; opt-in to ApiKeyAuth via ``auth.api_key_env``.
-    onnx      — managed local Qwen3.5 0.8B ONNX generation on CPU.
+    onnx      — managed local Qwen3 0.6B ONNX GenAI generation on CPU.
     openai    — preset for ``https://api.openai.com/v1`` + OPENAI_API_KEY,
                 with default models from OPENAI_CHAT_MODELS.
     azure_openai
@@ -66,7 +66,7 @@ HEADER_FORMAT_MAP: dict[str, str] = {
 _REMOVED_PROVIDERS: dict[str, str] = {
     "ollama": (
         "The 'ollama' provider has been removed. "
-        "Required enrichment is managed in-process with Qwen3.5 0.8B ONNX "
+        "Required enrichment is managed in-process with Qwen3 0.6B ONNX GenAI "
         "and is not user-configurable.\n\n"
         "For optional Ollama answer synthesis, use the 'endpoint' provider with "
         "Ollama's OpenAI-compatible URL:\n\n"
@@ -375,7 +375,7 @@ def create_chat_provider(
     Create a chat provider from a spec string.
 
     Args:
-        spec: ``provider`` or ``provider/model`` (e.g. ``onnx/qwen3.5-0.8b``,
+        spec: ``provider`` or ``provider/model`` (e.g. ``onnx/qwen3-0.6b``,
             ``endpoint/qwen2.5-7b``, ``openai/gpt-4o``,
             ``azure_openai/my-deployment``).
         config: Optional config dict (auth, base_url, etc.).
@@ -450,7 +450,7 @@ def create_rerank_provider(
     """Create a rerank provider from a spec string.
 
     The canonical backend is ``onnx`` — an INT8 ONNX cross-encoder
-    served via `optimum.onnxruntime`. Default model is
+    loaded directly through ONNX Runtime. Default model is
     `Alibaba-NLP/gte-reranker-modernbert-base`. Override with
     ``onnx/<hf-model-id>`` to use a different cross-encoder.
 

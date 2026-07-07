@@ -9,7 +9,6 @@ adapted for KRAG's data model (symbol dicts + section dicts instead of Chunks).
 from __future__ import annotations
 
 import json
-import logging
 import re
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -18,8 +17,6 @@ from fitz_sage.core.json_utils import parse_llm_json
 
 if TYPE_CHECKING:
     from fitz_sage.llm.providers.base import ChatProvider
-
-logger = logging.getLogger(__name__)
 
 _IDENTIFIER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b[A-Z][A-Z0-9]{1,12}-[A-Z0-9-]*\d[A-Z0-9-]*\b"),
@@ -57,7 +54,6 @@ class KragEnricher:
     def __init__(self, chat: "ChatProvider", batch_size: int = 15):
         self._chat = chat
         self._batch_size = batch_size
-        self._fallback_only = False
 
     def enrich_symbols(self, symbol_dicts: list[dict[str, Any]]) -> None:
         """Enrich symbol dicts in-place with keywords, entities, and temporal metadata."""
@@ -139,9 +135,6 @@ class KragEnricher:
         strategy: EnrichmentStrategy,
     ) -> list[dict[str, Any]]:
         """Run a single LLM call to extract keywords + entities for a batch."""
-        if self._fallback_only:
-            return _deterministic_enrichments(items, strategy)
-
         parts = []
         for i, item in enumerate(items):
             parts.append(
@@ -153,54 +146,43 @@ class KragEnricher:
             )
         prompt = "\n\n".join(parts)
 
+        messages = [
+            {
+                "role": "system",
+                "content": _strategy_prompt(strategy, len(items)),
+            },
+            {"role": "user", "content": prompt},
+        ]
+        response = self._chat.chat(
+            messages,
+            max_tokens=_enrichment_max_tokens(len(items)),
+            temperature=0,
+        )
         try:
-            messages = [
-                {
-                    "role": "system",
-                    "content": _strategy_prompt(strategy, len(items)),
-                },
-                {"role": "user", "content": prompt},
-            ]
-            response = self._chat.chat(
-                messages,
-                max_tokens=_enrichment_max_tokens(len(items)),
+            return self._parse_response(response, len(items))
+        except ValueError:
+            retry_response = self._chat.chat(
+                [
+                    *messages,
+                    {
+                        "role": "user",
+                        "content": (
+                            "Retry the same enrichment. The previous response was not valid "
+                            f"JSON for exactly {len(items)} item block(s). Return only the "
+                            "JSON array, with no markdown and no extra objects."
+                        ),
+                    },
+                ],
+                max_tokens=_RETRY_ENRICHMENT_TOKENS,
                 temperature=0,
             )
             try:
-                return self._parse_response(response, len(items))
-            except ValueError:
-                retry_response = self._chat.chat(
-                    [
-                        *messages,
-                        {
-                            "role": "user",
-                            "content": (
-                                "Retry the same enrichment. The previous response was not valid "
-                                f"JSON for exactly {len(items)} item block(s). Return only the "
-                                "JSON array, with no markdown and no extra objects."
-                            ),
-                        },
-                    ],
-                    max_tokens=_RETRY_ENRICHMENT_TOKENS,
-                    temperature=0,
-                )
-                try:
-                    return self._parse_response(retry_response, len(items))
-                except ValueError:
-                    logger.warning(
-                        "Enrichment model returned invalid JSON twice; "
-                        "using deterministic fallback for %s item(s).",
-                        len(items),
-                    )
-                    return _deterministic_enrichments(items, strategy)
-        except Exception as e:
-            self._fallback_only = True
-            logger.warning(
-                "Enrichment model call failed; using deterministic fallback for %s item(s): %s",
-                len(items),
-                e,
-            )
-            return _deterministic_enrichments(items, strategy)
+                return self._parse_response(retry_response, len(items))
+            except ValueError as e:
+                raise ValueError(
+                    "enrichment model returned invalid JSON twice; required "
+                    f"{len(items)} item block(s)"
+                ) from e
 
     def _parse_response(self, response: str, expected_count: int) -> list[dict[str, Any]]:
         """Parse LLM response into list of enrichment dicts."""

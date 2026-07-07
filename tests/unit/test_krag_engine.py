@@ -1312,7 +1312,7 @@ class TestPoint:
             engine.point(source, start_worker=False, progress=progress)
 
         engine._enricher_chat.ensure_available.assert_called_once()
-        progress.assert_any_call("Preparing managed Qwen3.5 0.8B ONNX enrichment snapshot...")
+        progress.assert_any_call("Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...")
         progress.assert_any_call("Managed Qwen snapshot ready (abc123456789).")
 
     def test_point_deletes_stale_files_outside_current_manifest(self, tmp_path):

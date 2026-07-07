@@ -67,7 +67,7 @@ class TestUnknownProvider:
         """The managed ONNX Qwen provider is available through get_chat."""
         from fitz_sage.llm.providers.onnx_chat import DEFAULT_QWEN_MODEL_ID, OnnxChat
 
-        chat = get_chat("onnx/qwen3.5-0.8b")
+        chat = get_chat("onnx/qwen3-0.6b")
         assert isinstance(chat, OnnxChat)
         assert chat._model_id == DEFAULT_QWEN_MODEL_ID
 

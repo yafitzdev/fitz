@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from fitz_sage.core import Answer, Provenance
+from fitz_sage.core.exceptions import GenerationError
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 from tests.unit.mock_engine import build_mock_engine
 
@@ -138,31 +141,22 @@ class TestQueryRewriting:
 
         assert result is expected
 
-    def test_fallback_to_original_on_batch_error(self):
-        """When batcher raises, the original query is used with fallback analysis."""
+    def test_query_intelligence_error_is_not_silently_downgraded(self):
+        """When configured query intelligence fails, the query fails visibly."""
         engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
         query = _make_query(
             "How does the authentication system work when handling multiple sessions?"
         )
 
-        # No rewriter: rewrite_result stays None so fallback is clean
         assert engine._query_rewriter is None
         engine._query_batcher.batch_classify.side_effect = RuntimeError("LLM timeout")
 
-        expected = _wire_happy_path(engine, query.text)
+        _wire_happy_path(engine, query.text)
 
-        result = engine.answer(query)
-
-        # Batcher was called (query is 10 words > 8, so LLM analysis needed) and failed
+        with pytest.raises(GenerationError, match="LLM timeout"):
+            engine.answer(query)
         engine._query_batcher.batch_classify.assert_called_once()
-
-        # Falls back to original query text with no rewrite_result
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
-        assert call_args[0][0] == query.text
-        assert call_args[1]["rewrite_result"] is None
-
-        assert result is expected
+        engine._retrieval_router.retrieve.assert_not_called()
 
     def test_rewriting_skipped_when_rewriter_is_none(self):
         """When _query_rewriter is None, the original query flows through directly."""

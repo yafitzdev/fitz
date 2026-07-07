@@ -315,7 +315,8 @@ class FitzKragConfig(BasePluginConfig):
         default=None,
         description=(
             "Optional chat provider/model spec for LLM query prep. "
-            "None uses the deterministic no-chat planner."
+            "None uses the deterministic no-chat planner; a configured "
+            "provider must return valid query-prep JSON."
         ),
     )
 

@@ -54,13 +54,13 @@ both are part of the standard retrieval backbone.
 
 ## Chat Provider Model
 
-The LLM layer has a managed Qwen3.5 0.8B ONNX runtime for required enrichment
+The LLM layer has a managed Qwen3 0.6B ONNX GenAI runtime for required enrichment
 and a canonical **`endpoint`** provider for optional OpenAI-compatible chat. The
 other names are URL+auth presets over `endpoint`:
 
 | Spec form                              | Resolves to                                              |
 | -------------------------------------- | -------------------------------------------------------- |
-| `onnx/qwen3.5-0.8b`                    | managed local Qwen3.5 0.8B ONNX runtime                  |
+| `onnx/qwen3-0.6b`                    | managed local Qwen3 0.6B ONNX GenAI runtime                  |
 | `endpoint` + `chat_base_url`           | the canonical form                                       |
 | `openai/<model>`                       | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |
@@ -74,7 +74,7 @@ example `http://localhost:11434/v1`.
 
 | Provider     | Purpose                                                    |
 | ------------ | ---------------------------------------------------------- |
-| `onnx`       | Managed local Qwen3.5 0.8B chat provider                   |
+| `onnx`       | Managed local Qwen3 0.6B chat provider                   |
 | `endpoint`   | Canonical OpenAI-compatible chat (any URL)                 |
 | `enterprise` | Same protocol + enterprise auth (M2M OAuth2, mTLS, CA bundle) |
 | `onnx_reranker` | Internal — INT8 ONNX cross-encoder (gte-reranker-modernbert-base) |
@@ -177,7 +177,7 @@ preserve (e.g. a custom XML dialect).
 Ingestion enrichment (keyword / entity / temporal extraction and the
 L1/L2 hierarchy summaries) is built into the KRAG ingestion pipeline,
 not a plugin surface and not user-configurable. It always uses the managed
-Qwen3.5 0.8B ONNX runtime. See [ENRICHMENT.md](ENRICHMENT.md)
+Qwen3 0.6B ONNX GenAI runtime. See [ENRICHMENT.md](ENRICHMENT.md)
 for the architecture and [`features/ingestion/hierarchical-rag.md`](features/ingestion/hierarchical-rag.md)
 for the hierarchy details.
 

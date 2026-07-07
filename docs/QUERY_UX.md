@@ -60,7 +60,7 @@ flags:
 | Message | Meaning |
 |---|---|
 | `Registering ...` | fitz-sage found a source directory and collection target. |
-| `Preparing managed Qwen3.5 0.8B ONNX enrichment snapshot...` | Local enrichment model files are being downloaded or verified. |
+| `Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...` | Local enrichment model files are being downloaded or verified. |
 | `Parsing documents...` | Foreground indexing is building the query-ready surface. |
 | `Search surface ready; enrichment continues.` | Retrieval can run while deeper enrichment proceeds. |
 | `Analyzing query...` | Query profile and semantic keywords are being prepared. |
@@ -76,7 +76,7 @@ flags:
 - `source`: current working directory
 - `collection`: derived from the source folder name
 - retrieval: broad recall -> ONNX rerank -> Pyrrho cutoff
-- enrichment: managed Qwen3.5 0.8B ONNX, required
+- enrichment: managed Qwen3 0.6B ONNX GenAI, required
 - answer synthesis: not used
 
 Users should reach for `fitz retrieve` only when they need advanced evidence

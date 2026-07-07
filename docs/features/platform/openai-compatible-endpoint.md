@@ -2,7 +2,7 @@
 # OpenAI-Compatible Endpoint Architecture
 
 **Status:** the optional endpoint/cloud chat path. Required enrichment uses
-managed Qwen3.5 0.8B ONNX; endpoint chat is for optional synthesis, query
+managed Qwen3 0.6B ONNX GenAI; endpoint chat is for optional synthesis, query
 intelligence, and vision.
 
 ## TL;DR

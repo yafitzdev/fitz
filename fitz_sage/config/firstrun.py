@@ -15,7 +15,7 @@ Detection order:
 2. **OpenAI cloud** — falls back to ``openai/gpt-4o-mini`` if
    ``OPENAI_API_KEY`` is set, again for optional synthesis only.
 3. **No provider** — writes a minimal config. The first ingest downloads
-   Qwen3.5 0.8B ONNX into the Hugging Face cache and runs it locally.
+   Qwen3 0.6B ONNX GenAI into the Hugging Face cache and runs it locally.
 
 There is no Ollama-specific enrichment path; Ollama is only an optional
 OpenAI-compatible endpoint for synthesis. fitz-sage uses no embeddings;
@@ -236,7 +236,7 @@ def _configure_local_enrichment_required() -> bool:
     config_path = write_local_enrichment_config()
     print("\n  No optional chat endpoint found.")
     print(f"  Wrote minimal config; enrichment uses managed {DEFAULT_ENRICHMENT_MODEL}.")
-    print("  First ingest will download the managed Qwen3.5 0.8B ONNX weights locally.")
+    print("  First ingest will download the managed Qwen3 0.6B ONNX GenAI weights locally.")
     print(f"\n  Config: {config_path}\n")
     return True
 

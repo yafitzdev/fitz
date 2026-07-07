@@ -23,7 +23,7 @@ chat_base_url: http://127.0.0.1:8080/v1
 
 This is enough for `fitz query`, `fitz retrieve`, and `fitz_sage.evidence(...)` with local
 enrichment: no hosted API key and no external inference server are required.
-On first ingestion, fitz-sage downloads the managed Qwen3.5 0.8B ONNX weights
+On first ingestion, fitz-sage downloads the managed Qwen3 0.6B ONNX GenAI weights
 into the Hugging Face cache and runs them on CPU.
 
 To enable synthesized answers through a hosted endpoint:
@@ -53,7 +53,7 @@ Role-specific provider fields bind LLM-backed stages:
 | `synthesizer`        | Optional answer generation                       |
 
 Required keyword/entity enrichment, hierarchy summaries, and default semantic
-query keywords always use Fitz's managed Qwen3.5 0.8B ONNX runtime. There is no
+query keywords always use Fitz's managed Qwen3 0.6B ONNX GenAI runtime. There is no
 config key for that internal model. Optional LLM-backed roles take a provider/model spec. For `endpoint`,
 the model name is the part after the slash and `chat_base_url` supplies the
 OpenAI-compatible URL:
@@ -72,14 +72,14 @@ factory directly.
 
 ## Chat provider model
 
-Required enrichment uses Qwen3.5 0.8B through an in-process CPU ONNX runtime
+Required enrichment uses Qwen3 0.6B through an in-process CPU ONNX GenAI runtime
 managed by fitz-sage. The model is downloaded on first ingest if missing.
 Optional synthesis, query intelligence, and vision can use **`endpoint`** or
 the cloud/enterprise presets:
 
 | Spec form                       | Resolves to                                              |
 | ------------------------------- | -------------------------------------------------------- |
-| `onnx/qwen3.5-0.8b`             | managed local Qwen3.5 0.8B ONNX runtime                  |
+| `onnx/qwen3-0.6b`             | managed local Qwen3 0.6B ONNX GenAI runtime                  |
 | `endpoint` + `chat_base_url`    | the canonical form                                       |
 | `openai/<model>`                | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`     | endpoint with Azure deployment URL                       |
@@ -100,7 +100,7 @@ not boolean flags:
 
 | Feature            | Standard / enabled when                  | Disabled when                       |
 | ------------------ | ---------------------------------------- | ----------------------------------- |
-| Managed enrichment | always uses local `onnx/qwen3.5-0.8b`    | not disabled                        |
+| Managed enrichment | always uses local `onnx/qwen3-0.6b`    | not disabled                        |
 | ONNX reranker      | `rerank: onnx` (default)                 | not disabled                        |
 | Governance         | `governance: pyrrho` (default)           | not disabled                        |
 | Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |

@@ -140,7 +140,7 @@ def plan_from_batch_result(
     detection: DetectionSummary | None,
     fallback_plan: QueryPlan | None = None,
 ) -> QueryPlan:
-    """Normalize the optional LLM enhancer output into a QueryPlan."""
+    """Normalize configured LLM query-prep output into a QueryPlan."""
     retrieval_query = query
     rewrite_result = batch_result.rewrite_result
     if rewrite_result and rewrite_result.rewritten_query != query:

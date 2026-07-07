@@ -63,7 +63,7 @@ CLI waits for before returning the first evidence pack.
 
 ### 3. Keyword Enrichment
 
-`keyword_file` uses managed Qwen3.5 0.8B ONNX to add semantic keywords and
+`keyword_file` uses managed Qwen3 0.6B ONNX GenAI to add semantic keywords and
 aliases. Once a file reaches `QUERY_READY`, it has the minimum Qwen enrichment
 needed by steady-state retrieval.
 

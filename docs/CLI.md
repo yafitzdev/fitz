@@ -32,7 +32,7 @@ fitz answer "What is the refund policy?" --source ./docs \
 
 `fitz query` is the product default. It returns a ranked `EvidencePack`; it does
 not generate an answer. Required retrieval enrichment runs through the managed
-Qwen3.5 0.8B ONNX model on CPU, so no API key or external inference server is
+Qwen3 0.6B ONNX GenAI model on CPU, so no API key or external inference server is
 needed for retrieval.
 
 ---
@@ -175,7 +175,7 @@ chat_base_url: http://127.0.0.1:8080/v1
 ```
 
 This is enough for `fitz query`, `fitz retrieve`, and
-`fitz_sage.evidence(...)`. Managed Qwen3.5 0.8B ONNX enrichment, the ONNX
+`fitz_sage.evidence(...)`. Managed Qwen3 0.6B ONNX GenAI enrichment, the ONNX
 reranker, and Pyrrho governance all run locally on CPU.
 
 See [CONFIG.md](CONFIG.md) for every key and

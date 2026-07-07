@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
 # ---------------------------------------------------------------------------
@@ -284,15 +286,15 @@ class TestBatchProcessing:
 
 
 # ---------------------------------------------------------------------------
-# TestGracefulFallback
+# TestFailureHandling
 # ---------------------------------------------------------------------------
 
 
-class TestEnrichmentFallback:
+class TestEnrichmentFailureHandling:
     """Tests for enrichment failure handling."""
 
-    def test_llm_exception_uses_deterministic_fallback(self):
-        """When the managed model cannot run, exact grounded metadata still indexes."""
+    def test_llm_exception_is_not_silently_downgraded(self):
+        """Managed model runtime failures should fail the required enrichment path."""
         chat = _make_chat(side_effect=RuntimeError("LLM unreachable"))
         enricher = KragEnricher(chat, batch_size=15)
         symbols = [
@@ -303,14 +305,13 @@ class TestEnrichmentFallback:
             }
         ]
 
-        enricher.enrich_symbols(symbols)
+        with pytest.raises(RuntimeError, match="LLM unreachable"):
+            enricher.enrich_symbols(symbols)
 
-        assert symbols[0]["keywords"] == ["TC-4812", "v2.3"]
-        assert {"name": "TC-4812", "type": "identifier"} in symbols[0]["entities"]
-        assert {"name": "Acme Corp", "type": "entity"} in symbols[0]["entities"]
+        assert "keywords" not in symbols[0]
 
-    def test_malformed_json_uses_deterministic_fallback(self):
-        """When model JSON is unusable, exact grounded identifiers still index."""
+    def test_malformed_json_raises_after_strict_retry(self):
+        """Unusable model JSON is retried once, then surfaced as an error."""
         chat = _make_chat(response="This is not JSON at all")
         enricher = KragEnricher(chat, batch_size=15)
         symbols = [
@@ -321,16 +322,14 @@ class TestEnrichmentFallback:
             }
         ]
 
-        enricher.enrich_symbols(symbols)
+        with pytest.raises(ValueError, match="invalid JSON twice"):
+            enricher.enrich_symbols(symbols)
 
         assert chat.chat.call_count == 2
-        assert symbols[0]["keywords"] == ["TC-4812", "v2.3"]
-        assert {"name": "TC-4812", "type": "identifier"} in symbols[0]["entities"]
-        assert {"name": "v2.3", "type": "identifier"} in symbols[0]["entities"]
-        assert {"name": "Acme Corp", "type": "entity"} in symbols[0]["entities"]
+        assert "keywords" not in symbols[0]
 
     def test_retries_once_when_first_response_is_invalid_json(self):
-        """A malformed first response gets one strict retry before fallback."""
+        """A malformed first response gets one strict retry."""
         good_response = _make_enrichment_response([{"keywords": ["retry"], "entities": []}])
         chat = _make_chat()
         chat.chat.side_effect = ["truncated json", good_response]
@@ -344,8 +343,8 @@ class TestEnrichmentFallback:
         retry_messages = chat.chat.call_args.args[0]
         assert "Retry the same enrichment" in retry_messages[-1]["content"]
 
-    def test_partial_batch_failure_falls_back_for_failed_batch(self):
-        """First batch can use model output while a later batch falls back."""
+    def test_partial_batch_failure_surfaces_after_completed_batches(self):
+        """Earlier batches stay enriched, but a later runtime failure is visible."""
         good_response = _make_enrichment_response([{"keywords": ["good"], "entities": []}])
         chat = _make_chat()
         chat.chat.side_effect = [
@@ -358,14 +357,14 @@ class TestEnrichmentFallback:
             {"name": "second", "kind": "function", "summary": "Handles TC-9001."},
         ]
 
-        enricher.enrich_symbols(symbols)
+        with pytest.raises(RuntimeError, match="timeout"):
+            enricher.enrich_symbols(symbols)
 
         assert symbols[0]["keywords"] == ["good"]
-        assert symbols[1]["keywords"] == ["TC-9001"]
-        assert {"name": "TC-9001", "type": "identifier"} in symbols[1]["entities"]
+        assert "keywords" not in symbols[1]
 
-    def test_sections_fall_back_on_failure(self):
-        """Sections also get deterministic metadata when the model call fails."""
+    def test_sections_surface_runtime_failure(self):
+        """Section enrichment also fails visibly when the model call fails."""
         chat = _make_chat(side_effect=RuntimeError("API error"))
         enricher = KragEnricher(chat, batch_size=15)
         sections = [
@@ -376,10 +375,10 @@ class TestEnrichmentFallback:
             }
         ]
 
-        enricher.enrich_sections(sections)
+        with pytest.raises(RuntimeError, match="API error"):
+            enricher.enrich_sections(sections)
 
-        assert "INC-7000" in sections[0]["keywords"]
-        assert {"name": "INC-7000", "type": "identifier"} in sections[0]["entities"]
+        assert "keywords" not in sections[0]
 
     def test_response_with_code_fence(self):
         """LLM response wrapped in markdown code fence is parsed correctly."""

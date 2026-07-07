@@ -409,8 +409,8 @@ class FitzKragEngine:
         )
 
         # Query prep defaults to the deterministic planner. If
-        # query_intelligence is configured, the batcher uses that provider as
-        # an optional LLM enhancer.
+        # query_intelligence is configured, the batcher uses that provider and
+        # treats provider/model failures as query failures.
         from fitz_sage.engines.fitz_krag.query_batcher import QueryBatcher
         from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
         from fitz_sage.retrieval.detection.modules import DEFAULT_MODULES
@@ -1402,7 +1402,7 @@ class FitzKragEngine:
             return
 
         _progress = progress or (lambda _: None)
-        _progress("Preparing managed Qwen3.5 0.8B ONNX enrichment snapshot...")
+        _progress("Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...")
         info = ensure_available()
         revision = getattr(info, "revision", "")
         short_revision = revision[:12] if revision else "unknown"

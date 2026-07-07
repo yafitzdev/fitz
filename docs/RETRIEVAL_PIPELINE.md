@@ -239,7 +239,7 @@ the query contract/profile calls for a representative corpus overview.
 
 | Model/runtime | Required? | Used for |
 |---------------|-----------|----------|
-| Managed Qwen3.5 0.8B ONNX | yes | ingestion keywords/entities/hierarchy and default semantic query keywords |
+| Managed Qwen3 0.6B ONNX GenAI | yes | ingestion keywords/entities/hierarchy and default semantic query keywords |
 | ONNX reranker | default | candidate precision after broad recall |
 | Pyrrho v2 nano g1 | default product governance | native evidence verdict, failure mode, retrieval intents, and evidence-kind metadata |
 | OpenAI-compatible endpoint | optional | answer synthesis, optional query intelligence, optional vision parser |

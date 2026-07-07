@@ -43,7 +43,7 @@ Optional query-intelligence rewrite section
 
 4. **LLM handles extraction** - No regex or entity configuration. The configured query-intelligence model figures out what's important.
 
-5. **Graceful degradation** - If query intelligence is unavailable, retrieval falls back to deterministic planning and a single main search plus keyword/intent fanout.
+5. **Explicit failure semantics** - If `query_intelligence:` is configured, the provider must return valid query-prep JSON. Without `query_intelligence:`, retrieval uses deterministic planning plus keyword/intent fanout.
 
 ## Example
 

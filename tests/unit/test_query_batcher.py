@@ -1,25 +1,121 @@
-"""Tests for batched query intelligence fallbacks."""
+"""Tests for strict batched query intelligence handling."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import json
+
+import pytest
 
 from fitz_sage.engines.fitz_krag.query_batcher import QueryBatcher
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryType
 from fitz_sage.retrieval.rewriter.types import RewriteType
 
 
-def test_query_batcher_latches_fallback_after_provider_failure() -> None:
-    """A failed local provider should fall back deterministically for later queries."""
-    chat_factory = MagicMock(side_effect=RuntimeError("onnx provider unavailable"))
-    batcher = QueryBatcher(chat_factory=chat_factory)
+class _Chat:
+    def __init__(self, response: str | Exception) -> None:
+        self.response = response
 
-    first = batcher.batch_classify("What is the Acme refund window?")
-    second = batcher.batch_classify("What is the incident acknowledgement target?")
+    def chat(self, messages):
+        if isinstance(self.response, Exception):
+            raise self.response
+        return self.response
 
-    assert batcher.fallback_only is True
-    assert chat_factory.call_count == 1
-    assert first.analysis.primary_type is QueryType.GENERAL
-    assert first.rewrite_result.rewrite_type is RewriteType.NONE
-    assert second.analysis.primary_type is QueryType.GENERAL
-    assert second.rewrite_result.rewrite_type is RewriteType.NONE
+
+def _factory(response: str | Exception):
+    return lambda _tier: _Chat(response)
+
+
+def test_batch_classify_parses_requested_sections() -> None:
+    response = json.dumps(
+        {
+            "analysis": {
+                "primary_type": "documentation",
+                "confidence": 0.88,
+                "entities": ["refund"],
+                "refined_query": "refund policy",
+            },
+            "rewriting": {
+                "rewritten_query": "refund policy",
+                "rewrite_type": "none",
+                "confidence": 0.0,
+                "is_compound": False,
+                "decomposed_queries": [],
+                "is_ambiguous": False,
+                "disambiguated_queries": [],
+            },
+            "extended": {
+                "specificity": "narrow",
+                "answer_type": "factual",
+                "domain": "general",
+            },
+            "keywords": ["refund", "returns"],
+        }
+    )
+    batcher = QueryBatcher(chat_factory=_factory(response))
+
+    result = batcher.batch_classify(
+        "refund policy",
+        include_analysis=True,
+        include_detection=False,
+        include_rewriting=True,
+        include_extended=True,
+        include_keywords=True,
+    )
+
+    assert result.analysis is not None
+    assert result.analysis.primary_type is QueryType.DOCUMENTATION
+    assert result.rewrite_result is not None
+    assert result.rewrite_result.rewrite_type is RewriteType.NONE
+    assert result.extended_signals == {
+        "specificity": "narrow",
+        "answer_type": "factual",
+        "domain": "general",
+    }
+    assert "returns" in result.keywords
+
+
+def test_batch_classify_propagates_provider_errors() -> None:
+    batcher = QueryBatcher(chat_factory=_factory(RuntimeError("provider unavailable")))
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        batcher.batch_classify(
+            "refund policy",
+            include_analysis=False,
+            include_detection=False,
+            include_rewriting=False,
+            include_extended=False,
+            include_keywords=True,
+        )
+
+
+def test_batch_classify_rejects_missing_requested_sections() -> None:
+    batcher = QueryBatcher(chat_factory=_factory("{}"))
+
+    with pytest.raises(ValueError, match="missing `keywords` array"):
+        batcher.batch_classify(
+            "refund policy",
+            include_analysis=False,
+            include_detection=False,
+            include_rewriting=False,
+            include_extended=False,
+            include_keywords=True,
+        )
+
+
+def test_batch_classify_filters_schema_placeholder_keywords() -> None:
+    batcher = QueryBatcher(
+        chat_factory=_factory(json.dumps({"keywords": ["term", "keyword", "return policy"]}))
+    )
+
+    result = batcher.batch_classify(
+        "refund policy",
+        include_analysis=False,
+        include_detection=False,
+        include_rewriting=False,
+        include_extended=False,
+        include_keywords=True,
+    )
+
+    assert "term" not in result.keywords
+    assert "keyword" not in result.keywords
+    assert "return policy" in result.keywords
