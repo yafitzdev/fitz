@@ -209,7 +209,7 @@ entity graph links, corpus summaries, and richer context expansion.
 
 ---
 
-### EvidencePack 🧾
+### EvidencePack
 
 [Evidence Pack Contract](docs/EVIDENCE_PACK.md) • [Evidence Signals](docs/features/retrieval/evidence-signals.md)
 
