@@ -69,8 +69,7 @@ def main() -> int:
     try:
         qwen_info = OnnxChat().model_info()
         print(
-            "managed_qwen="
-            f"{qwen_info.repo_id} {qwen_info.onnx_file} {qwen_info.revision[:12]}"
+            "managed_qwen=" f"{qwen_info.repo_id} {qwen_info.onnx_file} {qwen_info.revision[:12]}"
         )
 
         progress: list[str] = []

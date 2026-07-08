@@ -3,11 +3,30 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 
 from huggingface_hub.errors import EntryNotFoundError
 
 from fitz_sage.encoders.onnx import OnnxEncoderBackend
+
+
+def _install_transformers_stub(
+    monkeypatch,
+    *,
+    from_pretrained,
+    tokenizer_fast=None,
+) -> None:
+    module = ModuleType("transformers")
+    module.AutoTokenizer = SimpleNamespace(from_pretrained=from_pretrained)
+    module.PreTrainedTokenizerFast = tokenizer_fast or (lambda *args, **kwargs: SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "transformers", module)
+
+
+def _install_onnxruntime_stub(monkeypatch, inference_session) -> None:
+    module = ModuleType("onnxruntime")
+    module.InferenceSession = inference_session
+    monkeypatch.setitem(sys.modules, "onnxruntime", module)
 
 
 def test_load_downloads_external_data_sidecar(monkeypatch):
@@ -19,12 +38,12 @@ def test_load_downloads_external_data_sidecar(monkeypatch):
         return f"C:/cache/{filename}"
 
     monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_hf_hub_download)
-    monkeypatch.setattr(
-        "transformers.AutoTokenizer.from_pretrained",
-        lambda model_id: SimpleNamespace(),
+    _install_transformers_stub(
+        monkeypatch,
+        from_pretrained=lambda model_id: SimpleNamespace(),
     )
-    monkeypatch.setattr(
-        "onnxruntime.InferenceSession",
+    _install_onnxruntime_stub(
+        monkeypatch,
         lambda path, providers: SimpleNamespace(path=path, providers=providers),
     )
 
@@ -46,12 +65,12 @@ def test_load_ignores_missing_external_data_sidecar(monkeypatch):
         return f"C:/cache/{filename}"
 
     monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_hf_hub_download)
-    monkeypatch.setattr(
-        "transformers.AutoTokenizer.from_pretrained",
-        lambda model_id: SimpleNamespace(),
+    _install_transformers_stub(
+        monkeypatch,
+        from_pretrained=lambda model_id: SimpleNamespace(),
     )
-    monkeypatch.setattr(
-        "onnxruntime.InferenceSession",
+    _install_onnxruntime_stub(
+        monkeypatch,
         lambda path, providers: SimpleNamespace(path=path, providers=providers),
     )
 
@@ -98,10 +117,13 @@ def test_load_falls_back_to_tokenizer_json(monkeypatch, tmp_path):
         return SimpleNamespace(tokenizer_file=tokenizer_file, special_tokens=special_tokens)
 
     monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_hf_hub_download)
-    monkeypatch.setattr("transformers.AutoTokenizer.from_pretrained", fake_from_pretrained)
-    monkeypatch.setattr("transformers.PreTrainedTokenizerFast", fake_tokenizer_fast)
-    monkeypatch.setattr(
-        "onnxruntime.InferenceSession",
+    _install_transformers_stub(
+        monkeypatch,
+        from_pretrained=fake_from_pretrained,
+        tokenizer_fast=fake_tokenizer_fast,
+    )
+    _install_onnxruntime_stub(
+        monkeypatch,
         lambda path, providers: SimpleNamespace(path=path, providers=providers),
     )
 

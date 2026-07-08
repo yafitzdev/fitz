@@ -133,9 +133,7 @@ def _matches(expectation: EvidenceExpectation, item: dict[str, Any]) -> bool:
             return False
 
     searchable = _normalize_text(
-        "\n".join(
-            str(item.get(field, "")) for field in ("excerpt", "content", "address_location")
-        )
+        "\n".join(str(item.get(field, "")) for field in ("excerpt", "content", "address_location"))
     )
     return all(_normalize_text(fragment) in searchable for fragment in expectation.contains)
 

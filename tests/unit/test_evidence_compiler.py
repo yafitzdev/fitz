@@ -10,8 +10,8 @@ from fitz_sage.engines.fitz_krag.evidence_compiler import (
     order_addresses_for_contract,
     query_has_table_obligation,
 )
-from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from fitz_sage.engines.fitz_krag.evidence_contract import build_query_contract
+from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
 
 def test_pyrrho_comparison_contract_sets_prefix_floor() -> None:

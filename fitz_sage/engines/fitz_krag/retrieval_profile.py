@@ -633,7 +633,9 @@ def _pyrrho_plan_metadata(pyrrho_plan: Any | None) -> dict[str, Any]:
             "confidence": float(getattr(head, "confidence", 0.0) or 0.0),
             "probabilities": {
                 str(label): float(value)
-                for label, value in (probabilities.items() if isinstance(probabilities, dict) else ())
+                for label, value in (
+                    probabilities.items() if isinstance(probabilities, dict) else ()
+                )
             },
         }
     return output

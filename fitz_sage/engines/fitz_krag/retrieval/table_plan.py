@@ -49,8 +49,26 @@ _STOPWORDS = {
 }
 _BOOLEAN_TRUE = {"1", "active", "enabled", "true", "yes", "on"}
 _BOOLEAN_FALSE = {"0", "disabled", "false", "inactive", "no", "off"}
-_NEGATIVE_QUERY_TERMS = {"disabled", "false", "inactive", "no", "not", "off", "unencrypted", "without"}
-_POSITIVE_QUERY_TERMS = {"active", "enabled", "encrypted", "managed", "on", "true", "visible", "yes"}
+_NEGATIVE_QUERY_TERMS = {
+    "disabled",
+    "false",
+    "inactive",
+    "no",
+    "not",
+    "off",
+    "unencrypted",
+    "without",
+}
+_POSITIVE_QUERY_TERMS = {
+    "active",
+    "enabled",
+    "encrypted",
+    "managed",
+    "on",
+    "true",
+    "visible",
+    "yes",
+}
 
 
 class ColumnRole(str, Enum):
@@ -176,12 +194,12 @@ def execute_table_query_plan(plan: TableQueryPlan, rows: list[list[Any]]) -> lis
                     sortable,
                     key=lambda item: item[0],
                     reverse=plan.sort.direction == "max",
-                )[0][1]
+                )[
+                    0
+                ][1]
             ]
 
-    scored = [
-        (_row_score(plan, row), index, row) for index, row in enumerate(candidate_rows)
-    ]
+    scored = [(_row_score(plan, row), index, row) for index, row in enumerate(candidate_rows)]
     scored = [item for item in scored if item[0] > 0]
     if not scored:
         return []
@@ -238,8 +256,7 @@ def _row_predicates(
         accepted_values = {
             _normalize(str(row[column.index]))
             for row in rows
-            if column.index < len(row)
-            and _normalize(str(row[column.index])) in set(query_terms)
+            if column.index < len(row) and _normalize(str(row[column.index])) in set(query_terms)
         }
         if accepted_values:
             predicates.append(
@@ -257,7 +274,10 @@ def _boolean_predicate_values(column: ColumnBinding, query_text: str) -> set[str
     has_column_reference = bool(column_terms & set(query_text.split()))
     if "encrypt" in query_text and any(token.startswith("encrypt") for token in column_terms):
         has_column_reference = True
-    if {"customer", "visible"} <= set(query_text.split()) and {"customer", "visible"} <= column_terms:
+    if {"customer", "visible"} <= set(query_text.split()) and {
+        "customer",
+        "visible",
+    } <= column_terms:
         has_column_reference = True
     if not has_column_reference:
         return set()
@@ -285,7 +305,9 @@ def _sort_clause(
         if column.role is not ColumnRole.METRIC:
             continue
         if not any(
-            _sortable_value(row[column.index]) is not None for row in rows if column.index < len(row)
+            _sortable_value(row[column.index]) is not None
+            for row in rows
+            if column.index < len(row)
         ):
             continue
         score = _column_query_score(column, query_terms)

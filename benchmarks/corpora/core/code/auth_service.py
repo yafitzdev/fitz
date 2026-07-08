@@ -16,4 +16,3 @@ class AuthService:
 
 class SessionExpiredError(RuntimeError):
     """Raised when a session expired outside the refresh grace window."""
-

@@ -70,18 +70,20 @@ def test_benchmark_workspace_defaults_under_cluster_dir(tmp_path):
     """Benchmark runs should not create many top-level workspace directories."""
     from benchmarks.fitz_bench import runner
 
-    assert runner._benchmark_workspace(tmp_path, None, "bench_123") == (
-        tmp_path / ".bench_workspace" / "bench_123"
-    ).resolve()
+    assert (
+        runner._benchmark_workspace(tmp_path, None, "bench_123")
+        == (tmp_path / ".bench_workspace" / "bench_123").resolve()
+    )
 
 
 def test_benchmark_workspace_resolves_relative_override_under_repo_root(tmp_path):
     """Relative workspace overrides should resolve from the benchmark repo root."""
     from benchmarks.fitz_bench import runner
 
-    assert runner._benchmark_workspace(tmp_path, "custom/workspace", "bench_123") == (
-        tmp_path / "custom" / "workspace"
-    ).resolve()
+    assert (
+        runner._benchmark_workspace(tmp_path, "custom/workspace", "bench_123")
+        == (tmp_path / "custom" / "workspace").resolve()
+    )
 
 
 def test_benchmark_workspace_preserves_absolute_override(tmp_path):

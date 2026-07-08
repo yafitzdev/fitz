@@ -54,8 +54,8 @@ from .evidence import EvidenceItem, EvidencePack
 # Core exceptions
 from .exceptions import (
     ConfigurationError,
-    EnrichmentError,
     EngineError,
+    EnrichmentError,
     GenerationError,
     KnowledgeError,
     ManagedModelError,

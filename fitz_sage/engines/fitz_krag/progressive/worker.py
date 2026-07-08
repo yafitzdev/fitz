@@ -300,10 +300,7 @@ class BackgroundIngestWorker:
                 break
         self._manifest.save()
         if failures:
-            raise RuntimeError(
-                "Keyword indexing failed before query-ready. "
-                + failures[0]
-            )
+            raise RuntimeError("Keyword indexing failed before query-ready. " + failures[0])
 
     def _deep_enrich_phase(self) -> None:
         """QUERY_READY → ENRICHED: entity graph + L1 hierarchy summaries."""

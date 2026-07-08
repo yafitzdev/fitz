@@ -7,8 +7,8 @@ import json
 import pytest
 
 from fitz_sage.core.exceptions import QueryIntelligenceError
-from fitz_sage.engines.fitz_krag.query_batcher import QueryBatcher
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryType
+from fitz_sage.engines.fitz_krag.query_batcher import QueryBatcher
 from fitz_sage.retrieval.rewriter.types import RewriteType
 
 
