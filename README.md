@@ -209,7 +209,7 @@ entity graph links, corpus summaries, and richer context expansion.
 
 ---
 
-### EvidencePack
+### EvidencePack 🧾
 
 [Evidence Pack Contract](docs/EVIDENCE_PACK.md) • [Evidence Signals](docs/features/retrieval/evidence-signals.md)
 
@@ -218,18 +218,13 @@ entity graph links, corpus summaries, and richer context expansion.
 It gives you the relevant sources and the governance signals around them. You can show it directly, pass it to a model,
 trigger a workflow from it, or store it as an audit artifact.
 
-An `EvidencePack` has three parts:
+The source items are the evidence. The signals around them explain how Fitz searched before retrieval and what Pyrrho judged
+after retrieval.
 
-| Part | Meaning | What you can do with it |
-|------|---------|-------------------------|
-| **Source evidence** | The documents, code symbols, table rows, sections, or chunks that matched the query. | Show citations, open source files, pass evidence into a model, or store provenance. |
-| **Retrieval profile** | The effective search plan: query type, breadth, semantic keywords, and strategy weights. | Understand why Fitz favored code, tables, sections, exact lookup, comparison coverage, or broader recall. |
-| **Governance verdict** | Pyrrho's judgment after seeing the retrieved evidence. | Decide whether evidence is sufficient, disputed, or insufficient; retry retrieval or request missing documents when needed. |
+#### Pre-retrieval 🔎
 
-#### Retrieval profile
-
-Before retrieval, Fitz builds a retrieval profile from deterministic query
-analysis, managed Qwen query keywords, and optional query intelligence.
+Before retrieval, Fitz builds a search plan from deterministic query analysis,
+managed Qwen query keywords, and optional query intelligence.
 
 | Signal | What it means | Why it matters |
 |--------|---------------|----------------|
@@ -238,7 +233,7 @@ analysis, managed Qwen query keywords, and optional query intelligence.
 | `strategy_weights` | Relative weight for code, section, table, and chunk retrieval. | Makes the first pass search the right evidence surfaces. |
 | `top_k` / `top_read` | How much candidate evidence Fitz should collect and read. | Keeps narrow lookups fast while giving broad or comparative questions enough coverage. |
 
-#### Governance signals
+#### Post-retrieval 🛡️
 
 After retrieval and reranking, Pyrrho evaluates evidence prefixes. These
 signals tell you whether the result is usable.
