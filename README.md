@@ -88,7 +88,7 @@ as symbols, documents as sections, tables as SQLite-backed data, and fallback te
 typed surfaces with retrieval strategies that match the source structure.
 
 ⭐ Governance is enforced by [Pyrrho](https://huggingface.co/yafitzdev) in a local CPU forward pass. Pyrrho evaluates the
-selected evidence prefix with the native v2 verdicts `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`.
+selected evidence prefix as `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`.
 
 Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](https://github.com/yafitzdev), [HuggingFace](https://huggingface.co/yafitzdev)).
 
@@ -173,7 +173,7 @@ and retrieval.
 |-------|--------------|-----------|
 | **1. Query profile + broad recall** | Fitz builds a retrieval profile, extracts query terms, adds semantic keywords, and searches typed units broadly. | SQLite FTS + deterministic planning + managed Qwen query keywords |
 | **2. Rerank** | INT8 ONNX cross-encoder reorders broad candidates by query relevance. | Local ONNX reranker |
-| **3. Pyrrho cutoff** | Pyrrho evaluates `query + top 1`, then `query + top 2`, and so on until the evidence prefix is sufficient, disputed, or insufficient. | Local Pyrrho v2 ONNX classifier |
+| **3. Pyrrho cutoff** | Pyrrho evaluates `query + top 1`, then `query + top 2`, and so on until the evidence prefix is sufficient, disputed, or insufficient. | Local Pyrrho ONNX classifier |
 
 <br>
 
@@ -224,7 +224,7 @@ An `EvidencePack` has three parts:
 |------|---------|-------------------------|
 | **Source evidence** | The documents, code symbols, table rows, sections, or chunks that matched the query. | Show citations, open source files, pass evidence into a model, or store provenance. |
 | **Retrieval profile** | The effective search plan: query type, breadth, semantic keywords, and strategy weights. | Understand why Fitz favored code, tables, sections, exact lookup, comparison coverage, or broader recall. |
-| **Governance verdict** | Pyrrho v2's judgment after seeing the retrieved evidence. | Decide whether evidence is sufficient, disputed, or insufficient; retry retrieval or request missing documents when needed. |
+| **Governance verdict** | Pyrrho's judgment after seeing the retrieved evidence. | Decide whether evidence is sufficient, disputed, or insufficient; retry retrieval or request missing documents when needed. |
 
 #### Retrieval profile
 
@@ -240,7 +240,7 @@ analysis, managed Qwen query keywords, and optional query intelligence.
 
 #### Governance signals
 
-After retrieval and reranking, Pyrrho v2 evaluates evidence prefixes. These
+After retrieval and reranking, Pyrrho evaluates evidence prefixes. These
 signals tell you whether the result is usable.
 
 | Signal | What it means | What you can do with it |
@@ -248,10 +248,10 @@ signals tell you whether the result is usable.
 | `mode` | Runtime `AnswerMode`: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Gate generated answers, UI display, automation, or human review. |
 | `reasons` | Plain-language explanation for the verdict. | Show users why Fitz judged evidence sufficient, disputed, or insufficient. |
 | `stop_reason` | Why retrieval stopped: enough evidence, stable dispute, cutoff reached, retry exhausted, etc. | Route the next step: answer, retry, broaden search, or ask for more source material. |
-| `evidence_verdict` | Native v2 verdict: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Inspect the model head behind the runtime mode. |
-| `failure_mode` | Native v2 reason when evidence is insufficient or disputed. | Explain why the evidence cannot safely support a clean answer. |
-| `retrieval_intents` | Native v2 multi-label metadata such as lookup, temporal resolution, comparison, or broad coverage. | Decide whether another retrieval pass should focus on coverage, time, lookup, or comparison. |
-| `evidence_kinds` | Native v2 multi-label metadata such as text, table, code, config, logs, or document layout. | Decide which evidence surface is missing or should be emphasized. |
+| `evidence_verdict` | Verdict: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Inspect the evidence judgment. |
+| `failure_mode` | Reason when evidence is insufficient or disputed. | Explain why the evidence cannot safely support a clean answer. |
+| `retrieval_intents` | Evidence intent metadata such as lookup, temporal resolution, comparison, or broad coverage. | Decide whether another retrieval pass should focus on coverage, time, lookup, or comparison. |
+| `evidence_kinds` | Evidence-surface metadata such as text, table, code, config, logs, or document layout. | Decide which evidence surface is missing or should be emphasized. |
 
 This is why `fitz-sage` is useful as infrastructure: the package returns source evidence plus enough judgment to decide the
 next action.
@@ -264,7 +264,7 @@ next action.
 
 Pyrrho is the local governance model behind `fitz-sage`. The default backend is
 [`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1):
-a CPU-local ONNX ModernBERT classifier with native v2 evidence heads.
+a CPU-local ONNX ModernBERT classifier for evidence governance.
 
 <br>
 
@@ -288,24 +288,31 @@ a CPU-local ONNX ModernBERT classifier with native v2 evidence heads.
 
 | Signal | Purpose |
 |--------|---------|
-| `evidence_verdict` | Native v2 evidence judgment: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. |
-| `failure_mode` | Native v2 reason when evidence is insufficient or disputed. |
-| `retrieval_intents` | Multi-label v2 evidence intent metadata, such as lookup, temporal resolution, comparison, or broad coverage. |
-| `evidence_kinds` | Multi-label v2 evidence-surface metadata, such as text, table, code, config, logs, or document layout. |
+| `evidence_verdict` | Evidence judgment: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. |
+| `failure_mode` | Reason when evidence is insufficient or disputed. |
+| `retrieval_intents` | Evidence intent metadata, such as lookup, temporal resolution, comparison, or broad coverage. |
+| `evidence_kinds` | Evidence-surface metadata, such as text, table, code, config, logs, or document layout. |
 
-Fitz records these heads in `EvidencePack.metadata["governance_cutoff"]["pyrrho"]`
-for audit, UI display, retries, and downstream automation.
+Fitz returns the verdict and reasons with the `EvidencePack`, so applications can
+answer, retry, show conflict, or request more source material.
 
 <br>
 
-| Benchmark | Score |
-|-----------|-------|
-| fitz-gov-v2 held-out post-retrieval overall score | **94.71%** |
-| fitz-gov-v2 evidence verdict accuracy | **97.03%** |
-| fitz-gov-v2 failure-mode accuracy | **95.67%** |
-| fitz-gov-v2 false sufficient rate | **4.84%** |
-| fitz-sage balanced fixed-evidence governance sanity suite | **120/120** |
-| fitz-sage live retrieval benchmark | **97/120** |
+**fitz-gov**
+
+| Metric | Score |
+|--------|-------|
+| Held-out post-retrieval overall score | **94.71%** |
+| Evidence verdict accuracy | **97.03%** |
+| Failure-mode accuracy | **95.67%** |
+| False sufficient rate | **4.84%** |
+
+**fitz-sage**
+
+| Metric | Score |
+|--------|-------|
+| Balanced fixed-evidence governance sanity suite | **120/120** |
+| Live retrieval benchmark | **97/120** |
 
 <br>
 
@@ -560,8 +567,7 @@ legal_pack = legal.evidence("What are the payment terms?", source="./contracts")
 pack = fitz_sage.evidence("Where is Pyrrho governance implemented?", source="./fitz_sage")
 
 print(pack.mode)  # runtime AnswerMode: SUFFICIENT, DISPUTED, or INSUFFICIENT
-print(pack.metadata["governance_cutoff"]["pyrrho"]["evidence_verdict"]["final_label"])
-# SUFFICIENT, DISPUTED, or INSUFFICIENT
+print(pack.reasons)
 
 for item in pack.items:
     print(item.file_path, item.address_location, item.line_range)
