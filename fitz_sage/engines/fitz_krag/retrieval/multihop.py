@@ -4,7 +4,7 @@ Multi-hop retrieval controller for KRAG.
 
 Loops a `RetrievalPass` (retrieve -> rerank -> read): after each pass the
 pyrrho governance classifier judges whether the accumulated evidence is
-enough. TRUSTWORTHY / DISPUTED -> stop; ABSTAIN -> extract a bridge
+enough. SUFFICIENT / DISPUTED -> stop; INSUFFICIENT -> extract a bridge
 question and run another pass. The pass already reranks, so every hop's
 candidates get the cross-encoder — multi-hop is purely a loop on top.
 """
@@ -93,8 +93,8 @@ class KragHopController:
     def _is_sufficient(self, query: str, results: list[ReadResult]) -> bool:
         """Decide whether to stop hopping, using the pyrrho governance verdict.
 
-        TRUSTWORTHY or DISPUTED -> stop (evidence is enough, or the sources
-        disagree and more retrieval will not resolve it); ABSTAIN -> keep
+        SUFFICIENT or DISPUTED -> stop (evidence is enough, or the sources
+        disagree and more retrieval will not resolve it); INSUFFICIENT -> keep
         hopping. With no classifier wired (governance disabled) there is no
         cheap sufficiency signal, so the loop relies on bridge extraction
         and max_hops to terminate.
@@ -102,7 +102,7 @@ class KragHopController:
         if not results or self._governance is None:
             return False
         decision = self._governance.decide(query, results)
-        return decision.mode is not AnswerMode.ABSTAIN
+        return decision.mode is not AnswerMode.INSUFFICIENT
 
     def _extract_bridge(self, query: str, results: list[ReadResult]) -> list[str]:
         """Generate bridge questions to fill evidence gaps."""

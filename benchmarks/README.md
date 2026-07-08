@@ -66,9 +66,8 @@ Generated reports under `benchmarks/results/` and benchmark workspaces under
   tags: [code, symbol_lookup]
 ```
 
-New cases should use the v2 evidence-verdict names (`sufficient`, `disputed`,
-`insufficient`). The validator also accepts runtime names (`trustworthy`,
-`disputed`, `abstain`) and normalizes them before validation.
+Cases use the v2 evidence-verdict names: `sufficient`, `disputed`, and
+`insufficient`.
 
 The validator checks evidence items, not generated text. A required evidence
 entry passes when any returned evidence item matches the file/kind/location and

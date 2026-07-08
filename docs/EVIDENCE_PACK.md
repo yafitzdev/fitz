@@ -49,9 +49,9 @@ Use `pack.to_dict()` or `pack.to_json()` for API responses.
 
 | Runtime mode | Meaning |
 |---|---|
-| `trustworthy` | Runtime API mode for a Pyrrho `SUFFICIENT` verdict. |
+| `sufficient` | Runtime API mode for a Pyrrho `SUFFICIENT` verdict. |
 | `disputed` | Runtime API mode for a Pyrrho `DISPUTED` verdict. |
-| `abstain` | Runtime API mode for a Pyrrho `INSUFFICIENT` verdict. |
+| `insufficient` | Runtime API mode for a Pyrrho `INSUFFICIENT` verdict. |
 | `null` | Governance did not run. This is not the default product path. |
 
 ## Metadata
@@ -100,8 +100,8 @@ fetch limits, and intent flags.
 ### Governance Cutoff
 
 `metadata.governance_cutoff` records how Pyrrho evaluated ranked evidence
-prefixes. The runtime `mode` stays in the `trustworthy` / `disputed` /
-`abstain` vocabulary, while Pyrrho v2 heads expose the model's native evidence
+prefixes. The runtime `mode` stays in the `sufficient` / `disputed` /
+`insufficient` vocabulary, while Pyrrho v2 heads expose the model's native evidence
 metadata.
 
 ```json
@@ -111,20 +111,20 @@ metadata.
       "evaluated": 3,
       "selected": 3,
       "max": 10,
-      "mode": "trustworthy",
-      "stop_reason": "trustworthy_min_evidence_met",
+      "mode": "sufficient",
+      "stop_reason": "sufficient_min_evidence_met",
       "policy": {
         "query_shape": "comparison",
-        "min_trustworthy_docs": 2,
+        "min_sufficient_docs": 2,
         "min_disputed_docs": 2,
         "disputed_patience_docs": 2
       },
       "pyrrho": {
-        "mode": "trustworthy",
+        "mode": "sufficient",
         "probabilities": {
-          "abstain": 0.03,
+          "insufficient": 0.03,
           "disputed": 0.04,
-          "trustworthy": 0.93
+          "sufficient": 0.93
         },
         "reason": "Pyrrho: sources support a confident answer (P=0.93).",
         "evidence_verdict": {
@@ -159,10 +159,10 @@ Field meanings:
 | `mode` | Final runtime governance mode for the selected prefix. |
 | `stop_reason` | Why the cutoff loop stopped. |
 | `policy.query_shape` | Narrow, broad, comparison, or aggregation. |
-| `policy.min_trustworthy_docs` | Minimum prefix size before the runtime `trustworthy` mode can stop. |
+| `policy.min_sufficient_docs` | Minimum prefix size before the runtime `sufficient` mode can stop. |
 | `policy.min_disputed_docs` | Minimum prefix size before comparison disputes can stop. |
 | `policy.disputed_patience_docs` | Additional patience for narrow disputes. |
-| `pyrrho.probabilities` | Runtime probabilities for `abstain`, `disputed`, and `trustworthy` modes. |
+| `pyrrho.probabilities` | Runtime probabilities for `insufficient`, `disputed`, and `sufficient` modes. |
 | `pyrrho.evidence_verdict` | Native v2 verdict head. |
 | `pyrrho.failure_mode` | Native v2 failure-mode head. |
 | `pyrrho.retrieval_intents` | Native v2 retrieval-intent head. |

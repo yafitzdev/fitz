@@ -324,8 +324,8 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
         verdict = _format_verdict(pyrrho.get("mode"))
         lines.append(
             f"Pyrrho: {verdict}  "
-            f"P(TRUSTWORTHY)={_fmt_prob(probs.get('trustworthy'))}  "
-            f"P(ABSTAIN)={_fmt_prob(probs.get('abstain'))}  "
+            f"P(SUFFICIENT)={_fmt_prob(probs.get('sufficient'))}  "
+            f"P(INSUFFICIENT)={_fmt_prob(probs.get('insufficient'))}  "
             f"P(DISPUTED)={_fmt_prob(probs.get('disputed'))}"
         )
     elif pyrrho and pyrrho.get("mode") and not pyrrho.get("reason"):
@@ -348,7 +348,7 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
             parts.extend(
                 [
                     f"policy {policy.get('query_shape', '?')}",
-                    f"min trustworthy {policy.get('min_trustworthy_docs', '?')}",
+                    f"min sufficient {policy.get('min_sufficient_docs', '?')}",
                     f"min disputed {policy.get('min_disputed_docs', '?')}",
                     f"dispute patience {policy.get('disputed_patience_docs', '?')}",
                 ]

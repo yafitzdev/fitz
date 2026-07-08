@@ -13,7 +13,7 @@ def test_evidence_pack_json_round_trips():
     """Evidence packs serialize to plain JSON-compatible data."""
     pack = EvidencePack(
         query="Which test failed?",
-        mode=AnswerMode.TRUSTWORTHY,
+        mode=AnswerMode.SUFFICIENT,
         items=[
             EvidenceItem(
                 rank=1,
@@ -25,7 +25,7 @@ def test_evidence_pack_json_round_trips():
                 score=0.87,
                 excerpt="Sprint 47 failed in payment retry tests.",
                 content="Sprint 47 failed in payment retry tests.",
-                metadata={"kind": AnswerMode.TRUSTWORTHY},
+                metadata={"kind": AnswerMode.SUFFICIENT},
             )
         ],
         reasons=["Sources support the answer."],
@@ -35,6 +35,6 @@ def test_evidence_pack_json_round_trips():
 
     data = json.loads(pack.to_json())
 
-    assert data["mode"] == "trustworthy"
+    assert data["mode"] == "sufficient"
     assert data["items"][0]["line_range"] == [12, 18]
-    assert data["items"][0]["metadata"]["kind"] == "trustworthy"
+    assert data["items"][0]["metadata"]["kind"] == "sufficient"

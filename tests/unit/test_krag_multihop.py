@@ -72,10 +72,10 @@ def _make_chat_factory(bridge_questions: list[str] | None = None) -> MagicMock:
 class TestSingleHop:
     """One pass when pyrrho judges the first hop sufficient."""
 
-    def test_trustworthy_stops_after_one_pass(self):
+    def test_sufficient_stops_after_one_pass(self):
         r1 = _read_result(location="mod.auth")
         rp = _make_pass([[r1]])
-        gov = _make_governance([AnswerMode.TRUSTWORTHY])
+        gov = _make_governance([AnswerMode.SUFFICIENT])
         factory = _make_chat_factory()
         controller = KragHopController(
             retrieval_pass=rp, chat_factory=factory, governance=gov, max_hops=3
@@ -110,16 +110,16 @@ class TestSingleHop:
 
 
 class TestMultipleHops:
-    """Bridge to a second pass when pyrrho abstains."""
+    """Bridge to a second pass when pyrrho insufficients."""
 
-    def test_abstain_bridges_to_second_pass(self):
+    def test_insufficient_bridges_to_second_pass(self):
         r1 = _read_result(location="mod.auth")
         r2 = _read_result(location="mod.session")
         rp = _make_pass([[r1], [r2]])
         controller = KragHopController(
             retrieval_pass=rp,
             chat_factory=_make_chat_factory(["what is the session handler?"]),
-            governance=_make_governance([AnswerMode.ABSTAIN, AnswerMode.TRUSTWORTHY]),
+            governance=_make_governance([AnswerMode.INSUFFICIENT, AnswerMode.SUFFICIENT]),
             max_hops=3,
         )
 
@@ -145,7 +145,7 @@ class TestMultipleHops:
         controller = KragHopController(
             retrieval_pass=rp,
             chat_factory=_make_chat_factory(["bridge"]),
-            governance=_make_governance([AnswerMode.ABSTAIN, AnswerMode.TRUSTWORTHY]),
+            governance=_make_governance([AnswerMode.INSUFFICIENT, AnswerMode.SUFFICIENT]),
             max_hops=3,
         )
         controller.execute("query")
@@ -183,7 +183,7 @@ class TestStopConditions:
         controller = KragHopController(
             retrieval_pass=rp,
             chat_factory=_make_chat_factory(["next question"]),
-            governance=_make_governance([AnswerMode.ABSTAIN, AnswerMode.ABSTAIN]),
+            governance=_make_governance([AnswerMode.INSUFFICIENT, AnswerMode.INSUFFICIENT]),
             max_hops=2,
         )
 
@@ -198,7 +198,7 @@ class TestStopConditions:
         controller = KragHopController(
             retrieval_pass=rp,
             chat_factory=_make_chat_factory([]),  # no bridge questions
-            governance=_make_governance([AnswerMode.ABSTAIN]),
+            governance=_make_governance([AnswerMode.INSUFFICIENT]),
             max_hops=5,
         )
 
@@ -242,7 +242,7 @@ class TestProfileForwarding:
         controller = KragHopController(
             retrieval_pass=rp,
             chat_factory=_make_chat_factory(),
-            governance=_make_governance([AnswerMode.TRUSTWORTHY]),
+            governance=_make_governance([AnswerMode.SUFFICIENT]),
             max_hops=2,
         )
 

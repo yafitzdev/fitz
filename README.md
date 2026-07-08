@@ -245,7 +245,7 @@ signals tell you whether the result is usable.
 
 | Signal | What it means | What you can do with it |
 |--------|---------------|-------------------------|
-| `mode` | Runtime `AnswerMode`: `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`. | Gate generated answers, UI display, automation, or human review. |
+| `mode` | Runtime `AnswerMode`: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Gate generated answers, UI display, automation, or human review. |
 | `reasons` | Plain-language explanation for the verdict. | Show users why Fitz judged evidence sufficient, disputed, or insufficient. |
 | `stop_reason` | Why retrieval stopped: enough evidence, stable dispute, cutoff reached, retry exhausted, etc. | Route the next step: answer, retry, broaden search, or ask for more source material. |
 | `evidence_verdict` | Native v2 verdict: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Inspect the model head behind the runtime mode. |
@@ -546,7 +546,7 @@ legal_pack = legal.evidence("What are the payment terms?", source="./contracts")
 ```python
 pack = fitz_sage.evidence("Where is Pyrrho governance implemented?", source="./fitz_sage")
 
-print(pack.mode)  # runtime AnswerMode: TRUSTWORTHY, DISPUTED, or ABSTAIN
+print(pack.mode)  # runtime AnswerMode: SUFFICIENT, DISPUTED, or INSUFFICIENT
 print(pack.metadata["governance_cutoff"]["pyrrho"]["evidence_verdict"]["final_label"])
 # SUFFICIENT, DISPUTED, or INSUFFICIENT
 

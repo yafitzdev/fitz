@@ -179,9 +179,9 @@ full content.
 
 Indicates how the runtime should treat the answer. Pyrrho v2's native model
 verdict is exposed in governance metadata as `evidence_verdict`:
-- `TRUSTWORTHY`: runtime mode for `SUFFICIENT` evidence
+- `SUFFICIENT`: runtime mode for `SUFFICIENT` evidence
 - `DISPUTED`: runtime mode for `DISPUTED` evidence
-- `ABSTAIN`: runtime mode for `INSUFFICIENT` evidence
+- `INSUFFICIENT`: runtime mode for `INSUFFICIENT` evidence
 
 If `None`, no epistemic assessment was performed.
 

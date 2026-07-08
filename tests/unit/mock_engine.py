@@ -49,7 +49,7 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     engine._assembler = MagicMock(name="assembler")
     engine._synthesizer = MagicMock(name="synthesizer")
     governance_decision = MagicMock(name="governance_decision")
-    governance_decision.mode = AnswerMode.TRUSTWORTHY
+    governance_decision.mode = AnswerMode.SUFFICIENT
     governance_decision.reason = "Sources support a confident answer."
     governance_decision.reasons = ("Sources support a confident answer.",)
     governance_decision.probs = (0.1, 0.1, 0.8)

@@ -12,12 +12,12 @@ the instruction it receives.
 from fitz_sage.core.answer_mode import AnswerMode
 
 MODE_INSTRUCTIONS: dict[AnswerMode, str] = {
-    AnswerMode.TRUSTWORTHY: ("Answer clearly and directly based on the evidence."),
+    AnswerMode.SUFFICIENT: ("Answer clearly and directly based on the evidence."),
     AnswerMode.DISPUTED: (
         "State explicitly that sources disagree and summarize the disagreement. "
         "Do not assert one view as correct."
     ),
-    AnswerMode.ABSTAIN: (
+    AnswerMode.INSUFFICIENT: (
         "State that the available information does not allow a definitive answer. "
         "Do not guess or invent explanations."
     ),
@@ -34,4 +34,4 @@ def get_mode_instruction(mode: AnswerMode) -> str:
     Returns:
         Instruction string to prepend to the prompt
     """
-    return MODE_INSTRUCTIONS.get(mode, MODE_INSTRUCTIONS[AnswerMode.TRUSTWORTHY])
+    return MODE_INSTRUCTIONS.get(mode, MODE_INSTRUCTIONS[AnswerMode.SUFFICIENT])

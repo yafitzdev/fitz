@@ -44,7 +44,7 @@ class TestQueryCommand:
 
     def test_query_defaults_to_current_directory(self, tmp_path):
         """Query should register the current directory when no flags are supplied."""
-        pack = EvidencePack(query="test question", mode=AnswerMode.TRUSTWORTHY)
+        pack = EvidencePack(query="test question", mode=AnswerMode.SUFFICIENT)
         mock_engine = MagicMock()
         mock_engine.evidence.return_value = pack
 
@@ -163,7 +163,7 @@ class TestQueryExecution:
 
     def test_query_direct_mode(self):
         """Test query with direct question argument via retrieval path."""
-        pack = EvidencePack(query="What is RAG?", mode=AnswerMode.TRUSTWORTHY)
+        pack = EvidencePack(query="What is RAG?", mode=AnswerMode.SUFFICIENT)
         mock_engine = MagicMock()
         mock_engine.evidence.return_value = pack
 
@@ -229,7 +229,7 @@ class TestQueryOptions:
 
     def test_query_with_collection_option(self):
         """Test query with --collection option."""
-        pack = EvidencePack(query="question", mode=AnswerMode.TRUSTWORTHY)
+        pack = EvidencePack(query="question", mode=AnswerMode.SUFFICIENT)
         mock_engine = MagicMock()
         mock_engine.evidence.return_value = pack
 

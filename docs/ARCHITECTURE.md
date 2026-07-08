@@ -211,7 +211,7 @@ class Query:
 @dataclass
 class Answer:
     text: str
-    mode: AnswerMode              # runtime: TRUSTWORTHY | DISPUTED | ABSTAIN
+    mode: AnswerMode              # runtime: SUFFICIENT | DISPUTED | INSUFFICIENT
     provenance: list[Provenance]  # source attribution chain
     metadata: dict
 ```

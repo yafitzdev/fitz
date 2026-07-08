@@ -13,7 +13,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from benchmarks.fitz_bench.governance_cases import GovernanceCase, build_cases
+from benchmarks.fitz_bench.governance_cases import build_cases
 from benchmarks.fitz_bench.models import normalize_mode
 from fitz_sage.core.evidence import EvidenceItem
 from fitz_sage.governance import create_governance
@@ -119,7 +119,9 @@ def _item(raw: dict[str, Any]) -> EvidenceItem:
 
 def _decision_to_dict(decision: Any) -> dict[str, Any]:
     output = {
-        "mode": getattr(getattr(decision, "mode", None), "value", str(getattr(decision, "mode", ""))),
+        "mode": getattr(
+            getattr(decision, "mode", None), "value", str(getattr(decision, "mode", ""))
+        ),
         "probs": list(getattr(decision, "probs", ()) or ()),
         "reason": getattr(decision, "reason", ""),
     }
@@ -158,13 +160,9 @@ def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:
 
     unsafe_expected = {"disputed", "insufficient"}
     unsafe_records = [record for record in records if record["expected_mode"] in unsafe_expected]
-    false_sufficient = sum(
-        1 for record in unsafe_records if record["actual_mode"] == "sufficient"
-    )
+    false_sufficient = sum(1 for record in unsafe_records if record["actual_mode"] == "sufficient")
     sufficient_records = [record for record in records if record["expected_mode"] == "sufficient"]
-    false_reject = sum(
-        1 for record in sufficient_records if record["actual_mode"] != "sufficient"
-    )
+    false_reject = sum(1 for record in sufficient_records if record["actual_mode"] != "sufficient")
 
     by_domain = defaultdict(list)
     for record in records:
@@ -177,13 +175,11 @@ def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         "accuracy": passed / total if total else 0.0,
         "macro_recall": sum(recalls) / len(recalls) if recalls else 0.0,
         "false_sufficient_count": false_sufficient,
-        "false_sufficient_rate": false_sufficient / len(unsafe_records)
-        if unsafe_records
-        else 0.0,
+        "false_sufficient_rate": false_sufficient / len(unsafe_records) if unsafe_records else 0.0,
         "false_reject_sufficient_count": false_reject,
-        "false_reject_sufficient_rate": false_reject / len(sufficient_records)
-        if sufficient_records
-        else 0.0,
+        "false_reject_sufficient_rate": (
+            false_reject / len(sufficient_records) if sufficient_records else 0.0
+        ),
         "expected_counts": dict(sorted(expected_counts.items())),
         "actual_counts": dict(sorted(actual_counts.items())),
         "by_expected": by_expected,
@@ -191,9 +187,9 @@ def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:
             domain: {
                 "total": len(items),
                 "passed": sum(1 for item in items if item["passed"]),
-                "accuracy": sum(1 for item in items if item["passed"]) / len(items)
-                if items
-                else 0.0,
+                "accuracy": (
+                    sum(1 for item in items if item["passed"]) / len(items) if items else 0.0
+                ),
             }
             for domain, items in sorted(by_domain.items())
         },
@@ -223,9 +219,7 @@ def _markdown(report: dict[str, Any]) -> str:
         "|---|---:|---:|---:|",
     ]
     for label, item in summary["by_expected"].items():
-        lines.append(
-            f"| {label} | {item['total']} | {item['passed']} | {item['recall']:.3f} |"
-        )
+        lines.append(f"| {label} | {item['total']} | {item['passed']} | {item['recall']:.3f} |")
     lines.extend(["", "## Confusion", "", "| Expected -> Actual | Count |", "|---|---:|"])
     for pair, count in summary["confusion"].items():
         lines.append(f"| {pair} | {count} |")

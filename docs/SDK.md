@@ -41,7 +41,7 @@ fitz_sage.evidence(
 
 ```python
 pack = fitz_sage.evidence("What is the refund policy?", source="./docs")
-print(pack.mode)  # runtime AnswerMode: TRUSTWORTHY, DISPUTED, ABSTAIN, or None
+print(pack.mode)  # runtime AnswerMode: SUFFICIENT, DISPUTED, INSUFFICIENT, or None
 
 for item in pack.items:
     print(f"{item.rank}. {item.file_path}:{item.line_range}")
@@ -68,7 +68,7 @@ fitz_sage.query(
 ```python
 answer = fitz_sage.query("What is the refund policy?")
 print(answer.text)
-print(answer.mode)  # runtime AnswerMode: TRUSTWORTHY, DISPUTED, or ABSTAIN
+print(answer.mode)  # runtime AnswerMode: SUFFICIENT, DISPUTED, or INSUFFICIENT
 
 # Access sources
 for source in answer.provenance:
@@ -204,9 +204,9 @@ Pyrrho v2's native model verdict is available in governance metadata as
 
 | Mode | Description |
 |------|-------------|
-| `TRUSTWORTHY` | Runtime mode for `SUFFICIENT` evidence |
+| `SUFFICIENT` | Runtime mode for `SUFFICIENT` evidence |
 | `DISPUTED` | Runtime mode for `DISPUTED` evidence |
-| `ABSTAIN` | Runtime mode for `INSUFFICIENT` evidence |
+| `INSUFFICIENT` | Runtime mode for `INSUFFICIENT` evidence |
 
 ### EvidencePack
 

@@ -10,7 +10,7 @@ from fitz_sage.services.fitz_service import FitzService
 def test_service_evidence_returns_engine_evidence_pack() -> None:
     pack = EvidencePack(
         query="What is indexed?",
-        mode=AnswerMode.TRUSTWORTHY,
+        mode=AnswerMode.SUFFICIENT,
         items=[
             EvidenceItem(
                 rank=1,
@@ -46,7 +46,7 @@ def test_service_evidence_returns_engine_evidence_pack() -> None:
 def test_evidence_response_accepts_pack_dict() -> None:
     pack = EvidencePack(
         query="What is indexed?",
-        mode=AnswerMode.ABSTAIN,
+        mode=AnswerMode.INSUFFICIENT,
         items=[],
         reasons=["No relevant evidence retrieved."],
         timings={},
@@ -57,6 +57,6 @@ def test_evidence_response_accepts_pack_dict() -> None:
     response = EvidenceResponse(**pack.to_dict())
 
     assert response.query == "What is indexed?"
-    assert response.mode == "abstain"
+    assert response.mode == "insufficient"
     assert response.reasons == ["No relevant evidence retrieved."]
     assert response.indexing_status == {"complete": False}

@@ -88,13 +88,15 @@ _METRIC_STOP_TERMS = {
     "why",
 }
 _METRIC_MODIFIER_TERMS = {"average", "avg", "count", "mean", "number", "sum", "total"}
+
+
 @dataclass(frozen=True)
 class GovernanceCutoffPolicy:
     """Prefix stop policy for Pyrrho verdict evaluation."""
 
     query_shape: str
     max_docs: int
-    min_trustworthy_docs: int
+    min_sufficient_docs: int
     min_disputed_docs: int
     disputed_patience_docs: int
 
@@ -120,7 +122,7 @@ def apply_governance_cutoff(
 ) -> GovernanceCutoffResult:
     """Use Pyrrho to select the smallest sufficient prefix of ranked evidence."""
     if not results:
-        mode = AnswerMode.ABSTAIN
+        mode = AnswerMode.INSUFFICIENT
         return GovernanceCutoffResult(
             selected=[],
             mode=mode,
@@ -139,10 +141,10 @@ def apply_governance_cutoff(
     policy = governance_cutoff_policy(profile, len(results), requested_top_k, query=query)
     if policy.query_shape == "broad_overview":
         selected_count = min(policy.max_docs, _BROAD_OVERVIEW_SOURCE_COUNT)
-        mode = AnswerMode.ABSTAIN
+        mode = AnswerMode.INSUFFICIENT
         reason = (
             "Query is too broad for evidence sufficiency; returned representative "
-            "sources instead of a Pyrrho trustworthy verdict."
+            "sources instead of a Pyrrho sufficient verdict."
         )
         return GovernanceCutoffResult(
             selected=results[:selected_count],
@@ -185,11 +187,11 @@ def apply_governance_cutoff(
             results, governance_results[:size]
         )
 
-        if mode is AnswerMode.TRUSTWORTHY:
+        if mode is AnswerMode.SUFFICIENT:
             consecutive_disputed = 0
-            required_trustworthy_docs = evidence_prefix_min or policy.min_trustworthy_docs
-            can_stop = size >= required_trustworthy_docs
-            stop_reason = "trustworthy_min_evidence_met"
+            required_sufficient_docs = evidence_prefix_min or policy.min_sufficient_docs
+            can_stop = size >= required_sufficient_docs
+            stop_reason = "sufficient_min_evidence_met"
 
             if can_stop:
                 selected_size = max(full_prefix_size, return_prefix_min or full_prefix_size)
@@ -286,14 +288,14 @@ def apply_governance_cutoff(
     )
     return GovernanceCutoffResult(
         selected=results[:selected_count],
-        mode=AnswerMode.ABSTAIN,
+        mode=AnswerMode.INSUFFICIENT,
         reasons=reasons,
         timings=[("Governance", time.perf_counter() - t0)],
         metadata=_governance_cutoff_metadata(
             policy,
             evaluated=evaluated,
             selected=selected_count,
-            mode=AnswerMode.ABSTAIN,
+            mode=AnswerMode.INSUFFICIENT,
             decision=last_decision,
             trajectory=trajectory,
             stop_reason=stop_reason,
@@ -318,12 +320,12 @@ def governance_cutoff_policy(
         "broad_overview": _BROAD_MIN_EVIDENCE,
         "aggregation": _AGGREGATION_MIN_EVIDENCE,
     }
-    min_trustworthy_docs = min(max_docs, min_docs_by_shape[query_shape])
+    min_sufficient_docs = min(max_docs, min_docs_by_shape[query_shape])
     min_disputed_docs = min(max_docs, _COMPARISON_MIN_EVIDENCE)
     return GovernanceCutoffPolicy(
         query_shape=query_shape,
         max_docs=max_docs,
-        min_trustworthy_docs=min_trustworthy_docs,
+        min_sufficient_docs=min_sufficient_docs,
         min_disputed_docs=min_disputed_docs,
         disputed_patience_docs=_DISPUTE_PATIENCE_DOCS,
     )
@@ -388,7 +390,7 @@ def _iter_prefix_decisions(
 
 def _first_batch_end(policy: GovernanceCutoffPolicy) -> int:
     """Batch up to the earliest point where a verdict can legally stop."""
-    min_stop_size = policy.min_trustworthy_docs
+    min_stop_size = policy.min_sufficient_docs
     if policy.query_shape == "comparison":
         min_stop_size = max(min_stop_size, policy.min_disputed_docs)
     return min(policy.max_docs, max(1, min_stop_size))
@@ -441,7 +443,7 @@ def _is_strong_dispute(decision: Any) -> bool:
     """Return whether a narrow DISPUTED prefix has enough probability mass to stop."""
     probabilities = _decision_probabilities(decision)
     disputed = probabilities.get("disputed", 0.0)
-    runner_up = max(probabilities.get("abstain", 0.0), probabilities.get("trustworthy", 0.0))
+    runner_up = max(probabilities.get("insufficient", 0.0), probabilities.get("sufficient", 0.0))
     return (
         disputed >= _NARROW_STRONG_DISPUTE_MIN_CONFIDENCE
         and disputed - runner_up >= _NARROW_STRONG_DISPUTE_MIN_MARGIN
@@ -454,9 +456,9 @@ def _decision_probabilities(decision: Any) -> dict[str, float]:
     if isinstance(probs, (list, tuple)) and len(probs) == 3:
         try:
             return {
-                "abstain": float(probs[0]),
+                "insufficient": float(probs[0]),
                 "disputed": float(probs[1]),
-                "trustworthy": float(probs[2]),
+                "sufficient": float(probs[2]),
             }
         except (TypeError, ValueError):
             return {}
@@ -465,12 +467,12 @@ def _decision_probabilities(decision: Any) -> dict[str, float]:
     probabilities = getattr(governance, "probabilities", None)
     if isinstance(probabilities, dict):
         return {
-            "abstain": float(probabilities.get("ABSTAIN", probabilities.get("abstain", 0.0))),
-            "disputed": float(
-                probabilities.get("DISPUTED", probabilities.get("disputed", 0.0))
+            "insufficient": float(
+                probabilities.get("INSUFFICIENT", probabilities.get("insufficient", 0.0))
             ),
-            "trustworthy": float(
-                probabilities.get("TRUSTWORTHY", probabilities.get("trustworthy", 0.0))
+            "disputed": float(probabilities.get("DISPUTED", probabilities.get("disputed", 0.0))),
+            "sufficient": float(
+                probabilities.get("SUFFICIENT", probabilities.get("sufficient", 0.0))
             ),
         }
     return {}
@@ -478,7 +480,7 @@ def _decision_probabilities(decision: Any) -> dict[str, float]:
 
 def _decision_mode(decision: Any) -> AnswerMode:
     """Read a decision mode defensively."""
-    mode = getattr(decision, "mode", AnswerMode.ABSTAIN)
+    mode = getattr(decision, "mode", AnswerMode.INSUFFICIENT)
     if isinstance(mode, AnswerMode):
         return mode
     return AnswerMode(str(mode))
@@ -515,7 +517,7 @@ def _governance_cutoff_metadata(
     if policy is not None:
         metadata["policy"] = {
             "query_shape": policy.query_shape,
-            "min_trustworthy_docs": policy.min_trustworthy_docs,
+            "min_sufficient_docs": policy.min_sufficient_docs,
             "min_disputed_docs": policy.min_disputed_docs,
             "disputed_patience_docs": policy.disputed_patience_docs,
         }
@@ -715,9 +717,9 @@ def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
     probs = getattr(decision, "probs", None)
     if isinstance(probs, (list, tuple)) and len(probs) == 3:
         metadata["probabilities"] = {
-            "abstain": float(probs[0]),
+            "insufficient": float(probs[0]),
             "disputed": float(probs[1]),
-            "trustworthy": float(probs[2]),
+            "sufficient": float(probs[2]),
         }
 
     reason = getattr(decision, "reason", None)

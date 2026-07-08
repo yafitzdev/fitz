@@ -3,8 +3,8 @@
 Epistemic governance.
 
 A single classifier decides whether retrieved sources support a confident
-answer (TRUSTWORTHY), contradict each other (DISPUTED), or simply don't
-contain enough information (ABSTAIN). The standard classifier is
+answer (SUFFICIENT), contradict each other (DISPUTED), or simply don't
+contain enough information (INSUFFICIENT). The standard classifier is
 [pyrrho](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1), a ModernBERT
 classifier with v2 evidence-verdict, failure-mode, retrieval-intent, and
 evidence-kind heads.
@@ -16,7 +16,7 @@ config key declares which pyrrho classifier to use:
 
     governance = create_governance("pyrrho")
     decision = governance.decide(query, retrieved_contexts)
-    # decision.mode in {TRUSTWORTHY, DISPUTED, ABSTAIN}
+    # decision.mode in {SUFFICIENT, DISPUTED, INSUFFICIENT}
     # decision.probs is the governance softmax distribution
     # v2 verdict, failure, retrieval-intent, and evidence-kind heads expose metadata
     # decision.reason is a one-line human-readable summary
@@ -53,8 +53,7 @@ def create_governance(spec: str) -> Pyrrho:
     if provider == "pyrrho":
         return Pyrrho(model_id=model) if model else Pyrrho()
     raise ValueError(
-        f"Unknown governance provider: {provider!r}. "
-        f"Supported: 'pyrrho' or 'pyrrho/<package>'."
+        f"Unknown governance provider: {provider!r}. " f"Supported: 'pyrrho' or 'pyrrho/<package>'."
     )
 
 

@@ -22,7 +22,7 @@ class TestRetrieveCommand:
         """Text mode should render the EvidencePack through the CLI display helper."""
         pack = EvidencePack(
             query="Which test failed?",
-            mode=AnswerMode.TRUSTWORTHY,
+            mode=AnswerMode.SUFFICIENT,
             items=[
                 EvidenceItem(
                     rank=1,
@@ -79,7 +79,7 @@ class TestRetrieveCommand:
         """JSON mode should emit a loadable EvidencePack without progress text."""
         pack = EvidencePack(
             query="Which test failed?",
-            mode=AnswerMode.TRUSTWORTHY,
+            mode=AnswerMode.SUFFICIENT,
             items=[
                 EvidenceItem(
                     rank=1,
@@ -123,7 +123,7 @@ class TestRetrieveCommand:
 
         assert result.exit_code == 0
         assert data["query"] == "Which test failed?"
-        assert data["mode"] == "trustworthy"
+        assert data["mode"] == "sufficient"
         mock_engine.load.assert_called_once_with("test")
         mock_engine.evidence.assert_called_once()
 
@@ -132,7 +132,7 @@ class TestRetrieveCommand:
         source = tmp_path / "docs"
         source.mkdir()
 
-        pack = EvidencePack(query="What changed?", mode=AnswerMode.TRUSTWORTHY)
+        pack = EvidencePack(query="What changed?", mode=AnswerMode.SUFFICIENT)
         manifest = MagicMock()
         manifest.entries.return_value = {}
 
@@ -173,7 +173,7 @@ class TestRetrieveCommand:
 
     def test_retrieve_defaults_to_current_directory(self, tmp_path):
         """Retrieve should register the current directory when no flags are supplied."""
-        pack = EvidencePack(query="What changed?", mode=AnswerMode.TRUSTWORTHY)
+        pack = EvidencePack(query="What changed?", mode=AnswerMode.SUFFICIENT)
 
         mock_engine = MagicMock()
         mock_engine.evidence.return_value = pack
@@ -209,7 +209,7 @@ class TestRetrieveCommand:
         (collection_dir / "manifest.json").write_text("{}", encoding="utf-8")
         (collection_dir / "source_dir.txt").write_text(str(tmp_path), encoding="utf-8")
 
-        pack = EvidencePack(query="What changed?", mode=AnswerMode.TRUSTWORTHY)
+        pack = EvidencePack(query="What changed?", mode=AnswerMode.SUFFICIENT)
 
         mock_engine = MagicMock()
         mock_engine.evidence.return_value = pack
@@ -258,7 +258,7 @@ class TestRetrieveCommand:
         """CLI query returns evidence, then hands remaining enrichment to a daemon."""
         pack = EvidencePack(
             query="What changed?",
-            mode=AnswerMode.TRUSTWORTHY,
+            mode=AnswerMode.SUFFICIENT,
             indexing_status={
                 "total": 3,
                 "complete": False,

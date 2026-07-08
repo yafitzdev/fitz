@@ -91,8 +91,8 @@ disputed, or exhausted.
 
 | Signal | Meaning | Product use |
 |---|---|---|
-| `mode` | Runtime `AnswerMode`: `TRUSTWORTHY`, `DISPUTED`, or `ABSTAIN`. | Gate synthesis, UI display, automation, and review. |
-| `probabilities` | Runtime probabilities for abstain, disputed, trustworthy. | Display confidence and audit cutoff decisions. |
+| `mode` | Runtime `AnswerMode`: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Gate synthesis, UI display, automation, and review. |
+| `probabilities` | Runtime probabilities for insufficient, disputed, sufficient. | Display confidence and audit cutoff decisions. |
 | `reason` / `reasons` | Human-readable explanation. | Tell users why Fitz judged evidence sufficient, disputed, or insufficient. |
 | `stop_reason` | Why cutoff stopped. | Route the next step: answer, retry, broaden, or request source material. |
 | `evidence_verdict` | Native v2 verdict: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Inspect the model head behind the runtime mode. |
@@ -104,9 +104,9 @@ disputed, or exhausted.
 
 | Mode | Meaning | Product behavior |
 |---|---|---|
-| `TRUSTWORTHY` | Runtime API mode for a Pyrrho `SUFFICIENT` verdict. | Show evidence; optionally synthesize prose from it. |
+| `SUFFICIENT` | Runtime API mode for a Pyrrho `SUFFICIENT` verdict. | Show evidence; optionally synthesize prose from it. |
 | `DISPUTED` | Runtime API mode for a Pyrrho `DISPUTED` verdict. | Show conflicting sources and avoid one clean answer. |
-| `ABSTAIN` | Runtime API mode for a Pyrrho `INSUFFICIENT` verdict. | Ask for more source material, clarify, or broaden retrieval. |
+| `INSUFFICIENT` | Runtime API mode for a Pyrrho `INSUFFICIENT` verdict. | Ask for more source material, clarify, or broaden retrieval. |
 
 ### Native V2 Heads
 
@@ -138,7 +138,7 @@ Likely governance metadata:
 | Signal | Likely value |
 |---|---|
 | `evidence_verdict` | `SUFFICIENT` |
-| `mode` | Runtime `TRUSTWORTHY` |
+| `mode` | Runtime `SUFFICIENT` |
 | `failure_mode` | `none` |
 | `retrieval_intents` | `needs_lookup` |
 | `evidence_kinds` | `needs_code_or_symbol` |
@@ -160,7 +160,7 @@ Likely governance metadata when complete:
 | Signal | Likely value |
 |---|---|
 | `evidence_verdict` | `SUFFICIENT` |
-| `mode` | Runtime `TRUSTWORTHY` |
+| `mode` | Runtime `SUFFICIENT` |
 | `retrieval_intents` | `needs_comparison_or_set` |
 | `evidence_kinds` | `needs_code_or_symbol`, `needs_text` |
 
@@ -181,7 +181,7 @@ Likely governance metadata when evidence is incomplete:
 | Signal | Likely value |
 |---|---|
 | `evidence_verdict` | `INSUFFICIENT` |
-| `mode` | Runtime `ABSTAIN` |
+| `mode` | Runtime `INSUFFICIENT` |
 | `failure_mode` | `wrong_scope_or_version` |
 | `retrieval_intents` | `needs_temporal_resolution` |
 
@@ -198,7 +198,7 @@ Useful governance metadata:
 | Signal | Meaning |
 |---|---|
 | `evidence_verdict = INSUFFICIENT` | Native v2 verdict agrees the evidence cannot answer. |
-| `mode = ABSTAIN` | Runtime API mode for insufficient evidence. |
+| `mode = INSUFFICIENT` | Runtime API mode for insufficient evidence. |
 | `failure_mode = missing_or_incomplete_evidence` | The corpus lacks the required Q4 evidence. |
 | `retrieval_intents = needs_temporal_resolution` | Another pass should focus on the missing period. |
 

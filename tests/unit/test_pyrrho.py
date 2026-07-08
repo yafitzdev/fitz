@@ -11,34 +11,34 @@ import pytest
 
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.governance.pyrrho import (
-    GovernanceDecision,
-    MultiLabelDecision,
     PYRRHO_POST_TAG,
     PYRRHO_PRE_TAG,
+    GovernanceDecision,
+    MultiLabelDecision,
     Pyrrho,
     PyrrhoQueryPlan,
     _format_input,
     _format_query_input,
     _is_v2_model_dir,
-    _load_trustworthy_threshold,
+    _load_sufficient_threshold,
     _preferred_onnx_path,
     _v2_decision_from_logits,
 )
 
 
 def test_decide_many_batches_non_empty_prefixes():
-    """decide_many should batch non-empty prefixes and preserve empty-prefix abstain."""
+    """decide_many should batch non-empty prefixes and preserve empty-prefix insufficient."""
     pyrrho = Pyrrho.__new__(Pyrrho)
     pyrrho._load = MagicMock()
     pyrrho._predict_context_batches = MagicMock(
         return_value=[
             GovernanceDecision(
-                mode=AnswerMode.ABSTAIN,
+                mode=AnswerMode.INSUFFICIENT,
                 probs=(0.9, 0.05, 0.05),
                 reason="Need more evidence.",
             ),
             GovernanceDecision(
-                mode=AnswerMode.TRUSTWORTHY,
+                mode=AnswerMode.SUFFICIENT,
                 probs=(0.05, 0.05, 0.9),
                 reason="Enough evidence.",
             ),
@@ -58,9 +58,9 @@ def test_decide_many_batches_non_empty_prefixes():
     )
 
     assert [decision.mode for decision in decisions] == [
-        AnswerMode.ABSTAIN,
-        AnswerMode.ABSTAIN,
-        AnswerMode.TRUSTWORTHY,
+        AnswerMode.INSUFFICIENT,
+        AnswerMode.INSUFFICIENT,
+        AnswerMode.SUFFICIENT,
     ]
     pyrrho._predict_context_batches.assert_called_once_with(
         "What happened?",
@@ -78,7 +78,7 @@ def test_decide_many_passes_only_evidence_text_to_model():
     pyrrho._predict_context_batches = MagicMock(
         return_value=[
             GovernanceDecision(
-                mode=AnswerMode.TRUSTWORTHY,
+                mode=AnswerMode.SUFFICIENT,
                 probs=(0.05, 0.05, 0.9),
                 reason="Enough evidence.",
             )
@@ -140,7 +140,7 @@ def test_v2_decision_exposes_only_native_heads():
 
     decision = _v2_decision_from_logits(logits)
 
-    assert decision.mode is AnswerMode.TRUSTWORTHY
+    assert decision.mode is AnswerMode.SUFFICIENT
     assert decision.probs[2] > 0.9
     assert decision.evidence_verdict is not None
     assert decision.evidence_verdict.final_label == "SUFFICIENT"
@@ -242,7 +242,7 @@ def test_v2_threshold_falls_back_from_weak_sufficient():
         dtype=np.float32,
     )
 
-    decision = _v2_decision_from_logits(logits, trustworthy_threshold=0.5)
+    decision = _v2_decision_from_logits(logits, sufficient_threshold=0.5)
 
     assert decision.evidence_verdict is not None
     assert decision.evidence_verdict.raw_label == "SUFFICIENT"
@@ -251,14 +251,14 @@ def test_v2_threshold_falls_back_from_weak_sufficient():
     assert decision.mode is AnswerMode.DISPUTED
 
 
-def test_load_trustworthy_threshold_reads_manifest(tmp_path):
+def test_load_sufficient_threshold_reads_manifest(tmp_path):
     """Packaged release thresholds should override the default constant."""
     (tmp_path / "manifest.json").write_text(
-        '{"release": {"trustworthy_threshold": 0.44}}',
+        '{"release": {"sufficient_threshold": 0.44}}',
         encoding="utf-8",
     )
 
-    assert _load_trustworthy_threshold(tmp_path) == 0.44
+    assert _load_sufficient_threshold(tmp_path) == 0.44
 
 
 def test_preferred_onnx_path_prefers_fp32_graph(tmp_path):

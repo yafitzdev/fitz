@@ -51,9 +51,9 @@ def test_pyrrho_loads_and_decides():
     decision = governance.decide("What is the capital of France?", contexts)
 
     assert decision.mode in (
-        AnswerMode.TRUSTWORTHY,
+        AnswerMode.SUFFICIENT,
         AnswerMode.DISPUTED,
-        AnswerMode.ABSTAIN,
+        AnswerMode.INSUFFICIENT,
     )
     assert len(decision.probs) == 3
     assert abs(sum(decision.probs) - 1.0) < 1e-3  # softmax distribution

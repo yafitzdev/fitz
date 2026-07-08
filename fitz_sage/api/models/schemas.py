@@ -35,13 +35,15 @@ class QueryResponse(BaseModel):
     """Response from a knowledge base query."""
 
     text: str = Field(..., description="The answer text")
-    mode: Optional[str] = Field(None, description="Answer mode: trustworthy, disputed, or abstain")
+    mode: Optional[str] = Field(
+        None, description="Answer mode: sufficient, disputed, or insufficient"
+    )
     sources: List[SourceInfo] = Field(
         default_factory=list, description="Sources used in the answer"
     )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Extra answer metadata, e.g. gap_context (what's missing / what to add) on abstain",
+        description="Extra answer metadata, e.g. gap_context (what's missing / what to add) on insufficient",
     )
 
 
@@ -96,13 +98,15 @@ class ChatResponse(BaseModel):
     """Response from a chat request."""
 
     text: str = Field(..., description="The assistant's response")
-    mode: Optional[str] = Field(None, description="Answer mode: trustworthy, disputed, or abstain")
+    mode: Optional[str] = Field(
+        None, description="Answer mode: sufficient, disputed, or insufficient"
+    )
     sources: List[SourceInfo] = Field(
         default_factory=list, description="Sources used in the response"
     )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Extra answer metadata, e.g. gap_context (what's missing / what to add) on ABSTAIN",
+        description="Extra answer metadata, e.g. gap_context (what's missing / what to add) on INSUFFICIENT",
     )
 
 

@@ -120,7 +120,7 @@ class TestOutputSanitization:
 
         abstention_phrases = ["don't", "unable", "no relevant", "no information", "cannot"]
         answer_lower = answer.text.lower() if answer.text else ""
-        is_abstaining = any(phrase in answer_lower for phrase in abstention_phrases)
+        is_refusing = any(phrase in answer_lower for phrase in abstention_phrases)
 
-        if answer.text and not is_abstaining:
+        if answer.text and not is_refusing:
             assert answer.provenance, "Factual answer without sources"

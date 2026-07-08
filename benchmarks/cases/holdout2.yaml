@@ -3,7 +3,7 @@
   domain: unstructured
   query: "How often do service accounts rotate API tokens?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/access_policy.md
         kind: section
@@ -14,7 +14,7 @@
   domain: unstructured
   query: "How long does break-glass access last?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/access_policy.md
         contains: ["Break-glass", "4 hours", "incident ticket"]
@@ -24,7 +24,7 @@
   domain: unstructured
   query: "Can guest collaborators export customer data from Amber project boards?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/access_policy.md
         contains: ["Guest collaborators", "Amber", "cannot export"]
@@ -34,7 +34,7 @@
   domain: unstructured
   query: "What is the current MFA exception status for customer data systems?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/access_policy.md
         contains: ["2026-08-02", "no active MFA exceptions"]
@@ -47,7 +47,7 @@
   domain: unstructured
   query: "What final customer-visible outage duration was confirmed for INC-611?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/incident_review.md
         contains: ["Final review", "INC-611", "42 minutes"]
@@ -60,7 +60,7 @@
   domain: unstructured
   query: "Who commanded INC-611 and what was the root cause?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/incident_review.md
         contains: ["Dana Ortiz", "replay worker", "idempotency queue"]
@@ -70,7 +70,7 @@
   domain: unstructured
   query: "Which vendors require Security review before renewal?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/procurement_policy.md
         contains: ["annual spend above 50000 USD", "Security review"]
@@ -80,7 +80,7 @@
   domain: unstructured
   query: "How much written notice is required to cancel MeridianAI auto-renewal?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/procurement_policy.md
         contains: ["MeridianAI", "75 days written notice"]
@@ -90,7 +90,7 @@
   domain: unstructured
   query: "What is the latest Project Vega EMEA status?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/roadmap_status.md
         contains: ["2026-07-12", "private beta", "12 design partners"]
@@ -103,7 +103,7 @@
   domain: unstructured
   query: "Who owns Project Nimbus and what is its GA target?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/roadmap_status.md
         contains: ["Mei Rao", "2026-11-30"]
@@ -113,7 +113,7 @@
   domain: unstructured
   query: "What exact budget amount has Project Comet been approved for?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/roadmap_status.md
         contains: ["Project Comet", "budget has not been approved"]
@@ -123,7 +123,7 @@
   domain: unstructured
   query: "What acknowledgement time applies to Enterprise Critical cases?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/support_handbook.md
         contains: ["Enterprise Critical", "7 minutes"]
@@ -133,7 +133,7 @@
   domain: unstructured
   query: "What first response time applies to Standard P3 support cases?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/support_handbook.md
         contains: ["Standard P3", "6 hours"]
@@ -155,7 +155,7 @@
   domain: unstructured
   query: "What is the final residual score for risk RSK-81?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/risk_audit_note.md
         contains: ["RSK-81", "final residual score", "18"]
@@ -168,7 +168,7 @@
   domain: structured
   query: "Who owns service SVC-204 and what SLO is recorded?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/services.csv
         kind: table
@@ -179,7 +179,7 @@
   domain: structured
   query: "Which gold APAC service is listed in the service catalog?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/services.csv
         kind: table
@@ -190,7 +190,7 @@
   domain: structured
   query: "Which service has the highest SLO percent?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/services.csv
         kind: table
@@ -201,7 +201,7 @@
   domain: structured
   query: "What status and commander are recorded for incident INC-730?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/incidents.csv
         kind: table
@@ -212,7 +212,7 @@
   domain: structured
   query: "Which customer-visible incident has the longest duration?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/incidents.csv
         kind: table
@@ -223,7 +223,7 @@
   domain: structured
   query: "What annual spend and notice days are recorded for vendor VEN-301?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/vendors.csv
         kind: table
@@ -234,7 +234,7 @@
   domain: structured
   query: "Which vendor has the highest annual spend?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/vendors.csv
         kind: table
@@ -245,7 +245,7 @@
   domain: structured
   query: "Which legal vendor lacks SOC 2?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/vendors.csv
         kind: table
@@ -256,7 +256,7 @@
   domain: structured
   query: "What status, percent, and expiry are recorded for rollout ROL-401?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/rollouts.csv
         kind: table
@@ -267,7 +267,7 @@
   domain: structured
   query: "Which rollout is disabled for analytics_cache_v2?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/rollouts.csv
         kind: table
@@ -278,7 +278,7 @@
   domain: structured
   query: "Is export EXP-502 encrypted and who owns it?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/exports.csv
         kind: table
@@ -289,7 +289,7 @@
   domain: structured
   query: "Which export has the most rows?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/exports.csv
         kind: table
@@ -300,7 +300,7 @@
   domain: structured
   query: "What status and due date are recorded for control CTL-601?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/controls.csv
         kind: table
@@ -311,7 +311,7 @@
   domain: structured
   query: "Which control is blocked for risk RSK-83?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/controls.csv
         kind: table
@@ -322,7 +322,7 @@
   domain: code
   query: "Which Python method decides whether a user may export customer data?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/access_control.py
         kind: symbol
@@ -334,7 +334,7 @@
   domain: code
   query: "Which Python constant contains the admin override environment variable?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/access_control.py
         kind: symbol
@@ -358,7 +358,7 @@
   domain: code
   query: "Which method returns token rotation days for service accounts?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/access_control.py
         kind: symbol
@@ -370,7 +370,7 @@
   domain: code
   query: "Which dataclass represents a scheduled export job?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/export_scheduler.py
         kind: symbol
@@ -382,7 +382,7 @@
   domain: code
   query: "Which function returns the APAC export window of 16:00?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/export_scheduler.py
         kind: symbol
@@ -394,7 +394,7 @@
   domain: code
   query: "Which function skips large unencrypted exports?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/export_scheduler.py
         kind: symbol
@@ -406,7 +406,7 @@
   domain: code
   query: "Which function maps S0 incidents to the incident command channel?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/incident_triage.py
         kind: symbol
@@ -430,7 +430,7 @@
   domain: code
   query: "Which function returns an 18 percent discount for platinum accounts with at least 1000 seats?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/pricing_engine.py
         kind: symbol
@@ -442,7 +442,7 @@
   domain: code
   query: "Which Python constant controls pricing discount override environment variables?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/pricing_engine.py
         kind: symbol
@@ -454,7 +454,7 @@
   domain: mixed
   query: "Using the release brief, which rollout and service owner apply to Project Vega EMEA?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/release_brief.md
         contains: ["Project Vega EMEA", "ROL-401", "SVC-202"]
@@ -468,7 +468,7 @@
   domain: mixed
   query: "Using the release brief, what is Vega's latest roadmap status and rollout expiry?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/release_brief.md
         contains: ["roadmap status document", "rollout table"]
@@ -498,7 +498,7 @@
   domain: mixed
   query: "Using the export brief, should EXP-502 be skipped by the export scheduler?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/export_brief.md
         contains: ["EXP-502", "skip logic"]
@@ -512,7 +512,7 @@
   domain: mixed
   query: "Using the export brief, what deletion rule applies to EXP-505?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/export_brief.md
         contains: ["EXP-505", "biometric artifacts"]
@@ -526,7 +526,7 @@
   domain: mixed
   query: "Using the risk brief, what control tracks RSK-81 and what final residual score did audit record?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/risk_brief.md
         contains: ["RSK-81", "CTL-601"]
@@ -554,7 +554,7 @@
   domain: mixed
   query: "Using the pricing brief, what notice applies to MeridianAI and which code path mirrors model_eval renewal notice?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/pricing_brief.md
         contains: ["MeridianAI", "VEN-301", "model_eval"]
@@ -570,7 +570,7 @@
   domain: mixed
   query: "Which incident had the 42 minute outage in the review, and what service id does the table record?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/incident_review.md
         contains: ["INC-611", "42 minutes"]
@@ -582,7 +582,7 @@
   domain: mixed
   query: "Which open S0 incident is in the table and which code function maps S0 to incident command?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/incidents.csv
         contains: ["INC-730", "S0", "open"]

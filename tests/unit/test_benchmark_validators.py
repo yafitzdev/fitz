@@ -12,7 +12,7 @@ def test_validate_case_matches_required_evidence() -> None:
             "domain": "code",
             "query": "Where is refresh implemented?",
             "expected": {
-                "mode": "trustworthy",
+                "mode": "sufficient",
                 "required_evidence": [
                     {
                         "file": "code/auth_service.py",
@@ -25,7 +25,7 @@ def test_validate_case_matches_required_evidence() -> None:
         }
     )
     pack = {
-        "mode": "trustworthy",
+        "mode": "sufficient",
         "items": [
             {
                 "rank": 1,
@@ -53,7 +53,7 @@ def test_validate_case_reports_mode_and_forbidden_failures() -> None:
             "domain": "unstructured",
             "query": "What is missing?",
             "expected": {
-                "mode": "abstain",
+                "mode": "insufficient",
                 "forbidden_evidence": [
                     {
                         "file": "refund_policy.md",
@@ -64,7 +64,7 @@ def test_validate_case_reports_mode_and_forbidden_failures() -> None:
         }
     )
     pack = {
-        "mode": "trustworthy",
+        "mode": "sufficient",
         "items": [
             {
                 "rank": 2,
@@ -86,7 +86,7 @@ def test_validate_case_reports_mode_and_forbidden_failures() -> None:
     assert len(result.failures) == 2
 
 
-def test_validate_case_accepts_v2_mode_aliases() -> None:
+def test_validate_case_accepts_v2_mode_names() -> None:
     case = BenchmarkCase.from_dict(
         {
             "id": "case_3",
@@ -95,7 +95,7 @@ def test_validate_case_accepts_v2_mode_aliases() -> None:
             "expected": {"mode": "sufficient"},
         }
     )
-    pack = {"mode": "trustworthy", "items": []}
+    pack = {"mode": "sufficient", "items": []}
 
     result = validate_case(case, pack)
 
@@ -104,7 +104,7 @@ def test_validate_case_accepts_v2_mode_aliases() -> None:
     assert result.metrics.mode_match is True
 
 
-def test_validate_case_accepts_insufficient_alias_for_abstain() -> None:
+def test_validate_case_rejects_old_runtime_mode_names() -> None:
     case = BenchmarkCase.from_dict(
         {
             "id": "case_4",
@@ -118,8 +118,8 @@ def test_validate_case_accepts_insufficient_alias_for_abstain() -> None:
     result = validate_case(case, pack)
 
     assert case.expected_mode == "insufficient"
-    assert result.passed is True
-    assert result.metrics.mode_match is True
+    assert result.passed is False
+    assert result.metrics.mode_match is False
 
 
 def test_validate_case_matches_wrapped_markdown_phrase() -> None:

@@ -6,22 +6,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-_MODE_ALIASES = {
-    "sufficient": "sufficient",
-    "trustworthy": "sufficient",
-    "insufficient": "insufficient",
-    "abstain": "insufficient",
-    "disputed": "disputed",
-}
+_VALID_MODES = {"sufficient", "disputed", "insufficient"}
 
 
 def normalize_mode(value: Any) -> str | None:
-    """Normalize old and v2 governance label names to v2 benchmark labels."""
+    """Normalize v2 governance label names used by benchmark cases and packs."""
     if value is None:
         return None
     raw = getattr(value, "value", value)
     normalized = str(raw).strip().lower()
-    return _MODE_ALIASES.get(normalized, normalized)
+    return normalized if normalized in _VALID_MODES else normalized
 
 
 @dataclass(frozen=True)

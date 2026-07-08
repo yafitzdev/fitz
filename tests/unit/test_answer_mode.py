@@ -16,13 +16,13 @@ from fitz_sage.governance.instructions import (
 
 class TestAnswerModeEnum:
     def test_all_modes_defined(self):
-        assert AnswerMode.TRUSTWORTHY == "trustworthy"
+        assert AnswerMode.SUFFICIENT == "sufficient"
         assert AnswerMode.DISPUTED == "disputed"
-        assert AnswerMode.ABSTAIN == "abstain"
+        assert AnswerMode.INSUFFICIENT == "insufficient"
 
     def test_mode_is_string(self):
-        assert isinstance(AnswerMode.TRUSTWORTHY, str)
-        assert AnswerMode.TRUSTWORTHY.value == "trustworthy"
+        assert isinstance(AnswerMode.SUFFICIENT, str)
+        assert AnswerMode.SUFFICIENT.value == "sufficient"
 
 
 class TestModeInstructions:
@@ -35,9 +35,9 @@ class TestModeInstructions:
         instruction = get_mode_instruction(AnswerMode.DISPUTED)
         assert "disagree" in instruction.lower()
 
-        instruction = get_mode_instruction(AnswerMode.ABSTAIN)
+        instruction = get_mode_instruction(AnswerMode.INSUFFICIENT)
         assert "definitive" in instruction.lower()
 
-    def test_trustworthy_instruction_is_direct(self):
-        instruction = get_mode_instruction(AnswerMode.TRUSTWORTHY)
+    def test_sufficient_instruction_is_direct(self):
+        instruction = get_mode_instruction(AnswerMode.SUFFICIENT)
         assert "clearly" in instruction.lower() or "directly" in instruction.lower()

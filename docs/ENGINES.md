@@ -40,7 +40,7 @@ class Query:
 @dataclass
 class Answer:
     text: str
-    mode: AnswerMode                  # runtime: TRUSTWORTHY | DISPUTED | ABSTAIN
+    mode: AnswerMode                  # runtime: SUFFICIENT | DISPUTED | INSUFFICIENT
     provenance: list[Provenance]
     metadata: dict
 ```
@@ -174,7 +174,7 @@ class MyEngine:
     def answer(self, query: Query) -> Answer:
         return Answer(
             text="...",
-            mode=AnswerMode.TRUSTWORTHY,  # runtime mode for sufficient evidence
+            mode=AnswerMode.SUFFICIENT,  # runtime mode for sufficient evidence
             provenance=[],
             metadata={},
         )

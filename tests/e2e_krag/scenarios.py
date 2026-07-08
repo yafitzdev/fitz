@@ -56,7 +56,7 @@ class TestScenario:
         must_contain: Substrings that MUST appear in the answer (case-insensitive)
         must_contain_any: At least ONE of these must appear (case-insensitive)
         must_not_contain: Substrings that must NOT appear in the answer
-        expected_mode: Expected AnswerMode (e.g., "HEDGED", "ABSTAIN")
+        expected_mode: Expected AnswerMode (e.g., "HEDGED", "INSUFFICIENT")
         min_sources: Minimum number of source citations expected
         custom_validator: Optional custom validation function
     """
@@ -1120,7 +1120,7 @@ SCENARIOS: list[TestScenario] = [
         name="Causal: reverse causation question",
         feature=Feature.CAUSAL_ATTRIBUTION,
         query="What events might have influenced the EV tax credit expansion?",
-        # Documents don't establish this causation - should abstain or hedge
+        # Documents don't establish this causation - should insufficient or hedge
         must_contain_any=["not clear", "unknown", "cannot determine", "government", "policy"],
         min_sources=0,
     ),

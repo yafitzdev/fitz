@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+
 def _report_timings(
     progress: Callable[[str], None],
     timings: list[tuple[str, float]],
@@ -664,13 +665,13 @@ class FitzKragEngine:
                     _report_timings(_progress, timings, pipeline_start)
                     gap_context = self._build_gap_context(sanitized)
                     return Answer(
-                        text=self._synthesizer._build_abstain_message(sanitized, gap_context),
+                        text=self._synthesizer._build_insufficient_message(sanitized, gap_context),
                         provenance=[],
-                        mode=AnswerMode.ABSTAIN,
+                        mode=AnswerMode.INSUFFICIENT,
                         metadata={
                             "engine": "fitz_krag",
                             "query": query.text,
-                            "answer_mode": "abstain",
+                            "answer_mode": "insufficient",
                             "gap_context": gap_context,
                             "query_profile": outcome.query_profile_metadata,
                         },
@@ -695,7 +696,7 @@ class FitzKragEngine:
                 t0 = time.perf_counter()
                 gap_context = None
                 conflict_context = None
-                if answer_mode == AnswerMode.ABSTAIN:
+                if answer_mode == AnswerMode.INSUFFICIENT:
                     gap_context = self._build_gap_context(sanitized, governance.reasons)
                 elif answer_mode == AnswerMode.DISPUTED:
                     conflict_context = {"reason": governance.reason}
@@ -1005,10 +1006,10 @@ class FitzKragEngine:
         governance_reasons: tuple[str, ...] = (),
     ) -> dict:
         """
-        Build gap analysis context for actionable ABSTAIN messages.
+        Build gap analysis context for actionable INSUFFICIENT messages.
 
         Assembles information about what the corpus DOES contain
-        so the ABSTAIN message can explain gaps and suggest additions.
+        so the INSUFFICIENT message can explain gaps and suggest additions.
 
         Args:
             query: The user's query text

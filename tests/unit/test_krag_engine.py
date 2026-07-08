@@ -71,7 +71,7 @@ def _decision(
     decision.reason = reason
     if probs is not None:
         decision.probs = probs
-    elif mode is AnswerMode.TRUSTWORTHY:
+    elif mode is AnswerMode.SUFFICIENT:
         decision.probs = (0.11, 0.22, 0.67)
     elif mode is AnswerMode.DISPUTED:
         decision.probs = (0.12, 0.68, 0.20)
@@ -375,17 +375,17 @@ class TestAnswer:
             query.text,
             context,
             expanded,
-            answer_mode=AnswerMode.TRUSTWORTHY,
+            answer_mode=AnswerMode.SUFFICIENT,
             gap_context=None,
             conflict_context=None,
         )
 
         assert result is expected_answer
-        assert result.metadata["pyrrho"]["mode"] == "trustworthy"
+        assert result.metadata["pyrrho"]["mode"] == "sufficient"
         assert result.metadata["pyrrho"]["probabilities"] == {
-            "abstain": 0.1,
+            "insufficient": 0.1,
             "disputed": 0.1,
-            "trustworthy": 0.8,
+            "sufficient": 0.8,
         }
         assert result.metadata["query_profile"]["profile"]["top_k"] == engine._config.top_addresses
 
@@ -433,7 +433,7 @@ class TestAnswer:
             engine.answer(_make_query("What is RAG?"))
 
     def test_answer_no_addresses_returns_fallback(self):
-        """Router returning [] yields an actionable ABSTAIN answer."""
+        """Router returning [] yields an actionable INSUFFICIENT answer."""
         engine = _make_engine()
         query = _make_query()
 
@@ -442,17 +442,17 @@ class TestAnswer:
         result = engine.answer(query)
 
         assert result.provenance == []
-        assert result.mode == AnswerMode.ABSTAIN
+        assert result.mode == AnswerMode.INSUFFICIENT
         assert result.metadata["engine"] == "fitz_krag"
         assert result.metadata["query"] == query.text
-        assert result.metadata["answer_mode"] == "abstain"
+        assert result.metadata["answer_mode"] == "insufficient"
         assert "gap_context" in result.metadata
 
         # Reader should never be called
         engine._reader.read.assert_not_called()
 
     def test_answer_no_read_results_returns_fallback(self):
-        """Retrieval finding addresses but reading nothing yields an abstain Answer."""
+        """Retrieval finding addresses but reading nothing yields an insufficient Answer."""
         engine = _make_engine()
         query = _make_query()
 
@@ -461,8 +461,8 @@ class TestAnswer:
 
         result = engine.answer(query)
 
-        assert result.mode == AnswerMode.ABSTAIN
-        assert result.metadata["answer_mode"] == "abstain"
+        assert result.mode == AnswerMode.INSUFFICIENT
+        assert result.metadata["answer_mode"] == "insufficient"
         assert "gap_context" in result.metadata
         assert result.provenance == []
 
@@ -621,14 +621,14 @@ class TestEvidence:
         engine._expander.expand.return_value = [result]
 
         decision = MagicMock()
-        decision.mode = AnswerMode.TRUSTWORTHY
+        decision.mode = AnswerMode.SUFFICIENT
         decision.reasons = ("Sources support a confident answer.",)
         engine._governance = MagicMock()
         engine._governance.decide.return_value = decision
 
         pack = engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
 
-        assert pack.mode == AnswerMode.TRUSTWORTHY
+        assert pack.mode == AnswerMode.SUFFICIENT
         assert pack.reasons == ["Sources support a confident answer."]
         assert len(pack.items) == 1
         assert pack.items[0].file_path == "docs/sprint.md"
@@ -663,7 +663,7 @@ class TestEvidence:
         engine._retrieval_router.retrieve.return_value = [address]
         engine._reader.read.return_value = [result]
         decision = MagicMock()
-        decision.mode = AnswerMode.TRUSTWORTHY
+        decision.mode = AnswerMode.SUFFICIENT
         decision.reasons = ("Enough evidence.",)
         engine._governance = MagicMock()
         engine._governance.decide.return_value = decision
@@ -684,7 +684,7 @@ class TestEvidence:
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
         engine._governance.decide.return_value = _decision(
-            AnswerMode.TRUSTWORTHY,
+            AnswerMode.SUFFICIENT,
             "Enough comparative evidence.",
         )
         engine._governance.plan_query.return_value = MagicMock(
@@ -724,13 +724,13 @@ class TestEvidence:
 
         engine._governance = MagicMock()
         engine._governance.decide.side_effect = [
-            _decision(AnswerMode.ABSTAIN, "Need more evidence."),
-            _decision(AnswerMode.TRUSTWORTHY, "Enough evidence at two docs."),
+            _decision(AnswerMode.INSUFFICIENT, "Need more evidence."),
+            _decision(AnswerMode.SUFFICIENT, "Enough evidence at two docs."),
         ]
 
         pack = engine.evidence(Query(text="What happened?"), top_k=3)
 
-        assert pack.mode == AnswerMode.TRUSTWORTHY
+        assert pack.mode == AnswerMode.SUFFICIENT
         assert pack.reasons == ["Enough evidence at two docs."]
         assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
         for timing_name in (
@@ -747,14 +747,14 @@ class TestEvidence:
         assert cutoff["evaluated"] == 2
         assert cutoff["selected"] == 2
         assert cutoff["max"] == 3
-        assert cutoff["mode"] == "trustworthy"
+        assert cutoff["mode"] == "sufficient"
         assert cutoff["policy"]["query_shape"] == "narrow"
         assert cutoff["pyrrho"] == {
-            "mode": "trustworthy",
+            "mode": "sufficient",
             "probabilities": {
-                "abstain": 0.11,
+                "insufficient": 0.11,
                 "disputed": 0.22,
-                "trustworthy": 0.67,
+                "sufficient": 0.67,
             },
             "reason": "Enough evidence at two docs.",
         }
@@ -764,23 +764,23 @@ class TestEvidence:
         assert len(second_contexts) == 2
         engine._expander.expand.assert_not_called()
 
-    def test_broad_query_requires_minimum_trustworthy_window(self):
-        """Pyrrho broad-answer plans do not stop on a top-1 trustworthy verdict."""
+    def test_broad_query_requires_minimum_sufficient_window(self):
+        """Pyrrho broad-answer plans do not stop on a top-1 sufficient verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
         engine._governance.decide.side_effect = [
-            _decision(AnswerMode.TRUSTWORTHY, "Top one is plausible."),
-            _decision(AnswerMode.TRUSTWORTHY, "Top two are plausible."),
-            _decision(AnswerMode.TRUSTWORTHY, "Top three are plausible."),
-            _decision(AnswerMode.TRUSTWORTHY, "Broad window is enough."),
+            _decision(AnswerMode.SUFFICIENT, "Top one is plausible."),
+            _decision(AnswerMode.SUFFICIENT, "Top two are plausible."),
+            _decision(AnswerMode.SUFFICIENT, "Top three are plausible."),
+            _decision(AnswerMode.SUFFICIENT, "Broad window is enough."),
         ]
 
         pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=4)
 
-        assert pack.mode == AnswerMode.TRUSTWORTHY
+        assert pack.mode == AnswerMode.SUFFICIENT
         assert [item.file_path for item in pack.items] == [
             "docs/1.md",
             "docs/2.md",
@@ -790,7 +790,7 @@ class TestEvidence:
         assert engine._governance.decide.call_count == 4
         cutoff = pack.metadata["governance_cutoff"]
         assert cutoff["policy"]["query_shape"] == "broad"
-        assert cutoff["policy"]["min_trustworthy_docs"] == 4
+        assert cutoff["policy"]["min_sufficient_docs"] == 4
 
     def test_comparison_query_stops_on_disputed_after_two_docs(self):
         """Pyrrho comparison plans can stop on disputed once both sides exist."""
@@ -800,7 +800,7 @@ class TestEvidence:
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
         engine._governance.decide.side_effect = [
-            _decision(AnswerMode.ABSTAIN, "Need another side."),
+            _decision(AnswerMode.INSUFFICIENT, "Need another side."),
             _decision(AnswerMode.DISPUTED, "Sources disagree."),
         ]
 
@@ -837,8 +837,8 @@ class TestEvidence:
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
         engine._governance.decide.side_effect = [
-            _decision(AnswerMode.TRUSTWORTHY, "Top one is not enough."),
-            _decision(AnswerMode.TRUSTWORTHY, "Both quarters represented."),
+            _decision(AnswerMode.SUFFICIENT, "Top one is not enough."),
+            _decision(AnswerMode.SUFFICIENT, "Both quarters represented."),
         ]
 
         pack = engine.evidence(
@@ -846,12 +846,12 @@ class TestEvidence:
             top_k=2,
         )
 
-        assert pack.mode == AnswerMode.TRUSTWORTHY
+        assert pack.mode == AnswerMode.SUFFICIENT
         assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
         assert engine._governance.decide.call_count == 2
         cutoff = pack.metadata["governance_cutoff"]
         assert cutoff["policy"]["query_shape"] == "comparison"
-        assert cutoff["policy"]["min_trustworthy_docs"] == 2
+        assert cutoff["policy"]["min_sufficient_docs"] == 2
 
     def test_narrow_query_disputed_needs_patience_window(self):
         """Narrow queries keep going for two more docs before disputed stops."""
@@ -861,7 +861,7 @@ class TestEvidence:
         engine._reader.read.return_value = results
         engine._governance = MagicMock()
         engine._governance.decide.side_effect = [
-            _decision(AnswerMode.ABSTAIN, "Need evidence."),
+            _decision(AnswerMode.INSUFFICIENT, "Need evidence."),
             _decision(AnswerMode.DISPUTED, "Conflict appears.", probs=(0.26, 0.55, 0.19)),
             _decision(AnswerMode.DISPUTED, "Conflict remains.", probs=(0.26, 0.55, 0.19)),
             _decision(AnswerMode.DISPUTED, "Conflict persisted.", probs=(0.26, 0.55, 0.19)),

@@ -68,7 +68,7 @@ class CodeSynthesizer:
         query: str,
         context: str,
         results: list[ReadResult],
-        answer_mode: AnswerMode = AnswerMode.TRUSTWORTHY,
+        answer_mode: AnswerMode = AnswerMode.SUFFICIENT,
         gap_context: dict | None = None,
         conflict_context: dict | None = None,
     ) -> Answer:
@@ -80,17 +80,17 @@ class CodeSynthesizer:
             context: Assembled context string from ContextAssembler
             results: ReadResults used to build provenance
             answer_mode: Epistemic posture controlling answer framing
-            gap_context: Gap analysis for actionable ABSTAIN messages
+            gap_context: Gap analysis for actionable INSUFFICIENT messages
             conflict_context: Conflict details for actionable DISPUTED messages
 
         Returns:
             Answer with text, provenance, and metadata
         """
-        # ABSTAIN: generate actionable diagnostic instead of generic refusal
-        if answer_mode == AnswerMode.ABSTAIN:
+        # INSUFFICIENT: generate actionable diagnostic instead of generic refusal
+        if answer_mode == AnswerMode.INSUFFICIENT:
             provenance = self._build_provenance(results)
             return Answer(
-                text=self._build_abstain_message(query, gap_context),
+                text=self._build_insufficient_message(query, gap_context),
                 provenance=provenance,
                 mode=answer_mode,
                 metadata={
@@ -214,9 +214,9 @@ class CodeSynthesizer:
             "and note that the user should verify which is current/authoritative."
         )
 
-    def _build_abstain_message(self, query: str, gap_context: dict | None) -> str:
+    def _build_insufficient_message(self, query: str, gap_context: dict | None) -> str:
         """
-        Build an actionable ABSTAIN message that explains WHY the system
+        Build an actionable INSUFFICIENT message that explains WHY the system
         can't answer and WHAT the user can do about it.
 
         Instead of "I don't have enough information", tells the user:

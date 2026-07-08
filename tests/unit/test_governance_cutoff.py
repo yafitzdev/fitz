@@ -19,7 +19,7 @@ from fitz_sage.governance.pyrrho import (
 
 def test_cutoff_serializes_only_native_pyrrho_v2_metadata():
     """Cutoff metadata should expose v2 heads and no removed legacy heads."""
-    decision = _decision(AnswerMode.TRUSTWORTHY)
+    decision = _decision(AnswerMode.SUFFICIENT)
     result = apply_governance_cutoff(
         "What is the refund window?",
         [_result("Refund window is 30 days.")],
@@ -27,8 +27,8 @@ def test_cutoff_serializes_only_native_pyrrho_v2_metadata():
     )
 
     pyrrho = result.metadata["pyrrho"]
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert pyrrho["mode"] == "trustworthy"
+    assert result.mode is AnswerMode.SUFFICIENT
+    assert pyrrho["mode"] == "sufficient"
     assert pyrrho["evidence_verdict"]["final_label"] == "SUFFICIENT"
     assert pyrrho["failure_mode"]["final_label"] == "none"
     assert pyrrho["retrieval_intents"]["final_labels"] == ["needs_lookup"]
@@ -40,17 +40,17 @@ def test_cutoff_serializes_only_native_pyrrho_v2_metadata():
 
 def test_pyrrho_decision_metadata_ignores_removed_heads_even_if_present():
     """External test doubles should not reintroduce removed Pyrrho metadata fields."""
-    decision = _decision(AnswerMode.TRUSTWORTHY)
+    decision = _decision(AnswerMode.SUFFICIENT)
     removed_key = "retrieval" + "_action"
     object.__setattr__(decision, "heads", {**decision.heads, removed_key: _head("ready")})
 
-    metadata = pyrrho_decision_metadata(AnswerMode.TRUSTWORTHY, decision)
+    metadata = pyrrho_decision_metadata(AnswerMode.SUFFICIENT, decision)
 
     assert "evidence_verdict" in metadata
     assert removed_key not in metadata
 
 
-def test_evidence_compiler_floor_delays_trustworthy_stop():
+def test_evidence_compiler_floor_delays_sufficient_stop():
     """Compiler-required sources can force Pyrrho to see enough ranked evidence."""
     results = [
         _result(
@@ -73,13 +73,13 @@ def test_evidence_compiler_floor_delays_trustworthy_stop():
         results,
         _governance(
             {
-                1: _decision(AnswerMode.TRUSTWORTHY),
-                2: _decision(AnswerMode.TRUSTWORTHY),
+                1: _decision(AnswerMode.SUFFICIENT),
+                2: _decision(AnswerMode.SUFFICIENT),
             }
         ),
     )
 
-    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.mode is AnswerMode.SUFFICIENT
     assert result.metadata["evaluated"] == 2
     assert result.metadata["trajectory"][0]["evidence_prefix_min"] == 2
 
@@ -95,7 +95,7 @@ def test_comparison_dispute_stops_when_pyrrho_verdict_policy_is_met():
         ],
         _governance(
             {
-                1: _decision(AnswerMode.ABSTAIN),
+                1: _decision(AnswerMode.INSUFFICIENT),
                 2: _decision(AnswerMode.DISPUTED),
             }
         ),
@@ -107,7 +107,7 @@ def test_comparison_dispute_stops_when_pyrrho_verdict_policy_is_met():
     assert result.metadata["evaluated"] == 2
 
 
-def test_cutoff_does_not_override_pyrrho_trustworthy_with_local_conflict_signal():
+def test_cutoff_does_not_override_pyrrho_sufficient_with_local_conflict_signal():
     """Explicit-value conflicts are evidence for Pyrrho, not local verdict overrides."""
     profile = SimpleNamespace(query_contract="comparison_coverage")
     result = apply_governance_cutoff(
@@ -118,15 +118,15 @@ def test_cutoff_does_not_override_pyrrho_trustworthy_with_local_conflict_signal(
         ],
         _governance(
             {
-                1: _decision(AnswerMode.ABSTAIN),
-                2: _decision(AnswerMode.TRUSTWORTHY),
+                1: _decision(AnswerMode.INSUFFICIENT),
+                2: _decision(AnswerMode.SUFFICIENT),
             }
         ),
         profile=profile,
     )
 
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+    assert result.mode is AnswerMode.SUFFICIENT
+    assert result.metadata["stop_reason"] == "sufficient_min_evidence_met"
 
 
 def test_broad_overview_returns_representative_sources_without_pyrrho_call():
@@ -141,29 +141,31 @@ def test_broad_overview_returns_representative_sources_without_pyrrho_call():
     profile = SimpleNamespace(query_contract="representative_overview")
     results = [_result(f"Source {idx}.", index=idx) for idx in range(1, 9)]
 
-    result = apply_governance_cutoff("Summarize the docs.", results, _NoCallGovernance(), profile=profile)
+    result = apply_governance_cutoff(
+        "Summarize the docs.", results, _NoCallGovernance(), profile=profile
+    )
 
-    assert result.mode is AnswerMode.ABSTAIN
+    assert result.mode is AnswerMode.INSUFFICIENT
     assert result.metadata["stop_reason"] == "representative_overview"
     assert result.metadata["sufficiency_evaluated"] is False
     assert len(result.selected) == 6
 
 
-def test_cutoff_exhaustion_returns_abstain_without_old_control_reasons():
+def test_cutoff_exhaustion_returns_insufficient_without_old_control_reasons():
     """Cutoff exhaustion should report Pyrrho insufficiency, not retrieval-control state."""
     result = apply_governance_cutoff(
         "What is the launch date?",
         [_result("Only mentions launch owner.", index=1), _result("No date.", index=2)],
         _governance(
             {
-                1: _decision(AnswerMode.ABSTAIN),
-                2: _decision(AnswerMode.ABSTAIN),
+                1: _decision(AnswerMode.INSUFFICIENT),
+                2: _decision(AnswerMode.INSUFFICIENT),
             }
         ),
         requested_top_k=2,
     )
 
-    assert result.mode is AnswerMode.ABSTAIN
+    assert result.mode is AnswerMode.INSUFFICIENT
     assert result.metadata["stop_reason"] == "cutoff_exhausted"
     assert ("retrieval" + "_control_blocker") not in result.metadata
     assert any("did not find sufficient" in reason for reason in result.reasons)
@@ -181,14 +183,14 @@ def _governance(decisions: dict[int, GovernanceDecision]):
 
 def _decision(mode: AnswerMode) -> GovernanceDecision:
     labels = {
-        AnswerMode.ABSTAIN: "INSUFFICIENT",
+        AnswerMode.INSUFFICIENT: "INSUFFICIENT",
         AnswerMode.DISPUTED: "DISPUTED",
-        AnswerMode.TRUSTWORTHY: "SUFFICIENT",
+        AnswerMode.SUFFICIENT: "SUFFICIENT",
     }
     probs = {
-        AnswerMode.ABSTAIN: (0.86, 0.08, 0.06),
+        AnswerMode.INSUFFICIENT: (0.86, 0.08, 0.06),
         AnswerMode.DISPUTED: (0.07, 0.86, 0.07),
-        AnswerMode.TRUSTWORTHY: (0.06, 0.08, 0.86),
+        AnswerMode.SUFFICIENT: (0.06, 0.08, 0.86),
     }[mode]
     evidence_verdict = _head(
         labels[mode],

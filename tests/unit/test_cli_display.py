@@ -78,11 +78,11 @@ def test_evidence_title_stays_stable_for_pyrrho_verdict():
     """Evidence table title should not encode governance state."""
     metadata = {
         "governance_cutoff": {
-            "pyrrho": {"mode": "trustworthy"},
+            "pyrrho": {"mode": "sufficient"},
         }
     }
 
-    assert _evidence_title("trustworthy", metadata) == "Evidence"
+    assert _evidence_title("sufficient", metadata) == "Evidence"
 
 
 def test_broad_overview_title_stays_stable():
@@ -94,7 +94,7 @@ def test_broad_overview_title_stays_stable():
         }
     }
 
-    assert _evidence_title("abstain", metadata) == "Evidence"
+    assert _evidence_title("insufficient", metadata) == "Evidence"
 
 
 def test_format_governance_metadata_shows_pyrrho_and_cutoff():
@@ -104,19 +104,19 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
             "evaluated": 6,
             "selected": 6,
             "max": 10,
-            "mode": "trustworthy",
+            "mode": "sufficient",
             "policy": {
                 "query_shape": "broad",
-                "min_trustworthy_docs": 4,
+                "min_sufficient_docs": 4,
                 "min_disputed_docs": 2,
                 "disputed_patience_docs": 2,
             },
             "pyrrho": {
-                "mode": "trustworthy",
+                "mode": "sufficient",
                 "probabilities": {
-                    "abstain": 0.21,
+                    "insufficient": 0.21,
                     "disputed": 0.26,
-                    "trustworthy": 0.53,
+                    "sufficient": 0.53,
                 },
                 "reason": "Pyrrho: sources support a confident answer (P=0.53).",
             },
@@ -124,10 +124,10 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
     }
 
     assert _format_governance_metadata(metadata, []) == [
-        "Pyrrho: TRUSTWORTHY  P(TRUSTWORTHY)=0.53  P(ABSTAIN)=0.21  P(DISPUTED)=0.26",
+        "Pyrrho: SUFFICIENT  P(SUFFICIENT)=0.53  P(INSUFFICIENT)=0.21  P(DISPUTED)=0.26",
         (
             "Cutoff: selected 6; evaluated 6/10; policy broad; "
-            "min trustworthy 4; min disputed 2; dispute patience 2"
+            "min sufficient 4; min disputed 2; dispute patience 2"
         ),
         "Pyrrho: sources support a confident answer (P=0.53).",
     ]
@@ -191,7 +191,7 @@ def test_format_governance_metadata_preserves_extra_reasons():
     metadata = {
         "governance_cutoff": {
             "pyrrho": {
-                "mode": "abstain",
+                "mode": "insufficient",
                 "reason": "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
             },
         }
@@ -201,11 +201,11 @@ def test_format_governance_metadata_preserves_extra_reasons():
         metadata,
         [
             "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
-            "Pyrrho abstained after evaluating the top 10 evidence item(s).",
+            "Pyrrho found insufficient evidence after evaluating the top 10 evidence item(s).",
         ],
     ) == [
         "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
-        "Pyrrho abstained after evaluating the top 10 evidence item(s).",
+        "Pyrrho found insufficient evidence after evaluating the top 10 evidence item(s).",
     ]
 
 
@@ -216,12 +216,12 @@ def test_format_broad_overview_metadata_skips_pyrrho_cutoff_language():
             "evaluated": 0,
             "selected": 4,
             "max": 10,
-            "mode": "abstain",
+            "mode": "insufficient",
             "representative_sources": True,
             "sufficiency_evaluated": False,
             "policy": {
                 "query_shape": "broad_overview",
-                "min_trustworthy_docs": 4,
+                "min_sufficient_docs": 4,
                 "min_disputed_docs": 2,
                 "disputed_patience_docs": 2,
             },

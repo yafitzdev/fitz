@@ -63,8 +63,8 @@ from fitz_sage.governance import GovernanceDecision, create_governance
 
 governance = create_governance("pyrrho")
 decision = governance.decide(query, retrieved_contexts)
-# decision.mode    → runtime AnswerMode (TRUSTWORTHY / DISPUTED / ABSTAIN)
-# decision.probs   → (p_abstain, p_disputed, p_trustworthy)
+# decision.mode    → runtime AnswerMode (SUFFICIENT / DISPUTED / INSUFFICIENT)
+# decision.probs   → (p_insufficient, p_disputed, p_sufficient)
 # decision.reason  → one-line human-readable explanation
 # decision exposes native v2 verdict, failure, retrieval-intent, and evidence-kind metadata
 ```

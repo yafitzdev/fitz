@@ -29,7 +29,7 @@ _DEFAULT_ALLOW_PATTERNS = (
     "tokenizer_config.json",
 )
 
-LABELS = (AnswerMode.ABSTAIN, AnswerMode.DISPUTED, AnswerMode.TRUSTWORTHY)
+LABELS = (AnswerMode.INSUFFICIENT, AnswerMode.DISPUTED, AnswerMode.SUFFICIENT)
 
 _VERDICT_LABELS = ("INSUFFICIENT", "DISPUTED", "SUFFICIENT")
 _FAILURE_LABELS = (
@@ -54,9 +54,9 @@ _EVIDENCE_KINDS = (
     "needs_document_layout",
 )
 _VERDICT_TO_MODE = {
-    "INSUFFICIENT": AnswerMode.ABSTAIN,
+    "INSUFFICIENT": AnswerMode.INSUFFICIENT,
     "DISPUTED": AnswerMode.DISPUTED,
-    "SUFFICIENT": AnswerMode.TRUSTWORTHY,
+    "SUFFICIENT": AnswerMode.SUFFICIENT,
 }
 PYRRHO_PRE_TAG = "[PYRRHO_PRE]"
 PYRRHO_POST_TAG = "[PYRRHO_POST]"
@@ -136,7 +136,7 @@ def _format_input(query: str, contexts: Iterable[str]) -> str:
 
 def _reason_for(mode: AnswerMode, probs: tuple[float, float, float]) -> str:
     p_a, p_d, p_t = probs
-    if mode is AnswerMode.TRUSTWORTHY:
+    if mode is AnswerMode.SUFFICIENT:
         return f"Pyrrho: evidence is sufficient for a confident answer (P={p_t:.2f})."
     if mode is AnswerMode.DISPUTED:
         return f"Pyrrho: evidence is disputed (P={p_d:.2f})."
@@ -154,7 +154,7 @@ class Pyrrho:
         self._model_dir: Path | None = None
         self._tokenizer: Any = None
         self._model: Any = None
-        self._trustworthy_threshold = TAU
+        self._sufficient_threshold = TAU
 
     def decide(self, query: str, contexts: list[EvidenceItem]) -> GovernanceDecision:
         """Classify one (query, contexts) pair into a governance mode."""
@@ -166,7 +166,7 @@ class Pyrrho:
         logits = self._run_onnx_texts([_format_query_input(query)])[0]
         _, _, retrieval_intents, evidence_kinds = _v2_core_heads(
             logits,
-            trustworthy_threshold=None,
+            sufficient_threshold=None,
         )
         return PyrrhoQueryPlan(
             retrieval_intents=retrieval_intents,
@@ -190,7 +190,7 @@ class Pyrrho:
         for index, contexts in enumerate(contexts_by_prefix):
             if not contexts:
                 decisions[index] = GovernanceDecision(
-                    mode=AnswerMode.ABSTAIN,
+                    mode=AnswerMode.INSUFFICIENT,
                     probs=(1.0, 0.0, 0.0),
                     reason="Pyrrho: no contexts retrieved.",
                 )
@@ -262,7 +262,7 @@ class Pyrrho:
             self._model_dir = model_dir
             self._tokenizer = _load_tokenizer(model_dir)
             self._model = _load_onnx_session(onnx_path)
-            self._trustworthy_threshold = _load_trustworthy_threshold(model_dir) or TAU
+            self._sufficient_threshold = _load_sufficient_threshold(model_dir) or TAU
 
     def _predict_context_batches(
         self,
@@ -274,7 +274,7 @@ class Pyrrho:
             [_format_input(query, contexts) for contexts in contexts_by_prefix]
         )
         return [
-            _v2_decision_from_logits(row, trustworthy_threshold=self._trustworthy_threshold)
+            _v2_decision_from_logits(row, sufficient_threshold=self._sufficient_threshold)
             for row in logits
         ]
 
@@ -367,14 +367,14 @@ def _resolve_model_dir(model_id: str) -> Path | None:
     return None
 
 
-def _load_trustworthy_threshold(model_dir: Path) -> float | None:
+def _load_sufficient_threshold(model_dir: Path) -> float | None:
     """Read the packaged release threshold when a Pyrrho manifest provides one."""
     manifest_path = model_dir / "manifest.json"
     if not manifest_path.exists():
         return None
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        value = manifest.get("release", {}).get("trustworthy_threshold")
+        value = manifest.get("release", {}).get("sufficient_threshold")
         return float(value) if value is not None else None
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return None
@@ -403,12 +403,12 @@ def _format_evidence_item(item: EvidenceItem) -> str:
 def _v2_decision_from_logits(
     logits: Any,
     *,
-    trustworthy_threshold: float | None = TAU,
+    sufficient_threshold: float | None = TAU,
 ) -> GovernanceDecision:
     """Convert one v2 output row into the public decision object."""
     evidence_verdict, failure_mode, retrieval_intents, evidence_kinds = _v2_core_heads(
         logits,
-        trustworthy_threshold=trustworthy_threshold,
+        sufficient_threshold=sufficient_threshold,
     )
     probs = (
         float(evidence_verdict.probabilities["INSUFFICIENT"]),
@@ -437,14 +437,14 @@ def _v2_decision_from_logits(
 def _v2_core_heads(
     logits: Any,
     *,
-    trustworthy_threshold: float | None,
+    sufficient_threshold: float | None,
 ) -> tuple[HeadDecision, HeadDecision, MultiLabelDecision, MultiLabelDecision]:
     """Decode the four native v2 output groups."""
     evidence_verdict = _single_label_decision(
         logits,
         0,
         _VERDICT_LABELS,
-        trustworthy_threshold=trustworthy_threshold,
+        sufficient_threshold=sufficient_threshold,
     )
     failure_mode = _single_label_decision(logits, 3, _FAILURE_LABELS)
     retrieval_intents = _multi_label_decision(logits, 8, _RETRIEVAL_INTENTS)
@@ -457,7 +457,7 @@ def _single_label_decision(
     start: int,
     labels: tuple[str, ...],
     *,
-    trustworthy_threshold: float | None = None,
+    sufficient_threshold: float | None = None,
 ) -> HeadDecision:
     """Decode a mutually exclusive v2 label group."""
     probabilities = {
@@ -472,10 +472,10 @@ def _single_label_decision(
     used_threshold_fallback = False
     raw_label = max(probabilities, key=probabilities.get)
     if (
-        trustworthy_threshold is not None
+        sufficient_threshold is not None
         and "SUFFICIENT" in probabilities
         and raw_label == "SUFFICIENT"
-        and probabilities[raw_label] < trustworthy_threshold
+        and probabilities[raw_label] < sufficient_threshold
     ):
         fallback_labels = [label for label in labels if label != "SUFFICIENT"]
         final_label = max(fallback_labels, key=probabilities.get)
@@ -484,7 +484,7 @@ def _single_label_decision(
         probabilities,
         final_label=final_label,
         raw_label=raw_label,
-        threshold=trustworthy_threshold if "SUFFICIENT" in probabilities else None,
+        threshold=sufficient_threshold if "SUFFICIENT" in probabilities else None,
         used_threshold_fallback=used_threshold_fallback,
     )
 
@@ -552,9 +552,7 @@ def _head_from_probabilities(
         runner_up_label=runner_up,
         runner_up_probability=runner_up_probability,
         margin_to_runner_up=float(confidence - runner_up_probability),
-        entropy=float(
-            -sum(prob * math.log(prob) for prob in probabilities.values() if prob > 0.0)
-        ),
+        entropy=float(-sum(prob * math.log(prob) for prob in probabilities.values() if prob > 0.0)),
     )
 
 

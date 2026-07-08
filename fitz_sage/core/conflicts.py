@@ -2,8 +2,8 @@
 """
 Conflict detection stub kept for hierarchy-enricher compatibility.
 
-The pyrrho classifier (`fitz_sage.governance.pyrrho`) decides TRUSTWORTHY /
-DISPUTED / ABSTAIN at query time in a single forward pass over
+The pyrrho classifier (`fitz_sage.governance.pyrrho`) decides SUFFICIENT /
+DISPUTED / INSUFFICIENT at query time in a single forward pass over
 (query, contexts). No ingest-time conflict extraction is needed.
 """
 

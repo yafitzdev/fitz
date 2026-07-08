@@ -12,7 +12,7 @@ owns the lock-guarded lazy load of a pre-built ONNX from the HuggingFace
 hub and the forward pass. The concrete encoders live next to the
 features they serve:
 
-- `fitz_sage.governance.pyrrho` — TRUSTWORTHY / DISPUTED / ABSTAIN classifier
+- `fitz_sage.governance.pyrrho` — SUFFICIENT / DISPUTED / INSUFFICIENT classifier
 - `fitz_sage.llm.providers.onnx_reranker` — cross-encoder reranker
 
 Both subclass `OnnxEncoderBackend`.

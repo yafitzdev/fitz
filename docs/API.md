@@ -88,7 +88,7 @@ source attribution.
 ```json
 {
   "text": "The refund policy allows returns within 30 days...",
-  "mode": "trustworthy",
+  "mode": "sufficient",
   "sources": [
     {
       "source_id": "policies/refund.md",
@@ -106,9 +106,9 @@ source attribution.
 | Field | Type | Description |
 |-------|------|-------------|
 | `text` | string | The answer text |
-| `mode` | string | Runtime mode: `trustworthy`, `disputed`, or `abstain` |
+| `mode` | string | Runtime mode: `sufficient`, `disputed`, or `insufficient` |
 | `sources` | array | Source attribution for the answer |
-| `metadata` | object | Extra answer metadata; on runtime `abstain`, includes `gap_context` (what's missing and what to add) |
+| `metadata` | object | Extra answer metadata; on runtime `insufficient`, includes `gap_context` (what's missing and what to add) |
 
 ### Example
 
@@ -148,7 +148,7 @@ equivalent of `fitz query`, `fitz retrieve`, and `fitz_sage.evidence()`.
 ```json
 {
   "query": "What is the refund policy?",
-  "mode": "trustworthy",
+  "mode": "sufficient",
   "items": [
     {
       "rank": 1,
@@ -221,7 +221,7 @@ Same as `/query`:
 ```json
 {
   "text": "For returns, you need to...",
-  "mode": "trustworthy",
+  "mode": "sufficient",
   "sources": [...]
 }
 ```
@@ -419,9 +419,9 @@ available in governance metadata as `evidence_verdict` with
 
 | Mode | Description | Typical Cause |
 |------|-------------|---------------|
-| `trustworthy` | Runtime mode for sufficient evidence | Clear, unambiguous sources |
+| `sufficient` | Runtime mode for sufficient evidence | Clear, unambiguous sources |
 | `disputed` | Runtime mode for disputed evidence | Sources disagree |
-| `abstain` | Runtime mode for insufficient evidence | Missing or incomplete evidence |
+| `insufficient` | Runtime mode for insufficient evidence | Missing or incomplete evidence |
 
 ---
 

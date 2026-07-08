@@ -3,7 +3,7 @@
   domain: unstructured
   query: "How many PTO days do independent contractors accrue?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/hr_policy.md
         kind: section
@@ -14,7 +14,7 @@
   domain: unstructured
   query: "How much paid parental leave do primary caregivers receive?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/hr_policy.md
         contains: ["Primary caregivers", "16 weeks"]
@@ -24,7 +24,7 @@
   domain: unstructured
   query: "What is the travel meal cap and receipt threshold?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/hr_policy.md
         contains: ["65 USD", "25 USD"]
@@ -34,7 +34,7 @@
   domain: unstructured
   query: "What acknowledgement time applies to Platinum Severity 0 incidents?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/observability_sla.md
         contains: ["Platinum", "Severity 0", "5 minutes"]
@@ -44,7 +44,7 @@
   domain: unstructured
   query: "What first response time do Gold customers get for Severity 2 incidents?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/observability_sla.md
         contains: ["Gold", "Severity 2", "2 hours"]
@@ -54,7 +54,7 @@
   domain: unstructured
   query: "What does GAR mean and when do GAR reports expire?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/observability_sla.md
         contains: ["Global Access Review", "21 days"]
@@ -64,7 +64,7 @@
   domain: unstructured
   query: "What is the latest APAC status for Project Atlas?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/product_launch_status.md
         contains: ["2026-07-18", "limited general availability", "APAC"]
@@ -77,17 +77,17 @@
   domain: unstructured
   query: "What is the Project Helios budget?"
   expected:
-    mode: abstain
+    mode: insufficient
     forbidden_evidence:
       - file: unstructured/finance_forecast.md
         contains: ["7.8 million"]
-  tags: [holdout, unstructured, abstain, missing_fact]
+  tags: [holdout, unstructured, insufficient, missing_fact]
 
 - id: holdout_pay209_final_duration
   domain: unstructured
   query: "What was the final recovery duration for incident PAY-209?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/payments_postmortem.md
         contains: ["final postmortem", "PAY-209", "37 minutes"]
@@ -100,7 +100,7 @@
   domain: unstructured
   query: "Who owned privacy incident PRI-88 and what notification window applied?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/payments_postmortem.md
         contains: ["DPO Lena", "PRI-88", "72-hour"]
@@ -110,7 +110,7 @@
   domain: unstructured
   query: "How much notice is required to cancel Skyline Labs auto-renewal?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/vendor_contract.md
         contains: ["Skyline Labs", "60 days"]
@@ -120,7 +120,7 @@
   domain: unstructured
   query: "What security addendum obligations apply to Cobalt CDN?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/vendor_contract.md
         contains: ["Cobalt CDN", "annual SOC 2", "30-day breach notice"]
@@ -130,7 +130,7 @@
   domain: unstructured
   query: "How quickly must biometric verification artifacts be deleted?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/data_retention_policy.md
         contains: ["Biometric verification artifacts", "24 hours"]
@@ -140,7 +140,7 @@
   domain: unstructured
   query: "How long are EU customer export logs retained?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: unstructured/data_retention_policy.md
         contains: ["EU customer export logs", "180 days"]
@@ -162,7 +162,7 @@
   domain: structured
   query: "Is asset AST-22 encrypted and who owns it?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/cloud_assets.csv
         kind: table
@@ -173,7 +173,7 @@
   domain: structured
   query: "What rotation_days value is recorded for asset AST-58?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/cloud_assets.csv
         kind: table
@@ -184,7 +184,7 @@
   domain: structured
   query: "Which production asset is unencrypted?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/cloud_assets.csv
         kind: table
@@ -195,7 +195,7 @@
   domain: structured
   query: "Who owns alert ALT-504 and what is its acknowledgement time?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/alerts.csv
         kind: table
@@ -206,7 +206,7 @@
   domain: structured
   query: "What route is recorded for the search P2 alert?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/alerts.csv
         kind: table
@@ -217,7 +217,7 @@
   domain: structured
   query: "What conversion rate did EXP-17 variant_b record?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/experiments.csv
         kind: table
@@ -228,7 +228,7 @@
   domain: structured
   query: "Which EXP-22 variant has the highest conversion rate?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/experiments.csv
         kind: table
@@ -239,7 +239,7 @@
   domain: structured
   query: "What amount and owner are recorded for invoice INV-702?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/invoices.csv
         kind: table
@@ -250,7 +250,7 @@
   domain: structured
   query: "Which overdue invoice belongs to Blue Peak?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/invoices.csv
         kind: table
@@ -261,7 +261,7 @@
   domain: structured
   query: "What rollback status and error rate are recorded for deployment DEP-902?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/deployments.csv
         kind: table
@@ -272,7 +272,7 @@
   domain: structured
   query: "Who owns the atlas_search flag and when does it expire?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/feature_flags.csv
         kind: table
@@ -283,7 +283,7 @@
   domain: structured
   query: "Which release disabled legacy_sync?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/feature_flags.csv
         kind: table
@@ -294,7 +294,7 @@
   domain: structured
   query: "Which alert has the shortest MTTR?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/alerts.csv
         kind: table
@@ -305,7 +305,7 @@
   domain: code
   query: "Which Python method evaluates whether a user is eligible for a feature flag?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/feature_flag_service.py
         kind: symbol
@@ -317,7 +317,7 @@
   domain: code
   query: "Which Python constant stores the feature flag kill switch environment variable?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/feature_flag_service.py
         kind: symbol
@@ -341,7 +341,7 @@
   domain: code
   query: "Which method computes the stable rollout bucket with sha256?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/feature_flag_service.py
         kind: symbol
@@ -353,7 +353,7 @@
   domain: code
   query: "Which function routes P2 alerts to the Slack channel?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/alert_router.py
         kind: symbol
@@ -365,7 +365,7 @@
   domain: code
   query: "Which dataclass represents a resolved alert route?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/alert_router.py
         kind: symbol
@@ -377,7 +377,7 @@
   domain: code
   query: "Which Python function calculates late fees for overdue invoices?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/invoice_rules.py
         kind: symbol
@@ -389,7 +389,7 @@
   domain: code
   query: "Which environment variable can waive holdout late fees?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/invoice_rules.py
         kind: symbol
@@ -401,7 +401,7 @@
   domain: code
   query: "Which required deployment environment variables are enforced by rollout_guard?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/rollout_guard.py
         kind: symbol
@@ -425,7 +425,7 @@
   domain: code
   query: "Which function returns a 45 minute canary window for APAC?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/rollout_guard.py
         kind: symbol
@@ -437,7 +437,7 @@
   domain: code
   query: "Which function decides whether an alert owner should be paged?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: code/alert_router.py
         kind: symbol
@@ -449,7 +449,7 @@
   domain: mixed
   query: "Using the Atlas launch brief, who owns the atlas_search flag and when does it expire?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/launch_brief.md
         contains: ["Project Atlas APAC", "atlas_search"]
@@ -461,7 +461,7 @@
   domain: mixed
   query: "Which experiment does the Atlas launch brief name and which variant has the higher conversion rate?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/launch_brief.md
         contains: ["semantic ranker", "EXP-22"]
@@ -473,7 +473,7 @@
   domain: mixed
   query: "Using the operations brief, what alert maps to PAY-209 and what recovery duration did the final postmortem confirm?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/operations_brief.md
         contains: ["PAY-209", "ALT-501"]
@@ -487,7 +487,7 @@
   domain: mixed
   query: "Using the operations brief, which deployment rolled back and which code function decides automatic rollback?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/operations_brief.md
         contains: ["DEP-902", "rolled back"]
@@ -501,7 +501,7 @@
   domain: mixed
   query: "Using the compliance brief, which asset is the unencrypted production analytics cache and what retention period applies?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/compliance_brief.md
         contains: ["AST-22", "unencrypted production analytics cache"]
@@ -515,7 +515,7 @@
   domain: mixed
   query: "Using the compliance brief, what biometric deletion rule applies to AST-58?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/compliance_brief.md
         contains: ["AST-58", "biometric"]
@@ -529,7 +529,7 @@
   domain: mixed
   query: "Using the billing brief, which vendor owns INV-702 and which code function calculates its late fee?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/billing_brief.md
         contains: ["INV-702", "Cobalt CDN"]
@@ -543,7 +543,7 @@
   domain: mixed
   query: "Using the billing brief, what Skyline Labs cancellation notice applies and is it an invoice status field?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: mixed/billing_brief.md
         contains: ["Skyline Labs", "contractual", "not an invoice status field"]
@@ -555,7 +555,7 @@
   domain: mixed
   query: "For ALT-502, what route does the alerts table record and what does the Observability SLA say P2 alerts use?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/alerts.csv
         contains: ["ALT-502", "slack"]
@@ -567,7 +567,7 @@
   domain: mixed
   query: "Which deployment covers privacy_banner in EU and what retention policy applies to EU customer export logs?"
   expected:
-    mode: trustworthy
+    mode: sufficient
     required_evidence:
       - file: structured/deployments.csv
         contains: ["DEP-903", "privacy_banner", "eu"]

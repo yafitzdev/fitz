@@ -44,7 +44,7 @@ fitz_krag:
 
   # Governance. 'pyrrho' = local Pyrrho v2 evidence classifier that evaluates
   # evidence prefixes as SUFFICIENT / DISPUTED / INSUFFICIENT, bridged to
-  # TRUSTWORTHY / DISPUTED / ABSTAIN for the runtime.
+  # SUFFICIENT / DISPUTED / INSUFFICIENT for the runtime.
   # 'pyrrho/<hf-model-id>' or 'pyrrho/<local-package-path>' to swap packages.
   governance: pyrrho
 
