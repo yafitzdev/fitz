@@ -173,7 +173,7 @@ and retrieval.
 |-------|--------------|
 | **1. Broad recall 🔎** | Finds candidate evidence:<br>`Doc 2`<br>`Doc 3`<br>`Doc 5`<br>`Doc 8` |
 | **2. Rerank 🎯** | Reorders by relevance:<br>`Doc 5`<br>`Doc 2`<br>`Doc 8`<br>`Doc 3` |
-| **3. Governance 🛡️** | Accepts the smallest usable prefix:<br>`Doc 5`<br>`Doc 2`<br>**=> SUFFICIENT** |
+| **3. Governance 🛡️** | Tests the ranked prefix:<br>`Doc 5` => `INSUFFICIENT`<br>`Doc 5 + Doc 2` => `SUFFICIENT` |
 
 <br>
 
