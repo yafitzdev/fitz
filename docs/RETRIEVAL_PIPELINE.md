@@ -73,7 +73,7 @@ flowchart TD
     K --> G["Pyrrho cutoff loop"]
     G --> E["EvidencePack"]
 
-    C --> C1["deterministic signals / optional trained query heads"]
+    C --> C1["deterministic query profile"]
 
     P --> P1["Deterministic terms, query type, intent detection"]
     P --> P2["Managed Qwen semantic keywords"]
@@ -100,11 +100,9 @@ Broad recall is intentionally permissive. It uses real query terms, dictionary
 synonyms/acronyms, managed Qwen semantic keywords, and intent fanout for
 comparison, temporal, aggregation, and freshness queries. False positives are
 acceptable because the reranker and governance cutoff handle precision.
-The default Pyrrho v2 package is evidence-conditioned and does not add
-pre-retrieval query heads. Query profiling comes from deterministic signals,
-managed Qwen semantic keywords, and optional query-intelligence providers.
-Explicit Pyrrho packages that actually train query heads may still contribute
-query metadata, but v2 does not project those labels.
+The default Pyrrho v2 package is evidence-conditioned. Query profiling comes
+from deterministic signals, managed Qwen semantic keywords, and optional
+query-intelligence providers.
 
 Primary stores:
 
@@ -217,7 +215,6 @@ the configured synthesizer. This is separate from the retrieval package default.
 |----------|------|
 | Sparse BM25 / keyword vocabulary | Broad recall backbone. |
 | Managed Qwen semantic query keywords | Broad recall expansion in the default no-endpoint path. |
-| Optional Pyrrho query heads | Pre-retrieval signals only when the configured Pyrrho package actually trains query heads. |
 | Dictionary query expansion | Fast synonyms/acronyms, no LLM call. |
 | Query rewriting | Optional `query_intelligence` enhancement for conversational context or ambiguous phrasing. |
 | Multi-query decomposition | Optional `query_intelligence` enhancement for compound questions. |

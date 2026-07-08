@@ -98,9 +98,8 @@ if pred == SUFFICIENT and P(SUFFICIENT) < TAU:
 
 ## Where it plugs in
 
-The `FitzKragEngine` uses the default Pyrrho v2 package after reranking to
-evaluate evidence prefixes. Pre-retrieval Pyrrho query planning is inactive for
-v2 until a query-trained v2 package exists.
+The `FitzKragEngine` profiles the query, retrieves and reranks candidates, then
+uses the default Pyrrho v2 package to evaluate evidence prefixes.
 
 The cutoff loop:
 

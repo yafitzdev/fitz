@@ -14,9 +14,7 @@ The standard retrieval path uses local CPU models.
 
 None of these models require `optimum`, `llama.cpp`, GGUF, or an
 OpenAI-compatible server. Qwen uses ONNX Runtime GenAI; the reranker and Pyrrho
-v2 load pre-built ONNX graphs through plain ONNX Runtime. `torch` and
-`safetensors` are only needed for old custom Pyrrho packages installed through
-the `legacy-pyrrho` extra.
+v2 load pre-built ONNX graphs through plain ONNX Runtime.
 
 ## Download Behavior
 
@@ -62,7 +60,7 @@ Warm the standard model set:
 ```bash
 python -c "from fitz_sage.llm.providers.onnx_chat import OnnxChat; OnnxChat().ensure_available(include_checksum=True)"
 python -c "from fitz_sage.llm.providers.onnx_reranker import OnnxReranker; OnnxReranker().rerank('warmup', ['one', 'two'])"
-python -c "from fitz_sage.governance import create_governance; create_governance('pyrrho').classify_query('warmup')"
+python -c "from types import SimpleNamespace; from fitz_sage.governance import create_governance; create_governance('pyrrho').decide('warmup', [SimpleNamespace(content='warmup evidence', metadata={})])"
 ```
 
 Copy both cache roots:

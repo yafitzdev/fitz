@@ -138,8 +138,8 @@ governance: pyrrho                  # default — the local Pyrrho v2 classifier
 ```
 
 `governance: pyrrho` runs evidence-prefix checks in the cutoff loop.
-Pre-retrieval Pyrrho query heads are available only for packages that actually
-train them.
+Pyrrho owns v2 query-planning heads and evidence governance; Fitz/KRAG owns the
+retrieval mechanics that consume those signals.
 
 ## Managed enrichment
 

@@ -75,7 +75,6 @@ fetch limits, and intent flags.
 {
   "metadata": {
     "query_profile": {
-      "signals": {},
       "profile": {
         "domain": "technical",
         "specificity": "moderate",

@@ -41,8 +41,7 @@ flowchart LR
 ## Retrieval Profile
 
 Before retrieval, Fitz builds a query profile from deterministic query analysis,
-managed Qwen query keywords, optional query intelligence, and optional trained
-query heads if the configured Pyrrho package exposes them.
+managed Qwen query keywords, and optional query intelligence.
 
 | Signal | Meaning | Retrieval effect |
 |---|---|---|
@@ -61,7 +60,6 @@ Example:
 ```json
 {
   "query_profile": {
-    "signals": {},
     "profile": {
       "domain": "technical",
       "specificity": "moderate",
@@ -127,7 +125,7 @@ disputed, or exhausted.
 
 Query:
 
-> "Where is `classify_query` implemented?"
+> "Where is Pyrrho governance implemented?"
 
 Expected retrieval behavior:
 

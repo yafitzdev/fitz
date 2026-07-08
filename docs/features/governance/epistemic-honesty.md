@@ -32,7 +32,7 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 
 Each decision is one local classifier call on CPU, with no external LLM
 dependency. The default v2 model is evidence-conditioned; it does not project
-pre-retrieval query heads.
+query-planning labels.
 
 For evidence retrieval, Pyrrho runs incrementally:
 

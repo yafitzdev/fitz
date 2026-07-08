@@ -14,8 +14,9 @@ The retrieval strategy is deliberately split into three jobs:
 This split matters because each stage optimizes a different failure mode. Recall
 is allowed to be noisy. Reranking is where precision belongs. Pyrrho decides
 whether the ranked evidence is sufficient, disputed, or incomplete. The default
-Pyrrho v2 package is evidence-conditioned only; pre-retrieval Pyrrho query heads
-are used only when a configured package actually trains them.
+Pyrrho v2 owns query-planning heads before retrieval and evidence governance
+after retrieval. Fitz/KRAG owns the retrieval mechanics that consume those
+signals.
 
 ---
 
@@ -32,7 +33,7 @@ flowchart LR
     S --> P["3. Pyrrho cutoff"]
     P --> E["EvidencePack"]
 
-    QC --> QC1["Deterministic signals + optional trained query heads"]
+    QC --> QC1["Deterministic query profile"]
 
     R --> R1["Real query keywords"]
     R --> R2["Managed-Qwen semantic keywords"]
@@ -64,7 +65,6 @@ Inputs:
 - the user's exact query terms
 - deterministic synonyms and acronyms
 - managed Qwen semantic keywords for the query
-- optional Pyrrho query heads when the configured package actually trains them
 - deterministic query shape: narrow, broad, comparison, temporal, aggregation, or freshness-sensitive
 - typed retrieval units from KRAG: sections, code symbols, tables, files, summaries
 
@@ -198,7 +198,6 @@ stage.
 | Sparse BM25 / FTS5 | Recall | Cheap candidate generation. |
 | Keyword vocabulary | Recall | Exact identifiers, codes, acronyms, test IDs. |
 | Managed Qwen semantic keywords | Recall | Adds semantic aliases without embeddings. |
-| Optional Pyrrho query heads | Recall / governance policy | Adds pre-retrieval metadata only when the configured package trains query heads. |
 | Query expansion | Recall | Deterministic synonyms and acronym expansion. |
 | Query rewriting | Recall | Fixes conversational or ambiguous phrasing before search. |
 | Multi-query decomposition | Recall | Bounded fanout for compound questions. |

@@ -111,8 +111,8 @@ Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](
 > background worker finish managed Qwen keyword/entity/hierarchy enrichment.
 
 **Pyrrho-governed retrieval 🧭** → [Pyrrho docs](docs/CONSTRAINTS.md)
-> Pyrrho profiles the query before retrieval, then judges the selected evidence after reranking. The query plan, 
-> reasons, and missing-evidence signals travel with the `EvidencePack`, so callers know whether to answer, show conflict, 
+> Fitz profiles the query before retrieval, then Pyrrho judges the selected evidence after reranking. The retrieval profile,
+> reasons, and missing-evidence signals travel with the `EvidencePack`, so callers know whether to answer, show conflict,
 > retrieve more, or ask for more source material.
 
 **Queries that actually work 📊**
@@ -223,14 +223,13 @@ An `EvidencePack` has three parts:
 | Part | Meaning | What you can do with it |
 |------|---------|-------------------------|
 | **Source evidence** | The documents, code symbols, table rows, sections, or chunks that matched the query. | Show citations, open source files, pass evidence into a model, or store provenance. |
-| **Retrieval profile** | The effective search plan: query type, breadth, semantic keywords, strategy weights, and optional trained query-head metadata. | Understand why Fitz favored code, tables, sections, exact lookup, comparison coverage, or broader recall. |
+| **Retrieval profile** | The effective search plan: query type, breadth, semantic keywords, and strategy weights. | Understand why Fitz favored code, tables, sections, exact lookup, comparison coverage, or broader recall. |
 | **Governance verdict** | Pyrrho v2's judgment after seeing the retrieved evidence. | Decide whether evidence is sufficient, disputed, or insufficient; retry retrieval or request missing documents when needed. |
 
 #### Retrieval profile
 
 Before retrieval, Fitz builds a retrieval profile from deterministic query
-analysis, managed Qwen query keywords, optional query intelligence, and any
-trained query heads exposed by the configured Pyrrho package.
+analysis, managed Qwen query keywords, and optional query intelligence.
 
 | Signal | What it means | Why it matters |
 |--------|---------------|----------------|
@@ -327,7 +326,7 @@ The new Pyrrho heads are the metadata Fitz records for governance decisions.
 >`fitz-sage` creates a local retrieval config on first run:
 >1. **SQLite storage** for collections.
 >2. **Managed ONNX models** for reranking and enrichment.
->3. **Pyrrho governance** for query profile and evidence cutoff.
+>3. **Pyrrho query planning** plus **Pyrrho governance** for evidence cutoff.
 >
 >For generated prose from the governed evidence:
 >
@@ -346,7 +345,7 @@ The new Pyrrho heads are the metadata Fitz records for governance decisions.
 >```python
 >import fitz_sage
 >
->pack = fitz_sage.evidence("Where is classify_query implemented?", source="./fitz_sage")
+>pack = fitz_sage.evidence("Where is Pyrrho governance implemented?", source="./fitz_sage")
 >
 >print(pack.mode)
 >for item in pack.items:
@@ -473,7 +472,7 @@ build on source evidence.
 │  EvidencePack: items | mode | reasons | timings | metadata      │
 ├─────────────────────────────────────────────────────────────────┤
 │  Pyrrho                                                         │
-│  query profile | retrieval action | evidence cutoff             │
+│  evidence verdict | failure mode | evidence metadata            │
 ├─────────────────────────────────────────────────────────────────┤
 │  Local CPU Models                                               │
 │  ONNX reranker | managed Qwen enrichment | Pyrrho governance    │
@@ -545,7 +544,7 @@ legal_pack = legal.evidence("What are the payment terms?", source="./contracts")
 
 **Working with evidence:**
 ```python
-pack = fitz_sage.evidence("Where is classify_query implemented?", source="./fitz_sage")
+pack = fitz_sage.evidence("Where is Pyrrho governance implemented?", source="./fitz_sage")
 
 print(pack.mode)  # runtime AnswerMode: TRUSTWORTHY, DISPUTED, or ABSTAIN
 print(pack.metadata["governance_cutoff"]["pyrrho"]["evidence_verdict"]["final_label"])
