@@ -169,11 +169,11 @@ and retrieval.
 
 <br>
 
-| Stage | What it does | Main cost |
-|-------|--------------|-----------|
-| **1. Query profile + broad recall** | Fitz builds a retrieval profile, extracts query terms, adds semantic keywords, and searches typed units broadly. | SQLite FTS + deterministic planning + managed Qwen query keywords |
-| **2. Rerank** | INT8 ONNX cross-encoder reorders broad candidates by query relevance. | Local ONNX reranker |
-| **3. Pyrrho cutoff** | Pyrrho evaluates `query + top 1`, then `query + top 2`, and so on until the evidence prefix is sufficient, disputed, or insufficient. | Local Pyrrho ONNX classifier |
+| Stage | What it does |
+|-------|--------------|
+| **1. Broad recall 🔎** | Fitz extracts query terms, adds semantic keywords, and searches typed units broadly with SQLite FTS, deterministic planning, and managed Qwen query keywords. |
+| **2. Rerank 🎯** | A local INT8 ONNX cross-encoder reorders broad candidates by query relevance. |
+| **3. Governance 🛡️** | Pyrrho evaluates `query + top 1`, then `query + top 2`, and so on with a local ONNX classifier until the evidence prefix is sufficient, disputed, or insufficient. |
 
 <br>
 
@@ -186,20 +186,20 @@ entity graph links, corpus summaries, and richer context expansion.
 
 | Feature | Query | What Fitz Uses |
 |---------|-------|----------------|
-| [**epistemic-honesty**](docs/features/governance/epistemic-honesty.md) | "What was our Q4 revenue?" | Pyrrho cutoff and insufficient-evidence reasons |
-| [**keyword-vocabulary**](docs/features/retrieval/keyword-vocabulary.md) | "Find TC_1000" | Exact identifier matching |
-| [**sparse-search**](docs/features/retrieval/sparse-search.md) | "error code E_AUTH_401" | SQLite FTS5 + native `bm25()` |
-| [**multi-hop**](docs/features/retrieval/multi-hop-reasoning.md) | "Who wrote the paper cited by the 2023 review?" | Iterative retrieval |
-| [**hierarchical-rag**](docs/features/ingestion/hierarchical-rag.md) | "What are the design principles?" | Hierarchical summaries |
-| [**multi-query**](docs/features/retrieval/multi-query-rag.md) | *[User pastes 500-char test report]* "What failed and why?" | Multi-query decomposition |
-| [**comparison-queries**](docs/features/retrieval/comparison-queries.md) | "Compare React vs Vue performance" | Multi-entity coverage and comparison cutoff |
-| [**entity-graph**](docs/features/retrieval/entity-graph.md) | "What else mentions AuthService?" | Entity-based linking across sources |
-| [**temporal-queries**](docs/features/retrieval/temporal-queries.md) | "What changed between Q1 and Q2?" | Temporal scope detection |
-| [**aggregation-queries**](docs/features/retrieval/aggregation-queries.md) | "List all the test cases that failed" | Exhaustive/list query handling |
-| [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What's the latest status on feature X?" | Recency and authority scoring |
-| [**query-expansion**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | Dictionary + managed-Qwen keyword expansion |
-| [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | Conversational context resolution |
-| [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ONNX cross-encoder reranker |
+| 🛡️ [**epistemic-honesty**](docs/features/governance/epistemic-honesty.md) | "What was our Q4 revenue?" | Pyrrho cutoff and insufficient-evidence reasons |
+| 🔑 [**keyword-vocabulary**](docs/features/retrieval/keyword-vocabulary.md) | "Find TC_1000" | Exact identifier matching |
+| 🔎 [**sparse-search**](docs/features/retrieval/sparse-search.md) | "error code E_AUTH_401" | SQLite FTS5 + native `bm25()` |
+| 🧩 [**multi-hop**](docs/features/retrieval/multi-hop-reasoning.md) | "Who wrote the paper cited by the 2023 review?" | Iterative retrieval |
+| 🗂️ [**hierarchical-rag**](docs/features/ingestion/hierarchical-rag.md) | "What are the design principles?" | Hierarchical summaries |
+| 🧭 [**multi-query**](docs/features/retrieval/multi-query-rag.md) | *[User pastes 500-char test report]* "What failed and why?" | Multi-query decomposition |
+| ⚖️ [**comparison-queries**](docs/features/retrieval/comparison-queries.md) | "Compare React vs Vue performance" | Multi-entity coverage and comparison cutoff |
+| 🕸️ [**entity-graph**](docs/features/retrieval/entity-graph.md) | "What else mentions AuthService?" | Entity-based linking across sources |
+| ⏱️ [**temporal-queries**](docs/features/retrieval/temporal-queries.md) | "What changed between Q1 and Q2?" | Temporal scope detection |
+| 📋 [**aggregation-queries**](docs/features/retrieval/aggregation-queries.md) | "List all the test cases that failed" | Exhaustive/list query handling |
+| 🕰️ [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What's the latest status on feature X?" | Recency and authority scoring |
+| ✨ [**query-expansion**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | Dictionary + managed-Qwen keyword expansion |
+| 💬 [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | Conversational context resolution |
+| 🎯 [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ONNX cross-encoder reranker |
 
 <br>
 
