@@ -4,7 +4,7 @@
 
 # fitz-sage
 
-### Fully local governed retrieval for code, documents, and tables.
+### Fully local governed RAG for code, documents, and tables.
 
 **No LLM API key. No GPU. No infrastructure.**
 
