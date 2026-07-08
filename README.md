@@ -262,8 +262,9 @@ next action.
 
 [Feature docs](docs/CONSTRAINTS.md) • [Pyrrho on Hugging Face](https://huggingface.co/yafitzdev) • [fitz-gov on Hugging Face](https://huggingface.co/datasets/yafitzdev/fitz-gov-v2)
 
-Pyrrho is the local governance model behind `fitz-sage`. The default release
-uses the new `pyrrho-v2-nano-g1` ONNX model and its native v2 evidence heads.
+Pyrrho is the local governance model behind `fitz-sage`. The default backend is
+[`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1):
+a CPU-local ONNX ModernBERT classifier with native v2 evidence heads.
 
 <br>
 
@@ -292,7 +293,19 @@ uses the new `pyrrho-v2-nano-g1` ONNX model and its native v2 evidence heads.
 | `retrieval_intents` | Multi-label v2 evidence intent metadata, such as lookup, temporal resolution, comparison, or broad coverage. |
 | `evidence_kinds` | Multi-label v2 evidence-surface metadata, such as text, table, code, config, logs, or document layout. |
 
-The new Pyrrho heads are the metadata Fitz records for governance decisions.
+Fitz records these heads in `EvidencePack.metadata["governance_cutoff"]["pyrrho"]`
+for audit, UI display, retries, and downstream automation.
+
+<br>
+
+| Benchmark | Score |
+|-----------|-------|
+| fitz-gov-v2 held-out post-retrieval overall score | **94.71%** |
+| fitz-gov-v2 evidence verdict accuracy | **97.03%** |
+| fitz-gov-v2 failure-mode accuracy | **95.67%** |
+| fitz-gov-v2 false sufficient rate | **4.84%** |
+| fitz-sage balanced fixed-evidence governance sanity suite | **120/120** |
+| fitz-sage live retrieval benchmark | **97/120** |
 
 <br>
 
