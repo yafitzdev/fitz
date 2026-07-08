@@ -173,9 +173,11 @@ and retrieval.
 
 | Stage | What happens |
 |-------|--------------|
-| **1. Broad recall 🔎** | Finds candidate evidence:<br>`Doc 2`<br>`Doc 3`<br>`Doc 5`<br>`Doc 8` |
-| **2. Rerank 🎯** | Reorders by relevance:<br>`Doc 5`<br>`Doc 2`<br>`Doc 8`<br>`Doc 3` |
-| **3. Governance 🛡️** | Tests the ranked prefix:<br>`Doc 5` → `INSUFFICIENT`<br>`Doc 5 + Doc 2` → `INSUFFICIENT`<br>`Doc 5 + Doc 2 + Doc 8` → `SUFFICIENT` |
+| **0. User Query ❓** | User asks:<br>`"What are the company policies?"` |
+| **1. Broad Recall 🔎** | Finds candidate evidence:<br>`Doc B`, `Doc C`, `Doc E`, `Doc H`, `Doc L` |
+| **2. Rerank 🎯** | Reorders by relevance:<br>`Doc E`, `Doc B`, `Doc H`, `Doc L`, `Doc C` |
+| **3. Sufficiency Check 🛡️** | Adds evidence until the user query is sufficiently supported:<br>`User query` + `Doc E` → ❌<br>`User query` + `Doc E` + `Doc B` → ❌<br>`User query` + `Doc E` + `Doc B` + `Doc H` → ✅ |
+| **4. Synthesis (optional) 💡** | Verified evidence can be passed to an LLM:<br>LLM(`User query`, `Doc E`, `Doc B`, `Doc H`) |
 
 <br>
 
