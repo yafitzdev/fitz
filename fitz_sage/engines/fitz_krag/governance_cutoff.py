@@ -24,45 +24,8 @@ _DISPUTE_PATIENCE_DOCS = 2
 _STABLE_DISPUTE_DOCS = 2
 _FOLLOWUP_BATCH_SIZE = 2
 _BROAD_OVERVIEW_SOURCE_COUNT = 6
-_RETRIEVAL_CONTROL_MIN_CONFIDENCE = 0.70
-_ANSWER_NOW_MIN_CONFIDENCE = 0.70
 _NARROW_STRONG_DISPUTE_MIN_CONFIDENCE = 0.60
 _NARROW_STRONG_DISPUTE_MIN_MARGIN = 0.15
-_SINGLE_SOURCE_RISK_TRUST_MIN_CONFIDENCE = 0.85
-_SINGLE_SOURCE_RISK_ANSWER_NOW_MIN_CONFIDENCE = 0.85
-_RETRIEVAL_CONTROL_MORE_ACTIONS = {"retrieve_more", "broaden_search"}
-_RETRIEVAL_CONTROL_BLOCKING_ACTIONS = {
-    "retrieve_more",
-    "broaden_search",
-    "resolve_conflict",
-    "structured_lookup",
-    "ask_clarifying_question",
-}
-_SINGLE_SOURCE_TRUST_RISK_PATTERN = re.compile(
-    r"\b("
-    r"stale|legacy|outdated|superseded|deprecated|"
-    r"planning\s+forecast|forecast\s+says|forecast\s+lists|"
-    r"draft|preliminary|intentionally\s+stale"
-    r")\b",
-    re.IGNORECASE,
-)
-_CONFLICT_QUERY_PATTERN = re.compile(
-    r"\b("
-    r"agree|agrees|agreement|disagree|disagrees|conflict|conflicts|"
-    r"contradict|contradicts|contradiction|consistent|inconsistent|"
-    r"differ|differs|different|same|compare|compared|versus|vs"
-    r")\b",
-    re.IGNORECASE,
-)
-_EXPLICIT_VALUE_PATTERN = re.compile(
-    r"\b\d+(?:\.\d+)?\s*(?:"
-    r"%|percent|percentage|"
-    r"days?|weeks?|months?|years?|hours?|minutes?|mins?|"
-    r"usd|eur|gbp|dollars?|euros?|"
-    r"items?|users?|seats?|licenses?|tickets?|requests?"
-    r")?\b",
-    re.IGNORECASE,
-)
 _MONTH_PATTERN = (
     r"\b(january|february|march|april|may|june|july|august|september|"
     r"october|november|december)(?:\s+(\d{4}))?\b"
@@ -125,43 +88,6 @@ _METRIC_STOP_TERMS = {
     "why",
 }
 _METRIC_MODIFIER_TERMS = {"average", "avg", "count", "mean", "number", "sum", "total"}
-_ANCHOR_STOP_TERMS = _METRIC_STOP_TERMS | {
-    "answer",
-    "available",
-    "based",
-    "briefly",
-    "can",
-    "could",
-    "current",
-    "currently",
-    "describe",
-    "detail",
-    "details",
-    "does",
-    "evidence",
-    "explain",
-    "give",
-    "list",
-    "mention",
-    "mentions",
-    "need",
-    "notes",
-    "provide",
-    "question",
-    "record",
-    "records",
-    "relevant",
-    "say",
-    "says",
-    "show",
-    "shows",
-    "source",
-    "sources",
-    "support",
-    "tell",
-}
-
-
 @dataclass(frozen=True)
 class GovernanceCutoffPolicy:
     """Prefix stop policy for Pyrrho verdict evaluation."""
@@ -241,15 +167,11 @@ def apply_governance_cutoff(
 
     results = _prioritize_comparison_metric_evidence(query, profile, results, policy)
     governance_results = _pyrrho_governance_results(results)
-    pyrrho_contract_prefix_min = min(
-        _pyrrho_contract_prefix_min(governance_results), policy.max_docs
-    )
-    pyrrho_return_prefix_min = min(_pyrrho_contract_return_prefix_min(results), policy.max_docs)
+    evidence_prefix_min = min(_evidence_prefix_min(governance_results), policy.max_docs)
+    return_prefix_min = min(_return_prefix_min(results), policy.max_docs)
 
     last_reasons: list[str] = []
     last_decision: Any = None
-    last_retrieval_control_blocker: str | None = None
-    last_trustworthy_risk_blocker: str | None = None
     stable_disputed_decision: Any = None
     trajectory: list[dict[str, Any]] = []
     consecutive_disputed = 0
@@ -263,63 +185,14 @@ def apply_governance_cutoff(
             results, governance_results[:size]
         )
 
-        retrieval_control_blocker = _retrieval_control_blocker(decision)
-        last_retrieval_control_blocker = retrieval_control_blocker
-        if retrieval_control_blocker:
-            trace["retrieval_control_blocker"] = retrieval_control_blocker
-
         if mode is AnswerMode.TRUSTWORTHY:
             consecutive_disputed = 0
-            required_trustworthy_docs = pyrrho_contract_prefix_min or policy.min_trustworthy_docs
+            required_trustworthy_docs = evidence_prefix_min or policy.min_trustworthy_docs
             can_stop = size >= required_trustworthy_docs
             stop_reason = "trustworthy_min_evidence_met"
-            if (
-                not can_stop
-                and not pyrrho_contract_prefix_min
-                and _should_stop_on_answer_now(decision)
-            ):
-                can_stop = True
-                stop_reason = "pyrrho_answer_now"
 
             if can_stop:
-                if retrieval_control_blocker:
-                    trajectory.append(trace)
-                    continue
-                selected_size = max(full_prefix_size, pyrrho_return_prefix_min or full_prefix_size)
-                trustworthy_risk_blocker = _trustworthy_risk_blocker(
-                    query=query,
-                    decision=decision,
-                    policy=policy,
-                    governance_prefix_size=size,
-                    selected_results=results[:selected_size],
-                )
-                if trustworthy_risk_blocker:
-                    trace["trustworthy_risk_blocker"] = trustworthy_risk_blocker
-                    last_trustworthy_risk_blocker = trustworthy_risk_blocker
-                    trajectory.append(trace)
-                    continue
-                deterministic_conflict = _deterministic_dispute_signal(
-                    query,
-                    results[:selected_size],
-                )
-                if deterministic_conflict:
-                    trace["deterministic_conflict_signal"] = deterministic_conflict
-                    trajectory.append(trace)
-                    return GovernanceCutoffResult(
-                        selected=results[:selected_size],
-                        mode=AnswerMode.DISPUTED,
-                        reasons=[deterministic_conflict],
-                        timings=[("Governance", time.perf_counter() - t0)],
-                        metadata=_governance_cutoff_metadata(
-                            policy,
-                            evaluated=size,
-                            selected=selected_size,
-                            mode=AnswerMode.DISPUTED,
-                            decision=decision,
-                            trajectory=trajectory,
-                            stop_reason="deterministic_conflict_signal",
-                        ),
-                    )
+                selected_size = max(full_prefix_size, return_prefix_min or full_prefix_size)
                 trajectory.append(trace)
                 return GovernanceCutoffResult(
                     selected=results[:selected_size],
@@ -334,11 +207,10 @@ def apply_governance_cutoff(
                         decision=decision,
                         trajectory=trajectory,
                         stop_reason=stop_reason,
-                        retrieval_control_blocker=retrieval_control_blocker,
                     ),
                 )
-            if pyrrho_contract_prefix_min > size:
-                trace["pyrrho_contract_prefix_min"] = pyrrho_contract_prefix_min
+            if evidence_prefix_min > size:
+                trace["evidence_prefix_min"] = evidence_prefix_min
             trajectory.append(trace)
             continue
 
@@ -354,7 +226,7 @@ def apply_governance_cutoff(
                 decision,
             )
             if dispute_stop_reason:
-                selected_size = max(full_prefix_size, pyrrho_return_prefix_min or full_prefix_size)
+                selected_size = max(full_prefix_size, return_prefix_min or full_prefix_size)
                 return GovernanceCutoffResult(
                     selected=results[:selected_size],
                     mode=mode,
@@ -383,7 +255,7 @@ def apply_governance_cutoff(
         evaluated = min(policy.max_docs, len(governance_results))
         selected_count = max(
             _full_prefix_size_for_governance_prefix(results, governance_results[:evaluated]),
-            pyrrho_return_prefix_min,
+            return_prefix_min,
         )
         return GovernanceCutoffResult(
             selected=results[:selected_count],
@@ -401,54 +273,16 @@ def apply_governance_cutoff(
             ),
         )
 
-    deterministic_dispute_prefix = _deterministic_dispute_prefix_count(
-        query,
-        results[: policy.max_docs],
+    reasons = list(last_reasons)
+    reasons.append(
+        f"Pyrrho did not find sufficient or stable disputed evidence within the top "
+        f"{policy.max_docs} evidence item(s)."
     )
-    if deterministic_dispute_prefix:
-        selected_count = max(deterministic_dispute_prefix, pyrrho_return_prefix_min)
-        selected = results[:selected_count]
-        deterministic_conflict = _deterministic_dispute_signal(query, selected)
-        reasons = [deterministic_conflict] if deterministic_conflict else []
-        return GovernanceCutoffResult(
-            selected=selected,
-            mode=AnswerMode.DISPUTED,
-            reasons=reasons,
-            timings=[("Governance", time.perf_counter() - t0)],
-            metadata=_governance_cutoff_metadata(
-                policy,
-                evaluated=min(policy.max_docs, len(governance_results)),
-                selected=selected_count,
-                mode=AnswerMode.DISPUTED,
-                decision=last_decision,
-                trajectory=trajectory,
-                stop_reason="deterministic_conflict_signal",
-            ),
-        )
-
-    if last_retrieval_control_blocker:
-        reasons = list(last_reasons)
-        reasons.insert(0, last_retrieval_control_blocker)
-        reasons.append("Pyrrho retrieval control did not authorize an answer within the cutoff.")
-        stop_reason = "retrieval_control_unsatisfied_at_cutoff"
-        retrieval_control_blocker = last_retrieval_control_blocker
-    elif last_trustworthy_risk_blocker:
-        reasons = list(last_reasons)
-        reasons.insert(0, last_trustworthy_risk_blocker)
-        reasons.append("Pyrrho did not see enough non-stale evidence to certify trust.")
-        stop_reason = "trustworthy_risk_unsatisfied_at_cutoff"
-        retrieval_control_blocker = None
-    else:
-        reasons = list(last_reasons)
-        reasons.append(
-            f"Pyrrho abstained after evaluating the top {policy.max_docs} evidence item(s)."
-        )
-        stop_reason = "cutoff_exhausted"
-        retrieval_control_blocker = None
+    stop_reason = "cutoff_exhausted"
     evaluated = min(policy.max_docs, len(governance_results))
     selected_count = max(
         _full_prefix_size_for_governance_prefix(results, governance_results[:evaluated]),
-        pyrrho_return_prefix_min,
+        return_prefix_min,
     )
     return GovernanceCutoffResult(
         selected=results[:selected_count],
@@ -463,7 +297,6 @@ def apply_governance_cutoff(
             decision=last_decision,
             trajectory=trajectory,
             stop_reason=stop_reason,
-            retrieval_control_blocker=retrieval_control_blocker,
         ),
     )
 
@@ -497,7 +330,7 @@ def governance_cutoff_policy(
 
 
 def governance_query_shape(profile: Any, *, query: str | None = None) -> str:
-    """Map Pyrrho-owned profile signals to a cutoff policy shape."""
+    """Map retrieval profile signals to a cutoff policy shape."""
     if profile is None:
         return "narrow"
     query_contract = getattr(profile, "query_contract", None)
@@ -604,168 +437,6 @@ def _disputed_stop_reason(
     return None
 
 
-def _should_stop_on_answer_now(decision: Any) -> bool:
-    """Return whether Pyrrho explicitly authorizes an early trustworthy stop."""
-    label, confidence = _head_label_and_confidence(decision, "retrieval_action")
-    return label == "answer_now" and confidence >= _ANSWER_NOW_MIN_CONFIDENCE
-
-
-def _trustworthy_risk_blocker(
-    *,
-    query: str,
-    decision: Any,
-    policy: GovernanceCutoffPolicy,
-    governance_prefix_size: int,
-    selected_results: list["ReadResult"],
-) -> str | None:
-    """Block brittle trustworthy verdicts that deterministic checks can disprove."""
-    anchor_blocker = _trustworthy_anchor_blocker(
-        query=query,
-        policy=policy,
-        selected_results=selected_results,
-    )
-    if anchor_blocker:
-        return anchor_blocker
-
-    if policy.query_shape != "narrow" or governance_prefix_size != 1 or len(selected_results) != 1:
-        return None
-    evidence = _raw_evidence(selected_results)
-    if not _SINGLE_SOURCE_TRUST_RISK_PATTERN.search(evidence):
-        return None
-
-    probabilities = _decision_probabilities(decision)
-    trust = probabilities.get("trustworthy", 0.0)
-    action_label, action_confidence = _head_label_and_confidence(decision, "retrieval_action")
-    if (
-        trust >= _SINGLE_SOURCE_RISK_TRUST_MIN_CONFIDENCE
-        and action_label == "answer_now"
-        and action_confidence >= _SINGLE_SOURCE_RISK_ANSWER_NOW_MIN_CONFIDENCE
-    ):
-        return None
-    return "Single-source evidence has stale, legacy, or forecast markers; require corroboration."
-
-
-def _trustworthy_anchor_blocker(
-    *,
-    query: str,
-    policy: GovernanceCutoffPolicy,
-    selected_results: list["ReadResult"],
-) -> str | None:
-    """Reject trustworthy verdicts when the selected evidence is lexically off-topic."""
-    if policy.query_shape != "narrow":
-        return None
-    anchors = _query_anchor_terms(query)
-    if len(anchors) < 3:
-        return None
-
-    evidence = _normalized_evidence(selected_results)
-    matched = [term for term in anchors if _contains_term_or_variant(evidence, term)]
-    coverage = len(matched) / len(anchors)
-    if not matched or (len(anchors) >= 4 and coverage <= 0.25):
-        return (
-            "Selected evidence matches too few query anchors "
-            f"({len(matched)}/{len(anchors)}); require more relevant evidence."
-        )
-    return None
-
-
-def _deterministic_dispute_prefix_count(
-    query: str,
-    results: list["ReadResult"],
-) -> int | None:
-    """Return the first prefix with an explicit deterministic conflict signal."""
-    for count in range(2, len(results) + 1):
-        if _deterministic_dispute_signal(query, results[:count]):
-            return count
-    return None
-
-
-def _deterministic_dispute_signal(
-    query: str,
-    selected_results: list["ReadResult"],
-) -> str | None:
-    """Detect simple explicit-value conflicts for agreement/comparison queries."""
-    if len(selected_results) < 2 or not _CONFLICT_QUERY_PATTERN.search(query):
-        return None
-
-    anchors = _query_anchor_terms(query)
-    evidence = _normalized_evidence(selected_results)
-    if anchors and not any(_contains_term_or_variant(evidence, term) for term in anchors):
-        return None
-
-    values_by_result: list[set[str]] = []
-    for result in selected_results:
-        raw = _raw_evidence([result])
-        values = {
-            _normalize_explicit_value(match.group(0))
-            for match in _EXPLICIT_VALUE_PATTERN.finditer(raw)
-        }
-        values.discard("")
-        if values:
-            values_by_result.append(values)
-
-    if len(values_by_result) < 2:
-        return None
-    distinct_values = set().union(*values_by_result)
-    if len(distinct_values) < 2:
-        return None
-
-    return (
-        "Evidence contains conflicting explicit values for an agreement or "
-        "comparison query; treat the answer as disputed."
-    )
-
-
-def _query_anchor_terms(query: str) -> tuple[str, ...]:
-    """Extract stable content anchors from a user query."""
-    anchors: list[str] = []
-    seen: set[str] = set()
-    for token in _normalize_text(query).split():
-        if len(token) < 4 or token in _ANCHOR_STOP_TERMS:
-            continue
-        if token.isdigit() or re.fullmatch(r"q[1-4]|\d{4}", token):
-            continue
-        normalized = _anchor_stem(token)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            anchors.append(normalized)
-    return tuple(anchors)
-
-
-def _contains_term_or_variant(evidence: str, term: str) -> bool:
-    """Return whether normalized evidence contains the term or a simple inflection."""
-    return any(re.search(rf"\b{re.escape(variant)}\b", evidence) for variant in _term_variants(term))
-
-
-def _term_variants(term: str) -> tuple[str, ...]:
-    """Return a compact set of singular/plural variants for anchor matching."""
-    variants = {term}
-    stem = _anchor_stem(term)
-    variants.add(stem)
-    if stem.endswith("y") and len(stem) > 3:
-        variants.add(stem[:-1] + "ies")
-    if stem.endswith(("s", "x", "z", "ch", "sh")):
-        variants.add(stem + "es")
-    variants.add(stem + "s")
-    return tuple(sorted(value for value in variants if value))
-
-
-def _anchor_stem(token: str) -> str:
-    """Normalize common English plural forms without depending on NLP packages."""
-    if len(token) > 5 and token.endswith("ies"):
-        return token[:-3] + "y"
-    if len(token) > 4 and token.endswith("es"):
-        return token[:-2]
-    if len(token) > 4 and token.endswith("s"):
-        return token[:-1]
-    return token
-
-
-def _normalize_explicit_value(value: str) -> str:
-    """Normalize a numeric value phrase for conflict comparison."""
-    return re.sub(r"\s+", " ", value.lower()).strip(" .,:;()[]{}")
-
-
 def _is_strong_dispute(decision: Any) -> bool:
     """Return whether a narrow DISPUTED prefix has enough probability mass to stop."""
     probabilities = _decision_probabilities(decision)
@@ -805,41 +476,6 @@ def _decision_probabilities(decision: Any) -> dict[str, float]:
     return {}
 
 
-def _retrieval_control_blocker(decision: Any) -> str | None:
-    """Return a reason to keep evaluating evidence from Pyrrho retrieval control."""
-    label, confidence = _head_label_and_confidence(decision, "retrieval_action")
-    if label not in _RETRIEVAL_CONTROL_BLOCKING_ACTIONS:
-        return None
-    if confidence < _RETRIEVAL_CONTROL_MIN_CONFIDENCE:
-        return None
-    if label in _RETRIEVAL_CONTROL_MORE_ACTIONS:
-        return f"Pyrrho retrieval action requested more evidence: {label}."
-    if label == "resolve_conflict":
-        return "Pyrrho retrieval action requested conflict resolution before trusting evidence."
-    if label == "structured_lookup":
-        return "Pyrrho retrieval action requested structured lookup evidence."
-    if label == "ask_clarifying_question":
-        return "Pyrrho retrieval action indicated the query needs clarification."
-    return None
-
-
-def _head_label_and_confidence(decision: Any, name: str) -> tuple[str | None, float]:
-    """Read one Pyrrho head's final label and confidence defensively."""
-    head = getattr(decision, name, None)
-    if head is None:
-        heads = getattr(decision, "heads", None)
-        if isinstance(heads, dict):
-            head = heads.get(name)
-    if head is None:
-        return None, 0.0
-    label = getattr(head, "final_label", None)
-    try:
-        confidence = float(getattr(head, "confidence", 0.0))
-    except (TypeError, ValueError):
-        confidence = 0.0
-    return str(label) if label else None, confidence
-
-
 def _decision_mode(decision: Any) -> AnswerMode:
     """Read a decision mode defensively."""
     mode = getattr(decision, "mode", AnswerMode.ABSTAIN)
@@ -866,7 +502,6 @@ def _governance_cutoff_metadata(
     decision: Any = None,
     trajectory: list[dict[str, Any]] | None = None,
     stop_reason: str | None = None,
-    retrieval_control_blocker: str | None = None,
 ) -> dict[str, Any]:
     """Build serializable metadata for the cutoff loop."""
     metadata = {
@@ -877,8 +512,6 @@ def _governance_cutoff_metadata(
     }
     if stop_reason:
         metadata["stop_reason"] = stop_reason
-    if retrieval_control_blocker:
-        metadata["retrieval_control_blocker"] = retrieval_control_blocker
     if policy is not None:
         metadata["policy"] = {
             "query_shape": policy.query_shape,
@@ -1095,17 +728,13 @@ def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
     if isinstance(reason, str) and reason:
         metadata["reason"] = reason
 
-    for key in (
-        "governance",
-        "query_contract",
-        "route",
-        "taxonomy",
-        "retrieval_action",
-        "gap_type",
-        "answerability_shape",
-        "retrieval_modality",
-        "retrieval_obligation",
-    ):
+    native_heads = {
+        "evidence_verdict",
+        "failure_mode",
+        "retrieval_intents",
+        "evidence_kinds",
+    }
+    for key in native_heads:
         head = _head_metadata(getattr(decision, key, None))
         if head:
             metadata[key] = head
@@ -1113,15 +742,11 @@ def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
     heads = getattr(decision, "heads", None)
     if isinstance(heads, dict):
         for key, head in heads.items():
-            if not isinstance(key, str) or key in metadata:
+            if not isinstance(key, str) or key not in native_heads or key in metadata:
                 continue
             head_data = _head_metadata(head)
             if head_data:
                 metadata[key] = head_data
-
-    scalars = getattr(decision, "scalars", None)
-    if isinstance(scalars, dict) and scalars:
-        metadata["scalars"] = {str(key): float(value) for key, value in scalars.items()}
 
     return metadata
 
@@ -1207,7 +832,7 @@ def _full_prefix_size_for_governance_prefix(
     return max(result_positions.get(id(result), 0) for result in governance_prefix)
 
 
-def _pyrrho_contract_prefix_min(results: list["ReadResult"]) -> int:
+def _evidence_prefix_min(results: list["ReadResult"]) -> int:
     """Return how many compiler-ledger sources Pyrrho should see before trust."""
     required = 0
     for index, result in enumerate(results, start=1):
@@ -1226,7 +851,7 @@ def _pyrrho_contract_prefix_min(results: list["ReadResult"]) -> int:
     return min(len(results), required)
 
 
-def _pyrrho_contract_return_prefix_min(results: list["ReadResult"]) -> int:
+def _return_prefix_min(results: list["ReadResult"]) -> int:
     """Return how many sources should remain in the public evidence pack."""
     required = 0
     for index, result in enumerate(results, start=1):

@@ -11,7 +11,7 @@ from fitz_sage.engines.fitz_krag.evidence_compiler import (
     query_has_table_obligation,
 )
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
-from fitz_sage.governance.evidence_contract import build_query_contract
+from fitz_sage.engines.fitz_krag.evidence_contract import build_query_contract
 
 
 def test_pyrrho_comparison_contract_sets_prefix_floor() -> None:
@@ -392,7 +392,7 @@ def test_address_rescue_preserves_required_table_candidate() -> None:
     assert not query_has_table_obligation("How many flux capacitor units are in the west region?")
 
 
-def test_address_rescue_uses_pyrrho_obligation_for_companion_table() -> None:
+def test_address_rescue_uses_profile_obligation_for_companion_table() -> None:
     """A prose-plus-table Pyrrho obligation should preserve both evidence kinds."""
     prose = _address(
         AddressKind.SECTION,
@@ -699,7 +699,7 @@ def test_query_contract_requires_table_only_from_pyrrho_modality() -> None:
     )
 
 
-def test_query_contract_requires_modalities_from_pyrrho_obligation() -> None:
+def test_query_contract_requires_modalities_from_profile_obligation() -> None:
     """Pyrrho retrieval_obligation is part of the evidence contract."""
     contract = build_query_contract(
         "For the EU token rotation rollout, which release enabled it?",

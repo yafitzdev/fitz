@@ -7,8 +7,7 @@ answer (TRUSTWORTHY), contradict each other (DISPUTED), or simply don't
 contain enough information (ABSTAIN). The standard classifier is
 [pyrrho](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1), a ModernBERT
 classifier with v2 evidence-verdict, failure-mode, retrieval-intent, and
-evidence-kind heads. V2 g1 is evidence-conditioned; query-only v2 planning
-remains inactive until a query-trained v2 head is available.
+evidence-kind heads.
 
 Governance is mandatory in the standard product path. The ``governance:``
 config key declares which pyrrho classifier to use:
@@ -20,18 +19,16 @@ config key declares which pyrrho classifier to use:
     # decision.mode in {TRUSTWORTHY, DISPUTED, ABSTAIN}
     # decision.probs is the governance softmax distribution
     # v2 verdict, failure, retrieval-intent, and evidence-kind heads expose metadata
-    # governance.classify_query(query) returns pre-retrieval query signals when supported
     # decision.reason is a one-line human-readable summary
 
-Pyrrho supplies evidence governance. Pre-retrieval query signals remain
-available only for packages that actually train query heads.
+Pyrrho owns v2 query-planning heads and evidence governance. KRAG owns the
+retrieval mechanics that consume those planning signals.
 """
 
 from __future__ import annotations
 
-from .evidence_contract import QueryContract, build_query_contract
 from .protocol import EvidenceItem
-from .pyrrho import GovernanceDecision, Pyrrho, QueryDecision
+from .pyrrho import GovernanceDecision, Pyrrho, PyrrhoQueryPlan
 
 
 def create_governance(spec: str) -> Pyrrho:
@@ -65,8 +62,6 @@ __all__ = [
     "EvidenceItem",
     "GovernanceDecision",
     "Pyrrho",
-    "QueryContract",
-    "QueryDecision",
-    "build_query_contract",
+    "PyrrhoQueryPlan",
     "create_governance",
 ]

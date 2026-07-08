@@ -1,5 +1,5 @@
-# fitz_sage/governance/evidence_contract.py
-"""Pyrrho-owned evidence contract projection for retrieval governance."""
+# fitz_sage/engines/fitz_krag/evidence_contract.py
+"""KRAG evidence contract helpers for retrieval and evidence assembly."""
 
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ _V2_EVIDENCE_KIND_TO_ADDRESS_KINDS = {
 
 @dataclass(frozen=True)
 class QueryContract:
-    """Evidence obligations projected from Pyrrho g5 query heads."""
+    """Evidence obligations used by KRAG retrieval and evidence assembly."""
 
     query: str
     query_contract: str | None = None
@@ -159,12 +159,10 @@ class QueryContract:
 
 
 def build_query_contract(query: str, profile: Any = None) -> QueryContract:
-    """Build the evidence contract from Pyrrho heads plus literal anchors.
+    """Build the executor evidence contract from profile values and anchors.
 
-    Pyrrho owns semantic obligations. This function does not infer table/code,
-    temporal, source-authority, metric, conflict, or coverage policy from query
-    wording. Query text contributes only literal anchors used for mechanical
-    matching against retrieved evidence.
+    Profile values come from KRAG query prep. Query text contributes only
+    literal anchors used for mechanical matching against retrieved evidence.
     """
     query_contract = _profile_value(profile, "query_contract")
     answerability_shape = _profile_value(profile, "answerability_shape")
@@ -172,7 +170,7 @@ def build_query_contract(query: str, profile: Any = None) -> QueryContract:
     retrieval_obligation = _profile_value(profile, "retrieval_obligation")
     required_modalities = _profile_sequence_value(profile, "required_modalities")
     if not required_modalities:
-        required_modalities = required_modalities_from_pyrrho(
+        required_modalities = required_modalities_from_profile(
             retrieval_modality,
             retrieval_obligation,
         )
@@ -209,11 +207,11 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
 
 
-def required_modalities_from_pyrrho(
+def required_modalities_from_profile(
     retrieval_modality: str | None,
     retrieval_obligation: str | None = None,
 ) -> tuple[str, ...]:
-    """Translate Pyrrho query-head labels into executor address kinds."""
+    """Translate retrieval profile labels into executor address kinds."""
     kinds: list[str] = []
     for source in (
         _OBLIGATION_TO_ADDRESS_KINDS.get(retrieval_obligation or "", ()),
@@ -293,6 +291,6 @@ __all__ = [
     "exact_identifiers",
     "normalize_text",
     "required_modalities_for_obligation",
-    "required_modalities_from_pyrrho",
+    "required_modalities_from_profile",
     "required_modalities_from_v2_evidence_kinds",
 ]

@@ -335,10 +335,6 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
     if head_line:
         lines.append(head_line)
 
-    scalar_line = _format_pyrrho_scalars(pyrrho)
-    if scalar_line:
-        lines.append(scalar_line)
-
     policy = cutoff.get("policy", {}) if isinstance(cutoff.get("policy", {}), dict) else {}
     has_cutoff_values = any(key in cutoff for key in ("selected", "evaluated", "max")) or bool(
         policy
@@ -367,34 +363,15 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
 
 
 def _format_query_profile(metadata: dict) -> str:
-    """Format pre-retrieval query profile signals and profile knobs."""
+    """Format pre-retrieval query profile knobs."""
     query_profile = metadata.get("query_profile", {}) if isinstance(metadata, dict) else {}
     if not isinstance(query_profile, dict):
         return ""
-    signals = query_profile.get("signals", {})
     profile = query_profile.get("profile", {})
-    if not isinstance(signals, dict):
-        signals = {}
     if not isinstance(profile, dict):
         profile = {}
 
     parts: list[str] = []
-    for key, label in (
-        ("query_contract", "contract"),
-        ("route", "route"),
-        ("answerability_shape", "shape"),
-        ("retrieval_modality", "modality"),
-        ("retrieval_obligation", "obligation"),
-    ):
-        signal = signals.get(key)
-        if not isinstance(signal, dict):
-            continue
-        final_label = signal.get("final_label")
-        if not final_label:
-            continue
-        ignored = "" if signal.get("used_for_retrieval", True) else ", ignored"
-        parts.append(f"{label} {final_label} ({_fmt_prob(signal.get('confidence'))}{ignored})")
-
     if profile:
         summary = "/".join(
             str(value)
@@ -489,45 +466,7 @@ def _format_pyrrho_heads(pyrrho: dict) -> str:
         confidence = _fmt_prob(head.get("confidence"))
         parts.append(f"{label} {final_label} ({confidence})")
 
-    for key, label in (
-        ("query_contract", "contract"),
-        ("route", "route"),
-        ("taxonomy", "taxonomy"),
-        ("retrieval_action", "action"),
-        ("gap_type", "gap"),
-        ("answerability_shape", "shape"),
-        ("retrieval_modality", "modality"),
-        ("retrieval_obligation", "obligation"),
-    ):
-        head = pyrrho.get(key)
-        if not isinstance(head, dict):
-            continue
-        final_label = head.get("final_label")
-        if not final_label:
-            continue
-        confidence = _fmt_prob(head.get("confidence"))
-        parts.append(f"{label} {final_label} ({confidence})")
     return "Pyrrho heads: " + "; ".join(parts) if parts else ""
-
-
-def _format_pyrrho_scalars(pyrrho: dict) -> str:
-    """Format the retrieval-relevant Pyrrho scalar heads."""
-    scalars = pyrrho.get("scalars") if isinstance(pyrrho, dict) else None
-    if not isinstance(scalars, dict) or not scalars:
-        return ""
-    labels = {
-        "evidence_sufficiency": "sufficiency",
-        "query_evidence_alignment": "alignment",
-        "answer_coverage": "coverage",
-        "conflict_density": "conflict",
-        "retrieval_retry_value": "retry",
-        "false_trustworthy_risk": "false-trust risk",
-        "evidence_failure_severity": "failure severity",
-    }
-    parts = [
-        f"{label} {_fmt_prob(scalars[key])}" for key, label in labels.items() if key in scalars
-    ]
-    return "Pyrrho signals: " + "; ".join(parts) if parts else ""
 
 
 def _format_verdict(value: object) -> str:

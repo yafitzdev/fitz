@@ -10,6 +10,7 @@ adds only what that file needs on top (e.g. a rewrite-aware batcher).
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from fitz_sage.core.answer_mode import AnswerMode
@@ -54,6 +55,20 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     governance_decision.probs = (0.1, 0.1, 0.8)
     engine._governance = MagicMock(name="governance")
     engine._governance.decide.return_value = governance_decision
+    engine._governance.plan_query.return_value = SimpleNamespace(
+        retrieval_intents=SimpleNamespace(
+            final_labels=("needs_lookup",),
+            final_label="needs_lookup",
+            confidence=0.9,
+            probabilities={"needs_lookup": 0.9},
+        ),
+        evidence_kinds=SimpleNamespace(
+            final_labels=("needs_text",),
+            final_label="needs_text",
+            confidence=0.85,
+            probabilities={"needs_text": 0.85},
+        ),
+    )
     engine._query_rewriter = None
     engine._address_reranker = None
     engine._hop_controller = None

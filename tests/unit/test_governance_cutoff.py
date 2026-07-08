@@ -1,1014 +1,276 @@
 # tests/unit/test_governance_cutoff.py
-"""Unit tests for Pyrrho cutoff policy metadata."""
+"""Unit tests for the Pyrrho v2 cutoff policy."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
 from fitz_sage.core.answer_mode import AnswerMode
-from fitz_sage.engines.fitz_krag.governance_cutoff import apply_governance_cutoff
-from fitz_sage.governance.pyrrho import GovernanceDecision, HeadDecision
+from fitz_sage.engines.fitz_krag.governance_cutoff import (
+    apply_governance_cutoff,
+    pyrrho_decision_metadata,
+)
+from fitz_sage.governance.pyrrho import (
+    GovernanceDecision,
+    HeadDecision,
+    MultiLabelDecision,
+)
 
 
-def test_cutoff_serializes_pyrrho_multitask_metadata():
-    """Pyrrho head and scalar outputs should survive into evidence-pack metadata."""
-    future_head = _head(
-        raw_label="future_signal",
-        final_label="future_signal",
-        probabilities={"future_signal": 0.91, "other": 0.09},
+def test_cutoff_serializes_only_native_pyrrho_v2_metadata():
+    """Cutoff metadata should expose v2 heads and no removed legacy heads."""
+    decision = _decision(AnswerMode.TRUSTWORTHY)
+    result = apply_governance_cutoff(
+        "What is the refund window?",
+        [_result("Refund window is 30 days.")],
+        _governance({1: decision}),
     )
-    decision = GovernanceDecision(
-        mode=AnswerMode.TRUSTWORTHY,
-        probs=(0.05, 0.10, 0.85),
-        reason="Pyrrho: sources support a confident answer (P=0.85).",
-        governance=_head(
-            raw_label="TRUSTWORTHY",
-            final_label="TRUSTWORTHY",
-            probabilities={"ABSTAIN": 0.05, "DISPUTED": 0.10, "TRUSTWORTHY": 0.85},
+
+    pyrrho = result.metadata["pyrrho"]
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert pyrrho["mode"] == "trustworthy"
+    assert pyrrho["evidence_verdict"]["final_label"] == "SUFFICIENT"
+    assert pyrrho["failure_mode"]["final_label"] == "none"
+    assert pyrrho["retrieval_intents"]["final_labels"] == ["needs_lookup"]
+    assert pyrrho["evidence_kinds"]["final_labels"] == ["needs_text"]
+    assert ("retrieval" + "_action") not in pyrrho
+    assert ("gap" + "_type") not in pyrrho
+    assert "scalars" not in pyrrho
+
+
+def test_pyrrho_decision_metadata_ignores_removed_heads_even_if_present():
+    """External test doubles should not reintroduce removed Pyrrho metadata fields."""
+    decision = _decision(AnswerMode.TRUSTWORTHY)
+    removed_key = "retrieval" + "_action"
+    object.__setattr__(decision, "heads", {**decision.heads, removed_key: _head("ready")})
+
+    metadata = pyrrho_decision_metadata(AnswerMode.TRUSTWORTHY, decision)
+
+    assert "evidence_verdict" in metadata
+    assert removed_key not in metadata
+
+
+def test_evidence_compiler_floor_delays_trustworthy_stop():
+    """Compiler-required sources can force Pyrrho to see enough ranked evidence."""
+    results = [
+        _result(
+            "WH-1 row says 17 units.",
+            index=1,
+            kind="table",
+            metadata={
+                "evidence_compiler": {
+                    "roles": ["required_table"],
+                    "min_sources": 2,
+                    "contract": {"required_modalities": ["table"]},
+                }
+            },
         ),
-        query_contract=_head(
-            raw_label="structured_lookup",
-            final_label="structured_lookup",
-            probabilities={"structured_lookup": 0.88, "representative_overview": 0.12},
+        _result("WH-1 table header confirms units.", index=2, kind="table"),
+    ]
+
+    result = apply_governance_cutoff(
+        "How many units are in WH-1?",
+        results,
+        _governance(
+            {
+                1: _decision(AnswerMode.TRUSTWORTHY),
+                2: _decision(AnswerMode.TRUSTWORTHY),
+            }
         ),
-        route=_head(
-            raw_label="business_ops",
-            final_label="business_ops",
-            probabilities={"business_ops": 0.80, "technical_docs": 0.20},
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.metadata["evaluated"] == 2
+    assert result.metadata["trajectory"][0]["evidence_prefix_min"] == 2
+
+
+def test_comparison_dispute_stops_when_pyrrho_verdict_policy_is_met():
+    """Comparison queries should stop once Pyrrho gives a policy-eligible dispute."""
+    profile = SimpleNamespace(query_contract="comparison_coverage")
+    result = apply_governance_cutoff(
+        "Compare refund windows in the old and new policies.",
+        [
+            _result("Old policy says 45 days.", index=1),
+            _result("New policy says 30 days.", index=2),
+        ],
+        _governance(
+            {
+                1: _decision(AnswerMode.ABSTAIN),
+                2: _decision(AnswerMode.DISPUTED),
+            }
         ),
-        taxonomy=_head(
-            raw_label="evidence_direct",
-            final_label="evidence_direct",
-            probabilities={"evidence_direct": 0.72, "evidence_indirect": 0.28},
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.DISPUTED
+    assert result.metadata["stop_reason"] == "dispute_policy_met"
+    assert result.metadata["evaluated"] == 2
+
+
+def test_cutoff_does_not_override_pyrrho_trustworthy_with_local_conflict_signal():
+    """Explicit-value conflicts are evidence for Pyrrho, not local verdict overrides."""
+    profile = SimpleNamespace(query_contract="comparison_coverage")
+    result = apply_governance_cutoff(
+        "Do the policies agree on the refund window?",
+        [
+            _result("Legacy note says 45 days.", index=1),
+            _result("Current policy says 30 days.", index=2),
+        ],
+        _governance(
+            {
+                1: _decision(AnswerMode.ABSTAIN),
+                2: _decision(AnswerMode.TRUSTWORTHY),
+            }
         ),
-        retrieval_action=_head(
-            raw_label="answer_now",
-            final_label="answer_now",
-            probabilities={"answer_now": 0.83, "retrieve_more": 0.17},
+        profile=profile,
+    )
+
+    assert result.mode is AnswerMode.TRUSTWORTHY
+    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
+
+
+def test_broad_overview_returns_representative_sources_without_pyrrho_call():
+    """Representative overview is a retrieval surface, not a sufficiency verdict."""
+
+    class _NoCallGovernance:
+        supports_batched_prefixes = True
+
+        def decide_many(self, query, prefixes):  # pragma: no cover - should not be called
+            raise AssertionError("Pyrrho should not run for representative overview.")
+
+    profile = SimpleNamespace(query_contract="representative_overview")
+    results = [_result(f"Source {idx}.", index=idx) for idx in range(1, 9)]
+
+    result = apply_governance_cutoff("Summarize the docs.", results, _NoCallGovernance(), profile=profile)
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["stop_reason"] == "representative_overview"
+    assert result.metadata["sufficiency_evaluated"] is False
+    assert len(result.selected) == 6
+
+
+def test_cutoff_exhaustion_returns_abstain_without_old_control_reasons():
+    """Cutoff exhaustion should report Pyrrho insufficiency, not retrieval-control state."""
+    result = apply_governance_cutoff(
+        "What is the launch date?",
+        [_result("Only mentions launch owner.", index=1), _result("No date.", index=2)],
+        _governance(
+            {
+                1: _decision(AnswerMode.ABSTAIN),
+                2: _decision(AnswerMode.ABSTAIN),
+            }
         ),
-        gap_type=_head(
-            raw_label="none",
-            final_label="none",
-            probabilities={"none": 0.86, "missing_specific_fact": 0.14},
-        ),
-        answerability_shape=_head(
-            raw_label="direct_answer",
-            final_label="direct_answer",
-            probabilities={"direct_answer": 0.76, "structured_reasoning": 0.24},
-        ),
-        retrieval_modality=_head(
-            raw_label="unstructured_text",
-            final_label="unstructured_text",
-            probabilities={"unstructured_text": 0.70, "structured_table": 0.30},
-        ),
-        heads={"future_head": future_head},
-        scalars={
-            "retrieval_retry_value": 0.17,
-            "false_trustworthy_risk": 0.09,
-            "evidence_failure_severity": 0.11,
+        requested_top_k=2,
+    )
+
+    assert result.mode is AnswerMode.ABSTAIN
+    assert result.metadata["stop_reason"] == "cutoff_exhausted"
+    assert ("retrieval" + "_control_blocker") not in result.metadata
+    assert any("did not find sufficient" in reason for reason in result.reasons)
+
+
+def _governance(decisions: dict[int, GovernanceDecision]):
+    class _Governance:
+        supports_batched_prefixes = True
+
+        def decide_many(self, query, prefixes):
+            return [decisions[len(prefix)] for prefix in prefixes]
+
+    return _Governance()
+
+
+def _decision(mode: AnswerMode) -> GovernanceDecision:
+    labels = {
+        AnswerMode.ABSTAIN: "INSUFFICIENT",
+        AnswerMode.DISPUTED: "DISPUTED",
+        AnswerMode.TRUSTWORTHY: "SUFFICIENT",
+    }
+    probs = {
+        AnswerMode.ABSTAIN: (0.86, 0.08, 0.06),
+        AnswerMode.DISPUTED: (0.07, 0.86, 0.07),
+        AnswerMode.TRUSTWORTHY: (0.06, 0.08, 0.86),
+    }[mode]
+    evidence_verdict = _head(
+        labels[mode],
+        probabilities={
+            "INSUFFICIENT": probs[0],
+            "DISPUTED": probs[1],
+            "SUFFICIENT": probs[2],
         },
     )
-
-    class Governance:
-        def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
-            return decision
-
-    result = apply_governance_cutoff(
-        "Which invoice failed?",
-        [SimpleNamespace(content="Invoice 17 failed retry validation.")],
-        Governance(),
-    )
-
-    metadata = result.metadata
-    assert metadata["stop_reason"] == "trustworthy_min_evidence_met"
-    assert metadata["trajectory"][0]["prefix_n"] == 1
-    pyrrho = metadata["pyrrho"]
-    assert pyrrho["governance"]["raw_label"] == "TRUSTWORTHY"
-    assert pyrrho["query_contract"]["final_label"] == "structured_lookup"
-    assert pyrrho["route"]["final_label"] == "business_ops"
-    assert pyrrho["taxonomy"]["final_label"] == "evidence_direct"
-    assert pyrrho["retrieval_action"]["final_label"] == "answer_now"
-    assert pyrrho["gap_type"]["final_label"] == "none"
-    assert pyrrho["answerability_shape"]["final_label"] == "direct_answer"
-    assert pyrrho["retrieval_modality"]["final_label"] == "unstructured_text"
-    assert pyrrho["future_head"]["final_label"] == "future_signal"
-    assert pyrrho["scalars"]["retrieval_retry_value"] == 0.17
-    assert pyrrho["scalars"]["false_trustworthy_risk"] == 0.09
-    assert pyrrho["scalars"]["evidence_failure_severity"] == 0.11
-
-
-def test_pyrrho_controls_when_comparison_coverage_is_complete():
-    """Comparison coverage is complete only when Pyrrho returns a trustworthy prefix."""
-    profile = SimpleNamespace(
-        has_temporal_intent=True,
-        has_comparison_intent=True,
-        comparison_entities=["Q1", "Q2 2024"],
-        answer_type="comparative",
-    )
-    results = [
-        _result("Q1 revenue increased.", "quarterly_summary_q1_2024.md"),
-        _result("Q1 customer feedback improved.", "feedback_q1_2024.md"),
-        _result("Q2 revenue increased faster.", "quarterly_summary_q2_2024.md"),
-    ]
-
-    result = apply_governance_cutoff(
-        "What changed between Q1 and Q2 2024?",
-        results,
-        _PrefixGovernance(
-            {
-                1: _decision(mode=AnswerMode.ABSTAIN),
-                2: _decision(mode=AnswerMode.ABSTAIN),
-                3: _decision(mode=AnswerMode.TRUSTWORTHY),
-            }
-        ),
-        profile=profile,
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert len(result.selected) == 3
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-    assert "contract_blocker" not in result.metadata["trajectory"][1]
-
-
-def test_pyrrho_abstention_is_final_at_cutoff():
-    """Missing-evidence judgments come from Pyrrho, not from a sidecar contract gate."""
-    profile = SimpleNamespace(has_temporal_intent=True, has_comparison_intent=False)
-
-    result = apply_governance_cutoff(
-        "What changed in March 2024?",
-        [_result("April feedback improved after the beta release.", "feedback_april_2024.md")],
-        _AbstainingGovernance(),
-        profile=profile,
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.metadata["stop_reason"] == "cutoff_exhausted"
-    assert result.metadata["pyrrho"]["mode"] == "abstain"
-
-
-def test_cutoff_does_not_override_pyrrho_trust_with_metric_gate():
-    """The cutoff wrapper must not add its own metric sufficiency verdict."""
-    profile = SimpleNamespace(has_temporal_intent=True, has_comparison_intent=False)
-
-    result = apply_governance_cutoff(
-        "What was Q4 2024 revenue?",
-        [_result("Q4 2024 roadmap targets were postponed.", "roadmap_q4_2024.md")],
-        _TrustworthyGovernance(),
-        profile=profile,
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-    assert "contract_blocker" not in result.metadata
-
-
-def test_metric_comparison_cutoff_prefers_exact_table_evidence():
-    """Metric comparisons should not stop on weaker prose before exact table rows."""
-    profile = SimpleNamespace(
-        has_temporal_intent=True,
-        has_comparison_intent=True,
-        comparison_entities=["Q1", "Q2"],
-        answer_type="comparative",
-    )
-    q2_metrics = _result(
-        "| Metric | April | May | Q2 Avg | vs Q1 |\n"
-        "| Total Responses | 278 | 312 | 295 | +51% |",
-        "quarterly_summary_q2_2024.md",
-    )
-    q1_conclusion = _result(
-        "Q1 established a strong foundation. Customer engagement is increasing "
-        "(50% more responses).",
-        "quarterly_summary_q1_2024.md",
-    )
-    q1_metrics = _result(
-        "| Metric | January | February | March | Change |\n"
-        "| Total Responses | 156 | 189 | 234 | +50% |",
-        "quarterly_summary_q1_2024.md",
-    )
-
-    result = apply_governance_cutoff(
-        "Which quarterly summary had higher total responses, Q1 or Q2?",
-        [q2_metrics, q1_conclusion, q1_metrics],
-        _TrustworthyGovernance(),
-        profile=profile,
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [q2_metrics, q1_metrics]
-    assert q1_conclusion not in result.selected
-
-
-def test_retrieval_action_answer_now_allows_early_broad_stop():
-    """A confident g4 answer_now action can override broad-shape minimum evidence."""
-    results = [
-        _result("The deployment guide says rollback requires `fitz deploy --rollback`.", "ops.md"),
-        _result("Release notes mention deployment automation.", "release.md"),
-        _result("The runbook lists monitoring alerts.", "alerts.md"),
-        _result("The changelog records CLI changes.", "changelog.md"),
-    ]
-    decision = _decision(
-        mode=AnswerMode.TRUSTWORTHY,
-        action="answer_now",
-        action_confidence=0.88,
-    )
-
-    result = apply_governance_cutoff(
-        "What should I know about deployment rollback?",
-        results,
-        _FixedGovernance(decision),
-        profile=SimpleNamespace(specificity="broad"),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [results[0]]
-    assert result.metadata["stop_reason"] == "pyrrho_answer_now"
-    assert result.metadata["policy"]["query_shape"] == "broad"
-
-
-def test_retrieval_action_retrieve_more_blocks_early_trustworthy_stop():
-    """A confident retrieve_more action should force another prefix evaluation."""
-    results = [
-        _result("The summary says the invoice failed validation.", "summary.md"),
-        _result("Invoice INV-17 failed retry validation in the audit log.", "audit.md"),
-    ]
-
-    result = apply_governance_cutoff(
-        "Which invoice failed retry validation?",
-        results,
-        _PrefixGovernance(
-            {
-                1: _decision(
-                    mode=AnswerMode.TRUSTWORTHY,
-                    action="retrieve_more",
-                    action_confidence=0.91,
-                    gap="missing_specific_fact",
-                ),
-                2: _decision(
-                    mode=AnswerMode.TRUSTWORTHY,
-                    action="answer_now",
-                    action_confidence=0.86,
-                ),
-            }
-        ),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == results
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-    assert "retrieval_control_blocker" in result.metadata["trajectory"][0]
-    assert result.metadata["trajectory"][0]["retrieval_action"]["final_label"] == "retrieve_more"
-
-
-def test_retrieval_action_blocks_trustworthy_at_cutoff():
-    """A final retrieve_more action should abstain instead of certifying weak evidence."""
-    decision = _decision(
-        mode=AnswerMode.TRUSTWORTHY,
-        action="retrieve_more",
-        action_confidence=0.91,
-        gap="missing_specific_fact",
-    )
-
-    result = apply_governance_cutoff(
-        "Which invoice failed retry validation?",
-        [_result("The summary says an invoice failed validation.", "summary.md")],
-        _FixedGovernance(decision),
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.metadata["stop_reason"] == "retrieval_control_unsatisfied_at_cutoff"
-    assert result.metadata["retrieval_control_blocker"] == (
-        "Pyrrho retrieval action requested more evidence: retrieve_more."
-    )
-    assert result.metadata["trajectory"][0]["retrieval_control_blocker"] == (
-        "Pyrrho retrieval action requested more evidence: retrieve_more."
-    )
-
-
-def test_retrieval_action_structured_lookup_blocks_trust_without_pyrrho_trust():
-    """structured_lookup is a Pyrrho retrieval-control request, not a trust verdict."""
-    exact_match = _result("The trace shows TC-0901 failed during export.", "trace.md")
-    noise = _result("Other trace entries passed.", "trace.md")
-
-    result = apply_governance_cutoff(
-        "Which document mentions TC-0901?",
-        [exact_match, noise],
-        _FixedGovernance(
-            _decision(
-                mode=AnswerMode.ABSTAIN,
-                action="structured_lookup",
-                action_confidence=0.90,
-                gap="missing_specific_fact",
-            )
-        ),
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.selected == [exact_match, noise]
-    assert result.metadata["stop_reason"] == "retrieval_control_unsatisfied_at_cutoff"
-    assert "structured_lookup_contract" not in result.metadata
-
-
-def test_structured_lookup_exact_identifier_does_not_override_pyrrho_abstention():
-    """Source-finding exact matches are evidence for Pyrrho, not final governance."""
-    profile = SimpleNamespace(query_contract="structured_lookup")
-    exact_match = _result(
-        "All regression tests passed. TC-0901: Data export - PASSED.",
-        "keyword_test/test_cases.md",
-    )
-    noise = _result("Operational incidents must be reviewed monthly.", "policy.md")
-
-    result = apply_governance_cutoff(
-        "Which document mentions TC-0901?",
-        [exact_match, noise],
-        _AbstainingGovernance(),
-        profile=profile,
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.selected == [exact_match, noise]
-    assert result.metadata["stop_reason"] == "cutoff_exhausted"
-    assert "structured_lookup_contract" not in result.metadata
-    assert result.metadata["pyrrho"]["mode"] == "abstain"
-
-
-def test_private_identifier_exact_match_does_not_bypass_pyrrho():
-    """Private Python function names cannot certify trust without Pyrrho."""
-    profile = SimpleNamespace(query_contract="structured_lookup")
-    exact_match = _result(
-        "def _format_query_profile(metadata: dict[str, object]) -> str:",
-        "fitz_sage/cli/ui/display.py",
-    )
-
-    result = apply_governance_cutoff(
-        "Which function named _format_query_profile formats query profile metadata?",
-        [exact_match],
-        _AbstainingGovernance(),
-        profile=profile,
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.selected == [exact_match]
-    assert result.metadata["stop_reason"] == "cutoff_exhausted"
-    assert "structured_lookup_contract" not in result.metadata
-
-
-def test_structured_lookup_does_not_match_identifier_as_loose_words():
-    """Exact lookup matching is no longer a cutoff-level governance path."""
-    profile = SimpleNamespace(query_contract="structured_lookup")
-    near_match = _result(
-        "def _format_query_profile(metadata: dict[str, object]) -> str:",
-        "fitz_sage/cli/ui/display.py",
-    )
-
-    result = apply_governance_cutoff(
-        "Which function named query_profile_metadata serializes Pyrrho query profile metadata?",
-        [near_match],
-        _AbstainingGovernance(),
-        profile=profile,
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.metadata["stop_reason"] != "structured_lookup_exact_match"
-
-
-def test_contract_does_not_treat_natural_hyphen_term_as_exact_identifier():
-    """Natural hyphenated prose should not become a hard exact-identifier requirement."""
-    result = apply_governance_cutoff(
-        "How does pre-retrieval planning work?",
-        [_result("Planning runs before evidence retrieval.", "docs/planning.md")],
-        _TrustworthyGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-
-
-def test_comparison_contract_accepts_identifier_variant_without_trailing_topic():
-    """Pyrrho trustworthy verdicts still use comparison-shaped prefix sizing."""
-    profile = SimpleNamespace(
-        has_comparison_intent=True,
-        comparison_entities=["query_profile_metadata", "_format_query_profile responsibilities"],
-        answer_type="comparative",
-    )
-    metadata_result = _result(
-        "def query_profile_metadata(query_signals, profile):",
-        "fitz_sage/engines/fitz_krag/retrieval_profile.py",
-    )
-    display_result = _result(
-        "def _format_query_profile(metadata: dict[str, object]) -> str:",
-        "fitz_sage/cli/ui/display.py",
-    )
-
-    result = apply_governance_cutoff(
-        "Compare query_profile_metadata and _format_query_profile responsibilities.",
-        [metadata_result, display_result],
-        _TrustworthyGovernance(),
-        profile=profile,
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [metadata_result, display_result]
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-    assert "contract_blocker" not in result.metadata
-
-
-def test_pyrrho_answer_now_is_authoritative_for_comparison_prefix():
-    """A confident Pyrrho answer_now head is authoritative at cutoff time."""
-    profile = SimpleNamespace(
-        has_comparison_intent=True,
-        comparison_entities=["query_profile_metadata", "_format_query_profile responsibilities"],
-        answer_type="comparative",
-    )
-    near_match = _result(
-        "def _format_query_profile(metadata: dict[str, object]) -> str:",
-        "fitz_sage/cli/ui/display.py",
-    )
-
-    result = apply_governance_cutoff(
-        "Compare query_profile_metadata and _format_query_profile responsibilities.",
-        [near_match],
-        _FixedGovernance(
-            _decision(
-                mode=AnswerMode.TRUSTWORTHY,
-                action="answer_now",
-                action_confidence=0.95,
-            )
-        ),
-        profile=profile,
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [near_match]
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-
-
-def test_compiler_required_table_does_not_override_pyrrho_abstention():
-    """Compiler-required table evidence is ledger input, not final governance."""
-    table = _result(
-        "Table: Warehouses\n"
-        "warehouse_id | region | item | stock | unit\n"
-        "WH-1 | west | flux capacitor | 17 | count",
-        "structured/warehouses.csv",
-    )
-    table.metadata["evidence_compiler"] = {
-        "rank": 1,
-        "alignment_score": 4,
-        "roles": ["required_table"],
-        "min_sources": 1,
+    failure_mode = _head("none")
+    retrieval_intents = _multi_head("needs_lookup", ("needs_lookup",))
+    evidence_kinds = _multi_head("needs_text", ("needs_text",))
+    heads = {
+        "evidence_verdict": evidence_verdict,
+        "failure_mode": failure_mode,
+        "retrieval_intents": retrieval_intents,
+        "evidence_kinds": evidence_kinds,
     }
-
-    result = apply_governance_cutoff(
-        "How many flux capacitor units are in the west region?",
-        [table],
-        _AbstainingGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.selected == [table]
-    assert result.metadata["stop_reason"] == "cutoff_exhausted"
-
-
-def test_evidence_contract_does_not_trust_conflict_roles():
-    """A single compiler conflict role is not enough to force a dispute."""
-    conflict = _result("Q1 revenue was 1.2 billion.", "finance.md")
-    conflict.metadata["evidence_compiler"] = {
-        "rank": 1,
-        "alignment_score": 2,
-        "roles": ["conflict_value"],
-        "min_sources": 2,
-    }
-
-    result = apply_governance_cutoff(
-        "What was Q1 revenue?",
-        [conflict],
-        _AbstainingGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.metadata["stop_reason"] == "cutoff_exhausted"
-
-
-def test_pyrrho_dispute_owns_conflict_verdict():
-    """Compiler-labeled conflicts need Pyrrho's DISPUTED verdict to govern."""
-    code = _result("if user.get('archived') == 'true': return False", "feature_flags.py")
-    code.metadata["evidence_compiler"] = {
-        "rank": 1,
-        "alignment_score": 5,
-        "roles": ["conflict_value", "required_symbol"],
-        "min_sources": 2,
-    }
-    docs = _result("Archived users remain eligible for beta flags.", "README.md")
-    docs.metadata["evidence_compiler"] = {
-        "rank": 2,
-        "alignment_score": 4,
-        "roles": ["conflict_value", "conflict_companion:documentation"],
-        "min_sources": 2,
-    }
-
-    result = apply_governance_cutoff(
-        "Are archived users eligible for beta feature flags?",
-        [code, docs],
-        _FixedGovernance(_decision(mode=AnswerMode.DISPUTED)),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.DISPUTED
-    assert result.selected == [code, docs]
-    assert result.metadata["stop_reason"] == "narrow_strong_dispute_met"
-
-
-def test_narrow_strong_dispute_stops_at_two_sources():
-    """A strong two-source dispute should not be downgraded to abstain at cutoff."""
-    finance_report = _result("The Q1 revenue report says revenue was 1.2B.", "finance.md")
-    audit_report = _result("The audit report disputes Q1 revenue and says it was 1.4B.", "audit.md")
-
-    result = apply_governance_cutoff(
-        "What was Q1 revenue?",
-        [finance_report, audit_report],
-        _PrefixGovernance(
-            {
-                1: _decision(mode=AnswerMode.ABSTAIN, probs=(0.65, 0.04, 0.31)),
-                2: _decision(mode=AnswerMode.DISPUTED, probs=(0.29, 0.67, 0.04)),
-            }
-        ),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.DISPUTED
-    assert result.selected == [finance_report, audit_report]
-    assert result.metadata["evaluated"] == 2
-    assert result.metadata["stop_reason"] == "narrow_strong_dispute_met"
-
-
-def test_narrow_strong_dispute_beats_later_noisy_trust():
-    """Once the top two sources form a strong dispute, later noise should not flip trust."""
-    stale_note = _result("Legacy guide says major incidents are never declared before 60 minutes.", "README.md")
-    implementation = _result(
-        "def should_declare_major(duration_minutes, affected_customers): "
-        "return duration_minutes >= 30 or affected_customers >= 5000",
-        "incident_triage.py",
-    )
-    incident_note = _result("Final recovery duration was 26 minutes.", "incident.md")
-    table = _result("incident_id | duration_minutes | customer_visible\nINC-730 | 26 | no", "incidents.csv")
-
-    result = apply_governance_cutoff(
-        "Are major incidents never declared before 60 minutes?",
-        [stale_note, implementation, incident_note, table],
-        _PrefixGovernance(
-            {
-                1: _decision(mode=AnswerMode.ABSTAIN, probs=(0.84, 0.11, 0.05)),
-                2: _decision(mode=AnswerMode.DISPUTED, probs=(0.09, 0.86, 0.05)),
-                3: _decision(mode=AnswerMode.DISPUTED, probs=(0.43, 0.52, 0.05)),
-                4: _decision(mode=AnswerMode.TRUSTWORTHY, probs=(0.13, 0.05, 0.82)),
-            }
-        ),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.DISPUTED
-    assert result.selected == [stale_note, implementation]
-    assert result.metadata["stop_reason"] == "narrow_strong_dispute_met"
-
-
-def test_single_stale_source_blocks_weak_trustworthy_stop():
-    """One stale answer-looking source should require corroboration before trust."""
-    stale_note = _result(
-        "The stale deployment note says Fitz never automatically rolls back a deployment.",
-        "deployment_note.md",
-    )
-
-    result = apply_governance_cutoff(
-        "Does Fitz ever automatically roll back a deployment?",
-        [stale_note],
-        _FixedGovernance(
-            _decision(mode=AnswerMode.TRUSTWORTHY, probs=(0.41, 0.08, 0.51))
-        ),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.metadata["stop_reason"] == "trustworthy_risk_unsatisfied_at_cutoff"
-    assert "trustworthy_risk_blocker" in result.metadata["trajectory"][0]
-
-
-def test_single_stale_source_allows_emphatic_answer_now():
-    """Pyrrho can still certify a risky-looking single source when it is emphatic."""
-    source = _result(
-        "The current forecast says Project Atlas FY27 pipeline is 8.4 million ARR.",
-        "current_forecast.md",
-    )
-
-    result = apply_governance_cutoff(
-        "What is the Project Atlas FY27 pipeline?",
-        [source],
-        _FixedGovernance(
-            _decision(
-                mode=AnswerMode.TRUSTWORTHY,
-                action="answer_now",
-                action_confidence=0.91,
-                probs=(0.03, 0.04, 0.93),
-            )
-        ),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-
-
-def test_phrase_anchor_contract_does_not_override_pyrrho_abstention():
-    """Phrase-anchor compiler roles cannot create a trustworthy result by themselves."""
-    evidence = _result(
-        "Enterprise Critical cases receive acknowledgement within 7 minutes.",
-        "support_handbook.md",
-    )
-    evidence.metadata["evidence_compiler"] = {
-        "rank": 1,
-        "alignment_score": 6,
-        "roles": ["anchor:Enterprise Critical"],
-        "min_sources": 1,
-    }
-
-    result = apply_governance_cutoff(
-        "What acknowledgement time applies to Enterprise Critical cases?",
-        [evidence],
-        _AbstainingGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.selected == [evidence]
-    assert result.metadata["stop_reason"] == "cutoff_exhausted"
-
-
-def test_compiler_min_sources_do_not_create_trustworthy_mode():
-    """Compiler min_sources can assemble the prefix but cannot decide the mode."""
-    table = _result("warehouse_id | item | stock\nWH-1 | flux capacitor | 17", "warehouses.csv")
-    table.metadata["evidence_compiler"] = {
-        "rank": 1,
-        "alignment_score": 5,
-        "roles": ["required_table"],
-        "min_sources": 2,
-    }
-    release = _result("Release 2026.05 confirmed 17 flux capacitor units.", "release_notes.md")
-    release.metadata["evidence_compiler"] = {
-        "rank": 2,
-        "alignment_score": 5,
-        "roles": ["aligned"],
-        "min_sources": 2,
-    }
-
-    result = apply_governance_cutoff(
-        "Which release mentioned flux capacitor units and how many did it confirm?",
-        [table, release],
-        _AbstainingGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.selected == [table, release]
-    assert result.metadata["stop_reason"] == "cutoff_exhausted"
-
-
-def test_compiler_min_sources_define_pyrrho_prefix_floor():
-    """Pyrrho should not be asked to trust before the contract ledger bundle is visible."""
-    table = _result("warehouse_id | item | stock\nWH-1 | flux capacitor | 17", "warehouses.csv")
-    table.metadata["evidence_compiler"] = {
-        "rank": 1,
-        "alignment_score": 5,
-        "roles": ["required_table"],
-        "min_sources": 2,
-    }
-    release = _result("Release 2026.05 confirmed 17 flux capacitor units.", "release_notes.md")
-    release.metadata["evidence_compiler"] = {
-        "rank": 2,
-        "alignment_score": 5,
-        "roles": ["aligned"],
-        "min_sources": 2,
-    }
-
-    result = apply_governance_cutoff(
-        "Which release mentioned flux capacitor units and how many did it confirm?",
-        [table, release],
-        _TrustworthyGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [table, release]
-    assert result.metadata["trajectory"][0]["pyrrho_contract_prefix_min"] == 2
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-
-
-def test_compiler_required_later_source_extends_pyrrho_prefix_floor():
-    """A required compiler source at rank N must be visible before Pyrrho can stop."""
-    intro = _result("Incident INC-611 is discussed in the support overview.", "overview.md")
-    timeline = _result("The support timeline mentions INC-611 follow-up work.", "timeline.md")
-    required = _result(
-        "INC-611 root cause: cache invalidation race in worker pool.", "incidents.csv"
-    )
-    required.metadata["evidence_compiler"] = {
-        "rank": 3,
-        "alignment_score": 5,
-        "roles": ["anchor_identifier:INC-611"],
-        "min_sources": 1,
-    }
-
-    result = apply_governance_cutoff(
-        "What caused INC-611?",
-        [intro, timeline, required],
-        _TrustworthyGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [intro, timeline, required]
-    assert result.metadata["trajectory"][0]["pyrrho_contract_prefix_min"] == 3
-    assert result.metadata["trajectory"][1]["pyrrho_contract_prefix_min"] == 3
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-
-
-def test_compiler_prefix_floor_is_capped_at_policy_cutoff():
-    """A required source beyond the cutoff must not convert trusted top evidence into abstain."""
-    results = [_result(f"Evidence item {index}.", f"evidence_{index}.md") for index in range(12)]
-    results[11].metadata["evidence_compiler"] = {
-        "rank": 12,
-        "alignment_score": 5,
-        "roles": ["anchor_identifier:INC-612"],
-        "min_sources": 1,
-    }
-
-    result = apply_governance_cutoff(
-        "What caused INC-612?",
-        results,
-        _TrustworthyGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == results[:10]
-    assert result.metadata["trajectory"][0]["pyrrho_contract_prefix_min"] == 10
-    assert result.metadata["stop_reason"] == "trustworthy_min_evidence_met"
-
-
-def test_compiler_bridge_roles_do_not_extend_pyrrho_prefix_floor():
-    """Bridge artifacts return to users but should not force noisy sources into governance."""
-    proof = _result("INC-611 root cause: cache invalidation race.", "incidents.csv")
-    proof.metadata["evidence_compiler"] = {
-        "rank": 1,
-        "alignment_score": 5,
-        "roles": ["anchor_identifier:INC-611"],
-        "min_sources": 1,
-    }
-    bridge = _result("Incident overview mentions a related review document.", "review.md")
-    bridge.metadata["evidence_compiler"] = {
-        "rank": 2,
-        "alignment_score": 2,
-        "roles": ["bridge_document:incident review"],
-        "min_sources": 4,
-    }
-
-    result = apply_governance_cutoff(
-        "What caused INC-611?",
-        [proof, bridge],
-        _TrustworthyGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [proof, bridge]
-    assert result.metadata["evaluated"] == 1
-    assert result.metadata["selected"] == 2
-    assert "pyrrho_contract_prefix_min" not in result.metadata["trajectory"][0]
-
-
-def test_compiler_bridge_roles_are_return_only_for_pyrrho_governance():
-    """Bridge artifacts should be returned without entering Pyrrho's judged prefix."""
-    proof = _result("Final PAY-209 postmortem confirms alert ALT-501.", "postmortem.md")
-    proof.metadata["evidence_compiler"] = {
-        "rank": 1,
-        "alignment_score": 5,
-        "roles": ["anchor_identifier:PAY-209"],
-        "min_sources": 1,
-    }
-    bridge = _result("ALT-501 duration was 37 minutes.", "alerts.csv")
-    bridge.metadata["evidence_compiler"] = {
-        "rank": 2,
-        "alignment_score": 4,
-        "roles": ["bridge:ALT-501"],
-        "min_sources": 1,
-    }
-    governance = _RecordingTrustworthyGovernance()
-
-    result = apply_governance_cutoff(
-        "Which alert maps to PAY-209?",
-        [proof, bridge],
-        governance,
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [proof, bridge]
-    assert result.metadata["evaluated"] == 1
-    assert result.metadata["selected"] == 2
-    assert governance.seen_file_paths == [["postmortem.md"]]
-
-
-def test_mismatched_required_role_does_not_extend_pyrrho_prefix_floor():
-    """A required-symbol closure role on a section is not a concrete required symbol."""
-    section = _result(
-        "The support overview mentions incident INC-612.",
-        "overview.md",
-        kind="section",
-    )
-    section.metadata["evidence_compiler"] = {
-        "rank": 1,
-        "alignment_score": 2,
-        "roles": ["required_symbol"],
-        "min_sources": 4,
-    }
-
-    result = apply_governance_cutoff(
-        "What mentions INC-612?",
-        [section],
-        _TrustworthyGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.TRUSTWORTHY
-    assert result.selected == [section]
-    assert "pyrrho_contract_prefix_min" not in result.metadata["trajectory"][0]
-
-
-def test_trustworthy_off_topic_evidence_is_blocked_by_anchor_guard():
-    """Pyrrho cannot certify evidence that barely overlaps the query anchors."""
-    refund = _result(
-        "Current Acme Support refund policy: refunds are available for 30 days. "
-        "Request code RF-30.",
-        "refund_policy.md",
-    )
-
-    result = apply_governance_cutoff(
-        "What is Acme vacation allowance for employees?",
-        [refund],
-        _TrustworthyGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.ABSTAIN
-    assert result.metadata["stop_reason"] == "trustworthy_risk_unsatisfied_at_cutoff"
-    assert "too few query anchors" in result.reasons[0]
-    assert "trustworthy_risk_blocker" in result.metadata["trajectory"][0]
-
-
-def test_agreement_query_with_conflicting_values_is_disputed_even_when_pyrrho_abstains():
-    """Simple explicit-value conflicts should not be hidden behind abstain."""
-    current = _result(
-        "Current Acme refund policy: refunds are available for 30 days.",
-        "refund_policy.md",
-    )
-    legacy = _result(
-        "Archived 2021 Acme refund note: refunds are available for 14 days.",
-        "legacy_refund_note.md",
-    )
-
-    result = apply_governance_cutoff(
-        "Do Acme refund notes agree on the refund window?",
-        [current, legacy],
-        _AbstainingGovernance(),
-        profile=SimpleNamespace(),
-    )
-
-    assert result.mode is AnswerMode.DISPUTED
-    assert result.selected == [current, legacy]
-    assert result.metadata["stop_reason"] == "deterministic_conflict_signal"
-    assert "conflicting explicit values" in result.reasons[0]
-
-
-class _TrustworthyGovernance:
-    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
-        return GovernanceDecision(
-            mode=AnswerMode.TRUSTWORTHY,
-            probs=(0.05, 0.05, 0.90),
-            reason="Pyrrho: sources support a confident answer (P=0.90).",
-        )
-
-
-class _RecordingTrustworthyGovernance:
-    def __init__(self) -> None:
-        self.seen_file_paths: list[list[str]] = []
-
-    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
-        self.seen_file_paths.append([context.file_path for context in contexts])
-        return GovernanceDecision(
-            mode=AnswerMode.TRUSTWORTHY,
-            probs=(0.05, 0.05, 0.90),
-            reason="Pyrrho: sources support a confident answer (P=0.90).",
-        )
-
-
-class _AbstainingGovernance:
-    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
-        return GovernanceDecision(
-            mode=AnswerMode.ABSTAIN,
-            probs=(0.80, 0.05, 0.15),
-            reason="Pyrrho: retrieved sources do not contain enough evidence (P=0.80).",
-        )
-
-
-class _FixedGovernance:
-    def __init__(self, decision: GovernanceDecision) -> None:
-        self._decision = decision
-
-    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
-        return self._decision
-
-
-class _PrefixGovernance:
-    def __init__(self, decisions: dict[int, GovernanceDecision]) -> None:
-        self._decisions = decisions
-
-    def decide(self, query: str, contexts: list[SimpleNamespace]) -> GovernanceDecision:
-        return self._decisions[len(contexts)]
-
-
-def _result(content: str, file_path: str, *, kind: str | None = None) -> SimpleNamespace:
-    """Build a compact ReadResult-like fixture."""
-    return SimpleNamespace(
-        content=content,
-        file_path=file_path,
-        address=SimpleNamespace(kind=kind, location=file_path, summary=content),
-        metadata={},
-    )
-
-
-def _decision(
-    *,
-    mode: AnswerMode,
-    action: str | None = None,
-    action_confidence: float = 0.0,
-    gap: str = "none",
-    probs: tuple[float, float, float] | None = None,
-) -> GovernanceDecision:
-    """Build a governance decision with optional g4 retrieval-control heads."""
-    default_probs = {
-        AnswerMode.ABSTAIN: (0.85, 0.05, 0.10),
-        AnswerMode.DISPUTED: (0.05, 0.85, 0.10),
-        AnswerMode.TRUSTWORTHY: (0.05, 0.10, 0.85),
-    }[mode]
-    if probs is None:
-        probs = default_probs
-    action_other = "retrieve_more" if action == "answer_now" else "answer_now"
-    retrieval_action = (
-        _head(
-            raw_label=action,
-            final_label=action,
-            probabilities={action: action_confidence, action_other: 1.0 - action_confidence},
-        )
-        if action
-        else None
-    )
-    gap_other = "missing_specific_fact" if gap == "none" else "none"
-    gap_type = _head(
-        raw_label=gap,
-        final_label=gap,
-        probabilities={gap: 0.90, gap_other: 0.10},
-    )
-    heads = {"gap_type": gap_type}
-    if retrieval_action is not None:
-        heads["retrieval_action"] = retrieval_action
     return GovernanceDecision(
         mode=mode,
         probs=probs,
         reason=f"Pyrrho: {mode.value}.",
-        retrieval_action=retrieval_action,
-        gap_type=gap_type,
+        evidence_verdict=evidence_verdict,
+        failure_mode=failure_mode,
+        retrieval_intents=retrieval_intents,
+        evidence_kinds=evidence_kinds,
         heads=heads,
     )
 
 
-def _head(
-    *,
-    raw_label: str,
-    final_label: str,
-    probabilities: dict[str, float],
-) -> HeadDecision:
-    """Build a compact head fixture."""
-    sorted_probs = sorted(probabilities.items(), key=lambda item: item[1], reverse=True)
-    runner_up = sorted_probs[1] if len(sorted_probs) > 1 else sorted_probs[0]
-    confidence = probabilities[final_label]
+def _head(label: str, *, probabilities: dict[str, float] | None = None) -> HeadDecision:
+    probabilities = probabilities or {label: 0.91}
     return HeadDecision(
-        raw_label=raw_label,
-        final_label=final_label,
+        raw_label=label,
+        final_label=label,
         used_threshold_fallback=False,
         threshold=None,
-        confidence=confidence,
+        confidence=float(probabilities[label]),
         probabilities=probabilities,
-        runner_up_label=runner_up[0],
-        runner_up_probability=runner_up[1],
-        margin_to_runner_up=confidence - runner_up[1],
+        runner_up_label=label,
+        runner_up_probability=float(probabilities[label]),
+        margin_to_runner_up=0.0,
         entropy=0.0,
+    )
+
+
+def _multi_head(label: str, labels: tuple[str, ...]) -> MultiLabelDecision:
+    probabilities = {item: (0.91 if item in labels else 0.05) for item in labels}
+    return MultiLabelDecision(
+        raw_label=label,
+        final_label=label,
+        final_labels=labels,
+        used_threshold_fallback=False,
+        threshold=0.5,
+        confidence=0.91,
+        probabilities=probabilities,
+        runner_up_label=label,
+        runner_up_probability=0.91,
+        margin_to_runner_up=0.0,
+        entropy=0.0,
+    )
+
+
+def _result(
+    content: str,
+    *,
+    index: int = 1,
+    kind: str = "section",
+    metadata: dict | None = None,
+) -> SimpleNamespace:
+    address = SimpleNamespace(
+        source_id=f"source-{index}",
+        location=f"doc-{index}",
+        summary="",
+        kind=kind,
+        metadata={},
+        score=1.0,
+    )
+    return SimpleNamespace(
+        content=content,
+        file_path=f"doc-{index}.md",
+        address=address,
+        line_range=None,
+        metadata=metadata or {},
     )

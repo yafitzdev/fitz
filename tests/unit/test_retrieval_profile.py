@@ -12,164 +12,29 @@ from fitz_sage.engines.fitz_krag.retrieval_profile import (
 )
 
 
-def test_pyrrho_query_signals_steer_first_pass_profile():
-    """Query-only Pyrrho heads should shape initial recall before evidence exists."""
+def test_data_lookup_uses_deterministic_structured_profile():
+    """Exact data lookups should stay table-heavy without Pyrrho query heads."""
     config = SimpleNamespace(top_addresses=20, top_read=10)
-    signals = SimpleNamespace(
-        query_contract=_head("comparison_coverage", 0.91),
-        route=_head("law_policy", 0.88),
-        answerability_shape=_head("structured_reasoning", 0.86),
-        retrieval_modality=_head("structured_table", 0.90),
+    analysis = QueryAnalysis(
+        primary_type=QueryType.DATA,
+        confidence=0.80,
+        refined_query="How many units are listed for EXP-502 in the export table?",
     )
 
-    profile = build_retrieval_profile(None, None, config, query_signals=signals)
+    profile = build_retrieval_profile(analysis, None, config)
 
-    assert profile.query_contract == "comparison_coverage"
-    assert profile.query_route == "law_policy"
-    assert profile.domain == "legal"
-    assert profile.answerability_shape == "structured_reasoning"
-    assert profile.retrieval_modality == "structured_table"
-    assert profile.answer_type == "comparative"
-    assert profile.has_comparison_intent is True
-    assert profile.strategy_weights["table"] >= 0.55
-
-
-def test_pyrrho_set_answer_broadens_first_pass_recall():
-    """Set-shaped answers should broaden recall and mark aggregation intent."""
-    config = SimpleNamespace(top_addresses=20, top_read=10)
-    signals = SimpleNamespace(
-        query_contract=_head("evidence_sufficiency", 0.90),
-        answerability_shape=_head("set_answer", 0.89),
-        retrieval_modality=_head("mixed", 0.84),
-    )
-
-    profile = build_retrieval_profile(None, None, config, query_signals=signals)
-
-    assert profile.specificity == "broad"
-    assert profile.answer_type == "exploratory"
-    assert profile.has_aggregation_intent is True
-    assert profile.entity_expansion_limit == 12
-    assert profile.top_k > config.top_addresses
-    assert profile.top_read > config.top_read
-    assert profile.strategy_weights["code"] >= 0.30
-    assert profile.strategy_weights["section"] >= 0.30
-    assert profile.strategy_weights["table"] >= 0.25
-
-
-def test_low_confidence_pyrrho_query_signals_still_own_retrieval():
-    """Weak Pyrrho heads are exposed as uncertainty, not replaced by fitz-sage routing."""
-    config = SimpleNamespace(top_addresses=20, top_read=10)
-    signals = SimpleNamespace(
-        query_contract=_head("evidence_sufficiency", 0.90),
-        route=_head("law_policy", 0.59),
-        answerability_shape=_head("set_answer", 0.59),
-        retrieval_modality=_head("code", 0.59),
-    )
-
-    profile = build_retrieval_profile(None, None, config, query_signals=signals)
-
-    assert profile.query_route == "law_policy"
-    assert profile.query_route_confidence == 0.59
-    assert profile.answerability_shape == "set_answer"
-    assert profile.retrieval_modality == "code"
-    assert profile.domain == "legal"
-    assert profile.specificity == "broad"
-    assert profile.answer_type == "exploratory"
-    assert profile.strategy_weights["code"] >= 0.60
-
-
-def test_pyrrho_obligation_forces_companion_evidence_modalities():
-    """The obligation head is a retrieval contract signal, not debug-only metadata."""
-    config = SimpleNamespace(top_addresses=20, top_read=10)
-    signals = SimpleNamespace(
-        retrieval_modality=_head("unstructured_text", 0.91),
-        retrieval_obligation=_head("prose_plus_table", 0.21),
-    )
-
-    profile = build_retrieval_profile(None, None, config, query_signals=signals)
-    metadata = query_profile_metadata(signals, profile)
-
-    assert profile.retrieval_obligation == "prose_plus_table"
-    assert profile.required_modalities == ("section", "table")
-    assert profile.strategy_weights["section"] >= 0.45
-    assert profile.strategy_weights["table"] >= 0.55
-    assert metadata["signals"]["retrieval_obligation"]["used_for_retrieval"] is True
-
-
-def test_v2_native_heads_steer_first_pass_profile():
-    """v2 retrieval intents and evidence kinds should directly affect retrieval."""
-    config = SimpleNamespace(top_addresses=20, top_read=10)
-    signals = SimpleNamespace(
-        retrieval_intents=_multi_head(
-            ("needs_comparison_or_set", "needs_temporal_resolution"),
-            {
-                "needs_comparison_or_set": 0.91,
-                "needs_temporal_resolution": 0.88,
-                "needs_lookup": 0.20,
-                "needs_broad_coverage": 0.10,
-            },
-        ),
-        evidence_kinds=_multi_head(
-            ("needs_table_or_record", "needs_text"),
-            {
-                "needs_table_or_record": 0.92,
-                "needs_text": 0.77,
-                "needs_code_or_symbol": 0.12,
-            },
-        ),
-    )
-
-    profile = build_retrieval_profile(None, None, config, query_signals=signals)
-    metadata = query_profile_metadata(signals, profile)
-
-    assert profile.retrieval_intents == (
-        "needs_comparison_or_set",
-        "needs_temporal_resolution",
-    )
-    assert profile.evidence_kinds == ("needs_table_or_record", "needs_text")
-    assert profile.required_modalities == ("table", "section")
-    assert profile.has_comparison_intent is True
-    assert profile.has_temporal_intent is True
-    assert profile.boost_recency is True
-    assert profile.strategy_weights["table"] >= 0.55
-    assert profile.strategy_weights["section"] >= 0.45
-    assert metadata["signals"]["retrieval_intents"]["used_for_retrieval"] is True
-    assert metadata["signals"]["evidence_kinds"]["final_labels"] == [
-        "needs_table_or_record",
-        "needs_text",
-    ]
-
-
-def test_pyrrho_mixed_modality_requires_all_evidence_kinds():
-    """Mixed modality should make companion retrieval concrete."""
-    config = SimpleNamespace(top_addresses=20, top_read=10)
-    signals = SimpleNamespace(
-        retrieval_modality=_head("mixed", 0.91),
-    )
-
-    profile = build_retrieval_profile(None, None, config, query_signals=signals)
-
-    assert profile.required_modalities == ("section", "table", "symbol")
-    assert profile.strategy_weights["section"] >= 0.45
-    assert profile.strategy_weights["table"] >= 0.55
-    assert profile.strategy_weights["code"] >= 0.60
-
-
-def test_structured_lookup_keeps_code_search_eligible_for_data_phrasing():
-    """Exact lookups should still search code when prose mentions table/section terms."""
-    config = SimpleNamespace(top_addresses=20, top_read=10)
-    analysis = QueryAnalysis(primary_type=QueryType.DATA, confidence=0.80)
-    signals = SimpleNamespace(query_contract=_head("structured_lookup", 0.90))
-
-    profile = build_retrieval_profile(analysis, None, config, query_signals=signals)
-
+    assert profile.planning_owner == "fitz_krag"
+    assert profile.auxiliary_signal_policy == "deterministic_profile"
     assert profile.query_contract == "structured_lookup"
-    assert profile.strategy_weights["code"] > 0.05
-    assert profile.strategy_weights["table"] >= 0.35
+    assert profile.retrieval_modality == "structured_table"
+    assert profile.required_modalities == ("table",)
+    assert profile.strategy_weights["table"] >= 0.55
+    assert profile.top_k >= config.top_addresses
+    assert profile.top_read >= config.top_read
 
 
-def test_inactive_v2_query_heads_use_deterministic_recall_fallback():
-    """When v2 query heads are inactive, fallback planning should keep mixed evidence alive."""
+def test_mixed_evidence_query_keeps_all_required_modalities_alive():
+    """Deterministic recall should preserve text/table/code evidence for mixed queries."""
     config = SimpleNamespace(top_addresses=20, top_read=10)
     analysis = QueryAnalysis(
         primary_type=QueryType.GENERAL,
@@ -178,37 +43,126 @@ def test_inactive_v2_query_heads_use_deterministic_recall_fallback():
             "Using the export brief, should EXP-502 be skipped by the export scheduler?"
         ),
     )
-    signals = SimpleNamespace(heads={})
 
-    profile = build_retrieval_profile(analysis, None, config, query_signals=signals)
+    profile = build_retrieval_profile(analysis, None, config)
 
-    assert profile.planning_owner == "deterministic_fallback"
     assert profile.query_contract == "comparison_coverage"
     assert profile.retrieval_modality == "mixed"
     assert profile.retrieval_obligation == "prose_plus_table"
     assert profile.required_modalities == ("section", "table", "symbol")
+    assert profile.has_comparison_intent is True
     assert profile.strategy_weights["section"] >= 0.45
     assert profile.strategy_weights["table"] >= 0.55
     assert profile.strategy_weights["code"] >= 0.60
 
 
-def _head(label: str, confidence: float) -> SimpleNamespace:
-    """Build a minimal Pyrrho head fixture."""
-    return SimpleNamespace(
-        final_label=label,
-        confidence=confidence,
-        probabilities={label: confidence},
+def test_temporal_detection_boosts_recency():
+    """Temporal retrieval is KRAG-owned and does not depend on Pyrrho query planning."""
+    config = SimpleNamespace(top_addresses=20, top_read=10)
+    analysis = QueryAnalysis(
+        primary_type=QueryType.DOCUMENTATION,
+        confidence=0.75,
+        refined_query="What is the latest refund policy?",
+    )
+    detection = SimpleNamespace(
+        has_comparison_intent=False,
+        has_temporal_intent=True,
+        has_freshness_intent=True,
     )
 
+    profile = build_retrieval_profile(analysis, detection, config)
 
-def _multi_head(
-    labels: tuple[str, ...],
-    probabilities: dict[str, float],
-) -> SimpleNamespace:
-    """Build a minimal Pyrrho multi-label head fixture."""
-    return SimpleNamespace(
-        final_label=labels[0],
-        final_labels=labels,
-        confidence=probabilities[labels[0]],
-        probabilities=probabilities,
+    assert profile.query_contract == "temporal_grounding"
+    assert profile.has_temporal_intent is True
+    assert profile.boost_recency is True
+    assert "needs_temporal_resolution" in profile.retrieval_intents
+
+
+def test_extended_signals_still_adjust_profile_shape():
+    """Local query intelligence can adjust retrieval shape without owning governance."""
+    config = SimpleNamespace(top_addresses=20, top_read=10)
+    analysis = QueryAnalysis(primary_type=QueryType.GENERAL, confidence=0.55)
+
+    profile = build_retrieval_profile(
+        analysis,
+        None,
+        config,
+        extended_signals={
+            "specificity": "broad",
+            "answer_type": "exploratory",
+            "domain": "technical",
+        },
     )
+
+    assert profile.specificity == "broad"
+    assert profile.answer_type == "exploratory"
+    assert profile.domain == "technical"
+    assert profile.inject_corpus_summaries is True
+    assert profile.entity_expansion_limit == 12
+    assert profile.top_k > config.top_addresses
+
+
+def test_pyrrho_pre_heads_own_retrieval_profile_when_available():
+    """Pyrrho PRE labels should drive retrieval intent and evidence-surface knobs."""
+    config = SimpleNamespace(top_addresses=20, top_read=10)
+    pyrrho_plan = SimpleNamespace(
+        retrieval_intents=SimpleNamespace(
+            final_labels=("needs_comparison_or_set", "needs_temporal_resolution"),
+            final_label="needs_comparison_or_set",
+            confidence=0.91,
+            probabilities={
+                "needs_comparison_or_set": 0.91,
+                "needs_temporal_resolution": 0.73,
+            },
+        ),
+        evidence_kinds=SimpleNamespace(
+            final_labels=("needs_text", "needs_table_or_record"),
+            final_label="needs_text",
+            confidence=0.88,
+            probabilities={"needs_text": 0.88, "needs_table_or_record": 0.84},
+        ),
+    )
+
+    profile = build_retrieval_profile(
+        QueryAnalysis(
+            primary_type=QueryType.GENERAL,
+            confidence=0.70,
+            refined_query="Compare current release notes against the rollout table.",
+        ),
+        None,
+        config,
+        pyrrho_plan=pyrrho_plan,
+    )
+    metadata = query_profile_metadata(profile, pyrrho_plan)
+
+    assert profile.planning_owner == "pyrrho"
+    assert profile.auxiliary_signal_policy == "pyrrho_v2_pre_with_deterministic_fallback"
+    assert profile.query_contract == "temporal_grounding"
+    assert profile.retrieval_modality == "mixed"
+    assert profile.retrieval_obligation == "prose_plus_table"
+    assert profile.required_modalities == ("section", "table", "symbol")
+    assert metadata["pyrrho_pre"]["retrieval_intents"]["final_labels"] == [
+        "needs_comparison_or_set",
+        "needs_temporal_resolution",
+    ]
+
+
+def test_query_profile_metadata_has_no_external_signal_section():
+    """Profile metadata should not serialize removed Pyrrho query-head signals."""
+    config = SimpleNamespace(top_addresses=20, top_read=10)
+    profile = build_retrieval_profile(
+        QueryAnalysis(
+            primary_type=QueryType.DATA,
+            confidence=0.80,
+            refined_query="Show record EXP-502.",
+        ),
+        None,
+        config,
+    )
+
+    metadata = query_profile_metadata(profile)
+
+    assert set(metadata) == {"profile"}
+    assert "signals" not in metadata
+    assert metadata["profile"]["planning_owner"] == "fitz_krag"
+    assert metadata["profile"]["auxiliary_signal_policy"] == "deterministic_profile"

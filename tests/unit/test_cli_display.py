@@ -134,31 +134,9 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
 
 
 def test_format_governance_metadata_shows_query_profile():
-    """Pre-retrieval query signals should be visible separately from cutoff."""
+    """Pre-retrieval profile knobs should be visible separately from cutoff."""
     metadata = {
         "query_profile": {
-            "signals": {
-                "query_contract": {
-                    "final_label": "comparison_coverage",
-                    "confidence": 0.91,
-                    "used_for_retrieval": True,
-                },
-                "route": {
-                    "final_label": "law_policy",
-                    "confidence": 0.59,
-                    "used_for_retrieval": False,
-                },
-                "answerability_shape": {
-                    "final_label": "structured_reasoning",
-                    "confidence": 0.86,
-                    "used_for_retrieval": True,
-                },
-                "retrieval_modality": {
-                    "final_label": "structured_table",
-                    "confidence": 0.90,
-                    "used_for_retrieval": True,
-                },
-            },
             "profile": {
                 "specificity": "moderate",
                 "answer_type": "comparative",
@@ -172,52 +150,9 @@ def test_format_governance_metadata_shows_query_profile():
 
     assert _format_governance_metadata(metadata, []) == [
         (
-            "Query profile: contract comparison_coverage (0.91); "
-            "route law_policy (0.59, ignored); "
-            "shape structured_reasoning (0.86); modality structured_table (0.90); "
-            "profile moderate/comparative/technical; top 20; read 12; "
+            "Query profile: profile moderate/comparative/technical; top 20; read 12; "
             "weights section 0.25, code 0.25, table 0.55"
         )
-    ]
-
-
-def test_format_governance_metadata_shows_pyrrho_heads_and_scalars():
-    """Pyrrho metadata should be visible without dumping raw JSON."""
-    metadata = {
-        "governance_cutoff": {
-            "pyrrho": {
-                "query_contract": {
-                    "final_label": "structured_lookup",
-                    "confidence": 0.88,
-                },
-                "route": {"final_label": "business_ops", "confidence": 0.81},
-                "taxonomy": {"final_label": "direct_evidence", "confidence": 0.77},
-                "retrieval_action": {"final_label": "answer_now", "confidence": 0.83},
-                "gap_type": {"final_label": "none", "confidence": 0.86},
-                "answerability_shape": {"final_label": "direct_answer", "confidence": 0.76},
-                "retrieval_modality": {"final_label": "unstructured_text", "confidence": 0.70},
-                "scalars": {
-                    "evidence_sufficiency": 0.84,
-                    "query_evidence_alignment": 0.79,
-                    "retrieval_retry_value": 0.17,
-                    "false_trustworthy_risk": 0.09,
-                    "evidence_failure_severity": 0.11,
-                },
-            },
-        }
-    }
-
-    assert _format_governance_metadata(metadata, []) == [
-        (
-            "Pyrrho heads: contract structured_lookup (0.88); "
-            "route business_ops (0.81); taxonomy direct_evidence (0.77); "
-            "action answer_now (0.83); gap none (0.86); "
-            "shape direct_answer (0.76); modality unstructured_text (0.70)"
-        ),
-        (
-            "Pyrrho signals: sufficiency 0.84; alignment 0.79; retry 0.17; "
-            "false-trust risk 0.09; failure severity 0.11"
-        ),
     ]
 
 

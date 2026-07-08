@@ -1,5 +1,5 @@
 # fitz_sage/engines/fitz_krag/evidence_compiler.py
-"""Pyrrho-contract evidence compilation for KRAG evidence packs."""
+"""Evidence contract compilation for KRAG evidence packs."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from fitz_sage.engines.fitz_krag.types import Address, ReadResult
-from fitz_sage.governance.evidence_contract import (
+from fitz_sage.engines.fitz_krag.evidence_contract import (
     EXACT_IDENTIFIER_PATTERN as _EXACT_IDENTIFIER_PATTERN,
+    QueryContract as _QueryContract,
+    build_query_contract as _build_query_contract,
+    normalize_text as _normalize_text,
 )
-from fitz_sage.governance.evidence_contract import QueryContract as _QueryContract
-from fitz_sage.governance.evidence_contract import build_query_contract as _build_query_contract
-from fitz_sage.governance.evidence_contract import normalize_text as _normalize_text
+from fitz_sage.engines.fitz_krag.types import Address, ReadResult
 
 _NUMBER_PATTERN = re.compile(
     r"\b\d+(?:\.\d+)?(?:\s*(?:billion|million|percent|minutes?|days?|hours?))?\b",
@@ -52,7 +52,7 @@ def compile_evidence(
     results: list[ReadResult],
     profile: Any = None,
 ) -> EvidenceCompilation:
-    """Compile ranked read results into a Pyrrho-contract evidence order."""
+    """Compile ranked read results into an evidence-contract order."""
     contract = _build_query_contract(query, profile)
     if not results:
         return EvidenceCompilation([], _metadata(contract, [], [], 0))

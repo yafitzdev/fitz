@@ -13,13 +13,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.engines.fitz_krag.evidence_contract import exact_identifiers
 from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import rrf_score
 from fitz_sage.engines.fitz_krag.retrieval.table_plan import (
     build_table_query_plan,
     execute_table_query_plan,
 )
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
-from fitz_sage.governance.evidence_contract import exact_identifiers
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig

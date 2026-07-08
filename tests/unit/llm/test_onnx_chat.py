@@ -12,6 +12,7 @@ from fitz_sage.llm.providers.onnx_chat import (
     DEFAULT_QWEN_MODEL_ID,
     DEFAULT_QWEN_ONNX_FILE,
     DEFAULT_QWEN_ONNX_SUBFOLDER,
+    GenAiRuntimeBundle,
     OnnxChat,
     OnnxChatModelError,
 )
@@ -45,6 +46,12 @@ def _snapshot(tmp_path, *, with_model: bool = True):
             data_bytes
         )
     return snapshot, model_bytes, data_bytes
+
+
+@pytest.fixture(autouse=True)
+def _stub_genai_runtime(monkeypatch):
+    """Snapshot lifecycle tests should not require the native GenAI wheel."""
+    monkeypatch.setattr(GenAiRuntimeBundle, "require_genai", staticmethod(lambda: object()))
 
 
 def test_ensure_available_returns_inspectable_snapshot_metadata(monkeypatch, tmp_path):

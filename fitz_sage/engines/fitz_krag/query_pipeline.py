@@ -9,7 +9,6 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
-from unittest.mock import Mock
 
 from fitz_sage.engines.fitz_krag.evidence_closure import (
     EvidenceClosureRequest,
@@ -17,6 +16,7 @@ from fitz_sage.engines.fitz_krag.evidence_closure import (
     plan_evidence_closure,
     request_metadata,
 )
+from fitz_sage.engines.fitz_krag.evidence_contract import build_query_contract
 from fitz_sage.engines.fitz_krag.query_planner import (
     DeterministicQueryPlanner,
     QueryPlan,
@@ -25,14 +25,8 @@ from fitz_sage.engines.fitz_krag.query_planner import (
 from fitz_sage.engines.fitz_krag.retrieval.trace import read_results_trace
 from fitz_sage.engines.fitz_krag.retrieval_profile import (
     RetrievalProfile,
-    apply_required_modality_weights,
-    apply_retrieval_modality_weights,
     build_retrieval_profile,
     query_profile_metadata,
-)
-from fitz_sage.governance.evidence_contract import (
-    build_query_contract,
-    required_modalities_from_pyrrho,
 )
 from fitz_sage.logging.logger import get_logger
 
@@ -71,8 +65,8 @@ class QueryPipeline:
         config: "FitzKragConfig",
         query_planner: Any,
         query_batcher: Any,
-        query_signal_classifier: Any,
         semantic_keyword_batcher: Any,
+        governance: Any,
         retrieval_pass: Any,
         hop_controller: Any,
         expander: Any,
@@ -85,8 +79,8 @@ class QueryPipeline:
         self._config = config
         self._query_planner = query_planner
         self._query_batcher = query_batcher
-        self._query_signal_classifier = query_signal_classifier
         self._semantic_keyword_batcher = semantic_keyword_batcher
+        self._governance = governance
         self._retrieval_pass = retrieval_pass
         self._hop_controller = hop_controller
         self._expander = expander
@@ -115,10 +109,6 @@ class QueryPipeline:
         _progress("Analyzing query...")
 
         t0 = time.perf_counter()
-        query_signals = self._classify_query_signals(sanitized)
-        timings.append(("Query profile signals", time.perf_counter() - t0))
-
-        t0 = time.perf_counter()
         plan = self._prepare_query_plan(
             sanitized,
             query.metadata,
@@ -130,15 +120,19 @@ class QueryPipeline:
         plan = self._add_semantic_query_keywords(sanitized, plan)
         timings.append(("Qwen query keywords", time.perf_counter() - t0))
 
+        t0 = time.perf_counter()
+        pyrrho_plan = self._plan_with_pyrrho(sanitized)
+        timings.append(("Pyrrho pre", time.perf_counter() - t0))
+
         profile = build_retrieval_profile(
             plan.analysis,
             plan.detection,
             self._config,
             extended_signals=plan.extended_signals,
             keywords=plan.keywords,
-            query_signals=query_signals,
+            pyrrho_plan=pyrrho_plan,
         )
-        query_profile = query_profile_metadata(query_signals, profile)
+        query_profile = query_profile_metadata(profile, pyrrho_plan)
 
         _progress("Retrieving relevant sources...")
         t0 = time.perf_counter()
@@ -204,88 +198,6 @@ class QueryPipeline:
             retrieval_query=plan.retrieval_query,
             rewrite_result=plan.rewrite_result,
             query_profile_metadata=query_profile,
-            retrieval_trace=retrieval_trace,
-        )
-
-    def retry_retrieve(
-        self,
-        outcome: RetrievalOutcome,
-        *,
-        retrieval_action: str,
-        retrieval_modality: str | None = None,
-        progress: Callable[[str], None] | None = None,
-        allow_llm_strategies: bool = True,
-        execute_table_queries: bool = True,
-        allow_table_sql_generation: bool = True,
-        expand_context: bool = True,
-    ) -> RetrievalOutcome:
-        """Run one Pyrrho-directed follow-up retrieval pass and merge new evidence."""
-        if outcome.profile is None:
-            return outcome
-
-        profile = _retry_profile(
-            outcome.profile,
-            self._config,
-            retrieval_action=retrieval_action,
-            retrieval_modality=retrieval_modality,
-        )
-        query = outcome.retrieval_query or outcome.sanitized
-        existing_keys = _read_result_keys(outcome.expanded)
-        timings = list(outcome.timings)
-
-        _progress = progress or (lambda _: None)
-        _progress("Retrieving additional evidence...")
-        t0 = time.perf_counter()
-        with self._retrieval_strategy_scope(allow_llm_strategies):
-            read_results = self._retrieval_pass.run(
-                query,
-                profile,
-                exclude=existing_keys,
-                rewrite_result=outcome.rewrite_result,
-                progress=progress,
-            )
-        retry_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
-        retry_duration = time.perf_counter() - t0
-        timings.extend(_prefixed_retrieval_pass_timings(self._retrieval_pass, "Retry "))
-        timings.append(("Retrieval retry", retry_duration))
-
-        if expand_context and read_results:
-            t0 = time.perf_counter()
-            read_results = self._expander.expand(
-                read_results,
-                entity_expansion_limit=profile.entity_expansion_limit,
-            )
-            timings.append(("Retry expand context", time.perf_counter() - t0))
-
-        if execute_table_queries and read_results:
-            t0 = time.perf_counter()
-            read_results = self._table_handler.process(
-                outcome.sanitized,
-                read_results,
-                allow_sql_generation=allow_table_sql_generation,
-            )
-            timings.append(("Retry table queries", time.perf_counter() - t0))
-
-        expanded = _merge_read_results(outcome.expanded, read_results)
-        retrieval_trace = dict(outcome.retrieval_trace)
-        retries = list(retrieval_trace.get("retries", []))
-        retries.append(
-            {
-                "retrieval_action": retrieval_action,
-                "retrieval_modality": retrieval_modality,
-                "trace": retry_trace,
-            }
-        )
-        retrieval_trace["retries"] = retries
-        return RetrievalOutcome(
-            sanitized=outcome.sanitized,
-            expanded=expanded,
-            addresses=[result.address for result in expanded],
-            timings=timings,
-            profile=profile,
-            retrieval_query=query,
-            rewrite_result=outcome.rewrite_result,
-            query_profile_metadata=outcome.query_profile_metadata,
             retrieval_trace=retrieval_trace,
         )
 
@@ -456,14 +368,6 @@ class QueryPipeline:
 
         return plan
 
-    def _classify_query_signals(self, sanitized: str) -> Any:
-        """Classify Pyrrho query-planning signals when the backend exposes them."""
-        classifier = self._query_signal_classifier
-        classify_query = getattr(classifier, "classify_query", None)
-        if not callable(classify_query) or _is_mock_callable(classify_query):
-            return None
-        return classify_query(sanitized)
-
     def _add_semantic_query_keywords(self, query: str, plan: QueryPlan) -> QueryPlan:
         """Use local Qwen for keyword-only query expansion."""
         batcher = self._semantic_keyword_batcher
@@ -490,6 +394,13 @@ class QueryPipeline:
             extended_signals=plan.extended_signals,
             keywords=_merge_query_keywords(plan.keywords, batch_result.keywords),
         )
+
+    def _plan_with_pyrrho(self, query: str) -> Any | None:
+        """Run Pyrrho's query-only planning pass when the backend exposes it."""
+        planner = getattr(self._governance, "plan_query", None)
+        if not callable(planner):
+            return None
+        return planner(query)
 
 
 def _sanitize_query(text: str) -> str:
@@ -530,68 +441,12 @@ def _prefixed_retrieval_pass_timings(retrieval_pass: Any, prefix: str) -> list[t
     ]
 
 
-def _retry_profile(
-    profile: Any,
-    config: "FitzKragConfig",
-    *,
-    retrieval_action: str,
-    retrieval_modality: str | None,
-) -> Any:
-    """Build one Pyrrho-directed retry pass without fitz-sage semantic replanning."""
-    weights = dict(getattr(profile, "strategy_weights", {}) or {})
-    top_k = max(int(getattr(profile, "top_k", config.top_addresses)), config.top_addresses)
-    top_read = max(int(getattr(profile, "top_read", config.top_read)), config.top_read)
-    obligation = getattr(profile, "retrieval_obligation", None)
-    modality = retrieval_modality or getattr(profile, "retrieval_modality", None)
-    required_modalities = required_modalities_from_pyrrho(modality, obligation)
-    kwargs: dict[str, Any] = {
-        "strategy_weights": weights,
-        "top_k": int(top_k * 2),
-        "top_read": int(top_read * 1.5),
-        "retrieval_modality": modality,
-        "required_modalities": required_modalities,
-        "run_agentic": True,
-    }
-
-    if retrieval_action == "broaden_search":
-        kwargs.update(
-            {
-                "specificity": "broad",
-                "inject_corpus_summaries": getattr(
-                    profile,
-                    "inject_corpus_summaries",
-                    False,
-                ),
-                "entity_expansion_limit": max(
-                    int(getattr(profile, "entity_expansion_limit", 3)),
-                    12,
-                ),
-            }
-        )
-    elif retrieval_action == "resolve_conflict":
-        kwargs.update(
-            {
-                "has_comparison_intent": True,
-            }
-        )
-    elif retrieval_action == "structured_lookup":
-        kwargs.update(
-            {
-                "query_contract": "structured_lookup",
-            }
-        )
-
-    apply_retrieval_modality_weights(weights, modality)
-    apply_required_modality_weights(weights, required_modalities)
-    return replace(profile, **kwargs)
-
-
 def _closure_profile(
     profile: Any,
     config: "FitzKragConfig",
     request: EvidenceClosureRequest,
 ) -> RetrievalProfile:
-    """Build a tight executor profile for one Pyrrho-contract closure request."""
+    """Build a tight executor profile for one evidence-contract closure request."""
     base = profile or RetrievalProfile(
         top_k=config.top_addresses,
         top_read=config.top_read,
@@ -626,35 +481,6 @@ def _closure_profile(
         specificity=getattr(base, "specificity", "moderate"),
         answer_type=getattr(base, "answer_type", "factual"),
     )
-
-
-def _read_result_keys(results: list["ReadResult"]) -> set[tuple[str, str]]:
-    """Return address keys for already-read evidence."""
-    return {
-        (str(result.address.source_id), str(result.address.location))
-        for result in results
-        if getattr(result, "address", None) is not None
-    }
-
-
-def _merge_read_results(
-    current: list["ReadResult"],
-    additional: list["ReadResult"],
-) -> list["ReadResult"]:
-    """Merge read results by address key, preserving the original order."""
-    merged = list(current)
-    seen = _read_result_keys(merged)
-    for result in additional:
-        address = getattr(result, "address", None)
-        if address is None:
-            merged.append(result)
-            continue
-        key = (str(address.source_id), str(address.location))
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(result)
-    return merged
 
 
 def _merge_closure_results(
@@ -727,13 +553,6 @@ def _merge_query_keywords(*keyword_lists: list[str]) -> list[str]:
                 seen.add(key)
                 merged.append(value)
     return merged
-
-
-def _is_mock_callable(value: Any) -> bool:
-    """Return whether a callable came from unittest.mock."""
-    if isinstance(value, Mock):
-        return True
-    return isinstance(getattr(value, "__self__", None), Mock)
 
 
 __all__ = ["QueryPipeline", "RetrievalOutcome"]

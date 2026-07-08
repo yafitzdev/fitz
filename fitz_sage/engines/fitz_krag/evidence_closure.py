@@ -1,5 +1,5 @@
 # fitz_sage/engines/fitz_krag/evidence_closure.py
-"""Pyrrho-contract follow-up retrieval planning for evidence packs."""
+"""Evidence-contract follow-up retrieval planning for evidence packs."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import EvidenceCompilation
 from fitz_sage.engines.fitz_krag.types import AddressKind, ReadResult
-from fitz_sage.governance.evidence_contract import QueryContract, build_query_contract
+from fitz_sage.engines.fitz_krag.evidence_contract import QueryContract, build_query_contract
 
 _BRIDGE_IDENTIFIER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"

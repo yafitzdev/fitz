@@ -97,9 +97,6 @@ krag-all = [
     "tree-sitter-go>=0.22",
 ]
 
-# Only needed for old custom Pyrrho g5 packages or v2 packages that do not ship ONNX.
-legacy-pyrrho = ["torch>=2.1", "safetensors>=0.4"]
-
 # Development
 dev = [
     "pytest>=7.0",

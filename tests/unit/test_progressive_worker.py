@@ -176,7 +176,7 @@ class TestScheduling:
         core.keyword_file.side_effect = RuntimeError("llm unavailable")
         worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
 
-        with pytest.raises(RuntimeError, match="Required keyword enrichment failed"):
+        with pytest.raises(RuntimeError, match="Keyword indexing failed before query-ready"):
             worker._keyword_phase()
 
         assert manifest.get("a.py").state == FileState.PARSED

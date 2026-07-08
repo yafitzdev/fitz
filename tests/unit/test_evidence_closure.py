@@ -12,7 +12,7 @@ from fitz_sage.engines.fitz_krag.evidence_closure import (
 )
 from fitz_sage.engines.fitz_krag.evidence_compiler import compile_evidence
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
-from fitz_sage.governance.evidence_contract import build_query_contract
+from fitz_sage.engines.fitz_krag.evidence_contract import build_query_contract
 
 
 def test_closure_plans_table_followup_from_bridge_identifier() -> None:
