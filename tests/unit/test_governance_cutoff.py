@@ -84,6 +84,39 @@ def test_evidence_compiler_floor_delays_sufficient_stop():
     assert result.metadata["trajectory"][0]["evidence_prefix_min"] == 2
 
 
+def test_bridge_evidence_delays_sufficient_stop_until_bridge_is_seen():
+    """Pyrrho must inspect a retrieved bridge target before accepting sufficiency."""
+    results = [
+        _result("The glossary maps the service to SVC-202.", index=1),
+        _result(
+            "SVC-202 has a recovery objective of 15 minutes.",
+            index=2,
+            metadata={
+                "evidence_compiler": {
+                    "roles": ["bridge:SVC-202"],
+                    "min_sources": 1,
+                    "contract": {},
+                }
+            },
+        ),
+    ]
+
+    result = apply_governance_cutoff(
+        "What is the recovery objective for the mapped service?",
+        results,
+        _governance(
+            {
+                1: _decision(AnswerMode.SUFFICIENT),
+                2: _decision(AnswerMode.SUFFICIENT),
+            }
+        ),
+    )
+
+    assert result.mode is AnswerMode.SUFFICIENT
+    assert result.metadata["evaluated"] == 2
+    assert result.metadata["trajectory"][0]["evidence_prefix_min"] == 2
+
+
 def test_comparison_dispute_stops_when_pyrrho_verdict_policy_is_met():
     """Comparison queries should stop once Pyrrho gives a policy-eligible dispute."""
     profile = SimpleNamespace(query_contract="comparison_coverage")
@@ -103,8 +136,21 @@ def test_comparison_dispute_stops_when_pyrrho_verdict_policy_is_met():
     )
 
     assert result.mode is AnswerMode.DISPUTED
-    assert result.metadata["stop_reason"] == "dispute_policy_met"
+    assert result.metadata["stop_reason"] == "disputed_min_evidence_met"
     assert result.metadata["evaluated"] == 2
+
+
+def test_cutoff_returns_single_prefix_pyrrho_dispute_unchanged():
+    """Fitz must not rewrite Pyrrho's only available verdict to insufficient."""
+    result = apply_governance_cutoff(
+        "What is the status of ECU-17A?",
+        [_result("ECU-17A has two conflicting status values.")],
+        _governance({1: _decision(AnswerMode.DISPUTED)}),
+    )
+
+    assert result.mode is AnswerMode.DISPUTED
+    assert result.metadata["pyrrho"]["mode"] == "disputed"
+    assert result.metadata["stop_reason"] == "disputed_min_evidence_met"
 
 
 def test_cutoff_does_not_override_pyrrho_sufficient_with_local_conflict_signal():

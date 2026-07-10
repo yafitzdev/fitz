@@ -115,9 +115,7 @@ metadata.
       "stop_reason": "sufficient_min_evidence_met",
       "policy": {
         "query_shape": "comparison",
-        "min_sufficient_docs": 2,
-        "min_disputed_docs": 2,
-        "disputed_patience_docs": 2
+        "min_sufficient_docs": 2
       },
       "pyrrho": {
         "mode": "sufficient",
@@ -160,13 +158,16 @@ Field meanings:
 | `stop_reason` | Why the cutoff loop stopped. |
 | `policy.query_shape` | Narrow, broad, comparison, or aggregation. |
 | `policy.min_sufficient_docs` | Minimum prefix size before the runtime `sufficient` mode can stop. |
-| `policy.min_disputed_docs` | Minimum prefix size before comparison disputes can stop. |
-| `policy.disputed_patience_docs` | Additional patience for narrow disputes. |
 | `pyrrho.probabilities` | Runtime probabilities for `insufficient`, `disputed`, and `sufficient` modes. |
 | `pyrrho.evidence_verdict` | Native v2 verdict head. |
 | `pyrrho.failure_mode` | Native v2 failure-mode head. |
 | `pyrrho.retrieval_intents` | Native v2 retrieval-intent head. |
 | `pyrrho.evidence_kinds` | Native v2 evidence-kind head. |
+
+Query-shape floors ensure that Pyrrho sees the evidence required for cases such
+as comparisons. Once that floor is met, fitz-sage returns Pyrrho's verdict
+without adding confidence thresholds, dispute patience, or local verdict
+overrides.
 
 ### Retrieval Trace
 

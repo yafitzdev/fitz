@@ -1,122 +1,65 @@
-# Query Expansion (Synonym/Acronym Variations)
+# Semantic Query Keywords
 
-## Problem
+## Purpose
 
-Users often use different terminology than what appears in documents:
+BM25 is fitz-sage's central recall mechanism, so lexical mismatch matters. A
+query may say `fetch` while a relevant source says `retrieve`, or use `db` while
+the corpus says `database`.
 
-- "How do I fetch employee data?" — document uses "retrieve" or "get"
-- "How does the db connection work?" — document uses "database"
-- "What failures can occur?" — document uses "errors" or "exceptions"
+The default query path asks the managed local Qwen model for a small set of
+semantic keywords. Those suggestions are merged with the literal query terms
+and searched as an additional BM25 leg.
 
-BM25 token matching catches *some* of this (shared stems, casing) but
-not enough — it doesn't know `fetch` ↔ `retrieve` or `db` ↔ `database`.
-The bridge lives on the query side: synonym and acronym terms are added to the
-query's keyword set, which retrieval searches as one extra BM25 leg.
-
-## Solution: synonym/acronym term expansion
-
-`expand_terms()` adds dictionary synonym/acronym terms to the query's
-keyword set:
-
-```
-Original query:   "How do I fetch the db config?"
-                              ↓
-expand_terms() →   ["get", "retrieve", "database", "datastore",
-                    "configuration"]
-                              ↓
-Merged into the query-prep keyword set (alongside managed-Qwen
-semantic keywords)
-                              ↓
-The keyword set runs as one extra FTS5 + bm25() retrieval leg
+```text
+literal query terms ─┐
+                    ├─> merged keyword set ─> FTS5 + bm25()
+Qwen suggestions ───┘
 ```
 
-## How it works
+The merged candidates still pass through the ONNX cross-encoder reranker and
+Pyrrho governance cutoff.
 
-### At query time
+## Query-Time Flow
 
-1. `expand_terms()` scans the query for known synonyms and acronyms
-   (rule-based, no LLM).
-2. The matched terms are merged into the query plan's keyword set alongside
-   managed-Qwen semantic keywords.
-3. The router runs that keyword set as one extra BM25 retrieval leg,
-   pooled and ranked with the other strategy results.
+1. The deterministic planner extracts terms exactly as written by the user.
+2. Managed Qwen proposes related retrieval keywords and short phrases.
+3. fitz-sage de-duplicates the two sets without rewriting the source data.
+4. The router searches the merged keyword set as one broad-recall BM25 leg.
 
-### Expansion Rules
+This path uses the managed ONNX Qwen runtime. It does not require a configured
+endpoint model.
 
-**Synonym Substitution:**
-- `delete` ↔ `remove`, `erase`
-- `create` ↔ `add`, `make`, `generate`
-- `get` ↔ `retrieve`, `fetch`, `obtain`
-- `update` ↔ `modify`, `change`, `edit`
-- `error` ↔ `failure`, `exception`, `issue`
-- And 40+ more common technical terms
+## Boundary
 
-**Acronym Expansion:**
-- `api` → `application programming interface`
-- `db` → `database`
-- `auth` → `authentication`
-- `config` → `configuration`
-- `ml` → `machine learning`
-- `rag` → `retrieval augmented generation`
-- And 50+ more common acronyms
+Semantic keywords are recall suggestions, not equivalence declarations.
+fitz-sage does not include a fixed synonym/acronym dictionary and does not
+silently canonicalize identifiers.
 
-## Key Design Decisions
+In particular:
 
-1. **Always-on** - Fused into the query-prep keyword set. No configuration.
+- `AX-156`, `AX_156`, `AX 156`, and `AX156` remain distinct strings.
+- Private abbreviations are not guaranteed to expand unless the corpus defines
+  them or the user preprocesses the data.
+- A Qwen suggestion can surface a candidate, but the suggestion does not prove
+  that two terms mean the same thing in the user's domain.
+- Deterministic retrieval continues to work from literal query terms if a
+  semantic suggestion is not useful.
 
-2. **Rule-based** - No LLM calls. Fast and deterministic.
+Users who require guaranteed domain mappings should normalize their data and
+queries outside fitz-sage. A public mapping-table hook is not currently part of
+the package API.
 
-3. **Bidirectional synonyms** - Both directions work (fetch→retrieve, retrieve→fetch).
+## Implementation
 
-4. **Recall-stage** - Loose terms are fine — the cross-encoder reranker filters precision downstream.
-
-## Files
-
-- **`expand_terms()`:** `fitz_sage/retrieval/detection/detectors/expansion.py`
-- **Keyword fusion:** `fitz_sage/engines/fitz_krag/query_batcher.py` (`_distribute` merges dict terms into `BatchResult.keywords`)
-- **Retrieval leg:** `fitz_sage/engines/fitz_krag/retrieval/router.py`
-
-Note: Query expansion uses dictionary-based matching (not LLM) for fast, deterministic results. Synonyms and acronyms are defined in the `SYNONYMS` and `ACRONYMS` dicts in `expansion.py`.
-
-## Benefits
-
-| Without Expansion | With Expansion |
-|-------------------|----------------|
-| "fetch" misses "retrieve" docs | "fetch" finds "retrieve" docs |
-| "db" misses "database" docs | "db" finds "database" docs |
-| User must guess exact terms | Natural language works |
-| Lower recall | Higher recall |
-
-## Example
-
-**Query:** "How does the db connection work?"
-
-**`expand_terms()` adds:** `database`, `datastore` (from `db`)
-
-**Result:** Those terms join the keyword set; the keyword leg's BM25
-search surfaces documents that say "database connection" even though
-the user typed "db".
-
-## Performance
-
-- `expand_terms()` is microsecond-fast (rule-based dictionary lookup).
-- It adds no endpoint call — dictionary terms ride alongside the managed-Qwen
-  semantic keyword expansion that already runs in the default path.
-- The keyword set adds one extra BM25 leg; FTS5 + `bm25()` is sub-10 ms
-  per call on typical collections.
-
-## Dependencies
-
-- No LLM required (dictionary-based expansion).
-- Fast, deterministic synonym/acronym matching.
-- To add new synonyms or acronyms, edit the dicts in
-  `detection/detectors/expansion.py`.
+- Query keyword prompt and parsing:
+  `fitz_sage/engines/fitz_krag/query_batcher.py`
+- Query-time keyword merge:
+  `fitz_sage/engines/fitz_krag/query_pipeline.py`
+- BM25 keyword leg:
+  `fitz_sage/engines/fitz_krag/retrieval/router.py`
 
 ## Related
 
-- [Sparse Search (FTS5 + bm25)](sparse-search.md) — what each expanded
-  query actually hits
-- [Keyword Vocabulary](keyword-vocabulary.md) — exact-match identifiers
-  (complements synonym expansion)
-- [Multi-Query RAG](multi-query-rag.md) — for long compound queries
-  the rule-based expander can't handle
+- [Sparse Search](sparse-search.md)
+- [Keyword Vocabulary](keyword-vocabulary.md)
+- [Managed Models](../../MANAGED_MODELS.md)

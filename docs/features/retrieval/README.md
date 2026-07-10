@@ -12,7 +12,7 @@ and [Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) for the end-to-end flow.
 | `sparse-search.md`         | FTS5 + native `bm25()` over typed-unit stores                    |
 | `reranking.md`             | INT8 ONNX cross-encoder reranker (gte-reranker-modernbert-base)  |
 | `query-rewriting.md`       | Optional query-intelligence reformulation (pronouns, typos, intent) |
-| `query-expansion.md`       | Dictionary + managed-Qwen keyword expansion                      |
+| `query-expansion.md`       | Managed-Qwen semantic keywords and package boundaries            |
 | `multi-query-rag.md`       | Optional decomposition for long compound queries                 |
 | `multi-hop-reasoning.md`   | Iterative retrieval with bridge extraction                       |
 | `keyword-vocabulary.md`    | Exact-match identifier vocabulary (TC-123, AuthService, …)       |

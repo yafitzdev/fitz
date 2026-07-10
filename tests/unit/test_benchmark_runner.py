@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from benchmarks.fitz_bench.models import BenchmarkCase
+
 
 @dataclass
 class _BenchmarkConfig:
@@ -92,3 +96,28 @@ def test_benchmark_workspace_preserves_absolute_override(tmp_path):
 
     override = Path("C:/tmp/fitz-bench-workspace").resolve()
     assert runner._benchmark_workspace(tmp_path, str(override), "bench_123") == override
+
+
+def test_select_cases_preserves_suite_order():
+    """Repeated case filters should not reorder the benchmark suite."""
+    from benchmarks.fitz_bench import runner
+
+    cases = [
+        BenchmarkCase(case_id="alpha", domain="test", query="A"),
+        BenchmarkCase(case_id="beta", domain="test", query="B"),
+        BenchmarkCase(case_id="gamma", domain="test", query="C"),
+    ]
+
+    selected = runner._select_cases(cases, ["gamma", "alpha"])
+
+    assert [case.case_id for case in selected] == ["alpha", "gamma"]
+
+
+def test_select_cases_rejects_unknown_id():
+    """A typo in a release-gate case filter should fail loudly."""
+    from benchmarks.fitz_bench import runner
+
+    cases = [BenchmarkCase(case_id="alpha", domain="test", query="A")]
+
+    with pytest.raises(ValueError, match="missing"):
+        runner._select_cases(cases, ["missing"])

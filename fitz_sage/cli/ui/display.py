@@ -349,8 +349,6 @@ def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]
                 [
                     f"policy {policy.get('query_shape', '?')}",
                     f"min sufficient {policy.get('min_sufficient_docs', '?')}",
-                    f"min disputed {policy.get('min_disputed_docs', '?')}",
-                    f"dispute patience {policy.get('disputed_patience_docs', '?')}",
                 ]
             )
         lines.append("Cutoff: " + "; ".join(parts))

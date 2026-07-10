@@ -14,6 +14,7 @@ import json
 import re
 from typing import Any
 
+from fitz_sage.core.identifiers import contains_exact_identifier
 from fitz_sage.logging.logger import get_logger
 from fitz_sage.logging.tags import STORAGE
 from fitz_sage.storage import get_connection_manager
@@ -316,6 +317,65 @@ class SqliteTableStore:
                 f'SELECT {cols_str} FROM "{table_name}" ORDER BY _row_num LIMIT ?',
                 (bounded_limit,),
             ).fetchall()
+        return list(original_cols), [list(row) for row in rows]
+
+    def find_rows_by_identifiers(
+        self,
+        table_id: str,
+        identifiers: list[str] | tuple[str, ...],
+        *,
+        limit: int = 100,
+    ) -> tuple[list[str], list[list[Any]]] | None:
+        """Find rows containing complete literal identifiers in any column."""
+        literal_identifiers = tuple(value for value in identifiers if value)
+        if not literal_identifiers:
+            return None
+
+        self._ensure_schema()
+        with self._manager.connection(self.collection) as conn:
+            result = conn.execute(
+                """
+                SELECT table_name, columns, column_names_original
+                FROM _table_metadata
+                WHERE table_id = ?
+                """,
+                (table_id,),
+            ).fetchone()
+            if not result:
+                return None
+
+            table_name, sanitized_json, original_json = result
+            sanitized_cols = json.loads(sanitized_json) if sanitized_json else []
+            original_cols = json.loads(original_json) if original_json else []
+            if not sanitized_cols:
+                return list(original_cols), []
+
+            def contains_any_identifier(value: Any) -> int:
+                text = "" if value is None else str(value)
+                return int(
+                    any(
+                        contains_exact_identifier(text, identifier)
+                        for identifier in literal_identifiers
+                    )
+                )
+
+            conn.create_function(
+                "fitz_contains_exact_identifier",
+                1,
+                contains_any_identifier,
+                deterministic=True,
+            )
+            cols_str = ", ".join(f'"{column}"' for column in sanitized_cols)
+            predicates = " OR ".join(
+                f'fitz_contains_exact_identifier("{column}") = 1' for column in sanitized_cols
+            )
+            bounded_limit = max(1, int(limit))
+            rows = conn.execute(
+                f'SELECT {cols_str} FROM "{table_name}" '
+                f"WHERE {predicates} ORDER BY _row_num LIMIT ?",
+                (bounded_limit,),
+            ).fetchall()
+
         return list(original_cols), [list(row) for row in rows]
 
     def get_row_count(self, table_id: str) -> int | None:

@@ -44,15 +44,6 @@ _SYMBOL_QUERY_STOPWORDS = {
     "who",
     "with",
 }
-_SYMBOL_QUERY_SYNONYMS = {
-    "back": ("rollback",),
-    "dataclass": ("class",),
-    "environment": ("env",),
-    "fees": ("fee",),
-    "variable": ("env",),
-    "variables": ("env",),
-    "waive": ("waiver",),
-}
 
 
 class CodeSearchStrategy:
@@ -181,7 +172,7 @@ class CodeSearchStrategy:
 
 
 def _symbol_name_queries(query: str) -> list[str]:
-    """Return bounded name-search variants for prose-to-symbol matching."""
+    """Return bounded literal name-search queries for symbol matching."""
     variants: list[str] = []
     seen: set[str] = set()
 
@@ -206,12 +197,6 @@ def _symbol_name_queries(query: str) -> list[str]:
         add(f"{first}_{second}")
     for token in tokens:
         add(token)
-        for synonym in _SYMBOL_QUERY_SYNONYMS.get(token, ()):
-            add(synonym)
-    if "roll back" in normalized_query:
-        add("rollback")
-    if "late fee" in normalized_query:
-        add("late_fee")
     return variants[:16]
 
 

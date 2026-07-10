@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Removed built-in synonym/acronym dictionaries, identifier separator
+  normalization, and hard-coded code-search synonym mappings. Managed Qwen
+  semantic keywords remain the default broad-recall enhancement.
+- Evidence compilation now preserves raw retrieved content and historical
+  sources instead of focusing paragraphs or suppressing older facts.
+- Governance cutoff now returns Pyrrho verdicts without local dispute
+  confidence thresholds, patience windows, or stability overrides.
+
+### Fixed
+
+- Exact table identifiers are looked up across the full SQLite table instead
+  of only the bounded scan prefix.
+- Evidence closure now derives bridges from compiler-selected evidence and no
+  longer replaces precise table rows merely because a follow-up has closure
+  metadata.
+- Added the 60-case limitations benchmark, focused `--case-id` benchmark runs,
+  per-case progress, and a versioned `LIMITATIONS.md` product contract.
+
 ## [0.15.0] - 2026-07-08
 
 ### 🎉 Highlights
@@ -29,7 +49,7 @@ top-2, ... evidence prefix is enough to answer.
 model uses the new v2 heads: `evidence_verdict`, `failure_mode`,
 `retrieval_intents`, and `evidence_kinds`.
 
-**Managed Qwen enrichment is standard.** Qwen3.5 0.8B ONNX is the
+**Managed Qwen enrichment is standard.** Qwen3 0.6B ONNX is the
 required local runtime for semantic query keywords and ingestion
 enrichment. It is downloaded when missing and is not exposed as an
 optional user flag.

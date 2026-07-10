@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from fitz_sage.engines.fitz_krag.evidence_contract import exact_identifiers
+from fitz_sage.core.identifiers import exact_identifiers
 from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import rrf_score
 from fitz_sage.engines.fitz_krag.retrieval.table_plan import (
     build_table_query_plan,
@@ -72,19 +72,39 @@ class TableSearchStrategy:
             return []
         catalog = getattr(self._sqlite_table_store, "catalog", None)
         scan_rows = getattr(self._sqlite_table_store, "scan_rows", None)
+        find_rows_by_identifiers = getattr(
+            self._sqlite_table_store,
+            "find_rows_by_identifiers",
+            None,
+        )
         get_by_table_id = getattr(self._table_store, "get_by_table_id", None)
-        if not callable(catalog) or not callable(scan_rows) or not callable(get_by_table_id):
+        if not callable(catalog) or not callable(get_by_table_id):
             return []
 
+        identifiers = tuple(exact_identifiers(query))
         matches: list[dict[str, Any]] = []
         for table in catalog():
             table_id = str(table.get("table_id") or "")
             if not table_id:
                 continue
-            scan = scan_rows(table_id, limit=_ROW_SCAN_LIMIT)
-            if scan is None:
+            row_data: tuple[list[str], list[list[Any]]] | None = None
+            exact_identifier_lookup = False
+            if identifiers and callable(find_rows_by_identifiers):
+                candidate = find_rows_by_identifiers(
+                    table_id,
+                    identifiers,
+                    limit=max(limit, len(identifiers)),
+                )
+                if _is_row_data(candidate):
+                    row_data = candidate
+                    exact_identifier_lookup = True
+            if row_data is None and callable(scan_rows):
+                candidate = scan_rows(table_id, limit=_ROW_SCAN_LIMIT)
+                if _is_row_data(candidate):
+                    row_data = candidate
+            if row_data is None:
                 continue
-            columns, rows = scan
+            columns, rows = row_data
             if not columns or not rows:
                 continue
             plan = build_table_query_plan(query, columns, rows)
@@ -96,6 +116,7 @@ class TableSearchStrategy:
                 continue
             metadata = dict(record.get("metadata") or {})
             metadata["row_match"] = {
+                "exact_identifier_lookup": exact_identifier_lookup,
                 "matched_rows": len(selected_rows),
                 "plan": plan.metadata,
             }
@@ -120,8 +141,7 @@ class TableSearchStrategy:
         """Convert a table store row to an Address."""
         columns = list(record["columns"])
         summary = record.get("summary") or (
-            f"Table {record['name']} columns: {', '.join(columns)}. "
-            f"Rows: {record['row_count']}."
+            f"Table {record['name']} columns: {', '.join(columns)}. Rows: {record['row_count']}."
         )
         metadata = dict(record.get("metadata") or {})
         metadata.update(
@@ -172,3 +192,13 @@ def _row_match_score(plan_metadata: dict[str, Any], matched_rows: int) -> float:
     if matched_rows == 1:
         score += 0.01
     return score
+
+
+def _is_row_data(value: Any) -> bool:
+    """Return whether a store result has the expected columns-and-rows shape."""
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], list)
+        and isinstance(value[1], list)
+    )

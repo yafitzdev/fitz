@@ -94,8 +94,8 @@ class TestCodeSearchStrategy:
         assert addr.metadata["start_line"] == 1
         assert addr.metadata["end_line"] == 10
 
-    def test_prose_query_expands_to_symbol_name_variants(self, mock_symbol_store, config):
-        """Prose terms such as 'waive' should find identifier forms such as WAIVER_ENV."""
+    def test_prose_query_does_not_use_hardcoded_symbol_synonyms(self, mock_symbol_store, config):
+        """Code search must not silently map prose to domain-specific symbol terms."""
 
         def search_by_name(query, limit):
             if query == "waiver":
@@ -109,5 +109,6 @@ class TestCodeSearchStrategy:
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("Which environment variable can waive late fees?", limit=5)
 
-        assert len(results) == 1
-        assert results[0].metadata["qualified_name"] == "invoice.WAIVER_ENV"
+        assert results == []
+        searched_names = [call.args[0] for call in mock_symbol_store.search_by_name.call_args_list]
+        assert "waiver" not in searched_names

@@ -139,3 +139,27 @@ class TestTableSearchStrategy:
         assert len(addresses) == 1
         assert addresses[0].location == "Vendors"
         assert addresses[0].metadata["row_match"]["matched_rows"] == 1
+
+    def test_retrieve_uses_full_table_exact_identifier_lookup(self):
+        """An exact ID beyond the bounded scan should still surface its table."""
+        record = _make_table_record(
+            record_id="rec-assets",
+            table_id="tbl_assets",
+            name="Assets",
+            columns=["asset_id", "owner"],
+            row_count=900,
+        )
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.catalog.return_value = [{"table_id": "tbl_assets"}]
+        sqlite_store.find_rows_by_identifiers.return_value = (
+            ["asset_id", "owner"],
+            [["AX-156", "Platform"]],
+        )
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+        strategy._table_store.get_by_table_id.return_value = record
+
+        addresses = strategy.retrieve("Who owns AX-156?", limit=5)
+
+        assert len(addresses) == 1
+        assert addresses[0].metadata["row_match"]["exact_identifier_lookup"] is True
+        sqlite_store.scan_rows.assert_not_called()

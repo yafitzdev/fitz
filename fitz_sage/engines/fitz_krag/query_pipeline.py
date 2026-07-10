@@ -518,8 +518,6 @@ def _merge_closure_results(
 
 def _closure_result_should_replace(existing: "ReadResult", candidate: "ReadResult") -> bool:
     """Return whether closure produced a more specific version of an existing result."""
-    if candidate.metadata.get("evidence_closure") and not existing.metadata.get("evidence_closure"):
-        return True
     if candidate.content == existing.content:
         return False
     if candidate.metadata.get("deterministic_table_filter") and not existing.metadata.get(

@@ -20,12 +20,8 @@ _NARROW_MIN_EVIDENCE = 1
 _COMPARISON_MIN_EVIDENCE = 2
 _BROAD_MIN_EVIDENCE = 4
 _AGGREGATION_MIN_EVIDENCE = 5
-_DISPUTE_PATIENCE_DOCS = 2
-_STABLE_DISPUTE_DOCS = 2
 _FOLLOWUP_BATCH_SIZE = 2
 _BROAD_OVERVIEW_SOURCE_COUNT = 6
-_NARROW_STRONG_DISPUTE_MIN_CONFIDENCE = 0.60
-_NARROW_STRONG_DISPUTE_MIN_MARGIN = 0.15
 _MONTH_PATTERN = (
     r"\b(january|february|march|april|may|june|july|august|september|"
     r"october|november|december)(?:\s+(\d{4}))?\b"
@@ -97,8 +93,6 @@ class GovernanceCutoffPolicy:
     query_shape: str
     max_docs: int
     min_sufficient_docs: int
-    min_disputed_docs: int
-    disputed_patience_docs: int
 
 
 @dataclass(frozen=True)
@@ -174,9 +168,7 @@ def apply_governance_cutoff(
 
     last_reasons: list[str] = []
     last_decision: Any = None
-    stable_disputed_decision: Any = None
     trajectory: list[dict[str, Any]] = []
-    consecutive_disputed = 0
 
     for size, decision in _iter_prefix_decisions(governance, query, governance_results, policy):
         mode = _decision_mode(decision)
@@ -188,7 +180,6 @@ def apply_governance_cutoff(
         )
 
         if mode is AnswerMode.SUFFICIENT:
-            consecutive_disputed = 0
             required_sufficient_docs = evidence_prefix_min or policy.min_sufficient_docs
             can_stop = size >= required_sufficient_docs
             stop_reason = "sufficient_min_evidence_met"
@@ -218,16 +209,8 @@ def apply_governance_cutoff(
 
         if mode is AnswerMode.DISPUTED:
             trajectory.append(trace)
-            consecutive_disputed += 1
-            if consecutive_disputed >= _STABLE_DISPUTE_DOCS:
-                stable_disputed_decision = decision
-            dispute_stop_reason = _disputed_stop_reason(
-                policy,
-                size,
-                consecutive_disputed,
-                decision,
-            )
-            if dispute_stop_reason:
+            required_disputed_docs = evidence_prefix_min or policy.min_sufficient_docs
+            if size >= required_disputed_docs:
                 selected_size = max(full_prefix_size, return_prefix_min or full_prefix_size)
                 return GovernanceCutoffResult(
                     selected=results[:selected_size],
@@ -241,45 +224,24 @@ def apply_governance_cutoff(
                         mode=mode,
                         decision=decision,
                         trajectory=trajectory,
-                        stop_reason=dispute_stop_reason,
+                        stop_reason="disputed_min_evidence_met",
                     ),
                 )
+            if evidence_prefix_min > size:
+                trace["evidence_prefix_min"] = evidence_prefix_min
             continue
 
         trajectory.append(trace)
-        consecutive_disputed = 0
-
-    if stable_disputed_decision is not None:
-        disputed_reasons = _decision_reasons(stable_disputed_decision)
-        disputed_reasons.append(
-            f"Pyrrho found a stable dispute by the top {policy.max_docs} evidence item(s)."
-        )
-        evaluated = min(policy.max_docs, len(governance_results))
-        selected_count = max(
-            _full_prefix_size_for_governance_prefix(results, governance_results[:evaluated]),
-            return_prefix_min,
-        )
-        return GovernanceCutoffResult(
-            selected=results[:selected_count],
-            mode=AnswerMode.DISPUTED,
-            reasons=disputed_reasons,
-            timings=[("Governance", time.perf_counter() - t0)],
-            metadata=_governance_cutoff_metadata(
-                policy,
-                evaluated=evaluated,
-                selected=selected_count,
-                mode=AnswerMode.DISPUTED,
-                decision=stable_disputed_decision,
-                trajectory=trajectory,
-                stop_reason="stable_dispute_at_cutoff",
-            ),
-        )
 
     reasons = list(last_reasons)
-    reasons.append(
-        f"Pyrrho did not find sufficient or stable disputed evidence within the top "
-        f"{policy.max_docs} evidence item(s)."
+    final_mode = (
+        _decision_mode(last_decision) if last_decision is not None else AnswerMode.INSUFFICIENT
     )
+    if final_mode is AnswerMode.INSUFFICIENT:
+        reasons.append(
+            f"Pyrrho did not find sufficient evidence within the top "
+            f"{policy.max_docs} evidence item(s)."
+        )
     stop_reason = "cutoff_exhausted"
     evaluated = min(policy.max_docs, len(governance_results))
     selected_count = max(
@@ -288,14 +250,14 @@ def apply_governance_cutoff(
     )
     return GovernanceCutoffResult(
         selected=results[:selected_count],
-        mode=AnswerMode.INSUFFICIENT,
+        mode=final_mode,
         reasons=reasons,
         timings=[("Governance", time.perf_counter() - t0)],
         metadata=_governance_cutoff_metadata(
             policy,
             evaluated=evaluated,
             selected=selected_count,
-            mode=AnswerMode.INSUFFICIENT,
+            mode=final_mode,
             decision=last_decision,
             trajectory=trajectory,
             stop_reason=stop_reason,
@@ -321,13 +283,10 @@ def governance_cutoff_policy(
         "aggregation": _AGGREGATION_MIN_EVIDENCE,
     }
     min_sufficient_docs = min(max_docs, min_docs_by_shape[query_shape])
-    min_disputed_docs = min(max_docs, _COMPARISON_MIN_EVIDENCE)
     return GovernanceCutoffPolicy(
         query_shape=query_shape,
         max_docs=max_docs,
         min_sufficient_docs=min_sufficient_docs,
-        min_disputed_docs=min_disputed_docs,
-        disputed_patience_docs=_DISPUTE_PATIENCE_DOCS,
     )
 
 
@@ -390,10 +349,7 @@ def _iter_prefix_decisions(
 
 def _first_batch_end(policy: GovernanceCutoffPolicy) -> int:
     """Batch up to the earliest point where a verdict can legally stop."""
-    min_stop_size = policy.min_sufficient_docs
-    if policy.query_shape == "comparison":
-        min_stop_size = max(min_stop_size, policy.min_disputed_docs)
-    return min(policy.max_docs, max(1, min_stop_size))
+    return min(policy.max_docs, max(1, policy.min_sufficient_docs))
 
 
 def _decide_prefix_batch(
@@ -420,62 +376,6 @@ def _is_mock_callable(value: Any) -> bool:
     if isinstance(value, Mock):
         return True
     return isinstance(getattr(value, "__self__", None), Mock)
-
-
-def _disputed_stop_reason(
-    policy: GovernanceCutoffPolicy,
-    size: int,
-    consecutive_disputed: int,
-    decision: Any,
-) -> str | None:
-    """Return whether a DISPUTED verdict is strong enough to stop."""
-    if policy.query_shape == "comparison":
-        return "dispute_policy_met" if size >= policy.min_disputed_docs else None
-    if policy.query_shape == "narrow":
-        if size >= policy.min_disputed_docs and _is_strong_dispute(decision):
-            return "narrow_strong_dispute_met"
-        if consecutive_disputed >= policy.disputed_patience_docs + 1:
-            return "dispute_policy_met"
-    return None
-
-
-def _is_strong_dispute(decision: Any) -> bool:
-    """Return whether a narrow DISPUTED prefix has enough probability mass to stop."""
-    probabilities = _decision_probabilities(decision)
-    disputed = probabilities.get("disputed", 0.0)
-    runner_up = max(probabilities.get("insufficient", 0.0), probabilities.get("sufficient", 0.0))
-    return (
-        disputed >= _NARROW_STRONG_DISPUTE_MIN_CONFIDENCE
-        and disputed - runner_up >= _NARROW_STRONG_DISPUTE_MIN_MARGIN
-    )
-
-
-def _decision_probabilities(decision: Any) -> dict[str, float]:
-    """Return normalized governance probabilities from Pyrrho-style decisions."""
-    probs = getattr(decision, "probs", None)
-    if isinstance(probs, (list, tuple)) and len(probs) == 3:
-        try:
-            return {
-                "insufficient": float(probs[0]),
-                "disputed": float(probs[1]),
-                "sufficient": float(probs[2]),
-            }
-        except (TypeError, ValueError):
-            return {}
-
-    governance = getattr(decision, "governance", None)
-    probabilities = getattr(governance, "probabilities", None)
-    if isinstance(probabilities, dict):
-        return {
-            "insufficient": float(
-                probabilities.get("INSUFFICIENT", probabilities.get("insufficient", 0.0))
-            ),
-            "disputed": float(probabilities.get("DISPUTED", probabilities.get("disputed", 0.0))),
-            "sufficient": float(
-                probabilities.get("SUFFICIENT", probabilities.get("sufficient", 0.0))
-            ),
-        }
-    return {}
 
 
 def _decision_mode(decision: Any) -> AnswerMode:
@@ -518,8 +418,6 @@ def _governance_cutoff_metadata(
         metadata["policy"] = {
             "query_shape": policy.query_shape,
             "min_sufficient_docs": policy.min_sufficient_docs,
-            "min_disputed_docs": policy.min_disputed_docs,
-            "disputed_patience_docs": policy.disputed_patience_docs,
         }
     if trajectory:
         metadata["trajectory"] = trajectory
@@ -922,6 +820,7 @@ def _compiler_role_requires_prefix_floor(role: str, kind: str | None) -> bool:
         role.startswith("anchor_identifier:")
         or role.startswith("anchor_phrase:")
         or role.startswith("source_anchor:")
+        or role.startswith("bridge:")
         or role in {"conflict_value", "latest", "final"}
     )
 

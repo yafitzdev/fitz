@@ -23,7 +23,8 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.temporal_intent == TemporalIntent.POINT_IN_TIME
         assert plan.detection.has_comparison_intent
         assert plan.detection.comparison_queries
-        assert "endpoint" in plan.keywords
+        assert "API" in plan.keywords
+        assert "failures" in plan.keywords
         assert plan.extended_signals == {
             "specificity": "moderate",
             "answer_type": "comparative",
@@ -58,7 +59,7 @@ class TestDeterministicQueryPlanner:
 
         assert plan.analysis.primary_type == QueryType.CODE
         assert plan.detection is None
-        assert "failure" in plan.keywords
+        assert "errors" in plan.keywords
 
     def test_detects_changed_between_temporal_comparison(self):
         """Between-period change wording should route like a comparison."""
@@ -81,12 +82,12 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.has_temporal_intent
         assert "march 2024" in plan.detection.temporal.metadata["references"]
 
-    def test_exact_identifier_keywords_include_tokenizer_variants(self):
-        """Exact IDs should survive underscore vs hyphen tokenizer differences."""
+    def test_exact_identifier_keywords_remain_literal(self):
+        """Deterministic planning must not invent separator variants for IDs."""
         planner = DeterministicQueryPlanner()
 
         plan = planner.plan("Find TC_1000")
 
         assert "TC_1000" in plan.keywords
-        assert "TC-1000" in plan.keywords
-        assert "TC 1000" in plan.keywords
+        assert "TC-1000" not in plan.keywords
+        assert "TC 1000" not in plan.keywords

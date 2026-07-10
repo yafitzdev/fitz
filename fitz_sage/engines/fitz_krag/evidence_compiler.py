@@ -14,6 +14,9 @@ from fitz_sage.engines.fitz_krag.evidence_contract import QueryContract as _Quer
 from fitz_sage.engines.fitz_krag.evidence_contract import (
     build_query_contract as _build_query_contract,
 )
+from fitz_sage.engines.fitz_krag.evidence_contract import (
+    contains_exact_identifier as _contains_exact_identifier,
+)
 from fitz_sage.engines.fitz_krag.evidence_contract import normalize_text as _normalize_text
 from fitz_sage.engines.fitz_krag.types import Address, ReadResult
 
@@ -66,7 +69,9 @@ def compile_evidence(
 
     working = aligned if aligned else units
     ordered = _compile_order(contract, working, all_units=units)
-    ordered, suppressed = _suppress_superseded_units(contract, ordered)
+    # Preserve retrieved evidence verbatim. Query-shape logic may reorder evidence,
+    # but authority resolution and conflict judgment belong to Pyrrho and the caller.
+    suppressed: list[EvidenceUnit] = []
     min_sources = _minimum_sources(contract, ordered)
     compiled = [
         _with_compiler_metadata(unit.result, unit, rank, min_sources, contract)
@@ -290,7 +295,6 @@ def _with_compiler_metadata(
     """Return a copy of a read result annotated with compiler metadata."""
     if result is None:
         return None
-    content, span_metadata = _focused_content(result.content, contract, kind=unit.kind)
     metadata = dict(result.metadata)
     metadata["evidence_compiler"] = {
         "rank": rank,
@@ -299,110 +303,13 @@ def _with_compiler_metadata(
         "min_sources": min_sources,
         "contract": _contract_snapshot(contract),
     }
-    if span_metadata:
-        metadata["evidence_span"] = span_metadata
     return ReadResult(
         address=result.address,
-        content=content,
+        content=result.content,
         file_path=result.file_path,
         line_range=result.line_range,
         metadata=metadata,
     )
-
-
-def _focused_content(
-    content: str,
-    contract: _QueryContract,
-    *,
-    kind: str | None = None,
-) -> tuple[str, dict[str, Any] | None]:
-    """Return a narrower evidence span when one addressed unit contains separable facts."""
-    if kind in {"table", "symbol"}:
-        return content, None
-    if not _should_focus_text(contract):
-        return content, None
-
-    prefix, body = _content_prefix(content)
-    blocks = _paragraph_blocks(body)
-    if len(blocks) < 2:
-        return content, None
-
-    scored = [
-        (_span_score(block, contract, index, blocks), index, block)
-        for index, block in enumerate(blocks)
-    ]
-    best_score, best_index, best_block = sorted(scored, key=lambda item: (-item[0], item[1]))[0]
-    if best_score <= 0:
-        return content, None
-
-    focused = "\n\n".join(part for part in (prefix, best_block.strip()) if part)
-    if focused.strip() == content.strip():
-        return content, None
-    return focused, {
-        "kind": "paragraph",
-        "selected_index": best_index + 1,
-        "block_count": len(blocks),
-        "score": best_score,
-        "original_char_count": len(content),
-        "focused_char_count": len(focused),
-    }
-
-
-def _should_focus_text(contract: _QueryContract) -> bool:
-    """Return whether Pyrrho requested temporal paragraph focusing."""
-    return contract.temporal_policy == "temporal"
-
-
-def _content_prefix(content: str) -> tuple[str, str]:
-    """Split a display prefix such as a breadcrumb from the body text."""
-    lines = content.splitlines()
-    if not lines:
-        return "", content
-    first = lines[0].strip()
-    if re.fullmatch(r"\[[^\]]+\]", first) and len(lines) > 1:
-        return first, "\n".join(lines[1:]).lstrip()
-    return "", content
-
-
-def _paragraph_blocks(content: str) -> list[str]:
-    """Split content into non-empty paragraph blocks."""
-    return [block.strip() for block in re.split(r"\n\s*\n", content) if block.strip()]
-
-
-def _span_score(
-    block: str,
-    contract: _QueryContract,
-    index: int,
-    blocks: list[str],
-) -> int:
-    """Score a paragraph span by literal alignment and temporal/finality cues."""
-    score = _hard_anchor_score(contract, block) * 10
-    for term in contract.keyword_anchors:
-        if _contains_term_variant(block, term):
-            score += 1
-
-    query_terms = set(_normalize_text(contract.query).split())
-    normalized = _normalize_text(block)
-    if "final" in query_terms and ("final" in normalized or "confirmed" in normalized):
-        score += 20
-    if query_terms.intersection({"latest", "current"}):
-        if "current" in normalized:
-            score += 20
-        score += _date_rank_bonus(block, blocks)
-    return score
-
-
-def _date_rank_bonus(block: str, blocks: list[str]) -> int:
-    """Return a small deterministic bonus for the latest dated paragraph."""
-    block_date = _latest_date_value(block)
-    if block_date is None:
-        return 0
-    dated_values = sorted(
-        {value for candidate in blocks if (value := _latest_date_value(candidate)) is not None}
-    )
-    if not dated_values:
-        return 0
-    return dated_values.index(block_date) + 1
 
 
 def _latest_date_value(text: str) -> int | None:
@@ -587,139 +494,6 @@ def _content_alignment_score(contract: _QueryContract, unit: EvidenceUnit) -> in
         if _contains_term_variant(unit.content_text, term):
             score += 1
     return score
-
-
-def _suppress_superseded_units(
-    contract: _QueryContract,
-    units: list[EvidenceUnit],
-) -> tuple[list[EvidenceUnit], list[EvidenceUnit]]:
-    """Drop older same-anchor status evidence once final/current evidence is selected."""
-    if len(units) < 2 or not _has_temporal_selection_intent(contract):
-        return units, []
-
-    authoritative = _authoritative_temporal_signatures(contract, units)
-    if not authoritative:
-        return units, []
-
-    retained: list[EvidenceUnit] = []
-    suppressed: list[EvidenceUnit] = []
-    for unit in units:
-        unit_signatures = _unit_temporal_signatures(contract, unit)
-        matching = unit_signatures & set(authoritative)
-        if matching and _is_superseded_temporal_unit(contract, unit, authoritative, matching):
-            suppressed.append(unit)
-            continue
-        retained.append(unit)
-    return retained, suppressed
-
-
-def _has_temporal_selection_intent(contract: _QueryContract) -> bool:
-    """Return whether Pyrrho requested temporal/finality selection."""
-    if contract.temporal_policy != "temporal":
-        return False
-    query_terms = set(contract.keyword_anchors)
-    return bool({"current", "final", "latest"}.intersection(query_terms))
-
-
-def _authoritative_temporal_signatures(
-    contract: _QueryContract,
-    units: list[EvidenceUnit],
-) -> dict[tuple[str, str], dict[str, Any]]:
-    """Return source-thread signatures that have selected final/current evidence."""
-    max_dates = _max_dates_by_signature(contract, units)
-    authoritative: dict[tuple[str, str], dict[str, Any]] = {}
-    query_terms = set(contract.keyword_anchors)
-    for unit in units:
-        signatures = _unit_temporal_signatures(contract, unit)
-        if not signatures:
-            continue
-        text = _normalize_text(_unit_text(unit.content_text, unit.location))
-        date_value = _latest_date_value(unit.content_text)
-        for signature in signatures:
-            reason: str | None = None
-            if "final" in query_terms and ("final" in text or "confirmed" in text):
-                reason = "final"
-            elif query_terms.intersection({"current", "latest"}):
-                if "current" in text:
-                    reason = "current"
-                elif date_value is not None and date_value == max_dates.get(signature):
-                    reason = "latest_date"
-            if reason is None:
-                continue
-            entry = authoritative.setdefault(
-                signature,
-                {
-                    "reason": reason,
-                    "date": date_value,
-                    "indices": set(),
-                },
-            )
-            entry["indices"].add(unit.index)
-            if date_value is not None and (entry.get("date") is None or date_value > entry["date"]):
-                entry["reason"] = reason
-                entry["date"] = date_value
-    return authoritative
-
-
-def _max_dates_by_signature(
-    contract: _QueryContract,
-    units: list[EvidenceUnit],
-) -> dict[tuple[str, str], int]:
-    """Return the latest observed date for each source-thread signature."""
-    max_dates: dict[tuple[str, str], int] = {}
-    for unit in units:
-        date_value = _latest_date_value(unit.content_text)
-        if date_value is None:
-            continue
-        for signature in _unit_temporal_signatures(contract, unit):
-            max_dates[signature] = max(date_value, max_dates.get(signature, 0))
-    return max_dates
-
-
-def _unit_temporal_signatures(contract: _QueryContract, unit: EvidenceUnit) -> set[tuple[str, str]]:
-    """Return source-thread signatures for same-file temporal supersession."""
-    identity_text = _unit_text(unit.content_text, unit.location, unit.file_path)
-    signatures: set[tuple[str, str]] = set()
-    file_path = unit.file_path.lower()
-    signature_scope = "*" if _has_temporal_selection_intent(contract) else file_path
-    for identifier in contract.identifiers:
-        if _contains_identifier(identity_text, identifier):
-            signatures.add((signature_scope, f"id:{identifier.lower()}"))
-    for phrase in contract.phrase_anchors:
-        if _contains_phrase(identity_text, phrase):
-            signatures.add((signature_scope, f"phrase:{_normalize_text(phrase)}"))
-    return signatures
-
-
-def _is_superseded_temporal_unit(
-    contract: _QueryContract,
-    unit: EvidenceUnit,
-    authoritative: dict[tuple[str, str], dict[str, Any]],
-    matching_signatures: set[tuple[str, str]],
-) -> bool:
-    """Return whether a unit is older or competing evidence for a selected source thread."""
-    query_terms = set(contract.keyword_anchors)
-    text = _normalize_text(_unit_text(unit.content_text, unit.location))
-    if "final" in query_terms and ("final" in text or "confirmed" in text):
-        return False
-    if query_terms.intersection({"current", "latest"}) and "current" in text:
-        return False
-
-    unit_date = _latest_date_value(unit.content_text)
-    for signature in matching_signatures:
-        if unit.index in authoritative[signature].get("indices", set()):
-            return False
-        authoritative_date = authoritative[signature].get("date")
-        if (
-            unit_date is not None
-            and authoritative_date is not None
-            and unit_date < authoritative_date
-        ):
-            return True
-
-    if "final" in query_terms:
-        return bool(unit.numbers)
-    return False
 
 
 def _unit_order_key(contract: _QueryContract, unit: EvidenceUnit) -> tuple[int, int, int, int]:
@@ -953,6 +727,7 @@ def _role_requires_prefix_floor(role: str, kind: str | None = None) -> bool:
         role.startswith("anchor_identifier:")
         or role.startswith("anchor_phrase:")
         or role.startswith("source_anchor:")
+        or role.startswith("bridge:")
         or role in {"conflict_value", "latest", "final"}
     )
 
@@ -1017,20 +792,8 @@ def _evidence_body_text(text: str) -> str:
 
 
 def _contains_identifier(text: str, identifier: str) -> bool:
-    """Return whether raw text contains an identifier or separator variant."""
-    lower = text.lower()
-    normalized = identifier.lower()
-    variants = {
-        normalized,
-        normalized.replace("_", "-"),
-        normalized.replace("-", "_"),
-        normalized.replace("_", " ").replace("-", " "),
-    }
-    for variant in variants:
-        escaped = re.escape(variant).replace(r"\ ", r"\s+")
-        if re.search(rf"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])", lower):
-            return True
-    return False
+    """Return whether raw text contains the literal identifier."""
+    return _contains_exact_identifier(text, identifier)
 
 
 def _contains_phrase(text: str, phrase: str) -> bool:

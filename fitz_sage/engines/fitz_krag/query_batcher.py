@@ -18,7 +18,6 @@ from fitz_sage.engines.fitz_krag.query_analyzer import (
     QueryAnalysis,
     parse_analysis_dict,
 )
-from fitz_sage.retrieval.detection.detectors.expansion import expand_terms
 from fitz_sage.retrieval.detection.modules import distribute_to_modules
 from fitz_sage.retrieval.rewriter.rewriter import parse_rewrite_dict
 from fitz_sage.retrieval.rewriter.types import RewriteResult
@@ -360,22 +359,11 @@ class QueryBatcher:
             result.extended_signals = _required_object(raw, "extended")
 
         if include_keywords:
-            llm_keywords: list[str] = []
             kw_data = _required_array(raw, "keywords")
-            llm_keywords = [
+            result.keywords = [
                 value
                 for value in (str(k).strip() for k in kw_data if isinstance(k, str))
                 if value and value.lower() not in _KEYWORD_PLACEHOLDERS
             ]
-            # Fuse deterministic dict expansion (synonyms / acronyms) — always
-            # available, independent of whether the LLM section parsed.
-            seen: set[str] = set()
-            merged: list[str] = []
-            for term in (*llm_keywords, *expand_terms(query)):
-                low = term.lower()
-                if low not in seen:
-                    seen.add(low)
-                    merged.append(term)
-            result.keywords = merged
 
         return result

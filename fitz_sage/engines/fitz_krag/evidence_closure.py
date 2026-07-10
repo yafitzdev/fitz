@@ -174,7 +174,10 @@ def plan_evidence_closure(
         )
 
     if "table" in contract.required_modalities:
+        query_identifiers = {value.lower() for value in contract.identifiers}
         for identifier in _structured_bridge_identifiers(bridge_terms):
+            if identifier.lower() in query_identifiers:
+                continue
             role = f"bridge:{identifier}"
             if role in existing_roles:
                 continue
@@ -311,12 +314,11 @@ def _bridge_terms(
     for value in _specific_query_terms(contract):
         add(value)
 
-    evidence = list(compiled_results or [])
-    for result in current_results:
-        if result not in evidence:
-            evidence.append(result)
+    evidence = list(compiled_results) if compiled_results else list(current_results)
 
     for result in evidence[:10]:
+        if _result_kind(result) == "table":
+            continue
         text = _result_text(result)
         for match in _BRIDGE_IDENTIFIER_PATTERN.finditer(text):
             add(match.group(0))
@@ -340,6 +342,13 @@ def _bridge_terms(
             add(PurePath(path_name).stem.replace("_", " "))
 
     return terms[:32]
+
+
+def _result_kind(result: ReadResult) -> str | None:
+    kind = getattr(getattr(result, "address", None), "kind", None)
+    if kind is None:
+        return None
+    return str(getattr(kind, "value", kind))
 
 
 def _specific_query_terms(contract: QueryContract) -> list[str]:

@@ -231,6 +231,57 @@ def test_closure_repairs_table_only_evidence_for_prose_query() -> None:
     assert "INC-611" in requests[0].query
 
 
+def test_closure_does_not_expand_incidental_identifiers_from_table_rows() -> None:
+    """A precise table result is endpoint evidence, not another table bridge source."""
+    query = "Who owns ASSET-940?"
+    table = _result(
+        AddressKind.TABLE,
+        "structured/assets.csv",
+        "Assets",
+        (
+            "asset_id | owner\n"
+            "ASSET-001 | Example One\n"
+            "ASSET-002 | Example Two\n"
+            "ASSET-940 | Target Team"
+        ),
+    )
+
+    profile = _profile(modality="structured_table")
+    compilation = compile_evidence(query, [table], profile=profile)
+    plan = plan_evidence_closure(query, [table], compilation, profile=profile)
+
+    assert plan.requests == []
+
+
+def test_closure_ignores_bridge_terms_from_unselected_candidates() -> None:
+    """Only compiler-selected evidence may create follow-up bridge obligations."""
+    query = "Who owns ASSET-940?"
+    selected_table = _result(
+        AddressKind.TABLE,
+        "structured/assets.csv",
+        "Assets",
+        "ASSET-940 | Target Team",
+    )
+    unrelated_candidate = _result(
+        AddressKind.SECTION,
+        "unstructured/unrelated.md",
+        "Unrelated",
+        "The unrelated migration note references OTHER-777 and a records table.",
+    )
+
+    profile = _profile(modality="structured_table")
+    compilation = compile_evidence(query, [selected_table], profile=profile)
+    plan = plan_evidence_closure(
+        query,
+        [selected_table, unrelated_candidate],
+        compilation,
+        profile=profile,
+    )
+
+    assert plan.requests == []
+    assert "OTHER-777" not in plan.metadata["bridge_terms"]
+
+
 def _result(
     kind: AddressKind,
     file_path: str,

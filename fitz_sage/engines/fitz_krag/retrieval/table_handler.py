@@ -12,6 +12,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.identifiers import exact_identifiers
 from fitz_sage.engines.fitz_krag.retrieval.table_plan import (
     build_table_query_plan,
     execute_table_query_plan,
@@ -156,26 +157,49 @@ class TableQueryHandler:
 
         sanitized_cols, original_cols = col_info
         row_count = self._sqlite_table_store.get_row_count(table_id)
-        rows = self._get_scan_data(table_name, sanitized_cols)
-        plan = build_table_query_plan(query, sanitized_cols, rows)
+        identifiers = tuple(exact_identifiers(query))
+        row_columns = sanitized_cols
+        rows: list[list[Any]] = []
+        exact_identifier_lookup = False
+        if identifiers:
+            find_rows = getattr(self._sqlite_table_store, "find_rows_by_identifiers", None)
+            if callable(find_rows):
+                candidate = find_rows(
+                    table_id,
+                    identifiers,
+                    limit=max(self._config.max_table_results, len(identifiers)),
+                )
+                if _is_row_data(candidate):
+                    row_columns, rows = candidate
+                    exact_identifier_lookup = True
+        if not exact_identifier_lookup:
+            rows = self._get_scan_data(table_name, sanitized_cols)
+
+        plan = build_table_query_plan(query, row_columns, rows)
         selected_rows = execute_table_query_plan(plan, rows)
         if not selected_rows:
             return result
 
         name = result.address.metadata.get("name", result.address.location)
         columns = result.address.metadata.get("columns", original_cols)
+        result_columns = original_cols if len(original_cols) == len(row_columns) else row_columns
+        lookup_note = (
+            f"Rows selected by exact identifier lookup across all {row_count} row(s)."
+            if exact_identifier_lookup
+            else (
+                f"Rows selected from a bounded scan of {len(rows)} row(s)"
+                f" out of {row_count} total row(s)."
+            )
+        )
         content = self._format_table_evidence(
             name=name,
             columns=columns,
             row_count=row_count,
             heading="Deterministic Table Matches",
             query_label="Selection: query-grounded row filter",
-            col_names=columns,
+            col_names=result_columns,
             rows=selected_rows,
-            note=(
-                f"Rows selected from a bounded scan of {len(rows)} row(s)"
-                f" out of {row_count} total row(s)."
-            ),
+            note=lookup_note,
         )
 
         return ReadResult(
@@ -185,6 +209,7 @@ class TableQueryHandler:
             metadata={
                 **result.metadata,
                 "deterministic_table_filter": True,
+                "exact_identifier_table_lookup": exact_identifier_lookup,
                 "result_count": len(selected_rows),
                 "table_query_plan": plan.metadata,
             },
@@ -364,3 +389,13 @@ class TableQueryHandler:
                 text = match.group(1)
 
         return text
+
+
+def _is_row_data(value: Any) -> bool:
+    """Return whether a store result has the expected columns-and-rows shape."""
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], list)
+        and isinstance(value[1], list)
+    )

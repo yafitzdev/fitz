@@ -35,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     FitzPaths.set_workspace(workspace)
 
     cases = _load_cases(cases_path)
+    cases = _select_cases(cases, args.case_ids)
     if args.limit is not None:
         cases = cases[: args.limit]
 
@@ -49,15 +50,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.index_mode == "complete":
             engine.continue_indexing()
 
-        for case in cases:
+        for index, case in enumerate(cases, start=1):
             case_started = time.perf_counter()
             pack = engine.evidence(Query(text=case.query))
             pack_dict = pack.to_dict()
             validation = validate_case(case, pack_dict)
+            duration = time.perf_counter() - case_started
             records.append(
                 {
                     "case": asdict(case),
-                    "duration_seconds": time.perf_counter() - case_started,
+                    "duration_seconds": duration,
                     "validation": validation.to_dict(),
                     "evidence_pack": pack_dict,
                     "signals": {
@@ -71,6 +73,11 @@ def main(argv: list[str] | None = None) -> int:
                         ),
                     },
                 }
+            )
+            status = "PASS" if validation.passed else "FAIL"
+            print(
+                f"[{index}/{len(cases)}] {status} {case.case_id} ({duration:.2f}s)",
+                flush=True,
             )
     finally:
         engine.stop_background_indexing()
@@ -122,11 +129,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--engine", default=None, help="Engine name passed to create_engine.")
     parser.add_argument(
+        "--case-id",
+        dest="case_ids",
+        action="append",
+        default=[],
+        help="Run only this case id. Repeat to select multiple cases.",
+    )
+    parser.add_argument(
         "--governance",
         default=None,
         help=(
-            "Optional governance provider override, e.g. "
-            "'pyrrho/C:\\path\\to\\pyrrho-v2-nano-g1'."
+            "Optional governance provider override, e.g. 'pyrrho/C:\\path\\to\\pyrrho-v2-nano-g1'."
         ),
     )
     parser.add_argument("--limit", type=int, default=None, help="Limit number of cases.")
@@ -153,6 +166,22 @@ def _load_cases(path: Path) -> list[BenchmarkCase]:
     if not isinstance(raw, list):
         raise ValueError(f"Benchmark cases must be a YAML list: {path}")
     return [BenchmarkCase.from_dict(item) for item in raw]
+
+
+def _select_cases(
+    cases: list[BenchmarkCase],
+    case_ids: list[str],
+) -> list[BenchmarkCase]:
+    """Select requested case ids while preserving suite order."""
+    if not case_ids:
+        return cases
+    requested = set(case_ids)
+    selected = [case for case in cases if case.case_id in requested]
+    found = {case.case_id for case in selected}
+    missing = requested - found
+    if missing:
+        raise ValueError(f"Unknown benchmark case id(s): {', '.join(sorted(missing))}")
+    return selected
 
 
 def _create_engine(engine: str | None, *, governance: str | None) -> Any:

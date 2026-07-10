@@ -157,7 +157,7 @@ context that BM25 doesn't see.
 
 - [Keyword Vocabulary](keyword-vocabulary.md) — exact-match identifier
   storage complements BM25
-- [Query Expansion](query-expansion.md) — dictionary + managed-Qwen keyword
+- [Semantic Query Keywords](query-expansion.md) — managed-Qwen keyword
   expansion feeding the BM25 query
 - [Reranking](reranking.md) — ONNX cross-encoder reranker that runs after BM25
 - [Unified Storage](../platform/unified-storage.md) — the SQLite +

@@ -128,41 +128,36 @@ class TestEngineInit:
             # storage
             "SqliteConnectionManager": ("fitz_sage.storage.sqlite.SqliteConnectionManager"),
             # stores
-            "RawFileStore": (
-                "fitz_sage.engines.fitz_krag.ingestion" ".raw_file_store.RawFileStore"
-            ),
-            "SymbolStore": ("fitz_sage.engines.fitz_krag.ingestion" ".symbol_store.SymbolStore"),
+            "RawFileStore": ("fitz_sage.engines.fitz_krag.ingestion.raw_file_store.RawFileStore"),
+            "SymbolStore": ("fitz_sage.engines.fitz_krag.ingestion.symbol_store.SymbolStore"),
             "ImportGraphStore": (
-                "fitz_sage.engines.fitz_krag.ingestion" ".import_graph_store.ImportGraphStore"
+                "fitz_sage.engines.fitz_krag.ingestion.import_graph_store.ImportGraphStore"
             ),
-            "SectionStore": ("fitz_sage.engines.fitz_krag.ingestion" ".section_store.SectionStore"),
-            "TableStoreKrag": ("fitz_sage.engines.fitz_krag.ingestion" ".table_store.TableStore"),
-            "ensure_schema": ("fitz_sage.engines.fitz_krag.ingestion" ".schema.ensure_schema"),
+            "SectionStore": ("fitz_sage.engines.fitz_krag.ingestion.section_store.SectionStore"),
+            "TableStoreKrag": ("fitz_sage.engines.fitz_krag.ingestion.table_store.TableStore"),
+            "ensure_schema": ("fitz_sage.engines.fitz_krag.ingestion.schema.ensure_schema"),
             # strategies
             "CodeSearchStrategy": (
-                "fitz_sage.engines.fitz_krag.retrieval" ".strategies.code_search.CodeSearchStrategy"
+                "fitz_sage.engines.fitz_krag.retrieval.strategies.code_search.CodeSearchStrategy"
             ),
             "SectionSearchStrategy": (
                 "fitz_sage.engines.fitz_krag.retrieval"
                 ".strategies.section_search.SectionSearchStrategy"
             ),
             "TableSearchStrategy": (
-                "fitz_sage.engines.fitz_krag.retrieval"
-                ".strategies.table_search.TableSearchStrategy"
+                "fitz_sage.engines.fitz_krag.retrieval.strategies.table_search.TableSearchStrategy"
             ),
             # retrieval
-            "RetrievalRouter": ("fitz_sage.engines.fitz_krag.retrieval" ".router.RetrievalRouter"),
-            "ContentReader": ("fitz_sage.engines.fitz_krag.retrieval" ".reader.ContentReader"),
-            "CodeExpander": ("fitz_sage.engines.fitz_krag.retrieval" ".expander.CodeExpander"),
+            "RetrievalRouter": ("fitz_sage.engines.fitz_krag.retrieval.router.RetrievalRouter"),
+            "ContentReader": ("fitz_sage.engines.fitz_krag.retrieval.reader.ContentReader"),
+            "CodeExpander": ("fitz_sage.engines.fitz_krag.retrieval.expander.CodeExpander"),
             "TableQueryHandler": (
-                "fitz_sage.engines.fitz_krag.retrieval" ".table_handler.TableQueryHandler"
+                "fitz_sage.engines.fitz_krag.retrieval.table_handler.TableQueryHandler"
             ),
             # context + generation
-            "ContextAssembler": (
-                "fitz_sage.engines.fitz_krag.context" ".assembler.ContextAssembler"
-            ),
+            "ContextAssembler": ("fitz_sage.engines.fitz_krag.context.assembler.ContextAssembler"),
             "CodeSynthesizer": (
-                "fitz_sage.engines.fitz_krag.generation" ".synthesizer.CodeSynthesizer"
+                "fitz_sage.engines.fitz_krag.generation.synthesizer.CodeSynthesizer"
             ),
             # shared tabular (SQLite-backed after Cloud removal)
             "SqliteTableStore": "fitz_sage.tabular.store.sqlite.SqliteTableStore",
@@ -853,8 +848,8 @@ class TestEvidence:
         assert cutoff["policy"]["query_shape"] == "comparison"
         assert cutoff["policy"]["min_sufficient_docs"] == 2
 
-    def test_narrow_query_disputed_needs_patience_window(self):
-        """Narrow queries keep going for two more docs before disputed stops."""
+    def test_narrow_query_returns_pyrrho_dispute_without_local_patience(self):
+        """Narrow queries return Pyrrho's dispute once its evidence floor is met."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
@@ -876,10 +871,10 @@ class TestEvidence:
             "docs/3.md",
             "docs/4.md",
         ]
-        assert engine._governance.decide.call_count == 4
+        assert engine._governance.decide.call_count == 2
         cutoff = pack.metadata["governance_cutoff"]
         assert cutoff["policy"]["query_shape"] == "narrow"
-        assert cutoff["policy"]["disputed_patience_docs"] == 2
+        assert "disputed_patience_docs" not in cutoff["policy"]
 
     def test_broad_query_disputed_continues_to_cutoff(self):
         """Pyrrho broad-answer plans do not stop on disputed until the cutoff."""

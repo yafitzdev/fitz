@@ -9,7 +9,6 @@ from typing import Any
 
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
 from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
-from fitz_sage.retrieval.detection.detectors.expansion import expand_terms
 from fitz_sage.retrieval.detection.modules import (
     AggregationModule,
     AggregationType,
@@ -110,7 +109,7 @@ class QueryPlan:
 
 
 class DeterministicQueryPlanner:
-    """No-chat query planner based on lexical and dictionary signals."""
+    """No-chat query planner based on lexical and query-shape signals."""
 
     def plan(self, query: str, *, detection_enabled: bool = True) -> QueryPlan:
         """Build a retrieval plan without calling a chat model."""
@@ -194,13 +193,10 @@ def deterministic_detection(query: str) -> DetectionSummary:
 
 
 def deterministic_keywords(query: str, terms: list[str] | None = None) -> list[str]:
-    """Extract query terms plus dictionary synonym/acronym expansions."""
+    """Extract literal query terms for deterministic retrieval."""
     seen: set[str] = set()
     keywords: list[str] = []
-    expanded_terms: list[str] = []
     for term in terms or content_terms(query):
-        expanded_terms.extend(_keyword_variants(term))
-    for term in (*expanded_terms, *expand_terms(query)):
         low = term.lower()
         if low not in seen:
             seen.add(low)
@@ -382,18 +378,6 @@ def _comparison_queries(query: str, entities: list[str]) -> list[str]:
 def _clean_entity(value: str) -> str:
     cleaned = re.sub(r"^\s*(compare|difference|between|the)\s+", "", value, flags=re.IGNORECASE)
     return cleaned.strip(" ?.,")
-
-
-def _keyword_variants(term: str) -> list[str]:
-    """Return exact-token variants that should survive tokenizer differences."""
-    variants = [term]
-    if "_" in term:
-        variants.append(term.replace("_", "-"))
-        variants.append(term.replace("_", " "))
-    if "-" in term:
-        variants.append(term.replace("-", "_"))
-        variants.append(term.replace("-", " "))
-    return variants
 
 
 def _specificity(query: str, detection: DetectionSummary | None) -> str:

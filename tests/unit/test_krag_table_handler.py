@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from fitz_sage.engines.fitz_krag.query_pipeline import _closure_result_should_replace
 from fitz_sage.engines.fitz_krag.retrieval.table_handler import TableQueryHandler
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
@@ -290,6 +291,54 @@ class TestTableQueryHandler:
         assert "AST-22" in results[0].content
         assert "Data Platform" in results[0].content
         assert "AST-31" not in results[0].content
+
+    def test_deterministic_table_filter_uses_full_table_identifier_lookup(self):
+        """Exact identifier evidence should not depend on the bounded scan prefix."""
+        handler, _, sqlite_table_store = _make_handler(
+            execute_result=None,
+            table_name="tbl_assets",
+            columns=(
+                ["asset_id", "owner"],
+                ["asset_id", "owner"],
+            ),
+            row_count=900,
+        )
+        sqlite_table_store.find_rows_by_identifiers.return_value = (
+            ["asset_id", "owner"],
+            [["AX-156", "Platform"]],
+        )
+        table_result = _make_table_read_result(name="Assets", columns=["asset_id", "owner"])
+
+        results = handler.process(
+            "Who owns AX-156?",
+            [table_result],
+            allow_sql_generation=False,
+        )
+
+        assert "AX-156" in results[0].content
+        assert "Platform" in results[0].content
+        assert results[0].metadata["exact_identifier_table_lookup"] is True
+        sqlite_table_store.execute_query.assert_not_called()
+
+    def test_noisier_closure_table_result_does_not_replace_precise_result(self):
+        """Closure provenance alone must not replace a narrower table result."""
+        existing = _make_table_read_result(name="Assets")
+        existing.metadata.update(
+            {
+                "deterministic_table_filter": True,
+                "result_count": 1,
+            }
+        )
+        candidate = _make_table_read_result(name="Assets")
+        candidate.metadata.update(
+            {
+                "deterministic_table_filter": True,
+                "evidence_closure": {"role": "bridge:ASSET-940"},
+                "result_count": 4,
+            }
+        )
+
+        assert _closure_result_should_replace(existing, candidate) is False
 
     def test_deterministic_table_plan_does_not_sort_on_identifier_columns(self):
         """Metric superlatives should bind to metric columns, not numeric-looking IDs."""

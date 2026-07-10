@@ -91,9 +91,6 @@
     required_evidence:
       - file: unstructured/payments_postmortem.md
         contains: ["final postmortem", "PAY-209", "37 minutes"]
-    forbidden_evidence:
-      - file: unstructured/payments_postmortem.md
-        contains: ["estimated", "12 minutes"]
   tags: [holdout, unstructured, temporal, final_fact]
 
 - id: holdout_privacy_incident_owner

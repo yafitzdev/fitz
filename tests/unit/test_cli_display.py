@@ -108,8 +108,6 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
             "policy": {
                 "query_shape": "broad",
                 "min_sufficient_docs": 4,
-                "min_disputed_docs": 2,
-                "disputed_patience_docs": 2,
             },
             "pyrrho": {
                 "mode": "sufficient",
@@ -125,10 +123,7 @@ def test_format_governance_metadata_shows_pyrrho_and_cutoff():
 
     assert _format_governance_metadata(metadata, []) == [
         "Pyrrho: SUFFICIENT  P(SUFFICIENT)=0.53  P(INSUFFICIENT)=0.21  P(DISPUTED)=0.26",
-        (
-            "Cutoff: selected 6; evaluated 6/10; policy broad; "
-            "min sufficient 4; min disputed 2; dispute patience 2"
-        ),
+        ("Cutoff: selected 6; evaluated 6/10; policy broad; min sufficient 4"),
         "Pyrrho: sources support a confident answer (P=0.53).",
     ]
 
@@ -222,8 +217,6 @@ def test_format_broad_overview_metadata_skips_pyrrho_cutoff_language():
             "policy": {
                 "query_shape": "broad_overview",
                 "min_sufficient_docs": 4,
-                "min_disputed_docs": 2,
-                "disputed_patience_docs": 2,
             },
         }
     }

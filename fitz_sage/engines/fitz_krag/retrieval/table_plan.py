@@ -9,14 +9,12 @@ from datetime import date
 from enum import Enum
 from typing import Any
 
-_IDENTIFIER_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"
-    r"(?:[-_][A-Za-z0-9]+)*(?![A-Za-z0-9_])|"
-    r"(?<![A-Za-z0-9_])(?=[A-Za-z0-9-]*\d)[A-Za-z][A-Za-z0-9]*"
-    r"(?:-[A-Za-z0-9]+)+(?![A-Za-z0-9_])|"
-    r"\b[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9_-]*\b|"
-    r"\b[A-Z]\d+\b"
+from fitz_sage.core.identifiers import (
+    EXACT_IDENTIFIER_PATTERN as _IDENTIFIER_PATTERN,
+    contains_exact_identifier,
+    exact_identifiers,
 )
+
 _MAX_SUPERLATIVES = {"highest", "largest", "latest", "longest", "max", "maximum", "most", "newest"}
 _MIN_SUPERLATIVES = {"earliest", "fastest", "least", "lowest", "min", "minimum", "shortest"}
 _STOPWORDS = {
@@ -194,9 +192,7 @@ def execute_table_query_plan(plan: TableQueryPlan, rows: list[list[Any]]) -> lis
                     sortable,
                     key=lambda item: item[0],
                     reverse=plan.sort.direction == "max",
-                )[
-                    0
-                ][1]
+                )[0][1]
             ]
 
     scored = [(_row_score(plan, row), index, row) for index, row in enumerate(candidate_rows)]
@@ -372,16 +368,7 @@ def _row_satisfies_predicates(row: list[Any], predicates: tuple[RowPredicate, ..
 
 
 def _query_identifiers(query: str) -> list[str]:
-    identifiers: list[str] = []
-    seen: set[str] = set()
-    for match in _IDENTIFIER_PATTERN.finditer(query):
-        value = match.group(0).strip(".,;:()[]{}")
-        key = value.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        identifiers.append(value)
-    return identifiers
+    return exact_identifiers(query)
 
 
 def _query_terms(query: str) -> list[str]:
@@ -425,19 +412,7 @@ def _sortable_value(value: Any) -> float | None:
 
 
 def _contains_identifier(text: str, identifier: str) -> bool:
-    lower = text.lower()
-    normalized = identifier.lower()
-    variants = {
-        normalized,
-        normalized.replace("_", "-"),
-        normalized.replace("-", "_"),
-        normalized.replace("_", " ").replace("-", " "),
-    }
-    for variant in variants:
-        escaped = re.escape(variant).replace(r"\ ", r"\s+")
-        if re.search(rf"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])", lower):
-            return True
-    return False
+    return contains_exact_identifier(text, identifier)
 
 
 def _contains_term(text: str, term: str) -> bool:

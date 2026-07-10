@@ -83,7 +83,7 @@ The starter corpus covers:
 - mixed table/prose cases
 - conflicts and insufficient evidence
 - temporal freshness and stale evidence
-- acronym expansion
+- explicit in-corpus acronym bridges
 - filtered table lookups and comparisons
 - stale documentation versus implementation conflicts
 - cross-domain multi-hop retrieval
@@ -102,6 +102,20 @@ python -m benchmarks.fitz_bench.runner --corpus benchmarks/corpora/holdout2 --ca
 
 Grow this by adding more files under `benchmarks/corpora/` and YAML cases under
 `benchmarks/cases/`.
+
+For focused diagnosis, repeat `--case-id` without editing the suite:
+
+```bash
+python -m benchmarks.fitz_bench.runner \
+  --corpus benchmarks/corpora/limits \
+  --cases benchmarks/cases/limits.yaml \
+  --case-id structured_large_rec0619_owner \
+  --case-id conflict_run55b_final_audit
+```
+
+The runner prints one progress line per completed case. The full limitations
+suite exercises managed Qwen, reranking, evidence closure, and Pyrrho for every
+query, so it is a release-gate run rather than a fast smoke test.
 
 ## Balanced Governance
 

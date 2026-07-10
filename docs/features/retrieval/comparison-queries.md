@@ -169,5 +169,5 @@ Detection is LLM-based. The `ComparisonModule` contributes its prompt fragment t
 ## Related Features
 
 - **Multi-Query** - Long queries decomposed; comparison is a special case of decomposition
-- **Query Expansion** - Synonyms/acronyms expanded; comparison adds entity-specific sub-queries
+- **Semantic keywords** - Managed Qwen adds recall terms; comparison adds entity-specific sub-queries
 - **Temporal Queries** - Period filtering; comparison is entity filtering

@@ -125,7 +125,7 @@ User: "How does it handle expired sessions?"
 
 ## Related
 
-- [Query Expansion](query-expansion.md) — rule-based synonym / acronym
+- [Semantic Query Keywords](query-expansion.md) — managed-Qwen recall terms
   expansion that runs alongside LLM rewriting
 - [Multi-Query RAG](multi-query-rag.md) — decomposes long queries into
   focused sub-queries

@@ -76,8 +76,8 @@ def test_compiler_requires_anchor_in_evidence_not_closure_metadata() -> None:
     assert compiled.metadata["filtered_all"] is True
 
 
-def test_compiler_focuses_current_span_inside_multi_fact_section() -> None:
-    """EvidencePack content should not mix stale and current facts from one section."""
+def test_compiler_preserves_raw_current_and_historical_spans() -> None:
+    """The compiler must not rewrite a source before Pyrrho evaluates it."""
     status = _result(
         "[Introduction]\n"
         "2026-03-10: Pilot users under exception MFA-CX-13 may skip hardware keys until "
@@ -95,8 +95,9 @@ def test_compiler_focuses_current_span_inside_multi_fact_section() -> None:
     )
 
     assert "Current rule" in compiled.results[0].content
-    assert "may skip hardware keys" not in compiled.results[0].content
-    assert compiled.results[0].metadata["evidence_span"]["selected_index"] == 2
+    assert "may skip hardware keys" in compiled.results[0].content
+    assert compiled.results[0].content == status.content
+    assert "evidence_span" not in compiled.results[0].metadata
 
 
 def test_compiler_keeps_authoritative_latest_section_when_it_contains_old_history() -> None:
@@ -121,7 +122,7 @@ def test_compiler_keeps_authoritative_latest_section_when_it_contains_old_histor
 
     assert compiled.results[0].address.location == "Project Atlas APAC"
     assert "limited general availability" in compiled.results[0].content
-    assert "entered a pilot" not in compiled.results[0].content
+    assert "entered a pilot" in compiled.results[0].content
     assert compiled.metadata["suppressed"] == []
 
 
@@ -150,8 +151,8 @@ def test_compiler_does_not_count_parser_toc_as_evidence_body() -> None:
     assert compiled.results[0].address.location == "Introduction > May Launch Memo"
 
 
-def test_compiler_focuses_final_span_inside_multi_fact_section() -> None:
-    """Pyrrho temporal grounding should package final spans without earlier estimates."""
+def test_compiler_preserves_raw_estimate_and_final_spans() -> None:
+    """Temporal routing may reorder evidence but must not compact its content."""
     status = _result(
         "The first status update estimated that incident PAY-209 would recover in "
         "12 minutes.\n\n"
@@ -168,8 +169,9 @@ def test_compiler_focuses_final_span_inside_multi_fact_section() -> None:
     )
 
     assert "final postmortem" in compiled.results[0].content
-    assert "estimated" not in compiled.results[0].content
-    assert compiled.results[0].metadata["evidence_span"]["selected_index"] == 2
+    assert "estimated" in compiled.results[0].content
+    assert compiled.results[0].content == status.content
+    assert "evidence_span" not in compiled.results[0].metadata
 
 
 def test_compiler_does_not_focus_final_span_without_pyrrho_temporal() -> None:
@@ -290,8 +292,8 @@ def test_compiler_orders_temporal_candidates_from_pyrrho_contract() -> None:
     assert compiled.metadata["contract"]["temporal_policy"] == "temporal"
 
 
-def test_compiler_suppresses_same_source_initial_estimate_after_final_evidence() -> None:
-    """Pyrrho temporal grounding lets final evidence supersede earlier estimates."""
+def test_compiler_keeps_same_source_initial_estimate_and_final_evidence() -> None:
+    """Pyrrho, rather than the compiler, judges which temporal fact governs."""
     final = _result(
         "The final postmortem confirmed that Search outage INC-101 recovered after 42 minutes.",
         "unstructured/outage_postmortem.md",
@@ -309,12 +311,12 @@ def test_compiler_suppresses_same_source_initial_estimate_after_final_evidence()
         profile=_profile(query_contract="temporal_grounding"),
     )
 
-    assert [result.content for result in compiled.results] == [final.content]
-    assert compiled.metadata["suppressed"][0]["location"] == "Initial Status Update"
+    assert [result.content for result in compiled.results] == [final.content, initial.content]
+    assert compiled.metadata["suppressed"] == []
 
 
-def test_compiler_suppresses_cross_source_stale_fact_after_final_evidence() -> None:
-    """Pyrrho temporal grounding lets final evidence supersede cross-source stale facts."""
+def test_compiler_keeps_cross_source_stale_and_final_evidence() -> None:
+    """The evidence pack must preserve disagreement for Pyrrho to evaluate."""
     final = _result(
         "Risk RSK-81 final residual score is 18 after reclassification.",
         "unstructured/risk_audit_note.md",
@@ -332,8 +334,11 @@ def test_compiler_suppresses_cross_source_stale_fact_after_final_evidence() -> N
         profile=_profile(query_contract="temporal_grounding"),
     )
 
-    assert [result.file_path for result in compiled.results] == ["unstructured/risk_audit_note.md"]
-    assert compiled.metadata["suppressed"][0]["file_path"] == ("unstructured/risk_finance_memo.md")
+    assert [result.file_path for result in compiled.results] == [
+        "unstructured/risk_audit_note.md",
+        "unstructured/risk_finance_memo.md",
+    ]
+    assert compiled.metadata["suppressed"] == []
 
 
 def test_compiler_promotes_required_code_symbol() -> None:
@@ -478,7 +483,7 @@ def test_compiler_splits_code_identifiers_for_keyword_alignment() -> None:
 def test_compiler_treats_short_letter_digit_codes_as_identifiers() -> None:
     """Codes such as S1 are exact anchors, not disposable short words."""
     table = _result(
-        "incident_id | severity | owner | resolved_minutes\n" "INC-103 | S1 | Mina | 25",
+        "incident_id | severity | owner | resolved_minutes\nINC-103 | S1 | Mina | 25",
         "structured/incidents.csv",
         kind=AddressKind.TABLE,
         location="Incidents",
@@ -538,7 +543,7 @@ def test_compiler_chooses_required_table_by_fact_anchors() -> None:
         location="Rollout Matrix",
     )
     warehouses = _result(
-        "warehouse_id | region | item | stock | unit\n" "WH-1 | west | flux capacitor | 17 | count",
+        "warehouse_id | region | item | stock | unit\nWH-1 | west | flux capacitor | 17 | count",
         "structured/warehouses.csv",
         kind=AddressKind.TABLE,
         location="Warehouses",
@@ -647,7 +652,7 @@ def test_compiler_does_not_promote_bridge_companion_without_pyrrho_multi_modalit
 def test_compiler_does_not_make_policy_terms_source_authority() -> None:
     """Policy wording is lexical alignment unless Pyrrho supplies an authority signal."""
     table = _result(
-        "feature | region | status | release\n" "token_rotation | eu | enabled | 2026.05",
+        "feature | region | status | release\ntoken_rotation | eu | enabled | 2026.05",
         "structured/rollout_matrix.csv",
         kind=AddressKind.TABLE,
         location="Rollout Matrix",

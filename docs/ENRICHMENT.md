@@ -32,7 +32,7 @@ stateDiagram-v2
 | Stage | Blocks first evidence pack? | Runtime | Purpose |
 |-------|-----------------------------|---------|---------|
 | Parse | yes | CPU parser / AST / table parsers | Store raw content, sections, symbols, tables. |
-| Keyword | no | managed Qwen ONNX GenAI | Add semantic keywords and exact aliases for broad recall. |
+| Keyword | no | managed Qwen ONNX GenAI | Add semantic keywords for broad recall. |
 | Entity link | no | managed Qwen ONNX GenAI + SQLite | Populate entity graph links for expansion. |
 | Hierarchy | no | managed Qwen ONNX GenAI | Build L1 file summaries and L2 corpus overview. |
 | Demand summary | no | managed Qwen ONNX GenAI | Summarize only files that queries actually surfaced. |
@@ -47,7 +47,7 @@ finished and retrieval can start. If later stages remain, it spawns
 
 ### Keywords
 
-Exact and semantic retrieval terms: identifiers, aliases, domain terms,
+Exact and semantic retrieval terms: identifiers, domain terms,
 acronyms, issue IDs, version strings, endpoint names, class names, and
 near-synonyms that improve broad BM25 recall.
 
@@ -89,7 +89,7 @@ near-instant first evidence pack.
 
 The default no-endpoint query path uses managed Qwen. During query prep,
 fitz-sage asks Qwen for a small keyword-only expansion and merges those terms
-with deterministic query terms and dictionary synonyms/acronyms.
+with literal deterministic query terms.
 
 That keyword set becomes one extra BM25 leg in broad recall. It is cheap and
 recall-oriented; precision belongs to the ONNX reranker and Pyrrho cutoff.

@@ -7,6 +7,12 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from fitz_sage.core.identifiers import (
+    EXACT_IDENTIFIER_PATTERN,
+    contains_exact_identifier,
+    exact_identifiers,
+)
+
 _STOPWORDS = {
     "a",
     "an",
@@ -70,15 +76,6 @@ _QUESTION_TITLE_WORDS = {
     "Will",
     "Would",
 }
-
-EXACT_IDENTIFIER_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"
-    r"(?:[-_][A-Za-z0-9]+)*(?![A-Za-z0-9_])|"
-    r"(?<![A-Za-z0-9_])(?=[A-Za-z0-9-]*\d)[A-Za-z][A-Za-z0-9]*"
-    r"(?:-[A-Za-z0-9]+)+(?![A-Za-z0-9_])|"
-    r"\b[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9_-]*\b|"
-    r"\b[A-Z]\d+\b"
-)
 
 _MODALITY_TO_ADDRESS_KINDS = {
     "code": ("symbol",),
@@ -189,19 +186,6 @@ def build_query_contract(query: str, profile: Any = None) -> QueryContract:
     )
 
 
-def exact_identifiers(query: str) -> list[str]:
-    """Extract literal exact identifiers from query text."""
-    identifiers: list[str] = []
-    seen: set[str] = set()
-    for match in EXACT_IDENTIFIER_PATTERN.finditer(query):
-        value = match.group(0).strip(".,;:()[]{}")
-        if value.lower() in seen:
-            continue
-        seen.add(value.lower())
-        identifiers.append(value)
-    return identifiers
-
-
 def normalize_text(value: str) -> str:
     """Normalize text for mechanical evidence matching."""
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
@@ -288,6 +272,7 @@ __all__ = [
     "EXACT_IDENTIFIER_PATTERN",
     "QueryContract",
     "build_query_contract",
+    "contains_exact_identifier",
     "exact_identifiers",
     "normalize_text",
     "required_modalities_for_obligation",

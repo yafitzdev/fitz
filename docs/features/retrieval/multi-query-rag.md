@@ -89,7 +89,7 @@ Leave `query_intelligence: null` for the default no-endpoint path.
 
 ## Related
 
-- [Query Expansion](query-expansion.md) — rule-based synonym/acronym
+- [Semantic Query Keywords](query-expansion.md) — managed-Qwen recall terms
   expansion; complements multi-query
 - [Sparse Search (FTS5 + bm25)](sparse-search.md) — what each
   sub-query actually hits

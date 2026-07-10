@@ -126,7 +126,7 @@ just because it looks similar.
 
 - [Sparse Search (FTS5 + bm25)](sparse-search.md) — the FTS5 + native
   `bm25()` retrieval that delivers exact-identifier matching
-- [Query Expansion](query-expansion.md) — handles synonyms and acronym
-  expansion (the soft-matching counterpart)
+- [Semantic Query Keywords](query-expansion.md) — model-proposed terms for
+  broader recall without declaring domain equivalence
 - [Multi-Query RAG](multi-query-rag.md) — long queries may contain
   multiple identifiers to match

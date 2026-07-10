@@ -62,8 +62,7 @@ False positives are acceptable because later stages filter and stop.
 
 Inputs:
 
-- the user's exact query terms
-- deterministic synonyms and acronyms
+- the user's literal query terms
 - managed Qwen semantic keywords for the query
 - deterministic query shape: narrow, broad, comparison, temporal, aggregation, or freshness-sensitive
 - typed retrieval units from KRAG: sections, code symbols, tables, files, summaries
@@ -75,7 +74,7 @@ Main retrieval legs:
 | SQLite FTS5 + `bm25()` | Default text recall over sections and summaries. |
 | Symbol/name search | Exact recall for functions, classes, methods, identifiers, error codes, and test IDs. |
 | Table metadata search | Recall over table names, schemas, columns, and row counts. |
-| Query expansion | Adds synonyms, acronyms, and Qwen semantic keywords. |
+| Semantic keywords | Adds managed-Qwen recall suggestions. |
 | Intent fanout | Adds side queries for comparison, temporal, aggregation, and freshness cases. |
 | Supplemental scan | Reads files that are registered but not fully query-ready yet. |
 
@@ -197,8 +196,7 @@ stage.
 |---|---|---|
 | Sparse BM25 / FTS5 | Recall | Cheap candidate generation. |
 | Keyword vocabulary | Recall | Exact identifiers, codes, acronyms, test IDs. |
-| Managed Qwen semantic keywords | Recall | Adds semantic aliases without embeddings. |
-| Query expansion | Recall | Deterministic synonyms and acronym expansion. |
+| Managed Qwen semantic keywords | Recall | Adds related recall terms without embeddings. |
 | Query rewriting | Recall | Fixes conversational or ambiguous phrasing before search. |
 | Multi-query decomposition | Recall | Bounded fanout for compound questions. |
 | Comparison detection | Recall | Ensures both compared entities enter the pool. |

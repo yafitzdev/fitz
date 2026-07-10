@@ -14,7 +14,7 @@
 [![Version](https://img.shields.io/badge/version-0.15.0-green.svg)](CHANGELOG.md)
 [![Coverage](https://img.shields.io/badge/coverage-99%25-brightgreen)](https://github.com/yafitzdev/fitz-sage)
 
-[EvidencePack](#evidencepack) • [Why `fitz-sage`?](#why-fitz-sage) • [Retrieval Intelligence](#retrieval-intelligence) • [Governance](#governance--know-what-you-dont-know) • [Documentation](#links) • [GitHub](https://github.com/yafitzdev/fitz-sage)
+[EvidencePack](#evidencepack) • [Why `fitz-sage`?](#why-fitz-sage) • [Retrieval Intelligence](#retrieval-intelligence) • [Governance](#governance--know-what-you-dont-know) • [Limitations](LIMITATIONS.md) • [Documentation](#links) • [GitHub](https://github.com/yafitzdev/fitz-sage)
 
 </div>
 
@@ -199,7 +199,7 @@ entity graph links, corpus summaries, and richer context expansion.
 | ✅ [**temporal-queries**](docs/features/retrieval/temporal-queries.md) | "What changed between Q1 and Q2?" | Temporal scope detection |
 | ✅ [**aggregation-queries**](docs/features/retrieval/aggregation-queries.md) | "List all the test cases that failed" | Exhaustive/list query handling |
 | ✅ [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What's the latest status on feature X?" | Recency and authority scoring |
-| ✅ [**query-expansion**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | Dictionary + managed-Qwen keyword expansion |
+| ✅ [**semantic-keywords**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | Managed-Qwen recall terms merged with literal query terms |
 | ✅ [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | Conversational context resolution |
 | ✅ [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ONNX cross-encoder reranker |
 
@@ -231,7 +231,7 @@ managed Qwen query keywords, and optional query intelligence.
 | Signal | What it means | Why it matters |
 |--------|---------------|----------------|
 | `query_type` / `analysis_type` | Narrow lookup, comparison, temporal, aggregation, broad overview, or general query shape. | Sets recall breadth and cutoff policy. |
-| `keywords` | Managed Qwen and deterministic semantic query terms. | Improves broad recall without embeddings. |
+| `keywords` | Managed Qwen suggestions and literal deterministic query terms. | Improves broad recall without embeddings. |
 | `strategy_weights` | Relative weight for code, section, table, and chunk retrieval. | Makes the first pass search the right evidence surfaces. |
 | `top_k` / `top_read` | How much candidate evidence Fitz should collect and read. | Keeps narrow lookups fast while giving broad or comparative questions enough coverage. |
 
@@ -244,7 +244,7 @@ signals tell you whether the result is usable.
 |--------|---------------|-------------------------|
 | `mode` | Runtime `AnswerMode`: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Gate generated answers, UI display, automation, or human review. |
 | `reasons` | Plain-language explanation for the verdict. | Show users why Fitz judged evidence sufficient, disputed, or insufficient. |
-| `stop_reason` | Why retrieval stopped: enough evidence, stable dispute, cutoff reached, retry exhausted, etc. | Route the next step: answer, retry, broaden search, or ask for more source material. |
+| `stop_reason` | Why retrieval stopped: Pyrrho verdict accepted, cutoff reached, retry exhausted, etc. | Route the next step: answer, retry, broaden search, or ask for more source material. |
 | `evidence_verdict` | Verdict: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Inspect the evidence judgment. |
 | `failure_mode` | Reason when evidence is insufficient or disputed. | Explain why the evidence cannot safely support a clean answer. |
 | `retrieval_intents` | Evidence intent metadata such as lookup, temporal resolution, comparison, or broad coverage. | Decide whether another retrieval pass should focus on coverage, time, lookup, or comparison. |
