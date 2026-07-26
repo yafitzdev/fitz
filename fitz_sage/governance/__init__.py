@@ -4,10 +4,10 @@ Epistemic governance.
 
 A single classifier decides whether retrieved sources support a confident
 answer (SUFFICIENT), contradict each other (DISPUTED), or simply don't
-contain enough information (INSUFFICIENT). The standard classifier is
-[pyrrho](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1), a ModernBERT
-classifier with v2 evidence-verdict, failure-mode, retrieval-intent, and
-evidence-kind heads.
+contain enough information (INSUFFICIENT). Pyrrho is a ModernBERT classifier
+with v2 evidence-verdict, failure-mode, retrieval-intent, and evidence-kind
+heads. Its historical remote package is quarantined; normal use requires an
+explicitly reviewed local package.
 
 Governance is mandatory in the standard product path. The ``governance:``
 config key declares which pyrrho classifier to use:
@@ -35,8 +35,8 @@ def create_governance(spec: str) -> Pyrrho:
     """Build a governance classifier from a config spec.
 
     Args:
-        spec: ``"pyrrho"`` (the default v2 classifier),
-            ``"pyrrho/<hf-model-id>"`` (a Pyrrho package), or
+        spec: ``"pyrrho"`` (blocked quarantined remote default),
+            ``"pyrrho/<hf-model-id>@<commit>"`` (an immutable remote package), or
             ``"pyrrho/<local-package-path>"`` (an unpacked Pyrrho package).
 
     Returns:

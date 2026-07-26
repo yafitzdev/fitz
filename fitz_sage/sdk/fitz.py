@@ -12,7 +12,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
-from fitz_sage.core import Answer, ConfigurationError, EvidencePack, Query, QueryError
+from fitz_sage.core import (
+    Answer,
+    ConfigurationError,
+    EvidencePack,
+    GovernanceReplay,
+    Query,
+    QueryError,
+    RetrievalRun,
+)
+from fitz_sage.core.collections import validate_collection_name
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -63,7 +72,7 @@ class fitz:
             auto_init: If True, auto-create a default config when none exists;
                 if False, raise ConfigurationError.
         """
-        self._collection = collection
+        self._collection = validate_collection_name(collection)
         self._config_path = Path(config_path) if config_path else None
         self._auto_init = auto_init
         self._engine: Optional["RetrievalEngine"] = None
@@ -151,6 +160,31 @@ class fitz:
             engine.point(self._resolve_source(source), self._collection)
             engine.wait_for_query_surface()
         return engine.evidence(Query(text=question, metadata=self._metadata(conversation_context)))
+
+    def trace(
+        self,
+        question: str,
+        source: Optional[Union[str, Path]] = None,
+        conversation_context: Optional["ConversationContext"] = None,
+    ) -> RetrievalRun:
+        """Execute governed retrieval and return a versioned execution record."""
+        if not question or not question.strip():
+            raise QueryError("Question cannot be empty")
+        engine = self._get_engine()
+        if source is not None:
+            engine.point(self._resolve_source(source), self._collection)
+            engine.wait_for_query_surface()
+        return engine.trace(Query(text=question, metadata=self._metadata(conversation_context)))
+
+    @staticmethod
+    def replay_governance(
+        run: RetrievalRun | str | Path,
+        governance: str | object | None = None,
+    ) -> GovernanceReplay:
+        """Replay governance over the frozen evidence in a content-bearing trace."""
+        from fitz_sage.runtime import replay_governance
+
+        return replay_governance(run, governance)
 
     def wait_for_indexing(self) -> None:
         """Block until background indexing reaches the query-ready keyword phase."""

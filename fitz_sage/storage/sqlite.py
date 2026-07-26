@@ -12,13 +12,13 @@ There is no server lifecycle to manage — the file *is* the database.
 from __future__ import annotations
 
 import atexit
-import re
 import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Optional
 
+from fitz_sage.core.collections import validate_collection_name
 from fitz_sage.core.paths import FitzPaths
 from fitz_sage.logging.logger import get_logger
 from fitz_sage.logging.tags import STORAGE
@@ -28,14 +28,6 @@ logger = get_logger(__name__)
 
 
 _DB_PREFIX = "fitz_"
-
-
-def _sanitize_collection_name(name: str) -> str:
-    """Sanitize collection name for use as a filename stem."""
-    sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", name)
-    if sanitized and not sanitized[0].isalpha():
-        sanitized = "c_" + sanitized
-    return sanitized.lower()
 
 
 def _configure_connection(conn: sqlite3.Connection) -> None:
@@ -106,7 +98,7 @@ class SqliteConnectionManager:
         if not self._started:
             self.start()
         assert self._storage_dir is not None
-        return self._storage_dir / f"{_DB_PREFIX}{_sanitize_collection_name(collection)}.db"
+        return self._storage_dir / f"{_DB_PREFIX}{validate_collection_name(collection)}.db"
 
     def list_collections(self) -> list[str]:
         """List existing collection names by scanning the storage directory."""

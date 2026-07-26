@@ -53,20 +53,6 @@ class TestContentReader:
         assert "import os" in results[0].content
         assert results[0].line_range is None
 
-    def test_read_chunk(self):
-        store = MagicMock()
-        reader = ContentReader(store)
-        addr = Address(
-            kind=AddressKind.CHUNK,
-            source_id="c1",
-            location="doc.pdf",
-            summary="A chunk",
-            metadata={"text": "Some chunk content"},
-        )
-        results = reader.read([addr], limit=5)
-        assert len(results) == 1
-        assert results[0].content == "Some chunk content"
-
     def test_read_missing_file(self):
         store = MagicMock()
         store.get.return_value = None

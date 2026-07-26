@@ -95,7 +95,7 @@ class ManifestEntry:
 class FileManifest:
     """Thread-safe manifest with JSON persistence.
 
-    Persisted at ~/.fitz/collections/{collection}/manifest.json.
+    Persisted at .fitz/collections/{collection}/manifest.json in the workspace.
     All mutations are guarded by a threading.Lock.
     """
 

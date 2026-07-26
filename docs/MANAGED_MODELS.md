@@ -4,13 +4,13 @@
 fitz-sage retrieval works without an API key or an external inference server.
 The standard retrieval path uses local CPU models.
 
-## Default Local Models
+## Local Models
 
 | Job | Model | Runtime | Why it exists |
 |---|---|---|---|
 | Enrichment and semantic query keywords | `onnx-community/Qwen3-0.6B-DQ-ONNX` (`qwen3-0.6b`) | `onnxruntime-genai`, CPU | Required metadata backbone for better recall. |
 | Reranking | `Alibaba-NLP/gte-reranker-modernbert-base` | raw `onnxruntime`, CPU | Cross-encoder precision over broad recall candidates. |
-| Governance | `yafitzdev/pyrrho-v2-nano-g1` | raw `onnxruntime`, CPU | Sufficiency/conflict/insufficiency classifier for ranked evidence prefixes with native v2 metadata. |
+| Governance | Explicitly reviewed local Pyrrho package required | raw `onnxruntime`, CPU | No remote artifact is currently approved; the historical `yafitzdev/pyrrho-v2-nano-g1` revision `948f0500b74871cfaec7689a01d4eab0dd516e1b` is quarantined. |
 
 None of these models require `optimum`, `llama.cpp`, GGUF, or an
 OpenAI-compatible server. Qwen uses ONNX Runtime GenAI; the reranker and Pyrrho
@@ -18,16 +18,16 @@ v2 load pre-built ONNX graphs through plain ONNX Runtime.
 
 ## Download Behavior
 
-Models are downloaded lazily from Hugging Face the first time a workflow needs
-them. Qwen and the reranker use the Hugging Face cache. Pyrrho uses Fitz's
-managed user cache under `~/.fitz/models/pyrrho/...` so Windows users do not need
-symlink privileges.
+Qwen and the reranker are downloaded lazily from Hugging Face and use the Hub
+cache. Normal Pyrrho use does not download a remote default: configure an
+explicitly reviewed local package. The managed Pyrrho cache is used only for
+immutable remote packages or deliberate forensic reproduction.
 
 | Model | Trigger |
 |---|---|
 | Qwen3 0.6B ONNX GenAI | First query or ingest that can use local enrichment or semantic query keywords. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
-| Pyrrho v2 | First governance cutoff evaluation. |
+| Pyrrho v2 | First governance cutoff evaluation; fails closed unless a reviewed local package is configured. |
 
 The CLI may print messages such as:
 
@@ -46,9 +46,9 @@ Run the standard local CPU path against a tiny generated corpus:
 python tools/smoke_local_retrieval.py
 ```
 
-The script initializes managed Qwen, indexes the corpus, and runs governed
-evidence queries so the reranker and Pyrrho path execute as well. It is a
-runtime smoke check, not a retrieval-quality benchmark.
+The script initializes managed Qwen and indexes the corpus. Its governed query
+path additionally requires an explicitly configured clean local Pyrrho package.
+It is a runtime smoke check, not a retrieval-quality benchmark.
 
 ## Offline and Air-Gapped Use
 
@@ -60,7 +60,7 @@ Warm the standard model set:
 ```bash
 python -c "from fitz_sage.llm.providers.onnx_chat import OnnxChat; OnnxChat().ensure_available(include_checksum=True)"
 python -c "from fitz_sage.llm.providers.onnx_reranker import OnnxReranker; OnnxReranker().rerank('warmup', ['one', 'two'])"
-python -c "from types import SimpleNamespace; from fitz_sage.governance import create_governance; create_governance('pyrrho').decide('warmup', [SimpleNamespace(content='warmup evidence', metadata={})])"
+python -c "from types import SimpleNamespace; from fitz_sage.governance import create_governance; create_governance('pyrrho/C:/reviewed/clean/pyrrho-package').decide('warmup', [SimpleNamespace(content='warmup evidence', metadata={})])"
 ```
 
 Copy both cache roots:
@@ -68,7 +68,7 @@ Copy both cache roots:
 | Cache | What it contains |
 |---|---|
 | Hugging Face cache (`HF_HOME`, or the platform default) | Qwen ONNX snapshot, reranker ONNX file, tokenizers, configs |
-| `~/.fitz/models/pyrrho/` | Managed Pyrrho ONNX package |
+| Reviewed local package path | Clean Pyrrho ONNX package selected by configuration |
 
 On the target machine, point `HF_HOME` at the copied Hugging Face cache and set
 Hugging Face offline mode:
@@ -78,16 +78,16 @@ export HF_HOME=/opt/fitz/hf-cache
 export HF_HUB_OFFLINE=1
 ```
 
-For Pyrrho, either copy `~/.fitz/models/pyrrho/` to the same Fitz home location
-or configure governance with the unpacked local package path:
+Copy the reviewed Pyrrho package to the target machine and configure its exact
+unpacked local path:
 
 ```yaml
-governance: pyrrho//opt/fitz/models/pyrrho/yafitzdev__pyrrho-v2-nano-g1
+governance: pyrrho//opt/fitz/models/pyrrho/reviewed-clean-release
 ```
 
 The double slash after `pyrrho/` is intentional for absolute Unix paths. On
 Windows, use a normal absolute path after the provider prefix, for example
-`pyrrho/C:\fitz\models\pyrrho\yafitzdev__pyrrho-v2-nano-g1`.
+`pyrrho/C:\fitz\models\pyrrho\reviewed-clean-release`.
 
 ## Qwen Enrichment
 

@@ -171,7 +171,7 @@ class GlmOcrParser(BaseParser):
                 size_counts[round(char["size"], 1)] += 1
         if not size_counts:
             return 10.0
-        return size_counts.most_common(1)[0][0]
+        return float(size_counts.most_common(1)[0][0])
 
     def _post_process_elements(self, elements: List[DocumentElement]) -> List[DocumentElement]:
         """Post-process: fix no-space titles, filter noise headings, deduplicate."""
@@ -398,7 +398,7 @@ class GlmOcrParser(BaseParser):
             timeout=60.0,
         )
         response.raise_for_status()
-        return response.json().get("response", "")
+        return str(response.json().get("response", ""))
 
     # --- GLM-OCR markdown output parsing (for OCR path) ---
 

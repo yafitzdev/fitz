@@ -13,9 +13,9 @@ When you ask questions like:
 Fitz detects the aggregation intent and adjusts retrieval to get comprehensive coverage:
 
 1. **Detects aggregation type**: LIST, COUNT, or UNIQUE
-2. **Expands retrieval**: Fetches 3-4x more chunks than normal
+2. **Expands retrieval**: Fetches 3-4x more source units than normal
 3. **Augments query**: Adds instructions for exhaustive results
-4. **Tags results**: Marks chunks with aggregation metadata for the answer generator
+4. **Tags results**: Marks source units with aggregation metadata for the answer generator
 
 ## Aggregation Types
 
@@ -41,7 +41,7 @@ Query: "List all the people mentioned in the documents"
     (include complete list of all people)"
          ↓
    [Expanded Retrieval]
-   Fetch 75 chunks instead of 25
+   Fetch 75 source units instead of 25
          ↓
    [Results Tagged]
    aggregation_type: LIST
@@ -52,16 +52,16 @@ Query: "List all the people mentioned in the documents"
 
 ```
 "List all test cases that failed"
-→ LIST: fetches 3x chunks to find all failed tests
+→ LIST: fetches 3x source units to find all failed tests
 
 "How many errors occurred in the authentication module?"
-→ COUNT: fetches 4x chunks for accurate counting
+→ COUNT: fetches 4x source units for accurate counting
 
 "What different types of reports are available?"
-→ UNIQUE: fetches 3x chunks to find all report types
+→ UNIQUE: fetches 3x source units to find all report types
 
 "Enumerate all the configuration options"
-→ LIST: fetches 3x chunks for comprehensive listing
+→ LIST: fetches 3x source units for comprehensive listing
 ```
 
 ## Technical Details

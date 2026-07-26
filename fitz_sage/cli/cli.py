@@ -99,6 +99,16 @@ def retrieve(
         help="Output format: text or json.",
     ),
     top_k: Optional[int] = typer.Option(None, "--top-k", help="Maximum evidence items to show."),
+    trace_path: Optional[Path] = typer.Option(
+        None,
+        "--trace",
+        help="Write a versioned retrieval execution record to this JSON file.",
+    ),
+    trace_content: bool = typer.Option(
+        False,
+        "--trace-content",
+        help="Include source content in the trace so governance can be replayed.",
+    ),
 ) -> None:
     """Retrieve governed evidence without answer synthesis."""
     from fitz_sage.cli.commands import retrieve as mod
@@ -110,6 +120,56 @@ def retrieve(
         engine=engine,
         output_format=output_format,
         top_k=top_k,
+        trace_path=trace_path,
+        trace_content=trace_content,
+    )
+
+
+@app.command("explain")
+def explain(
+    trace_file: Path = typer.Argument(..., help="Retrieval trace JSON file."),
+) -> None:
+    """Explain a recorded retrieval execution without rerunning it."""
+    from fitz_sage.cli.commands import runs as mod
+
+    mod.explain_command(trace_file)
+
+
+@app.command("replay")
+def replay(
+    trace_file: Path = typer.Argument(..., help="Content-bearing retrieval trace JSON file."),
+    governance: Optional[str] = typer.Option(
+        None,
+        "--governance",
+        "-g",
+        help="Governance provider/model spec. Defaults to the recorded provider.",
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write the replay result to this JSON file.",
+    ),
+    output_format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json.",
+    ),
+    include_content: bool = typer.Option(
+        False,
+        "--include-content",
+        help="Include selected source content in JSON output.",
+    ),
+) -> None:
+    """Replay governance over frozen evidence without rerunning retrieval."""
+    from fitz_sage.cli.commands import runs as mod
+
+    mod.replay_command(
+        trace_file,
+        governance=governance,
+        output=output,
+        output_format=output_format,
+        include_content=include_content,
     )
 
 

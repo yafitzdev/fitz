@@ -138,6 +138,39 @@ class TestFitzEvidence:
         engine.evidence.assert_called_once()
 
 
+class TestFitzTrace:
+    """Tests for fitz.trace() and governance replay."""
+
+    def test_trace_points_source_and_returns_execution_record(self, tmp_path):
+        from fitz_sage.core import RetrievalRun
+        from fitz_sage.sdk import fitz
+
+        config_path = tmp_path / "config.yaml"
+        source = tmp_path / "docs"
+        source.mkdir()
+        _write_test_config(config_path)
+
+        expected = MagicMock(spec=RetrievalRun)
+        engine = MagicMock()
+        engine.trace.return_value = expected
+        f = fitz(config_path=config_path)
+        f._engine = engine
+
+        result = f.trace("question", source=source)
+
+        assert result is expected
+        engine.point.assert_called_once_with(source.resolve(), "default")
+        engine.wait_for_query_surface.assert_called_once()
+        engine.trace.assert_called_once()
+
+    def test_trace_rejects_empty_question(self):
+        from fitz_sage.core import QueryError
+        from fitz_sage.sdk import fitz
+
+        with pytest.raises(QueryError, match="cannot be empty"):
+            fitz().trace(" ")
+
+
 class TestFitzExports:
     """Tests for SDK exports."""
 
@@ -167,6 +200,15 @@ class TestFitzExports:
         assert hasattr(fitz_sage, "evidence")
         assert callable(fitz_sage.evidence)
 
+    def test_trace_contracts_exported_from_top_level(self):
+        """Execution records and module-level trace are public API."""
+        import fitz_sage
+        from fitz_sage import GovernanceReplay, RetrievalRun
+
+        assert RetrievalRun is not None
+        assert GovernanceReplay is not None
+        assert callable(fitz_sage.trace)
+
     def test_evidence_types_exported_from_top_level(self):
         """Test evidence contracts are exported from fitz_sage."""
         from fitz_sage import EvidenceItem, EvidencePack
@@ -188,3 +230,17 @@ class TestFitzExports:
 
         assert result is expected
         sdk.evidence.assert_called_once_with("question", source="./docs")
+
+    def test_module_level_trace_delegates_to_default_fitz(self, monkeypatch):
+        import fitz_sage
+        from fitz_sage.core import RetrievalRun
+
+        expected = MagicMock(spec=RetrievalRun)
+        sdk = MagicMock()
+        sdk.trace.return_value = expected
+        monkeypatch.setattr(fitz_sage, "_get_default_fitz", lambda: sdk)
+
+        result = fitz_sage.trace("question", source="./docs")
+
+        assert result is expected
+        sdk.trace.assert_called_once_with("question", source="./docs")

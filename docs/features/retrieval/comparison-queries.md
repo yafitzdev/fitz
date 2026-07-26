@@ -58,8 +58,8 @@ Detection rides the single batched `QueryBatcher` LLM call (one call for analysi
 ### Multi-Entity Retrieval
 
 1. **Parallel search** - Execute separate BM25/FTS5 searches for each entity
-2. **Merge results** - Combine chunks from both searches
-3. **Deduplicate** - Remove overlapping chunks (e.g., docs mentioning both)
+2. **Merge results** - Combine source units from both searches
+3. **Deduplicate** - Remove overlapping units (e.g., sections mentioning both)
 4. **Answer generation** - LLM receives balanced context from both entities
 
 ## Key Design Decisions
@@ -117,7 +117,7 @@ Detection is LLM-based. The `ComparisonModule` contributes its prompt fragment t
 - Search 1: "React performance" → 5 React docs
 - Search 2: "Vue performance" → 5 Vue docs
 - Search 3: "Compare React vs Vue performance" → 5 cross-comparison docs
-- Merged: 10-15 unique chunks (balanced React + Vue content)
+- Merged: 10-15 unique source units (balanced React + Vue content)
 - Answer: "React uses a virtual DOM with reconciliation, achieving X ms render times. Vue uses a reactivity system with dependency tracking, achieving Y ms render times. Both are performant, but React excels at..."
 
 ## Detected Comparison Patterns
@@ -164,7 +164,7 @@ Detection is LLM-based. The `ComparisonModule` contributes its prompt fragment t
 
 - **Latency:** +0-500ms (parallel searches are concurrent, minimal overhead)
 - **Retrieval count:** 2-3x normal (entity1 + entity2 + original query)
-- **LLM context:** Larger context (more chunks), slightly higher cost
+- **LLM context:** Larger context (more source units), slightly higher cost
 
 ## Related Features
 

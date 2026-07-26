@@ -8,7 +8,7 @@ OpenAI-compatible HTTP endpoints, and SQLite + FTS5 storage.
 
 ## Quick Diagnostics
 
-Open the config file directly at `~/.fitz/config/fitz_krag.yaml`. For
+Open the workspace config file directly at `.fitz/config.yaml`. For
 `fitz query` / `fitz retrieve`, verify the collection and indexing status. For
 `fitz answer`, also verify `synthesizer`,
 `chat_base_url`, and the API-key environment variable if your endpoint
@@ -157,23 +157,22 @@ RateLimitError: Rate limit exceeded
 
 ---
 
-### Empty Chunks
+### No Indexed Units
 
 **Error:**
 ```
-ValueError: No chunks created from documents
+ValueError: No indexable content created from documents
 ```
 
 **Causes:**
 - Documents are empty or unreadable.
 - Parser failed silently (enable DEBUG logging to see why).
-- All content filtered out by chunking rules.
+- The parser returned no indexable sections, symbols, or tables.
 
 **Solution:**
 
 1. Check document contents manually.
-2. Enable DEBUG logging by setting `log_level: DEBUG` in
-   `~/.fitz/config/fitz_krag.yaml`, then re-run the query.
+2. Enable DEBUG logging with `FITZ_LOG_LEVEL=DEBUG`, then re-run the query.
 3. Check supported formats in [INGESTION.md](INGESTION.md).
 
 ---
@@ -212,8 +211,8 @@ TimeoutError: Request timed out
 **Solution:**
 
 1. Check network connection.
-2. For large documents, lower `chunk_size` or `top_addresses` so
-   each LLM call stays within timeout.
+2. For large documents, lower `top_addresses` so each optional endpoint call
+   receives less work.
 3. Switch to a faster model for the synthesizer.
 
 ---
@@ -222,15 +221,19 @@ TimeoutError: Request timed out
 
 ### Enable Debug Logging
 
-```yaml
-# In ~/.fitz/config/fitz_krag.yaml
-log_level: DEBUG
+```bash
+# Linux / macOS
+FITZ_LOG_LEVEL=DEBUG fitz query "test" --source ./docs
+
+# PowerShell
+$env:FITZ_LOG_LEVEL = "DEBUG"
+fitz query "test" --source ./docs
 ```
 
 ### Inspect State File
 
 ```bash
-cat .fitz/ingest_state.json | python -m json.tool
+python -m json.tool .fitz/collections/<collection>/manifest.json
 ```
 
 ### Test Chat Endpoint Directly
@@ -288,7 +291,7 @@ APIError
 
 ## Getting Help
 
-1. **Check config:** inspect `~/.fitz/config/fitz_krag.yaml` directly
+1. **Check config:** inspect `.fitz/config.yaml` directly
 2. **Check logs:** enable DEBUG level
 3. **Report issues:** [GitHub Issues](https://github.com/yafitzdev/fitz-sage/issues)
 
@@ -297,7 +300,7 @@ When reporting, include:
 - Python version: `python --version`
 - OS
 - Full traceback
-- Effective config (the contents of `~/.fitz/config/fitz_krag.yaml`, with secrets redacted)
+- Effective config (the contents of `.fitz/config.yaml`, with secrets redacted)
 
 ---
 

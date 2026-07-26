@@ -3,10 +3,10 @@
 Parsed text cache for rich documents (PDF, DOCX, PPTX, HTML).
 
 Caches parsed text by content hash so documents are only parsed once.
-Cache lives at ~/.fitz/collections/{col}/parsed/{content_hash}.txt.
+Cache lives at .fitz/collections/{col}/parsed/{content_hash}.txt.
 
 Also caches heading structure from Docling parses:
-    ~/.fitz/collections/{col}/parsed/{content_hash}.headings.json
+    .fitz/collections/{col}/parsed/{content_hash}.headings.json
 
 PDF strategy:
   1. Try fast native text extraction via pypdfium2 (<1s for 100 pages)
@@ -47,25 +47,25 @@ def get_parsed_text(
     cache_path = cache_dir / f"{content_hash}.txt"
     if cache_path.exists():
         try:
-            text = cache_path.read_text(encoding="utf-8")
-            if text.strip():
-                return text
+            cached_text = cache_path.read_text(encoding="utf-8")
+            if cached_text.strip():
+                return cached_text
         except Exception:
             pass  # Cache corrupt, re-parse
 
     # Parse — try fast extraction for PDFs, Docling for everything else
     if path.suffix.lower() == ".pdf":
-        text, headings = _parse_pdf_fast(path)
+        parsed_text, headings = _parse_pdf_fast(path)
     else:
-        text, headings = _parse_docling(path)
+        parsed_text, headings = _parse_docling(path)
 
-    if not text:
+    if not parsed_text:
         return None
 
     # Save to cache
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(text, encoding="utf-8")
+        cache_path.write_text(parsed_text, encoding="utf-8")
     except Exception as e:
         logger.debug(f"Failed to cache parsed text for {path.name}: {e}")
 
@@ -77,10 +77,19 @@ def get_parsed_text(
         except Exception as e:
             logger.debug(f"Failed to cache headings for {path.name}: {e}")
 
+    return parsed_text
+
+
+def parse_document_text(path: Path) -> str | None:
+    """Parse a rich document without persisting a cache entry."""
+    if path.suffix.lower() == ".pdf":
+        text, _ = _parse_pdf_fast(path)
+    else:
+        text, _ = _parse_docling(path)
     return text
 
 
-def get_parsed_headings(content_hash: str, cache_dir: Path) -> list[dict]:
+def get_parsed_headings(content_hash: str, cache_dir: Path) -> list[dict[str, object]]:
     """Read cached headings for a rich document.
 
     Returns:
@@ -174,11 +183,11 @@ def _parse_docling(path: Path) -> tuple[str | None, list[dict] | None]:
             _suppress_parser_logs()
             _parser_logs_suppressed = True
 
-        text = parsed.full_text
-        text = text if text and text.strip() else None
+        parsed_text: str | None = parsed.full_text
+        parsed_text = parsed_text if parsed_text and parsed_text.strip() else None
 
         # Extract headings from structured elements
-        headings: list[dict] | None = None
+        headings: list[dict[str, object]] | None = None
         if parsed.elements:
             heading_list = [
                 {"title": el.content.strip(), "level": el.level or 1}
@@ -188,7 +197,7 @@ def _parse_docling(path: Path) -> tuple[str | None, list[dict] | None]:
             if heading_list:
                 headings = heading_list
 
-        return text, headings
+        return parsed_text, headings
     except Exception as e:
         if not _parser_logs_suppressed:
             import logging as _logging

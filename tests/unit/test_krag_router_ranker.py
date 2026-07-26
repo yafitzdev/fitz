@@ -56,7 +56,7 @@ def _code_profile(
 ) -> RetrievalProfile:
     """RetrievalProfile with CODE-like weights."""
     return RetrievalProfile(
-        strategy_weights={"code": 0.8, "section": 0.1, "table": 0.05, "chunk": 0.05},
+        strategy_weights={"code": 0.83, "section": 0.11, "table": 0.06},
         entities=entities,
         top_k=top_k,
         analysis_type="code",
@@ -67,13 +67,13 @@ def _code_profile(
 def _custom_weight_profile(
     code: float,
     section: float,
-    chunk: float,
+    table: float,
     entities: tuple[str, ...] = (),
     top_k: int = 10,
 ) -> RetrievalProfile:
     """Build a RetrievalProfile with custom strategy weights."""
     return RetrievalProfile(
-        strategy_weights={"code": code, "section": section, "chunk": chunk},
+        strategy_weights={"code": code, "section": section, "table": table},
         entities=entities,
         top_k=top_k,
         analysis_type="general",
@@ -176,7 +176,7 @@ class TestRetrievalRouter:
         )
 
         # Custom weights: section weight is 0.04 (below 0.05 threshold)
-        profile = _custom_weight_profile(code=0.9, section=0.04, chunk=0.04)
+        profile = _custom_weight_profile(code=0.9, section=0.04, table=0.06)
 
         result = router.retrieve("find func", profile)
 
@@ -358,15 +358,15 @@ class TestCrossStrategyRanker:
     def test_rank_applies_weights(self):
         """CODE profile boosts SYMBOL addresses via higher weight."""
         sym_addr = _addr(AddressKind.SYMBOL, score=0.5, location="func")
-        chunk_addr = _addr(AddressKind.CHUNK, score=0.5, location="chunk1")
+        section_addr = _addr(AddressKind.SECTION, score=0.5, location="section1")
 
         profile = _code_profile()
-        # CODE weights: code=0.8, section=0.1, chunk=0.05
-        # sym: 0.5 * 0.8 = 0.40,  chunk: 0.5 * 0.05 = 0.025
-        result = self.ranker.rank([chunk_addr, sym_addr], profile)
+        # CODE weights: code=0.8, section=0.1
+        # sym: 0.5 * 0.8 = 0.40, section: 0.5 * 0.1 = 0.05
+        result = self.ranker.rank([section_addr, sym_addr], profile)
 
         assert result[0].kind == AddressKind.SYMBOL
-        assert result[1].kind == AddressKind.CHUNK
+        assert result[1].kind == AddressKind.SECTION
 
     # -- test_rank_entity_match_bonus_in_location -------------------------
 

@@ -195,7 +195,7 @@ class SectionStore:
         store_utils.update_enrichment_by_file(self._cm, self._collection, TABLE, enriched_dicts)
 
     def get_corpus_summaries(self) -> list[dict[str, Any]]:
-        """Fetch all L2 corpus-level summary chunks for this collection."""
+        """Fetch all L2 corpus-level summary sections for this collection."""
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
                    content, summary, parent_section_id, position, keywords, entities, metadata

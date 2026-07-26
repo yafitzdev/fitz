@@ -67,7 +67,11 @@ class PromptMixin:
             if not must_exist or path.exists():
                 return path
             else:
-                self.error(f"Path does not exist: {path}")
+                error = getattr(self, "error", None)
+                if callable(error):
+                    error(f"Path does not exist: {path}")
+                else:
+                    print(f"Error: Path does not exist: {path}")
                 if not self.prompt_confirm("Try again?", default=True):
                     raise typer.Exit(1)
 

@@ -317,6 +317,8 @@ class TableQueryHandler:
         )
         prompt = prompt + error_context
 
+        if self._chat is None:
+            raise RuntimeError("SQL generation requires a configured chat provider")
         response = self._chat.chat([{"role": "user", "content": prompt}])
         return self._extract_sql(response)
 

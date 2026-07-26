@@ -7,7 +7,6 @@ No LLM calls. Runs in <500ms for 100 files.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 import uuid
@@ -21,6 +20,7 @@ from fitz_sage.engines.fitz_krag.progressive.manifest import (
     ManifestHeading,
     ManifestSymbol,
 )
+from fitz_sage.ingestion.hashing import compute_bytes_hash
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
@@ -116,7 +116,7 @@ class ManifestBuilder:
                     logger.warning(f"Cannot read {abs_path}: {e}")
                     continue
 
-                content_hash = hashlib.sha256(raw_bytes).hexdigest()
+                content_hash = compute_bytes_hash(raw_bytes)
 
                 # Ensure parsed text is cached (cheap if already cached)
                 cache_file = cache_dir / f"{content_hash}.txt"
@@ -135,8 +135,9 @@ class ManifestBuilder:
                 )
 
                 heading_dicts = get_parsed_headings(content_hash, cache_dir)
-                headings = [
-                    ManifestHeading(title=h["title"], level=h["level"]) for h in heading_dicts
+                rich_headings = [
+                    ManifestHeading(title=str(h["title"]), level=int(str(h["level"])))
+                    for h in heading_dicts
                 ]
 
                 file_id = existing_entry.file_id if existing_entry else str(uuid.uuid4())
@@ -149,7 +150,7 @@ class ManifestBuilder:
                     size_bytes=len(raw_bytes),
                     state=FileState.REGISTERED,
                     symbols=[],
-                    headings=headings,
+                    headings=rich_headings,
                 )
                 manifest.add(entry)
                 continue
@@ -161,7 +162,7 @@ class ManifestBuilder:
                 logger.warning(f"Cannot read {abs_path}: {e}")
                 continue
 
-            content_hash = hashlib.sha256(content.encode()).hexdigest()
+            content_hash = compute_bytes_hash(content.encode())
 
             # Re-add unchanged files (manifest was cleared, so we must re-add)
             existing_entry = existing.get(rel_path)

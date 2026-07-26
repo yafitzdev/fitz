@@ -1,26 +1,25 @@
 # .github/workflows/mutation.yml
 #
-# Mutation Testing for Fitz - Split across 3 days
-# Sun: guardrails/, Mon: paths/, Tue: core/*.py
+# Mutation testing for three critical production boundaries.
 
 name: Mutation Testing
 
 on:
   schedule:
-    - cron: "0 3 * * 0"  # Sunday: guardrails
-    - cron: "0 3 * * 1"  # Monday: paths
-    - cron: "0 3 * * 2"  # Tuesday: core-files
+    - cron: "0 3 * * 0"  # Sunday: evidence governance
+    - cron: "0 3 * * 1"  # Monday: query planning
+    - cron: "0 3 * * 2"  # Tuesday: ingestion identity
   workflow_dispatch:
     inputs:
       target:
         description: 'Which part to test'
         required: true
-        default: 'guardrails'
+        default: 'evidence'
         type: choice
         options:
-          - guardrails
-          - paths
-          - core-files
+          - evidence
+          - query
+          - ingestion
 
 jobs:
   mutation:
@@ -39,10 +38,10 @@ jobs:
           else
             DAY=$(date +%w)
             case $DAY in
-              0) TARGET="guardrails" ;;
-              1) TARGET="paths" ;;
-              2) TARGET="core-files" ;;
-              *) TARGET="guardrails" ;;
+              0) TARGET="evidence" ;;
+              1) TARGET="query" ;;
+              2) TARGET="ingestion" ;;
+              *) TARGET="evidence" ;;
             esac
           fi
           echo "target=$TARGET" >> $GITHUB_OUTPUT
@@ -68,25 +67,25 @@ jobs:
 
       - name: Run mutation tests
         id: mutation
-        continue-on-error: true
         run: |
           TARGET="${{ steps.target.outputs.target }}"
 
           case $TARGET in
-            guardrails) PATHS="fitz_sage/engines/fitz_krag/guardrails/" ;;
-            paths) PATHS="fitz_sage/core/paths/" ;;
-            core-files) PATHS="fitz_sage/core/answer.py,fitz_sage/core/answer_mode.py,fitz_sage/core/chunk.py,fitz_sage/core/config.py,fitz_sage/core/constants.py,fitz_sage/core/constraints.py,fitz_sage/core/detect.py,fitz_sage/core/document.py,fitz_sage/core/engine.py,fitz_sage/core/http.py,fitz_sage/core/registry.py,fitz_sage/core/utils.py" ;;
+            evidence) PATHS="fitz_sage/engines/fitz_krag/evidence_contract.py,fitz_sage/engines/fitz_krag/evidence_compiler.py,fitz_sage/engines/fitz_krag/evidence_closure.py,fitz_sage/engines/fitz_krag/governance_cutoff.py" ;;
+            query) PATHS="fitz_sage/engines/fitz_krag/query_planner.py,fitz_sage/engines/fitz_krag/retrieval_profile.py,fitz_sage/engines/fitz_krag/query_pipeline.py" ;;
+            ingestion) PATHS="fitz_sage/ingestion/hashing.py,fitz_sage/engines/fitz_krag/progressive/manifest.py" ;;
           esac
 
           echo "Target: $TARGET"
           echo "Paths: $PATHS"
 
-          # Run mutmut, capture output, only show last 30 lines to reduce spam
+          # Pipefail is enabled by the GitHub Actions shell, so mutmut errors
+          # and timeouts fail the job while tee still preserves the log.
           timeout 21600 python -m mutmut run \
             --paths-to-mutate "$PATHS" \
             --tests-dir tests/ \
             --runner "python -m pytest tests/unit/ tests/integration/ -x -q --tb=no" \
-            --CI 2>&1 | tee mutmut_output.log | grep -E '(^[0-9]|🎉|🙁|===|Error|FAILED)' | tail -50 || true
+            --CI 2>&1 | tee mutmut_output.log
 
           echo ""
           echo "=== Final Status ==="
@@ -124,9 +123,11 @@ jobs:
           python -m mutmut results 2>&1 | head -100 >> mutation_summary.txt || true
 
       - name: Generate HTML report
+        if: always()
         run: python -m mutmut html 2>/dev/null || true
 
       - name: Upload report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mutation-${{ steps.target.outputs.target }}
@@ -136,6 +137,7 @@ jobs:
           retention-days: 30
 
       - name: Summary
+        if: always()
         run: |
           echo "## Mutation Testing: ${{ steps.mutation.outputs.target }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

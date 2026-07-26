@@ -50,6 +50,23 @@ def test_pyrrho_decision_metadata_ignores_removed_heads_even_if_present():
     assert removed_key not in metadata
 
 
+def test_pyrrho_decision_metadata_exposes_consistency_and_truncation_fallbacks():
+    decision = _decision(AnswerMode.INSUFFICIENT)
+    object.__setattr__(decision, "input_tokens", 2050)
+    object.__setattr__(decision, "max_input_tokens", 2048)
+    object.__setattr__(decision, "input_truncated", True)
+    object.__setattr__(decision, "used_consistency_fallback", True)
+    object.__setattr__(decision, "consistency_reason", "contradictory heads")
+    object.__setattr__(decision, "pre_consistency_pair", ("INSUFFICIENT", "none"))
+
+    metadata = pyrrho_decision_metadata(AnswerMode.INSUFFICIENT, decision)
+
+    assert metadata["input_tokens"] == 2050
+    assert metadata["input_truncated"] is True
+    assert metadata["used_consistency_fallback"] is True
+    assert metadata["pre_consistency_pair"] == ["INSUFFICIENT", "none"]
+
+
 def test_evidence_compiler_floor_delays_sufficient_stop():
     """Compiler-required sources can force Pyrrho to see enough ranked evidence."""
     results = [

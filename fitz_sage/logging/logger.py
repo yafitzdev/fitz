@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextvars
 import logging
+import os
 import sys
 
 DEFAULT_FORMAT = "[%(levelname)s] %(name)s%(query_id)s — %(message)s"
@@ -36,22 +37,33 @@ class _QueryContextFilter(logging.Filter):
         return True
 
 
+class _DynamicStderrHandler(logging.StreamHandler):
+    """Resolve stderr at emit time so redirected or captured streams do not go stale."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.stream = sys.stderr
+        super().emit(record)
+
+
 def configure_logging(
-    level: int = logging.WARNING,
+    level: int | str | None = None,
     fmt: str = DEFAULT_FORMAT,
-    stream=sys.stderr,
+    stream=None,
 ) -> None:
     """Install the root logging handler. Idempotent — safe to call repeatedly.
 
     Call once early at an application entrypoint (CLI / API server).
     """
+    configured_level: int | str = (
+        level if level is not None else os.getenv("FITZ_LOG_LEVEL", "WARNING")
+    )
     root = logging.getLogger()
     if not root.handlers:
-        handler = logging.StreamHandler(stream)
+        handler = logging.StreamHandler(stream) if stream is not None else _DynamicStderrHandler()
         handler.setFormatter(logging.Formatter(fmt))
         handler.addFilter(_QueryContextFilter())
         root.addHandler(handler)
-    root.setLevel(level)
+    root.setLevel(configured_level)
 
 
 def set_query_context(query_id: str, collection: str | None = None, **kwargs) -> None:

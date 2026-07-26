@@ -51,11 +51,9 @@ def _make_config(**overrides) -> FitzKragConfig:
 _make_engine = build_mock_engine
 
 
-def _make_query(text: str = "How does auth work?") -> MagicMock:
-    """Return a mock Query with the given text."""
-    q = MagicMock(name="query")
-    q.text = text
-    return q
+def _make_query(text: str = "How does auth work?") -> Query:
+    """Return a real query so metadata defaults match the public contract."""
+    return Query(text=text)
 
 
 def _decision(
@@ -207,6 +205,17 @@ class TestEngineInit:
         # Config stored correctly
         assert engine.config is config
 
+    def test_load_same_collection_does_not_reinitialize_components(self, _patches):
+        """The common create-then-load lifecycle initializes components once."""
+        config = _make_config(collection="default")
+        engine = FitzKragEngine(config)
+
+        with patch.object(engine, "_try_load_persisted_manifest"):
+            engine.load("default")
+
+        _patches["ensure_schema"].assert_called_once()
+        _patches["RetrievalRouter"].assert_called_once()
+
     def test_init_creates_synthesizer_when_configured(self, _patches):
         """A synthesizer provider creates the answer generator explicitly."""
         config = _make_config(synthesizer="endpoint/qwen2.5-7b-instruct")
@@ -307,29 +316,15 @@ class TestAnswer:
     """Tests for the answer() pipeline."""
 
     def test_answer_full_flow(self):
-        """Happy path: every stage returns valid data."""
+        """Synthesis consumes the same governed evidence prefix as evidence()."""
         engine = _make_engine()
         query = _make_query(
             "What does the login function do when the user provides invalid credentials?"
         )
-
-        # Wire up the pipeline stages
-        address_1 = MagicMock(name="addr1")
-        address_2 = MagicMock(name="addr2")
-        engine._retrieval_router.retrieve.return_value = [
-            address_1,
-            address_2,
-        ]
-
-        read_1 = MagicMock(name="read1")
-        engine._reader.read.return_value = [read_1]
-
-        expanded = [MagicMock(name="expanded1")]
-        engine._expander.expand.return_value = expanded
-
-        # Table handler passes through (side_effect from _make_engine)
-
-        context = MagicMock(name="context")
+        addresses, results = _evidence_results(2)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        context = "governed context"
         engine._assembler.assemble.return_value = context
 
         expected_answer = Answer(
@@ -339,49 +334,39 @@ class TestAnswer:
         )
         engine._synthesizer.generate.return_value = expected_answer
 
-        # Execute
         result = engine.answer(query)
 
-        # Verify each stage called with correct args
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
+        assert engine._retrieval_router.retrieve.call_count >= 1
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == query.text
         from fitz_sage.engines.fitz_krag.retrieval_profile import RetrievalProfile
 
         assert isinstance(call_args[0][1], RetrievalProfile)
         assert call_args[1]["rewrite_result"] is None
-        engine._reader.read.assert_called_once_with(
-            [address_1, address_2],
+        assert engine._reader.read.call_args_list[0] == call(
+            addresses,
             engine._config.top_read,
         )
-        engine._expander.expand.assert_called_once_with([read_1], entity_expansion_limit=3)
-        engine._table_handler.process.assert_called_once_with(
+        assert engine._expander.expand.call_count >= 1
+        assert engine._table_handler.process.call_args_list[0] == call(
             query.text,
-            expanded,
+            results,
             allow_sql_generation=True,
         )
-        engine._assembler.assemble.assert_called_once_with(
-            query.text,
-            expanded,
-        )
-        from fitz_sage.core.answer_mode import AnswerMode
+        selected = engine._synthesizer.generate.call_args.args[2]
+        engine._assembler.assemble.assert_called_once_with(query.text, selected)
 
         engine._synthesizer.generate.assert_called_once_with(
             query.text,
             context,
-            expanded,
+            selected,
             answer_mode=AnswerMode.SUFFICIENT,
             gap_context=None,
             conflict_context=None,
         )
 
         assert result is expected_answer
-        assert result.metadata["pyrrho"]["mode"] == "sufficient"
-        assert result.metadata["pyrrho"]["probabilities"] == {
-            "insufficient": 0.1,
-            "disputed": 0.1,
-            "sufficient": 0.8,
-        }
+        assert result.metadata["governance_cutoff"]["mode"] == "sufficient"
         assert result.metadata["query_profile"]["profile"]["top_k"] == engine._config.top_addresses
 
     def test_answer_uses_no_chat_query_planner_by_default(self):
@@ -390,11 +375,11 @@ class TestAnswer:
         query = _make_query("Compare Q1 2024 vs Q2 2024 API failures")
         engine._query_batcher.batch_classify.side_effect = AssertionError("chat prep called")
 
-        address = MagicMock(name="addr")
-        engine._retrieval_router.retrieve.return_value = [address]
-        read_result = MagicMock(name="read")
-        engine._reader.read.return_value = [read_result]
-        engine._expander.expand.return_value = [read_result]
+        addresses, results = _evidence_results(2)
+        results[0].content = "Q1 2024 API failures totaled 8."
+        results[1].content = "Q2 2024 API failures totaled 5."
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         expected = Answer(text="Answer.", provenance=[], metadata={})
         engine._synthesizer.generate.return_value = expected
@@ -415,7 +400,7 @@ class TestAnswer:
         engine = _make_engine()
 
         for blank in ("", "   ", "\t\n"):
-            q = _make_query(blank)
+            q = MagicMock(text=blank, metadata={})
             with pytest.raises(QueryError, match="empty"):
                 engine.answer(q)
 
@@ -499,9 +484,9 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-        engine._reader.read.return_value = [MagicMock()]
-        engine._expander.expand.return_value = [MagicMock()]
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError(
             "generation failed: LLM returned empty"
@@ -517,9 +502,9 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-        engine._reader.read.return_value = [MagicMock()]
-        engine._expander.expand.return_value = [MagicMock()]
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError("llm api rate limit exceeded")
 
@@ -533,9 +518,9 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-        engine._reader.read.return_value = [MagicMock()]
-        engine._expander.expand.return_value = [MagicMock()]
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError("unexpected null pointer")
 
@@ -543,20 +528,24 @@ class TestAnswer:
             engine.answer(query)
 
     def test_answer_with_table_results(self):
-        """Table handler is invoked after expansion."""
+        """Table synthesis uses deterministic table evidence from the governed path."""
         engine = _make_engine()
         query = _make_query("what is the average salary?")
-
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-
-        read_result = MagicMock(name="table_read_result")
+        address = Address(
+            kind=AddressKind.TABLE,
+            source_id="table-1",
+            location="salaries",
+            summary="Salary table",
+            score=0.9,
+        )
+        read_result = ReadResult(
+            address=address,
+            content="| employee | salary |\n| A | 50000 |",
+            file_path="salaries.csv",
+        )
+        engine._retrieval_router.retrieve.return_value = [address]
         engine._reader.read.return_value = [read_result]
-
-        expanded = [read_result]
-        engine._expander.expand.return_value = expanded
-
-        # Override side_effect for this test to verify table_handler is called
-        augmented = [MagicMock(name="augmented")]
+        augmented = [read_result]
         engine._table_handler.process.side_effect = None
         engine._table_handler.process.return_value = augmented
 
@@ -569,12 +558,19 @@ class TestAnswer:
 
         engine.answer(query)
 
-        engine._table_handler.process.assert_called_once_with(
+        assert engine._table_handler.process.call_args_list[0] == call(
             query.text,
-            expanded,
+            [read_result],
             allow_sql_generation=True,
         )
-        engine._assembler.assemble.assert_called_once_with(query.text, augmented)
+        assert all(
+            invocation.kwargs["allow_sql_generation"] is True
+            for invocation in engine._table_handler.process.call_args_list
+        )
+        assembled_results = engine._assembler.assemble.call_args.args[1]
+        synthesized_results = engine._synthesizer.generate.call_args.args[2]
+        assert assembled_results == synthesized_results
+        assert [result.content for result in assembled_results] == [read_result.content]
 
 
 # ---------------------------------------------------------------------------
@@ -585,18 +581,17 @@ class TestAnswer:
 class TestEvidence:
     """Tests for retrieval-first evidence packs."""
 
-    def test_evidence_skips_chat_prep_synthesis_and_table_sql(self):
-        """Evidence mode uses deterministic retrieval prep and does not synthesize."""
+    def test_evidence_skips_chat_prep_and_synthesis_but_allows_table_queries(self):
+        """Evidence uses deterministic prep, runs table retrieval, and does not synthesize."""
         engine = _make_engine()
         engine._query_batcher.batch_classify.side_effect = AssertionError("chat prep called")
         engine._synthesizer.generate.side_effect = AssertionError("synthesis called")
 
-        def _deterministic_table_only(query, results, *, allow_sql_generation=True):
-            if allow_sql_generation:
-                raise AssertionError("table SQL called")
+        def _table_query(query, results, *, allow_sql_generation=True):
+            assert allow_sql_generation is True
             return results
 
-        engine._table_handler.process.side_effect = _deterministic_table_only
+        engine._table_handler.process.side_effect = _table_query
 
         address = Address(
             kind=AddressKind.SECTION,
@@ -630,10 +625,10 @@ class TestEvidence:
         assert pack.items[0].address_kind == "section"
         engine._query_batcher.batch_classify.assert_not_called()
         engine._synthesizer.generate.assert_not_called()
-        engine._table_handler.process.assert_called_once_with(
+        assert engine._table_handler.process.call_args_list[0] == call(
             "Which test case failed in Sprint 47?",
             [result],
-            allow_sql_generation=False,
+            allow_sql_generation=True,
         )
 
     def test_evidence_adds_semantic_keywords_to_broad_recall_profile(self):
@@ -757,7 +752,10 @@ class TestEvidence:
         second_contexts = engine._governance.decide.call_args_list[1].args[1]
         assert len(first_contexts) == 1
         assert len(second_contexts) == 2
-        engine._expander.expand.assert_not_called()
+        engine._expander.expand.assert_called_once_with(
+            results,
+            entity_expansion_limit=3,
+        )
 
     def test_broad_query_requires_minimum_sufficient_window(self):
         """Pyrrho broad-answer plans do not stop on a top-1 sufficient verdict."""
@@ -896,6 +894,80 @@ class TestEvidence:
         assert len(pack.items) == 4
         assert engine._governance.decide.call_count == 4
         assert pack.metadata["governance_cutoff"]["policy"]["query_shape"] == "broad"
+
+    def test_trace_records_the_canonical_governed_execution(self, monkeypatch, tmp_path):
+        """A trace captures pre-cutoff evidence without rerunning retrieval."""
+        from fitz_sage.core.paths import FitzPaths
+
+        engine = _make_engine()
+        addresses, results = _evidence_results(3)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        engine._semantic_keyword_batcher.batch_classify.return_value = BatchResult(
+            keywords=["incident"]
+        )
+        monkeypatch.setattr(FitzPaths, "workspace", classmethod(lambda cls: tmp_path))
+
+        run = engine.trace(Query(text="What happened?"), top_k=3)
+
+        assert engine._retrieval_router.retrieve.call_count == 1
+        assert run.evidence.mode == AnswerMode.SUFFICIENT
+        assert len(run.ranked_evidence) == 3
+        assert run.ranked_evidence[0].content == results[0].content
+        assert run.governance.selected == len(run.evidence.items)
+        assert run.governance.evaluated <= run.governance.selected
+        assert run.environment.engine == "fitz_krag"
+        assert run.environment.collection == "test_collection"
+        assert any(term.origin == "literal" for term in run.query.terms)
+        assert any(
+            term.text == "incident" and term.origin == "semantic" for term in run.query.terms
+        )
+
+    def test_trace_labels_query_intelligence_keyword_fallback_as_deterministic(
+        self, monkeypatch, tmp_path
+    ):
+        """Configured query intelligence does not claim fallback term ownership."""
+        from fitz_sage.core.paths import FitzPaths
+
+        engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        monkeypatch.setattr(
+            FitzPaths,
+            "workspace",
+            classmethod(lambda cls: tmp_path),
+        )
+
+        run = engine.trace(Query(text="What happened?"), top_k=1)
+
+        assert any(
+            term.text == "happened" and term.origin == "deterministic" for term in run.query.terms
+        )
+        assert not any(term.origin == "query_intelligence" for term in run.query.terms)
+
+    def test_trace_labels_keywords_returned_by_query_intelligence(self, monkeypatch, tmp_path):
+        """Model-produced query terms retain their actual producer."""
+        from fitz_sage.core.paths import FitzPaths
+
+        engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = addresses
+        engine._reader.read.return_value = results
+        engine._query_batcher.batch_classify.side_effect = None
+        engine._query_batcher.batch_classify.return_value = BatchResult(keywords=["diagnostic"])
+        monkeypatch.setattr(
+            FitzPaths,
+            "workspace",
+            classmethod(lambda cls: tmp_path),
+        )
+
+        run = engine.trace(Query(text="What happened?"), top_k=1)
+
+        assert any(
+            term.text == "diagnostic" and term.origin == "query_intelligence"
+            for term in run.query.terms
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -151,8 +151,9 @@ def _default_source(source: Optional[Path], collection: Optional[str]) -> Option
 
 def _collection_name_for_source(source: Path) -> str:
     """Derive the default collection name from the selected source directory."""
-    name = source.resolve().name.strip()
-    return name or "default"
+    from fitz_sage.core.collections import collection_name_from_path
+
+    return collection_name_from_path(source)
 
 
 def _persisted_source_matches(collection: str, source: Path, cwd: Path) -> bool:
@@ -181,6 +182,8 @@ def command(
     *,
     output_format: str = "text",
     top_k: int | None = None,
+    trace_path: Path | None = None,
+    trace_content: bool = False,
 ) -> None:
     """Run retrieval-first evidence mode."""
     output_format = output_format.lower().strip()
@@ -189,6 +192,9 @@ def command(
         raise typer.Exit(1)
     if top_k is not None and top_k < 1:
         ui.error("--top-k must be greater than zero.")
+        raise typer.Exit(1)
+    if trace_content and trace_path is None:
+        ui.error("--trace-content requires --trace PATH.")
         raise typer.Exit(1)
     effective_source = _default_source(source, collection)
     if effective_source is not None and not effective_source.exists():
@@ -232,11 +238,23 @@ def command(
                 progress(f"Loading collection '{selected_collection}'...")
             engine_instance.load(selected_collection)
 
-        pack = engine_instance.evidence(
-            Query(text=question_text, metadata=metadata),
-            progress=progress,
-            top_k=top_k,
-        )
+        query = Query(text=question_text, metadata=metadata)
+        if trace_path is not None:
+            run = engine_instance.trace(
+                query,
+                progress=progress,
+                top_k=top_k,
+            )
+            pack = run.evidence
+            written_trace = run.write(trace_path, include_content=trace_content)
+            if output_format != "json":
+                ui.info(f"Trace written to {written_trace}.")
+        else:
+            pack = engine_instance.evidence(
+                query,
+                progress=progress,
+                top_k=top_k,
+            )
         if output_format == "json":
             print(pack.to_json())
         else:
@@ -269,7 +287,7 @@ def _select_collection(
     if source is not None:
         return requested or _collection_name_for_source(source)
 
-    collections = registry.get_list_collections(engine_name)
+    collections = [str(name) for name in registry.get_list_collections(engine_name)]
     if not collections:
         ui.warning("No collections found.")
         ui.info("Run 'fitz query \"question\"' from your documents folder to get started.")
@@ -282,6 +300,6 @@ def _select_collection(
         return requested
 
     if len(collections) == 1:
-        return collections[0]
+        return str(collections[0])
 
-    return ui.prompt_numbered_choice("Collection", collections, collections[0])
+    return str(ui.prompt_numbered_choice("Collection", collections, collections[0]))

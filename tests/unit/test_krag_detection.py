@@ -278,10 +278,24 @@ class TestEngineAnswerDetectionFlow:
         query = _make_query(
             "compare the latest authentication changes between the different modules in the system"
         )
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-        engine._reader.read.return_value = [MagicMock()]
-        engine._expander.expand.return_value = [MagicMock()]
-        engine._assembler.assemble.return_value = MagicMock()
+        from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
+
+        address = Address(
+            kind=AddressKind.SECTION,
+            source_id="auth-doc",
+            location="Authentication changes",
+            summary="Latest authentication changes",
+            score=0.9,
+        )
+        read_result = ReadResult(
+            address=address,
+            content="The authentication flow changed in the latest release.",
+            file_path="auth.md",
+        )
+        engine._retrieval_router.retrieve.return_value = [address]
+        engine._reader.read.return_value = [read_result]
+        engine._expander.expand.return_value = [read_result]
+        engine._assembler.assemble.return_value = "[S1] Latest authentication changes"
         engine._synthesizer.generate.return_value = MagicMock(
             text="answer", provenance=[], metadata={}
         )

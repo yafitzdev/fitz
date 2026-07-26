@@ -12,7 +12,7 @@ Thank you for your interest in contributing to Fitz! This document provides guid
 - [How to Contribute](#how-to-contribute)
 - [Pull Request Process](#pull-request-process)
 - [Engine Development](#engine-development)
-- [Plugin Development](#plugin-development)
+- [Extension Development](#extension-development)
 - [Testing](#testing)
 - [Style Guide](#style-guide)
 
@@ -70,8 +70,8 @@ fitz_sage/
 ├── retrieval/         # SHARED retrieval intelligence (detection, entities, vocabulary, etc.)
 ├── llm/               # LLM service layer — single OpenAI-compatible HTTP protocol (chat) + ONNX cross-encoder reranker
 ├── storage/           # SQLite connection manager (one .db per collection, FTS5 + bm25)
-├── ingestion/         # Document ingestion (parser, chunking, enrichment)
-├── tabular/           # CSV/table query with SQL generation (SqliteTableStore)
+├── ingestion/         # Document parsers, source discovery, and hashing
+├── tabular/           # Native table parsers and SqliteTableStore
 ├── runtime/           # Multi-engine orchestration
 ├── cli/               # Command-line interface
 ├── api/               # REST API (FastAPI)
@@ -276,51 +276,17 @@ Engines are the core abstraction in Fitz. Each engine is a complete implementati
 
 ---
 
-## Plugin Development
+## Extension Development
 
-Plugins extend functionality within engines (chat providers, parsers, chunkers, sources, enrichment artifacts).
+The supported extension boundaries are custom knowledge engines and package
+contributions for provider or parser implementations. There is no runtime
+auto-discovery mechanism and no generic chunker, source, or data-cleanup plugin
+surface. See [Extension Points](docs/PLUGINS.md) before adding one.
 
-### Creating a New Plugin
-
-1. **Identify the plugin type**: `chat`, `parser`, `chunker`, `source`, `enrichment-artifact`
-
-2. **Create the plugin file**:
-   ```python
-   # fitz_sage/llm/chat/plugins/my_provider.py
-   
-   class MyProviderChatClient:
-       plugin_name = "my_provider"
-       plugin_type = "chat"
-       
-       def __init__(self, api_key: str = None, **kwargs):
-           self.api_key = api_key
-       
-       def chat(self, messages: list[dict]) -> str:
-           # Implement the protocol method
-           return "response"
-   ```
-
-3. **The plugin will be auto-discovered**: No registration needed
-
-4. **Add tests**:
-   ```python
-   # tests/test_my_provider_plugin.py
-   
-   def test_my_provider_chat_basic():
-       plugin = MyProviderChatClient(api_key="test")
-       response = plugin.chat([{"role": "user", "content": "hello"}])
-       assert isinstance(response, str)
-   ```
-
-### Plugin Protocol Reference
-
-| Type | Protocol | Required Method | Return Type |
-|------|----------|-----------------|-------------|
-| `chat` | `ChatProvider` | `chat(messages)` | `str` |
-| `parser` | `Parser` | `parse(file)` | `ParsedDocument` |
-| `chunker` | `Chunker` | `chunk(document)` | `list[Chunk]` |
-| `source` | `Source` | `discover(root, patterns)` | `Iterable[SourceFile]` |
-| `enrichment-artifact` | `ArtifactGenerator` | `generate(analysis)` | `Artifact` |
+New providers must implement the relevant protocol under
+`fitz_sage/llm/providers/`, be registered in `fitz_sage/llm/config.py`, and have
+dispatch tests. New parser modes must be wired explicitly through
+`fitz_sage/ingestion/parser/router.py`.
 
 ---
 
@@ -425,7 +391,7 @@ Before submitting a PR, verify:
 - [ ] No imports from `engines/` in `core/`
 - [ ] No imports from `ingestion/` in `core/`
 - [ ] New engines implement `KnowledgeEngine` protocol
-- [ ] New plugins follow the Protocol pattern
+- [ ] New extensions use an existing engine, provider, or parser boundary
 - [ ] Config-driven design (no hardcoded provider selection)
 - [ ] Tests added for new functionality
 - [ ] `python -m tools.contract_map --fail-on-errors` passes

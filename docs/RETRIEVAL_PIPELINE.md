@@ -100,7 +100,7 @@ Broad recall is intentionally permissive. It uses literal query terms,
 managed Qwen semantic keywords, and intent fanout for
 comparison, temporal, aggregation, and freshness queries. False positives are
 acceptable because the reranker and governance cutoff handle precision.
-The default Pyrrho v2 package is evidence-conditioned. Query profiling comes
+The configured reviewed Pyrrho v2 package is evidence-conditioned. Query profiling comes
 from deterministic signals, managed Qwen semantic keywords, and optional
 query-intelligence providers.
 
@@ -237,7 +237,7 @@ the query contract/profile calls for a representative corpus overview.
 |---------------|-----------|----------|
 | Managed Qwen3 0.6B ONNX GenAI | yes | ingestion keywords/entities/hierarchy and default semantic query keywords |
 | ONNX reranker | default | candidate precision after broad recall |
-| Pyrrho v2 nano g1 | default product governance | native evidence verdict, failure mode, retrieval intents, and evidence-kind metadata |
+| Reviewed local Pyrrho v2 package | required product governance | native evidence verdict, failure mode, retrieval intents, and evidence-kind metadata |
 | OpenAI-compatible endpoint | optional | answer synthesis, optional query intelligence, optional vision parser |
 
 No dense embedding model and no vector database are used.

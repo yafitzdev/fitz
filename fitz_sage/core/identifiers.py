@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 
-
 EXACT_IDENTIFIER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"
     r"(?:[-_][A-Za-z0-9]+)*(?![A-Za-z0-9_])|"

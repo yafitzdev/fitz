@@ -9,9 +9,11 @@ content is read on demand after ranking.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from fitz_sage.core import (
     Answer,
@@ -23,14 +25,13 @@ from fitz_sage.core import (
     KnowledgeError,
     Query,
     QueryError,
+    RetrievalRun,
 )
 from fitz_sage.core.answer_mode import AnswerMode
+from fitz_sage.core.collections import validate_collection_name
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.evidence_compiler import compile_evidence
-from fitz_sage.engines.fitz_krag.governance_cutoff import (
-    apply_governance_cutoff,
-    pyrrho_decision_metadata,
-)
+from fitz_sage.engines.fitz_krag.governance_cutoff import apply_governance_cutoff
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -39,6 +40,17 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.types import ReadResult
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class _GovernedEvidenceResult:
+    """Internal carrier for one canonical governed retrieval execution."""
+
+    pack: EvidencePack
+    selected: list["ReadResult"]
+    outcome: "RetrievalOutcome"
+    compilation: Any
+    cutoff: Any
 
 
 def _report_timings(
@@ -118,6 +130,7 @@ class FitzKragEngine:
     def __init__(self, config: FitzKragConfig):
         try:
             self._config = config
+            self._initialized_collection: str | None = None
             self._bg_worker: Any = None
             self._manifest: Any = None
             self._source_dir: Path | None = None
@@ -134,6 +147,12 @@ class FitzKragEngine:
 
     def load(self, collection: str) -> None:
         """Load a collection, reinitializing collection-dependent components."""
+        collection = validate_collection_name(collection)
+        if getattr(self, "_initialized_collection", None) == collection:
+            if not self._manifest or not self._source_dir:
+                self._try_load_persisted_manifest(collection)
+            return
+
         # Stop background worker when switching collections
         if self._bg_worker and collection != self._config.collection:
             self._bg_worker.stop()
@@ -158,6 +177,8 @@ class FitzKragEngine:
             AgenticSearchStrategy,
         )
 
+        if self._manifest is None or self._source_dir is None:
+            raise RuntimeError("Agentic strategy requires an active source manifest")
         col_dir = FitzPaths.workspace() / "collections" / self._config.collection
         agentic = AgenticSearchStrategy(
             manifest=self._manifest,
@@ -392,6 +413,7 @@ class FitzKragEngine:
         )
 
         # LLM structural code search (default when chat available)
+        active_code_strategy: Any = code_strategy
         if self._config.code_search_mode != "hybrid" and self._chat_factory:
             from fitz_sage.engines.fitz_krag.retrieval.strategies.llm_code_search import (
                 LlmCodeSearchStrategy,
@@ -405,10 +427,10 @@ class FitzKragEngine:
                 fallback_strategy=code_strategy,
             )
             self._retrieval_router._code_strategy = llm_strategy
-            code_strategy = llm_strategy  # so raw_store wiring below reaches it
+            active_code_strategy = llm_strategy
 
         # Wire raw_store for freshness boosting
-        code_strategy._raw_store = self._raw_store
+        active_code_strategy._raw_store = self._raw_store
         section_strategy._raw_store = self._raw_store
 
         # Entity graph store
@@ -449,6 +471,7 @@ class FitzKragEngine:
         logger.debug(f"[init] components: {(_t4-_t3)*1000:.0f}ms")
 
         ensure_schema(self._connection_manager, self._config.collection)
+        self._initialized_collection = self._config.collection
 
         _t5 = _t.perf_counter()
         logger.debug(f"[init] schema: {(_t5-_t4)*1000:.0f}ms, " f"total: {(_t5-_t0)*1000:.0f}ms")
@@ -634,8 +657,6 @@ class FitzKragEngine:
         """
         import time
 
-        from fitz_sage.engines.fitz_krag.context.compressor import compress_results
-
         if not query.text or not query.text.strip():
             raise QueryError("Query text cannot be empty")
         if self._synthesizer is None:
@@ -647,64 +668,55 @@ class FitzKragEngine:
         with self._query_scope():
             logger.info(f"Starting query processing (query_length={len(query.text)})")
             try:
+                from fitz_sage.engines.fitz_krag.context.compressor import compress_results
+
                 _progress = progress or (lambda _: None)
                 pipeline_start = time.perf_counter()
-
-                # 1-4. Analyze, detect, retrieve, read, expand, table queries
                 try:
-                    outcome = self._retrieve_core(query, progress=progress)
+                    pack, selected = self._governed_evidence(query, progress=progress)
                 except EngineError:
                     raise
                 except Exception as e:
                     raise KnowledgeError(f"Retrieval failed: {e}") from e
-                sanitized = outcome.sanitized
-                expanded = outcome.expanded
-                timings = outcome.timings
 
-                if not expanded:
-                    _report_timings(_progress, timings, pipeline_start)
-                    gap_context = self._build_gap_context(sanitized)
+                answer_mode = pack.mode or AnswerMode.INSUFFICIENT
+                if not selected:
+                    early_gap_context = self._build_gap_context(pack.query, pack.reasons)
+                    _report_timings(_progress, list(pack.timings.items()), pipeline_start)
                     return Answer(
-                        text=self._synthesizer._build_insufficient_message(sanitized, gap_context),
+                        text=self._synthesizer._build_insufficient_message(
+                            pack.query,
+                            early_gap_context,
+                        ),
                         provenance=[],
                         mode=AnswerMode.INSUFFICIENT,
                         metadata={
                             "engine": "fitz_krag",
-                            "query": query.text,
-                            "answer_mode": "insufficient",
-                            "gap_context": gap_context,
-                            "query_profile": outcome.query_profile_metadata,
+                            "query": pack.query,
+                            "answer_mode": AnswerMode.INSUFFICIENT.value,
+                            "gap_context": early_gap_context,
+                            "query_profile": pack.metadata.get("query_profile", {}),
+                            "evidence_compiler": pack.metadata.get("evidence_compiler", {}),
+                            "evidence_closure": pack.metadata.get("evidence_closure", {}),
+                            "governance_cutoff": pack.metadata.get("governance_cutoff", {}),
                         },
                     )
 
-                # 5. Run governance — pyrrho classifier on the (query, contexts) pair.
-                # ReadResult satisfies EvidenceItem (has .content).
-                t0 = time.perf_counter()
-                governance = self._governance.decide(sanitized, expanded)
-                answer_mode = governance.mode
-                timings.append(("Governance", time.perf_counter() - t0))
-                pyrrho_metadata = pyrrho_decision_metadata(answer_mode, governance)
-
-                # 5.5. Compress code context (AST-based, ~50-70% token reduction)
-                expanded = compress_results(expanded)
-
-                # 6. Assemble context
-                context = self._assembler.assemble(sanitized, expanded)
-
-                # 7. Generate answer with answer mode
+                compressed = compress_results(selected)
+                context = self._assembler.assemble(pack.query, compressed) if compressed else ""
                 _progress("Generating answer...")
                 t0 = time.perf_counter()
-                gap_context = None
-                conflict_context = None
+                gap_context: dict[str, Any] | None = None
+                conflict_context: dict[str, Any] | None = None
                 if answer_mode == AnswerMode.INSUFFICIENT:
-                    gap_context = self._build_gap_context(sanitized, governance.reasons)
+                    gap_context = self._build_gap_context(pack.query, pack.reasons)
                 elif answer_mode == AnswerMode.DISPUTED:
-                    conflict_context = {"reason": governance.reason}
+                    conflict_context = self._build_conflict_context(pack, selected)
                 try:
                     answer = self._synthesizer.generate(
-                        sanitized,
+                        pack.query,
                         context,
-                        expanded,
+                        compressed,
                         answer_mode=answer_mode,
                         gap_context=gap_context,
                         conflict_context=conflict_context,
@@ -713,17 +725,13 @@ class FitzKragEngine:
                     raise
                 except Exception as e:
                     raise GenerationError(f"Generation failed: {e}") from e
-                if pyrrho_metadata:
-                    answer.metadata["pyrrho"] = pyrrho_metadata
-                if outcome.query_profile_metadata:
-                    answer.metadata["query_profile"] = outcome.query_profile_metadata
+                answer.metadata["query_profile"] = pack.metadata.get("query_profile", {})
+                answer.metadata["evidence_compiler"] = pack.metadata.get("evidence_compiler", {})
+                answer.metadata["evidence_closure"] = pack.metadata.get("evidence_closure", {})
+                answer.metadata["governance_cutoff"] = pack.metadata.get("governance_cutoff", {})
+                timings = list(pack.timings.items())
                 timings.append(("Generation", time.perf_counter() - t0))
-
-                # Report timing breakdown
                 _report_timings(_progress, timings, pipeline_start)
-
-                # 7.5. Flag queried files for background-worker priority + warming
-                self._boost_queried_files(outcome)
 
                 return answer
 
@@ -782,75 +790,165 @@ class FitzKragEngine:
         with self._query_scope():
             logger.info(f"Starting evidence retrieval (query_length={len(query.text)})")
             try:
-                outcome = self._retrieve_core(
-                    query,
-                    progress=progress,
-                    use_query_intelligence=False,
-                    allow_llm_strategies=False,
-                    execute_table_queries=True,
-                    allow_table_sql_generation=False,
-                    expand_context=False,
-                )
-                timings = list(outcome.timings)
-                compilation = compile_evidence(
-                    outcome.sanitized,
-                    outcome.expanded,
-                    profile=outcome.profile,
-                )
-                query_pipeline = self._build_query_pipeline()
-                outcome = query_pipeline.close_evidence(
-                    outcome,
-                    compilation,
-                    progress=progress,
-                    allow_llm_strategies=False,
-                    execute_table_queries=True,
-                    allow_table_sql_generation=False,
-                    expand_context=False,
-                )
-                closure_metadata = outcome.retrieval_trace.get("evidence_closure", {})
-                if closure_metadata.get("added") or closure_metadata.get("replaced"):
-                    compilation = compile_evidence(
-                        outcome.sanitized,
-                        outcome.expanded,
-                        profile=outcome.profile,
-                    )
-
-                requested_top_k = top_k or query.metadata.get("top_k")
-                cutoff = apply_governance_cutoff(
-                    outcome.sanitized,
-                    compilation.results,
-                    self._governance,
-                    profile=outcome.profile,
-                    requested_top_k=requested_top_k,
-                )
-
-                timings = list(outcome.timings)
-                timings.extend(cutoff.timings)
-                items = self._build_evidence_items(cutoff.selected)
-
-                self._boost_queried_files(outcome)
-
-                return EvidencePack(
-                    query=outcome.sanitized,
-                    mode=cutoff.mode,
-                    items=items,
-                    reasons=cutoff.reasons,
-                    timings={name: duration for name, duration in timings},
-                    indexing_status=self.indexing_status(),
-                    metadata={
-                        "engine": "fitz_krag",
-                        "source_query": query.text,
-                        "query_profile": outcome.query_profile_metadata,
-                        "retrieval_trace": outcome.retrieval_trace,
-                        "evidence_closure": outcome.retrieval_trace.get("evidence_closure", {}),
-                        "evidence_compiler": compilation.metadata,
-                        "governance_cutoff": cutoff.metadata,
-                    },
-                )
+                pack, _ = self._governed_evidence(query, progress=progress, top_k=top_k)
+                return pack
             except EngineError:
                 raise
             except Exception as e:
                 raise KnowledgeError(f"Evidence retrieval failed: {e}") from e
+
+    def trace(
+        self,
+        query: Query,
+        *,
+        progress: Callable[[str], None] | None = None,
+        top_k: int | None = None,
+    ) -> RetrievalRun:
+        """Return a versioned execution record for one governed retrieval."""
+        if not query.text or not query.text.strip():
+            raise QueryError("Query text cannot be empty")
+
+        with self._query_scope():
+            logger.info(f"Starting traced retrieval (query_length={len(query.text)})")
+            try:
+                result = self._governed_result(
+                    query,
+                    progress=progress,
+                    top_k=top_k,
+                )
+                from fitz_sage.core.paths import FitzPaths
+                from fitz_sage.engines.fitz_krag.run_trace import (
+                    build_retrieval_run,
+                )
+
+                return build_retrieval_run(
+                    source_query=query.text,
+                    pack=result.pack,
+                    outcome=result.outcome,
+                    compilation=result.compilation,
+                    cutoff=result.cutoff,
+                    config=self._config,
+                    indexing_status=result.pack.indexing_status,
+                    workspace=FitzPaths.workspace(),
+                )
+            except EngineError:
+                raise
+            except Exception as e:
+                raise KnowledgeError(f"Retrieval trace failed: {e}") from e
+
+    def _governed_evidence(
+        self,
+        query: Query,
+        *,
+        progress: Callable[[str], None] | None = None,
+        top_k: int | None = None,
+    ) -> tuple[EvidencePack, list["ReadResult"]]:
+        """Run the canonical retrieval, closure, compilation, and cutoff path."""
+        result = self._governed_result(
+            query,
+            progress=progress,
+            top_k=top_k,
+        )
+        return result.pack, result.selected
+
+    def _governed_result(
+        self,
+        query: Query,
+        *,
+        progress: Callable[[str], None] | None = None,
+        top_k: int | None = None,
+    ) -> _GovernedEvidenceResult:
+        """Return all products of the canonical governed retrieval path."""
+        outcome = self._retrieve_core(
+            query,
+            progress=progress,
+            use_query_intelligence=None,
+            allow_llm_strategies=True,
+            execute_table_queries=True,
+            allow_table_sql_generation=True,
+            expand_context=True,
+        )
+        compilation = compile_evidence(
+            outcome.sanitized,
+            outcome.expanded,
+            profile=outcome.profile,
+        )
+        query_pipeline = self._build_query_pipeline()
+        outcome = query_pipeline.close_evidence(
+            outcome,
+            compilation,
+            progress=progress,
+            allow_llm_strategies=True,
+            execute_table_queries=True,
+            allow_table_sql_generation=True,
+            expand_context=True,
+        )
+        closure_metadata = outcome.retrieval_trace.get("evidence_closure", {})
+        if closure_metadata.get("added") or closure_metadata.get("replaced"):
+            compilation = compile_evidence(
+                outcome.sanitized,
+                outcome.expanded,
+                profile=outcome.profile,
+            )
+
+        requested_top_k = top_k or query.metadata.get("top_k")
+        cutoff = apply_governance_cutoff(
+            outcome.sanitized,
+            compilation.results,
+            self._governance,
+            profile=outcome.profile,
+            requested_top_k=requested_top_k,
+        )
+        timings = list(outcome.timings)
+        timings.extend(cutoff.timings)
+        self._boost_queried_files(outcome)
+        pack = EvidencePack(
+            query=outcome.sanitized,
+            mode=cutoff.mode,
+            items=self._build_evidence_items(cutoff.selected),
+            reasons=cutoff.reasons,
+            timings={name: duration for name, duration in timings},
+            indexing_status=self.indexing_status(),
+            metadata={
+                "engine": "fitz_krag",
+                "source_query": query.text,
+                "query_profile": outcome.query_profile_metadata,
+                "retrieval_trace": outcome.retrieval_trace,
+                "evidence_closure": closure_metadata,
+                "evidence_compiler": compilation.metadata,
+                "governance_cutoff": cutoff.metadata,
+            },
+        )
+        return _GovernedEvidenceResult(
+            pack=pack,
+            selected=cutoff.selected,
+            outcome=outcome,
+            compilation=compilation,
+            cutoff=cutoff,
+        )
+
+    @staticmethod
+    def _build_conflict_context(
+        pack: EvidencePack,
+        selected: list["ReadResult"],
+    ) -> dict[str, str]:
+        """Build concrete disputed-source context from governed evidence."""
+        context = {"reason": "; ".join(pack.reasons)}
+        if selected:
+            context.update(
+                {
+                    "source_a": selected[0].file_path,
+                    "excerpt_a": selected[0].content[:200],
+                }
+            )
+        if len(selected) > 1:
+            context.update(
+                {
+                    "source_b": selected[1].file_path,
+                    "excerpt_b": selected[1].content[:200],
+                }
+            )
+        return context
 
     def _build_evidence_items(self, results: list["ReadResult"]) -> list[EvidenceItem]:
         """Convert KRAG read results into stable core evidence items."""
@@ -990,20 +1088,23 @@ class FitzKragEngine:
         guarantee non-empty query text and supply the query-scoped context.
         """
         pipeline = getattr(self, "_query_pipeline", None) or self._build_query_pipeline()
-        return pipeline.retrieve(
-            query,
-            progress=progress,
-            use_query_intelligence=use_query_intelligence,
-            allow_llm_strategies=allow_llm_strategies,
-            execute_table_queries=execute_table_queries,
-            allow_table_sql_generation=allow_table_sql_generation,
-            expand_context=expand_context,
+        return cast(
+            "RetrievalOutcome",
+            pipeline.retrieve(
+                query,
+                progress=progress,
+                use_query_intelligence=use_query_intelligence,
+                allow_llm_strategies=allow_llm_strategies,
+                execute_table_queries=execute_table_queries,
+                allow_table_sql_generation=allow_table_sql_generation,
+                expand_context=expand_context,
+            ),
         )
 
     def _build_gap_context(
         self,
         query: str,
-        governance_reasons: tuple[str, ...] = (),
+        governance_reasons: Sequence[str] = (),
     ) -> dict:
         """
         Build gap analysis context for actionable INSUFFICIENT messages.
@@ -1122,7 +1223,7 @@ class FitzKragEngine:
             AgenticSearchStrategy,
         )
 
-        col = collection or self._config.collection
+        col = validate_collection_name(collection or self._config.collection)
         source = Path(source).resolve()
 
         if col != self._config.collection:

@@ -8,16 +8,4 @@ consistent, searchable log output.
 Changing a tag here updates it project-wide.
 """
 
-INGEST = "[INGEST]"
-CHUNKING = "[CHUNKING]"
-VALIDATION = "[VALIDATION]"
-CHAT = "[CHAT]"
-RETRIEVER = "[RETRIEVER]"
-RERANK = "[RERANK]"
-PROMPT = "[PROMPT]"
-SOURCER = "[SOURCER]"
-PIPELINE = "[PIPELINE]"
-CLI = "[CLI]"
-RGS = "[RGS]"  # retrieval-guided synthesis
 STORAGE = "[STORAGE]"
-GOVERNANCE = "[GOVERNANCE]"

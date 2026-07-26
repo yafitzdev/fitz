@@ -127,6 +127,71 @@ class TestRetrieveCommand:
         mock_engine.load.assert_called_once_with("test")
         mock_engine.evidence.assert_called_once()
 
+    def test_retrieve_trace_uses_same_execution_and_writes_requested_content(self, tmp_path):
+        """Tracing replaces evidence(), so retrieval is executed exactly once."""
+        pack = EvidencePack(
+            query="Which test failed?",
+            mode=AnswerMode.SUFFICIENT,
+            indexing_status={"complete": True},
+        )
+        trace_path = tmp_path / "retrieval-run.json"
+        run = MagicMock()
+        run.evidence = pack
+        run.write.return_value = trace_path.resolve()
+        mock_engine = MagicMock()
+        mock_engine.trace.return_value = run
+
+        mock_registry = MagicMock()
+        mock_registry.list.return_value = ["fitz_krag"]
+        mock_caps = MagicMock()
+        mock_caps.supports_persistent_ingest = True
+        mock_registry.get_capabilities.return_value = mock_caps
+        mock_registry.get_list_collections.return_value = ["test"]
+
+        with (
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_default_engine",
+                return_value="fitz_krag",
+            ),
+            patch(
+                "fitz_sage.cli.commands.retrieve.create_engine",
+                return_value=mock_engine,
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "retrieve",
+                    "Which test failed?",
+                    "--collection",
+                    "test",
+                    "--format",
+                    "json",
+                    "--trace",
+                    str(trace_path),
+                    "--trace-content",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert json.loads(result.output)["mode"] == "sufficient"
+        mock_engine.trace.assert_called_once()
+        mock_engine.evidence.assert_not_called()
+        run.write.assert_called_once_with(trace_path, include_content=True)
+
+    def test_trace_content_requires_trace_path(self):
+        result = runner.invoke(
+            app,
+            ["retrieve", "Which test failed?", "--trace-content"],
+        )
+
+        assert result.exit_code == 1
+        assert "--trace-content requires --trace PATH" in result.output
+
     def test_retrieve_with_source_waits_for_required_indexing(self, tmp_path):
         """Source-backed retrieval waits for the query surface before evidence retrieval."""
         source = tmp_path / "docs"

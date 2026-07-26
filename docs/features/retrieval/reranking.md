@@ -57,11 +57,9 @@ scoring:
 3. **Stronger ranking signal.** Cross-encoders are the textbook
    solution for pairwise relevance scoring.
 
-The same model family as the
-[Pyrrho governance classifier](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1):
-ModernBERT-base, local CPU inference, lazy-loaded on first call, and cached for
-the process lifetime. The reranker and Pyrrho v2 both run from pre-built ONNX
-graphs on CPU.
+The same ModernBERT-base family used by Pyrrho governance: local CPU inference,
+lazy loading, and a process-lifetime cache. The historical linked Pyrrho Hub
+package is quarantined; normal governance uses a reviewed local ONNX package.
 
 ## How it works
 

@@ -28,6 +28,7 @@ Tier Guidelines:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Callable, Literal
 
 from fitz_sage.llm.config import create_chat_provider
@@ -38,7 +39,7 @@ ChatFactory = Callable[[ModelTier], ChatProvider]
 
 
 def get_chat_factory(
-    tier_specs: dict[str, str | None],
+    tier_specs: Mapping[str, str | None],
     config: dict[str, Any] | None = None,
 ) -> ChatFactory:
     """

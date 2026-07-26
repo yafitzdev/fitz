@@ -1,7 +1,7 @@
 # docs/features/retrieval/
 
 Deep-dive documentation for fitz-sage's retrieval intelligence modules. The
-default pipeline is broad recall → ONNX rerank → Pyrrho cutoff. See
+standard pipeline is broad recall → ONNX rerank → configured local Pyrrho cutoff. See
 [Three-Stage Retrieval Strategy](three-stage-strategy.md) for the product model
 and [Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) for the end-to-end flow.
 

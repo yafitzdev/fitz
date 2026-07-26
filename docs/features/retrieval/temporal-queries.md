@@ -75,7 +75,7 @@ Sub-queries:
 
 Results from all sub-queries are merged using RRF:
 - Chunks appearing in multiple time periods get higher scores
-- Temporal references are tagged in chunk metadata
+- Temporal references are tagged in source-unit metadata
 
 ## Key Design Decisions
 

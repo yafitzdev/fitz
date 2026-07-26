@@ -203,14 +203,22 @@ class RetrievalRouter:
 
         # Corpus summary injection for broad/thematic queries
         inject_summaries = profile.inject_corpus_summaries if profile else False
+        corpus_summary_trace: dict[str, Any] = {
+            "enabled": bool(self._section_strategy and inject_summaries),
+            "count": 0,
+            "addresses": [],
+        }
         if self._section_strategy and inject_summaries:
             try:
                 corpus_addresses = self._section_strategy.retrieve(
                     query, limit=limit, detection=profile, inject_corpus_summaries=True
                 )
                 all_addresses.extend(corpus_addresses)
+                corpus_summary_trace["count"] = len(corpus_addresses)
+                corpus_summary_trace["addresses"] = addresses_trace(corpus_addresses)
                 logger.debug(f"Injected {len(corpus_addresses)} corpus summary chunk(s)")
             except Exception as e:
+                corpus_summary_trace["error"] = str(e)
                 logger.debug(f"Corpus summary injection skipped: {e}")
 
         # Deduplicate
@@ -240,6 +248,7 @@ class RetrievalRouter:
             "unique_query_count": len(unique_queries),
             "strategy_calls": strategy_calls,
             "agentic": agentic_trace,
+            "corpus_summary": corpus_summary_trace,
             "raw_candidate_count": len(raw_addresses),
             "raw_candidates": addresses_trace(raw_addresses),
             "deduped_count": len(deduped),
@@ -261,7 +270,8 @@ class RetrievalRouter:
     ) -> list[Address]:
         """Run a single strategy."""
         try:
-            return strategy.retrieve(query, limit, detection=profile)
+            results = strategy.retrieve(query, limit, detection=profile)
+            return [result for result in results if isinstance(result, Address)]
         except Exception as e:
             logger.warning(f"{type(strategy).__name__} failed for '{query[:50]}': {e}")
             return []
@@ -291,7 +301,7 @@ class RetrievalRouter:
                 )
             else:
                 progress("Supplemental scan: no early candidates found")
-            return agentic_addresses
+            return [address for address in agentic_addresses if isinstance(address, Address)]
         except Exception as e:
             logger.warning(f"Agentic strategy failed: {e}")
             return []

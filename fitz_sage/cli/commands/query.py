@@ -40,7 +40,7 @@ def _get_root_cause(exc: Exception) -> str:
     filtering out generic wrapper messages like "Retrieval failed".
     """
     messages = []
-    current = exc
+    current: BaseException | None = exc
 
     while current is not None:
         msg = str(current)
@@ -514,18 +514,8 @@ def _chat_loop(engine: Any, collection: str) -> None:
             # Show sources
             if answer.provenance:
                 from fitz_sage.cli.ui import display_sources
-                from fitz_sage.core.chunk import Chunk
 
-                chunks = [
-                    Chunk(
-                        content=p.excerpt or "",
-                        metadata={"source": p.source_id},
-                    )
-                    for p in answer.provenance
-                    if p.excerpt
-                ]
-                if chunks:
-                    display_sources(chunks, indent=12)
+                display_sources(answer.provenance, indent=12)
 
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": answer.text})

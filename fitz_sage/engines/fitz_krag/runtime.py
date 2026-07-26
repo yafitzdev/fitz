@@ -145,8 +145,8 @@ def _register_fitz_krag_engine():
         supports_chat=True,
         supports_streaming=False,
         requires_config=True,
-        requires_api_key=True,
-        api_key_env_var="COHERE_API_KEY",
+        requires_api_key=False,
+        api_key_env_var=None,
     )
 
     try:

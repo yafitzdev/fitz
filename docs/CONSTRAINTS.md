@@ -3,6 +3,15 @@
 How fitz-sage decides whether retrieved evidence is sufficient, disputed, or
 insufficient.
 
+> **Quarantine notice (2026-07-15):** the historical default remote model
+> `yafitzdev/pyrrho-v2-nano-g1` is blocked by default because its training
+> corpus contained 5,000 benchmark-derived deterministic rows. Normal runtime
+> use must supply an explicit local clean model directory. Forensic reproduction
+> of the compromised, commit-pinned artifact requires the deliberate
+> `FITZ_ALLOW_COMPROMISED_PYRRHO=1` escape hatch and is fixed to known-bad
+> revision `948f0500b74871cfaec7689a01d4eab0dd516e1b`; it is not a production
+> opt-in.
+
 ---
 
 ## Overview
@@ -33,10 +42,10 @@ SUFFICIENT / DISPUTED / INSUFFICIENT
 EvidencePack is returned; optional synthesizer can use the mode
 ```
 
-The classifier is
+The historical classifier package is
 [`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
-on Hugging Face. It is a `ModernBERT` classifier trained from fitz-gov-v2
-evidence data. The default v2 package exposes only native v2 heads:
+on Hugging Face. It is preserved for forensic reproducibility and is not an
+approved runtime default. A clean local v2 package exposes only native v2 heads:
 
 | Head | Purpose |
 | ---- | ------- |
@@ -61,7 +70,7 @@ evidence data. The default v2 package exposes only native v2 heads:
 ```python
 from fitz_sage.governance import GovernanceDecision, create_governance
 
-governance = create_governance("pyrrho")
+governance = create_governance("pyrrho/C:/reviewed/clean/pyrrho-package")
 decision = governance.decide(query, retrieved_contexts)
 # decision.mode    → runtime AnswerMode (SUFFICIENT / DISPUTED / INSUFFICIENT)
 # decision.probs   → (p_insufficient, p_disputed, p_sufficient)
@@ -70,36 +79,57 @@ decision = governance.decide(query, retrieved_contexts)
 ```
 
 `retrieved_contexts` is any sequence of objects satisfying the
-`EvidenceItem` protocol — both `Chunk` and KRAG's `ReadResult`
-qualify.
+`EvidenceItem` protocol. KRAG's `ReadResult` qualifies, and custom engines can
+provide their own compatible evidence type.
 
-`create_governance("pyrrho")` returns a `Pyrrho` classifier instance.
-The engine owns this instance and calls `.decide()` after retrieval and
-before answer synthesis. The model is lazy-loaded on first decision;
-that first call downloads/loads the ONNX package when missing, and
-subsequent calls are local CPU forward passes.
+The bare `create_governance("pyrrho")` form currently fails closed because the
+historical remote default is quarantined. Pass an explicitly reviewed local
+package path as shown above. The engine owns the classifier and calls
+`.decide()` after retrieval and before answer synthesis; the package is
+lazy-loaded on the first decision and subsequent calls are local CPU forward
+passes.
 
 ---
 
-## Calibrated decision rule
+## Runtime threshold rule
 
 Raw `argmax` over the 3-way v2 evidence-verdict softmax gives the predicted
-class. Production uses a **threshold-calibrated fallback** on the `SUFFICIENT`
-probability to favour the safer modes:
+class. The runtime applies a `SUFFICIENT` probability floor:
 
 ```python
 if pred == SUFFICIENT and P(SUFFICIENT) < TAU:
     pred = argmax over (INSUFFICIENT, DISPUTED)
 ```
 
-`TAU = 0.34` is the default runtime threshold for v2.
+`TAU = 0.34` is the legacy fallback when a package does not declare
+`release.sufficient_threshold`. It must not be described as calibrated for a
+new clean model until runtime-exact threshold metrics are reported.
+
+The verdict and failure heads are decoded independently, but the corpus
+ontology permits only these pairs:
+
+| Verdict | Valid failure mode |
+|---|---|
+| `SUFFICIENT` | `none` |
+| `DISPUTED` | `unresolved_conflict` |
+| `INSUFFICIENT` | `missing_or_incomplete_evidence`, `wrong_scope_or_version`, or `ambiguous_request` |
+
+If independent predictions violate this matrix, the runtime reconciles them
+without upgrading safety. It records the original pair and consistency fallback
+in governance metadata.
+
+Inputs are right-truncated at the manifest-declared token budget. Every post-
+retrieval decision and pre-retrieval plan records the original token count,
+budget, and whether truncation occurred; callers should treat truncation as an
+observed evidence-coverage limitation.
 
 ---
 
 ## Where it plugs in
 
 The `FitzKragEngine` profiles the query, retrieves and reranks candidates, then
-uses the default Pyrrho v2 package to evaluate evidence prefixes.
+uses the configured reviewed local Pyrrho v2 package to evaluate evidence
+prefixes.
 
 The cutoff loop:
 
@@ -113,8 +143,9 @@ The cutoff loop:
    cutoff metadata, and source items.
 6. Optional `answer()` synthesis receives the same mode and evidence.
 
-`governance: pyrrho` is the product default and governance is mandatory in the
-standard retrieval pipeline.
+Governance is mandatory in the standard retrieval pipeline, but the bare
+`governance: pyrrho` remote resolution is blocked until a clean release is
+approved. Configure `governance: pyrrho/<local-package-path>`.
 
 ---
 
@@ -138,15 +169,16 @@ The model card calls out these known boundaries:
    knowledge.
 3. **Numeric agreement is learned, not hard-coded.** Exact numeric workflows
    should still be evaluated before deployment.
-4. **Safety-tuned thresholding.** The decision threshold is tuned for low
-   false-sufficient rate, so some answerable cases may be classified as
-   `INSUFFICIENT` or `DISPUTED`.
+4. **Threshold calibration pending.** The clean release needs runtime-exact
+   threshold evaluation; the legacy `0.34` fallback is not a new-release claim.
+5. **Finite context.** Long evidence prefixes are right-truncated. Runtime
+   metadata exposes this, but evidence beyond the token budget is unseen.
 
 ---
 
 ## See Also
 
-- [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
-- [fitz-gov on Hugging Face](https://huggingface.co/datasets/yafitzdev/fitz-gov-v2) — the evaluation dataset
+- [quarantined historical pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
+- [quarantined published fitz-gov snapshot](https://huggingface.co/datasets/yafitzdev/fitz-gov-v2)
 - [pyrrho training code](https://github.com/yafitzdev/pyrrho)
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — where governance fits in the engine pipeline

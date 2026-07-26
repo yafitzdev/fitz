@@ -150,7 +150,7 @@ class ContextAssembler:
 
     def _detect_language(self, result: ReadResult) -> str:
         """Detect language for syntax highlighting."""
-        if result.address.kind in (AddressKind.CHUNK, AddressKind.SECTION, AddressKind.TABLE):
+        if result.address.kind in (AddressKind.SECTION, AddressKind.TABLE):
             return ""
 
         path = result.file_path.lower()

@@ -10,7 +10,7 @@ convenient accessors for retrieval routing.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from .modules import AggregationType, TemporalIntent
 from .protocol import DetectionResult
@@ -74,14 +74,14 @@ class DetectionSummary:
     def fetch_multiplier(self) -> int:
         """Get fetch multiplier from aggregation if detected."""
         if self.aggregation.detected:
-            return self.aggregation.metadata.get("fetch_multiplier", 1)
+            return int(self.aggregation.metadata.get("fetch_multiplier", 1))
         return 1
 
     @property
     def comparison_entities(self) -> list[str]:
         """Get entities being compared."""
         if self.comparison.detected:
-            return self.comparison.metadata.get("entities", [])
+            return cast(list[str], self.comparison.metadata.get("entities", []))
         return []
 
     @property

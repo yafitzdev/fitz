@@ -28,7 +28,6 @@ class TestFitzKragConfig:
         assert config.top_addresses == 50
         assert config.top_read == 50
         assert config.keyword_weight == 0.4
-        assert config.enable_citations is True
         assert config.strict_grounding is True
         assert config.max_context_tokens == 48000
         assert config.max_answer_tokens == 512

@@ -23,7 +23,6 @@ def pytest_collection_modifyitems(config, items):
     """
     TIER1_PATTERNS = [
         "test_answer_mode",
-        "test_chunker_id",
         "test_constraints",
         "test_causal_attribution",
         "test_model_tier_resolution",

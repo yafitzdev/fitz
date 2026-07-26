@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added versioned `RetrievalRun` execution records with redacted-by-default
+  JSON export, deterministic explanations, typed query/candidate/governance
+  traces, and environment fingerprints.
+- Added governance-only replay over integrity-checked frozen evidence through
+  the SDK and the new `fitz explain` / `fitz replay` CLI commands.
+
 ### Changed
 
 - Removed built-in synonym/acronym dictionaries, identifier separator

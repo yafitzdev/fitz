@@ -2,7 +2,7 @@
 """
 Core types for the Fitz KRAG engine.
 
-Address: pointer to a knowledge unit (code symbol, file, section, chunk)
+Address: pointer to a knowledge unit (code symbol, file, section, table)
 ReadResult: content read from an address with file path and line range
 """
 
@@ -19,7 +19,6 @@ class AddressKind(str, Enum):
     SYMBOL = "symbol"
     FILE = "file"
     SECTION = "section"
-    CHUNK = "chunk"
     TABLE = "table"
 
 
@@ -35,7 +34,6 @@ class Address:
     - SYMBOL: name, qualified_name, kind, start_line, end_line, signature
     - FILE: file_type, size_bytes
     - SECTION: heading, level, parent_section
-    - CHUNK: chunk_id, score
     - TABLE: table_index_id, table_id, name, columns, row_count
     """
 

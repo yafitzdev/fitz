@@ -57,8 +57,6 @@ class ContentReader:
             result = self._read_symbol(addr)
         elif addr.kind == AddressKind.FILE:
             result = self._read_file(addr)
-        elif addr.kind == AddressKind.CHUNK:
-            result = self._read_chunk(addr)
         elif addr.kind == AddressKind.SECTION:
             result = self._read_section(addr)
         elif addr.kind == AddressKind.TABLE:
@@ -124,13 +122,15 @@ class ContentReader:
         """Read file content from disk when not in database (agentic path)."""
         if not self._source_dir:
             return None
-        disk_path = addr.metadata.get("disk_path")
-        if not disk_path:
+        disk_path_value = addr.metadata.get("disk_path")
+        if not disk_path_value:
             return None
+        disk_path = str(disk_path_value)
         try:
             from fitz_sage.engines.fitz_krag.progressive.parsed_cache import (
                 RICH_DOC_EXTENSIONS,
                 get_parsed_text,
+                parse_document_text,
             )
 
             full_path = self._source_dir / disk_path
@@ -142,25 +142,11 @@ class ContentReader:
                 cache_dir = getattr(self, "_cache_dir", None)
                 if cache_dir and content_hash:
                     return get_parsed_text(full_path, content_hash, cache_dir)
-                from fitz_sage.engines.fitz_krag.progressive.parsed_cache import _parse
-
-                return _parse(full_path)
+                return parse_document_text(full_path)
             return full_path.read_text(encoding="utf-8", errors="replace")
         except Exception as e:
             logger.debug(f"Disk read failed for {disk_path}: {e}")
         return None
-
-    def _read_chunk(self, addr: Address) -> ReadResult | None:
-        """Read chunk content (stored in address metadata)."""
-        text = addr.metadata.get("text", "")
-        if not text:
-            return None
-
-        return ReadResult(
-            address=addr,
-            content=text,
-            file_path=addr.location,
-        )
 
     def _read_section(self, addr: Address) -> ReadResult | None:
         """Read section content from section store."""

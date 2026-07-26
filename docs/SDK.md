@@ -48,6 +48,35 @@ for item in pack.items:
     print(item.excerpt)
 ```
 
+### fitz_sage.trace()
+
+Return a versioned record of the same governed retrieval execution.
+
+```python
+run = fitz_sage.trace(
+    "What is the refund policy?",
+    source="./docs",
+    collection="policies",
+)
+
+run.write("run.json")  # source content redacted
+run.write("run-with-content.json", include_content=True)
+print(run.explain())
+```
+
+Use `fitz_sage.replay_governance(...)` to evaluate another governance provider
+over a content-bearing record's frozen evidence:
+
+```python
+result = fitz_sage.replay_governance(
+    "run-with-content.json",
+    governance="pyrrho/C:/models/pyrrho-candidate",
+)
+```
+
+See [Retrieval Execution Records](RETRIEVAL_RUNS.md) for security and replay
+semantics.
+
 ### fitz_sage.query()
 
 Generate a synthesized answer. This requires a configured synthesizer provider;
@@ -123,6 +152,20 @@ f.evidence(
     question: str,
     source: str | Path = None,  # If provided, registers documents before retrieval
 ) -> EvidencePack
+```
+
+#### trace()
+
+```python
+f.trace(
+    question: str,
+    source: str | Path = None,
+) -> RetrievalRun
+
+f.replay_governance(
+    run: RetrievalRun | str | Path,
+    governance: str | object = None,
+) -> GovernanceReplay
 ```
 
 #### point()
@@ -239,6 +282,15 @@ class EvidenceItem:
 
 Use `pack.to_dict()` or `pack.to_json()` for API responses and downstream apps.
 
+### RetrievalRun
+
+An inspectable, versioned record containing the effective query plan, term
+origins, retrieval strategies, candidate stages, compiled evidence ranking,
+governance trajectory, selected `EvidencePack`, and runtime fingerprints.
+
+`to_dict()`, `to_json()`, and `write()` redact source bodies by default.
+Content-bearing traces are required for governance replay.
+
 ### Provenance
 
 Source attribution for an answer.
@@ -354,7 +406,7 @@ The SDK uses the same config as CLI. See [CONFIG.md](CONFIG.md) for details.
 
 **Config search order:**
 1. `config_path` parameter (if provided)
-2. `~/.fitz/config/fitz_krag.yaml` (user config)
+2. `.fitz/config.yaml` in the current workspace
 3. Auto-created default config (if `auto_init=True`)
 
 ---

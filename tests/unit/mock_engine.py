@@ -44,6 +44,7 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     engine._retrieval_router = MagicMock(name="retrieval_router")
     engine._reader = MagicMock(name="reader")
     engine._expander = MagicMock(name="expander")
+    engine._expander.expand.side_effect = lambda results, **kwargs: results
     engine._table_handler = MagicMock(name="table_handler")
     engine._table_handler.process.side_effect = lambda q, results, **kwargs: results
     engine._assembler = MagicMock(name="assembler")

@@ -37,12 +37,38 @@ Options:
 # Custom port
 fitz serve -p 3000
 
-# All interfaces (for Docker/remote access)
+# All interfaces (requires FITZ_API_KEY)
+export FITZ_API_KEY="replace-with-a-random-secret"
 fitz serve --host 0.0.0.0
 
 # Development mode
 fitz serve --reload
 ```
+
+---
+
+## Security Boundary
+
+Loopback clients (`127.0.0.1` and `::1`) may call the API without a key. Any
+non-loopback client must send the key configured in `FITZ_API_KEY`:
+
+```bash
+curl -H "X-Fitz-API-Key: $FITZ_API_KEY" http://server:8000/health
+```
+
+Browser cross-origin access is disabled by default. Set a comma-separated
+allowlist only for origins you control:
+
+```bash
+export FITZ_API_ALLOWED_ORIGINS="https://app.example.com,http://localhost:3000"
+```
+
+Request `source` paths are server-local paths. They must resolve inside the
+server's current working directory by default. `FITZ_API_SOURCE_ROOTS` can set
+an explicit platform-path-separated allowlist of roots.
+
+Collection names must match `[a-z0-9][a-z0-9_-]{0,63}`. fitz-sage does not
+normalize explicit names, so `project-a` and `project_a` remain distinct.
 
 ---
 
@@ -80,7 +106,7 @@ source attribution.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `question` | string | Yes | - | The question to ask |
-| `source` | string | No | null | Path to file or directory. If provided, registers documents before querying. |
+| `source` | string | No | null | Allowed server-local file or directory. If provided, registers it and waits until the query surface is ready. |
 | `collection` | string | No | `"default"` | Collection to query |
 
 ### Response
@@ -139,7 +165,7 @@ equivalent of `fitz query`, `fitz retrieve`, and `fitz_sage.evidence()`.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `question` | string | Yes | - | The question to retrieve evidence for |
-| `source` | string | No | null | Path to file or directory. If provided, registers documents before querying. |
+| `source` | string | No | null | Allowed server-local file or directory. If provided, registers it and waits until the query surface is ready. |
 | `collection` | string | No | `"default"` | Collection to query |
 | `conversation_history` | array | No | `[]` | Optional chat history for query rewriting |
 
@@ -250,8 +276,8 @@ List all available collections.
 
 ```json
 [
-  {"name": "default", "chunk_count": 234},
-  {"name": "physics", "chunk_count": 567}
+  {"name": "default", "item_count": 234},
+  {"name": "physics", "item_count": 567}
 ]
 ```
 
@@ -272,11 +298,8 @@ Get statistics for a specific collection.
 ```json
 {
   "name": "default",
-  "chunk_count": 234,
-  "metadata": {
-    "created_at": "2024-01-15T10:30:00",
-    "last_updated": "2024-01-16T14:20:00"
-  }
+  "item_count": 234,
+  "metadata": {}
 }
 ```
 
@@ -302,7 +325,7 @@ current indexing status; poll `GET /collections/{name}/status` for progress.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `source` | string | Yes | Path to a file or directory to ingest |
+| `source` | string | Yes | Allowed server-local file or directory to ingest |
 
 ### Response (`202 Accepted`)
 
@@ -348,15 +371,14 @@ curl http://localhost:8000/collections/default/status
 
 ## DELETE /collections/{name}
 
-Delete a collection and all its chunks.
+Delete a collection and its manifest, parsed cache, and SQLite data.
 
 ### Response
 
 ```json
 {
   "deleted": true,
-  "collection": "default",
-  "chunks_deleted": 234
+  "collection": "default"
 }
 ```
 
@@ -378,7 +400,7 @@ Health check endpoint.
 {
   "status": "healthy",
   "version": "<installed version>",
-  "config_exists": true
+  "components": {"sqlite": true}
 }
 ```
 
@@ -397,9 +419,10 @@ All endpoints return standard HTTP error codes:
 | Code | Description |
 |------|-------------|
 | 400 | Bad request (invalid input) |
+| 401 | Invalid or missing API key for remote access |
+| 403 | Remote access is not configured |
 | 404 | Resource not found |
 | 500 | Internal server error |
-| 501 | Feature not implemented |
 
 **Error response format:**
 

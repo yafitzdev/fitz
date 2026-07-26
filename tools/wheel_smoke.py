@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import venv
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -99,6 +100,9 @@ def newest_wheel(dist_dir: Path) -> Path | None:
 def build_wheel(out_dir: Path) -> Path:
     """Build a wheel into ``out_dir`` and return its path."""
     root = project_root()
+    for generated in (root / "build", root / "fitz_sage.egg-info"):
+        if generated.exists():
+            shutil.rmtree(generated)
     out_dir.mkdir(parents=True, exist_ok=True)
     run(
         [sys.executable, "-m", "build", "--wheel", "--outdir", str(out_dir)],
@@ -108,6 +112,42 @@ def build_wheel(out_dir: Path) -> Path:
     if wheel is None:
         raise RuntimeError(f"Build completed but no wheel was found in {out_dir}")
     return wheel
+
+
+def validate_wheel_contents(wheel: Path) -> None:
+    """Reject stale files from subsystems removed from the source tree."""
+    forbidden = (
+        "fitz_sage/cli/context.py",
+        "fitz_sage/cli/utils.py",
+        "fitz_sage/cli/ui/engine_selection.py",
+        "fitz_sage/cli/ui/progress.py",
+        "fitz_sage/core/chunk.py",
+        "fitz_sage/core/conflicts.py",
+        "fitz_sage/core/constants.py",
+        "fitz_sage/core/knowledge.py",
+        "fitz_sage/core/math.py",
+        "fitz_sage/core/registry.py",
+        "fitz_sage/core/utils.py",
+        "fitz_sage/core/paths/cache.py",
+        "fitz_sage/core/paths/ingestion.py",
+        "fitz_sage/ingestion/chunking/",
+        "fitz_sage/ingestion/detection.py",
+        "fitz_sage/ingestion/exceptions/",
+        "fitz_sage/prompts/entities.py",
+        "fitz_sage/tabular/direct_query.py",
+        "fitz_sage/tabular/extractor.py",
+        "fitz_sage/tabular/models.py",
+        "fitz_sage/tabular/query.py",
+        "fitz_sage/tabular/registry.py",
+        "fitz_sage/tabular/sql_gen.py",
+    )
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+    stale = [name for name in names if any(name.startswith(prefix) for prefix in forbidden)]
+    if stale:
+        raise RuntimeError(f"Wheel contains removed modules: {', '.join(stale)}")
+    if "fitz_sage/py.typed" not in names:
+        raise RuntimeError("Wheel does not contain fitz_sage/py.typed")
 
 
 def resolve_wheel(args: argparse.Namespace, temp_root: Path) -> Path:
@@ -155,6 +195,8 @@ def smoke_import(paths: SmokePaths) -> None:
     env = isolated_env(paths.root)
     run([str(paths.fitz), "--help"], cwd=smoke_cwd, env=env)
     code = (
+        "from importlib.resources import files; "
+        "assert files('fitz_sage').joinpath('py.typed').is_file(); "
         "from fitz_sage.runtime import create_engine; "
         "engine = create_engine('fitz_krag'); "
         "print(type(engine).__name__)"
@@ -250,6 +292,7 @@ def main() -> int:
     try:
         wheel = resolve_wheel(args, temp_root)
         print(f"Wheel under test: {wheel}", flush=True)
+        validate_wheel_contents(wheel)
         paths = create_smoke_env(temp_root)
         install_wheel(paths, wheel)
         smoke_import(paths)

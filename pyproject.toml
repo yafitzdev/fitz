@@ -105,6 +105,9 @@ dev = [
     "black>=23.0",
     "isort>=5.0",
     "ruff>=0.1.0",
+    "mypy>=1.10",
+    "types-PyYAML>=6.0",
+    "fastapi>=0.100.0",
     "psutil>=5.9",
     "hypothesis>=6.100.0",
 ]
@@ -126,6 +129,7 @@ exclude = ["tests*", "tools*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yaml", "*.yml"]
+"fitz_sage" = ["py.typed"]
 
 [project.scripts]
 fitz = "fitz_sage.cli.cli:app"
@@ -186,8 +190,8 @@ markers = [
 ]
 
 [tool.mutmut]
-# Full mutation testing - run overnight locally or in weekly CI
-paths_to_mutate = "fitz_sage/core/"
+# Default to the evidence-governance boundary; CI rotates additional targets.
+paths_to_mutate = "fitz_sage/engines/fitz_krag/evidence_contract.py,fitz_sage/engines/fitz_krag/evidence_compiler.py,fitz_sage/engines/fitz_krag/evidence_closure.py,fitz_sage/engines/fitz_krag/governance_cutoff.py"
 # Run unit + integration tests for thorough coverage
 runner = "python -m pytest tests/unit/ tests/integration/ -x -q --tb=no"
 # Test execution timeout (generous for full suite)

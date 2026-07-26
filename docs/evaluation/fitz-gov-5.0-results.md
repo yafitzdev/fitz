@@ -231,6 +231,6 @@ python -m tools.governance.calibrate_cascade
 v6's citation-grounded AV addressed the primary v5.1 problem (jury checking relevance, not answer presence). The remaining FT cases are harder boundary examples where citation quality is high but the answer is incomplete or mismatched.
 
 **What would help**:
-- Post-generation claim verification (check that the generated answer is grounded in the retrieved chunks)
+- Post-generation claim verification (check that the generated answer is grounded in the retrieved evidence)
 - Stronger LLM for constraint evaluation (the fast-tier model misses nuanced distinctions)
 - Further feature engineering on citation match quality signals

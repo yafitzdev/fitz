@@ -9,8 +9,8 @@ from datetime import date
 from enum import Enum
 from typing import Any
 
+from fitz_sage.core.identifiers import EXACT_IDENTIFIER_PATTERN as _IDENTIFIER_PATTERN
 from fitz_sage.core.identifiers import (
-    EXACT_IDENTIFIER_PATTERN as _IDENTIFIER_PATTERN,
     contains_exact_identifier,
     exact_identifiers,
 )
@@ -192,7 +192,9 @@ def execute_table_query_plan(plan: TableQueryPlan, rows: list[list[Any]]) -> lis
                     sortable,
                     key=lambda item: item[0],
                     reverse=plan.sort.direction == "max",
-                )[0][1]
+                )[
+                    0
+                ][1]
             ]
 
     scored = [(_row_score(plan, row), index, row) for index, row in enumerate(candidate_rows)]

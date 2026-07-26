@@ -12,7 +12,6 @@ Public API:
     - Provenance: Source attribution
     - FitzPaths: Central path management
     - Exceptions: Standard error hierarchy
-    - Utils: extract_path, set_nested_path
 
 Examples:
     Using the core abstractions:
@@ -35,17 +34,10 @@ Examples:
     >>> from fitz_sage.core import FitzPaths
     >>> config_path = FitzPaths.config()
 
-    Using extract_path:
-    >>> from fitz_sage.core import extract_path
-    >>> data = {"response": {"choices": [{"text": "Hello"}]}}
-    >>> extract_path(data, "response.choices[0].text")
-    'Hello'
 """
 
 from .answer import Answer
-
-# Core data models
-from .chunk import Chunk
+from .collections import collection_name_from_path, validate_collection_name
 
 # Core protocol
 from .engine import KnowledgeEngine, RetrievalEngine
@@ -71,9 +63,20 @@ from .provenance import Provenance
 
 # Core types
 from .query import Query
-
-# Core utilities
-from .utils import extract_path, set_nested_path
+from .retrieval_run import (
+    RETRIEVAL_RUN_SCHEMA_VERSION,
+    CandidateReference,
+    CandidateStage,
+    FrozenEvidence,
+    GovernanceExecution,
+    GovernanceReplay,
+    GovernanceStep,
+    QueryExecution,
+    QueryTerm,
+    RetrievalRun,
+    RunEnvironment,
+    StrategyExecution,
+)
 
 __all__ = [
     # Protocol
@@ -84,8 +87,21 @@ __all__ = [
     "Answer",
     "EvidenceItem",
     "EvidencePack",
+    "RETRIEVAL_RUN_SCHEMA_VERSION",
+    "CandidateReference",
+    "CandidateStage",
+    "FrozenEvidence",
+    "GovernanceExecution",
+    "GovernanceReplay",
+    "GovernanceStep",
+    "QueryExecution",
+    "QueryTerm",
+    "RetrievalRun",
+    "RunEnvironment",
+    "StrategyExecution",
     "Provenance",
-    "Chunk",
+    "validate_collection_name",
+    "collection_name_from_path",
     # Path Management
     "FitzPaths",
     "get_workspace",
@@ -101,7 +117,4 @@ __all__ = [
     "ConfigurationError",
     "TimeoutError",
     "UnsupportedOperationError",
-    # Utilities
-    "extract_path",
-    "set_nested_path",
 ]

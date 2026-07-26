@@ -20,6 +20,7 @@ from fitz_sage.engines.fitz_krag.evidence_contract import build_query_contract
 from fitz_sage.engines.fitz_krag.query_planner import (
     DeterministicQueryPlanner,
     QueryPlan,
+    content_terms,
     plan_from_batch_result,
 )
 from fitz_sage.engines.fitz_krag.retrieval.trace import read_results_trace
@@ -54,6 +55,7 @@ class RetrievalOutcome:
     rewrite_result: Any = None
     query_profile_metadata: dict[str, Any] = field(default_factory=dict)
     retrieval_trace: dict[str, Any] = field(default_factory=dict)
+    query_terms: list[dict[str, str]] = field(default_factory=list)
 
 
 class QueryPipeline:
@@ -109,7 +111,7 @@ class QueryPipeline:
         _progress("Analyzing query...")
 
         t0 = time.perf_counter()
-        plan = self._prepare_query_plan(
+        prepared_plan, prepared_keyword_origin = self._prepare_query_plan(
             sanitized,
             query.metadata,
             use_query_intelligence=use_query_intelligence,
@@ -117,8 +119,14 @@ class QueryPipeline:
         timings.append(("Query prep", time.perf_counter() - t0))
 
         t0 = time.perf_counter()
-        plan = self._add_semantic_query_keywords(sanitized, plan)
+        plan = self._add_semantic_query_keywords(sanitized, prepared_plan)
         timings.append(("Qwen query keywords", time.perf_counter() - t0))
+        query_terms = _query_term_trace(
+            sanitized,
+            prepared_plan,
+            plan,
+            prepared_keyword_origin=prepared_keyword_origin,
+        )
 
         t0 = time.perf_counter()
         pyrrho_plan = self._plan_with_pyrrho(sanitized)
@@ -168,6 +176,7 @@ class QueryPipeline:
                 rewrite_result=plan.rewrite_result,
                 query_profile_metadata=query_profile,
                 retrieval_trace=retrieval_trace,
+                query_terms=query_terms,
             )
 
         if expand_context:
@@ -199,6 +208,7 @@ class QueryPipeline:
             rewrite_result=plan.rewrite_result,
             query_profile_metadata=query_profile,
             retrieval_trace=retrieval_trace,
+            query_terms=query_terms,
         )
 
     def close_evidence(
@@ -315,6 +325,7 @@ class QueryPipeline:
             rewrite_result=outcome.rewrite_result,
             query_profile_metadata=outcome.query_profile_metadata,
             retrieval_trace=retrieval_trace,
+            query_terms=outcome.query_terms,
         )
 
     def _prepare_query_plan(
@@ -323,7 +334,7 @@ class QueryPipeline:
         metadata: dict[str, Any],
         *,
         use_query_intelligence: bool | None,
-    ) -> QueryPlan:
+    ) -> tuple[QueryPlan, str]:
         """Build the deterministic plan, optionally enhanced by query intelligence."""
         if use_query_intelligence is None:
             use_query_intelligence = self._config.query_intelligence is not None
@@ -332,7 +343,7 @@ class QueryPipeline:
         plan = planner.plan(sanitized, detection_enabled=True)
 
         if not use_query_intelligence:
-            return plan
+            return plan, "deterministic"
 
         fast_analysis = self._fast_analyze(sanitized)
         need_llm_analysis = fast_analysis is None
@@ -352,6 +363,7 @@ class QueryPipeline:
             if need_detection and batch_result.detection_results is not None
             else plan.detection
         )
+        keyword_origin = "query_intelligence" if batch_result.keywords else "deterministic"
         plan = plan_from_batch_result(
             sanitized,
             batch_result,
@@ -361,12 +373,12 @@ class QueryPipeline:
         )
         if plan.rewrite_result and plan.retrieval_query != sanitized:
             logger.debug(
-                "Query rewritten",
-                original_preview=sanitized[:50],
-                rewritten_preview=plan.retrieval_query[:50],
+                "Query rewritten: %r -> %r",
+                sanitized[:50],
+                plan.retrieval_query[:50],
             )
 
-        return plan
+        return plan, keyword_origin
 
     def _add_semantic_query_keywords(self, query: str, plan: QueryPlan) -> QueryPlan:
         """Use local Qwen for keyword-only query expansion."""
@@ -412,12 +424,38 @@ def _sanitize_query(text: str) -> str:
     if len(sanitized) > _MAX_QUERY_LENGTH:
         original_length = len(sanitized)
         sanitized = sanitized[:_MAX_QUERY_LENGTH]
-        logger.debug(
-            "Query truncated",
-            original_length=original_length,
-            new_length=_MAX_QUERY_LENGTH,
-        )
+        logger.debug("Query truncated: %d -> %d characters", original_length, _MAX_QUERY_LENGTH)
     return sanitized
+
+
+def _query_term_trace(
+    query: str,
+    prepared_plan: QueryPlan,
+    expanded_plan: QueryPlan,
+    *,
+    prepared_keyword_origin: str,
+) -> list[dict[str, str]]:
+    """Record term provenance without exposing planner implementation objects."""
+    traced: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(values: list[str], origin: str) -> None:
+        for value in values:
+            text = str(value).strip()
+            key = (text.casefold(), origin)
+            if not text or key in seen:
+                continue
+            seen.add(key)
+            traced.append({"text": text, "origin": origin})
+
+    add(content_terms(query), "literal")
+    add(list(prepared_plan.keywords), prepared_keyword_origin)
+    prepared = {keyword.casefold() for keyword in prepared_plan.keywords}
+    add(
+        [keyword for keyword in expanded_plan.keywords if keyword.casefold() not in prepared],
+        "semantic",
+    )
+    return traced
 
 
 def _retrieval_pass_timings(retrieval_pass: Any) -> list[tuple[str, float]]:
@@ -457,7 +495,6 @@ def _closure_profile(
         "code": 0.01,
         "section": 0.01,
         "table": 0.01,
-        "chunk": 0.0,
     }
     if request.modality == "table":
         weights.update({"table": 1.0, "section": 0.12})

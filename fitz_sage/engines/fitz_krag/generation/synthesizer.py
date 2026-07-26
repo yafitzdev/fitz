@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core import Answer, GenerationError, Provenance
 from fitz_sage.core.answer_mode import AnswerMode
@@ -283,7 +283,7 @@ class CodeSynthesizer:
             if r.metadata.get("context_type"):
                 continue
 
-            metadata = {
+            metadata: dict[str, Any] = {
                 "kind": r.address.kind.value,
                 "location": r.address.location,
                 "file_path": r.file_path,

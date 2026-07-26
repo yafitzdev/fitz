@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
+from starlette.concurrency import run_in_threadpool
 
 from fitz_sage.api.dependencies import get_fitz_version, get_service
 from fitz_sage.api.models.schemas import HealthResponse
@@ -19,7 +20,7 @@ async def health() -> HealthResponse:
     Returns server status, version, and component health.
     """
     service = get_service()
-    health_result = service.health_check()
+    health_result = await run_in_threadpool(service.health_check)
 
     return HealthResponse(
         status="healthy" if health_result.healthy else "unhealthy",

@@ -45,34 +45,28 @@ Use `pack.to_dict()` or `pack.to_json()` when returning evidence from an API.
 
 ---
 
-### Chunk
+### RetrievalRun
 
-A generic unit of ingested content retained for compatibility with custom
-engines and older plugin surfaces. The production KRAG engine uses typed
-retrieval units (`Symbol`, `Section`, `TableSpec`) and exposes them through
-`EvidenceItem`, not through public chunk objects.
+The versioned execution record returned by `fitz_sage.trace()` and
+`RetrievalEngine.trace(Query)`.
 
-**Definition:**
+The public record groups stable contracts for query planning, strategy calls,
+candidate stages, governance trajectory, frozen compiled evidence, selected
+`EvidencePack`, and environment fingerprints. It supports:
+
 ```python
-@dataclass
-class Chunk:
-    id: str                   # Chunk ID
-    doc_id: str              # Parent document ID
-    content: str             # Chunk text content
-    chunk_index: int         # Index within document
-    metadata: dict[str, Any] # Optional metadata
+run.to_dict(include_content=False)
+run.to_json(include_content=False)
+run.write(path, include_content=False)
+RetrievalRun.from_dict(payload)
+RetrievalRun.from_json(payload)
+RetrievalRun.read(path)
+run.explain()
 ```
 
-**Usage:**
-```python
-chunk = Chunk(
-    id="chunk_001",
-    doc_id="doc_123",
-    content="Quantum computing uses qubits...",
-    chunk_index=0,
-    metadata={"topic": "physics"}
-)
-```
+Serialization is source-content-redacted by default. `include_content=True` is
+required for `replay_governance()`. See
+[Retrieval Execution Records](RETRIEVAL_RUNS.md).
 
 ---
 
@@ -260,6 +254,7 @@ class RetrievalEngine(KnowledgeEngine, Protocol):
     def indexing_status(self) -> dict: ...
     def retrieve(self, query: Query) -> list: ...
     def evidence(self, query: Query) -> EvidencePack: ...
+    def trace(self, query: Query) -> RetrievalRun: ...
 ```
 
 **Usage:**
@@ -273,27 +268,5 @@ engine.point(Path("./docs"), collection="docs")
 engine.wait_for_query_surface()
 
 pack = engine.evidence(Query(text="Which documents are relevant?"))
+run = engine.trace(Query(text="Why were these documents selected?"))
 ```
-
----
-
-### ChunkLike
-
-Protocol for duck-typed chunk handling without requiring the concrete `Chunk` class.
-
-**When to use:**
-- You want to accept chunk-like objects from external sources
-- You're building a plugin that needs flexibility
-- You want to avoid coupling to the concrete Chunk class
-
-**Properties:**
-```python
-class ChunkLike(Protocol):
-    id: str
-    doc_id: str
-    chunk_index: int
-    content: str
-    metadata: dict[str, Any] | None
-```
-
-**Note:** In most cases, using the concrete `Chunk` class is preferred. Only use `ChunkLike` when you need explicit duck-typing.

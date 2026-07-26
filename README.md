@@ -86,7 +86,7 @@ retrieves the units relevant to a question, reranks them, and returns a governed
 inspect, display, store, or pass to a synthesizer.
 
 ⭐ The retrieval architecture is [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md). Code is parsed
-as symbols, documents as sections, tables as SQLite-backed data, and fallback text as chunks. Queries are routed across those
+as symbols, documents as sections, and tables as SQLite-backed data. Queries are routed across those
 typed surfaces with retrieval strategies that match the source structure.
 
 ⭐ Governance is enforced by [Pyrrho](https://huggingface.co/yafitzdev) in a local CPU forward pass. Pyrrho evaluates the
@@ -105,7 +105,7 @@ Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](
 > APIs, CLIs, dashboards, agents, or pass it to an LLM for answer generation with calibrated governance.
 
 **Asymmetric indexing 🗂️** → [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md)
-> Source files become typed retrieval units: code symbols, document sections, tables, and fallback chunks. Each unit type
+> Source files become typed retrieval units: code symbols, document sections, and tables. Each unit type
 > keeps the structure needed to retrieve it well.
 
 **Zero-wait querying 🐆** → [Progressive KRAG](docs/features/platform/progressive-krag-agentic-search.md)
@@ -153,7 +153,6 @@ and retrieval.
 | **Sections 📑** | Documents (PDF, markdown, text) | Headings and paragraphs become hierarchical sections with parent/child context and summaries. |
 | [**Tables 📅**](docs/features/ingestion/tabular-data-routing.md) | CSV files or tables within documents | Native SQLite storage with schema detection and SQL execution from natural language. |
 | **Images 🖼️** | Figures and diagrams within documents | VLM-powered figure extraction and visual understanding. *(Coming soon)* |
-| **Chunks 🧩** | Any content as fallback | Fallback text retrieval when structured extraction does not apply. |
 
 <br>
 
@@ -253,15 +252,39 @@ signals tell you whether the result is usable.
 This is why `fitz-sage` is useful as infrastructure: the package returns source evidence plus enough judgment to decide the
 next action.
 
+#### Retrieval execution records
+
+When an `EvidencePack` is not enough to diagnose a result, `RetrievalRun`
+records the actual query plan, term origins, candidate stages, compiled ranking,
+governance trajectory, and runtime fingerprints from the same execution.
+
+```bash
+fitz retrieve "Which test failed?" -c reports --trace run.json
+fitz explain run.json
+```
+
+Trace exports redact source bodies by default. Content-bearing traces are an
+explicit opt-in and enable governance-only replay over frozen evidence. See
+[Retrieval Execution Records](docs/RETRIEVAL_RUNS.md).
+
 ---
 
 ### Governance — `Pyrrho`
 
+> **Current safety status:** the historical default remote Pyrrho package is
+> quarantined and fails closed because its training corpus was contaminated.
+> Supply an explicitly reviewed local clean model directory. The environment
+> escape hatch documented in [Epistemic Governance](docs/CONSTRAINTS.md) exists
+> only for forensic reproduction pinned to the known-bad revision
+> `948f0500b74871cfaec7689a01d4eab0dd516e1b`.
+
 [Feature docs](docs/CONSTRAINTS.md) • [Pyrrho on Hugging Face](https://huggingface.co/yafitzdev) • [fitz-gov on Hugging Face](https://huggingface.co/datasets/yafitzdev/fitz-gov-v2)
 
-Pyrrho is the local governance model behind `fitz-sage`. The default backend is
-[`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1):
-a CPU-local ONNX ModernBERT classifier for evidence governance.
+Pyrrho is the local governance model behind `fitz-sage`. No remote Pyrrho
+artifact is currently approved as a default. The historical CPU-local ONNX
+ModernBERT package
+[`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
+is quarantined and retained only for forensic continuity.
 
 <br>
 
@@ -295,21 +318,10 @@ answer, retry, show conflict, or request more source material.
 
 <br>
 
-**fitz-gov**
-
-| Metric | Score |
-|--------|-------|
-| Held-out post-retrieval overall score | **94.71%** |
-| Evidence verdict accuracy | **97.03%** |
-| Failure-mode accuracy | **95.67%** |
-| False sufficient rate | **4.84%** |
-
-**fitz-sage**
-
-| Metric | Score |
-|--------|-------|
-| Balanced fixed-evidence governance sanity suite | **120/120** |
-| Live retrieval benchmark | **97/120** |
+Previously reported Pyrrho development metrics and fixed-evidence benchmark
+scores are withdrawn as release evidence because the contaminated training
+tranche duplicated benchmark wording. Clean retraining and independent
+evaluation must finish before replacement quality claims are published.
 
 <br>
 
@@ -317,9 +329,11 @@ answer, retry, show conflict, or request more source material.
 > Governance is a source-evidence judgment. Pyrrho is trained to decide whether retrieved evidence is sufficient,
 > disputed, or insufficient, and Fitz records that judgment in the returned metadata.
 
-<strong>The system fails safe 🛡️</strong>
-> Threshold calibration is tuned around avoiding false sufficient decisions. When evidence is incomplete or conflicting,
-> the returned mode and reasons make that explicit.
+<strong>The runtime fails closed on known contract violations 🛡️</strong>
+> Model packages, label order, ONNX width, token limits, graph parity, and
+> verdict/failure compatibility are checked before or during inference. These
+> checks reduce unsafe failure modes; they are not a substitute for clean-data
+> evaluation or threshold calibration.
 
 <strong>No LLM on the governance path ⏱️</strong>
 > Pyrrho is a local encoder forward pass. Governance does not require an external chat model.
@@ -331,6 +345,10 @@ answer, retry, show conflict, or request more source material.
 <summary><strong>📦 Quick Start</strong></summary>
 
 <br>
+
+> Governed queries currently require `governance: pyrrho/<absolute-local-path>`
+> pointing to an explicitly reviewed clean package. The bare `pyrrho` setting
+> intentionally refuses the quarantined historical remote artifact.
 
 #### CLI
 >
@@ -483,7 +501,7 @@ build on source evidence.
 │  API: /query | /chat | /collections | /health                   │
 ├─────────────────────────────────────────────────────────────────┤
 │  Engine                                                         │
-│  FitzKRAG: typed retrieval over code, docs, tables, chunks      │
+│  FitzKRAG: typed retrieval over code, documents, and tables     │
 ├─────────────────────────────────────────────────────────────────┤
 │  Evidence Contract                                              │
 │  EvidencePack: items | mode | reasons | timings | metadata      │
@@ -521,7 +539,7 @@ fitz collections                          # List and delete knowledge collection
 fitz serve                                # Start REST API server
 ```
 
-Config: `~/.fitz/config/fitz_krag.yaml` — auto-created on first run. Edit it for optional synthesis, query intelligence,
+Config: `.fitz/config.yaml` in the current workspace - auto-created on first run. Edit it for optional synthesis, query intelligence,
 vision, or custom model/provider choices.
 
 </details>
@@ -586,7 +604,8 @@ pip install fitz-sage[api]
 
 fitz serve                    # localhost:8000
 fitz serve -p 3000            # custom port
-fitz serve --host 0.0.0.0     # all interfaces
+$env:FITZ_API_KEY = "replace-with-a-random-secret"
+fitz serve --host 0.0.0.0     # remote access requires the API key
 ```
 
 **Interactive docs:** Visit `http://localhost:8000/docs` for Swagger UI.
@@ -638,14 +657,14 @@ curl -X POST http://localhost:8000/query \
 
 **"Model not found" error**
 > The model name in your config does not match what your server has loaded. Check `/v1/models` on your server:
-> `curl http://localhost:8080/v1/models`. Then update `synthesizer` in `~/.fitz/config/fitz_krag.yaml`.
+> `curl http://localhost:8080/v1/models`. Then update `synthesizer` in `.fitz/config.yaml`.
 
 **First query is slow**
 > First run initializes storage, downloads managed local models if needed, and builds the query-ready index. Later queries
 > reuse the collection.
 
 **How do I change my LLM endpoint or model?**
-> Edit `~/.fitz/config/fitz_krag.yaml`:
+> Edit `.fitz/config.yaml`:
 > ```yaml
 > synthesizer: endpoint/gpt-oss-20b
 > chat_base_url: http://localhost:8080/v1

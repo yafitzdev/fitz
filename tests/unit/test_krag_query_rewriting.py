@@ -8,13 +8,12 @@ answer() pipeline, and that failures or absence are handled gracefully.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
-from fitz_sage.core import Answer, Provenance
+from fitz_sage.core import Answer, Provenance, Query
 from fitz_sage.core.exceptions import QueryIntelligenceError
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
+from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from tests.unit.mock_engine import build_mock_engine
 
 # ---------------------------------------------------------------------------
@@ -26,23 +25,31 @@ from tests.unit.mock_engine import build_mock_engine
 _make_engine = build_mock_engine
 
 
-def _make_query(text: str = "How does auth work?") -> MagicMock:
-    """Return a mock Query with the given text."""
-    q = MagicMock(name="query")
-    q.text = text
-    return q
+def _make_query(text: str = "How does auth work?") -> Query:
+    """Return a query with the given text."""
+    return Query(text=text)
 
 
 def _wire_happy_path(engine: FitzKragEngine, query_text: str) -> Answer:
     """Wire up all pipeline stages to return valid data for a full flow."""
-    address = MagicMock(name="addr")
+    address = Address(
+        kind=AddressKind.SECTION,
+        source_id="auth-doc",
+        location="Authentication",
+        summary="Authentication implementation",
+        score=0.9,
+    )
     engine._retrieval_router.retrieve.return_value = [address]
 
-    read_result = MagicMock(name="read")
+    read_result = ReadResult(
+        address=address,
+        content="The authentication module validates login sessions.",
+        file_path="auth.md",
+    )
     engine._reader.read.return_value = [read_result]
     engine._expander.expand.return_value = [read_result]
 
-    context = MagicMock(name="context")
+    context = "[S1] Authentication implementation"
     engine._assembler.assemble.return_value = context
 
     expected = Answer(

@@ -406,7 +406,7 @@ def _governance_cutoff_metadata(
     stop_reason: str | None = None,
 ) -> dict[str, Any]:
     """Build serializable metadata for the cutoff loop."""
-    metadata = {
+    metadata: dict[str, Any] = {
         "evaluated": evaluated,
         "selected": selected,
         "max": policy.max_docs if policy else 0,
@@ -628,6 +628,26 @@ def _pyrrho_metadata(mode: AnswerMode, decision: Any = None) -> dict[str, Any]:
     if isinstance(reason, str) and reason:
         metadata["reason"] = reason
 
+    used_consistency_fallback = getattr(decision, "used_consistency_fallback", False) is True
+    consistency_reason = getattr(decision, "consistency_reason", None)
+    pre_consistency_pair = getattr(decision, "pre_consistency_pair", None)
+    if used_consistency_fallback:
+        metadata["used_consistency_fallback"] = True
+        if isinstance(consistency_reason, str) and consistency_reason:
+            metadata["consistency_reason"] = consistency_reason
+        if isinstance(pre_consistency_pair, tuple) and len(pre_consistency_pair) == 2:
+            metadata["pre_consistency_pair"] = list(pre_consistency_pair)
+
+    input_tokens = getattr(decision, "input_tokens", None)
+    max_input_tokens = getattr(decision, "max_input_tokens", None)
+    input_truncated = bool(getattr(decision, "input_truncated", False))
+    if isinstance(input_tokens, int) or isinstance(max_input_tokens, int):
+        if isinstance(input_tokens, int):
+            metadata["input_tokens"] = input_tokens
+        if isinstance(max_input_tokens, int):
+            metadata["max_input_tokens"] = max_input_tokens
+        metadata["input_truncated"] = input_truncated
+
     native_heads = {
         "evidence_verdict",
         "failure_mode",
@@ -674,6 +694,8 @@ def _head_metadata(head: Any) -> dict[str, Any]:
         "final_label",
         "final_labels",
         "used_threshold_fallback",
+        "used_consistency_fallback",
+        "consistency_reason",
         "threshold",
         "confidence",
         "runner_up_label",

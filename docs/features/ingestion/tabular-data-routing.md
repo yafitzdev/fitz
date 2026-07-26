@@ -10,18 +10,18 @@ Tables in documents get chunked arbitrarily, breaking structure:
 
 Text-based retrieval (BM25 or full-text search over chunks) fails on entity-specific table queries because chunked text doesn't capture row-level data. Tables need **structured querying (SQL)**, not chunk retrieval.
 
-## Solution: Table Registry + Optional SQL Execution
+## Solution: Table Index + Optional SQL Execution
 
-Fitz stores tables in SQLite and registers them for guaranteed retrieval:
+Fitz stores tables in SQLite and indexes their schemas for BM25 retrieval:
 
 ```
 Q: "How much does Alice earn?"
      ↓
-Table chunk retrieved via registry (guaranteed, not semantic similarity)
+Table schema address retrieved with BM25/FTS5
      ↓
 LLM generates SQL: SELECT salary FROM employees WHERE name = 'Alice'
      ↓
-SQL executed on stored table data when optional answer synthesis runs
+SQL executed on stored table data when an optional chat provider is configured
      ↓
 Result: "Alice earns $85,000"
 ```
@@ -40,22 +40,17 @@ Result: "Alice earns $85,000"
    - Full table data stored in SQLite (not chunked)
    - Schema extracted: column names, types, sample rows
 
-3. **Schema chunk indexing** - Schema chunks indexed for search:
+3. **Schema indexing** - Table schema units are indexed for search:
    - Contains: table name, column names, sample rows (top 3)
    - Indexed in SQLite FTS5
    - Tagged with `content_type: table_schema`
 
-4. **Table registry** - Mapping of table IDs to source files:
-   ```json
-   {
-     "employees.csv:0": "path/to/employees.csv",
-     "report.md:1": "path/to/report.md"
-   }
-   ```
+4. **Table identity** - Table IDs map schema addresses to intact table data in
+   the collection database.
 
 ### At Query Time
 
-1. **Schema chunk retrieval** - BM25/FTS5 search retrieves relevant schema chunks
+1. **Schema retrieval** - BM25/FTS5 search retrieves relevant table addresses
 
 2. **Table loading** - Full table data loaded from SQLite TableStore
 
@@ -64,7 +59,7 @@ Result: "Alice earns $85,000"
    SELECT salary FROM employees WHERE name = 'Alice'
    ```
 
-4. **SQL execution** - Query executed on in-memory SQLite table
+4. **SQL execution** - Query executed against the collection's SQLite table
 
 5. **Result formatting** - optional synthesizer formats SQL results into a natural language answer
 
@@ -72,13 +67,17 @@ Result: "Alice earns $85,000"
 
 1. **Always-on** - Tables are automatically detected and routed. No configuration needed.
 
-2. **Guaranteed retrieval** - Table registry ensures tables are always retrieved when needed (not dependent on semantic similarity).
+2. **Typed routing** - Table-shaped queries increase the table strategy weight;
+   retrieval still depends on the indexed schema matching the query.
 
 3. **Full table storage** - Tables stored intact in SQLite, not chunked and scattered.
 
-4. **LLM-generated SQL is optional** - SQL generation runs in the answer path when a chat synthesizer is configured. Evidence retrieval still returns the relevant table/source units.
+4. **LLM-generated SQL is optional** - SQL generation runs when a tiered chat
+   provider is configured. Evidence retrieval otherwise returns the relevant
+   table/source units without invented SQL.
 
-5. **In-memory execution** - SQLite tables loaded into memory for query execution (fast, no external DB).
+5. **Local execution** - Queries run in the collection's SQLite database; no
+   external database server is required.
 
 ## Configuration
 
@@ -86,7 +85,7 @@ No configuration is required for table detection and table evidence retrieval.
 Computed SQL answers require optional answer synthesis.
 
 Internal parameters:
-- `max_table_rows`: Max rows to index in schema chunk (default: 3 sample rows)
+- `max_table_rows`: Max sample rows to include in the schema index (default: 3)
 - Tables are stored inside the collection's own `.db` (under the workspace `sqlite/` dir), not a separate file
 
 ## Files
@@ -125,7 +124,7 @@ Internal parameters:
 - Problem: May not retrieve both header + Alice row together
 
 **Tabular Data Routing:**
-- Schema chunk retrieved: "employees.csv has columns: name, salary, department. Sample: Alice ($85,000), Bob ($75,000)"
+- Schema unit retrieved: "employees.csv has columns: name, salary, department. Sample: Alice ($85,000), Bob ($75,000)"
 - SQL generated: `SELECT salary FROM employees WHERE name = 'Alice'`
 - SQL executed: Returns 85000
 - Answer: "Alice earns $85,000"

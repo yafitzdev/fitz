@@ -102,9 +102,17 @@ pass on a bridge query when pyrrho judges the evidence insufficient.
 3  Fuse            merge across strategies, dedup, keyword and freshness boosts
 4  Rerank          ONNX cross-encoder (gte-reranker-modernbert-base)
 5  Read            fetch content for surviving addresses
-6  Govern cutoff   pyrrho evaluates top-1, top-2, ... up to cutoff
-7  Synthesize      optional chat call writes an Answer from governed evidence
+6  Compile         enforce query-shape evidence obligations
+7  Govern cutoff   pyrrho evaluates top-1, top-2, ... up to cutoff
+8  Record          optional RetrievalRun snapshots this same execution
+9  Synthesize      optional chat call writes an Answer from governed evidence
 ```
+
+`RetrievalRun` is built from the canonical governed result. Trace mode does not
+invoke a diagnostic copy of the pipeline. Governance replay operates only on
+the frozen post-compilation, pre-cutoff evidence in a content-bearing record;
+it does not claim to reproduce retrieval against a mutable collection. See
+[Retrieval Execution Records](RETRIEVAL_RUNS.md).
 
 ### Ingestion
 
@@ -214,6 +222,18 @@ class Answer:
     mode: AnswerMode              # runtime: SUFFICIENT | DISPUTED | INSUFFICIENT
     provenance: list[Provenance]  # source attribution chain
     metadata: dict
+
+
+@dataclass
+class RetrievalRun:
+    query: QueryExecution
+    evidence: EvidencePack
+    strategies: tuple[StrategyExecution, ...]
+    candidate_stages: tuple[CandidateStage, ...]
+    governance: GovernanceExecution
+    ranked_evidence: tuple[FrozenEvidence, ...]
+    environment: RunEnvironment
+    schema_version: str
 ```
 
 There is no public `Chunk` type in the retrieval path — KRAG uses
@@ -225,9 +245,8 @@ metadata, not fixed-size text windows.
 ## Configuration Layout
 
 ```
-~/.fitz/
-├── config/
-│   └── fitz_krag.yaml       # engine config (role providers, retrieval knobs)
+.fitz/
+├── config.yaml              # engine config (role providers, retrieval knobs)
 ├── sqlite/                  # one .db per collection
 │   ├── fitz_default.db
 │   └── ...
@@ -274,8 +293,8 @@ fitz_sage/
 │   ├── config.py        # provider-spec → instance factory
 │   └── client.py        # get_chat, ...
 ├── storage/             # SqliteConnectionManager (WAL, FTS5)
-├── ingestion/           # parser/chunking plugins used by KRAG ingestion
-├── tabular/             # CSV/XLSX → SqliteTableStore + SQL generation
+├── ingestion/           # built-in parsers, source discovery, and hashing
+├── tabular/             # native table parsers and SqliteTableStore
 ├── governance/          # pyrrho classifier, answer modes, instructions
 ├── runtime/             # multi-engine orchestration
 ├── cli/                 # typer commands
@@ -295,8 +314,8 @@ fitz_sage/
 4. **No embeddings.** BM25 + KRAG routing + ONNX rerank is the retrieval
    backbone; there are no dense indexes or vector columns.
 5. **Honest over helpful.** Mark evidence insufficient instead of hallucinating.
-6. **Files over frameworks.** Plugins are Python modules wired by config,
-   not framework abstractions.
+6. **Narrow extension points.** Provider and parser implementations are wired
+   explicitly; source cleanup stays outside the package.
 7. **Local-first.** SQLite + ONNX enrichment works offline after the model is
    cached; endpoint servers are optional.
 8. **Provenance always.** Every answer traces back to source addresses.

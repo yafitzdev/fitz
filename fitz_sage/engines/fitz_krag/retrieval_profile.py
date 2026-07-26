@@ -16,16 +16,6 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
 
-_ROUTE_DOMAINS = {
-    "technology_computing": "technical",
-    "law_policy": "legal",
-    "science_medicine": "medical",
-    "economics_finance": "financial",
-    "history_geography": "general",
-    "culture_society": "general",
-    "general_commonsense": "general",
-}
-
 _TEXT_EVIDENCE_TERMS = {
     "addendum",
     "brief",
@@ -102,10 +92,9 @@ class RetrievalProfile:
     # Strategy routing
     strategy_weights: dict[str, float] = field(
         default_factory=lambda: {
-            "code": 0.25,
-            "section": 0.25,
-            "table": 0.15,
-            "chunk": 0.35,
+            "code": 0.38,
+            "section": 0.39,
+            "table": 0.23,
         }
     )
     entities: tuple[str, ...] = ()
@@ -124,7 +113,6 @@ class RetrievalProfile:
 
     # Deterministic retrieval-profile signals
     query_contract: str | None = None
-    query_route: str | None = None
     answerability_shape: str | None = None
     retrieval_modality: str | None = None
     retrieval_obligation: str | None = None
@@ -178,7 +166,6 @@ def build_retrieval_profile(
     specificity = "moderate"
     answer_type = "factual"
     domain = "general"
-    route_label = None
     fallback = _deterministic_profile_signals(analysis, detection, extended_signals)
     pyrrho_signals = _pyrrho_profile_signals(pyrrho_plan)
     planning_owner = "fitz_krag"
@@ -199,7 +186,6 @@ def build_retrieval_profile(
         required_modalities_from_v2_evidence_kinds(evidence_kinds),
         tuple(fallback.get("required_modalities", ())),
     )
-    domain = _ROUTE_DOMAINS.get(route_label, domain)
     if extended_signals:
         specificity = str(extended_signals.get("specificity") or specificity)
         answer_type = str(extended_signals.get("answer_type") or answer_type)
@@ -250,10 +236,9 @@ def build_retrieval_profile(
     strategy_weights = dict(getattr(analysis, "strategy_weights", {}) or {}) if analysis else {}
     if not strategy_weights:
         strategy_weights = {
-            "code": 0.25,
-            "section": 0.25,
-            "table": 0.15,
-            "chunk": 0.35,
+            "code": 0.38,
+            "section": 0.39,
+            "table": 0.23,
         }
 
     # --- Detection-derived retrieval text is query-head gated. ---
@@ -359,7 +344,6 @@ def build_retrieval_profile(
         temporal_references=temporal_references,
         keywords=keywords or [],
         query_contract=contract_label,
-        query_route=route_label,
         answerability_shape=shape_label,
         retrieval_modality=modality_label,
         retrieval_obligation=obligation_label,
@@ -645,7 +629,6 @@ def _profile_metadata(profile: RetrievalProfile) -> dict[str, Any]:
     """Serialize retrieval-profile knobs that materially affect recall."""
     return {
         "query_contract": profile.query_contract,
-        "query_route": profile.query_route,
         "answerability_shape": profile.answerability_shape,
         "retrieval_modality": profile.retrieval_modality,
         "retrieval_obligation": profile.retrieval_obligation,

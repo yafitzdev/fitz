@@ -19,7 +19,7 @@ import threading
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fitz_sage.core.exceptions import ManagedModelError
 
@@ -256,11 +256,14 @@ class OnnxGenAiGenerator:
     def format_messages(self, messages: list[dict[str, Any]]) -> str:
         """Apply the model chat template, disabling Qwen thinking by default."""
         if getattr(self._tokenizer, "chat_template", None):
-            return self._tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
+            return cast(
+                str,
+                self._tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                ),
             )
         rendered: list[str] = []
         for message in messages:

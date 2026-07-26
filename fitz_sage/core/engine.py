@@ -9,6 +9,7 @@ from typing import Any, Protocol, runtime_checkable
 from .answer import Answer
 from .evidence import EvidencePack
 from .query import Query
+from .retrieval_run import RetrievalRun
 
 
 @runtime_checkable
@@ -44,7 +45,13 @@ class RetrievalEngine(KnowledgeEngine, Protocol):
         """Bind the engine to a collection."""
         ...
 
-    def point(self, source: Path, collection: str | None = None) -> Any:
+    def point(
+        self,
+        source: Path,
+        collection: str | None = None,
+        *,
+        start_worker: bool = True,
+    ) -> Any:
         """Register a source directory; indexing proceeds in the background."""
         ...
 
@@ -66,4 +73,8 @@ class RetrievalEngine(KnowledgeEngine, Protocol):
 
     def evidence(self, query: Query) -> EvidencePack:
         """Return governed, serializable evidence behind answer(), without synthesis."""
+        ...
+
+    def trace(self, query: Query) -> RetrievalRun:
+        """Return a versioned execution record for governed retrieval."""
         ...

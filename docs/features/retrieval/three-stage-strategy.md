@@ -225,7 +225,7 @@ avoidable failures:
 
 - exact identifiers get blurred by semantic similarity
 - comparison queries retrieve one side but miss the other
-- broad queries over-rank random matching chunks
+- broad queries over-rank random matching source units
 - missing evidence still looks answerable to a generator
 - conflicting evidence is treated as just another context pack
 

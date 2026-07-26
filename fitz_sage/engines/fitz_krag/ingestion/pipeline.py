@@ -21,7 +21,6 @@ schedules the same ops file-by-file on a background thread.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import uuid
 from collections.abc import Callable
@@ -48,6 +47,7 @@ from fitz_sage.engines.fitz_krag.ingestion.strategies.technical_doc import (
 )
 from fitz_sage.engines.fitz_krag.ingestion.symbol_store import SymbolStore, symbol_entry_to_dict
 from fitz_sage.engines.fitz_krag.ingestion.table_store import TableStore
+from fitz_sage.ingestion.hashing import compute_bytes_hash, compute_content_hash
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
@@ -385,7 +385,7 @@ class KragIngestPipeline:
             logger.warning(f"Cannot read {abs_path}: {e}")
             return 0
 
-        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        content_hash = compute_bytes_hash(content.encode())
         self._raw_store.upsert(
             file_id=file_id,
             path=rel_path,
@@ -503,7 +503,7 @@ class KragIngestPipeline:
 
         preview = "\n".join(content.splitlines()[:50])
         ext = abs_path.suffix.lower()
-        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        content_hash = compute_bytes_hash(content.encode())
 
         self._raw_store.upsert(
             file_id=file_id,
@@ -709,7 +709,7 @@ class KragIngestPipeline:
         self._enricher.enrich_symbol_entities(symbols)
         self._symbol_store.update_enrichment_by_file(file_id, symbols)
         if self._entity_graph_store:
-            self._populate_entity_graph(symbols, "symbol_id")
+            self._populate_entity_graph(symbols)
 
     def _link_doc_entities_file(self, file_id: str) -> None:
         """Extract entities for document sections and update the entity graph."""
@@ -720,7 +720,7 @@ class KragIngestPipeline:
         self._enricher.derive_section_entities(sections)
         self._section_store.update_enrichment_by_file(file_id, sections)
         if self._entity_graph_store:
-            self._populate_entity_graph(sections, "section_id")
+            self._populate_entity_graph(sections)
 
     def _build_doc_hierarchy_file(self, file_id: str) -> None:
         """Generate and persist an L1 hierarchy summary for a document file."""
@@ -744,7 +744,7 @@ class KragIngestPipeline:
         self._enricher.enrich_symbols(symbols)
         self._symbol_store.update_enrichment_by_file(file_id, symbols)
         if self._entity_graph_store:
-            self._populate_entity_graph(symbols, "symbol_id")
+            self._populate_entity_graph(symbols)
 
     def _enrich_doc_file(self, file_id: str) -> None:
         """Enrich a document file's sections with keywords + entities + L1 summary.
@@ -762,13 +762,13 @@ class KragIngestPipeline:
         # One write persists keywords, entities, and the L1 hierarchy summary
         self._section_store.update_enrichment_by_file(file_id, sections)
         if self._entity_graph_store:
-            self._populate_entity_graph(sections, "section_id")
+            self._populate_entity_graph(sections)
 
     # ------------------------------------------------------------------
     # Entity graph integration
     # ------------------------------------------------------------------
 
-    def _populate_entity_graph(self, item_dicts: list[dict[str, Any]], id_field: str) -> None:
+    def _populate_entity_graph(self, item_dicts: list[dict[str, Any]]) -> None:
         """Add entities from enriched items to the entity graph store."""
         try:
             for item in item_dicts:
@@ -845,7 +845,7 @@ class KragIngestPipeline:
     def _corpus_summary_source_signature(self, l1_summaries: list[str]) -> str:
         """Hash the L1 rollup inputs so stored L2 summaries are traceable."""
         normalized = "\n".join(sorted(s.strip() for s in l1_summaries if s.strip()))
-        return hashlib.sha256(normalized.encode()).hexdigest()
+        return compute_bytes_hash(normalized.encode())
 
     def _generate_corpus_summary(self, l1_summaries: list[str]) -> str | None:
         """Generate the L2 corpus-level summary from L1 summaries."""
@@ -869,7 +869,7 @@ class KragIngestPipeline:
 
     def _store_corpus_summary(self, summary: str, source_signature: str) -> None:
         """Persist the L2 summary as a retrievable section under a synthetic raw file."""
-        content_hash = hashlib.sha256(summary.encode()).hexdigest()
+        content_hash = compute_bytes_hash(summary.encode())
         self._raw_store.upsert(
             file_id=_CORPUS_FILE_ID,
             path=_CORPUS_FILE_PATH,
@@ -950,8 +950,6 @@ class KragIngestPipeline:
                 for parser in router._parsers.values():
                     if hasattr(parser, "vision_client"):
                         parser.vision_client = vision_client
-                        if hasattr(parser, "_vision_client_loaded"):
-                            parser._vision_client_loaded = True
                         break
         except Exception as e:
             logger.warning(f"Failed to inject vision client: {e}")
@@ -1007,7 +1005,7 @@ class KragIngestPipeline:
                 return [source]
             return []
 
-        files = []
+        files: list[Path] = []
         for ext in extensions:
             files.extend(source.rglob(f"*{ext}"))
 
@@ -1064,5 +1062,4 @@ def _resolve_section_parents(section_dicts: list[dict[str, Any]], file_ids: list
 
 def _hash_file(path: Path) -> str:
     """Compute SHA-256 hash of file content."""
-    content = path.read_bytes()
-    return hashlib.sha256(content).hexdigest()
+    return compute_content_hash(path)

@@ -73,11 +73,11 @@ def compile_evidence(
     # but authority resolution and conflict judgment belong to Pyrrho and the caller.
     suppressed: list[EvidenceUnit] = []
     min_sources = _minimum_sources(contract, ordered)
-    compiled = [
-        _with_compiler_metadata(unit.result, unit, rank, min_sources, contract)
-        for rank, unit in enumerate(ordered, start=1)
-        if unit.result is not None
-    ]
+    compiled: list[ReadResult] = []
+    for rank, unit in enumerate(ordered, start=1):
+        result = unit.result
+        if result is not None:
+            compiled.append(_with_compiler_metadata(result, unit, rank, min_sources, contract))
     return EvidenceCompilation(
         compiled,
         _metadata(contract, units, ordered, min_sources, suppressed=suppressed),
@@ -286,15 +286,13 @@ def _address_unit(index: int, address: Address, contract: _QueryContract) -> Evi
 
 
 def _with_compiler_metadata(
-    result: ReadResult | None,
+    result: ReadResult,
     unit: EvidenceUnit,
     rank: int,
     min_sources: int,
     contract: _QueryContract,
-) -> ReadResult | None:
+) -> ReadResult:
     """Return a copy of a read result annotated with compiler metadata."""
-    if result is None:
-        return None
     metadata = dict(result.metadata)
     metadata["evidence_compiler"] = {
         "rank": rank,
@@ -384,7 +382,6 @@ def _contract_snapshot(contract: _QueryContract) -> dict[str, Any]:
     """Return the Pyrrho contract and literal anchors as metadata."""
     return {
         "query_contract": contract.query_contract,
-        "route": contract.route,
         "answerability_shape": contract.answerability_shape,
         "retrieval_modality": contract.retrieval_modality,
         "retrieval_obligation": contract.retrieval_obligation,

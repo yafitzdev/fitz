@@ -35,7 +35,7 @@ def compress_results(results: list[ReadResult]) -> list[ReadResult]:
     """Compress code content in ReadResults before context assembly.
 
     Only compresses Python code results (SYMBOL/FILE kinds with .py paths).
-    Non-code results (sections, tables, chunks) are passed through unchanged.
+    Non-code results (sections and tables) are passed through unchanged.
     """
     compressed: list[ReadResult] = []
     for result in results:
@@ -91,7 +91,7 @@ def compress_python(source: str) -> str:
                 and isinstance(node.body[0].value.value, str)
             ):
                 doc_node = node.body[0]
-                removals.append((doc_node.lineno, doc_node.end_lineno))
+                removals.append((doc_node.lineno, doc_node.end_lineno or doc_node.lineno))
 
         # Compress function/method bodies
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -113,7 +113,7 @@ def compress_python(source: str) -> str:
             first_body = real_body[0]
             last_body = real_body[-1]
             body_start = first_body.lineno
-            body_end = last_body.end_lineno
+            body_end = last_body.end_lineno or last_body.lineno
 
             body_lines = body_end - body_start + 1
 

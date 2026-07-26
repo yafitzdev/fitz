@@ -87,6 +87,7 @@ fitz retrieve "Your question"
 fitz retrieve "What is this about?" --source ./docs
 fitz retrieve "Which test failed?" -c my_collection --source ./docs --top-k 10
 fitz retrieve "Which test failed?" --format json
+fitz retrieve "Which test failed?" -c my_collection --trace run.json
 ```
 
 **Options**
@@ -95,6 +96,43 @@ fitz retrieve "Which test failed?" --format json
 - `-e, --engine TEXT` - engine name; defaults to `fitz_krag`
 - `--format text|json` - human-readable table or serialized `EvidencePack`
 - `--top-k INT` - maximum evidence items to show
+- `--trace PATH` - write a versioned retrieval execution record
+- `--trace-content` - include source content so governance can be replayed;
+  requires `--trace`
+
+Trace capture and the displayed `EvidencePack` come from one execution. Source
+content is redacted unless `--trace-content` is explicitly set.
+
+### `fitz explain`
+
+Explain a retrieval trace without loading a collection or rerunning models.
+
+```bash
+fitz explain run.json
+```
+
+### `fitz replay`
+
+Replay only governance over verified, frozen evidence. The input must have been
+captured with `--trace-content`.
+
+```bash
+fitz replay run-with-content.json
+fitz replay run-with-content.json \
+  --governance pyrrho/C:/models/pyrrho-candidate \
+  --output replay.json
+fitz replay run-with-content.json --format json
+```
+
+**Options**
+- `-g, --governance TEXT` - provider/model spec; defaults to the recorded one
+- `-o, --output PATH` - write a versioned governance replay record
+- `--format text|json` - human explanation or serialized replay
+- `--include-content` - include selected source content in JSON output
+
+Replay does not rerun BM25, semantic keywords, reranking, or compilation. See
+[Retrieval Execution Records](RETRIEVAL_RUNS.md) for the exact boundary and
+redaction policy.
 
 ### `fitz answer`
 
@@ -147,7 +185,7 @@ Start the REST API server.
 
 ```bash
 fitz serve
-fitz serve --host 0.0.0.0 -p 8080
+FITZ_API_KEY=secret fitz serve --host 0.0.0.0 -p 8080
 fitz serve --reload
 ```
 
@@ -156,13 +194,17 @@ fitz serve --reload
 - `-p, --port INT` - bind port; default `8000`
 - `--reload` - auto-reload on code change
 
+Non-loopback binding requires `FITZ_API_KEY`; remote clients send it as
+`X-Fitz-API-Key`. Browser CORS and server-local source roots are disabled or
+restricted by default; see [API.md](API.md).
+
 See [API.md](API.md) for endpoint schemas.
 
 ---
 
 ## Configuration
 
-The minimum on-disk config (`~/.fitz/config/fitz_krag.yaml`) is:
+The minimum on-disk config (`.fitz/config.yaml` in the current workspace) is:
 
 ```yaml
 collection: default
@@ -197,7 +239,7 @@ export OPENAI_API_KEY="..."
 export TOGETHER_API_KEY="..."
 ```
 
-`FITZ_HOME` overrides `~/.fitz/` if you want to relocate config and storage.
+Run the command from a different working directory to use a separate workspace.
 `FITZ_LOG_LEVEL=DEBUG` enables verbose logging for any command.
 
 ---

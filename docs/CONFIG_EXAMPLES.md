@@ -8,8 +8,8 @@ Working configs for the managed-ONNX / SQLite world. The schema rules:
 - **Provider presence** controls optional endpoint-backed features
   (`synthesizer: null` means no generated answer; `query_intelligence: null`
   means deterministic query prep plus managed Qwen semantic keywords).
-- **Retrieval defaults are real defaults** — managed Qwen enrichment, Pyrrho
-  governance, and the ONNX reranker are the product path.
+- **Governance is mandatory** — configure an explicitly reviewed local Pyrrho
+  package while the historical remote default is quarantined.
 - **Sensible defaults** — `collection` is the only thing every config
   must set; the rest can be overridden per-invocation via CLI flags.
 
@@ -18,11 +18,11 @@ Working configs for the managed-ONNX / SQLite world. The schema rules:
 ## Minimal: retrieval-first local setup
 
 ```yaml
-# ~/.fitz/config/fitz_krag.yaml
+# .fitz/config.yaml
 collection: my_docs
 parser: cpu
 rerank: onnx
-governance: pyrrho
+governance: pyrrho//absolute/path/to/reviewed-clean-package
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1

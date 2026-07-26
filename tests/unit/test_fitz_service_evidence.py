@@ -60,3 +60,32 @@ def test_evidence_response_accepts_pack_dict() -> None:
     assert response.mode == "insufficient"
     assert response.reasons == ["No relevant evidence retrieved."]
     assert response.indexing_status == {"complete": False}
+
+
+def test_service_reuses_collection_bound_engine() -> None:
+    pack = EvidencePack(query="question", mode=AnswerMode.SUFFICIENT)
+    engine = Mock()
+    engine.evidence.return_value = pack
+    service = FitzService()
+
+    with patch("fitz_sage.runtime.create_engine", return_value=engine) as create:
+        service.evidence("first", collection="docs")
+        service.evidence("second", collection="docs")
+
+    create.assert_called_once_with("fitz_krag")
+    engine.load.assert_called_once_with("docs")
+    assert engine.evidence.call_count == 2
+
+
+def test_service_trace_returns_the_engine_execution_record() -> None:
+    run = Mock()
+    engine = Mock()
+    engine.trace.return_value = run
+
+    with patch("fitz_sage.runtime.create_engine", return_value=engine):
+        result = FitzService().trace("What is indexed?", collection="docs")
+
+    engine.load.assert_called_once_with("docs")
+    engine.trace.assert_called_once()
+    assert engine.trace.call_args.args[0].text == "What is indexed?"
+    assert result is run

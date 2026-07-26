@@ -5,7 +5,7 @@ Parser protocol for document format understanding.
 Parsers handle the "how" of extraction - converting raw file bytes into
 structured ParsedDocument with preserved semantics (headings, tables, etc.)
 
-Flow: SourceFile → Parser.parse() → ParsedDocument → Chunker
+Flow: SourceFile -> Parser.parse() -> ParsedDocument -> engine ingestion
 """
 
 from __future__ import annotations

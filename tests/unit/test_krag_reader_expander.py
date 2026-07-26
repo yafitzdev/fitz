@@ -59,19 +59,6 @@ def _make_file_address(
     )
 
 
-def _make_chunk_address(
-    text: str = "chunk content here",
-    location: str = "doc.md",
-) -> Address:
-    return Address(
-        kind=AddressKind.CHUNK,
-        source_id="chunk1",
-        location=location,
-        summary="A chunk",
-        metadata={"text": text},
-    )
-
-
 def _make_section_address(
     section_id: str = "sec-001",
     source_id: str = "file1",
@@ -186,26 +173,6 @@ class TestContentReader:
         assert results[0].content == RAW_FILE_CONTENT
         assert results[0].file_path == "module.py"
         assert results[0].line_range is None
-
-    def test_read_chunk(self):
-        """Reads chunk content from address metadata text field."""
-        reader = ContentReader(_make_raw_store())
-
-        addr = _make_chunk_address(text="Hello from chunk")
-        results = reader.read([addr], limit=10)
-
-        assert len(results) == 1
-        assert results[0].content == "Hello from chunk"
-        assert results[0].file_path == "doc.md"
-
-    def test_read_chunk_empty_text(self):
-        """Empty text in chunk metadata results in None (skipped)."""
-        reader = ContentReader(_make_raw_store())
-
-        addr = _make_chunk_address(text="")
-        results = reader.read([addr], limit=10)
-
-        assert results == []
 
     def test_read_section(self):
         """Reads section content from the section store with metadata."""

@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from fitz_sage.config.defaults import DEFAULT_LOCAL_LLM_BASE_URL
+from fitz_sage.core.collections import validate_collection_name
 from fitz_sage.core.config import BasePluginConfig
 
 
@@ -136,6 +137,11 @@ class FitzKragConfig(BasePluginConfig):
         ...,
         description="Collection name (required)",
     )
+
+    @field_validator("collection")
+    @classmethod
+    def _valid_collection(cls, value: str) -> str:
+        return validate_collection_name(value)
 
     # ==========================================================================
     # Code Strategy
@@ -297,11 +303,6 @@ class FitzKragConfig(BasePluginConfig):
         ),
     )
 
-    enable_citations: bool = Field(
-        default=True,
-        description="Enable [S1], [S2] citation markers in answers",
-    )
-
     strict_grounding: bool = Field(
         default=True,
         description="Only generate answers from provided context",
@@ -365,13 +366,4 @@ class FitzKragConfig(BasePluginConfig):
         ge=1,
         le=5,
         description="Maximum retrieval hops for multi-hop reasoning",
-    )
-
-    # ==========================================================================
-    # Logging
-    # ==========================================================================
-
-    log_level: str = Field(
-        default="INFO",
-        description="Logging level: DEBUG, INFO, WARNING, ERROR",
     )

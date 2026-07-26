@@ -1,28 +1,33 @@
 <!-- docs/CONFIG.md -->
 # Configuration Reference
 
-Engine config lives at
-`~/.fitz/config/<engine>.yaml` (auto-created on first run).
-Storage lives at `~/.fitz/sqlite/fitz_<collection>.db` (auto-created
-on first ingest).
+Engine config lives at `.fitz/config.yaml` in the current workspace
+(auto-created on first run). Storage lives at
+`.fitz/sqlite/fitz_<collection>.db` (auto-created on first ingest).
+
+Explicit collection names must match `[a-z0-9][a-z0-9_-]{0,63}`. They are
+validated, not normalized: `project-a` and `project_a` are separate
+collections. Names derived by the CLI from source directories are slugged only
+at that explicit boundary.
 
 ---
 
 ## Minimal config
 
 ```yaml
-# ~/.fitz/config/fitz_krag.yaml
+# .fitz/config.yaml
 collection: default
 parser: cpu
 rerank: onnx
-governance: pyrrho
+governance: pyrrho//absolute/path/to/reviewed-clean-package
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-This is enough for `fitz query`, `fitz retrieve`, and `fitz_sage.evidence(...)` with local
-enrichment: no hosted API key and no external inference server are required.
+This is enough for `fitz query`, `fitz retrieve`, and `fitz_sage.evidence(...)`
+with local enrichment once the reviewed package path is replaced. No hosted API
+key or external inference server is required.
 For exact local model IDs, runtimes, cache locations, and the smoke command,
 see [Managed Models](MANAGED_MODELS.md).
 
@@ -102,7 +107,7 @@ not boolean flags:
 | ------------------ | ---------------------------------------- | ----------------------------------- |
 | Managed enrichment | always uses local `onnx/qwen3-0.6b`    | not disabled                        |
 | ONNX reranker      | `rerank: onnx` (default)                 | not disabled                        |
-| Governance         | `governance: pyrrho` (default)           | not disabled                        |
+| Governance         | reviewed local `pyrrho/<path>` required  | not disabled                        |
 | Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |
 | Answer synthesis   | `synthesizer: <provider/model>`          | `synthesizer: null`                 |
 | VLM in parser      | `parser: docling_vision` + `vision:` set | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
@@ -177,7 +182,7 @@ For enterprise (M2M / mTLS) deployments see
 top_addresses: 50      # candidates fetched during broad recall
 top_read: 50           # candidates read after rerank
 retrieval_workers: 4   # max retrieval strategies run concurrently
-governance: pyrrho
+governance: pyrrho//absolute/path/to/reviewed-clean-package
 rerank: onnx
 ```
 

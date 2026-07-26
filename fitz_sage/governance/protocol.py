@@ -2,7 +2,8 @@
 """
 EvidenceItem Protocol - Generic interface for evidence that constraints can evaluate.
 
-Both Chunk (core) and ReadResult (KRAG) satisfy this protocol without adapter code.
+KRAG's ReadResult satisfies this protocol without adapter code. Custom engines
+can provide any object with the same evidence fields.
 """
 
 from __future__ import annotations

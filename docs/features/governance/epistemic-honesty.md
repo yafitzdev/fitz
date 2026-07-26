@@ -12,11 +12,13 @@ The system cannot distinguish between "I have evidence" and "I'm making an educa
 
 ## Solution: Pyrrho evidence governance
 
-Every `(query, retrieved evidence prefix)` pair runs through the **pyrrho**
-fine-tuned classifier
-([`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1),
-a ModernBERT model trained on fitz-gov-v2 evidence data). A single local CPU forward pass
-returns one of `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`:
+Every `(query, retrieved evidence prefix)` pair runs through a configured local
+**Pyrrho** classifier. The historical
+[`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
+package is quarantined at known-bad revision
+`948f0500b74871cfaec7689a01d4eab0dd516e1b`; normal use requires an explicitly
+reviewed clean local package. A local CPU forward pass returns one of
+`SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`:
 
 ```
 Q: "What was our Q4 revenue?"
@@ -31,8 +33,7 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 ### Prefix cutoff classification
 
 Each decision is one local classifier call on CPU, with no external LLM
-dependency. The default v2 model is evidence-conditioned; it does not project
-query-planning labels.
+dependency. The v2 post-retrieval pass is evidence-conditioned.
 
 For evidence retrieval, Pyrrho runs incrementally:
 
@@ -57,7 +58,8 @@ Every `EvidencePack` includes a **mode** indicating confidence level:
 
 ## Key Design Decisions
 
-1. **Standard product path** - `governance: pyrrho` is the default and Pyrrho governance is mandatory.
+1. **Standard product path** - Pyrrho governance is mandatory, but the bare
+   `governance: pyrrho` remote default is blocked until a clean release is approved.
 
 2. **Retrieval-first classification** - Governance labels the evidence pack before any optional synthesis.
 
@@ -72,8 +74,8 @@ Every `EvidencePack` includes a **mode** indicating confidence level:
 Governance is selected by the `governance:` field:
 
 ```yaml
-governance: pyrrho  # default local Pyrrho v2 classifier
-# governance: pyrrho/<hf-model-id>  # Pyrrho package
+governance: pyrrho//absolute/path/to/reviewed-clean-package
+# Remote packages require owner/repo@<40-character-commit>.
 ```
 
 ## Files

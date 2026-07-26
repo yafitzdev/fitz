@@ -30,7 +30,7 @@ def test_load_config_from_defaults():
     assert config.governance == "pyrrho"
 
     # Verify generation settings
-    assert hasattr(config, "enable_citations")
+    assert hasattr(config, "strict_grounding")
     assert hasattr(config, "strict_grounding")
     assert hasattr(config, "top_addresses")
 

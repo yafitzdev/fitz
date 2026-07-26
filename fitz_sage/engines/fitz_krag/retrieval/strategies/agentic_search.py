@@ -86,13 +86,13 @@ class AgenticSearchStrategy:
             selected_entries = unindexed
         # Fast path: few files — skip LLM, use BM25 + path matching
         elif len(unindexed) <= _SKIP_LLM_THRESHOLD:
-            path_matched = set(self._path_match_files(unindexed, query))
+            path_matches = set(self._path_match_files(unindexed, query))
             scored = self._bm25_prefilter(unindexed, query)
             top: list["ManifestEntry"] = []
             seen: set[str] = set()
             # Prioritize path matches first
             for entry in scored:
-                if entry.rel_path in path_matched and entry.rel_path not in seen:
+                if entry.rel_path in path_matches and entry.rel_path not in seen:
                     top.append(entry)
                     seen.add(entry.rel_path)
             # Then BM25 order
@@ -274,16 +274,12 @@ class AgenticSearchStrategy:
             if ext in RICH_DOC_EXTENSIONS:
                 from fitz_sage.engines.fitz_krag.progressive.parsed_cache import (
                     get_parsed_text,
+                    parse_document_text,
                 )
 
                 if self._cache_dir:
                     return get_parsed_text(path, entry.content_hash, self._cache_dir)
-                # No cache dir — fall through to direct parse
-                from fitz_sage.engines.fitz_krag.progressive.parsed_cache import (
-                    _parse,
-                )
-
-                return _parse(path)
+                return parse_document_text(path)
 
             return path.read_text(encoding="utf-8", errors="replace")
         except Exception as e:

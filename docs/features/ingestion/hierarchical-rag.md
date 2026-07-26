@@ -145,11 +145,11 @@ Sources: Corpus Overview (L2 corpus summary)
 ### Query: "How do I implement authentication in microservices?"
 
 **Standard RAG (no hierarchy):**
-- Returns: 5 chunks directly mentioning authentication
+- Returns: 5 sections directly mentioning authentication
 - Result: Granular, specific
 
 **Hierarchical RAG:**
-- Returns: L0 chunks (same as standard RAG—no hierarchy needed for specific queries)
+- Returns: L0 sections (no hierarchy needed for specific queries)
 - Result: Same as standard RAG
 
 Hierarchy only activates when BM25 + the ONNX cross-encoder reranker promote a summary row over the granular ones.
@@ -172,8 +172,8 @@ Hierarchy only activates when BM25 + the ONNX cross-encoder reranker promote a s
 ## Performance Considerations
 
 - **Ingestion time:** +30-60s per 50 documents (for summary generation)
-- **Storage:** +2-5% (summaries are small compared to chunks)
-- **Query time:** No additional latency (summaries retrieved like any chunk)
+- **Storage:** +2-5% (summaries are small compared to source sections)
+- **Query time:** No additional latency (summaries are retrieved as sections)
 
 ## Related Features
 

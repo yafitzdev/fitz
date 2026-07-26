@@ -189,7 +189,7 @@ class DoclingParser(BaseParser):
                 elements.append(element)
 
         # Build metadata
-        metadata = {
+        metadata: dict[str, Any] = {
             "parser": self.plugin_name,
             "source_extension": file.extension,
         }
@@ -381,10 +381,10 @@ class DoclingParser(BaseParser):
         """Extract text from a Docling item."""
         # TextItem has 'text' attribute
         if hasattr(item, "text") and item.text:
-            return item.text.strip()
+            return str(item.text).strip()
         # Some items have 'orig' for original text
         if hasattr(item, "orig") and item.orig:
-            return item.orig.strip()
+            return str(item.orig).strip()
         return ""
 
     def _build_table_from_grid(self, item) -> str | None:
@@ -490,7 +490,7 @@ class DoclingParser(BaseParser):
 
             if description:
                 logger.debug(f"VLM described image: {description[:100]}...")
-                return description
+                return str(description)
 
         except Exception as e:
             self._vlm_errors += 1

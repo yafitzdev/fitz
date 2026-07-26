@@ -137,7 +137,6 @@ class QueryContract:
 
     query: str
     query_contract: str | None = None
-    route: str | None = None
     answerability_shape: str | None = None
     retrieval_modality: str | None = None
     retrieval_obligation: str | None = None
@@ -174,7 +173,6 @@ def build_query_contract(query: str, profile: Any = None) -> QueryContract:
     return QueryContract(
         query=query,
         query_contract=query_contract,
-        route=_profile_value(profile, "query_route"),
         answerability_shape=answerability_shape,
         retrieval_modality=retrieval_modality,
         retrieval_obligation=retrieval_obligation,

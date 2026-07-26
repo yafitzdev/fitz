@@ -70,6 +70,7 @@ def __getattr__(name: str):
         "ConfigurationError",
         "EngineError",
         "GenerationError",
+        "GovernanceReplay",
         "EvidenceItem",
         "EvidencePack",
         "KnowledgeEngine",
@@ -77,6 +78,7 @@ def __getattr__(name: str):
         "Provenance",
         "Query",
         "QueryError",
+        "RetrievalRun",
         "RetrievalEngine",
         "TimeoutError",
         "UnsupportedOperationError",
@@ -91,6 +93,8 @@ def __getattr__(name: str):
         "get_engine_registry",
         "list_engines",
         "list_engines_with_info",
+        "load_retrieval_run",
+        "replay_governance",
         "run",
     ):
         from fitz_sage import runtime
@@ -123,7 +127,7 @@ def _get_default_fitz():
     return _default_fitz
 
 
-def query(question: str, source=None, collection: str = None):
+def query(question: str, source=None, collection: str | None = None):
     """
     Query the knowledge base.
 
@@ -152,7 +156,7 @@ def query(question: str, source=None, collection: str = None):
     return f.query(question, source=source)
 
 
-def evidence(question: str, source=None, collection: str = None):
+def evidence(question: str, source=None, collection: str | None = None):
     """
     Retrieve governed evidence without answer synthesis.
 
@@ -181,6 +185,23 @@ def evidence(question: str, source=None, collection: str = None):
     return f.evidence(question, source=source)
 
 
+def trace(question: str, source=None, collection: str | None = None):
+    """
+    Execute governed retrieval and return its versioned execution record.
+
+    Serialization redacts source content by default. Call
+    ``run.write(path, include_content=True)`` only when governance replay is
+    required and the trace can be handled as source data.
+    """
+    global _default_fitz
+    if collection is not None:
+        from fitz_sage.sdk import fitz
+
+        _default_fitz = fitz(collection=collection)
+    f = _get_default_fitz()
+    return f.trace(question, source=source)
+
+
 # =============================================================================
 # PUBLIC API
 # =============================================================================
@@ -196,7 +217,9 @@ __all__ = [
     "Answer",
     "EvidenceItem",
     "EvidencePack",
+    "GovernanceReplay",
     "Provenance",
+    "RetrievalRun",
     # Core Exceptions
     "EngineError",
     "QueryError",
@@ -211,8 +234,11 @@ __all__ = [
     "list_engines",
     "list_engines_with_info",
     "get_engine_registry",
+    "load_retrieval_run",
+    "replay_governance",
     # SDK
     "fitz",
     "evidence",
     "query",
+    "trace",
 ]

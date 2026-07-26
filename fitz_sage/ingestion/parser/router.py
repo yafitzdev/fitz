@@ -103,6 +103,7 @@ class ParserRouter:
 
         # Docling handles rich documents (DOCX/PPTX/HTML) — and PDFs too when
         # it is the selected parser. Optional: pip install fitz-sage[docs].
+        docling: Parser
         try:
             if self.parser == "docling_vision":
                 from fitz_sage.ingestion.parser.plugins.docling_vision import (
@@ -176,6 +177,9 @@ class ParserRouter:
         parser = self._parsers.get(normalized)
         if parser is not None:
             return parser
+
+        if self._default_parser is None:
+            raise ParseError("Parser router has no default parser", normalized)
 
         # Fall back to default
         if normalized not in self._warned_extensions:
