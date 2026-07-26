@@ -19,9 +19,10 @@ def _addr(
     summary: str | None = None,
     score: float = 0.9,
     metadata: dict | None = None,
+    kind: AddressKind = AddressKind.SYMBOL,
 ) -> Address:
     return Address(
-        kind=AddressKind.SYMBOL,
+        kind=kind,
         source_id=source_id,
         location=location,
         summary=summary or f"Symbol {location}",
@@ -93,6 +94,122 @@ class TestRetrievalPass:
 
         reader.read.assert_called_once()
         assert [r.address.location for r in results] == ["a"]
+
+    def test_rerank_does_not_rescue_schema_only_table_without_obligation(self):
+        """A modality that Pyrrho did not request must not displace ranked evidence."""
+        symbols = [
+            _addr(location=f"symbol-{index}", source_id=f"symbol-{index}") for index in range(6)
+        ]
+        sections = [
+            _addr(
+                location=f"section-{index}",
+                source_id=f"section-{index}",
+                kind=AddressKind.SECTION,
+            )
+            for index in range(5)
+        ]
+        table = _addr(
+            location="rollout-matrix",
+            source_id="rollout-matrix",
+            kind=AddressKind.TABLE,
+        )
+        rp, _router, reranker, _reader = _build([*symbols, *sections, table])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = [*symbols[:6], *sections[:4]]
+        profile = SimpleNamespace(required_modalities=("symbol", "section"))
+
+        results = rp.run("Which release enabled token rotation?", profile=profile)
+
+        assert len(results) == 10
+        assert {result.address.kind for result in results} == {
+            AddressKind.SYMBOL,
+            AddressKind.SECTION,
+        }
+
+    def test_rerank_keeps_strong_concrete_row_match_without_table_obligation(self):
+        """A row-value match may recover a table when profiling misses its modality."""
+        symbols = [
+            _addr(location=f"symbol-{index}", source_id=f"symbol-{index}") for index in range(6)
+        ]
+        sections = [
+            _addr(
+                location=f"section-{index}",
+                source_id=f"section-{index}",
+                kind=AddressKind.SECTION,
+            )
+            for index in range(5)
+        ]
+        table = _addr(
+            location="rollout-matrix",
+            source_id="rollout-matrix",
+            kind=AddressKind.TABLE,
+            metadata={
+                "row_search": {
+                    "matched_rows": 1,
+                    "row_numbers": [1],
+                    "query_terms": [
+                        "release",
+                        "enabled",
+                        "token",
+                        "rotation",
+                        "eu",
+                        "region",
+                    ],
+                    "matched_terms": ["enabled", "token", "rotation", "eu"],
+                    "term_coverage": 4 / 6,
+                }
+            },
+        )
+        rp, _router, reranker, _reader = _build([*symbols, *sections, table])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = [*symbols[:6], *sections[:4]]
+        profile = SimpleNamespace(required_modalities=("symbol", "section"))
+
+        results = rp.run(
+            "Which release enabled token rotation in the EU region?",
+            profile=profile,
+        )
+
+        assert len(results) == 10
+        assert {result.address.kind for result in results} == {
+            AddressKind.SYMBOL,
+            AddressKind.SECTION,
+            AddressKind.TABLE,
+        }
+        assert results[-1].address.location == "rollout-matrix"
+
+    def test_rerank_rejects_weak_incidental_row_match(self):
+        """One common query term in a table row is not enough for candidate rescue."""
+        sections = [
+            _addr(
+                location=f"section-{index}",
+                source_id=f"section-{index}",
+                kind=AddressKind.SECTION,
+            )
+            for index in range(10)
+        ]
+        incidental_table = _addr(
+            location="incidents",
+            source_id="incidents",
+            kind=AddressKind.TABLE,
+            metadata={
+                "row_search": {
+                    "matched_rows": 1,
+                    "row_numbers": [1],
+                    "query_terms": ["gold", "support", "response", "severity", "incidents"],
+                    "matched_terms": ["incidents"],
+                    "term_coverage": 0.2,
+                }
+            },
+        )
+        rp, _router, reranker, _reader = _build([*sections, incidental_table])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = sections
+
+        results = rp.run("What is the Gold support response time?")
+
+        assert len(results) == 10
+        assert all(result.address.kind is AddressKind.SECTION for result in results)
 
     def test_broad_query_defers_duplicate_files_after_rerank(self):
         a1 = _addr(location="doc-a-file", source_id="doc-a")

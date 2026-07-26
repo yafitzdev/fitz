@@ -161,6 +161,7 @@ class TableQueryHandler:
         row_columns = sanitized_cols
         rows: list[list[Any]] = []
         exact_identifier_lookup = False
+        indexed_row_lookup = False
         if identifiers:
             find_rows = getattr(self._sqlite_table_store, "find_rows_by_identifiers", None)
             if callable(find_rows):
@@ -173,10 +174,24 @@ class TableQueryHandler:
                     row_columns, rows = candidate
                     exact_identifier_lookup = True
         if not exact_identifier_lookup:
+            row_numbers = _matched_row_numbers(result)
+            get_rows = getattr(self._sqlite_table_store, "get_rows_by_numbers", None)
+            if row_numbers and callable(get_rows):
+                candidate = get_rows(
+                    table_id,
+                    row_numbers,
+                    limit=self._config.max_table_results,
+                )
+                if _is_row_data(candidate):
+                    row_columns, rows = candidate
+                    indexed_row_lookup = True
+        if not exact_identifier_lookup and not indexed_row_lookup:
             rows = self._get_scan_data(table_name, sanitized_cols)
 
         plan = build_table_query_plan(query, row_columns, rows)
         selected_rows = execute_table_query_plan(plan, rows)
+        if indexed_row_lookup and not selected_rows:
+            selected_rows = rows
         if not selected_rows:
             return result
 
@@ -187,8 +202,12 @@ class TableQueryHandler:
             f"Rows selected by exact identifier lookup across all {row_count} row(s)."
             if exact_identifier_lookup
             else (
-                f"Rows selected from a bounded scan of {len(rows)} row(s)"
-                f" out of {row_count} total row(s)."
+                f"Rows selected by BM25 row lookup across all {row_count} row(s)."
+                if indexed_row_lookup
+                else (
+                    f"Rows selected from a bounded scan of {len(rows)} row(s)"
+                    f" out of {row_count} total row(s)."
+                )
             )
         )
         content = self._format_table_evidence(
@@ -210,6 +229,7 @@ class TableQueryHandler:
                 **result.metadata,
                 "deterministic_table_filter": True,
                 "exact_identifier_table_lookup": exact_identifier_lookup,
+                "indexed_table_row_lookup": indexed_row_lookup,
                 "result_count": len(selected_rows),
                 "table_query_plan": plan.metadata,
             },
@@ -401,3 +421,23 @@ def _is_row_data(value: Any) -> bool:
         and isinstance(value[0], list)
         and isinstance(value[1], list)
     )
+
+
+def _matched_row_numbers(result: ReadResult) -> list[int]:
+    """Return row locations attached by the row-value BM25 strategy."""
+    values = result.metadata.get("matched_row_numbers")
+    if not isinstance(values, list):
+        row_search = result.address.metadata.get("row_search")
+        values = row_search.get("row_numbers") if isinstance(row_search, dict) else None
+    if not isinstance(values, list):
+        return []
+
+    row_numbers: list[int] = []
+    for value in values:
+        try:
+            row_number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if row_number >= 0 and row_number not in row_numbers:
+            row_numbers.append(row_number)
+    return row_numbers[:20]

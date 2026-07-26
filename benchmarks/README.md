@@ -1,21 +1,25 @@
 <!-- benchmarks/README.md -->
 # Retrieval Benchmark
 
-This benchmark is evidence-first. It does not score answer prose. It runs
-fitz-sage retrieval, stores the full `EvidencePack`, and validates the returned
-evidence against deterministic expectations.
+This benchmark is evidence-first. It does not score answer prose. It runs the
+real folder-to-evidence path and validates returned evidence against
+deterministic expectations.
 
-The JSON report is also the debug artifact. Each record includes:
+Compact reports are the default. Each record includes:
 
-- the public `EvidencePack`
-- query-profile signals
-- retrieval trace: strategy calls, candidate frontier, reranker input/output,
-  final read set, retry traces
-- evidence compiler trace: Pyrrho v2 verdict, failure, intent, and
-  evidence-kind metadata, literal anchors, evidence roles, minimum source count
-- governance cutoff metadata, including Pyrrho prefix trajectory
+- selected evidence identities, without source bodies
+- query terms and query-shape signals
+- pre-governance ranked evidence identities
+- post-governance delivered evidence identities
+- candidate counts at recall, reranking, and final-selection boundaries
+- governance cutoff trajectory
+- stage attribution for missing evidence
 - deterministic validation metrics and failures
 - aggregate pass-rate summaries by domain and tag
+- a per-file ingestion inventory, including unsupported and failed files
+
+Use `--report-detail full` only when source-bearing debug artifacts are needed.
+Full reports include the content-bearing `RetrievalRun` and can be large.
 
 ## Run
 
@@ -26,7 +30,7 @@ python -m benchmarks.fitz_bench.runner
 To run against an unpacked local Pyrrho package:
 
 ```bash
-python -m benchmarks.fitz_bench.runner --governance "pyrrho/C:\Users\yanfi\PycharmProjects\pyrrho\outputs\modernbert_base_v2_alpha\best_model"
+python -m benchmarks.fitz_bench.runner --governance "pyrrho/path/to/model"
 ```
 
 Defaults:
@@ -37,6 +41,8 @@ Defaults:
 - Markdown summary: `benchmarks/results/latest.md`
 - workspace: `.bench_workspace/<collection>`
 - index mode: `complete`
+- report detail: `compact`
+- gate: all assertions, including governance
 
 For a quick smoke run:
 
@@ -116,6 +122,64 @@ python -m benchmarks.fitz_bench.runner \
 The runner prints one progress line per completed case. The full limitations
 suite exercises managed Qwen, reranking, evidence closure, and Pyrrho for every
 query, so it is a release-gate run rather than a fast smoke test.
+
+## Production Matrix
+
+The production matrix composes standard, holdout, corpus-growth, format,
+reload-stability, optional-format, and intentional-limitations suites:
+
+```bash
+python -m benchmarks.fitz_bench.production_runner \
+  --governance "pyrrho/C:\path\to\reviewed-clean-onnx-package"
+```
+
+The required matrix currently contains:
+
+- core, holdout, and second holdout corpora
+- an 80-document near-neighbor corpus-growth run
+- reload stability over the grown corpus
+- 60 explicit temporal, comparison, aggregation, and narrow query-shape cases
+- PDF, DOCX, PPTX, SQL, Python, Go, Java, and TypeScript evidence
+- measured, non-gating XLSX and known-limitations suites
+
+Required retrieval suites gate at 85%. The query-shape suite gates its own
+signals at 85%. Corpus growth fails the production gate if a shared case
+regresses even when the aggregate rate remains above threshold. Governance is
+measured separately because Pyrrho has its own fixed-evidence evaluation and
+release lifecycle. Supported-file ingestion failures always fail a required
+suite.
+
+Run one suite while developing:
+
+```bash
+python -m benchmarks.fitz_bench.production_runner \
+  --suite-id base_formats \
+  --governance "pyrrho/C:\path\to\reviewed-clean-onnx-package"
+```
+
+## Metric Boundaries
+
+- `retrieval_pass_rate`: required evidence is present and forbidden evidence is
+  absent in the compiled ranking before Pyrrho cutoff.
+- `delivery_pass_rate`: the same evidence assertions over the final governed
+  `EvidencePack`.
+- `query_shape_pass_rate`: explicit query-plan signals match their human-labeled
+  temporal, comparison, aggregation, or narrow expectation.
+- `capability_pass_rate`: all evaluated pre-governance retrieval and
+  query-shape assertions pass.
+- `pass_rate`: governed delivery, query shape, and expected Pyrrho mode all
+  pass.
+- `retrieval_stability_rate`: pre-governance ranked identities survive a fresh
+  engine load.
+- `delivery_stability_rate`: governed evidence identities survive a fresh
+  engine load.
+- `governance_stability_rate`: the Pyrrho mode survives a fresh engine load.
+
+Every rate includes an `*_evaluated` denominator. Cases without an assertion
+for that metric do not receive automatic credit. Do not use the full pass rate
+to describe retrieval quality. A mode-only Pyrrho error is reported as a
+governance failure; a correct item removed by cutoff is a delivery failure, not
+a recall failure.
 
 ## Balanced Governance
 

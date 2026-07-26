@@ -254,6 +254,17 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
 def _format_indexing_status(indexing_status: dict) -> str:
     """Return a user-facing status line for query-ready vs deep enrichment work."""
     total = indexing_status.get("total", "?")
+    failed = int(indexing_status.get("failed", 0) or 0)
+    if failed:
+        files = indexing_status.get("failed_files", [])
+        first_path = ""
+        first_stage = ""
+        if isinstance(files, list) and files and isinstance(files[0], dict):
+            first_path = str(files[0].get("path") or "")
+            first_stage = str(files[0].get("stage") or "")
+        detail = f" ({first_path}, {first_stage})" if first_path else ""
+        return f"Indexing failures: {failed}/{total}{detail}"
+
     by_state = indexing_status.get("by_state", {}) or {}
     if by_state and not by_state.get("registered", 0):
         if not indexing_status.get("complete", True):

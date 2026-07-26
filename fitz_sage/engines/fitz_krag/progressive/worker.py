@@ -152,7 +152,7 @@ class BackgroundIngestWorker:
                     progress(line)
                 last_emit = time.monotonic()
             self._parse_done.wait(timeout=1.0)
-        if self._failure is not None and not self._parse_done.is_set():
+        if self._failure is not None:
             if progress:
                 progress(f"Indexing failed: {self._failure}")
             raise RuntimeError(f"Indexing failed: {self._failure}") from self._failure
@@ -161,7 +161,11 @@ class BackgroundIngestWorker:
 
     def _status_line(self) -> str:
         """Coarse indexing-progress line from manifest file states."""
-        entries = self._manifest.entries()
+        entries = {
+            path: entry
+            for path, entry in self._manifest.entries().items()
+            if entry.state not in {FileState.FAILED, FileState.UNSUPPORTED}
+        }
         total = len(entries)
         if total == 0:
             return ""
@@ -170,7 +174,11 @@ class BackgroundIngestWorker:
 
     def _parse_status_line(self) -> str:
         """Coarse parse-progress line from manifest file states."""
-        entries = self._manifest.entries()
+        entries = {
+            path: entry
+            for path, entry in self._manifest.entries().items()
+            if entry.state not in {FileState.FAILED, FileState.UNSUPPORTED}
+        }
         total = len(entries)
         if total == 0:
             return ""
@@ -278,12 +286,17 @@ class BackgroundIngestWorker:
                 self._core.parse_file(entry.rel_path, abs_path, entry.file_id)
                 self._manifest.update_state(entry.rel_path, FileState.PARSED)
             except Exception as e:
+                self._core.discard_file(entry.file_id)
+                self._manifest.mark_failed(
+                    entry.rel_path,
+                    stage="parse",
+                    message=str(e),
+                )
                 logger.warning(f"Background parse failed for {entry.rel_path}: {e}")
         self._manifest.save()
 
     def _keyword_phase(self) -> None:
         """PARSED → QUERY_READY: extract minimum keywords (pauses during queries)."""
-        failures: list[str] = []
         for entry in self._get_ordered_files(FileState.PARSED):
             if self._stop_event.is_set():
                 return
@@ -295,16 +308,17 @@ class BackgroundIngestWorker:
                 self._manifest.update_state(entry.rel_path, FileState.KEYWORDED)
                 self._manifest.update_state(entry.rel_path, FileState.QUERY_READY)
             except Exception as e:
-                failures.append(f"{entry.rel_path}: {e}")
+                self._core.discard_file(entry.file_id)
+                self._manifest.mark_failed(
+                    entry.rel_path,
+                    stage="keywords",
+                    message=str(e),
+                )
                 logger.error(f"Background keyword enrichment failed for {entry.rel_path}: {e}")
-                break
         self._manifest.save()
-        if failures:
-            raise RuntimeError("Keyword indexing failed before query-ready. " + failures[0])
 
     def _deep_enrich_phase(self) -> None:
         """QUERY_READY → ENRICHED: entity graph + L1 hierarchy summaries."""
-        failures: list[str] = []
         for state in (FileState.QUERY_READY, FileState.ENTITY_LINKED, FileState.HIERARCHY_READY):
             for entry in self._get_ordered_files(state):
                 if self._stop_event.is_set():
@@ -315,16 +329,13 @@ class BackgroundIngestWorker:
                 try:
                     self._deep_enrich_entry(entry)
                 except Exception as e:
-                    failures.append(f"{entry.rel_path}: {e}")
+                    self._manifest.mark_failed(
+                        entry.rel_path,
+                        stage="deep_enrichment",
+                        message=str(e),
+                    )
                     logger.error(f"Background deep enrichment failed for {entry.rel_path}: {e}")
-                    break
-            if failures:
-                break
         self._manifest.save()
-        if failures:
-            raise RuntimeError(
-                "Required deep enrichment failed; finalize was skipped. " + failures[0]
-            )
 
     def _deep_enrich_entry(self, entry: "ManifestEntry") -> None:
         """Run remaining enrichment phases for one query-ready entry."""

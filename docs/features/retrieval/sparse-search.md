@@ -122,7 +122,7 @@ Internal parameters:
 | ---------------------- | --------------------------------------------------------------------- |
 | Section store FTS      | `fitz_sage/engines/fitz_krag/ingestion/section_store.py`              |
 | Symbol store FTS       | `fitz_sage/engines/fitz_krag/ingestion/symbol_store.py`               |
-| Table store FTS        | `fitz_sage/engines/fitz_krag/ingestion/table_store.py`                |
+| Table row-value FTS    | `fitz_sage/tabular/store/sqlite.py`                                   |
 | Code search strategy   | `fitz_sage/engines/fitz_krag/retrieval/strategies/code_search.py`     |
 | Section search strategy| `fitz_sage/engines/fitz_krag/retrieval/strategies/section_search.py`  |
 | Connection manager     | `fitz_sage/storage/sqlite.py`                                         |

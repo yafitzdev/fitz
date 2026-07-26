@@ -53,12 +53,49 @@ class TableSearchStrategy:
         fetch_limit = limit * 2
 
         keyword_results = self._table_store.search_by_name(query, limit=fetch_limit)
+        indexed_row_results = self._indexed_row_results(query, limit=fetch_limit)
         row_results = self._row_results(query, limit=fetch_limit, profile=detection)
 
-        # RRF-score the single retrieval leg for consistent combined_score scaling.
-        scored = _merge_table_results(rrf_score(keyword_results), row_results)[:limit]
+        scored = _merge_table_results(
+            rrf_score(keyword_results),
+            indexed_row_results,
+            row_results,
+        )[:limit]
 
         return [self._to_address(r) for r in scored]
+
+    def _indexed_row_results(
+        self,
+        query: str,
+        *,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Return table records surfaced by BM25 over concrete row values."""
+        search_rows = getattr(self._sqlite_table_store, "search_rows_bm25", None)
+        get_by_table_id = getattr(self._table_store, "get_by_table_id", None)
+        if not callable(search_rows) or not callable(get_by_table_id):
+            return []
+        hits = search_rows(query, limit=limit)
+        if not isinstance(hits, list):
+            return []
+
+        results: list[dict[str, Any]] = []
+        for hit in hits:
+            if not isinstance(hit, dict):
+                continue
+            record = get_by_table_id(str(hit.get("table_id") or ""))
+            if not record:
+                continue
+            metadata = dict(record.get("metadata") or {})
+            metadata["row_search"] = dict(hit)
+            results.append(
+                {
+                    **record,
+                    "metadata": metadata,
+                    "combined_score": _indexed_row_score(hit),
+                }
+            )
+        return results
 
     def _row_results(
         self,
@@ -164,20 +201,29 @@ class TableSearchStrategy:
 
 
 def _merge_table_results(
-    keyword_results: list[dict[str, Any]],
-    row_results: list[dict[str, Any]],
+    *result_sets: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Merge table metadata and row-hit legs by table-index id."""
     by_id: dict[str, dict[str, Any]] = {}
-    for result in [*keyword_results, *row_results]:
-        table_index_id = str(result["id"])
-        current = by_id.get(table_index_id)
-        if current is None or result.get("combined_score", 0.0) > current.get(
-            "combined_score",
-            0.0,
-        ):
-            by_id[table_index_id] = result
+    for result_set in result_sets:
+        for result in result_set:
+            table_index_id = str(result["id"])
+            current = by_id.get(table_index_id)
+            if current is None or result.get("combined_score", 0.0) > current.get(
+                "combined_score",
+                0.0,
+            ):
+                by_id[table_index_id] = result
     return sorted(by_id.values(), key=lambda item: item.get("combined_score", 0.0), reverse=True)
+
+
+def _indexed_row_score(hit: dict[str, Any]) -> float:
+    """Score row-index matches ahead of metadata-only matches."""
+    try:
+        rank = max(1, int(hit.get("rank", 1)))
+    except (TypeError, ValueError):
+        rank = 1
+    return (1.0 / 30.0) + (1.0 / (60 + rank))
 
 
 def _row_match_score(plan_metadata: dict[str, Any], matched_rows: int) -> float:

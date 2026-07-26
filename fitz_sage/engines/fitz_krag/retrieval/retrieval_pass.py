@@ -165,8 +165,15 @@ class RetrievalPass:
             addresses = self._reranker.rerank(query, addresses)
             self.last_timings["rerank"] = time.perf_counter() - t0
             reranker_trace = dict(getattr(self._reranker, "last_trace", {}) or {})
-            addresses = order_addresses_for_contract(query, candidates, addresses, profile)
+            addresses = order_addresses_for_contract(
+                query,
+                candidates,
+                addresses,
+                profile,
+                limit=len(addresses),
+            )
             addresses = _ensure_broad_corpus_coverage(query, candidates, addresses, profile)
+            addresses = _ensure_concrete_row_coverage(candidates, addresses, profile)
         else:
             self.last_timings["rerank"] = 0.0
             reranker_trace = {"used": False, "reason": "no_reranker"}
@@ -230,6 +237,96 @@ def _profile_trace(profile: Any) -> dict[str, Any]:
         if hasattr(profile, field_name):
             trace[field_name] = getattr(profile, field_name)
     return trace
+
+
+def _ensure_concrete_row_coverage(
+    candidates: list[Any],
+    ranked: list[Any],
+    profile: Any = None,
+) -> list[Any]:
+    """Keep a strongly matching concrete table row through top-k reranking."""
+    if not candidates or not ranked:
+        return ranked
+
+    strong_candidates = [
+        candidate for candidate in candidates if _concrete_row_strength(candidate) is not None
+    ]
+    if not strong_candidates:
+        return ranked
+    candidate = max(
+        strong_candidates,
+        key=lambda item: (
+            _concrete_row_strength(item) or (0.0, 0),
+            float(getattr(item, "score", 0.0) or 0.0),
+        ),
+    )
+    candidate_key = _address_identity(candidate)
+    if any(_address_identity(address) == candidate_key for address in ranked):
+        return ranked
+
+    selected = list(ranked)
+    selected_counts: dict[Any, int] = {}
+    for address in selected:
+        kind = getattr(address, "kind", None)
+        selected_counts[kind] = selected_counts.get(kind, 0) + 1
+    required_kinds = set(tuple(getattr(profile, "required_modalities", ()) or ()))
+    replace_at = next(
+        (
+            index
+            for index in range(len(selected) - 1, -1, -1)
+            if selected_counts.get(getattr(selected[index], "kind", None), 0)
+            > (
+                1
+                if getattr(
+                    getattr(selected[index], "kind", None),
+                    "value",
+                    str(getattr(selected[index], "kind", None)),
+                )
+                in required_kinds
+                else 0
+            )
+        ),
+        None,
+    )
+    if replace_at is None:
+        selected.append(candidate)
+    else:
+        selected[replace_at] = candidate
+    return selected
+
+
+def _concrete_row_strength(address: Any) -> tuple[float, int] | None:
+    """Return row-match confidence only for concrete, query-aligned rows."""
+    metadata = getattr(address, "metadata", {}) or {}
+    row_match = metadata.get("row_match")
+    if isinstance(row_match, dict):
+        try:
+            matched_rows = int(row_match.get("matched_rows", 0) or 0)
+        except (TypeError, ValueError):
+            matched_rows = 0
+        if matched_rows > 0:
+            return (1.0, matched_rows)
+
+    row_search = metadata.get("row_search")
+    if not isinstance(row_search, dict):
+        return None
+    try:
+        coverage = float(row_search.get("term_coverage", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    matched_terms = row_search.get("matched_terms")
+    matched_count = len(matched_terms) if isinstance(matched_terms, list) else 0
+    if coverage < 0.5 or matched_count < 2:
+        return None
+    return (coverage, matched_count)
+
+
+def _address_identity(address: Any) -> tuple[Any, Any, Any]:
+    return (
+        getattr(address, "kind", None),
+        getattr(address, "source_id", None),
+        getattr(address, "location", None),
+    )
 
 
 def _apply_broad_corpus_prior(query: str, addresses: list[Any], profile: Any = None) -> list[Any]:

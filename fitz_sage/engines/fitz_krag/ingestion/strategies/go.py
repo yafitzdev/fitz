@@ -13,7 +13,12 @@ from __future__ import annotations
 import logging
 import re
 
-from fitz_sage.engines.fitz_krag.ingestion.code_utils import node_text, path_to_module
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import (
+    brace_block_end,
+    leading_comment_context,
+    node_text,
+    path_to_module,
+)
 from fitz_sage.engines.fitz_krag.ingestion.strategies.base import (
     ImportEdge,
     IngestResult,
@@ -107,25 +112,7 @@ def _regex_extract_block(lines: list[str], start_line: int) -> tuple[str, int]:
     Walks forward from start_line counting braces until the opening brace
     is closed. Falls back to a 20-line window if no braces found.
     """
-    depth = 0
-    found_open = False
-    end = start_line  # 1-indexed
-
-    for i in range(start_line - 1, min(len(lines), start_line + 50)):
-        line = lines[i]
-        for ch in line:
-            if ch == "{":
-                depth += 1
-                found_open = True
-            elif ch == "}":
-                depth -= 1
-        end = i + 1
-        if found_open and depth <= 0:
-            break
-
-    if not found_open:
-        end = min(len(lines), start_line + 20)
-
+    end = brace_block_end(lines, start_line)
     return "\n".join(lines[start_line - 1 : end]), end
 
 
@@ -152,58 +139,66 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
     for m in _FUNC_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
         _, end_line = _regex_extract_block(lines, line_no)
+        context_start, docstring = leading_comment_context(lines, line_no)
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
                 qualified_name=f"{module_name}.{m.group(1)}",
                 kind="function",
-                start_line=line_no,
+                start_line=context_start,
                 end_line=end_line,
                 signature=f"func {m.group(1)}()",
+                docstring=docstring,
             )
         )
 
     for m in _METHOD_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
         _, end_line = _regex_extract_block(lines, line_no)
+        context_start, docstring = leading_comment_context(lines, line_no)
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
                 qualified_name=f"{module_name}.{m.group(1)}",
                 kind="method",
-                start_line=line_no,
+                start_line=context_start,
                 end_line=end_line,
                 signature=f"func (...) {m.group(1)}()",
+                docstring=docstring,
             )
         )
 
     for m in _STRUCT_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
         _, end_line = _regex_extract_block(lines, line_no)
+        context_start, docstring = leading_comment_context(lines, line_no)
         seen_type_names.add(m.group(1))
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
                 qualified_name=f"{module_name}.{m.group(1)}",
                 kind="struct",
-                start_line=line_no,
+                start_line=context_start,
                 end_line=end_line,
                 signature=f"type {m.group(1)} struct",
+                docstring=docstring,
             )
         )
 
     for m in _IFACE_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
         _, end_line = _regex_extract_block(lines, line_no)
+        context_start, docstring = leading_comment_context(lines, line_no)
         seen_type_names.add(m.group(1))
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
                 qualified_name=f"{module_name}.{m.group(1)}",
                 kind="interface",
-                start_line=line_no,
+                start_line=context_start,
                 end_line=end_line,
                 signature=f"type {m.group(1)} interface",
+                docstring=docstring,
             )
         )
 
@@ -214,14 +209,16 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
             continue
         line_no = source[: m.start()].count("\n") + 1
         _, end_line = _regex_extract_block(lines, line_no)
+        context_start, docstring = leading_comment_context(lines, line_no)
         symbols.append(
             SymbolEntry(
                 name=name,
                 qualified_name=f"{module_name}.{name}",
                 kind="type",
-                start_line=line_no,
+                start_line=context_start,
                 end_line=end_line,
                 signature=f"type {name}",
+                docstring=docstring,
             )
         )
 
@@ -252,6 +249,7 @@ def _extract_function(node, lines, module_name):
     name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
+    context_start, docstring = leading_comment_context(lines, start)
 
     params = node.child_by_field_name("parameters")
     result = node.child_by_field_name("result")
@@ -263,9 +261,10 @@ def _extract_function(node, lines, module_name):
         name=name,
         qualified_name=f"{module_name}.{name}",
         kind="function",
-        start_line=start,
+        start_line=context_start,
         end_line=end,
         signature=sig,
+        docstring=docstring,
     )
 
 
@@ -279,6 +278,7 @@ def _extract_method(node, lines, module_name):
     name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
+    context_start, docstring = leading_comment_context(lines, start)
 
     receiver_type = _extract_receiver_type(receiver_node)
     params = node.child_by_field_name("parameters")
@@ -297,9 +297,10 @@ def _extract_method(node, lines, module_name):
         name=name,
         qualified_name=qualified,
         kind="method",
-        start_line=start,
+        start_line=context_start,
         end_line=end,
         signature=sig,
+        docstring=docstring,
     )
 
 
@@ -316,6 +317,7 @@ def _extract_type_decl(node, lines, module_name):
             name = node_text(name_node)
             start = node.start_point[0] + 1
             end = node.end_point[0] + 1
+            context_start, docstring = leading_comment_context(lines, start)
 
             if type_node and type_node.type == "struct_type":
                 kind = "struct"
@@ -332,9 +334,10 @@ def _extract_type_decl(node, lines, module_name):
                     name=name,
                     qualified_name=f"{module_name}.{name}",
                     kind=kind,
-                    start_line=start,
+                    start_line=context_start,
                     end_line=end,
                     signature=sig,
+                    docstring=docstring,
                 )
             )
     return symbols
@@ -345,6 +348,7 @@ def _extract_const_var(node, lines, module_name, kind):
     symbols = []
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
+    context_start, docstring = leading_comment_context(lines, start)
 
     for child in node.children:
         if child.type in ("const_spec", "var_spec"):
@@ -356,9 +360,10 @@ def _extract_const_var(node, lines, module_name, kind):
                         name=name,
                         qualified_name=f"{module_name}.{name}",
                         kind=kind,
-                        start_line=start,
+                        start_line=context_start,
                         end_line=end,
                         signature=f"{kind} {name}",
+                        docstring=docstring,
                     )
                 )
     return symbols

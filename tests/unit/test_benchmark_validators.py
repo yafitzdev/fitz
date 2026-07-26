@@ -83,6 +83,10 @@ def test_validate_case_reports_mode_and_forbidden_failures() -> None:
     assert result.passed is False
     assert result.metrics.mode_match is False
     assert result.metrics.forbidden_count == 1
+    assert result.metrics.retrieval_passed is False
+    assert result.metrics.capability_passed is False
+    assert len(result.governance_failures) == 1
+    assert len(result.retrieval_failures) == 1
     assert len(result.failures) == 2
 
 
@@ -102,6 +106,125 @@ def test_validate_case_accepts_v2_mode_names() -> None:
     assert case.expected_mode == "sufficient"
     assert result.passed is True
     assert result.metrics.mode_match is True
+
+
+def test_governance_failure_does_not_count_as_retrieval_failure() -> None:
+    case = BenchmarkCase.from_dict(
+        {
+            "id": "mode_only",
+            "domain": "policy",
+            "query": "What is the policy?",
+            "expected": {
+                "mode": "sufficient",
+                "required_evidence": [{"file": "policy.md", "contains": ["30 days"]}],
+            },
+        }
+    )
+    pack = {
+        "mode": "insufficient",
+        "items": [
+            {
+                "file_path": "policy.md",
+                "address_kind": "section",
+                "address_location": "Policy",
+                "content": "The period is 30 days.",
+            }
+        ],
+    }
+
+    result = validate_case(case, pack)
+
+    assert result.passed is False
+    assert result.metrics.retrieval_passed is True
+    assert result.metrics.capability_passed is True
+    assert result.metrics.mode_match is False
+    assert result.retrieval_failures == ()
+    assert len(result.governance_failures) == 1
+
+
+def test_governance_cutoff_is_separate_from_pre_governance_retrieval() -> None:
+    case = BenchmarkCase.from_dict(
+        {
+            "id": "cutoff",
+            "domain": "policy",
+            "query": "What is the policy?",
+            "expected": {
+                "required_evidence": [{"file": "policy.md", "contains": ["30 days"]}],
+            },
+        }
+    )
+    ranked = [
+        {
+            "rank": 4,
+            "file_path": "policy.md",
+            "address_kind": "section",
+            "address_location": "Policy",
+            "content": "The period is 30 days.",
+        }
+    ]
+
+    result = validate_case(
+        case,
+        {"mode": "insufficient", "items": []},
+        ranked_items=ranked,
+    )
+
+    assert result.metrics.retrieval_passed is True
+    assert result.metrics.delivery_passed is False
+    assert result.metrics.capability_passed is True
+    assert result.retrieval_failures == ()
+    assert len(result.delivery_failures) == 1
+    assert result.passed is False
+
+
+def test_query_signals_use_explicit_trace_source() -> None:
+    case = BenchmarkCase.from_dict(
+        {
+            "id": "temporal",
+            "domain": "query_shape",
+            "query": "What is current?",
+            "expected_signals": {"query.has_temporal_intent": True},
+        }
+    )
+
+    result = validate_case(
+        case,
+        {"mode": "insufficient", "items": []},
+        signals={"query": {"has_temporal_intent": True}},
+    )
+
+    assert result.passed is True
+    assert result.metrics.retrieval_evaluated is False
+    assert result.metrics.query_shape_evaluated is True
+
+
+def test_validate_case_supports_contains_any_variants() -> None:
+    case = BenchmarkCase.from_dict(
+        {
+            "id": "variant",
+            "domain": "engineering",
+            "query": "What is the capacity?",
+            "expected": {
+                "required_evidence": [
+                    {
+                        "file": "spec.pdf",
+                        "contains": ["NX-7"],
+                        "contains_any": ["500 kg", "500kg"],
+                    }
+                ]
+            },
+        }
+    )
+    pack = {
+        "items": [
+            {
+                "file_path": "spec.pdf",
+                "content": "The NX-7 payload is 500kg.",
+            }
+        ]
+    }
+
+    assert validate_case(case, pack).metrics.retrieval_passed is True
 
 
 def test_validate_case_rejects_old_runtime_mode_names() -> None:

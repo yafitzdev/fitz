@@ -89,8 +89,10 @@ def order_addresses_for_contract(
     candidates: list[Address],
     selected: list[Address],
     profile: Any = None,
+    *,
+    limit: int | None = None,
 ) -> list[Address]:
-    """Preserve Pyrrho-required address kinds before the read step."""
+    """Preserve the best Pyrrho-required candidates inside the read window."""
     contract = _build_query_contract(query, profile)
     if not candidates or not _needs_candidate_rescue(contract):
         return selected
@@ -102,23 +104,76 @@ def order_addresses_for_contract(
     ]
     for modality in contract.required_modalities:
         matches = [
-            unit
-            for unit in candidate_units
-            if unit.kind == modality
-            and unit.address is not None
-            and (unit.address.source_id, unit.address.location) not in selected_keys
+            unit for unit in candidate_units if unit.kind == modality and unit.address is not None
         ]
         if not matches:
             continue
         match = _best_modality_unit(contract, matches)
         if match is None or match.address is None:
             continue
+        if (match.address.source_id, match.address.location) in selected_keys:
+            continue
         selected_keys.add((match.address.source_id, match.address.location))
         rescued.append(match.address)
 
     if not rescued:
         return selected
-    return selected + rescued
+    return _merge_rescued_addresses(
+        selected,
+        rescued,
+        contract.required_modalities,
+        limit=limit,
+    )
+
+
+def _merge_rescued_addresses(
+    selected: list[Address],
+    rescued: list[Address],
+    required_modalities: tuple[str, ...],
+    *,
+    limit: int | None,
+) -> list[Address]:
+    """Replace weak duplicate kinds before expanding a reranker's read window."""
+    merged = list(selected)
+    protected_kinds = set(required_modalities)
+
+    for rescue in rescued:
+        rescue_key = (rescue.source_id, rescue.location)
+        if any((item.source_id, item.location) == rescue_key for item in merged):
+            continue
+        if limit is None or len(merged) < limit:
+            merged.append(rescue)
+            continue
+
+        counts: dict[str, int] = {}
+        for item in merged:
+            kind = getattr(item.kind, "value", str(item.kind))
+            counts[kind] = counts.get(kind, 0) + 1
+
+        replace_at = next(
+            (
+                index
+                for index in range(len(merged) - 1, -1, -1)
+                if counts.get(
+                    getattr(merged[index].kind, "value", str(merged[index].kind)),
+                    0,
+                )
+                > (
+                    1
+                    if getattr(
+                        merged[index].kind,
+                        "value",
+                        str(merged[index].kind),
+                    )
+                    in protected_kinds
+                    else 0
+                )
+            ),
+            None,
+        )
+        if replace_at is not None:
+            merged[replace_at] = rescue
+    return merged
 
 
 def query_has_table_obligation(query: str, profile: Any = None) -> bool:
@@ -320,14 +375,22 @@ def _latest_date_value(text: str) -> int | None:
 
 
 def _initial_result_roles(result: ReadResult) -> tuple[str, ...]:
-    """Return structural roles already proven by evidence closure."""
+    """Return evidence-closure roles that the returned result actually proves."""
     closure = result.metadata.get("evidence_closure")
     if not isinstance(closure, dict):
         return ()
     roles: list[str] = []
-    role = closure.get("role")
-    if isinstance(role, str) and role:
+    role = str(closure.get("role") or "")
+    kind = getattr(result.address.kind, "value", str(result.address.kind))
+    if role.startswith("required_") and kind == role.removeprefix("required_"):
         roles.append(role)
+    elif role.startswith("bridge_document:"):
+        document = role.removeprefix("bridge_document:")
+        if _contains_term_variant(
+            _unit_text(result.content, result.file_path, result.address.location),
+            document,
+        ):
+            roles.append(role)
     for bridge in closure.get("bridges", []):
         bridge_text = str(bridge)
         if not _EXACT_IDENTIFIER_PATTERN.fullmatch(bridge_text):
@@ -431,6 +494,15 @@ def _closure_bridge_content_score(unit: EvidenceUnit) -> int:
     closure = unit.result.metadata.get("evidence_closure")
     if not isinstance(closure, dict):
         return 0
+    if any(role.startswith("bridge_document:") for role in unit.roles):
+        hard_anchors = [
+            str(value)
+            for key in ("contract_identifiers", "contract_phrase_anchors")
+            for value in closure.get(key, [])
+        ]
+        observed_bridges = {_normalize_text(str(value)) for value in closure.get("bridges", [])}
+        if any(_normalize_text(anchor) in observed_bridges for anchor in hard_anchors):
+            return 4
     role = str(closure.get("role") or "")
     if not (role.startswith("required_") or role.startswith("bridge:")):
         return 0

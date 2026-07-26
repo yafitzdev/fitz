@@ -82,6 +82,7 @@ class QueryExecution:
     comparison_entities: tuple[str, ...] = ()
     has_comparison_intent: bool = False
     has_aggregation_intent: bool = False
+    has_temporal_intent: bool = False
     inject_corpus_summaries: bool = False
     terms: tuple[QueryTerm, ...] = ()
 
@@ -100,6 +101,7 @@ class QueryExecution:
             "comparison_entities": list(self.comparison_entities),
             "has_comparison_intent": self.has_comparison_intent,
             "has_aggregation_intent": self.has_aggregation_intent,
+            "has_temporal_intent": self.has_temporal_intent,
             "inject_corpus_summaries": self.inject_corpus_summaries,
             "terms": [term.to_dict() for term in self.terms],
         }
@@ -120,6 +122,7 @@ class QueryExecution:
             comparison_entities=_text_tuple(raw.get("comparison_entities")),
             has_comparison_intent=bool(raw.get("has_comparison_intent", False)),
             has_aggregation_intent=bool(raw.get("has_aggregation_intent", False)),
+            has_temporal_intent=bool(raw.get("has_temporal_intent", False)),
             inject_corpus_summaries=bool(raw.get("inject_corpus_summaries", False)),
             terms=tuple(QueryTerm.from_dict(item) for item in _dict_items(raw.get("terms"))),
         )

@@ -16,6 +16,7 @@ from fitz_sage.engines.fitz_krag.evidence_closure import (
     plan_evidence_closure,
     request_metadata,
 )
+from fitz_sage.engines.fitz_krag.evidence_compiler import compile_evidence
 from fitz_sage.engines.fitz_krag.evidence_contract import build_query_contract
 from fitz_sage.engines.fitz_krag.query_planner import (
     DeterministicQueryPlanner,
@@ -238,6 +239,7 @@ class QueryPipeline:
 
         contract = build_query_contract(outcome.sanitized, outcome.profile)
         expanded = list(outcome.expanded)
+        closure_evidence = list(compilation.results)
         timings = list(outcome.timings)
         total_added = 0
         total_replaced = 0
@@ -256,6 +258,12 @@ class QueryPipeline:
                     rewrite_result=None,
                     progress=progress,
                 )
+            retrieved_count = len(read_results)
+            read_results = _filter_companion_source_repeats(
+                request,
+                closure_evidence,
+                read_results,
+            )
             closure_duration = time.perf_counter() - t0
             timings.extend(
                 _prefixed_retrieval_pass_timings(
@@ -285,6 +293,12 @@ class QueryPipeline:
                     (f"Evidence closure {run_index} table queries", time.perf_counter() - t0)
                 )
 
+            selected_results = _select_closure_results(
+                request.query,
+                read_results,
+                profile,
+                request=request,
+            )
             annotated = [
                 annotate_closure_result(
                     result,
@@ -292,8 +306,9 @@ class QueryPipeline:
                     contract=contract,
                     run_index=run_index,
                 )
-                for result in read_results
+                for result in selected_results
             ]
+            closure_evidence.extend(annotated)
             expanded, added, replaced = _merge_closure_results(
                 expanded,
                 annotated,
@@ -305,7 +320,9 @@ class QueryPipeline:
                 {
                     "request": request_metadata(request),
                     "trace": retrieval_pass_trace,
+                    "retrieved_count": retrieved_count,
                     "read_count": len(read_results),
+                    "selected_count": len(selected_results),
                     "added": added,
                     "replaced": replaced,
                     "results": read_results_trace(annotated),
@@ -553,17 +570,75 @@ def _merge_closure_results(
     return merged, added, replaced
 
 
+def _select_closure_results(
+    query: str,
+    results: list["ReadResult"],
+    profile: Any,
+    *,
+    request: EvidenceClosureRequest | None = None,
+) -> list["ReadResult"]:
+    """Keep the best grounded result for one bounded closure obligation."""
+    if not results:
+        return []
+    if request is not None and request.role.startswith("bridge_document:"):
+        document = _normalize_source_name(request.role.removeprefix("bridge_document:"))
+        exact_locations = [
+            result
+            for result in results
+            if _normalize_source_name(str(result.address.location)) == document
+        ]
+        if exact_locations:
+            results = exact_locations
+    compilation = compile_evidence(query, results, profile=profile)
+    if compilation.results:
+        return compilation.results[:1]
+    return results[:1]
+
+
+def _normalize_source_name(value: str) -> str:
+    """Normalize a source-derived document label for exact companion matching."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
+
+
+def _filter_companion_source_repeats(
+    request: EvidenceClosureRequest,
+    existing: list["ReadResult"],
+    candidates: list["ReadResult"],
+) -> list["ReadResult"]:
+    """Keep non-table companion retrieval on sources not already in evidence."""
+    if request.modality == "table":
+        return candidates
+    existing_sources = {
+        str(result.address.source_id)
+        for result in existing
+        if getattr(result, "address", None) is not None
+    }
+    return [
+        result for result in candidates if str(result.address.source_id) not in existing_sources
+    ]
+
+
 def _closure_result_should_replace(existing: "ReadResult", candidate: "ReadResult") -> bool:
     """Return whether closure produced a more specific version of an existing result."""
-    if candidate.content == existing.content:
-        return False
-    if candidate.metadata.get("deterministic_table_filter") and not existing.metadata.get(
-        "deterministic_table_filter"
-    ):
+    candidate_closure = candidate.metadata.get("evidence_closure")
+    existing_closure = existing.metadata.get("evidence_closure")
+    candidate_deterministic = bool(candidate.metadata.get("deterministic_table_filter"))
+    existing_deterministic = bool(existing.metadata.get("deterministic_table_filter"))
+    if candidate_deterministic and not existing_deterministic:
         return True
+    if existing_deterministic and not candidate_deterministic:
+        return False
+
     candidate_count = _metadata_int(candidate.metadata.get("result_count"))
     existing_count = _metadata_int(existing.metadata.get("result_count"))
-    if candidate_count > 0 and (existing_count == 0 or candidate_count < existing_count):
+    if candidate_count > 0 and existing_count > 0 and candidate_count != existing_count:
+        return candidate_count < existing_count
+    if candidate_count > 0 and existing_count == 0:
+        return True
+    if existing_count > 0 and candidate_count == 0 and existing_deterministic:
+        return False
+
+    if isinstance(candidate_closure, dict) and not isinstance(existing_closure, dict):
         return True
     return False
 

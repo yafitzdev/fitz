@@ -26,6 +26,7 @@ class EvidenceExpectation:
     kind: str | None = None
     location_contains: str | None = None
     contains: tuple[str, ...] = ()
+    contains_any: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "EvidenceExpectation":
@@ -33,11 +34,15 @@ class EvidenceExpectation:
         contains = raw.get("contains") or ()
         if isinstance(contains, str):
             contains = (contains,)
+        contains_any = raw.get("contains_any") or ()
+        if isinstance(contains_any, str):
+            contains_any = (contains_any,)
         return cls(
             file=raw.get("file"),
             kind=raw.get("kind"),
             location_contains=raw.get("location_contains"),
             contains=tuple(str(item) for item in contains),
+            contains_any=tuple(str(item) for item in contains_any),
         )
 
 
@@ -81,6 +86,10 @@ class BenchmarkCase:
 class CaseMetrics:
     """Deterministic metrics for one case."""
 
+    retrieval_evaluated: bool
+    delivery_evaluated: bool
+    query_shape_evaluated: bool
+    capability_evaluated: bool
     hit_at_1: bool
     hit_at_3: bool
     hit_at_5: bool
@@ -88,10 +97,18 @@ class CaseMetrics:
     required_recall: float
     forbidden_count: int
     mode_match: bool | None
+    retrieval_passed: bool
+    delivery_passed: bool
+    query_shape_passed: bool
+    capability_passed: bool
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize metrics."""
         return {
+            "retrieval_evaluated": self.retrieval_evaluated,
+            "delivery_evaluated": self.delivery_evaluated,
+            "query_shape_evaluated": self.query_shape_evaluated,
+            "capability_evaluated": self.capability_evaluated,
             "hit_at_1": self.hit_at_1,
             "hit_at_3": self.hit_at_3,
             "hit_at_5": self.hit_at_5,
@@ -99,6 +116,10 @@ class CaseMetrics:
             "required_recall": self.required_recall,
             "forbidden_count": self.forbidden_count,
             "mode_match": self.mode_match,
+            "retrieval_passed": self.retrieval_passed,
+            "delivery_passed": self.delivery_passed,
+            "query_shape_passed": self.query_shape_passed,
+            "capability_passed": self.capability_passed,
         }
 
 
@@ -111,6 +132,12 @@ class ValidationResult:
     metrics: CaseMetrics
     matched_required: tuple[int | None, ...]
     matched_forbidden: tuple[int, ...]
+    matched_delivery_required: tuple[int | None, ...] = ()
+    matched_delivery_forbidden: tuple[int, ...] = ()
+    retrieval_failures: tuple[str, ...] = ()
+    delivery_failures: tuple[str, ...] = ()
+    governance_failures: tuple[str, ...] = ()
+    query_shape_failures: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize validation result."""
@@ -120,6 +147,12 @@ class ValidationResult:
             "metrics": self.metrics.to_dict(),
             "matched_required": list(self.matched_required),
             "matched_forbidden": list(self.matched_forbidden),
+            "matched_delivery_required": list(self.matched_delivery_required),
+            "matched_delivery_forbidden": list(self.matched_delivery_forbidden),
+            "retrieval_failures": list(self.retrieval_failures),
+            "delivery_failures": list(self.delivery_failures),
+            "governance_failures": list(self.governance_failures),
+            "query_shape_failures": list(self.query_shape_failures),
         }
 
 

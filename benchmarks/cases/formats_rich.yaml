@@ -1,0 +1,225 @@
+- id: pdf_nexus_founder
+  domain: company_reports
+  query: "Who founded Nexus Robotics?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["Nexus Robotics", "Sarah Chen"]
+  tags: [production, format_pdf, direct_lookup]
+
+- id: pdf_nx7_payload
+  domain: engineering
+  query: "What is the maximum payload capacity of the NX-7 Navigator?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["NX-7"]
+        contains_any: ["500 kg", "500kg"]
+  tags: [production, format_pdf, specification]
+
+- id: pdf_q4_revenue
+  domain: finance
+  query: "What was Nexus Robotics Q4 2025 revenue?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["Q4", "2025"]
+        contains_any: ["124.5 million", "$124.5"]
+  tags: [production, format_pdf, direct_lookup]
+
+- id: pdf_nx7_battery
+  domain: engineering
+  query: "How long can the NX-7 Navigator operate on one charge?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["NX-7"]
+        contains_any: ["16 hours", "16-hour"]
+  tags: [production, format_pdf, paraphrase]
+
+- id: pdf_nx8_launch
+  domain: product
+  query: "When is the NX-8 Navigator launching?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["NX-8", "March 2026"]
+  tags: [production, format_pdf, temporal]
+
+- id: pdf_amazon_order
+  domain: sales
+  query: "How many NX-7 units did Amazon order?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["Amazon", "312"]
+  tags: [production, format_pdf, table_in_document]
+
+- id: pdf_navigation_accuracy
+  domain: engineering
+  query: "What navigation accuracy does the NX-7 provide?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["NX-7"]
+        contains_any: ["2 cm", "centimeter"]
+  tags: [production, format_pdf, specification]
+
+- id: pdf_regional_sales
+  domain: sales
+  query: "Which region had the highest Nexus Robotics sales in Q4 2025?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["North America"]
+        contains_any: ["67.2", "$67.2"]
+  tags: [production, format_pdf, comparison]
+
+- id: pdf_employee_count
+  domain: hr
+  query: "How many employees does Nexus Robotics have?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["847"]
+  tags: [production, format_pdf, direct_lookup]
+
+- id: pdf_market_share
+  domain: sales
+  query: "What North American market share does the NX-7 Navigator have?"
+  expected:
+    required_evidence:
+      - file: sample.pdf
+        contains: ["NX-7", "28%"]
+  tags: [production, format_pdf, direct_lookup]
+
+- id: docx_cloudscale_origin
+  domain: company_reports
+  query: "Who launched CloudScale Analytics and where is it headquartered?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains: ["DataFlow"]
+        contains_any: ["Seattle", "Washington"]
+  tags: [production, format_docx, direct_lookup]
+
+- id: docx_daily_processing
+  domain: operations
+  query: "How much data does CloudScale Analytics process daily?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains: ["CloudScale"]
+        contains_any: ["2.3 petabytes", "2.3 PB"]
+  tags: [production, format_docx, direct_lookup]
+
+- id: docx_uptime_sla
+  domain: operations
+  query: "What are CloudScale's uptime SLA and current performance?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains_any: ["99.95%", "99.97%"]
+  tags: [production, format_docx, comparison]
+
+- id: docx_query_latency
+  domain: engineering
+  query: "What is CloudScale's average query response time?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains: ["340"]
+        contains_any: ["milliseconds", "ms"]
+  tags: [production, format_docx, direct_lookup]
+
+- id: docx_kafka_instances
+  domain: engineering
+  query: "How many Kafka instances does CloudScale operate?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains: ["Kafka", "36"]
+  tags: [production, format_docx, table_in_document]
+
+- id: docx_encryption
+  domain: security
+  query: "What encryption protects CloudScale data at rest and in transit?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains_any: ["AES-256", "TLS 1.3"]
+  tags: [production, format_docx, comparison]
+
+- id: docx_professional_price
+  domain: finance
+  query: "What is the monthly price of CloudScale's Professional tier?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains: ["Professional"]
+        contains_any: ["8,500", "$8,500"]
+  tags: [production, format_docx, table_in_document]
+
+- id: docx_fedramp_target
+  domain: compliance
+  query: "When does CloudScale plan to achieve FedRAMP certification?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains: ["FedRAMP", "Q3 2026"]
+  tags: [production, format_docx, temporal]
+
+- id: docx_spark_capacity
+  domain: engineering
+  query: "What is the total compute capacity of CloudScale's Spark clusters?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains: ["Spark"]
+        contains_any: ["12,000 cores", "12000", "96 TB"]
+  tags: [production, format_docx, direct_lookup]
+
+- id: docx_rd_budget
+  domain: finance
+  query: "What is CloudScale's annual research and development budget?"
+  expected:
+    required_evidence:
+      - file: sample.docx
+        contains_any: ["34 million", "$34 million"]
+  tags: [production, format_docx, paraphrase]
+
+- id: pdf_figure_2028_market
+  domain: market_research
+  query: "What is the projected quantum computing market size in 2028?"
+  expected:
+    required_evidence:
+      - file: figure_test.pdf
+        contains: ["2028", "42.7"]
+  tags: [production, format_pdf, figure, known_limitation]
+
+- id: pdf_figure_cagr
+  domain: market_research
+  query: "What CAGR is shown for the quantum computing market?"
+  expected:
+    required_evidence:
+      - file: figure_test.pdf
+        contains: ["72.3"]
+  tags: [production, format_pdf, figure, known_limitation]
+
+- id: pdf_figure_2024_market
+  domain: market_research
+  query: "What was the quantum computing market size in 2024?"
+  expected:
+    required_evidence:
+      - file: figure_test.pdf
+        contains: ["2024", "4.8"]
+  tags: [production, format_pdf, figure, known_limitation]
+
+- id: pdf_figure_growth_drivers
+  domain: market_research
+  query: "What are the reported drivers of quantum computing market growth?"
+  expected:
+    required_evidence:
+      - file: figure_test.pdf
+        contains_any: ["pharmaceutical", "financial", "cryptography", "supply chain"]
+  tags: [production, format_pdf, direct_lookup]

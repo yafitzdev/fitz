@@ -18,7 +18,7 @@ from fitz_sage.engines.fitz_krag.evidence_compiler import (
     query_has_table_obligation,
 )
 from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace
-from fitz_sage.engines.fitz_krag.types import Address
+from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
@@ -236,7 +236,7 @@ class RetrievalRouter:
 
         # File diversity: prevent one file from monopolizing all read slots
         ranked = self._enforce_file_diversity(ranked)
-        final = ranked[:limit]
+        final = self._enforce_strategy_coverage(ranked, limit)
         self.last_trace = {
             "query": query,
             "limit": limit,
@@ -390,3 +390,58 @@ class RetrievalRouter:
                 deferred.append(addr)
 
         return promoted + deferred
+
+    @staticmethod
+    def _enforce_strategy_coverage(
+        addresses: list[Address],
+        limit: int,
+        minimum_per_strategy: int = 2,
+    ) -> list[Address]:
+        """Keep a small recall foothold for each strategy that found candidates."""
+        selected = list(addresses[:limit])
+        if len(selected) >= len(addresses) or minimum_per_strategy <= 0:
+            return selected
+
+        def strategy(address: Address) -> str:
+            if address.kind in {AddressKind.SYMBOL, AddressKind.FILE}:
+                return "code"
+            return address.kind.value
+
+        available: dict[str, int] = {}
+        for address in addresses:
+            name = strategy(address)
+            available[name] = available.get(name, 0) + 1
+        targets = {name: min(minimum_per_strategy, count) for name, count in available.items()}
+        selected_counts: dict[str, int] = {}
+        for address in selected:
+            name = strategy(address)
+            selected_counts[name] = selected_counts.get(name, 0) + 1
+
+        for missing_strategy, target in targets.items():
+            while selected_counts.get(missing_strategy, 0) < target:
+                replacement = next(
+                    (
+                        address
+                        for address in addresses[limit:]
+                        if strategy(address) == missing_strategy and address not in selected
+                    ),
+                    None,
+                )
+                if replacement is None:
+                    break
+                replace_at = next(
+                    (
+                        index
+                        for index in range(len(selected) - 1, -1, -1)
+                        if selected_counts[strategy(selected[index])]
+                        > targets[strategy(selected[index])]
+                    ),
+                    None,
+                )
+                if replace_at is None:
+                    break
+                removed_strategy = strategy(selected[replace_at])
+                selected[replace_at] = replacement
+                selected_counts[removed_strategy] -= 1
+                selected_counts[missing_strategy] = selected_counts.get(missing_strategy, 0) + 1
+        return selected

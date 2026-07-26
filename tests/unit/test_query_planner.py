@@ -42,6 +42,32 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.aggregation_type == AggregationType.COUNT
         assert plan.detection.fetch_multiplier == 4
 
+    def test_plans_explicit_set_quantifiers_as_aggregation(self):
+        """Common exhaustive-set language should request broad retrieval."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "Find every environment variable.",
+            "Show the owner for each vendor.",
+            "Return the full set of dependencies.",
+        ):
+            plan = planner.plan(query)
+            assert plan.detection is not None
+            assert plan.detection.has_aggregation_intent
+
+        plan = planner.plan("List the key metrics in the review.")
+        assert plan.detection is not None
+        assert plan.detection.has_aggregation_intent
+
+    def test_scalar_measurement_is_not_a_corpus_aggregation(self):
+        """A singular duration lookup should remain a narrow fact request."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("How many days is the token rotation interval?")
+
+        assert plan.detection is not None
+        assert not plan.detection.has_aggregation_intent
+
     def test_key_facts_query_is_broad_exploratory(self):
         """Corpus key-facts queries should use the broad cutoff policy."""
         planner = DeterministicQueryPlanner()
@@ -81,6 +107,28 @@ class TestDeterministicQueryPlanner:
         assert plan.detection is not None
         assert plan.detection.has_temporal_intent
         assert "march 2024" in plan.detection.temporal.metadata["references"]
+
+    def test_temporal_detection_recognizes_lifecycle_language(self):
+        """Version-state and relative-time language should retain temporal intent."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "Which retention rule is effective now?",
+            "What was the original deadline?",
+            "Who owned the account at that time?",
+        ):
+            plan = planner.plan(query)
+            assert plan.detection is not None
+            assert plan.detection.has_temporal_intent
+
+    def test_release_version_does_not_imply_temporal_intent(self):
+        """A dotted release id is an identifier unless the query adds time scope."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("Which region uses release 2026.05?")
+
+        assert plan.detection is not None
+        assert not plan.detection.has_temporal_intent
 
     def test_exact_identifier_keywords_remain_literal(self):
         """Deterministic planning must not invent separator variants for IDs."""

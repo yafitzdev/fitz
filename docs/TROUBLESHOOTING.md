@@ -193,7 +193,7 @@ ValueError: No documents found in ./path
 
 1. Verify path exists.
 2. Check file extensions (supported: `.pdf`, `.docx`, `.md`, `.txt`,
-   `.py`, `.go`, `.ts`, `.java`, `.cs`, `.sql`, `.xlsx`, `.csv`, etc.).
+   `.py`, `.go`, `.ts`, `.java`, `.sql`, `.xlsx`, `.csv`, etc.).
 3. Try with a specific file:
    ```bash
    fitz query "test query" --source ./path/file.pdf

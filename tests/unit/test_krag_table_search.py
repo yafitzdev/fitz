@@ -140,6 +140,38 @@ class TestTableSearchStrategy:
         assert addresses[0].location == "Vendors"
         assert addresses[0].metadata["row_match"]["matched_rows"] == 1
 
+    def test_retrieve_searches_row_values_without_table_classification(self):
+        """Ordinary lookups must find table rows even when query profiling misses the modality."""
+        record = _make_table_record(
+            record_id="rec-rollouts",
+            table_id="tbl_rollouts",
+            name="Rollout Matrix",
+            columns=["feature", "region", "release", "status"],
+            row_count=2,
+        )
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = [
+            {
+                "table_id": "tbl_rollouts",
+                "rank": 1,
+                "bm25_score": 3.2,
+                "matched_rows": 1,
+                "row_numbers": [1],
+            }
+        ]
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+        strategy._table_store.get_by_table_id.return_value = record
+
+        addresses = strategy.retrieve(
+            "Which release enabled token rotation in the EU region?",
+            limit=5,
+            detection=SimpleNamespace(required_modalities=("symbol", "section")),
+        )
+
+        assert [address.location for address in addresses] == ["Rollout Matrix"]
+        assert addresses[0].metadata["row_search"]["matched_rows"] == 1
+        sqlite_store.scan_rows.assert_not_called()
+
     def test_retrieve_uses_full_table_exact_identifier_lookup(self):
         """An exact ID beyond the bounded scan should still surface its table."""
         record = _make_table_record(

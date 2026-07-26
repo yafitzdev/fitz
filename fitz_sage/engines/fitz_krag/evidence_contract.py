@@ -194,14 +194,14 @@ def required_modalities_from_profile(
     retrieval_obligation: str | None = None,
 ) -> tuple[str, ...]:
     """Translate retrieval profile labels into executor address kinds."""
+    obligation_kinds = _OBLIGATION_TO_ADDRESS_KINDS.get(retrieval_obligation or "", ())
+    if obligation_kinds:
+        return obligation_kinds
+
     kinds: list[str] = []
-    for source in (
-        _OBLIGATION_TO_ADDRESS_KINDS.get(retrieval_obligation or "", ()),
-        _MODALITY_TO_ADDRESS_KINDS.get(retrieval_modality or "", ()),
-    ):
-        for kind in source:
-            if kind not in kinds:
-                kinds.append(kind)
+    for kind in _MODALITY_TO_ADDRESS_KINDS.get(retrieval_modality or "", ()):
+        if kind not in kinds:
+            kinds.append(kind)
     return tuple(kinds)
 
 

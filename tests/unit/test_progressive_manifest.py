@@ -111,9 +111,15 @@ def test_indexing_status_fully_enriched_when_deep_work_done(tmp_path: Path) -> N
 def test_indexing_status_none_manifest() -> None:
     """A None manifest reports an empty, complete status."""
     assert indexing_status(None) == {
+        "discovered": 0,
         "total": 0,
         "indexed": 0,
         "pending": 0,
+        "failed": 0,
+        "failed_files": [],
+        "unsupported": 0,
+        "unsupported_files": [],
+        "healthy": True,
         "complete": True,
         "query_ready": True,
         "deep_pending": 0,
@@ -121,6 +127,43 @@ def test_indexing_status_none_manifest() -> None:
         "fully_enriched": True,
         "by_state": {},
     }
+
+
+def test_indexing_status_reports_failures_and_unsupported_files(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_make_entry("good.md", file_id="good", state=FileState.QUERY_READY))
+    manifest.add(
+        ManifestEntry(
+            **{
+                **_make_entry("bad.pdf", file_id="bad").__dict__,
+                "state": FileState.FAILED,
+                "failure_stage": "parse",
+                "failure_message": "corrupt PDF",
+            }
+        )
+    )
+    manifest.add(
+        _make_entry(
+            "diagram.psd",
+            file_id="unsupported",
+            file_type=".psd",
+            state=FileState.UNSUPPORTED,
+        )
+    )
+
+    status = indexing_status(manifest)
+
+    assert status["discovered"] == 3
+    assert status["total"] == 2
+    assert status["indexed"] == 1
+    assert status["pending"] == 0
+    assert status["failed"] == 1
+    assert status["unsupported"] == 1
+    assert status["query_ready"] is True
+    assert status["complete"] is False
+    assert status["healthy"] is False
+    assert status["failed_files"] == [{"path": "bad.pdf", "stage": "parse", "error": "corrupt PDF"}]
+    assert status["unsupported_files"] == [{"path": "diagram.psd", "extension": ".psd"}]
 
 
 class TestFileManifest:

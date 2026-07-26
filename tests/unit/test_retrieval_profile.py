@@ -78,6 +78,85 @@ def test_temporal_detection_boosts_recency():
     assert "needs_temporal_resolution" in profile.retrieval_intents
 
 
+def test_deterministic_aggregation_survives_pyrrho_comparison_or_set_label():
+    """An explicit set query must not be rewritten into a comparison shape."""
+    config = SimpleNamespace(top_addresses=20, top_read=10)
+    analysis = QueryAnalysis(
+        primary_type=QueryType.GENERAL,
+        confidence=0.75,
+        refined_query="List all service owners.",
+    )
+    detection = SimpleNamespace(
+        has_aggregation_intent=True,
+        has_comparison_intent=False,
+        has_temporal_intent=False,
+        has_freshness_intent=False,
+    )
+    pyrrho_plan = SimpleNamespace(
+        retrieval_intents=SimpleNamespace(
+            final_labels=("needs_comparison_or_set",),
+            final_label="needs_comparison_or_set",
+        ),
+        evidence_kinds=SimpleNamespace(
+            final_labels=("needs_text",),
+            final_label="needs_text",
+        ),
+    )
+
+    profile = build_retrieval_profile(
+        analysis,
+        detection,
+        config,
+        pyrrho_plan=pyrrho_plan,
+    )
+
+    assert profile.query_contract == "exhaustive_coverage"
+    assert profile.has_aggregation_intent is True
+    assert profile.has_comparison_intent is False
+    assert set(profile.retrieval_intents) == {
+        "needs_lookup",
+        "needs_broad_coverage",
+        "needs_comparison_or_set",
+    }
+
+
+def test_deterministic_temporal_shape_survives_non_temporal_pyrrho_head():
+    """Explicit temporal language remains temporal when model heads disagree."""
+    config = SimpleNamespace(top_addresses=20, top_read=10)
+    analysis = QueryAnalysis(
+        primary_type=QueryType.DOCUMENTATION,
+        confidence=0.75,
+        refined_query="Which policy applied before the migration?",
+    )
+    detection = SimpleNamespace(
+        has_aggregation_intent=False,
+        has_comparison_intent=False,
+        has_temporal_intent=True,
+        has_freshness_intent=False,
+    )
+    pyrrho_plan = SimpleNamespace(
+        retrieval_intents=SimpleNamespace(
+            final_labels=("needs_comparison_or_set",),
+            final_label="needs_comparison_or_set",
+        ),
+        evidence_kinds=SimpleNamespace(
+            final_labels=("needs_text",),
+            final_label="needs_text",
+        ),
+    )
+
+    profile = build_retrieval_profile(
+        analysis,
+        detection,
+        config,
+        pyrrho_plan=pyrrho_plan,
+    )
+
+    assert profile.query_contract == "temporal_grounding"
+    assert profile.has_temporal_intent is True
+    assert profile.has_comparison_intent is False
+
+
 def test_extended_signals_still_adjust_profile_shape():
     """Local query intelligence can adjust retrieval shape without owning governance."""
     config = SimpleNamespace(top_addresses=20, top_read=10)
@@ -135,12 +214,12 @@ def test_pyrrho_pre_heads_own_retrieval_profile_when_available():
     )
     metadata = query_profile_metadata(profile, pyrrho_plan)
 
-    assert profile.planning_owner == "pyrrho"
-    assert profile.auxiliary_signal_policy == "pyrrho_v2_pre_with_deterministic_fallback"
+    assert profile.planning_owner == "hybrid"
+    assert profile.auxiliary_signal_policy == "pyrrho_v2_pre_plus_deterministic_query_shape"
     assert profile.query_contract == "temporal_grounding"
     assert profile.retrieval_modality == "mixed"
     assert profile.retrieval_obligation == "prose_plus_table"
-    assert profile.required_modalities == ("section", "table", "symbol")
+    assert profile.required_modalities == ("section", "table")
     assert metadata["pyrrho_pre"]["retrieval_intents"]["final_labels"] == [
         "needs_comparison_or_set",
         "needs_temporal_resolution",

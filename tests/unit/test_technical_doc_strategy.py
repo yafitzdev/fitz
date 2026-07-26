@@ -95,6 +95,7 @@ class TestHeadingExtraction:
         assert len(result.sections) == 2
         assert result.sections[0].title == "Chapter 1"
         assert result.sections[1].title == "Chapter 2"
+        assert result.sections[1].metadata["document_title"] == "Chapter 1"
 
     def test_nested_headings(self, strategy):
         doc = _make_doc(

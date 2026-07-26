@@ -974,6 +974,44 @@ class TestContentReaderTable:
         assert r.file_path == "module.py"
         assert r.metadata["table_id"] == "tbl_abc"
 
+    def test_read_table_uses_bm25_matched_rows_instead_of_prefix_sample(self):
+        """Concrete row hits should survive the address-to-evidence read."""
+        raw_store = _make_raw_store()
+        table_store = MagicMock()
+        table_store.get.return_value = {
+            "id": "rec-001",
+            "raw_file_id": "file1",
+            "table_id": "tbl_abc",
+            "name": "Sales Data",
+            "columns": ["product", "revenue"],
+            "row_count": 900,
+            "summary": "Sales records",
+            "metadata": {},
+        }
+        sqlite_store = MagicMock()
+        sqlite_store.get_rows_by_numbers.return_value = (
+            ["product", "revenue"],
+            [["Meridian", "85000"]],
+        )
+        reader = ContentReader(
+            raw_store,
+            table_store=table_store,
+            sqlite_table_store=sqlite_store,
+        )
+        addr = self._make_table_address()
+        addr.metadata["row_search"] = {"row_numbers": [640]}
+
+        result = reader.read([addr], limit=10)[0]
+
+        assert "Matched data:" in result.content
+        assert "Meridian" in result.content
+        assert result.metadata["matched_row_numbers"] == [640]
+        sqlite_store.get_rows_by_numbers.assert_called_once_with(
+            "tbl_abc",
+            [640],
+            limit=20,
+        )
+
     def test_read_table_no_store(self):
         """Graceful fallback when table store unavailable."""
         raw_store = _make_raw_store()

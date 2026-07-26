@@ -20,9 +20,11 @@ import json
 import logging
 from pathlib import Path
 
+from fitz_sage.engines.fitz_krag.ingestion.formats import RICH_DOCUMENT_EXTENSIONS
+
 logger = logging.getLogger(__name__)
 
-RICH_DOC_EXTENSIONS = {".pdf", ".docx", ".pptx", ".html", ".htm"}
+RICH_DOC_EXTENSIONS = RICH_DOCUMENT_EXTENSIONS
 
 # Minimum average chars per page to consider a PDF as having extractable text
 _MIN_CHARS_PER_PAGE = 50

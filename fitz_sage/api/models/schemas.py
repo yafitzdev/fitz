@@ -119,10 +119,32 @@ class IngestRequest(BaseModel):
 class IndexingStatus(BaseModel):
     """Background-indexing progress for a collection."""
 
-    total: int = Field(..., description="Total files registered")
-    indexed: int = Field(..., description="Files indexed (enriched or summarized)")
-    pending: int = Field(..., description="Files still pending (registered or parsed)")
-    complete: bool = Field(..., description="True when no files remain pending")
+    discovered: int = Field(0, description="All files discovered under the source")
+    total: int = Field(..., description="Supported files, including failed files")
+    indexed: int = Field(..., description="Supported files that are query-ready")
+    pending: int = Field(..., description="Supported files still being indexed")
+    failed: int = Field(0, description="Supported files that failed indexing")
+    failed_files: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Per-file indexing failures with stage and error",
+    )
+    unsupported: int = Field(0, description="Files outside the enabled format contract")
+    unsupported_files: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Unsupported file paths and extensions",
+    )
+    healthy: bool = Field(True, description="True when no supported file failed")
+    complete: bool = Field(
+        ...,
+        description="True when every supported file indexed successfully",
+    )
+    query_ready: bool = Field(
+        False,
+        description="True when no supported file remains pending",
+    )
+    deep_pending: int = Field(0, description="Files awaiting deep enrichment")
+    deep_pending_files: List[Dict[str, Any]] = Field(default_factory=list)
+    fully_enriched: bool = Field(False)
     by_state: Dict[str, int] = Field(
         default_factory=dict, description="File counts per indexing state"
     )

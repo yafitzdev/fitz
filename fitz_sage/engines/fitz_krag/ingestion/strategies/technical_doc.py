@@ -14,11 +14,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fitz_sage.core.document import DocumentElement, ElementType, ParsedDocument
+from fitz_sage.engines.fitz_krag.ingestion.formats import DOCUMENT_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
-# File extensions this strategy handles
-DOC_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".html", ".md", ".rst", ".txt", ".sql"}
+# Backwards-compatible alias. The format contract itself lives in formats.py.
+DOC_EXTENSIONS = set(DOCUMENT_EXTENSIONS)
 
 
 @dataclass
@@ -82,6 +83,10 @@ class TechnicalDocIngestStrategy:
 
         # Build sections from heading structure
         sections = self._build_sections(elements)
+        document_title = headings[0].content.strip()
+        if document_title:
+            for section in sections:
+                section.metadata.setdefault("document_title", document_title)
         return DocIngestResult(sections=sections)
 
     def _build_sections(self, elements: list[DocumentElement]) -> list[SectionEntry]:

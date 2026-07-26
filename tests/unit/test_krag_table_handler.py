@@ -320,6 +320,43 @@ class TestTableQueryHandler:
         assert results[0].metadata["exact_identifier_table_lookup"] is True
         sqlite_table_store.execute_query.assert_not_called()
 
+    def test_deterministic_table_filter_uses_bm25_rows_beyond_scan_window(self):
+        """Free-text row retrieval should preserve its concrete distant row."""
+        handler, _, sqlite_table_store = _make_handler(
+            execute_result=None,
+            table_name="tbl_assets",
+            columns=(
+                ["asset_name", "owner"],
+                ["asset_name", "owner"],
+            ),
+            row_count=900,
+        )
+        sqlite_table_store.get_rows_by_numbers.return_value = (
+            ["asset_name", "owner"],
+            [["Meridian relay", "Platform"]],
+        )
+        table_result = _make_table_read_result(
+            name="Assets",
+            columns=["asset_name", "owner"],
+        )
+        table_result.address.metadata["row_search"] = {"row_numbers": [640]}
+
+        results = handler.process(
+            "Who owns the Meridian relay?",
+            [table_result],
+            allow_sql_generation=False,
+        )
+
+        assert "Meridian relay" in results[0].content
+        assert "Platform" in results[0].content
+        assert results[0].metadata["indexed_table_row_lookup"] is True
+        sqlite_table_store.get_rows_by_numbers.assert_called_once_with(
+            "tbl_abc",
+            [640],
+            limit=100,
+        )
+        sqlite_table_store.execute_query.assert_not_called()
+
     def test_noisier_closure_table_result_does_not_replace_precise_result(self):
         """Closure provenance alone must not replace a narrower table result."""
         existing = _make_table_read_result(name="Assets")

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import PurePath
 from typing import Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import EvidenceCompilation
@@ -27,8 +26,9 @@ _UUID_PATTERN = re.compile(
     r"\b[0-9a-f]{4,}(?:-[0-9a-f]{4,})+\b|" r"\b[0-9a-f]{8,}\b",
     re.IGNORECASE,
 )
-_SOURCE_PHRASE_PATTERN = re.compile(
-    r"\b([A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z][A-Za-z0-9-]*){0,3}\s+"
+_SOURCE_REFERENCE_PATTERN = re.compile(
+    r"\b(?:according\s+to|follow|following|follows|from|see|use|using)\s+(?:the\s+)?"
+    r"([A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z][A-Za-z0-9-]*){0,3}\s+"
     r"(?:addendum|brief|contract|document|guide|matrix|notes?|playbook|policy|postmortem|"
     r"readme|report|rules?|sla|table))\b",
     re.IGNORECASE,
@@ -173,6 +173,18 @@ def plan_evidence_closure(
             primary_terms=[modality],
         )
 
+    if "section" in contract.required_modalities:
+        for document in _document_bridge_terms(bridge_terms):
+            role = f"bridge_document:{_normalize(document)}"
+            if role in existing_roles:
+                continue
+            add(
+                modality="section",
+                role=role,
+                reason="bridge_document",
+                primary_terms=[document],
+            )
+
     if "table" in contract.required_modalities:
         query_identifiers = {value.lower() for value in contract.identifiers}
         for identifier in _structured_bridge_identifiers(bridge_terms):
@@ -186,18 +198,6 @@ def plan_evidence_closure(
                 role=role,
                 reason="bridge_identifier",
                 primary_terms=[identifier],
-            )
-
-    if "section" in contract.required_modalities:
-        for document in _document_bridge_terms(bridge_terms):
-            role = f"bridge_document:{_normalize(document)}"
-            if role in existing_roles:
-                continue
-            add(
-                modality="section",
-                role=role,
-                reason="bridge_document",
-                primary_terms=[document],
             )
 
     metadata = {
@@ -314,7 +314,9 @@ def _bridge_terms(
     for value in _specific_query_terms(contract):
         add(value)
 
-    evidence = list(compiled_results) if compiled_results else list(current_results)
+    evidence = [result for result in compiled_results if _result_has_bridge_seed_role(result)]
+    if not evidence and not compiled_results:
+        evidence = list(current_results)
 
     for result in evidence[:10]:
         if _result_kind(result) == "table":
@@ -328,18 +330,13 @@ def _bridge_terms(
             add(match.group(1))
         for match in _SNAKE_TOKEN_PATTERN.finditer(text):
             add(match.group(0))
-        for match in _SOURCE_PHRASE_PATTERN.finditer(text):
+        for match in _SOURCE_REFERENCE_PATTERN.finditer(text):
             add(match.group(1))
         for match in _SOURCE_FILE_TOKEN_PATTERN.finditer(text):
             add(match.group(0))
         for hint in (*_TABLE_HINTS, *_DOCUMENT_HINTS):
             if re.search(rf"\b{re.escape(hint)}\b", _normalize(text)):
                 add(hint)
-
-        path_name = PurePath(str(result.file_path).replace("\\", "/")).name
-        if path_name:
-            add(path_name)
-            add(PurePath(path_name).stem.replace("_", " "))
 
     return terms[:32]
 
@@ -349,6 +346,28 @@ def _result_kind(result: ReadResult) -> str | None:
     if kind is None:
         return None
     return str(getattr(kind, "value", kind))
+
+
+def _result_has_bridge_seed_role(result: ReadResult) -> bool:
+    """Return whether compilation selected this result for a real obligation."""
+    compiler = result.metadata.get("evidence_compiler")
+    if not isinstance(compiler, dict):
+        return False
+    roles = compiler.get("roles")
+    if not isinstance(roles, list):
+        return False
+    return any(
+        str(role).startswith(
+            (
+                "required_",
+                "anchor_identifier:",
+                "anchor_phrase:",
+                "bridge:",
+                "bridge_document:",
+            )
+        )
+        for role in roles
+    )
 
 
 def _specific_query_terms(contract: QueryContract) -> list[str]:
@@ -422,6 +441,12 @@ def _section_request_query(
 ) -> str:
     terms: list[str] = []
     add = _term_adder(terms)
+    document_primary = _document_bridge_terms(primary_terms)
+    if document_primary:
+        for value in document_primary:
+            add(value)
+        return " ".join(terms[:8])[:500]
+
     for value in primary_terms:
         add(value)
     for value in contract.keyword_anchors:
@@ -522,7 +547,11 @@ def _document_bridge_terms(terms: list[str]) -> list[str]:
             continue
         if normalized in {"deterministic table", "query grounded row filter"}:
             continue
-        values.append(normalized)
+        document_end = next(
+            (index for index, word in enumerate(words) if word in _DOCUMENT_HINTS),
+            len(words) - 1,
+        )
+        values.append(" ".join(words[: document_end + 1]))
     return list(dict.fromkeys(values))
 
 
@@ -535,34 +564,8 @@ def _normalize_document_bridge(term: str) -> str:
 
 
 def _result_text(result: ReadResult) -> str:
-    metadata_values: list[str] = []
-    metadata_values.extend(_flatten_metadata(result.metadata))
-    metadata_values.extend(_flatten_metadata(getattr(result.address, "metadata", {}) or {}))
-    return "\n".join(
-        [
-            str(result.content),
-            str(result.file_path),
-            str(result.address.location),
-            str(result.address.summary),
-            *metadata_values,
-        ]
-    )
-
-
-def _flatten_metadata(value: Any) -> list[str]:
-    if isinstance(value, dict):
-        flattened: list[str] = []
-        for item in value.values():
-            flattened.extend(_flatten_metadata(item))
-        return flattened
-    if isinstance(value, (list, tuple, set)):
-        flattened = []
-        for item in value:
-            flattened.extend(_flatten_metadata(item))
-        return flattened
-    if value is None:
-        return []
-    return [str(value)]
+    """Return only evidence-bearing source text for bridge discovery."""
+    return str(result.content)
 
 
 def _normalize(value: str) -> str:

@@ -124,3 +124,33 @@ class TestContentReader:
         assert results[0].metadata["page_start"] == 3
         assert results[0].metadata["page_end"] == 5
         assert results[0].metadata["section_title"] == "Introduction"
+
+    def test_read_section_includes_source_document_title(self, mock_raw_store):
+        mock_section_store = MagicMock()
+        mock_section_store.get.return_value = {
+            "id": "sec2",
+            "raw_file_id": "f1",
+            "title": "Strategic Expansion Plans",
+            "level": 1,
+            "page_start": 4,
+            "page_end": 4,
+            "content": "Opening clinics in Austin and Denver.",
+            "summary": None,
+            "parent_section_id": None,
+            "position": 3,
+            "metadata": {"document_title": "Meridian Health Q3 Review"},
+        }
+        reader = ContentReader(mock_raw_store, section_store=mock_section_store)
+        addr = Address(
+            kind=AddressKind.SECTION,
+            source_id="f1",
+            location="Strategic Expansion Plans",
+            summary="Expansion plans",
+            metadata={"section_id": "sec2"},
+        )
+
+        result = reader.read([addr], limit=1)[0]
+
+        assert result.content.startswith("[Document: Meridian Health Q3 Review]")
+        assert "Opening clinics in Austin" in result.content
+        assert result.metadata["document_title"] == "Meridian Health Q3 Review"

@@ -106,8 +106,7 @@ class TestQueryRewriting:
         assert batch_call_args[0][0] == query.text
 
         # Router receives the rewritten query and the rewrite_result
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == rewritten
         assert call_args[1]["rewrite_result"] is rewrite_result
 
@@ -142,8 +141,7 @@ class TestQueryRewriting:
         result = engine.answer(query)
 
         # Router uses original query (rewrite returned same text)
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == query.text
 
         assert result is expected
@@ -178,8 +176,7 @@ class TestQueryRewriting:
         result = engine.answer(query)
 
         # Router uses original query with no rewrite_result
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == query.text
         assert call_args[1]["rewrite_result"] is None
 

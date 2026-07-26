@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
 
-    report = {
+    report: dict[str, Any] = {
         "run": {
             "run_id": f"{int(time.time())}-{uuid.uuid4().hex[:8]}",
             "git_sha": _git_sha(root),
@@ -136,7 +136,8 @@ def _decision_to_dict(decision: Any) -> dict[str, Any]:
 
 def _head_to_dict(head: Any) -> dict[str, Any]:
     raw = asdict(head) if hasattr(head, "__dataclass_fields__") else dict(head)
-    return _json_safe(raw)
+    safe = _json_safe(raw)
+    return safe if isinstance(safe, dict) else {}
 
 
 def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:

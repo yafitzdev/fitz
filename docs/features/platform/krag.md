@@ -131,7 +131,7 @@ queries automatically:
 | --------- | ---------------------------------------------- | --------------------------------------------------------- |
 | Code      | Symbol search (name + BM25 over qualified name + summary) | Functions have names, types, and summaries — use all   |
 | Documents | Section search (BM25 + hierarchy)              | Sections have titles, parents, children — use the tree    |
-| Tables    | Table metadata retrieval; optional SQL in answer path | Tables are structured — retrieve table evidence first, compute only when synthesis is configured |
+| Tables    | Metadata and row-value BM25; optional SQL in answer path | Tables are structured - retrieve table evidence first, compute only when synthesis is configured |
 
 **4. Structural expansion.**
 

@@ -110,7 +110,7 @@ Primary stores:
 |-------|----------------|----------------|
 | `SectionStore` | document sections and synthetic summaries | SQLite FTS5 + `bm25()` |
 | `SymbolStore` | code symbols | name search + SQLite FTS5 + `bm25()` |
-| `TableStore` | table metadata | table name/schema search |
+| `TableStore` / `SqliteTableStore` | table metadata and concrete row values | name/schema search plus row-value BM25 |
 | Manifest scan | files not yet query-ready | path/heading/symbol BM25, optional file-selection LLM if configured |
 
 ### Stage 2: Rerank

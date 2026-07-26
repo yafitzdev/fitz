@@ -23,6 +23,7 @@ from fitz_sage.engines.fitz_krag.ingestion.strategies.java import (  # noqa: E40
     JavaIngestStrategy,
     _extract_import,
     _extract_package,
+    _regex_fallback,
     _walk_node,
 )
 
@@ -403,3 +404,27 @@ class TestExtractIntegration:
         result = strategy.extract("{{invalid}}", "Bad.java")
         assert result.symbols == []
         _parser_mock.return_value.parse.side_effect = None
+
+    def test_regex_fallback_preserves_annotations_comments_and_bodies(self):
+        source = """/** Service-level documentation. */
+@Service
+@Transactional
+public class UserService {
+    /** Throws UserNotFoundException when absent. */
+    public User getUser(Long id) {
+        throw new UserNotFoundException();
+    }
+}
+"""
+
+        result = _regex_fallback(source, "UserService.java")
+        class_symbol = next(symbol for symbol in result.symbols if symbol.kind == "class")
+        method_symbol = next(symbol for symbol in result.symbols if symbol.kind == "method")
+
+        assert class_symbol.start_line == 1
+        assert class_symbol.end_line == 9
+        assert "@Service" in class_symbol.docstring
+        assert "@Transactional" in class_symbol.docstring
+        assert method_symbol.start_line == 5
+        assert method_symbol.end_line == 8
+        assert "UserNotFoundException" in method_symbol.docstring

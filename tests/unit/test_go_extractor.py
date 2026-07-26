@@ -24,6 +24,7 @@ from fitz_sage.engines.fitz_krag.ingestion.strategies.go import (  # noqa: E402
     _extract_imports,
     _extract_package,
     _extract_receiver_type,
+    _regex_fallback,
 )
 
 
@@ -377,3 +378,22 @@ class TestExtractIntegration:
         result = strategy.extract("{{invalid}}", "bad.go")
         assert result.symbols == []
         _parser_mock.return_value.parse.side_effect = None
+
+    def test_regex_fallback_preserves_doc_comment_and_complete_body(self):
+        source = """// AuthMiddleware validates Bearer tokens.
+// It reads the Authorization header.
+func AuthMiddleware(next Handler) Handler {
+    if next == nil {
+        return defaultHandler
+    }
+    return next
+}
+"""
+
+        result = _regex_fallback(source, "server.go")
+        symbol = result.symbols[0]
+
+        assert symbol.start_line == 1
+        assert symbol.end_line == 8
+        assert "Bearer" in symbol.docstring
+        assert "Authorization" in symbol.docstring

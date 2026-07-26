@@ -1,0 +1,46 @@
+- id: xlsx_engineering_budget
+  domain: finance
+  query: "What is the total engineering budget?"
+  expected:
+    required_evidence:
+      - file: project_budget.xlsx
+        contains_any: ["Engineering", "Salaries", "Infrastructure"]
+  tags: [production, format_xlsx, optional_parser]
+
+- id: xlsx_department_comparison
+  domain: finance
+  query: "Compare the engineering and marketing department budgets."
+  expected:
+    required_evidence:
+      - file: project_budget.xlsx
+        contains: ["Engineering", "Marketing"]
+  tags: [production, format_xlsx, comparison, optional_parser]
+
+- id: xlsx_aws_spend
+  domain: finance
+  query: "How much does the company spend on AWS cloud hosting?"
+  expected:
+    required_evidence:
+      - file: project_budget.xlsx
+        contains: ["AWS"]
+        contains_any: ["85,000", "85000", "92,000", "92000", "380,000", "380000"]
+  tags: [production, format_xlsx, direct_lookup, optional_parser]
+
+- id: xlsx_engineering_categories
+  domain: finance
+  query: "What are the main engineering budget categories?"
+  expected:
+    required_evidence:
+      - file: project_budget.xlsx
+        contains_any: ["Salaries", "Infrastructure", "Tools", "Training", "Hardware"]
+  tags: [production, format_xlsx, aggregation, optional_parser]
+
+- id: xlsx_google_ads
+  domain: finance
+  query: "How much does marketing spend on Google Ads?"
+  expected:
+    required_evidence:
+      - file: project_budget.xlsx
+        contains: ["Google"]
+        contains_any: ["45,000", "45000", "52,000", "52000", "210,000", "210000"]
+  tags: [production, format_xlsx, direct_lookup, optional_parser]

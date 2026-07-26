@@ -167,8 +167,8 @@ class TestScheduling:
         core.keyword_file.assert_called_once_with("id-a.py", ".py")
         assert manifest.get("a.py").state == FileState.QUERY_READY
 
-    def test_keyword_failure_stops_before_query_ready(self, tmp_path: Path) -> None:
-        """Required keyword failure leaves the file PARSED and stops indexing."""
+    def test_keyword_failure_is_reported_without_blocking_collection(self, tmp_path: Path) -> None:
+        """A keyword failure is terminal for that file and visible in status."""
         manifest = FileManifest(tmp_path / "manifest.json")
         manifest.add(_make_entry("a.py", file_type=".py", state=FileState.PARSED))
 
@@ -176,10 +176,13 @@ class TestScheduling:
         core.keyword_file.side_effect = RuntimeError("llm unavailable")
         worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
 
-        with pytest.raises(RuntimeError, match="Keyword indexing failed before query-ready"):
-            worker._keyword_phase()
+        worker._keyword_phase()
 
-        assert manifest.get("a.py").state == FileState.PARSED
+        entry = manifest.get("a.py")
+        assert entry.state == FileState.FAILED
+        assert entry.failure_stage == "keywords"
+        assert entry.failure_message == "llm unavailable"
+        core.discard_file.assert_called_once_with("id-a.py")
 
     def test_deep_enrich_phase_runs_remaining_stages(self, tmp_path: Path) -> None:
         """Deep enrichment advances query-ready files through entities and hierarchy."""
@@ -215,8 +218,12 @@ class TestScheduling:
         worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
         worker._parse_phase()
 
-        assert manifest.get("bad.py").state == FileState.REGISTERED
+        failed = manifest.get("bad.py")
+        assert failed.state == FileState.FAILED
+        assert failed.failure_stage == "parse"
+        assert failed.failure_message == "parse blew up"
         assert manifest.get("good.py").state == FileState.PARSED
+        core.discard_file.assert_called_once_with("id-bad.py")
 
     def test_stop_event_halts_processing(self, tmp_path: Path) -> None:
         """A set stop event prevents any core work."""
@@ -365,6 +372,17 @@ class TestWait:
         assert worker._parse_done.is_set()
         assert manifest.get("a.md").state == FileState.PARSED
         progress.assert_any_call("Search surface ready; enrichment continues.")
+        worker.stop()
+
+    def test_wait_for_query_surface_raises_fatal_worker_failure(self) -> None:
+        """A phase-level crash must not be hidden by the completion event."""
+        worker = _build_worker()
+        worker._parse_phase = MagicMock(side_effect=RuntimeError("worker crashed"))
+        worker.start()
+
+        with pytest.raises(RuntimeError, match="Indexing failed: worker crashed"):
+            worker.wait_for_query_surface()
+
         worker.stop()
 
 

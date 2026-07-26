@@ -55,7 +55,7 @@ For prose, it records headings. This stage has no LLM calls.
 |---------|-------------|-------|
 | Python / TypeScript / Java / Go | symbols | `SymbolStore` |
 | Markdown, text, rich documents | sections | `SectionStore` |
-| CSV / TSV / tables | table metadata and native table data | `TableStore` / `SqliteTableStore` |
+| CSV / TSV / tables | table metadata, native rows, and row-value FTS | `TableStore` / `SqliteTableStore` |
 | Generic fallback text | file/section fallback | `SectionStore` |
 
 After parse, FTS5/BM25 can already search the collection. This is the gate the
@@ -93,9 +93,13 @@ first-run cost focused on the metadata that moves retrieval quality most.
 
 ```json
 {
+  "discovered": 67,
   "total": 65,
   "indexed": 63,
   "pending": 2,
+  "failed": 0,
+  "unsupported": 2,
+  "healthy": true,
   "complete": false,
   "query_ready": false,
   "deep_pending": 40,
@@ -108,8 +112,14 @@ first-run cost focused on the metadata that moves retrieval quality most.
 }
 ```
 
-`complete` means all files are at least query-ready. `fully_enriched` means the
-entity/hierarchy stages are done too.
+`discovered` includes unsupported files. `total` contains supported files,
+including failures. `complete` means all supported files indexed successfully;
+`query_ready` means none are still pending and can therefore be true for a
+partial collection with explicit failures. `fully_enriched` means the
+entity/hierarchy stages are done and no supported file failed.
+
+`failed_files` records the path, stage, and error. `unsupported_files` records
+the path and extension. Neither condition is silently represented as success.
 
 ---
 
@@ -120,12 +130,16 @@ entity/hierarchy stages are done too.
 | `.pdf` | `parser: cpu` by default; `docling`, `docling_vision`, or `glm_ocr` are optional heavier parsers |
 | `.docx`, `.pptx` | Docling-backed document parsing when installed |
 | `.md`, `.rst`, `.txt` | section extraction and heading-aware storage |
+| `.cfg`, `.conf`, `.ini`, `.toml` | text/section fallback |
+| `.gql`, `.graphql`, `.json`, `.jsonl`, `.xml`, `.yaml`, `.yml`, `.sql` | text/section fallback |
+| `.htm`, `.html` | document parsing |
 | `.py` | AST-backed symbol extraction |
-| `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.go` | tree-sitter-backed symbol extraction when grammar packages are installed |
-| `.csv`, `.tsv` | native SQLite table storage plus table metadata search |
-| `.json`, `.yaml`, `.sql` | text/section fallback |
+| `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.go` | tree-sitter-backed symbol extraction when installed, with language-specific fallback extraction |
+| `.csv`, `.tsv` | native SQLite table storage plus metadata and row-value BM25 search |
+| `.xlsx` | optional Docling-backed document extraction |
 
-Unsupported files are skipped rather than forcing a broken generic parse.
+Unsupported files are reported rather than forcing a broken generic parse.
+Extensionless files and `.env` files are not indexed by default.
 
 ---
 

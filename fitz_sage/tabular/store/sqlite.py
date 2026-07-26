@@ -15,12 +15,44 @@ import re
 from typing import Any
 
 from fitz_sage.core.identifiers import contains_exact_identifier
+from fitz_sage.engines.fitz_krag.ingestion.store_utils import build_fts_query
 from fitz_sage.logging.logger import get_logger
 from fitz_sage.logging.tags import STORAGE
 from fitz_sage.storage import get_connection_manager
 from fitz_sage.tabular.store.base import StoredTable, compute_hash
 
 logger = get_logger(__name__)
+
+_ROW_SEARCH_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "in",
+        "into",
+        "is",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "with",
+    }
+)
 
 
 def _sanitize_table_name(table_id: str) -> str:
@@ -62,6 +94,15 @@ class SqliteTableStore:
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """
+    ROW_FTS_TABLE = "_table_row_fts"
+    ROW_FTS_SQL = f"""
+        CREATE VIRTUAL TABLE IF NOT EXISTS {ROW_FTS_TABLE} USING fts5(
+            table_id UNINDEXED,
+            row_num UNINDEXED,
+            content,
+            tokenize = 'unicode61'
+        )
+    """
 
     def __init__(self, collection: str):
         self.collection = collection
@@ -75,6 +116,8 @@ class SqliteTableStore:
 
         with self._manager.connection(self.collection) as conn:
             conn.execute(self.METADATA_TABLE_SQL)
+            conn.execute(self.ROW_FTS_SQL)
+            self._backfill_row_index(conn)
             conn.commit()
 
         self._schema_initialized = True
@@ -128,6 +171,7 @@ class SqliteTableStore:
                             row = row[: len(sanitized_cols)]
                         padded_batch.append((row_num, *(None if v == "" else v for v in row)))
                     conn.executemany(insert_sql, padded_batch)
+            self._replace_row_index(conn, table_id, rows)
 
             conn.execute(
                 """
@@ -319,6 +363,105 @@ class SqliteTableStore:
             ).fetchall()
         return list(original_cols), [list(row) for row in rows]
 
+    def get_rows_by_numbers(
+        self,
+        table_id: str,
+        row_numbers: list[int] | tuple[int, ...],
+        *,
+        limit: int = 20,
+    ) -> tuple[list[str], list[list[Any]]] | None:
+        """Return specific source rows while preserving their requested order."""
+        requested = list(dict.fromkeys(int(value) for value in row_numbers))
+        if not requested:
+            return None
+        requested = requested[: max(1, int(limit))]
+
+        self._ensure_schema()
+        with self._manager.connection(self.collection) as conn:
+            result = conn.execute(
+                """
+                SELECT table_name, columns, column_names_original
+                FROM _table_metadata
+                WHERE table_id = ?
+                """,
+                (table_id,),
+            ).fetchone()
+            if not result:
+                return None
+
+            table_name, sanitized_json, original_json = result
+            sanitized_cols = json.loads(sanitized_json) if sanitized_json else []
+            original_cols = json.loads(original_json) if original_json else []
+            if not sanitized_cols:
+                return list(original_cols), []
+
+            cols_str = ", ".join(f'"{column}"' for column in sanitized_cols)
+            placeholders = ", ".join("?" for _ in requested)
+            rows = conn.execute(
+                f'SELECT _row_num, {cols_str} FROM "{table_name}" '
+                f"WHERE _row_num IN ({placeholders})",
+                tuple(requested),
+            ).fetchall()
+
+        by_number = {int(row[0]): list(row[1:]) for row in rows}
+        return list(original_cols), [
+            by_number[row_number] for row_number in requested if row_number in by_number
+        ]
+
+    def search_rows_bm25(
+        self,
+        query: str,
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return table identities ranked by BM25 matches over concrete row values."""
+        fts_query = build_fts_query(query)
+        if fts_query is None:
+            return []
+        query_terms = _meaningful_row_terms(query)
+        self._ensure_schema()
+        hit_limit = max(limit * 20, 100)
+        with self._manager.connection(self.collection) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT table_id, row_num, bm25({self.ROW_FTS_TABLE}) AS rank, content
+                FROM {self.ROW_FTS_TABLE}
+                WHERE {self.ROW_FTS_TABLE} MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (fts_query, hit_limit),
+            ).fetchall()
+
+        by_table: dict[str, dict[str, Any]] = {}
+        for table_id, row_num, rank, content in rows:
+            key = str(table_id)
+            content_terms = set(_meaningful_row_terms(str(content or "")))
+            matched_terms = [term for term in query_terms if term in content_terms]
+            coverage = len(matched_terms) / len(query_terms) if query_terms else 0.0
+            entry = by_table.get(key)
+            if entry is None:
+                if len(by_table) >= limit:
+                    continue
+                entry = {
+                    "table_id": key,
+                    "rank": len(by_table) + 1,
+                    "bm25_score": -float(rank) if rank is not None else 0.0,
+                    "matched_rows": 0,
+                    "row_numbers": [],
+                    "query_terms": list(query_terms),
+                    "matched_terms": [],
+                    "term_coverage": 0.0,
+                }
+                by_table[key] = entry
+            entry["matched_rows"] += 1
+            if len(entry["row_numbers"]) < 20:
+                entry["row_numbers"].append(int(row_num))
+            if coverage > float(entry["term_coverage"]):
+                entry["matched_terms"] = matched_terms
+                entry["term_coverage"] = coverage
+        return list(by_table.values())
+
     def find_rows_by_identifiers(
         self,
         table_id: str,
@@ -454,6 +597,13 @@ class SqliteTableStore:
                     """,
                     (json.dumps(updated_cols), json.dumps(updated_original), table_id),
                 )
+                self._rebuild_row_index(
+                    conn,
+                    table_id,
+                    table_name,
+                    updated_cols,
+                    updated_original,
+                )
                 conn.commit()
 
                 logger.debug(
@@ -495,6 +645,10 @@ class SqliteTableStore:
             if result:
                 table_name = result[0]
                 conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+                conn.execute(
+                    f"DELETE FROM {self.ROW_FTS_TABLE} WHERE table_id = ?",
+                    (table_id,),
+                )
                 conn.execute("DELETE FROM _table_metadata WHERE table_id = ?", (table_id,))
                 conn.commit()
                 logger.debug(f"{STORAGE} Deleted table '{table_id}' ('{table_name}')")
@@ -502,6 +656,98 @@ class SqliteTableStore:
     def close(self) -> None:
         """No-op (no persistent connection)."""
         pass
+
+    def _backfill_row_index(self, conn: Any) -> None:
+        """Populate row FTS for collections created before the row index existed."""
+        missing = conn.execute(
+            f"""
+            SELECT m.table_id, m.table_name, m.columns, m.column_names_original
+            FROM _table_metadata m
+            LEFT JOIN (
+                SELECT DISTINCT table_id FROM {self.ROW_FTS_TABLE}
+            ) row_index ON row_index.table_id = m.table_id
+            WHERE row_index.table_id IS NULL
+            """
+        ).fetchall()
+        for table_id, table_name, columns_json, original_json in missing:
+            columns = json.loads(columns_json) if columns_json else []
+            original = json.loads(original_json) if original_json else []
+            self._rebuild_row_index(
+                conn,
+                str(table_id),
+                str(table_name),
+                list(columns),
+                list(original),
+            )
+
+    def _rebuild_row_index(
+        self,
+        conn: Any,
+        table_id: str,
+        table_name: str,
+        sanitized_columns: list[str],
+        original_columns: list[str],
+    ) -> None:
+        conn.execute(
+            f"DELETE FROM {self.ROW_FTS_TABLE} WHERE table_id = ?",
+            (table_id,),
+        )
+        if not sanitized_columns:
+            return
+        columns_sql = ", ".join(f'"{column}"' for column in sanitized_columns)
+        rows = conn.execute(
+            f'SELECT _row_num, {columns_sql} FROM "{table_name}" ORDER BY _row_num'
+        ).fetchall()
+        index_rows = [
+            (
+                table_id,
+                int(row[0]),
+                _row_index_text(list(row[1:])),
+            )
+            for row in rows
+        ]
+        if index_rows:
+            conn.executemany(
+                f"""
+                INSERT INTO {self.ROW_FTS_TABLE} (table_id, row_num, content)
+                VALUES (?, ?, ?)
+                """,
+                index_rows,
+            )
+
+    def _replace_row_index(
+        self,
+        conn: Any,
+        table_id: str,
+        rows: list[list[str]],
+    ) -> None:
+        conn.execute(
+            f"DELETE FROM {self.ROW_FTS_TABLE} WHERE table_id = ?",
+            (table_id,),
+        )
+        index_rows = [(table_id, row_num, _row_index_text(row)) for row_num, row in enumerate(rows)]
+        if index_rows:
+            conn.executemany(
+                f"""
+                INSERT INTO {self.ROW_FTS_TABLE} (table_id, row_num, content)
+                VALUES (?, ?, ?)
+                """,
+                index_rows,
+            )
+
+
+def _row_index_text(row: list[Any]) -> str:
+    return " ".join(str(value) for value in row if value is not None)
+
+
+def _meaningful_row_terms(value: str) -> tuple[str, ...]:
+    """Return stable lexical terms used to qualify row-index matches."""
+    terms = [
+        term.casefold()
+        for term in re.findall(r"[^\W_]+", value, flags=re.UNICODE)
+        if term.casefold() not in _ROW_SEARCH_STOPWORDS
+    ]
+    return tuple(dict.fromkeys(terms))
 
 
 __all__ = ["SqliteTableStore"]

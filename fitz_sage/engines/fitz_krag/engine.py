@@ -1245,7 +1245,10 @@ class FitzKragEngine:
         manifest_entries = manifest.entries()
         self._manifest = manifest
         self._source_dir = source_dir
-        if manifest_entries:
+        if any(
+            entry.state.value not in {"failed", "unsupported"}
+            for entry in manifest_entries.values()
+        ):
             self._ensure_standard_llm_available(progress)
 
         # 2. Persist source_dir so `fitz query` can find it across processes
@@ -1272,6 +1275,9 @@ class FitzKragEngine:
         # the same stores retrieval reads.
         core = self._build_ingest_core()
         core.delete_files_not_in_paths(set(manifest_entries))
+        for entry in manifest_entries.values():
+            if entry.state.value in {"failed", "unsupported"}:
+                core.discard_file(entry.file_id)
 
         # Fast synchronous symbol indexing (AST only, no LLM) via the core's
         # parse op. Populates symbol_store + import_store so LLM code search
@@ -1367,7 +1373,11 @@ class FitzKragEngine:
         _progress = progress or (lambda _: None)
 
         entries = manifest.entries()
-        code_entries = [e for e in entries.values() if e.file_type in EXTENSION_MAP]
+        code_entries = [
+            entry
+            for entry in entries.values()
+            if entry.file_type in EXTENSION_MAP and entry.state.value == "registered"
+        ]
         if not code_entries:
             return
 
@@ -1387,6 +1397,12 @@ class FitzKragEngine:
                 indexed += 1
 
             except Exception as e:
+                core.discard_file(entry.file_id)
+                manifest.mark_failed(
+                    entry.rel_path,
+                    stage="parse",
+                    message=str(e),
+                )
                 logger.debug(f"Fast index skipped {entry.rel_path}: {e}")
 
         # Resolve import graph targets now that all code files are stored

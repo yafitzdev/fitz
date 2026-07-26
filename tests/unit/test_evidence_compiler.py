@@ -422,6 +422,61 @@ def test_address_rescue_uses_profile_obligation_for_companion_table() -> None:
     assert ordered == [prose, table]
 
 
+def test_address_rescue_replaces_duplicate_inside_full_read_window() -> None:
+    """Required evidence must not be appended beyond the reranker's read limit."""
+    distractors = [
+        _address(
+            AddressKind.SECTION,
+            f"archive_{index}.md",
+            f"Archive {index}",
+            "Archived warehouse operations brief.",
+        )
+        for index in range(10)
+    ]
+    table = _address(
+        AddressKind.TABLE,
+        "structured/warehouses.csv",
+        "Warehouses",
+        "Table Warehouses columns: warehouse_id, region, item, stock, unit.",
+    )
+
+    ordered = order_addresses_for_contract(
+        "How many flux capacitor units are in the west region?",
+        [*distractors, table],
+        distractors,
+        profile=_profile(modality="structured_table"),
+        limit=10,
+    )
+
+    assert len(ordered) == 10
+    assert ordered[-1] == table
+
+
+def test_address_rescue_does_not_add_second_best_required_candidate() -> None:
+    """An already-selected best candidate satisfies its required modality."""
+    weak_table = _address(
+        AddressKind.TABLE,
+        "structured/incidents.csv",
+        "Incidents",
+        "Table Incidents columns: incident_id, service.",
+    )
+    best_table = _address(
+        AddressKind.TABLE,
+        "structured/warehouses.csv",
+        "Warehouses",
+        "Table Warehouses columns: warehouse_id, region, item, stock, unit.",
+    )
+
+    ordered = order_addresses_for_contract(
+        "How many flux capacitor units are in the west region?",
+        [weak_table, best_table],
+        [best_table],
+        profile=_profile(modality="structured_table"),
+    )
+
+    assert ordered == [best_table]
+
+
 def test_query_contract_does_not_make_question_prefix_an_entity() -> None:
     """Question wording should not become a hard phrase anchor."""
     contract = build_query_contract(
@@ -625,6 +680,41 @@ Columns: alert_id, duration_minutes
     assert "bridge:ALT-501" in compiled.results[1].metadata["evidence_compiler"]["roles"]
 
 
+def test_compiler_keeps_validated_document_companion_without_original_identifier() -> None:
+    """An explicit source bridge may lead to a policy that does not repeat the row ID."""
+    brief = _result(
+        "For model_eval renewal terms, use Procurement Policy.",
+        "mixed/pricing_brief.md",
+        location="Pricing Brief",
+    )
+    policy = _result(
+        "Procurement Policy: MeridianAI requires 75 days written notice.",
+        "unstructured/procurement_policy.md",
+        location="Procurement Policy",
+        metadata={
+            "evidence_closure": {
+                "role": "bridge_document:procurement policy",
+                "bridges": ["model_eval", "Procurement Policy"],
+                "contract_identifiers": ["model_eval"],
+                "contract_phrase_anchors": [],
+            }
+        },
+    )
+
+    compiled = compile_evidence(
+        "Which model_eval notice applies?",
+        [brief, policy],
+    )
+
+    assert [result.file_path for result in compiled.results] == [
+        "mixed/pricing_brief.md",
+        "unstructured/procurement_policy.md",
+    ]
+    assert compiled.results[1].metadata["evidence_compiler"]["roles"] == [
+        "bridge_document:procurement policy"
+    ]
+
+
 def test_compiler_does_not_promote_bridge_companion_without_pyrrho_multi_modality() -> None:
     """Bridge companion pulls are not fitz-sage-owned when Pyrrho asks for one modality."""
     postmortem = _result(
@@ -723,6 +813,16 @@ def test_query_contract_mixed_modality_requires_mixed_evidence_coverage() -> Non
     )
 
     assert contract.required_modalities == ("section", "table", "symbol")
+
+
+def test_query_contract_obligation_refines_coarse_mixed_modality() -> None:
+    """A precise mixed obligation should not require an unrelated third kind."""
+    contract = build_query_contract(
+        "Using the implementation guide, which function handles authentication?",
+        profile=_profile(modality="mixed", obligation="prose_plus_code"),
+    )
+
+    assert contract.required_modalities == ("section", "symbol")
 
 
 def test_query_contract_keeps_code_export_window_as_symbol_only() -> None:

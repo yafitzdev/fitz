@@ -31,6 +31,8 @@ class FileState(str, Enum):
     HIERARCHY_READY = "hierarchy_ready"  # L1 hierarchy summary exists
     ENRICHED = "enriched"  # Required deep enrichment completed
     SUMMARIZED = "summarized"  # Demand summaries exist for queried files
+    FAILED = "failed"  # A supported file failed at a recorded indexing stage
+    UNSUPPORTED = "unsupported"  # Discovered outside the enabled format contract
 
 
 _QUERY_READY_STATES = frozenset(
@@ -90,6 +92,8 @@ class ManifestEntry:
     headings: list[ManifestHeading] = field(default_factory=list)
     priority: int = 4  # 1=highest (queried), 4=default
     last_queried_at: float | None = None
+    failure_stage: str | None = None
+    failure_message: str | None = None
 
 
 class FileManifest:
@@ -143,6 +147,29 @@ class FileManifest:
                     headings=entry.headings,
                     priority=entry.priority,
                     last_queried_at=entry.last_queried_at,
+                    failure_stage=None,
+                    failure_message=None,
+                )
+
+    def mark_failed(self, rel_path: str, *, stage: str, message: str) -> None:
+        """Record a terminal per-file failure."""
+        with self._lock:
+            entry = self._entries.get(rel_path)
+            if entry:
+                self._entries[rel_path] = ManifestEntry(
+                    file_id=entry.file_id,
+                    rel_path=entry.rel_path,
+                    abs_path=entry.abs_path,
+                    content_hash=entry.content_hash,
+                    file_type=entry.file_type,
+                    size_bytes=entry.size_bytes,
+                    state=FileState.FAILED,
+                    symbols=entry.symbols,
+                    headings=entry.headings,
+                    priority=entry.priority,
+                    last_queried_at=entry.last_queried_at,
+                    failure_stage=str(stage),
+                    failure_message=str(message),
                 )
 
     def bump_priority(self, rel_paths: list[str]) -> None:
@@ -164,6 +191,8 @@ class FileManifest:
                         headings=entry.headings,
                         priority=1,
                         last_queried_at=now,
+                        failure_stage=entry.failure_stage,
+                        failure_message=entry.failure_message,
                     )
 
     def bump_priority_level(self, rel_paths: list[str], level: int) -> None:
@@ -184,6 +213,8 @@ class FileManifest:
                         headings=entry.headings,
                         priority=level,
                         last_queried_at=entry.last_queried_at,
+                        failure_stage=entry.failure_stage,
+                        failure_message=entry.failure_message,
                     )
 
     def files_in_state(self, state: FileState) -> list[ManifestEntry]:
@@ -199,7 +230,12 @@ class FileManifest:
     def files_not_query_ready(self) -> list[ManifestEntry]:
         """Return entries that still need the minimum retrieval index."""
         with self._lock:
-            return [e for e in self._entries.values() if not is_query_ready_state(e.state)]
+            return [
+                entry
+                for entry in self._entries.values()
+                if entry.state not in {FileState.FAILED, FileState.UNSUPPORTED}
+                and not is_query_ready_state(entry.state)
+            ]
 
     def to_manifest_text(self, entries: list[ManifestEntry] | None = None) -> str:
         """Build compact manifest text for LLM consumption.
@@ -254,15 +290,21 @@ def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
     """Summarize a manifest's background-indexing progress.
 
     Returns ``total`` / ``indexed`` / ``pending`` counts for the query-ready
-    index, plus deep-enrichment progress. ``complete`` intentionally means the
-    collection can serve retrieval queries while the daemon may still be doing
-    mandatory entity/hierarchy work in the background.
+    index, plus deep-enrichment progress. ``query_ready`` means no supported
+    file remains pending. ``complete`` additionally requires that no supported
+    file failed.
     """
     if manifest is None:
         return {
+            "discovered": 0,
             "total": 0,
             "indexed": 0,
             "pending": 0,
+            "failed": 0,
+            "failed_files": [],
+            "unsupported": 0,
+            "unsupported_files": [],
+            "healthy": True,
             "complete": True,
             "query_ready": True,
             "deep_pending": 0,
@@ -276,11 +318,16 @@ def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
     for entry in entries:
         by_state[entry.state.value] = by_state.get(entry.state.value, 0) + 1
 
-    total = sum(by_state.values())
-    indexed = sum(1 for entry in entries if is_query_ready_state(entry.state))
-    fully_enriched = sum(1 for entry in entries if is_fully_enriched_state(entry.state))
-    pending = total - indexed
-    deep_pending = total - fully_enriched
+    unsupported_entries = [entry for entry in entries if entry.state == FileState.UNSUPPORTED]
+    failed_entries = [entry for entry in entries if entry.state == FileState.FAILED]
+    active_entries = [
+        entry for entry in entries if entry.state not in {FileState.UNSUPPORTED, FileState.FAILED}
+    ]
+    total = len(entries) - len(unsupported_entries)
+    indexed = sum(1 for entry in active_entries if is_query_ready_state(entry.state))
+    fully_enriched = sum(1 for entry in active_entries if is_fully_enriched_state(entry.state))
+    pending = len(active_entries) - indexed
+    deep_pending = len(active_entries) - fully_enriched
     deep_pending_files = [
         {
             "path": entry.rel_path,
@@ -288,20 +335,38 @@ def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
             "priority": entry.priority,
         }
         for entry in sorted(
-            entries,
+            active_entries,
             key=lambda item: (item.priority, item.size_bytes, item.rel_path),
         )
         if not is_fully_enriched_state(entry.state)
     ][:5]
+    failed_files = [
+        {
+            "path": entry.rel_path,
+            "stage": entry.failure_stage,
+            "error": entry.failure_message,
+        }
+        for entry in sorted(failed_entries, key=lambda item: item.rel_path)
+    ]
+    unsupported_files = [
+        {"path": entry.rel_path, "extension": entry.file_type}
+        for entry in sorted(unsupported_entries, key=lambda item: item.rel_path)
+    ]
     return {
+        "discovered": len(entries),
         "total": total,
         "indexed": indexed,
         "pending": pending,
-        "complete": pending == 0,
+        "failed": len(failed_entries),
+        "failed_files": failed_files,
+        "unsupported": len(unsupported_entries),
+        "unsupported_files": unsupported_files,
+        "healthy": not failed_entries,
+        "complete": pending == 0 and not failed_entries,
         "query_ready": pending == 0,
         "deep_pending": deep_pending,
         "deep_pending_files": deep_pending_files,
-        "fully_enriched": deep_pending == 0,
+        "fully_enriched": deep_pending == 0 and not failed_entries,
         "by_state": by_state,
     }
 
@@ -327,6 +392,8 @@ def _dict_to_entry(d: dict[str, Any]) -> ManifestEntry:
         headings=[ManifestHeading(**h) for h in d.get("headings", [])],
         priority=d.get("priority", 4),
         last_queried_at=d.get("last_queried_at"),
+        failure_stage=d.get("failure_stage"),
+        failure_message=d.get("failure_message"),
     )
 
 

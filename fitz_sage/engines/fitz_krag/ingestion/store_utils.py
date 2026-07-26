@@ -25,7 +25,7 @@ def build_fts_query(query: str) -> str | None:
     words = [w for w in re.findall(r"\w+", query) if w]
     if not words:
         return None
-    return " OR ".join(words)
+    return " OR ".join(f'"{word}"' for word in words)
 
 
 def decode_json(value: Any, default: Any) -> Any:

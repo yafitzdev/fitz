@@ -392,7 +392,7 @@ class TestAnswer:
         profile = call_args[0][1]
         assert "q1 2024" in profile.temporal_references
         assert "q2 2024" in profile.temporal_references
-        assert profile.planning_owner == "pyrrho"
+        assert profile.planning_owner == "hybrid"
         engine._governance.plan_query.assert_called_once_with(query.text)
 
     def test_answer_empty_query_raises(self):
@@ -698,12 +698,12 @@ class TestEvidence:
         assert profile.query_contract == "comparison_coverage"
         assert profile.has_comparison_intent is True
         assert profile.answer_type == "comparative"
-        assert profile.planning_owner == "pyrrho"
+        assert profile.planning_owner == "hybrid"
         query_profile = pack.metadata["query_profile"]
         assert "signals" not in query_profile
         assert "pyrrho_pre" in query_profile
         assert query_profile["profile"]["answer_type"] == "comparative"
-        assert query_profile["profile"]["planning_owner"] == "pyrrho"
+        assert query_profile["profile"]["planning_owner"] == "hybrid"
 
     def test_evidence_uses_pyrrho_cutoff_over_reranked_results(self):
         """Evidence mode returns the smallest reranked prefix Pyrrho accepts."""

@@ -54,6 +54,7 @@ def build_retrieval_run(
         comparison_entities=_profile_tuple(profile, "comparison_entities"),
         has_comparison_intent=bool(getattr(profile, "has_comparison_intent", False)),
         has_aggregation_intent=bool(getattr(profile, "has_aggregation_intent", False)),
+        has_temporal_intent=bool(getattr(profile, "has_temporal_intent", False)),
         inject_corpus_summaries=bool(getattr(profile, "inject_corpus_summaries", False)),
         terms=tuple(
             QueryTerm(

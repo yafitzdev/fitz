@@ -341,6 +341,65 @@ class TestRetrievalRouter:
         agentic.retrieve.assert_not_called()
         progress.assert_not_called()
 
+    def test_retrieve_preserves_candidates_from_each_strategy(self):
+        """A dominant section leg must not push every table candidate past the read limit."""
+        code_strat = MagicMock()
+        code_strat.retrieve.return_value = []
+        section_strat = MagicMock()
+        section_strat.retrieve.return_value = [
+            _addr(
+                AddressKind.SECTION,
+                source_id=f"doc-{index}",
+                location=f"section-{index}",
+                score=1.0 - index * 0.01,
+            )
+            for index in range(10)
+        ]
+        table_strat = MagicMock()
+        table_strat.retrieve.return_value = [
+            _addr(
+                AddressKind.TABLE,
+                source_id="matrix.csv",
+                location=f"table-{index}",
+                score=0.1 - index * 0.01,
+            )
+            for index in range(2)
+        ]
+        router = RetrievalRouter(
+            code_strategy=code_strat,
+            config=_make_config(top_addresses=6),
+            section_strategy=section_strat,
+            table_strategy=table_strat,
+        )
+        profile = _custom_weight_profile(
+            code=0.1,
+            section=0.8,
+            table=0.1,
+            top_k=6,
+        )
+
+        result = router.retrieve("rollout status", profile)
+
+        assert len(result) == 6
+        assert sum(address.kind == AddressKind.TABLE for address in result) == 2
+        assert sum(address.kind == AddressKind.SECTION for address in result) == 4
+
+    def test_strategy_coverage_does_not_invent_missing_modalities(self):
+        """Coverage only applies to strategies that returned real candidates."""
+        addresses = [
+            _addr(
+                AddressKind.SECTION,
+                source_id=f"doc-{index}",
+                location=f"section-{index}",
+                score=1.0 - index * 0.01,
+            )
+            for index in range(10)
+        ]
+
+        result = RetrievalRouter._enforce_strategy_coverage(addresses, 5)
+
+        assert result == addresses[:5]
+
 
 # ---------------------------------------------------------------------------
 # TestCrossStrategyRanker

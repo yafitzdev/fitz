@@ -197,8 +197,9 @@ class fitz:
     def indexing_status(self) -> dict:
         """Background-indexing progress for this collection.
 
-        Returns counts (total, indexed, pending, by_state) and a ``complete``
-        flag. ``complete`` means query-ready keyword indexing has finished.
+        Returns query-ready progress plus explicit ``failed_files`` and
+        ``unsupported_files`` inventories. ``complete`` is false when any
+        supported file failed.
         """
         return self._get_engine().indexing_status()
 

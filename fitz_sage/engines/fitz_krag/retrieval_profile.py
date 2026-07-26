@@ -82,7 +82,24 @@ _CODE_EVIDENCE_TERMS = {
     "scheduler",
     "symbol",
 }
-_TEMPORAL_TERMS = {"current", "final", "fresh", "latest", "newest", "recent", "updated"}
+_TEMPORAL_TERMS = {
+    "at that time",
+    "current",
+    "currently",
+    "effective now",
+    "final",
+    "formerly",
+    "fresh",
+    "latest",
+    "newest",
+    "now",
+    "original",
+    "previous",
+    "prior",
+    "recent",
+    "superseded",
+    "updated",
+}
 
 
 @dataclass(frozen=True)
@@ -159,9 +176,9 @@ def build_retrieval_profile(
 ) -> RetrievalProfile:
     """Build a retrieval profile for the KRAG executor.
 
-    Pyrrho's query-only v2 heads own pre-retrieval evidence-intent signals when
-    available. Deterministic query prep remains the local fallback and supplies
-    mechanical retrieval defaults that are not model heads.
+    Pyrrho's query-only v2 heads contribute evidence-intent signals when
+    available. Fitz-owned deterministic query-shape signals remain active so
+    explicit temporal, comparison, and aggregation language cannot be dropped.
     """
     specificity = "moderate"
     answer_type = "factual"
@@ -172,8 +189,8 @@ def build_retrieval_profile(
     auxiliary_signal_policy = "deterministic_profile"
     if pyrrho_signals:
         fallback = _merge_pyrrho_signals(fallback, pyrrho_signals)
-        planning_owner = "pyrrho"
-        auxiliary_signal_policy = "pyrrho_v2_pre_with_deterministic_fallback"
+        planning_owner = "hybrid"
+        auxiliary_signal_policy = "pyrrho_v2_pre_plus_deterministic_query_shape"
     contract_label = fallback.get("query_contract")
     shape_label = fallback.get("answerability_shape")
     modality_label = fallback.get("retrieval_modality")
@@ -270,26 +287,38 @@ def build_retrieval_profile(
                 except Exception:
                     pass
 
-    boost_recency = False
-    has_aggregation_intent = False
-    has_comparison_intent = False
-    has_temporal_intent = False
-    if contract_label == "comparison_coverage":
-        has_comparison_intent = True
-    elif contract_label == "temporal_grounding":
-        has_temporal_intent = True
-        boost_recency = True
-    elif contract_label == "exhaustive_coverage":
-        has_aggregation_intent = True
-    if shape_label == "set_answer":
-        has_aggregation_intent = True
-    if "needs_comparison_or_set" in retrieval_intents:
-        has_comparison_intent = True
-    if "needs_temporal_resolution" in retrieval_intents:
-        has_temporal_intent = True
-        boost_recency = True
-    if "needs_broad_coverage" in retrieval_intents:
-        has_aggregation_intent = True
+    deterministic_aggregation = bool(getattr(detection, "has_aggregation_intent", False))
+    deterministic_comparison = bool(getattr(detection, "has_comparison_intent", False))
+    deterministic_temporal = bool(
+        getattr(detection, "has_temporal_intent", False)
+        or getattr(detection, "has_freshness_intent", False)
+        or _contains_any(
+            str(getattr(analysis, "refined_query", "") or "").lower(),
+            _TEMPORAL_TERMS,
+        )
+    )
+    has_deterministic_shape = (
+        deterministic_aggregation or deterministic_comparison or deterministic_temporal
+    )
+    if has_deterministic_shape:
+        has_aggregation_intent = deterministic_aggregation
+        has_comparison_intent = deterministic_comparison
+        has_temporal_intent = deterministic_temporal
+    else:
+        has_aggregation_intent = (
+            contract_label == "exhaustive_coverage"
+            or shape_label == "set_answer"
+            or "needs_broad_coverage" in retrieval_intents
+        )
+        has_comparison_intent = (
+            contract_label == "comparison_coverage"
+            or "needs_comparison_or_set" in retrieval_intents
+        )
+        has_temporal_intent = (
+            contract_label == "temporal_grounding"
+            or "needs_temporal_resolution" in retrieval_intents
+        )
+    boost_recency = has_temporal_intent
 
     # --- top_k: base * fetch_multiplier * specificity adjustment ---
     top_k = config.top_addresses
@@ -429,6 +458,7 @@ def _deterministic_profile_signals(
         add_kind("needs_code_or_symbol")
 
     has_comparison = bool(getattr(detection, "has_comparison_intent", False))
+    has_aggregation = bool(getattr(detection, "has_aggregation_intent", False))
     has_temporal = bool(
         getattr(detection, "has_temporal_intent", False)
         or getattr(detection, "has_freshness_intent", False)
@@ -442,12 +472,16 @@ def _deterministic_profile_signals(
     )
     if has_comparison or has_multi_source_hint:
         intents.append("needs_comparison_or_set")
+    if has_aggregation:
+        intents.append("needs_broad_coverage")
     if has_temporal:
         intents.append("needs_temporal_resolution")
 
     query_contract = None
     if has_temporal:
         query_contract = "temporal_grounding"
+    elif has_aggregation:
+        query_contract = "exhaustive_coverage"
     elif has_comparison or has_multi_source_hint:
         query_contract = "comparison_coverage"
     elif "needs_table_or_record" in kinds:
@@ -469,7 +503,9 @@ def _deterministic_profile_signals(
         retrieval_modality = "unstructured_text"
 
     answerability_shape = None
-    if has_comparison or has_multi_source_hint:
+    if has_aggregation:
+        answerability_shape = "synthesis_answer"
+    elif has_comparison or has_multi_source_hint:
         answerability_shape = "structured_reasoning"
 
     return {
@@ -521,20 +557,36 @@ def _merge_pyrrho_signals(
     fallback: dict[str, Any],
     pyrrho_signals: dict[str, Any],
 ) -> dict[str, Any]:
-    """Overlay model-owned query heads while retaining deterministic fallbacks."""
+    """Union model query heads with deterministic recall signals."""
     merged = dict(fallback)
-    for key in (
-        "query_contract",
-        "answerability_shape",
-        "retrieval_modality",
-        "retrieval_obligation",
-    ):
-        if pyrrho_signals.get(key):
-            merged[key] = pyrrho_signals[key]
     for key in ("retrieval_intents", "evidence_kinds", "required_modalities"):
-        values = tuple(pyrrho_signals.get(key) or ())
-        if values:
-            merged[key] = values
+        merged[key] = tuple(
+            dict.fromkeys(
+                (
+                    *tuple(fallback.get(key) or ()),
+                    *tuple(pyrrho_signals.get(key) or ()),
+                )
+            )
+        )
+
+    intents = tuple(merged["retrieval_intents"])
+    kinds = tuple(merged["evidence_kinds"])
+    if "needs_temporal_resolution" in intents:
+        merged["query_contract"] = "temporal_grounding"
+        merged["answerability_shape"] = None
+    elif "needs_broad_coverage" in intents:
+        merged["query_contract"] = "exhaustive_coverage"
+        merged["answerability_shape"] = "synthesis_answer"
+    elif "needs_comparison_or_set" in intents:
+        merged["query_contract"] = "comparison_coverage"
+        merged["answerability_shape"] = "structured_reasoning"
+    elif "needs_table_or_record" in kinds:
+        merged["query_contract"] = "structured_lookup"
+
+    modality, obligation = _modality_from_evidence_kinds(kinds)
+    if modality:
+        merged["retrieval_modality"] = modality
+        merged["retrieval_obligation"] = obligation
     return merged
 
 
@@ -582,7 +634,7 @@ def _contains_any(lower_text: str, terms: set[str]) -> bool:
 
 
 def _has_record_identifier(query: str) -> bool:
-    """Return whether query includes a table-like id such as EXP-505 or ROL-401."""
+    """Return whether query includes a table-like identifier such as ABC-123."""
     return bool(re.search(r"\b[A-Z]{2,}\d*[A-Z]*-\d+\b|\b[A-Z]{2,}\d+\b", query))
 
 

@@ -23,6 +23,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _matched_table_row_numbers(addr: Address) -> list[int]:
+    """Read bounded row locations produced by concrete-value retrieval."""
+    row_search = addr.metadata.get("row_search")
+    if not isinstance(row_search, dict):
+        return []
+    values = row_search.get("row_numbers")
+    if not isinstance(values, list):
+        return []
+
+    row_numbers: list[int] = []
+    for value in values:
+        try:
+            row_number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if row_number >= 0 and row_number not in row_numbers:
+            row_numbers.append(row_number)
+    return row_numbers[:20]
+
+
 class ContentReader:
     """Reads raw file content for addresses, extracts line ranges."""
 
@@ -165,12 +185,19 @@ class ContentReader:
         file_path = raw_file["path"] if raw_file else "unknown"
 
         content = section["content"]
+        section_metadata = section.get("metadata")
+        section_metadata = section_metadata if isinstance(section_metadata, dict) else {}
+        document_title = str(section_metadata.get("document_title") or "").strip()
         metadata: dict[str, Any] = {
             "page_start": section.get("page_start"),
             "page_end": section.get("page_end"),
             "section_title": section["title"],
             "section_level": section["level"],
         }
+        if document_title:
+            metadata["document_title"] = document_title
+            if document_title.casefold() != str(section["title"]).strip().casefold():
+                content = f"[Document: {document_title}]\n{content}"
 
         # Add breadcrumb and child TOC when section context is enabled
         if self._config and self._config.include_section_context:
@@ -218,30 +245,41 @@ class ContentReader:
         col_list = ", ".join(columns)
         content = f"Table: {name}\nColumns: {col_list}\nRow count: {row_count}"
 
-        # Fetch sample rows if sqlite_table_store is available
+        evidence_label = "Sample data"
+        row_numbers = _matched_table_row_numbers(addr)
+
+        # Fetch matched rows when retrieval identified them, otherwise a bounded sample.
         if self._sqlite_table_store:
             try:
-                table_name = self._sqlite_table_store.get_table_name(table_id)
-                if table_name:
+                result = None
+                get_rows = getattr(self._sqlite_table_store, "get_rows_by_numbers", None)
+                if row_numbers and callable(get_rows):
+                    result = get_rows(
+                        table_id,
+                        row_numbers,
+                        limit=self._table_sample_limit(row_count),
+                    )
+                    evidence_label = "Matched data"
+                if result is None:
+                    table_name = self._sqlite_table_store.get_table_name(table_id)
                     col_info = self._sqlite_table_store.get_columns(table_id)
-                    if col_info:
+                    if table_name and col_info:
                         sanitized_cols, _ = col_info
                         cols_str = ", ".join(f'"{c}"' for c in sanitized_cols[:20])
                         sample_limit = self._table_sample_limit(row_count)
                         sql = f'SELECT {cols_str} FROM "{table_name}" LIMIT {sample_limit}'
                         result = self._sqlite_table_store.execute_query(table_id, sql)
-                        if result:
-                            col_names, rows = result
-                            if rows:
-                                # Format as markdown table
-                                header = "| " + " | ".join(str(c) for c in col_names) + " |"
-                                sep = "| " + " | ".join("---" for _ in col_names) + " |"
-                                data_rows = []
-                                for row in rows:
-                                    cells = [str(v)[:50] if v is not None else "" for v in row]
-                                    data_rows.append("| " + " | ".join(cells) + " |")
-                                sample_table = "\n".join([header, sep] + data_rows)
-                                content += f"\nSample data:\n{sample_table}"
+                if result:
+                    col_names, rows = result
+                    if rows:
+                        header = "| " + " | ".join(str(c) for c in col_names) + " |"
+                        sep = "| " + " | ".join("---" for _ in col_names) + " |"
+                        data_rows = []
+                        for row in rows:
+                            cells = [str(v)[:50] if v is not None else "" for v in row]
+                            data_rows.append("| " + " | ".join(cells) + " |")
+                        sample_table = "\n".join([header, sep] + data_rows)
+                        content += f"\n{evidence_label}:\n{sample_table}"
             except Exception as e:
                 logger.debug(f"Failed to fetch sample rows for table {table_id}: {e}")
 
@@ -249,7 +287,10 @@ class ContentReader:
             address=addr,
             content=content,
             file_path=file_path,
-            metadata={"table_id": table_id},
+            metadata={
+                "table_id": table_id,
+                "matched_row_numbers": row_numbers,
+            },
         )
 
     def _table_sample_limit(self, row_count: int | None) -> int:

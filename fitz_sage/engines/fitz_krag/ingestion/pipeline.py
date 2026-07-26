@@ -29,6 +29,11 @@ from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core import ConfigurationError
 from fitz_sage.core.json_utils import parse_llm_json
+from fitz_sage.engines.fitz_krag.ingestion.formats import (
+    BINARY_DOCUMENT_EXTENSIONS,
+    CODE_EXTENSION_MAP,
+    enabled_extensions,
+)
 from fitz_sage.engines.fitz_krag.ingestion.import_graph_store import ImportGraphStore
 from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
 from fitz_sage.engines.fitz_krag.ingestion.schema import ensure_schema
@@ -41,7 +46,6 @@ from fitz_sage.engines.fitz_krag.ingestion.strategies.python_code import (
     PythonCodeIngestStrategy,
 )
 from fitz_sage.engines.fitz_krag.ingestion.strategies.technical_doc import (
-    DOC_EXTENSIONS,
     DocIngestResult,
     TechnicalDocIngestStrategy,
 )
@@ -57,16 +61,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Extensions handled by code strategies
-EXTENSION_MAP: dict[str, str] = {
-    ".py": "python",
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".js": "typescript",
-    ".jsx": "typescript",
-    ".java": "java",
-    ".go": "go",
-}
+# Backwards-compatible alias for internal callers.
+EXTENSION_MAP = CODE_EXTENSION_MAP
 
 # Synthetic raw-file / section that carries the L2 corpus summary. Fixed IDs
 # so re-ingest upserts in place rather than accumulating duplicates.
@@ -195,6 +191,10 @@ class KragIngestPipeline:
         else:
             counts["sections"] = self._parse_doc_file(rel_path, abs_path, file_id)
 
+        if not any(counts.values()):
+            raise ValueError(
+                f"No searchable content could be extracted from supported file '{rel_path}'."
+            )
         return counts
 
     def summarize_file(self, file_id: str, file_type: str) -> None:
@@ -273,6 +273,10 @@ class KragIngestPipeline:
             self._delete_file(existing_ids[stale_path])
         return len(stale_paths)
 
+    def discard_file(self, file_id: str) -> None:
+        """Remove stored retrieval units after a file fails to re-index."""
+        self._delete_file(file_id)
+
     # ------------------------------------------------------------------
     # Synchronous whole-corpus ingest — a thin loop over the core ops
     # ------------------------------------------------------------------
@@ -307,6 +311,8 @@ class KragIngestPipeline:
             "symbols_extracted": 0,
             "sections_extracted": 0,
             "tables_ingested": 0,
+            "files_failed": 0,
+            "failures": [],
             "collection": self._collection,
         }
 
@@ -340,18 +346,27 @@ class KragIngestPipeline:
         total = len(to_process)
 
         # 2. Parse every file (no LLM)
+        parsed_files: list[tuple[str, Path, str]] = []
         for i, (rel_path, abs_path, file_id) in enumerate(to_process):
             if on_progress:
                 on_progress(i + 1, total, rel_path)
-            counts = self.parse_file(rel_path, abs_path, file_id)
+            try:
+                counts = self.parse_file(rel_path, abs_path, file_id)
+            except Exception as exc:
+                self.discard_file(file_id)
+                stats["files_failed"] += 1
+                stats["failures"].append({"path": rel_path, "error": str(exc)})
+                logger.warning("Failed to index %s: %s", rel_path, exc)
+                continue
             stats["symbols_extracted"] += counts["symbols"]
             stats["sections_extracted"] += counts["sections"]
             stats["tables_ingested"] += counts["tables"]
+            parsed_files.append((rel_path, abs_path, file_id))
 
         # 3. Summarize, then 4. enrich (LLM)
-        for rel_path, abs_path, file_id in to_process:
+        for rel_path, abs_path, file_id in parsed_files:
             self.summarize_file(file_id, abs_path.suffix.lower())
-        for rel_path, abs_path, file_id in to_process:
+        for rel_path, abs_path, file_id in parsed_files:
             self.enrich_file(file_id, abs_path.suffix.lower())
 
         # 5. Delete removed files (the synthetic corpus file is not scanned)
@@ -420,14 +435,10 @@ class KragIngestPipeline:
 
         return len(result.symbols)
 
-    # Binary document formats where read_text() produces garbled output.
-    # For these, we hash the raw bytes and store Docling-extracted text instead.
-    _BINARY_DOC_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx"}
-
     def _parse_doc_file(self, rel_path: str, abs_path: Path, file_id: str) -> int:
         """Parse a document: store raw content + extract/store sections. Returns section count."""
         ext = abs_path.suffix.lower()
-        is_binary = ext in self._BINARY_DOC_EXTENSIONS
+        is_binary = ext in BINARY_DOCUMENT_EXTENSIONS
 
         content_hash = _hash_file(abs_path)
 
@@ -988,17 +999,10 @@ class KragIngestPipeline:
 
     def _scan_files(self, source: Path) -> list[Path]:
         """Scan source for files matching enabled code + document + table strategies."""
-        extensions = set()
-        for lang in self._config.code_languages:
-            for ext, lang_name in EXTENSION_MAP.items():
-                if lang_name == lang:
-                    extensions.add(ext)
-
-        # Include document extensions
-        extensions.update(DOC_EXTENSIONS)
-
-        # Include table extensions
-        extensions.update(self._config.table_extensions)
+        extensions = enabled_extensions(
+            code_languages=self._config.code_languages,
+            table_extensions=self._config.table_extensions,
+        )
 
         if source.is_file():
             if source.suffix.lower() in extensions:

@@ -13,7 +13,12 @@ from __future__ import annotations
 import logging
 import re
 
-from fitz_sage.engines.fitz_krag.ingestion.code_utils import node_text, path_to_module
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import (
+    brace_block_end,
+    leading_comment_context,
+    node_text,
+    path_to_module,
+)
 from fitz_sage.engines.fitz_krag.ingestion.strategies.base import (
     ImportEdge,
     IngestResult,
@@ -92,58 +97,67 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
     pkg_match = _PACKAGE_RE.search(source)
     module_name = pkg_match.group(1) if pkg_match else path_to_module(file_path, (".java",))
 
+    lines = source.splitlines()
     symbols: list[SymbolEntry] = []
     imports: list[ImportEdge] = []
 
     for m in _CLASS_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
+        context_start, docstring = leading_comment_context(lines, line_no, include_annotations=True)
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
                 qualified_name=f"{module_name}.{m.group(1)}",
                 kind="class",
-                start_line=line_no,
-                end_line=line_no,
+                start_line=context_start,
+                end_line=brace_block_end(lines, line_no),
                 signature=f"class {m.group(1)}",
+                docstring=docstring,
             )
         )
 
     for m in _INTERFACE_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
+        context_start, docstring = leading_comment_context(lines, line_no, include_annotations=True)
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
                 qualified_name=f"{module_name}.{m.group(1)}",
                 kind="interface",
-                start_line=line_no,
-                end_line=line_no,
+                start_line=context_start,
+                end_line=brace_block_end(lines, line_no),
                 signature=f"interface {m.group(1)}",
+                docstring=docstring,
             )
         )
 
     for m in _ENUM_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
+        context_start, docstring = leading_comment_context(lines, line_no, include_annotations=True)
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
                 qualified_name=f"{module_name}.{m.group(1)}",
                 kind="enum",
-                start_line=line_no,
-                end_line=line_no,
+                start_line=context_start,
+                end_line=brace_block_end(lines, line_no),
                 signature=f"enum {m.group(1)}",
+                docstring=docstring,
             )
         )
 
     for m in _RECORD_RE.finditer(source):
         line_no = source[: m.start()].count("\n") + 1
+        context_start, docstring = leading_comment_context(lines, line_no, include_annotations=True)
         symbols.append(
             SymbolEntry(
                 name=m.group(1),
                 qualified_name=f"{module_name}.{m.group(1)}",
                 kind="record",
-                start_line=line_no,
-                end_line=line_no,
+                start_line=context_start,
+                end_line=brace_block_end(lines, line_no),
                 signature=f"record {m.group(1)}",
+                docstring=docstring,
             )
         )
 
@@ -153,14 +167,16 @@ def _regex_fallback(source: str, file_path: str) -> IngestResult:
         if name in ("if", "else", "for", "while", "switch", "return", "new", "class"):
             continue
         line_no = source[: m.start()].count("\n") + 1
+        context_start, docstring = leading_comment_context(lines, line_no, include_annotations=True)
         symbols.append(
             SymbolEntry(
                 name=name,
                 qualified_name=f"{module_name}.{name}",
                 kind="method",
-                start_line=line_no,
-                end_line=line_no,
+                start_line=context_start,
+                end_line=brace_block_end(lines, line_no),
                 signature=f"{name}()",
+                docstring=docstring,
             )
         )
 
@@ -243,6 +259,7 @@ def _extract_class(node, lines, module_name):
     name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
+    context_start, docstring = leading_comment_context(lines, start, include_annotations=True)
 
     superclass = node.child_by_field_name("superclass")
     interfaces = node.child_by_field_name("interfaces")
@@ -256,9 +273,10 @@ def _extract_class(node, lines, module_name):
         name=name,
         qualified_name=f"{module_name}.{name}",
         kind="class",
-        start_line=start,
+        start_line=context_start,
         end_line=end,
         signature=" ".join(sig_parts),
+        docstring=docstring,
     )
 
 
@@ -270,14 +288,16 @@ def _extract_interface(node, lines, module_name):
     name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
+    context_start, docstring = leading_comment_context(lines, start, include_annotations=True)
 
     return SymbolEntry(
         name=name,
         qualified_name=f"{module_name}.{name}",
         kind="interface",
-        start_line=start,
+        start_line=context_start,
         end_line=end,
         signature=f"interface {name}",
+        docstring=docstring,
     )
 
 
@@ -289,14 +309,16 @@ def _extract_enum(node, lines, module_name):
     name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
+    context_start, docstring = leading_comment_context(lines, start, include_annotations=True)
 
     return SymbolEntry(
         name=name,
         qualified_name=f"{module_name}.{name}",
         kind="enum",
-        start_line=start,
+        start_line=context_start,
         end_line=end,
         signature=f"enum {name}",
+        docstring=docstring,
     )
 
 
@@ -308,14 +330,16 @@ def _extract_record(node, lines, module_name):
     name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
+    context_start, docstring = leading_comment_context(lines, start, include_annotations=True)
 
     return SymbolEntry(
         name=name,
         qualified_name=f"{module_name}.{name}",
         kind="record",
-        start_line=start,
+        start_line=context_start,
         end_line=end,
         signature=f"record {name}",
+        docstring=docstring,
     )
 
 
@@ -327,6 +351,7 @@ def _extract_method(node, lines, module_name, class_name):
     name = node_text(name_node)
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
+    context_start, docstring = leading_comment_context(lines, start, include_annotations=True)
 
     return_type = node.child_by_field_name("type")
     params = node.child_by_field_name("parameters")
@@ -337,9 +362,10 @@ def _extract_method(node, lines, module_name, class_name):
         name=name,
         qualified_name=f"{module_name}.{class_name}.{name}",
         kind="method",
-        start_line=start,
+        start_line=context_start,
         end_line=end,
         signature=sig,
+        docstring=docstring,
     )
 
 
@@ -349,6 +375,7 @@ def _extract_constructor(node, lines, module_name, class_name):
     name = node_text(name_node) if name_node else class_name
     start = node.start_point[0] + 1
     end = node.end_point[0] + 1
+    context_start, docstring = leading_comment_context(lines, start, include_annotations=True)
 
     params = node.child_by_field_name("parameters")
     sig = f"{name}{node_text(params) if params else '()'}"
@@ -357,9 +384,10 @@ def _extract_constructor(node, lines, module_name, class_name):
         name=name,
         qualified_name=f"{module_name}.{class_name}.{name}",
         kind="constructor",
-        start_line=start,
+        start_line=context_start,
         end_line=end,
         signature=sig,
+        docstring=docstring,
     )
 
 

@@ -1,0 +1,66 @@
+version: 1
+suites:
+  - id: core
+    corpus: benchmarks/corpora/core
+    cases: benchmarks/cases/core.yaml
+    required: true
+    gate: retrieval
+    minimum_pass_rate: 0.85
+
+  - id: holdout
+    corpus: benchmarks/corpora/holdout
+    cases: benchmarks/cases/holdout.yaml
+    required: true
+    gate: retrieval
+    minimum_pass_rate: 0.85
+
+  - id: holdout2
+    corpus: benchmarks/corpora/holdout2
+    cases: benchmarks/cases/holdout2.yaml
+    required: true
+    gate: retrieval
+    minimum_pass_rate: 0.85
+
+  - id: core_noise
+    corpus: benchmarks/corpora/core
+    cases: benchmarks/cases/core.yaml
+    required: true
+    gate: retrieval
+    minimum_pass_rate: 0.85
+    distractors: 80
+    reload_check: true
+    compare_to: core
+
+  - id: query_shapes
+    corpus: benchmarks/corpora/core
+    cases: benchmarks/cases/query_shapes.yaml
+    required: true
+    gate: query_shape
+    minimum_pass_rate: 0.85
+
+  - id: rich_documents
+    corpus: benchmarks/corpora/formats/rich
+    cases: benchmarks/cases/formats_rich.yaml
+    required: true
+    gate: retrieval
+    minimum_pass_rate: 0.85
+
+  - id: base_formats
+    corpus: benchmarks/corpora/formats/base
+    cases: benchmarks/cases/formats_base.yaml
+    required: true
+    gate: retrieval
+    minimum_pass_rate: 0.85
+
+  - id: xlsx_optional
+    corpus: benchmarks/corpora/formats/xlsx
+    cases: benchmarks/cases/formats_xlsx.yaml
+    required: false
+    gate: none
+    allow_ingestion_failures: true
+
+  - id: limitations
+    corpus: benchmarks/corpora/limits
+    cases: benchmarks/cases/limits.yaml
+    required: false
+    gate: none

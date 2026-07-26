@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core.json_utils import parse_llm_json
-from fitz_sage.engines.fitz_krag.progressive.manifest import is_query_ready_state
+from fitz_sage.engines.fitz_krag.progressive.manifest import FileState, is_query_ready_state
 from fitz_sage.engines.fitz_krag.progressive.parsed_cache import RICH_DOC_EXTENSIONS
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
@@ -57,7 +57,9 @@ class AgenticSearchStrategy:
     def has_pending_files(self) -> bool:
         """Return whether supplemental disk search has any files to inspect."""
         return any(
-            not is_query_ready_state(entry.state) for entry in self._manifest.entries().values()
+            entry.state not in {FileState.FAILED, FileState.UNSUPPORTED}
+            and not is_query_ready_state(entry.state)
+            for entry in self._manifest.entries().values()
         )
 
     def retrieve(self, query: str, limit: int, *, allow_llm: bool = True) -> list[Address]:
@@ -73,7 +75,8 @@ class AgenticSearchStrategy:
         unindexed = [
             entry
             for entry in self._manifest.entries().values()
-            if not is_query_ready_state(entry.state)
+            if entry.state not in {FileState.FAILED, FileState.UNSUPPORTED}
+            and not is_query_ready_state(entry.state)
         ]
         if not unindexed:
             return []

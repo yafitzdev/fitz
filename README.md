@@ -267,6 +267,22 @@ Trace exports redact source bodies by default. Content-bearing traces are an
 explicit opt-in and enable governance-only replay over frozen evidence. See
 [Retrieval Execution Records](docs/RETRIEVAL_RUNS.md).
 
+#### Measured production boundary
+
+The 2026-07-27 folder-to-evidence matrix passed 175/181 required retrieval and
+delivery contracts, 58/60 query-shape contracts, all tested format gates, and
+20/20 core cases after adding 80 near-neighbor documents and reloading the
+index. Retrieval, delivery, query interpretation, and Pyrrho decisions are
+reported separately.
+
+This is not a claim that arbitrary files work without preparation. Fitz does
+not compress raw logs, perform domain cleanup, silently equate identifier
+variants, or guarantee private abbreviation expansion. Long unsegmented
+documents, unrelated multi-intent requests, and some semantic table filters
+remain measured boundaries. See
+[Production Readiness](docs/PRODUCTION_READINESS.md) and
+[Limitations](LIMITATIONS.md).
+
 ---
 
 ### Governance — `Pyrrho`
