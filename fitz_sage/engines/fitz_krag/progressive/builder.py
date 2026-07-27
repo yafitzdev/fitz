@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from fitz_sage.engines.fitz_krag.ingestion.formats import (
     CODE_EXTENSION_MAP,
     DOCUMENT_EXTENSIONS,
+    RICH_DOCUMENT_EXTENSIONS,
     enabled_extensions,
 )
 from fitz_sage.engines.fitz_krag.progressive.manifest import (
@@ -71,7 +72,6 @@ class ManifestBuilder:
         No LLM calls.
         """
         from fitz_sage.engines.fitz_krag.progressive.parsed_cache import (
-            RICH_DOC_EXTENSIONS,
             get_parsed_text,
         )
 
@@ -112,7 +112,7 @@ class ManifestBuilder:
             ext = abs_path.suffix.lower()
 
             # Rich docs (PDF, DOCX, etc.) — hash raw bytes, parse + cache text
-            if ext in RICH_DOC_EXTENSIONS:
+            if ext in RICH_DOCUMENT_EXTENSIONS:
                 try:
                     raw_bytes = abs_path.read_bytes()
                 except Exception as e:

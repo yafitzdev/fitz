@@ -13,7 +13,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from fitz_sage.core.answer_mode import AnswerMode
+from pyrrho import empty_evidence_decision
+
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
@@ -49,14 +50,25 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     engine._table_handler.process.side_effect = lambda q, results, **kwargs: results
     engine._assembler = MagicMock(name="assembler")
     engine._synthesizer = MagicMock(name="synthesizer")
-    governance_decision = MagicMock(name="governance_decision")
-    governance_decision.mode = AnswerMode.SUFFICIENT
-    governance_decision.reason = "Sources support a confident answer."
-    governance_decision.reasons = ("Sources support a confident answer.",)
-    governance_decision.probs = (0.1, 0.1, 0.8)
-    engine._governance = MagicMock(name="governance")
-    engine._governance.decide.return_value = governance_decision
-    engine._governance.plan_query.return_value = SimpleNamespace(
+    pyrrho_decision = MagicMock(name="pyrrho_decision")
+    pyrrho_decision.verdict = "SUFFICIENT"
+    pyrrho_decision.reason = "Sources support a confident answer."
+    pyrrho_decision.reasons = ("Sources support a confident answer.",)
+    pyrrho_decision.to_dict.return_value = {
+        "schema_version": 1,
+        "verdict": "SUFFICIENT",
+        "reason": pyrrho_decision.reason,
+        "probabilities": {
+            "INSUFFICIENT": 0.1,
+            "DISPUTED": 0.1,
+            "SUFFICIENT": 0.8,
+        },
+    }
+    engine._pyrrho = MagicMock(name="pyrrho")
+    engine._pyrrho.decide.side_effect = lambda query, evidence: (
+        pyrrho_decision if evidence else empty_evidence_decision()
+    )
+    engine._pyrrho.plan_query.return_value = SimpleNamespace(
         retrieval_intents=SimpleNamespace(
             final_labels=("needs_lookup",),
             final_label="needs_lookup",

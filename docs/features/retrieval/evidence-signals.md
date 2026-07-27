@@ -21,7 +21,7 @@ flowchart LR
     Q["User query"] --> P["Query profile"]
     P --> R["Typed recall"]
     R --> K["ONNX rerank"]
-    K --> C["Pyrrho v2 cutoff"]
+    K --> C["Fixed delivery + Pyrrho v2"]
     C --> E["EvidencePack"]
 
     P --> P1["query shape"]
@@ -85,16 +85,15 @@ Example:
 
 ## Governance Signals
 
-After recall and reranking, Pyrrho v2 evaluates evidence prefixes: top 1, top
-2, top 3, and so on. The cutoff stops when the selected prefix is sufficient,
-disputed, or exhausted.
+After recall, reranking, closure, and compilation, Fitz-Sage applies a fixed
+evidence budget. Pyrrho v2 evaluates exactly that delivered set once.
 
 | Signal | Meaning | Product use |
 |---|---|---|
 | `mode` | Runtime `AnswerMode`: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Gate synthesis, UI display, automation, and review. |
-| `probabilities` | Runtime probabilities for insufficient, disputed, sufficient. | Display confidence and audit cutoff decisions. |
+| `probabilities` | Pyrrho probabilities for insufficient, disputed, sufficient. | Display confidence and audit the model decision. |
 | `reason` / `reasons` | Human-readable explanation. | Tell users why Fitz judged evidence sufficient, disputed, or insufficient. |
-| `stop_reason` | Why cutoff stopped. | Route the next step: answer, retry, broaden, or request source material. |
+| `evidence_delivery` | Available, selected, and limit counts fixed before Pyrrho. | Audit what evidence the model actually received. |
 | `evidence_verdict` | Native v2 verdict: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Inspect the model head behind the runtime mode. |
 | `failure_mode` | Native v2 failure reason. | Explain insufficient or disputed evidence. |
 | `retrieval_intents` | Native v2 multi-label intent metadata. | Decide whether another pass should focus on lookup, time, comparison, or coverage. |
@@ -131,7 +130,7 @@ Expected retrieval behavior:
 
 - exact symbol and identifier recall should dominate
 - code evidence should stay eligible
-- cutoff can stop once the selected evidence directly supports the lookup
+- a small fixed evidence budget is usually enough for this lookup
 
 Likely governance metadata:
 
@@ -152,7 +151,7 @@ Query:
 Expected retrieval behavior:
 
 - both comparison sides should be present
-- one-side evidence should not pass cutoff
+- retrieval should deliver both sides before Pyrrho evaluates the evidence
 - code and prose evidence may both matter
 
 Likely governance metadata when complete:
@@ -231,7 +230,7 @@ Useful governance metadata:
 | Run a focused retry | `stop_reason`, `retrieval_intents`, `evidence_kinds`, retrieval trace |
 | Explain disputes | `mode`, `failure_mode`, source evidence |
 | Build audit logs | source evidence, `stop_reason`, `trajectory`, Pyrrho v2 heads |
-| Tune retrieval quality | `query_profile`, `retrieval_trace`, `governance_cutoff` |
+| Tune retrieval quality | `query_profile`, `retrieval_trace`, `evidence_delivery` |
 
 The core rule:
 

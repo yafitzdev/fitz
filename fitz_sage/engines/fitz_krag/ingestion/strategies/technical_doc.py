@@ -18,9 +18,6 @@ from fitz_sage.engines.fitz_krag.ingestion.formats import DOCUMENT_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
-# Backwards-compatible alias. The format contract itself lives in formats.py.
-DOC_EXTENSIONS = set(DOCUMENT_EXTENSIONS)
-
 
 @dataclass
 class SectionEntry:
@@ -47,7 +44,7 @@ class TechnicalDocIngestStrategy:
     """Extracts sections from technical documents using parsed document elements."""
 
     def content_types(self) -> set[str]:
-        return DOC_EXTENSIONS
+        return set(DOCUMENT_EXTENSIONS)
 
     def extract(self, parsed_doc: ParsedDocument, file_path: str) -> DocIngestResult:
         """

@@ -51,8 +51,8 @@ It does not infer that two organization-specific abbreviations are aliases.
 The matrix starts at folders and files. It does not inject prebuilt chunks or
 retrieval results.
 
-Every case reports pre-governance retrieval, governed delivery, query-shape,
-and governance outcomes separately. Cases without an assertion for one of
+Every case reports compiled retrieval, fixed evidence delivery, query shape,
+and Pyrrho outcomes separately. Cases without an assertion for one of
 those metrics are excluded from that metric's denominator.
 Missing evidence is attributed to the earliest observable failing stage:
 
@@ -61,7 +61,7 @@ Missing evidence is attributed to the earliest observable failing stage:
 - final selection
 - evidence reading or compilation
 - evidence content/granularity
-- governance cutoff
+- fixed evidence delivery and Pyrrho decision
 
 ## Ingestion Health
 
@@ -77,7 +77,7 @@ partial collection as healthy.
 
 ## Release Interpretation
 
-Required retrieval suites gate on at least 85% pre-governance retrieval
+Required retrieval suites gate on at least 85% compiled retrieval
 success. Query-shape recognition has its own 85% gate. Any retrieval or
 delivery regression on shared core cases after adding 80 near-neighbor
 documents fails the production gate even if the aggregate remains above 85%.

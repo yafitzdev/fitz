@@ -7,7 +7,6 @@ Developer and CI tooling for fitz-sage. Not part of the importable package.
 | `contract_map/` | Enforces layer dependency rules across the codebase |
 | `detection/` | Training and evaluation scripts for the detection classifier |
 | `governance/` | Governance pipeline tooling |
-| `cli_map/` | Generates CLI command documentation |
 | `pre_release/` | Pre-release lint and verification steps |
 | `ci_check.py` | CI health checks run in GitHub Actions |
 | `mutation_test.py` | Mutation testing runner |

@@ -69,7 +69,7 @@ class TestDeterministicQueryPlanner:
         assert not plan.detection.has_aggregation_intent
 
     def test_key_facts_query_is_broad_exploratory(self):
-        """Corpus key-facts queries should use the broad cutoff policy."""
+        """Corpus key-facts queries should use broad retrieval coverage."""
         planner = DeterministicQueryPlanner()
 
         plan = planner.plan("What are the key facts in this corpus?")

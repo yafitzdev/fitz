@@ -6,8 +6,8 @@ from __future__ import annotations
 import pytest
 
 from fitz_sage.core.document import DocumentElement, ElementType, ParsedDocument
+from fitz_sage.engines.fitz_krag.ingestion.formats import DOCUMENT_EXTENSIONS
 from fitz_sage.engines.fitz_krag.ingestion.strategies.technical_doc import (
-    DOC_EXTENSIONS,
     TechnicalDocIngestStrategy,
 )
 
@@ -35,7 +35,7 @@ class TestContentTypes:
         assert ".txt" in strategy.content_types()
 
     def test_matches_doc_extensions(self, strategy):
-        assert strategy.content_types() == DOC_EXTENSIONS
+        assert strategy.content_types() == set(DOCUMENT_EXTENSIONS)
 
 
 class TestNoHeadings:

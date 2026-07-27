@@ -9,14 +9,12 @@ import sys
 import time
 import uuid
 from collections import Counter, defaultdict
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from benchmarks.fitz_bench.governance_cases import build_cases
 from benchmarks.fitz_bench.models import normalize_mode
-from fitz_sage.core.evidence import EvidenceItem
-from fitz_sage.governance import create_governance
+from fitz_sage.integrations.pyrrho import create_pyrrho
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -29,20 +27,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit is not None:
         cases = cases[: args.limit]
 
-    governance = create_governance(args.governance)
+    pyrrho = create_pyrrho(args.pyrrho)
     started = time.perf_counter()
     records: list[dict[str, Any]] = []
     for index, case in enumerate(cases, start=1):
         case_started = time.perf_counter()
-        decision = governance.decide(case.query, [_item(raw) for raw in case.contexts])
-        actual_mode = normalize_mode(decision.mode)
+        decision = pyrrho.decide(case.query, list(case.contexts))
+        actual_mode = normalize_mode(decision.verdict)
         expected_mode = normalize_mode(case.expected_mode)
         passed = actual_mode == expected_mode
         records.append(
             {
                 "case": case.to_dict(),
                 "duration_seconds": time.perf_counter() - case_started,
-                "prediction": _decision_to_dict(decision),
+                "prediction": decision.to_dict(),
                 "expected_mode": expected_mode,
                 "actual_mode": actual_mode,
                 "passed": passed,
@@ -60,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         "run": {
             "run_id": f"{int(time.time())}-{uuid.uuid4().hex[:8]}",
             "git_sha": _git_sha(root),
-            "governance_override": args.governance,
+            "pyrrho_override": args.pyrrho,
             "duration_seconds": time.perf_counter() - started,
             "benchmark": "governance_balanced_fixed_evidence",
         },
@@ -83,9 +81,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--repo-root", default=".", help="Repository root.")
     parser.add_argument(
-        "--governance",
+        "--pyrrho",
         default="pyrrho",
-        help="Governance provider spec, e.g. pyrrho/C:\\path\\to\\best_model.",
+        help="Pyrrho provider spec, e.g. pyrrho/C:\\path\\to\\best_model.",
     )
     parser.add_argument(
         "--output",
@@ -100,44 +98,6 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None, help="Optional case limit.")
     parser.add_argument("--verbose", action="store_true", help="Print per-case predictions.")
     return parser.parse_args(argv)
-
-
-def _item(raw: dict[str, Any]) -> EvidenceItem:
-    return EvidenceItem(
-        rank=int(raw["rank"]),
-        source_id=str(raw["source_id"]),
-        file_path=str(raw["file_path"]),
-        address_kind=str(raw["address_kind"]),
-        address_location=str(raw["address_location"]),
-        line_range=tuple(raw["line_range"]) if raw.get("line_range") else None,
-        score=float(raw["score"]) if raw.get("score") is not None else None,
-        excerpt=str(raw["excerpt"]),
-        content=str(raw["content"]),
-        metadata=dict(raw.get("metadata") or {}),
-    )
-
-
-def _decision_to_dict(decision: Any) -> dict[str, Any]:
-    output = {
-        "mode": getattr(
-            getattr(decision, "mode", None), "value", str(getattr(decision, "mode", ""))
-        ),
-        "probs": list(getattr(decision, "probs", ()) or ()),
-        "reason": getattr(decision, "reason", ""),
-    }
-    heads = getattr(decision, "heads", None)
-    if isinstance(heads, dict):
-        output["heads"] = {name: _head_to_dict(head) for name, head in heads.items()}
-    scalars = getattr(decision, "scalars", None)
-    if isinstance(scalars, dict):
-        output["scalars"] = {str(k): float(v) for k, v in scalars.items()}
-    return output
-
-
-def _head_to_dict(head: Any) -> dict[str, Any]:
-    raw = asdict(head) if hasattr(head, "__dataclass_fields__") else dict(head)
-    safe = _json_safe(raw)
-    return safe if isinstance(safe, dict) else {}
 
 
 def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -207,7 +167,7 @@ def _markdown(report: dict[str, Any]) -> str:
         "# Balanced Governance Benchmark",
         "",
         f"- Run: `{report['run']['run_id']}`",
-        f"- Governance: `{report['run']['governance_override']}`",
+        f"- Pyrrho: `{report['run']['pyrrho_override']}`",
         f"- Cases: {summary['passed']}/{summary['total']} passed",
         f"- Accuracy: {summary['accuracy']:.3f}",
         f"- Macro recall: {summary['macro_recall']:.3f}",
@@ -233,16 +193,6 @@ def _markdown(report: dict[str, Any]) -> str:
         )
     lines.append("")
     return "\n".join(lines)
-
-
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    return str(value)
 
 
 def _git_sha(root: Path) -> str:

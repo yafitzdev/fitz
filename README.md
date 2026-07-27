@@ -11,7 +11,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/fitz-sage.svg)](https://pypi.org/project/fitz-sage/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.15.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.16.0-green.svg)](CHANGELOG.md)
 [![Coverage](https://img.shields.io/badge/coverage-99%25-brightgreen)](https://github.com/yafitzdev/fitz-sage)
 
 [EvidencePack](#evidencepack) • [Why `fitz-sage`?](#why-fitz-sage) • [Retrieval Intelligence](#retrieval-intelligence) • [Governance](#governance--know-what-you-dont-know) • [Limitations](LIMITATIONS.md) • [Documentation](#links) • [GitHub](https://github.com/yafitzdev/fitz-sage)
@@ -158,7 +158,7 @@ and retrieval.
 
 > [!NOTE]
 > All retrieval units share the same retrieval intelligence: query profiling, temporal handling, comparisons,
-> aggregation, keyword expansion, reranking, and Pyrrho governance cutoff.
+> aggregation, keyword expansion, reranking, fixed evidence delivery, and Pyrrho governance.
 
 ---
 
@@ -174,7 +174,7 @@ and retrieval.
 |-------|--------------|
 | **1. Broad recall 🔎** | Finds candidate evidence:<br>`Doc 2`<br>`Doc 3`<br>`Doc 5`<br>`Doc 8` |
 | **2. Rerank 🎯** | Reorders by relevance:<br>`Doc 5`<br>`Doc 2`<br>`Doc 8`<br>`Doc 3` |
-| **3. Governance 🛡️** | Tests the ranked prefix:<br>`Doc 5` → `INSUFFICIENT`<br>`Doc 5 + Doc 2` → `INSUFFICIENT`<br>`Doc 5 + Doc 2 + Doc 8` → `SUFFICIENT` |
+| **3. Pyrrho 🛡️** | Evaluates the final delivered evidence set once:<br>`Doc 5 + Doc 2 + Doc 8` → `SUFFICIENT` |
 
 <br>
 
@@ -187,13 +187,13 @@ entity graph links, corpus summaries, and richer context expansion.
 
 | Feature | Query | What Fitz Uses |
 |---------|-------|----------------|
-| ✅ [**epistemic-honesty**](docs/features/governance/epistemic-honesty.md) | "What was our Q4 revenue?" | Pyrrho cutoff and insufficient-evidence reasons |
+| ✅ [**epistemic-honesty**](docs/features/governance/epistemic-honesty.md) | "What was our Q4 revenue?" | Pyrrho verdict and insufficient-evidence reasons |
 | ✅ [**keyword-vocabulary**](docs/features/retrieval/keyword-vocabulary.md) | "Find TC_1000" | Exact identifier matching |
 | ✅ [**sparse-search**](docs/features/retrieval/sparse-search.md) | "error code E_AUTH_401" | SQLite FTS5 + native `bm25()` |
 | ✅ [**multi-hop**](docs/features/retrieval/multi-hop-reasoning.md) | "Who wrote the paper cited by the 2023 review?" | Iterative retrieval |
 | ✅ [**hierarchical-rag**](docs/features/ingestion/hierarchical-rag.md) | "What are the design principles?" | Hierarchical summaries |
 | ✅ [**multi-query**](docs/features/retrieval/multi-query-rag.md) | *[User pastes 500-char test report]* "What failed and why?" | Multi-query decomposition |
-| ✅ [**comparison-queries**](docs/features/retrieval/comparison-queries.md) | "Compare React vs Vue performance" | Multi-entity coverage and comparison cutoff |
+| ✅ [**comparison-queries**](docs/features/retrieval/comparison-queries.md) | "Compare React vs Vue performance" | Multi-entity retrieval coverage |
 | ✅ [**entity-graph**](docs/features/retrieval/entity-graph.md) | "What else mentions AuthService?" | Entity-based linking across sources |
 | ✅ [**temporal-queries**](docs/features/retrieval/temporal-queries.md) | "What changed between Q1 and Q2?" | Temporal scope detection |
 | ✅ [**aggregation-queries**](docs/features/retrieval/aggregation-queries.md) | "List all the test cases that failed" | Exhaustive/list query handling |
@@ -229,21 +229,21 @@ managed Qwen query keywords, and optional query intelligence.
 
 | Signal | What it means | Why it matters |
 |--------|---------------|----------------|
-| `query_type` / `analysis_type` | Narrow lookup, comparison, temporal, aggregation, broad overview, or general query shape. | Sets recall breadth and cutoff policy. |
+| `query_type` / `analysis_type` | Narrow lookup, comparison, temporal, aggregation, broad overview, or general query shape. | Sets recall breadth and evidence coverage. |
 | `keywords` | Managed Qwen suggestions and literal deterministic query terms. | Improves broad recall without embeddings. |
 | `strategy_weights` | Relative weight for code, section, table, and chunk retrieval. | Makes the first pass search the right evidence surfaces. |
 | `top_k` / `top_read` | How much candidate evidence Fitz should collect and read. | Keeps narrow lookups fast while giving broad or comparative questions enough coverage. |
 
 #### Post-retrieval 🛡️
 
-After retrieval and reranking, Pyrrho evaluates evidence prefixes. These
-signals tell you whether the result is usable.
+After retrieval, reranking, closure, and fixed-budget evidence delivery,
+Pyrrho evaluates the complete delivered set once. These signals tell you
+whether the result is usable.
 
 | Signal | What it means | What you can do with it |
 |--------|---------------|-------------------------|
-| `mode` | Runtime `AnswerMode`: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Gate generated answers, UI display, automation, or human review. |
+| `mode` | Mechanical Fitz-Sage mapping of Pyrrho's `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT` verdict. | Gate generated answers, UI display, automation, or human review. |
 | `reasons` | Plain-language explanation for the verdict. | Show users why Fitz judged evidence sufficient, disputed, or insufficient. |
-| `stop_reason` | Why retrieval stopped: Pyrrho verdict accepted, cutoff reached, retry exhausted, etc. | Route the next step: answer, retry, broaden search, or ask for more source material. |
 | `evidence_verdict` | Verdict: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Inspect the evidence judgment. |
 | `failure_mode` | Reason when evidence is insufficient or disputed. | Explain why the evidence cannot safely support a clean answer. |
 | `retrieval_intents` | Evidence intent metadata such as lookup, temporal resolution, comparison, or broad coverage. | Decide whether another retrieval pass should focus on coverage, time, lookup, or comparison. |
@@ -256,7 +256,7 @@ next action.
 
 When an `EvidencePack` is not enough to diagnose a result, `RetrievalRun`
 records the actual query plan, term origins, candidate stages, compiled ranking,
-governance trajectory, and runtime fingerprints from the same execution.
+exact Pyrrho input and output, and runtime fingerprints from the same execution.
 
 ```bash
 fitz retrieve "Which test failed?" -c reports --trace run.json
@@ -264,7 +264,7 @@ fitz explain run.json
 ```
 
 Trace exports redact source bodies by default. Content-bearing traces are an
-explicit opt-in and enable governance-only replay over frozen evidence. See
+explicit opt-in and enable Pyrrho-only replay over frozen evidence. See
 [Retrieval Execution Records](docs/RETRIEVAL_RUNS.md).
 
 #### Measured production boundary
@@ -311,10 +311,10 @@ is quarantined and retained only for forensic continuity.
   RetrievalProfile → broad recall → rerank
     │
     ▼
-  Query + ranked evidence prefix
+  Query + fixed delivered evidence set
     │
     ▼
-  Pyrrho evidence cutoff
+  Pyrrho authoritative decision
     │
     ▼
   SUFFICIENT / DISPUTED / INSUFFICIENT → EvidencePack
@@ -329,7 +329,10 @@ is quarantined and retained only for forensic continuity.
 | `retrieval_intents` | Evidence intent metadata, such as lookup, temporal resolution, comparison, or broad coverage. |
 | `evidence_kinds` | Evidence-surface metadata, such as text, table, code, config, logs, or document layout. |
 
-Fitz returns the verdict and reasons with the `EvidencePack`, so applications can
+Pyrrho owns logit decoding, thresholds, head consistency, and the final verdict.
+Fitz-Sage passes evidence to Pyrrho unchanged, maps the verdict name into
+`AnswerMode`, and returns the exact serialized decision with the `EvidencePack`.
+Applications can
 answer, retry, show conflict, or request more source material.
 
 <br>
@@ -346,8 +349,9 @@ evaluation must finish before replacement quality claims are published.
 > disputed, or insufficient, and Fitz records that judgment in the returned metadata.
 
 <strong>The runtime fails closed on known contract violations 🛡️</strong>
-> Model packages, label order, ONNX width, token limits, graph parity, and
-> verdict/failure compatibility are checked before or during inference. These
+> The independent Pyrrho runtime checks model packages, label order, ONNX
+> width, token limits, graph parity, and verdict/failure compatibility before
+> or during inference. These
 > checks reduce unsafe failure modes; they are not a substitute for clean-data
 > evaluation or threshold calibration.
 
@@ -377,7 +381,7 @@ evaluation must finish before replacement quality claims are published.
 >`fitz-sage` creates a local retrieval config on first run:
 >1. **SQLite storage** for collections.
 >2. **Managed ONNX models** for reranking and enrichment.
->3. **Pyrrho query planning** plus **Pyrrho governance** for evidence cutoff.
+>3. **Pyrrho query planning** plus one authoritative evidence decision.
 >
 >For generated prose from the governed evidence:
 >

@@ -63,7 +63,8 @@ The most important metadata blocks are:
 | `query_profile` | The effective retrieval profile used before recall. |
 | `retrieval_trace` | Candidate generation, reranking, final reads, and retries. |
 | `evidence_compiler` | Mechanical evidence roles, anchors, and source-count constraints. |
-| `governance_cutoff` | Pyrrho v2 prefix evaluation and final governance decision. |
+| `evidence_delivery` | Fixed evidence budget applied before Pyrrho runs. |
+| `pyrrho` | Pyrrho's exact serialized governance decision. |
 
 ### Query Profile
 
@@ -97,34 +98,31 @@ fetch limits, and intent flags.
 }
 ```
 
-### Governance Cutoff
+### Evidence Delivery And Pyrrho
 
-`metadata.governance_cutoff` records how Pyrrho evaluated ranked evidence
-prefixes. The runtime `mode` stays in the `sufficient` / `disputed` /
-`insufficient` vocabulary, while Pyrrho v2 heads expose the model's native evidence
-metadata.
+Fitz-Sage selects a fixed number of compiled evidence items, then calls Pyrrho
+once over exactly that set. Selection does not inspect or react to the verdict.
+`metadata.evidence_delivery` records the mechanical budget.
+`metadata.pyrrho` is the dictionary returned by Pyrrho without reinterpretation.
 
 ```json
 {
   "metadata": {
-    "governance_cutoff": {
-      "evaluated": 3,
+    "evidence_delivery": {
+      "available": 7,
       "selected": 3,
-      "max": 10,
-      "mode": "sufficient",
-      "stop_reason": "sufficient_min_evidence_met",
-      "policy": {
-        "query_shape": "comparison",
-        "min_sufficient_docs": 2
+      "limit": 3
+    },
+    "pyrrho": {
+      "schema_version": 1,
+      "verdict": "SUFFICIENT",
+      "reason": "Pyrrho: evidence is sufficient for a confident answer (P=0.93).",
+      "probabilities": {
+        "INSUFFICIENT": 0.03,
+        "DISPUTED": 0.04,
+        "SUFFICIENT": 0.93
       },
-      "pyrrho": {
-        "mode": "sufficient",
-        "probabilities": {
-          "insufficient": 0.03,
-          "disputed": 0.04,
-          "sufficient": 0.93
-        },
-        "reason": "Pyrrho: sources support a confident answer (P=0.93).",
+      "heads": {
         "evidence_verdict": {
           "final_label": "SUFFICIENT",
           "confidence": 0.93
@@ -141,6 +139,11 @@ metadata.
           "final_labels": ["needs_text", "needs_table_or_record"],
           "confidence": 0.88
         }
+      },
+      "input": {
+        "tokens": 834,
+        "truncated": false,
+        "max_tokens": 2048
       }
     }
   }
@@ -151,23 +154,16 @@ Field meanings:
 
 | Field | Meaning |
 |---|---|
-| `evaluated` | How many ranked evidence prefixes Pyrrho evaluated. |
-| `selected` | How many evidence items were returned after cutoff. |
-| `max` | Maximum cutoff window for this query, capped at 10 by default. |
-| `mode` | Final runtime governance mode for the selected prefix. |
-| `stop_reason` | Why the cutoff loop stopped. |
-| `policy.query_shape` | Narrow, broad, comparison, or aggregation. |
-| `policy.min_sufficient_docs` | Minimum prefix size before the runtime `sufficient` mode can stop. |
-| `pyrrho.probabilities` | Runtime probabilities for `insufficient`, `disputed`, and `sufficient` modes. |
-| `pyrrho.evidence_verdict` | Native v2 verdict head. |
-| `pyrrho.failure_mode` | Native v2 failure-mode head. |
-| `pyrrho.retrieval_intents` | Native v2 retrieval-intent head. |
-| `pyrrho.evidence_kinds` | Native v2 evidence-kind head. |
+| `evidence_delivery.available` | Compiled evidence items available before the delivery budget. |
+| `evidence_delivery.selected` | Evidence items delivered to Pyrrho and returned in the pack. |
+| `evidence_delivery.limit` | Requested `top_k`, or configured `top_read` when omitted. |
+| `pyrrho.verdict` | Authoritative native verdict. |
+| `pyrrho.probabilities` | Native verdict probabilities. |
+| `pyrrho.heads` | Native v2 verdict, failure, retrieval-intent, and evidence-kind heads. |
+| `pyrrho.input` | Token count, truncation status, and package token limit. |
 
-Query-shape floors ensure that Pyrrho sees the evidence required for cases such
-as comparisons. Once that floor is met, fitz-sage returns Pyrrho's verdict
-without adding confidence thresholds, dispute patience, or local verdict
-overrides.
+Pyrrho owns thresholds and contradictory-head consistency. Fitz-Sage neither
+adds confidence thresholds nor overrides the verdict for any query shape.
 
 ### Retrieval Trace
 
@@ -208,7 +204,7 @@ reranker order, and retry behavior alongside the selected evidence.
 ### Evidence Compiler
 
 `metadata.evidence_compiler` records mechanical evidence constraints before
-Pyrrho cutoff: literal anchors, required source count, how many evidence items
+fixed delivery: literal anchors, required source count, how many evidence items
 entered and left compilation, and selected evidence roles.
 
 ```json

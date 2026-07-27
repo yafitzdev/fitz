@@ -13,7 +13,7 @@ The public configuration surface selects built-in implementations:
 | --- | --- | --- |
 | Document parser | `parser` | `cpu`, `docling`, `docling_vision`, `glm_ocr` |
 | Reranker | `rerank` | `onnx` or `onnx/<model-id>` |
-| Governance | `governance` | `pyrrho` or `pyrrho/<model-or-path>` |
+| Governance | `governance` | `pyrrho/<local-path>` or `pyrrho/<owner/repo@commit>` |
 | Optional chat roles | role-specific provider spec | `endpoint`, `openai`, `azure_openai`, `enterprise` |
 | Optional vision | `vision` | the same OpenAI-compatible endpoint protocol |
 

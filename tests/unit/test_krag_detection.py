@@ -126,8 +126,8 @@ class TestRouterDetection:
             section_strategy=section_strategy,
         )
 
-    def test_retrieve_without_detection_backward_compat(self):
-        """Router.retrieve without detection works as before (backward compat)."""
+    def test_retrieve_without_profile_uses_equal_strategy_weights(self):
+        """Router.retrieve can run all configured strategies without a profile."""
         addr = _make_address("file.py", "foo.bar", 0.8)
         router = self._make_router(code_results=[addr])
 

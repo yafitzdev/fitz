@@ -9,7 +9,7 @@ import typer
 from fitz_sage.cli.ui import ui
 from fitz_sage.core import RetrievalRun
 from fitz_sage.logging.logger import get_logger
-from fitz_sage.runtime import replay_governance
+from fitz_sage.runtime import replay_pyrrho
 
 logger = get_logger(__name__)
 
@@ -27,19 +27,19 @@ def explain_command(trace_file: Path) -> None:
 def replay_command(
     trace_file: Path,
     *,
-    governance: str | None = None,
+    pyrrho: str | None = None,
     output: Path | None = None,
     output_format: str = "text",
     include_content: bool = False,
 ) -> None:
-    """Replay governance over the trace's verified frozen evidence."""
+    """Replay Pyrrho over the trace's verified frozen evidence."""
     output_format = output_format.lower().strip()
     if output_format not in {"text", "json"}:
         ui.error("--format must be 'text' or 'json'.")
         raise typer.Exit(1)
 
     try:
-        result = replay_governance(trace_file, governance)
+        result = replay_pyrrho(trace_file, pyrrho)
         if output is not None:
             result.write(output, include_content=include_content)
         if output_format == "json":
@@ -48,7 +48,7 @@ def replay_command(
             print(result.explain())
     except Exception as exc:
         ui.error(f"Replay failed: {exc}")
-        logger.debug("Governance replay failed", exc_info=True)
+        logger.debug("Pyrrho replay failed", exc_info=True)
         raise typer.Exit(1) from exc
 
 

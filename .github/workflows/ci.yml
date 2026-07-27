@@ -92,6 +92,8 @@ jobs:
           pip install tenacity circuitbreaker
           # Managed Qwen lifecycle tests patch Hugging Face downloads.
           pip install huggingface-hub
+          # Governance runtime; model dependencies are not needed by mocked unit tests.
+          pip install "pyrrho>=0.1.0,<0.2" --no-deps
           # Property testing.
           pip install hypothesis
           # Install package in editable mode without deps (already installed above).
@@ -129,7 +131,6 @@ jobs:
         run: |
           # Only check imports that don't require heavy ML dependencies
           python -c "from fitz_sage.core import Answer, Provenance, Query; print('Core imports OK')"
-          python -c "from fitz_sage.governance import create_governance, GovernanceDecision; print('Governance OK')"
           python -c "import fitz_sage; print('Package imports OK')"
 
       - name: Check CLI entry point exists
@@ -183,6 +184,7 @@ jobs:
           pip install cryptography
           pip install tenacity circuitbreaker
           pip install huggingface-hub
+          pip install "pyrrho>=0.1.0,<0.2" --no-deps
           pip install hypothesis
           pip install -e . --no-deps
 

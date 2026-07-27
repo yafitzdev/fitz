@@ -69,8 +69,7 @@ fitz query "Your question" --source ./docs --collection product_docs
 1. A short progress feed: source registration, managed Qwen readiness, parsing,
    query analysis, and retrieval.
 2. A ranked evidence table.
-3. Pyrrho governance metadata folded into the table caption: probabilities,
-   cutoff policy, and reasons.
+3. Pyrrho's verdict, probabilities, reasons, and fixed evidence-delivery count.
 4. An indexing status line when Qwen keyword/deep enrichment is still running.
 
 If enrichment is still pending after the first evidence pack is shown, the CLI
@@ -97,7 +96,7 @@ fitz retrieve "Which test failed?" -c my_collection --trace run.json
 - `--format text|json` - human-readable table or serialized `EvidencePack`
 - `--top-k INT` - maximum evidence items to show
 - `--trace PATH` - write a versioned retrieval execution record
-- `--trace-content` - include source content so governance can be replayed;
+- `--trace-content` - include source content so Pyrrho can be replayed;
   requires `--trace`
 
 Trace capture and the displayed `EvidencePack` come from one execution. Source
@@ -113,20 +112,20 @@ fitz explain run.json
 
 ### `fitz replay`
 
-Replay only governance over verified, frozen evidence. The input must have been
+Replay only Pyrrho over verified, frozen evidence. The input must have been
 captured with `--trace-content`.
 
 ```bash
 fitz replay run-with-content.json
 fitz replay run-with-content.json \
-  --governance pyrrho/C:/models/pyrrho-candidate \
+  --pyrrho pyrrho/C:/models/pyrrho-candidate \
   --output replay.json
 fitz replay run-with-content.json --format json
 ```
 
 **Options**
-- `-g, --governance TEXT` - provider/model spec; defaults to the recorded one
-- `-o, --output PATH` - write a versioned governance replay record
+- `--pyrrho TEXT` - provider/model spec; defaults to the recorded one
+- `-o, --output PATH` - write a versioned Pyrrho replay record
 - `--format text|json` - human explanation or serialized replay
 - `--include-content` - include selected source content in JSON output
 
@@ -210,15 +209,17 @@ The minimum on-disk config (`.fitz/config.yaml` in the current workspace) is:
 collection: default
 parser: cpu
 rerank: onnx
-governance: pyrrho
+governance: pyrrho//absolute/path/to/reviewed-clean-package
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-This is enough for `fitz query`, `fitz retrieve`, and
-`fitz_sage.evidence(...)`. Managed Qwen3 0.6B ONNX GenAI enrichment, the ONNX
-reranker, and Pyrrho governance all run locally on CPU.
+With a reviewed local Pyrrho package, this is enough for `fitz query`,
+`fitz retrieve`, and `fitz_sage.evidence(...)`. Managed Qwen3 0.6B ONNX GenAI
+enrichment, the ONNX reranker, and Pyrrho governance all run locally on CPU.
+The bare `governance: pyrrho` value fails closed until a clean default model is
+promoted.
 
 See [CONFIG.md](CONFIG.md) for every key and
 [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) for deployment examples.

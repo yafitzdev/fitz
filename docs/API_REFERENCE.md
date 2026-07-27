@@ -51,8 +51,8 @@ The versioned execution record returned by `fitz_sage.trace()` and
 `RetrievalEngine.trace(Query)`.
 
 The public record groups stable contracts for query planning, strategy calls,
-candidate stages, governance trajectory, frozen compiled evidence, selected
-`EvidencePack`, and environment fingerprints. It supports:
+candidate stages, frozen compiled evidence, exact Pyrrho input and output,
+selected `EvidencePack`, and environment fingerprints. It supports:
 
 ```python
 run.to_dict(include_content=False)
@@ -65,7 +65,7 @@ run.explain()
 ```
 
 Serialization is source-content-redacted by default. `include_content=True` is
-required for `replay_governance()`. See
+required for `replay_pyrrho()`. See
 [Retrieval Execution Records](RETRIEVAL_RUNS.md).
 
 ---

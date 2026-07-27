@@ -53,7 +53,7 @@ Examples:
     >>> pack = engine.evidence(query)
 """
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 # =============================================================================
 # LAZY IMPORTS
@@ -70,7 +70,7 @@ def __getattr__(name: str):
         "ConfigurationError",
         "EngineError",
         "GenerationError",
-        "GovernanceReplay",
+        "PyrrhoReplay",
         "EvidenceItem",
         "EvidencePack",
         "KnowledgeEngine",
@@ -94,7 +94,7 @@ def __getattr__(name: str):
         "list_engines",
         "list_engines_with_info",
         "load_retrieval_run",
-        "replay_governance",
+        "replay_pyrrho",
         "run",
     ):
         from fitz_sage import runtime
@@ -190,7 +190,7 @@ def trace(question: str, source=None, collection: str | None = None):
     Execute governed retrieval and return its versioned execution record.
 
     Serialization redacts source content by default. Call
-    ``run.write(path, include_content=True)`` only when governance replay is
+    ``run.write(path, include_content=True)`` only when Pyrrho replay is
     required and the trace can be handled as source data.
     """
     global _default_fitz
@@ -217,7 +217,7 @@ __all__ = [
     "Answer",
     "EvidenceItem",
     "EvidencePack",
-    "GovernanceReplay",
+    "PyrrhoReplay",
     "Provenance",
     "RetrievalRun",
     # Core Exceptions
@@ -235,7 +235,7 @@ __all__ = [
     "list_engines_with_info",
     "get_engine_registry",
     "load_retrieval_run",
-    "replay_governance",
+    "replay_pyrrho",
     # SDK
     "fitz",
     "evidence",

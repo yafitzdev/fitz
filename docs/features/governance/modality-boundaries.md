@@ -14,7 +14,7 @@ surfaces today, not as separately trained governance domains.
 
 | Evidence surface | Current behavior | Boundary |
 |---|---|---|
-| Unstructured text | Pyrrho evaluates evidence prefixes directly. | Primary supported governance path. |
+| Unstructured text | Pyrrho evaluates the delivered evidence set directly. | Primary supported governance path. |
 | Tables / structured data | KRAG retrieves table metadata and SQL-backed results; Pyrrho judges the textual evidence representation. | Pyrrho does not prove SQL correctness, join validity, unit conversion, or aggregation completeness. |
 | Code | KRAG retrieves symbols, files, imports, and references; Pyrrho judges the retrieved snippets as text. | Pyrrho is not yet trained to prove call-graph completeness, runtime behavior, API compatibility, or test adequacy. |
 | Logs / traces / config | Retrieval favors exact tokens and source metadata. | Pyrrho can judge whether shown evidence looks sufficient, but domain-specific failure semantics are not separately modeled. |

@@ -27,7 +27,7 @@ immutable remote packages or deliberate forensic reproduction.
 |---|---|
 | Qwen3 0.6B ONNX GenAI | First query or ingest that can use local enrichment or semantic query keywords. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
-| Pyrrho v2 | First governance cutoff evaluation; fails closed unless a reviewed local package is configured. |
+| Pyrrho v2 | First query-plan or evidence-decision call; fails explicitly unless a reviewed local package is configured. |
 
 The CLI may print messages such as:
 
@@ -60,7 +60,7 @@ Warm the standard model set:
 ```bash
 python -c "from fitz_sage.llm.providers.onnx_chat import OnnxChat; OnnxChat().ensure_available(include_checksum=True)"
 python -c "from fitz_sage.llm.providers.onnx_reranker import OnnxReranker; OnnxReranker().rerank('warmup', ['one', 'two'])"
-python -c "from types import SimpleNamespace; from fitz_sage.governance import create_governance; create_governance('pyrrho/C:/reviewed/clean/pyrrho-package').decide('warmup', [SimpleNamespace(content='warmup evidence', metadata={})])"
+python -c "from fitz_sage.integrations.pyrrho import create_pyrrho; create_pyrrho('pyrrho/C:/reviewed/clean/pyrrho-package').decide('warmup', [{'source_id': 'warmup', 'text': 'warmup evidence'}])"
 ```
 
 Copy both cache roots:

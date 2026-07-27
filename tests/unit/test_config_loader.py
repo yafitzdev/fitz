@@ -83,44 +83,35 @@ def test_config_none_for_optional_vision():
     assert config.vision is None
 
 
-def test_enable_guardrails_raises_migration_error():
-    """A config using the removed `enable_guardrails` key gets an actionable error."""
-    with patch(
-        "fitz_sage.config.loader._load_user_config",
-        return_value={"enable_guardrails": False},
-    ):
-        with pytest.raises(ValueError, match="enable_guardrails"):
-            load_engine_config("fitz_krag")
+def test_create_pyrrho_dispatch(tmp_path):
+    """`create_pyrrho` maps a config spec to the independent runtime."""
+    from pyrrho import DEFAULT_MODEL_ID, DEFAULT_SUFFICIENT_THRESHOLD, Pyrrho
 
+    from fitz_sage.integrations.pyrrho import create_pyrrho
 
-def test_create_governance_dispatch(tmp_path):
-    """`create_governance` maps a config spec to a classifier instance."""
-    from fitz_sage.governance import Pyrrho, create_governance
-    from fitz_sage.governance.pyrrho import MODEL_ID, TAU
-
-    default = create_governance("pyrrho")
+    default = create_pyrrho("pyrrho")
     assert isinstance(default, Pyrrho)
-    assert default._model_id == MODEL_ID
-    assert MODEL_ID == "yafitzdev/pyrrho-v2-nano-g1"
-    assert TAU == 0.34
+    assert default.model_spec == DEFAULT_MODEL_ID
+    assert DEFAULT_MODEL_ID == "yafitzdev/pyrrho-v2-nano-g1"
+    assert DEFAULT_SUFFICIENT_THRESHOLD == 0.34
 
-    custom = create_governance("pyrrho/acme/custom-fine-tune")
+    custom = create_pyrrho("pyrrho/acme/custom-fine-tune")
     assert isinstance(custom, Pyrrho)
-    assert custom._model_id == "acme/custom-fine-tune"
+    assert custom.model_spec == "acme/custom-fine-tune"
 
     local_package = tmp_path / "pyrrho-v2-nano-g1"
     local_package.mkdir()
-    local = create_governance(f"pyrrho/{local_package}")
+    local = create_pyrrho(f"pyrrho/{local_package}")
     assert isinstance(local, Pyrrho)
-    assert local._model_id == str(local_package)
+    assert local.model_spec == str(local_package)
 
 
-def test_create_governance_unknown_provider():
-    """An unknown governance provider raises an actionable error."""
-    from fitz_sage.governance import create_governance
+def test_create_pyrrho_unknown_provider():
+    """An unknown provider raises an actionable error."""
+    from fitz_sage.integrations.pyrrho import create_pyrrho
 
     with pytest.raises(ValueError, match="Unknown governance provider"):
-        create_governance("bogus")
+        create_pyrrho("bogus")
 
     with pytest.raises(ValueError, match="Governance must"):
-        create_governance(None)
+        create_pyrrho(None)

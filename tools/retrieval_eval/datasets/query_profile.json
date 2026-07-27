@@ -7,7 +7,7 @@
     "fitz_sage/engines/fitz_krag/engine.py",
     "fitz_sage/engines/fitz_krag/config/schema.py",
     "fitz_sage/cli/ui/display.py",
-    "fitz_sage/governance/pyrrho.py"
+    "fitz_sage/integrations/pyrrho.py"
   ],
   "queries": [
     {
@@ -48,7 +48,7 @@
       "query": "Where does Pyrrho classify query-only retrieval planning signals before retrieval?",
       "vocab_mismatch": true,
       "relevant": [
-        {"grade": 2, "path": "fitz_sage/governance/pyrrho.py"}
+        {"grade": 2, "path": "fitz_sage/integrations/pyrrho.py"}
       ]
     },
     {
@@ -57,7 +57,7 @@
       "vocab_mismatch": true,
       "relevant": [
         {"grade": 2, "path": "fitz_sage/engines/fitz_krag/query_pipeline.py"},
-        {"grade": 1, "path": "fitz_sage/governance/pyrrho.py"}
+        {"grade": 1, "path": "fitz_sage/integrations/pyrrho.py"}
       ]
     },
     {
@@ -83,7 +83,7 @@
       "vocab_mismatch": true,
       "relevant": [
         {"grade": 2, "path": "fitz_sage/engines/fitz_krag/retrieval_profile.py"},
-        {"grade": 1, "path": "fitz_sage/governance/pyrrho.py"}
+        {"grade": 1, "path": "fitz_sage/integrations/pyrrho.py"}
       ]
     },
     {

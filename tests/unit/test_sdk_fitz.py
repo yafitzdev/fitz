@@ -203,10 +203,10 @@ class TestFitzExports:
     def test_trace_contracts_exported_from_top_level(self):
         """Execution records and module-level trace are public API."""
         import fitz_sage
-        from fitz_sage import GovernanceReplay, RetrievalRun
+        from fitz_sage import PyrrhoReplay, RetrievalRun
 
         assert RetrievalRun is not None
-        assert GovernanceReplay is not None
+        assert PyrrhoReplay is not None
         assert callable(fitz_sage.trace)
 
     def test_evidence_types_exported_from_top_level(self):

@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core.json_utils import parse_llm_json
+from fitz_sage.engines.fitz_krag.ingestion.formats import RICH_DOCUMENT_EXTENSIONS
 from fitz_sage.engines.fitz_krag.progressive.manifest import FileState, is_query_ready_state
-from fitz_sage.engines.fitz_krag.progressive.parsed_cache import RICH_DOC_EXTENSIONS
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
 if TYPE_CHECKING:
@@ -274,7 +274,7 @@ class AgenticSearchStrategy:
                 return None
 
             ext = path.suffix.lower()
-            if ext in RICH_DOC_EXTENSIONS:
+            if ext in RICH_DOCUMENT_EXTENSIONS:
                 from fitz_sage.engines.fitz_krag.progressive.parsed_cache import (
                     get_parsed_text,
                     parse_document_text,

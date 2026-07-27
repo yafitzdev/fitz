@@ -62,19 +62,29 @@ def _decision(
     *,
     probs: tuple[float, float, float] | None = None,
 ) -> MagicMock:
-    """Build a lightweight governance decision for cutoff tests."""
+    """Build a lightweight authoritative Pyrrho decision."""
     decision = MagicMock()
-    decision.mode = mode
+    decision.verdict = mode.value.upper()
     decision.reasons = (reason,)
     decision.reason = reason
     if probs is not None:
-        decision.probs = probs
+        probabilities = probs
     elif mode is AnswerMode.SUFFICIENT:
-        decision.probs = (0.11, 0.22, 0.67)
+        probabilities = (0.11, 0.22, 0.67)
     elif mode is AnswerMode.DISPUTED:
-        decision.probs = (0.12, 0.68, 0.20)
+        probabilities = (0.12, 0.68, 0.20)
     else:
-        decision.probs = (0.69, 0.18, 0.13)
+        probabilities = (0.69, 0.18, 0.13)
+    decision.to_dict.return_value = {
+        "schema_version": 1,
+        "verdict": decision.verdict,
+        "reason": reason,
+        "probabilities": {
+            "INSUFFICIENT": probabilities[0],
+            "DISPUTED": probabilities[1],
+            "SUFFICIENT": probabilities[2],
+        },
+    }
     return decision
 
 
@@ -366,7 +376,7 @@ class TestAnswer:
         )
 
         assert result is expected_answer
-        assert result.metadata["governance_cutoff"]["mode"] == "sufficient"
+        assert result.metadata["pyrrho"]["verdict"] == "SUFFICIENT"
         assert result.metadata["query_profile"]["profile"]["top_k"] == engine._config.top_addresses
 
     def test_answer_uses_no_chat_query_planner_by_default(self):
@@ -393,7 +403,7 @@ class TestAnswer:
         assert "q1 2024" in profile.temporal_references
         assert "q2 2024" in profile.temporal_references
         assert profile.planning_owner == "hybrid"
-        engine._governance.plan_query.assert_called_once_with(query.text)
+        engine._pyrrho.plan_query.assert_called_once_with(query.text)
 
     def test_answer_empty_query_raises(self):
         """Empty or whitespace-only query text raises QueryError."""
@@ -610,11 +620,11 @@ class TestEvidence:
         engine._reader.read.return_value = [result]
         engine._expander.expand.return_value = [result]
 
-        decision = MagicMock()
-        decision.mode = AnswerMode.SUFFICIENT
-        decision.reasons = ("Sources support a confident answer.",)
-        engine._governance = MagicMock()
-        engine._governance.decide.return_value = decision
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Sources support a confident answer.",
+        )
 
         pack = engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
 
@@ -652,11 +662,11 @@ class TestEvidence:
         )
         engine._retrieval_router.retrieve.return_value = [address]
         engine._reader.read.return_value = [result]
-        decision = MagicMock()
-        decision.mode = AnswerMode.SUFFICIENT
-        decision.reasons = ("Enough evidence.",)
-        engine._governance = MagicMock()
-        engine._governance.decide.return_value = decision
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Enough evidence.",
+        )
 
         engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
 
@@ -672,12 +682,12 @@ class TestEvidence:
         addresses, results = _evidence_results(2)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.return_value = _decision(
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
             AnswerMode.SUFFICIENT,
             "Enough comparative evidence.",
         )
-        engine._governance.plan_query.return_value = MagicMock(
+        engine._pyrrho.plan_query.return_value = MagicMock(
             retrieval_intents=MagicMock(
                 final_labels=("needs_lookup", "needs_comparison_or_set"),
                 final_label="needs_comparison_or_set",
@@ -705,23 +715,23 @@ class TestEvidence:
         assert query_profile["profile"]["answer_type"] == "comparative"
         assert query_profile["profile"]["planning_owner"] == "hybrid"
 
-    def test_evidence_uses_pyrrho_cutoff_over_reranked_results(self):
-        """Evidence mode returns the smallest reranked prefix Pyrrho accepts."""
+    def test_evidence_uses_fixed_budget_and_one_authoritative_pyrrho_call(self):
+        """Evidence delivery is fixed before Pyrrho and does not depend on its verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(3)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
 
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.INSUFFICIENT, "Need more evidence."),
-            _decision(AnswerMode.SUFFICIENT, "Enough evidence at two docs."),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Enough evidence.",
+        )
 
-        pack = engine.evidence(Query(text="What happened?"), top_k=3)
+        pack = engine.evidence(Query(text="What happened?"), top_k=2)
 
         assert pack.mode == AnswerMode.SUFFICIENT
-        assert pack.reasons == ["Enough evidence at two docs."]
+        assert pack.reasons == ["Enough evidence."]
         assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
         for timing_name in (
             "Query prep",
@@ -730,82 +740,64 @@ class TestEvidence:
             "Rerank",
             "Read",
             "Retrieval",
-            "Governance",
+            "Pyrrho",
         ):
             assert timing_name in pack.timings
-        cutoff = pack.metadata["governance_cutoff"]
-        assert cutoff["evaluated"] == 2
-        assert cutoff["selected"] == 2
-        assert cutoff["max"] == 3
-        assert cutoff["mode"] == "sufficient"
-        assert cutoff["policy"]["query_shape"] == "narrow"
-        assert cutoff["pyrrho"] == {
-            "mode": "sufficient",
-            "probabilities": {
-                "insufficient": 0.11,
-                "disputed": 0.22,
-                "sufficient": 0.67,
-            },
-            "reason": "Enough evidence at two docs.",
+        assert pack.metadata["evidence_delivery"] == {
+            "available": 3,
+            "selected": 2,
+            "limit": 2,
         }
-        first_contexts = engine._governance.decide.call_args_list[0].args[1]
-        second_contexts = engine._governance.decide.call_args_list[1].args[1]
-        assert len(first_contexts) == 1
-        assert len(second_contexts) == 2
+        assert pack.metadata["pyrrho"] == engine._pyrrho.decide.return_value.to_dict()
+        engine._pyrrho.decide.assert_called_once()
+        contexts = engine._pyrrho.decide.call_args.args[1]
+        assert contexts == [
+            {"source_id": "doc-1", "text": results[0].content},
+            {"source_id": "doc-2", "text": results[1].content},
+        ]
         engine._expander.expand.assert_called_once_with(
             results,
             entity_expansion_limit=3,
         )
 
-    def test_broad_query_requires_minimum_sufficient_window(self):
-        """Pyrrho broad-answer plans do not stop on a top-1 sufficient verdict."""
+    def test_broad_query_uses_requested_budget_without_local_evidence_floor(self):
+        """Broad query shape cannot delay or override Pyrrho's verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.SUFFICIENT, "Top one is plausible."),
-            _decision(AnswerMode.SUFFICIENT, "Top two are plausible."),
-            _decision(AnswerMode.SUFFICIENT, "Top three are plausible."),
-            _decision(AnswerMode.SUFFICIENT, "Broad window is enough."),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Pyrrho accepts the evidence.",
+        )
 
-        pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=4)
+        pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=1)
 
         assert pack.mode == AnswerMode.SUFFICIENT
-        assert [item.file_path for item in pack.items] == [
-            "docs/1.md",
-            "docs/2.md",
-            "docs/3.md",
-            "docs/4.md",
-        ]
-        assert engine._governance.decide.call_count == 4
-        cutoff = pack.metadata["governance_cutoff"]
-        assert cutoff["policy"]["query_shape"] == "broad"
-        assert cutoff["policy"]["min_sufficient_docs"] == 4
+        assert [item.file_path for item in pack.items] == ["docs/1.md"]
+        engine._pyrrho.decide.assert_called_once()
 
-    def test_comparison_query_stops_on_disputed_after_two_docs(self):
-        """Pyrrho comparison plans can stop on disputed once both sides exist."""
+    def test_comparison_query_returns_exact_pyrrho_dispute(self):
+        """Comparison query shape does not alter Pyrrho's disputed verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.INSUFFICIENT, "Need another side."),
-            _decision(AnswerMode.DISPUTED, "Sources disagree."),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.DISPUTED,
+            "Sources disagree.",
+        )
 
         pack = engine.evidence(Query(text="Compare React vs Vue performance"), top_k=4)
 
         assert pack.mode == AnswerMode.DISPUTED
-        assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
-        assert engine._governance.decide.call_count == 2
-        assert pack.metadata["governance_cutoff"]["policy"]["query_shape"] == "comparison"
+        assert len(pack.items) == 4
+        engine._pyrrho.decide.assert_called_once()
 
-    def test_comparative_or_query_requires_both_temporal_sides(self):
-        """Pyrrho comparison plans should not stop on one quarterly document."""
+    def test_comparative_query_delivers_both_requested_temporal_sides(self):
+        """Retrieval shape provides both sides before the single Pyrrho call."""
         engine = _make_engine()
         addresses, results = _evidence_results(2)
         results[0].content = "Q1 total revenue was 100."
@@ -828,11 +820,11 @@ class TestEvidence:
         )
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.SUFFICIENT, "Top one is not enough."),
-            _decision(AnswerMode.SUFFICIENT, "Both quarters represented."),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Both quarters represented.",
+        )
 
         pack = engine.evidence(
             Query(text="Which quarter had higher total revenue, Q1 or Q2?"),
@@ -841,24 +833,20 @@ class TestEvidence:
 
         assert pack.mode == AnswerMode.SUFFICIENT
         assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
-        assert engine._governance.decide.call_count == 2
-        cutoff = pack.metadata["governance_cutoff"]
-        assert cutoff["policy"]["query_shape"] == "comparison"
-        assert cutoff["policy"]["min_sufficient_docs"] == 2
+        engine._pyrrho.decide.assert_called_once()
 
-    def test_narrow_query_returns_pyrrho_dispute_without_local_patience(self):
-        """Narrow queries return Pyrrho's dispute once its evidence floor is met."""
+    def test_narrow_query_returns_pyrrho_dispute_without_local_policy(self):
+        """Narrow queries return Pyrrho's disputed verdict unchanged."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.INSUFFICIENT, "Need evidence."),
-            _decision(AnswerMode.DISPUTED, "Conflict appears.", probs=(0.26, 0.55, 0.19)),
-            _decision(AnswerMode.DISPUTED, "Conflict remains.", probs=(0.26, 0.55, 0.19)),
-            _decision(AnswerMode.DISPUTED, "Conflict persisted.", probs=(0.26, 0.55, 0.19)),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.DISPUTED,
+            "Conflict appears.",
+            probs=(0.26, 0.55, 0.19),
+        )
 
         pack = engine.evidence(Query(text="What happened to invoice 17?"), top_k=4)
 
@@ -869,34 +857,28 @@ class TestEvidence:
             "docs/3.md",
             "docs/4.md",
         ]
-        assert engine._governance.decide.call_count == 2
-        cutoff = pack.metadata["governance_cutoff"]
-        assert cutoff["policy"]["query_shape"] == "narrow"
-        assert "disputed_patience_docs" not in cutoff["policy"]
+        engine._pyrrho.decide.assert_called_once()
 
-    def test_broad_query_disputed_continues_to_cutoff(self):
-        """Pyrrho broad-answer plans do not stop on disputed until the cutoff."""
+    def test_broad_query_returns_pyrrho_dispute_without_local_override(self):
+        """Broad queries also return Pyrrho's disputed verdict unchanged."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = addresses
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.DISPUTED, "Conflict one."),
-            _decision(AnswerMode.DISPUTED, "Conflict two."),
-            _decision(AnswerMode.DISPUTED, "Conflict three."),
-            _decision(AnswerMode.DISPUTED, "Conflict four."),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.DISPUTED,
+            "Conflict.",
+        )
 
         pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=4)
 
         assert pack.mode == AnswerMode.DISPUTED
         assert len(pack.items) == 4
-        assert engine._governance.decide.call_count == 4
-        assert pack.metadata["governance_cutoff"]["policy"]["query_shape"] == "broad"
+        engine._pyrrho.decide.assert_called_once()
 
     def test_trace_records_the_canonical_governed_execution(self, monkeypatch, tmp_path):
-        """A trace captures pre-cutoff evidence without rerunning retrieval."""
+        """A trace captures compiled and Pyrrho-delivered evidence without rerunning."""
         from fitz_sage.core.paths import FitzPaths
 
         engine = _make_engine()
@@ -914,8 +896,9 @@ class TestEvidence:
         assert run.evidence.mode == AnswerMode.SUFFICIENT
         assert len(run.ranked_evidence) == 3
         assert run.ranked_evidence[0].content == results[0].content
-        assert run.governance.selected == len(run.evidence.items)
-        assert run.governance.evaluated <= run.governance.selected
+        assert run.pyrrho.evidence_count == len(run.evidence.items)
+        assert len(run.pyrrho_evidence) == len(run.evidence.items)
+        assert run.pyrrho.decision == run.evidence.metadata["pyrrho"]
         assert run.environment.engine == "fitz_krag"
         assert run.environment.collection == "test_collection"
         assert any(term.origin == "literal" for term in run.query.terms)

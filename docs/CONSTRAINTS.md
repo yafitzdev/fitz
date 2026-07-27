@@ -49,40 +49,40 @@ approved runtime default. A clean local v2 package exposes only native v2 heads:
 
 | Head | Purpose |
 | ---- | ------- |
-| `evidence_verdict` | `SUFFICIENT` / `DISPUTED` / `INSUFFICIENT` over `query + evidence prefix`. |
+| `evidence_verdict` | `SUFFICIENT` / `DISPUTED` / `INSUFFICIENT` over `query + delivered evidence`. |
 | `failure_mode` | Reason for insufficient or disputed evidence. |
 | `retrieval_intents` | Multi-label evidence intent metadata. |
 | `evidence_kinds` | Multi-label evidence-surface metadata. |
 
 ---
 
-## Implementation
+## Ownership
 
-- `pyrrho.py` — the local Pyrrho v2 inference module
-- `protocol.py` — the `EvidenceItem` protocol (any object with
-  `.content` + `.metadata`)
-- `instructions.py` — the small `AnswerMode → prompt instruction` map
+- The independent `pyrrho` package owns model loading, package validation,
+  tokenization, thresholds, head consistency, and the final verdict.
+- `fitz_sage/integrations/pyrrho.py` only converts `ReadResult` objects to
+  source ID plus unchanged text and maps the verdict name to `AnswerMode`.
+- `fitz_sage/engines/fitz_krag/generation/mode_instructions.py` maps an
+  already-decided mode into synthesis instructions. It does not choose a mode.
 
 ---
 
 ## Public API
 
 ```python
-from fitz_sage.governance import GovernanceDecision, create_governance
+from fitz_sage.integrations.pyrrho import create_pyrrho
 
-governance = create_governance("pyrrho/C:/reviewed/clean/pyrrho-package")
-decision = governance.decide(query, retrieved_contexts)
-# decision.mode    → runtime AnswerMode (SUFFICIENT / DISPUTED / INSUFFICIENT)
-# decision.probs   → (p_insufficient, p_disputed, p_sufficient)
-# decision.reason  → one-line human-readable explanation
-# decision exposes native v2 verdict, failure, retrieval-intent, and evidence-kind metadata
+pyrrho = create_pyrrho("pyrrho/C:/reviewed/clean/pyrrho-package")
+decision = pyrrho.decide(query, retrieved_contexts)
+# decision.verdict       -> SUFFICIENT / DISPUTED / INSUFFICIENT
+# decision.probabilities -> native verdict probability dictionary
+# decision.to_dict()     -> exact serializable Pyrrho result
 ```
 
-`retrieved_contexts` is any sequence of objects satisfying the
-`EvidenceItem` protocol. KRAG's `ReadResult` qualifies, and custom engines can
-provide their own compatible evidence type.
+Pyrrho accepts strings, dictionaries, or objects exposing `content`, `text`, or
+`excerpt`. Fitz-Sage's adapter sends explicit `source_id` and `text` fields.
 
-The bare `create_governance("pyrrho")` form currently fails closed because the
+The bare `create_pyrrho("pyrrho")` form currently fails explicitly because the
 historical remote default is quarantined. Pass an explicitly reviewed local
 package path as shown above. The engine owns the classifier and calls
 `.decide()` after retrieval and before answer synthesis; the package is
@@ -91,7 +91,7 @@ passes.
 
 ---
 
-## Runtime threshold rule
+## Pyrrho Runtime Policy
 
 Raw `argmax` over the 3-way v2 evidence-verdict softmax gives the predicted
 class. The runtime applies a `SUFFICIENT` probability floor:
@@ -114,9 +114,9 @@ ontology permits only these pairs:
 | `DISPUTED` | `unresolved_conflict` |
 | `INSUFFICIENT` | `missing_or_incomplete_evidence`, `wrong_scope_or_version`, or `ambiguous_request` |
 
-If independent predictions violate this matrix, the runtime reconciles them
+If independent predictions violate this matrix, Pyrrho reconciles them
 without upgrading safety. It records the original pair and consistency fallback
-in governance metadata.
+in its decision metadata. Fitz-Sage does not repeat or alter this policy.
 
 Inputs are right-truncated at the manifest-declared token budget. Every post-
 retrieval decision and pre-retrieval plan records the original token count,
@@ -128,20 +128,16 @@ observed evidence-coverage limitation.
 ## Where it plugs in
 
 The `FitzKragEngine` profiles the query, retrieves and reranks candidates, then
-uses the configured reviewed local Pyrrho v2 package to evaluate evidence
-prefixes.
+uses the configured reviewed local Pyrrho v2 package once over the fixed
+delivered evidence set.
 
-The cutoff loop:
-
-1. Broad recall + rerank candidates → ranked `ReadResult`s.
-2. Pyrrho scores `query + top 1`.
-3. If the verdict is `INSUFFICIENT`, the engine adds the next evidence item and
-   scores again.
-4. The loop stops when evidence is `SUFFICIENT`, a dispute is stable, or the
-   cutoff is reached.
-5. `evidence()` returns an `EvidencePack` with mode, reasons, probabilities,
-   cutoff metadata, and source items.
-6. Optional `answer()` synthesis receives the same mode and evidence.
+1. Broad recall, reranking, evidence closure, and compilation produce a ranking.
+2. `top_k`, or configured `top_read`, fixes the delivered evidence count.
+3. Pyrrho evaluates the query plus exactly those evidence items once.
+4. Fitz-Sage maps the verdict name to `AnswerMode` without another threshold,
+   evidence floor, patience rule, or query-shape override.
+5. `evidence()` returns the same items sent to Pyrrho and the exact serialized
+   Pyrrho decision.
 
 Governance is mandatory in the standard retrieval pipeline, but the bare
 `governance: pyrrho` remote resolution is blocked until a clean release is
@@ -151,10 +147,10 @@ approved. Configure `governance: pyrrho/<local-package-path>`.
 
 ## Why a classifier?
 
-Governance has to judge the whole `(query, evidence prefix)` pair, not just
+Governance has to judge the whole `(query, evidence set)` pair, not just
 individual keywords or source counts. Pyrrho gives the engine one calibrated
-local verdict with mode probabilities and native v2 metadata. That keeps the
-cutoff loop fast and makes the decision observable without adding endpoint calls
+local verdict with mode probabilities and native v2 metadata. That makes the
+decision observable without adding endpoint calls
 to the retrieval path.
 
 ---
@@ -171,7 +167,7 @@ The model card calls out these known boundaries:
    should still be evaluated before deployment.
 4. **Threshold calibration pending.** The clean release needs runtime-exact
    threshold evaluation; the legacy `0.34` fallback is not a new-release claim.
-5. **Finite context.** Long evidence prefixes are right-truncated. Runtime
+5. **Finite context.** Long delivered evidence sets are right-truncated. Pyrrho
    metadata exposes this, but evidence beyond the token budget is unseen.
 
 ---

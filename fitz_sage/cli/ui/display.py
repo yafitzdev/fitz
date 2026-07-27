@@ -204,7 +204,7 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
     items = getattr(pack, "items", []) or []
     indexing_status = getattr(pack, "indexing_status", {}) or {}
     metadata = getattr(pack, "metadata", {}) or {}
-    governance_lines = _format_governance_metadata(metadata, reasons)
+    governance_lines = _format_pyrrho_metadata(metadata, reasons)
 
     if RICH:
         table = Table(title=_evidence_title(mode_text, metadata))
@@ -303,60 +303,41 @@ def _evidence_title(mode_text: str, metadata: dict) -> str:
     return "Evidence"
 
 
-def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]:
-    """Format Pyrrho and cutoff metadata as compact display lines."""
-    cutoff = metadata.get("governance_cutoff", {}) if isinstance(metadata, dict) else {}
-    if not isinstance(cutoff, dict):
-        cutoff = {}
-
+def _format_pyrrho_metadata(metadata: dict, reasons: list[str]) -> list[str]:
+    """Format Pyrrho's exact decision and evidence-delivery facts."""
     lines: list[str] = []
     shown_reasons: set[str] = set()
     query_profile_line = _format_query_profile(metadata)
     if query_profile_line:
         lines.append(query_profile_line)
-    if _is_broad_overview(metadata):
-        selected = cutoff.get("selected", "?")
-        max_items = cutoff.get("max", "?")
-        lines.append(
-            f"Broad overview: selected {selected} representative source(s) from top {max_items}; "
-            "evidence sufficiency was not evaluated."
-        )
-        return _append_unique_reasons(lines, reasons)
 
-    pyrrho = _pyrrho_metadata(metadata)
+    pyrrho = metadata.get("pyrrho", {}) if isinstance(metadata, dict) else {}
+    if not isinstance(pyrrho, dict):
+        pyrrho = {}
     probs = pyrrho.get("probabilities", {}) if pyrrho else {}
     if isinstance(probs, dict) and probs:
-        verdict = _format_verdict(pyrrho.get("mode"))
+        verdict = _format_verdict(pyrrho.get("verdict"))
         lines.append(
             f"Pyrrho: {verdict}  "
-            f"P(SUFFICIENT)={_fmt_prob(probs.get('sufficient'))}  "
-            f"P(INSUFFICIENT)={_fmt_prob(probs.get('insufficient'))}  "
-            f"P(DISPUTED)={_fmt_prob(probs.get('disputed'))}"
+            f"P(SUFFICIENT)={_fmt_prob(probs.get('SUFFICIENT'))}  "
+            f"P(INSUFFICIENT)={_fmt_prob(probs.get('INSUFFICIENT'))}  "
+            f"P(DISPUTED)={_fmt_prob(probs.get('DISPUTED'))}"
         )
-    elif pyrrho and pyrrho.get("mode") and not pyrrho.get("reason"):
-        lines.append(f"Pyrrho: {_format_verdict(pyrrho.get('mode'))}")
+    elif pyrrho and pyrrho.get("verdict") and not pyrrho.get("reason"):
+        lines.append(f"Pyrrho: {_format_verdict(pyrrho.get('verdict'))}")
 
     head_line = _format_pyrrho_heads(pyrrho)
     if head_line:
         lines.append(head_line)
 
-    policy = cutoff.get("policy", {}) if isinstance(cutoff.get("policy", {}), dict) else {}
-    has_cutoff_values = any(key in cutoff for key in ("selected", "evaluated", "max")) or bool(
-        policy
-    )
-    if has_cutoff_values:
-        parts = [
-            f"selected {cutoff.get('selected', '?')}",
-            f"evaluated {cutoff.get('evaluated', '?')}/{cutoff.get('max', '?')}",
-        ]
-        if policy:
-            parts.extend(
-                [
-                    f"policy {policy.get('query_shape', '?')}",
-                    f"min sufficient {policy.get('min_sufficient_docs', '?')}",
-                ]
-            )
-        lines.append("Cutoff: " + "; ".join(parts))
+    delivery = metadata.get("evidence_delivery", {}) if isinstance(metadata, dict) else {}
+    if isinstance(delivery, dict) and delivery:
+        lines.append(
+            "Evidence delivery: "
+            f"selected {delivery.get('selected', '?')}/"
+            f"{delivery.get('available', '?')} "
+            f"(limit {delivery.get('limit', '?')})"
+        )
 
     reason = pyrrho.get("reason") if pyrrho else None
     if isinstance(reason, str) and reason:
@@ -417,26 +398,6 @@ def _append_unique_reasons(
     return lines
 
 
-def _is_broad_overview(metadata: dict) -> bool:
-    """Return whether metadata represents a deterministic broad-overview result."""
-    cutoff = metadata.get("governance_cutoff", {}) if isinstance(metadata, dict) else {}
-    if not isinstance(cutoff, dict):
-        return False
-    policy = cutoff.get("policy", {}) if isinstance(cutoff.get("policy", {}), dict) else {}
-    return (
-        bool(cutoff.get("representative_sources")) or policy.get("query_shape") == "broad_overview"
-    )
-
-
-def _pyrrho_metadata(metadata: dict) -> dict:
-    """Return nested Pyrrho metadata from an evidence pack metadata dict."""
-    cutoff = metadata.get("governance_cutoff", {}) if isinstance(metadata, dict) else {}
-    if not isinstance(cutoff, dict):
-        return {}
-    pyrrho = cutoff.get("pyrrho", {})
-    return pyrrho if isinstance(pyrrho, dict) else {}
-
-
 def _fmt_prob(value: object) -> str:
     """Format a probability-like value."""
     if not isinstance(value, (int, float, str)):
@@ -452,13 +413,16 @@ def _format_pyrrho_heads(pyrrho: dict) -> str:
     if not pyrrho:
         return ""
     parts: list[str] = []
+    heads = pyrrho.get("heads")
+    if not isinstance(heads, dict):
+        return ""
     for key, label in (
         ("evidence_verdict", "verdict"),
         ("failure_mode", "failure"),
         ("retrieval_intents", "intents"),
         ("evidence_kinds", "evidence"),
     ):
-        head = pyrrho.get(key)
+        head = heads.get(key)
         if not isinstance(head, dict):
             continue
         final_labels = head.get("final_labels")

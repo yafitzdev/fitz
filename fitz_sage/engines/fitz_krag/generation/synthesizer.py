@@ -14,8 +14,10 @@ from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core import Answer, GenerationError, Provenance
 from fitz_sage.core.answer_mode import AnswerMode
+from fitz_sage.engines.fitz_krag.generation.mode_instructions import (
+    get_mode_instruction,
+)
 from fitz_sage.engines.fitz_krag.types import ReadResult
-from fitz_sage.governance.instructions import get_mode_instruction
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
@@ -230,7 +232,7 @@ class CodeSynthesizer:
         lines = ["I don't have enough information to answer this question."]
 
         # Governance reasons (why constraints fired)
-        reasons = gap_context.get("governance_reasons", ())
+        reasons = gap_context.get("decision_reasons", ())
         if reasons:
             lines.append("")
             lines.append("Why:")

@@ -893,8 +893,8 @@ class TestContentReaderSectionContext:
         assert "breadcrumb" not in r.metadata
         assert "child_count" not in r.metadata
 
-    def test_read_section_backward_compat_no_config(self):
-        """ContentReader without config works as before (no breadcrumb/TOC)."""
+    def test_read_section_without_config_uses_plain_content(self):
+        """ContentReader without config returns plain section content."""
         section_data = {
             "sec-001": {
                 "content": "Section body text.",

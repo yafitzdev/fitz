@@ -107,10 +107,10 @@ Current limitations remain around:
 - PASS/FAIL style contradictions
 - stale docs versus code behavior
 - multiple owners/statuses in different sources
-- conflicts where the decisive source is outside the governed evidence prefix
+- conflicts where the decisive source is outside the delivered evidence set
 
-Once the query-shape evidence floor is present, fitz-sage returns Pyrrho's
-verdict without local confidence thresholds or dispute-stability overrides.
+Fitz-Sage returns Pyrrho's verdict without local confidence thresholds,
+evidence floors, or dispute-stability overrides.
 False sufficient, insufficient, or disputed decisions are Pyrrho model debt and
 should be fixed by retraining Pyrrho rather than by adding hidden Fitz-Sage
 heuristics.
@@ -126,25 +126,27 @@ step.
 The limitations benchmark intentionally contains cases that should fail or
 surface product boundaries. It is not a marketing benchmark.
 
-The 2026-07-27 production matrix measured 60 limitation cases. Of the 52 cases
-with evidence assertions, 48 passed retrieval and governed delivery (92.3%).
-No forbidden evidence was returned by this suite. The four package capability
+The 2026-07-27 governance-ownership run measured 60 limitation cases. Of the 52
+cases with evidence assertions, 49 passed retrieval and delivery (94.2%). No
+forbidden evidence was returned by this suite. The three package capability
 misses were:
 
-- two final facts buried in long headingless or single-paragraph documents
-  dropped during reranking
+- one final fact buried in a long single-paragraph document, dropped during
+  reranking
 - one explicit private-abbreviation bridge whose companion source was not
-  recovered during evidence reading/compilation
+  retained during evidence reading/compilation
 - one filtered table lookup whose target row was missed during recall
 
 These failures stay in the suite. They should only turn green after a general
 retrieval improvement, not a case-specific synonym or identifier rule.
 
-The same run passed 32 of 60 complete governed contracts. Pyrrho disagreed with
-the expected mode on 28 cases, including some of the four package misses. This
-run used an explicit local diagnostic Pyrrho artifact with no package manifest
-and a failing parity report. Its exact decisions are preserved for integration
-diagnosis, but its mode accuracy is not release-grade governance evidence.
+The same run passed 35 of 60 complete contracts. Pyrrho disagreed with the
+expected mode on 25 cases, including the three package misses. Temporal,
+comparison, and version-scope groups passed completely. Abbreviation and
+cross-source-bridge mode expectations passed 0%. The run used the explicit local
+`pyrrho-v2-nano-g1` package at its 2,048-token contract. Its exact decisions are
+preserved in the report; improving those 25 mode failures belongs in Pyrrho
+training and release work, not in Fitz-Sage policy code.
 
 The required production suites measured:
 

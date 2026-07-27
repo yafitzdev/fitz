@@ -11,7 +11,7 @@ but they are not the product contract.
 |---|---|---|
 | Retrieval recall | Hit@K / nDCG over fixture corpora | Broad recall must surface the right typed units before reranking. |
 | Reranking | Hit@1 / MRR after ONNX rerank | The reranker should move the answerable source near the top. |
-| Governance cutoff | False-sufficient rate, insufficient recall, disputed recall | Pyrrho must avoid trusting weak or contradictory evidence. |
+| Pyrrho governance | False-sufficient rate, insufficient recall, disputed recall | Pyrrho must avoid trusting weak or contradictory evidence. |
 | Progressive indexing | time-to-first-evidence, query-ready latency, full-enrichment latency | The user experience depends on useful evidence before deep indexing completes. |
 | Modality routing | accuracy by text/table/code/log/config route | Bad routing makes good retrieval strategies invisible. |
 | Structured/table evidence | SQL correctness, aggregation completeness, unit/filter correctness | Table evidence has failure modes that text governance does not cover. |
@@ -22,8 +22,9 @@ but they are not the product contract.
 - `fitz query` returns an `EvidencePack` with provenance and Pyrrho mode.
 - Retrieval uses FTS5/BM25, typed-unit routing, structural expansion, and ONNX
   reranking.
-- Pyrrho evaluates ranked evidence prefixes and may trigger a broader retrieval
-  retry when its retrieval-control heads request more evidence.
+- Fitz-Sage consumes Pyrrho's query-only intent and evidence-kind heads as
+  retrieval signals. Pyrrho evaluates the final delivered evidence set and owns
+  the final governance verdict.
 - Optional answer synthesis is measured separately from evidence retrieval.
 
 ## Gaps To Fill

@@ -142,10 +142,10 @@ def test_governance_failure_does_not_count_as_retrieval_failure() -> None:
     assert len(result.governance_failures) == 1
 
 
-def test_governance_cutoff_is_separate_from_pre_governance_retrieval() -> None:
+def test_evidence_delivery_is_separate_from_compiled_retrieval() -> None:
     case = BenchmarkCase.from_dict(
         {
-            "id": "cutoff",
+            "id": "delivery",
             "domain": "policy",
             "query": "What is the policy?",
             "expected": {

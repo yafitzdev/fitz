@@ -90,7 +90,7 @@ Strict import rules enforce separation of concerns (verified by
 
 ### Query
 
-Retrieval runs as a broad recall → rerank → govern pipeline. A
+Retrieval runs as a broad recall → rerank → deliver → Pyrrho pipeline. A
 `RetrievalPass` is retrieve → fuse → rerank → read; multi-hop may loop that
 pass on a bridge query when pyrrho judges the evidence insufficient.
 
@@ -103,14 +103,15 @@ pass on a bridge query when pyrrho judges the evidence insufficient.
 4  Rerank          ONNX cross-encoder (gte-reranker-modernbert-base)
 5  Read            fetch content for surviving addresses
 6  Compile         enforce query-shape evidence obligations
-7  Govern cutoff   pyrrho evaluates top-1, top-2, ... up to cutoff
-8  Record          optional RetrievalRun snapshots this same execution
-9  Synthesize      optional chat call writes an Answer from governed evidence
+7  Deliver         select a fixed top_k/top_read evidence set
+8  Pyrrho          one authoritative decision over the delivered set
+9  Record          optional RetrievalRun snapshots this same execution
+10 Synthesize      optional chat call writes an Answer from governed evidence
 ```
 
 `RetrievalRun` is built from the canonical governed result. Trace mode does not
-invoke a diagnostic copy of the pipeline. Governance replay operates only on
-the frozen post-compilation, pre-cutoff evidence in a content-bearing record;
+invoke a diagnostic copy of the pipeline. Pyrrho replay operates only on
+the frozen delivered evidence in a content-bearing record;
 it does not claim to reproduce retrieval against a mutable collection. See
 [Retrieval Execution Records](RETRIEVAL_RUNS.md).
 
@@ -197,7 +198,7 @@ public provider knob.
 ```yaml
 # ENABLED — a provider is named
 rerank: onnx
-governance: pyrrho
+governance: pyrrho//absolute/path/to/reviewed-clean-package
 synthesizer: endpoint/qwen2.5-7b-instruct
 chat_base_url: http://localhost:8080/v1
 
@@ -230,8 +231,9 @@ class RetrievalRun:
     evidence: EvidencePack
     strategies: tuple[StrategyExecution, ...]
     candidate_stages: tuple[CandidateStage, ...]
-    governance: GovernanceExecution
+    pyrrho: PyrrhoExecution
     ranked_evidence: tuple[FrozenEvidence, ...]
+    pyrrho_evidence: tuple[FrozenEvidence, ...]
     environment: RunEnvironment
     schema_version: str
 ```
@@ -259,11 +261,14 @@ Minimal local config:
 collection: default
 parser: cpu
 rerank: onnx
-governance: pyrrho
+governance: pyrrho//absolute/path/to/reviewed-clean-package
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
+
+The bare `governance: pyrrho` value is the logical default, but currently
+fails closed until a reviewed clean default model package is promoted.
 
 Override per-invocation:
 
@@ -295,7 +300,7 @@ fitz_sage/
 ├── storage/             # SqliteConnectionManager (WAL, FTS5)
 ├── ingestion/           # built-in parsers, source discovery, and hashing
 ├── tabular/             # native table parsers and SqliteTableStore
-├── governance/          # pyrrho classifier, answer modes, instructions
+├── integrations/        # thin adapter to the independent Pyrrho runtime
 ├── runtime/             # multi-engine orchestration
 ├── cli/                 # typer commands
 ├── api/                 # FastAPI app + routes

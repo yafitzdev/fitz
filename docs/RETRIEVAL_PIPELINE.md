@@ -99,7 +99,7 @@ flowchart TD
 Broad recall is intentionally permissive. It uses literal query terms,
 managed Qwen semantic keywords, and intent fanout for
 comparison, temporal, aggregation, and freshness queries. False positives are
-acceptable because the reranker and governance cutoff handle precision.
+acceptable because the reranker and fixed evidence delivery handle precision.
 The configured reviewed Pyrrho v2 package is evidence-conditioned. Query profiling comes
 from deterministic signals, managed Qwen semantic keywords, and optional
 query-intelligence providers.

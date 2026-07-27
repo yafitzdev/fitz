@@ -118,72 +118,54 @@ the candidates that actually answer the query and pushes broad keyword matches
 down.
 
 Reranking also standardizes the candidate list before Pyrrho sees it. Pyrrho
-should judge evidence sufficiency over a relevance-ordered prefix, not over raw
+should judge evidence sufficiency over a relevance-ordered set, not over raw
 BM25 order.
 
-For comparison-shaped metric queries, fitz-sage applies one deterministic
-pre-cutoff guard after reading content: evidence that directly contains the
-requested metric/table row is seeded ahead of weaker prose mentions before
-Pyrrho evaluates prefixes. This keeps questions like "Q1 vs Q2 total responses"
-from stopping on a generic Q1 summary when the exact Q1 metric table is already
-available lower in the ranked list.
+For comparison-shaped metric queries, evidence compilation can promote
+evidence that directly contains the requested metric or table row ahead of
+weaker prose mentions before
+fixed delivery. This keeps questions like "Q1 vs Q2 total responses" from
+delivering only a generic Q1 summary when the exact metric table is available.
 
 ---
 
-## Stage 3: Pyrrho Cutoff
+## Stage 3: Fixed Delivery And Pyrrho
 
 Pyrrho is not an answer generator and does not retrieve more documents. It is a
-local CPU governance classifier over `(query, evidence prefix)`.
+local CPU governance classifier over `(query, delivered evidence set)`.
 
-For a ranked list, fitz-sage evaluates prefixes:
+For a ranked list, Fitz-Sage fixes the delivery budget before Pyrrho runs:
 
 ```mermaid
 flowchart TD
-    A["Ranked evidence list"] --> B["query + top 1"]
-    B --> C["Pyrrho verdict"]
-    C -->|"SUFFICIENT"| D{"Enough docs for query shape?"}
-    D -->|"yes"| T["Stop: return sufficient evidence"]
-    D -->|"no"| N["Add next evidence item"]
-    C -->|"DISPUTED"| U{"Stable / query shape allows stop?"}
-    U -->|"yes"| V["Stop: return disputed evidence"]
-    U -->|"no"| N
-    C -->|"INSUFFICIENT"| W{"Cutoff reached?"}
-    W -->|"yes"| X["Stop: return insufficient evidence"]
-    W -->|"no"| N
-    N --> C
+    A["Compiled ranked evidence"] --> B["Fixed top_k / top_read delivery"]
+    B --> C["One Pyrrho decision"]
+    C --> D["Return exact verdict and same evidence"]
 ```
 
-The cutoff loop answers this retrieval question:
+Pyrrho answers this governance question:
 
-> Given the user query and the top N ranked evidence items, have we gathered
+> Given the user query and the delivered evidence items, have we gathered
 > enough evidence for a downstream system to answer?
 
 Verdicts:
 
 | Verdict | Meaning for retrieval |
 |---|---|
-| `SUFFICIENT` | The evidence prefix is sufficient and internally consistent. |
-| `DISPUTED` | The evidence prefix contains a meaningful conflict. |
-| `INSUFFICIENT` | The evidence prefix is incomplete or does not answer the query. |
+| `SUFFICIENT` | The evidence set is sufficient and internally consistent. |
+| `DISPUTED` | The evidence set contains a meaningful conflict. |
+| `INSUFFICIENT` | The evidence set is incomplete or does not answer the query. |
 
-Policy varies by query shape:
+Query shape affects retrieval and compilation before delivery:
 
-| Query shape | Cutoff behavior |
+| Query shape | Retrieval behavior |
 |---|---|
-| Narrow lookup | Can stop with fewer documents once Pyrrho finds sufficient evidence. |
-| Broad corpus overview | Requires a wider sufficient-evidence window before stopping. |
-| Comparison | Needs enough evidence to represent both sides. |
-| Aggregation | Needs a larger evidence window because completeness matters. |
-| Dispute | Stops only when conflict is stable enough for the shape. |
+| Narrow lookup | Uses a tighter evidence budget. |
+| Broad corpus overview | Retrieves and compiles a wider representative set. |
+| Comparison | Seeks evidence representing both sides. |
+| Aggregation | Uses broader recall because completeness matters. |
 
-The default cutoff inspects at most the top 10 evidence items unless the caller
-requests fewer.
-
-Corpus overview queries are a special case: evidence sufficiency is not
-well-defined for "key facts in this corpus" style prompts, so Pyrrho returns
-representative sources instead of a sufficient verdict. Synthetic corpus
-summaries are injected only through this overview path and are excluded from
-ordinary BM25 section hits.
+No query shape can delay, replace, or bypass Pyrrho's verdict.
 
 ---
 
@@ -207,9 +189,9 @@ stage.
 | Entity graph | Recall / expansion | Adds related evidence once entity enrichment exists. |
 | Supplemental scan | Recall | Covers registered files that are not fully query-ready yet. |
 | ONNX reranker | Rerank | Sorts noisy recall candidates by relevance. |
-| Metric comparison prefixing | Governance policy | Promotes direct metric/table evidence before Pyrrho cutoff. |
-| Multi-hop | Post-cutoff fallback | Runs another retrieval pass when Pyrrho marks evidence insufficient and a bridge is available. |
-| Pyrrho | Governance | Decides enough / disputed / not enough over ranked evidence prefixes. |
+| Metric comparison compilation | Compile | Promotes direct metric/table evidence before fixed delivery. |
+| Multi-hop | Retrieval loop | Runs another retrieval pass when Pyrrho marks evidence insufficient and a bridge is available. |
+| Pyrrho | Governance | Decides enough / disputed / not enough over the delivered evidence set. |
 
 Nothing in this model makes enrichment optional. Required enrichment improves
 the recall surface and the evidence available to the reranker. The difference is
@@ -250,7 +232,7 @@ that another application can trust, inspect, or pass into optional synthesis.
 | Broad recall router | `fitz_sage/engines/fitz_krag/retrieval/router.py` |
 | Section/code/table strategies | `fitz_sage/engines/fitz_krag/retrieval/strategies/` |
 | Reranker | `fitz_sage/engines/fitz_krag/retrieval/reranker.py`, `fitz_sage/llm/providers/onnx_reranker.py` |
-| Pyrrho | `fitz_sage/governance/pyrrho.py` |
+| Pyrrho | independent `pyrrho` runtime via `fitz_sage/integrations/pyrrho.py` |
 | Progressive indexing | `fitz_sage/engines/fitz_krag/progressive/` |
 | Enrichment | `fitz_sage/engines/fitz_krag/ingestion/enricher.py`, `fitz_sage/llm/providers/onnx_chat.py` |
 

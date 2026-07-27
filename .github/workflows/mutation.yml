@@ -62,6 +62,7 @@ jobs:
           pip install -q pydantic pyyaml httpx typing-extensions typer jinja2
           pip install -q pytest pytest-cov pytest-xdist psutil hypothesis
           pip install -q cryptography
+          pip install -q "pyrrho>=0.1.0,<0.2" --no-deps
           pip install -q "mutmut>=2.4,<3"
           pip install -q -e . --no-deps
 
@@ -71,7 +72,7 @@ jobs:
           TARGET="${{ steps.target.outputs.target }}"
 
           case $TARGET in
-            evidence) PATHS="fitz_sage/engines/fitz_krag/evidence_contract.py,fitz_sage/engines/fitz_krag/evidence_compiler.py,fitz_sage/engines/fitz_krag/evidence_closure.py,fitz_sage/engines/fitz_krag/governance_cutoff.py" ;;
+            evidence) PATHS="fitz_sage/engines/fitz_krag/evidence_contract.py,fitz_sage/engines/fitz_krag/evidence_compiler.py,fitz_sage/engines/fitz_krag/evidence_closure.py,fitz_sage/integrations/pyrrho.py" ;;
             query) PATHS="fitz_sage/engines/fitz_krag/query_planner.py,fitz_sage/engines/fitz_krag/retrieval_profile.py,fitz_sage/engines/fitz_krag/query_pipeline.py" ;;
             ingestion) PATHS="fitz_sage/ingestion/hashing.py,fitz_sage/engines/fitz_krag/progressive/manifest.py" ;;
           esac

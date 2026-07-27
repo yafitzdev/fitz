@@ -41,22 +41,16 @@ def _pyrrho_smoke_spec() -> str:
 
 def test_pyrrho_loads_and_decides():
     """Canonical Pyrrho v2 package -> a real local decide() call."""
-    from fitz_sage.core.answer_mode import AnswerMode
-    from fitz_sage.governance import create_governance
+    from fitz_sage.integrations.pyrrho import create_pyrrho
 
-    governance = create_governance(_pyrrho_smoke_spec())
-    assert governance is not None
+    pyrrho = create_pyrrho(_pyrrho_smoke_spec())
 
     contexts = [SimpleNamespace(content="The capital of France is Paris.", metadata={})]
-    decision = governance.decide("What is the capital of France?", contexts)
+    decision = pyrrho.decide("What is the capital of France?", contexts)
 
-    assert decision.mode in (
-        AnswerMode.SUFFICIENT,
-        AnswerMode.DISPUTED,
-        AnswerMode.INSUFFICIENT,
-    )
-    assert len(decision.probs) == 3
-    assert abs(sum(decision.probs) - 1.0) < 1e-3  # softmax distribution
+    assert decision.verdict in {"SUFFICIENT", "DISPUTED", "INSUFFICIENT"}
+    assert set(decision.probabilities) == {"SUFFICIENT", "DISPUTED", "INSUFFICIENT"}
+    assert abs(sum(decision.probabilities.values()) - 1.0) < 1e-3
 
 
 def test_onnx_reranker_loads_and_ranks():

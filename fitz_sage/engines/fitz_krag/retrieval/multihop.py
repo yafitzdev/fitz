@@ -14,13 +14,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.core.json_utils import parse_llm_json
 from fitz_sage.engines.fitz_krag.types import ReadResult
+from fitz_sage.integrations.pyrrho import decide
 
 if TYPE_CHECKING:
+    from pyrrho import Pyrrho
+
     from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
-    from fitz_sage.governance import Pyrrho
     from fitz_sage.llm.factory import ChatFactory
 
 logger = logging.getLogger(__name__)
@@ -38,12 +39,12 @@ class KragHopController:
         self,
         retrieval_pass: "RetrievalPass",
         chat_factory: "ChatFactory",
-        governance: "Pyrrho | None" = None,
+        pyrrho: "Pyrrho | None" = None,
         max_hops: int = 2,
     ):
         self._pass = retrieval_pass
         self._chat_factory = chat_factory
-        self._governance = governance
+        self._pyrrho = pyrrho
         self._max_hops = max_hops
 
     def execute(
@@ -99,10 +100,10 @@ class KragHopController:
         cheap sufficiency signal, so the loop relies on bridge extraction
         and max_hops to terminate.
         """
-        if not results or self._governance is None:
+        if not results or self._pyrrho is None:
             return False
-        decision = self._governance.decide(query, results)
-        return decision.mode is not AnswerMode.INSUFFICIENT
+        decision = decide(self._pyrrho, query, results)
+        return decision.verdict != "INSUFFICIENT"
 
     def _extract_bridge(self, query: str, results: list[ReadResult]) -> list[str]:
         """Generate bridge questions to fill evidence gaps."""

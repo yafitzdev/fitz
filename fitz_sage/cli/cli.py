@@ -107,7 +107,7 @@ def retrieve(
     trace_content: bool = typer.Option(
         False,
         "--trace-content",
-        help="Include source content in the trace so governance can be replayed.",
+        help="Include source content in the trace so Pyrrho can be replayed.",
     ),
 ) -> None:
     """Retrieve governed evidence without answer synthesis."""
@@ -138,11 +138,10 @@ def explain(
 @app.command("replay")
 def replay(
     trace_file: Path = typer.Argument(..., help="Content-bearing retrieval trace JSON file."),
-    governance: Optional[str] = typer.Option(
+    pyrrho: Optional[str] = typer.Option(
         None,
-        "--governance",
-        "-g",
-        help="Governance provider/model spec. Defaults to the recorded provider.",
+        "--pyrrho",
+        help="Pyrrho provider/model spec. Defaults to the recorded package.",
     ),
     output: Optional[Path] = typer.Option(
         None,
@@ -161,12 +160,12 @@ def replay(
         help="Include selected source content in JSON output.",
     ),
 ) -> None:
-    """Replay governance over frozen evidence without rerunning retrieval."""
+    """Replay Pyrrho over frozen evidence without rerunning retrieval."""
     from fitz_sage.cli.commands import runs as mod
 
     mod.replay_command(
         trace_file,
-        governance=governance,
+        pyrrho=pyrrho,
         output=output,
         output_format=output_format,
         include_content=include_content,

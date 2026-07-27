@@ -69,7 +69,7 @@ class QueryPipeline:
         query_planner: Any,
         query_batcher: Any,
         semantic_keyword_batcher: Any,
-        governance: Any,
+        pyrrho: Any,
         retrieval_pass: Any,
         hop_controller: Any,
         expander: Any,
@@ -83,7 +83,7 @@ class QueryPipeline:
         self._query_planner = query_planner
         self._query_batcher = query_batcher
         self._semantic_keyword_batcher = semantic_keyword_batcher
-        self._governance = governance
+        self._pyrrho = pyrrho
         self._retrieval_pass = retrieval_pass
         self._hop_controller = hop_controller
         self._expander = expander
@@ -426,7 +426,7 @@ class QueryPipeline:
 
     def _plan_with_pyrrho(self, query: str) -> Any | None:
         """Run Pyrrho's query-only planning pass when the backend exposes it."""
-        planner = getattr(self._governance, "plan_query", None)
+        planner = getattr(self._pyrrho, "plan_query", None)
         if not callable(planner):
             return None
         return planner(query)

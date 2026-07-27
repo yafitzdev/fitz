@@ -64,13 +64,13 @@ run.write("run-with-content.json", include_content=True)
 print(run.explain())
 ```
 
-Use `fitz_sage.replay_governance(...)` to evaluate another governance provider
-over a content-bearing record's frozen evidence:
+Use `fitz_sage.replay_pyrrho(...)` to evaluate another Pyrrho package over a
+content-bearing record's exact delivered evidence:
 
 ```python
-result = fitz_sage.replay_governance(
+result = fitz_sage.replay_pyrrho(
     "run-with-content.json",
-    governance="pyrrho/C:/models/pyrrho-candidate",
+    pyrrho="pyrrho/C:/models/pyrrho-candidate",
 )
 ```
 
@@ -162,10 +162,10 @@ f.trace(
     source: str | Path = None,
 ) -> RetrievalRun
 
-f.replay_governance(
+f.replay_pyrrho(
     run: RetrievalRun | str | Path,
-    governance: str | object = None,
-) -> GovernanceReplay
+    pyrrho: str | object = None,
+) -> PyrrhoReplay
 ```
 
 #### point()
@@ -242,8 +242,8 @@ class Answer:
 
 **Runtime Answer Modes:**
 
-Pyrrho v2's native model verdict is available in governance metadata as
-`evidence_verdict`. `AnswerMode` is the runtime API value.
+Pyrrho v2's native model verdict is available at
+`metadata["pyrrho"]["verdict"]`. `AnswerMode` is its mechanical runtime mapping.
 
 | Mode | Description |
 |------|-------------|
@@ -286,10 +286,10 @@ Use `pack.to_dict()` or `pack.to_json()` for API responses and downstream apps.
 
 An inspectable, versioned record containing the effective query plan, term
 origins, retrieval strategies, candidate stages, compiled evidence ranking,
-governance trajectory, selected `EvidencePack`, and runtime fingerprints.
+exact Pyrrho input and output, selected `EvidencePack`, and runtime fingerprints.
 
 `to_dict()`, `to_json()`, and `write()` redact source bodies by default.
-Content-bearing traces are required for governance replay.
+Content-bearing traces are required for Pyrrho replay.
 
 ### Provenance
 

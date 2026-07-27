@@ -72,7 +72,7 @@ max_hops: 2              # default — hop cap (1-5)
 | -------------- | --------------------------------------------------------- |
 | Hop controller | `fitz_sage/engines/fitz_krag/retrieval/multihop.py`       |
 | Retrieval pass | `fitz_sage/engines/fitz_krag/retrieval/retrieval_pass.py` |
-| Governance     | `fitz_sage/governance/pyrrho.py`                          |
+| Governance     | independent `pyrrho` runtime via `fitz_sage/integrations/pyrrho.py` |
 
 ## Example: citation chasing
 

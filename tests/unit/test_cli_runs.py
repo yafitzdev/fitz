@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from fitz_sage.cli.cli import app
 from fitz_sage.core import (
     EvidencePack,
-    GovernanceExecution,
+    PyrrhoExecution,
     QueryExecution,
     RetrievalRun,
     RunEnvironment,
@@ -35,15 +35,13 @@ def _write_trace(path):
         ),
         strategies=(),
         candidate_stages=(),
-        governance=GovernanceExecution(
-            mode="insufficient",
-            evaluated=0,
-            selected=0,
-            max_documents=0,
-            query_shape="narrow",
-            minimum_sufficient_documents=0,
+        pyrrho=PyrrhoExecution(
+            verdict="INSUFFICIENT",
+            evidence_count=0,
+            decision={"schema_version": 1, "verdict": "INSUFFICIENT"},
         ),
         ranked_evidence=(),
+        pyrrho_evidence=(),
         environment=RunEnvironment(
             fitz_sage_version="0.15.0",
             engine="fitz_krag",
@@ -74,7 +72,7 @@ def test_replay_writes_result_and_preserves_json_stdout(tmp_path):
     replay.to_json.return_value = '{"changed": false}'
 
     with patch(
-        "fitz_sage.cli.commands.runs.replay_governance",
+        "fitz_sage.cli.commands.runs.replay_pyrrho",
         return_value=replay,
     ) as replay_call:
         result = runner.invoke(
@@ -82,7 +80,7 @@ def test_replay_writes_result_and_preserves_json_stdout(tmp_path):
             [
                 "replay",
                 str(trace_path),
-                "--governance",
+                "--pyrrho",
                 "pyrrho/test",
                 "--output",
                 str(output_path),

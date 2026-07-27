@@ -6,8 +6,8 @@ captures what Fitz actually did, not a second diagnostic execution.
 The record is useful for:
 
 - explaining why a query produced a particular `EvidencePack`;
-- comparing query planning, candidates, and governance across releases;
-- preserving evidence for later governance evaluation;
+- comparing query planning, candidates, and Pyrrho decisions across releases;
+- preserving the exact Pyrrho input for later evaluation;
 - debugging production failures without adding hidden data normalization.
 
 ## Capture
@@ -18,7 +18,7 @@ The record is useful for:
 # Source bodies are redacted by default.
 fitz retrieve "Which test failed?" -c reports --trace run.json
 
-# Required when the trace will be used for governance replay.
+# Required when the trace will be used for Pyrrho replay.
 fitz retrieve "Which test failed?" -c reports \
   --trace run-with-content.json \
   --trace-content
@@ -66,7 +66,7 @@ print(run.explain())
 
 ## Recorded Stages
 
-A version 1 record contains:
+A version 2 record contains:
 
 - original, sanitized, and effective retrieval queries;
 - query shape and stable planning fields;
@@ -74,10 +74,11 @@ A version 1 record contains:
   `semantic` origin;
 - retrieval strategy calls and result counts;
 - ordered candidate identities and scores at recall, rerank, and final stages;
-- the complete ranked evidence after evidence compilation and before cutoff;
+- the complete ranked evidence after evidence compilation;
+- the exact fixed evidence set delivered to Pyrrho;
 - the selected `EvidencePack`;
-- every recorded governance-prefix verdict, probability, token count, and stop
-  reason that the provider exposed;
+- Pyrrho's exact serialized verdict, heads, probabilities, token counts,
+  truncation status, and model identity;
 - Fitz, engine, collection, component, config-hash, collection-fingerprint, and
   indexing-state metadata.
 
@@ -107,9 +108,9 @@ to your environment's data policy.
 handled like the source documents themselves. Content-bearing records include
 SHA-256 digests and character counts. Loading rejects changed frozen evidence.
 
-## Governance Replay
+## Pyrrho Replay
 
-Governance replay asks a Pyrrho provider to evaluate the exact compiled evidence
+Pyrrho replay asks a Pyrrho runtime to evaluate the exact delivered evidence
 stored in a content-bearing trace:
 
 ```bash
@@ -118,30 +119,30 @@ fitz replay run-with-content.json
 
 # Evaluate a different reviewed package.
 fitz replay run-with-content.json \
-  --governance pyrrho/C:/models/pyrrho-candidate \
+  --pyrrho pyrrho/C:/models/pyrrho-candidate \
   --output replay.json
 ```
 
 ```python
-from fitz_sage import replay_governance
+from fitz_sage import replay_pyrrho
 
-result = replay_governance(
+result = replay_pyrrho(
     "run-with-content.json",
-    governance="pyrrho/C:/models/pyrrho-candidate",
+    pyrrho="pyrrho/C:/models/pyrrho-candidate",
 )
 print(result.explain())
 ```
 
-Replay uses the same cutoff implementation, recorded query shape, compiler
-metadata, and maximum evidence prefix. It does not rerun query preparation,
+Replay performs one Pyrrho call over the recorded `pyrrho_evidence`. It does
+not rerun query preparation,
 BM25, semantic keyword generation, retrieval, reranking, evidence closure, or
-compilation. This boundary is deliberate: replay answers "Would this governance
-provider judge the same frozen evidence differently?", not "Would the current
+compilation. This boundary is deliberate: replay answers "Would this Pyrrho
+package judge the same frozen evidence differently?", not "Would the current
 system retrieve the same evidence?"
 
-Replay records both the source and current Fitz versions. A version difference
-means cutoff implementation changes may also contribute to a changed result.
-Governance replay currently supports `fitz_krag` records only.
+Replay records both the source and current Fitz versions, but Fitz-Sage does
+not reinterpret the result. Pyrrho replay currently supports `fitz_krag`
+records only.
 
 Redacted traces cannot be replayed. Fitz fails explicitly instead of fetching
 current source content, because doing so would no longer be a frozen-evidence
@@ -149,9 +150,9 @@ experiment.
 
 ## Versioning
 
-The top-level `schema_version` currently uses major version `1`. Readers accept
+The top-level `schema_version` currently uses major version `2`. Readers accept
 minor additions within the same major version and ignore unknown fields. They
 reject unsupported major versions rather than guessing at changed semantics.
 
-Both `RetrievalRun` and `GovernanceReplay` support `to_dict`, `to_json`,
+Both `RetrievalRun` and `PyrrhoReplay` support `to_dict`, `to_json`,
 `write`, `from_dict`, `from_json`, and `read`.

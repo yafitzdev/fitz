@@ -18,12 +18,12 @@ def test_load_dataset_materializes_repo_file_subset(tmp_path):
             {
                 "mode": "query_profile",
                 "collection": "unit_query_profile_dataset",
-                "corpus_files": ["fitz_sage/governance/pyrrho.py"],
+                "corpus_files": ["fitz_sage/integrations/pyrrho.py"],
                 "queries": [
                     {
                         "id": "qp-01",
                         "query": "Where does Pyrrho classify query signals?",
-                        "relevant": [{"grade": 2, "path": "fitz_sage/governance/pyrrho.py"}],
+                        "relevant": [{"grade": 2, "path": "fitz_sage/integrations/pyrrho.py"}],
                     }
                 ],
             }
@@ -35,8 +35,8 @@ def test_load_dataset_materializes_repo_file_subset(tmp_path):
 
     assert dataset.mode == "query_profile"
     assert dataset.collection == "unit_query_profile_dataset"
-    assert dataset.corpus_files == ("fitz_sage/governance/pyrrho.py",)
-    assert (dataset.corpus / "fitz_sage/governance/pyrrho.py").is_file()
+    assert dataset.corpus_files == ("fitz_sage/integrations/pyrrho.py",)
+    assert (dataset.corpus / "fitz_sage/integrations/pyrrho.py").is_file()
 
 
 def test_query_profile_mode_matches_code_paths():

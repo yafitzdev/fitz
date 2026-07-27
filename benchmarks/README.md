@@ -9,10 +9,10 @@ Compact reports are the default. Each record includes:
 
 - selected evidence identities, without source bodies
 - query terms and query-shape signals
-- pre-governance ranked evidence identities
-- post-governance delivered evidence identities
+- compiled ranked evidence identities
+- fixed Pyrrho-delivered evidence identities
 - candidate counts at recall, reranking, and final-selection boundaries
-- governance cutoff trajectory
+- exact Pyrrho input and output
 - stage attribution for missing evidence
 - deterministic validation metrics and failures
 - aggregate pass-rate summaries by domain and tag
@@ -160,25 +160,25 @@ python -m benchmarks.fitz_bench.production_runner \
 ## Metric Boundaries
 
 - `retrieval_pass_rate`: required evidence is present and forbidden evidence is
-  absent in the compiled ranking before Pyrrho cutoff.
-- `delivery_pass_rate`: the same evidence assertions over the final governed
+  absent in the compiled ranking.
+- `delivery_pass_rate`: the same evidence assertions over the fixed delivered
   `EvidencePack`.
 - `query_shape_pass_rate`: explicit query-plan signals match their human-labeled
   temporal, comparison, aggregation, or narrow expectation.
-- `capability_pass_rate`: all evaluated pre-governance retrieval and
+- `capability_pass_rate`: all evaluated retrieval and
   query-shape assertions pass.
 - `pass_rate`: governed delivery, query shape, and expected Pyrrho mode all
   pass.
-- `retrieval_stability_rate`: pre-governance ranked identities survive a fresh
+- `retrieval_stability_rate`: compiled ranked identities survive a fresh
   engine load.
-- `delivery_stability_rate`: governed evidence identities survive a fresh
+- `delivery_stability_rate`: delivered evidence identities survive a fresh
   engine load.
 - `governance_stability_rate`: the Pyrrho mode survives a fresh engine load.
 
 Every rate includes an `*_evaluated` denominator. Cases without an assertion
 for that metric do not receive automatic credit. Do not use the full pass rate
 to describe retrieval quality. A mode-only Pyrrho error is reported as a
-governance failure; a correct item removed by cutoff is a delivery failure, not
+Pyrrho failure; a correct item excluded by the fixed budget is a delivery failure, not
 a recall failure.
 
 ## Balanced Governance
@@ -188,7 +188,7 @@ class-balanced: most cases are expected to be sufficient. To compare Pyrrho
 governance models directly, use the fixed-evidence balanced benchmark:
 
 ```bash
-python -m benchmarks.fitz_bench.governance_runner --governance "pyrrho/C:\path\to\pyrrho\best_model" --output benchmarks/results/governance_balanced_model.json --markdown benchmarks/results/governance_balanced_model.md
+python -m benchmarks.fitz_bench.governance_runner --pyrrho "pyrrho/C:\path\to\pyrrho\best_model" --output benchmarks/results/governance_balanced_model.json --markdown benchmarks/results/governance_balanced_model.md
 ```
 
 This suite bypasses live retrieval and feeds Pyrrho 120 fixed evidence packs:

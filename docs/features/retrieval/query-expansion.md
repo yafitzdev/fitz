@@ -17,7 +17,7 @@ Qwen suggestions ───┘
 ```
 
 The merged candidates still pass through the ONNX cross-encoder reranker and
-Pyrrho governance cutoff.
+Pyrrho governance decision.
 
 ## Query-Time Flow
 

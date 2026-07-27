@@ -6,8 +6,8 @@ from __future__ import annotations
 from fitz_sage.cli.ui.display import (
     _compact_evidence_excerpt,
     _evidence_title,
-    _format_governance_metadata,
     _format_indexing_status,
+    _format_pyrrho_metadata,
 )
 
 
@@ -76,60 +76,35 @@ def test_format_indexing_status_shows_indexing_when_query_surface_is_pending():
 
 def test_evidence_title_stays_stable_for_pyrrho_verdict():
     """Evidence table title should not encode governance state."""
-    metadata = {
-        "governance_cutoff": {
-            "pyrrho": {"mode": "sufficient"},
-        }
-    }
+    metadata = {"pyrrho": {"verdict": "SUFFICIENT"}}
 
     assert _evidence_title("sufficient", metadata) == "Evidence"
 
 
-def test_broad_overview_title_stays_stable():
-    """Broad overview semantics belong in governance metadata, not the title."""
+def test_format_pyrrho_metadata_shows_decision_and_delivery():
+    """Display Pyrrho's decision separately from the fixed evidence budget."""
     metadata = {
-        "governance_cutoff": {
-            "representative_sources": True,
-            "policy": {"query_shape": "broad_overview"},
-        }
+        "pyrrho": {
+            "verdict": "SUFFICIENT",
+            "probabilities": {
+                "INSUFFICIENT": 0.21,
+                "DISPUTED": 0.26,
+                "SUFFICIENT": 0.53,
+            },
+            "reason": "Pyrrho: sources support a confident answer (P=0.53).",
+        },
+        "evidence_delivery": {"available": 10, "selected": 6, "limit": 6},
     }
 
-    assert _evidence_title("insufficient", metadata) == "Evidence"
-
-
-def test_format_governance_metadata_shows_pyrrho_and_cutoff():
-    """Governance metadata should expose probabilities and cutoff policy."""
-    metadata = {
-        "governance_cutoff": {
-            "evaluated": 6,
-            "selected": 6,
-            "max": 10,
-            "mode": "sufficient",
-            "policy": {
-                "query_shape": "broad",
-                "min_sufficient_docs": 4,
-            },
-            "pyrrho": {
-                "mode": "sufficient",
-                "probabilities": {
-                    "insufficient": 0.21,
-                    "disputed": 0.26,
-                    "sufficient": 0.53,
-                },
-                "reason": "Pyrrho: sources support a confident answer (P=0.53).",
-            },
-        }
-    }
-
-    assert _format_governance_metadata(metadata, []) == [
+    assert _format_pyrrho_metadata(metadata, []) == [
         "Pyrrho: SUFFICIENT  P(SUFFICIENT)=0.53  P(INSUFFICIENT)=0.21  P(DISPUTED)=0.26",
-        ("Cutoff: selected 6; evaluated 6/10; policy broad; min sufficient 4"),
+        "Evidence delivery: selected 6/10 (limit 6)",
         "Pyrrho: sources support a confident answer (P=0.53).",
     ]
 
 
-def test_format_governance_metadata_shows_query_profile():
-    """Pre-retrieval profile knobs should be visible separately from cutoff."""
+def test_format_pyrrho_metadata_shows_query_profile():
+    """Pre-retrieval profile knobs remain separate from Pyrrho."""
     metadata = {
         "query_profile": {
             "profile": {
@@ -143,7 +118,7 @@ def test_format_governance_metadata_shows_query_profile():
         }
     }
 
-    assert _format_governance_metadata(metadata, []) == [
+    assert _format_pyrrho_metadata(metadata, []) == [
         (
             "Query profile: profile moderate/comparative/technical; top 20; read 12; "
             "weights section 0.25, code 0.25, table 0.55"
@@ -151,11 +126,11 @@ def test_format_governance_metadata_shows_query_profile():
     ]
 
 
-def test_format_governance_metadata_shows_native_v2_heads():
+def test_format_pyrrho_metadata_shows_native_v2_heads():
     """v2 metadata should show native heads only."""
     metadata = {
-        "governance_cutoff": {
-            "pyrrho": {
+        "pyrrho": {
+            "heads": {
                 "evidence_verdict": {"final_label": "SUFFICIENT", "confidence": 0.92},
                 "failure_mode": {"final_label": "none", "confidence": 0.88},
                 "retrieval_intents": {
@@ -168,11 +143,11 @@ def test_format_governance_metadata_shows_native_v2_heads():
                     "final_labels": ["needs_text"],
                     "confidence": 0.81,
                 },
-            },
-        }
+            }
+        },
     }
 
-    assert _format_governance_metadata(metadata, []) == [
+    assert _format_pyrrho_metadata(metadata, []) == [
         (
             "Pyrrho heads: verdict SUFFICIENT (0.92); failure none (0.88); "
             "intents needs_lookup, needs_temporal_resolution (0.96); "
@@ -181,18 +156,16 @@ def test_format_governance_metadata_shows_native_v2_heads():
     ]
 
 
-def test_format_governance_metadata_preserves_extra_reasons():
-    """Additional governance reasons should not be hidden by Pyrrho metadata."""
+def test_format_pyrrho_metadata_preserves_extra_reasons():
+    """Additional reasons should not be hidden by Pyrrho metadata."""
     metadata = {
-        "governance_cutoff": {
-            "pyrrho": {
-                "mode": "insufficient",
-                "reason": "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
-            },
-        }
+        "pyrrho": {
+            "verdict": "INSUFFICIENT",
+            "reason": "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
+        },
     }
 
-    assert _format_governance_metadata(
+    assert _format_pyrrho_metadata(
         metadata,
         [
             "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
@@ -201,35 +174,6 @@ def test_format_governance_metadata_preserves_extra_reasons():
     ) == [
         "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
         "Pyrrho found insufficient evidence after evaluating the top 10 evidence item(s).",
-    ]
-
-
-def test_format_broad_overview_metadata_skips_pyrrho_cutoff_language():
-    """Broad overview metadata should explain representative-source semantics."""
-    metadata = {
-        "governance_cutoff": {
-            "evaluated": 0,
-            "selected": 4,
-            "max": 10,
-            "mode": "insufficient",
-            "representative_sources": True,
-            "sufficiency_evaluated": False,
-            "policy": {
-                "query_shape": "broad_overview",
-                "min_sufficient_docs": 4,
-            },
-        }
-    }
-
-    assert _format_governance_metadata(
-        metadata,
-        ["Query is too broad for evidence sufficiency; returned representative sources."],
-    ) == [
-        (
-            "Broad overview: selected 4 representative source(s) from top 10; "
-            "evidence sufficiency was not evaluated."
-        ),
-        "Query is too broad for evidence sufficiency; returned representative sources.",
     ]
 
 

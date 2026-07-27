@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fitz-sage"
-version = "0.15.0"
+version = "0.16.0"
 description = "Intelligent, honest knowledge retrieval in 5 minutes. No infrastructure. No boilerplate."
 readme = "README.md"
 license = "MIT"
@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Yan Fitzner" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 
 # Keywords for PyPI search discoverability
 keywords = [
@@ -51,6 +51,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "pyrrho>=0.1.0,<0.2",
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "httpx>=0.24",
@@ -191,7 +192,7 @@ markers = [
 
 [tool.mutmut]
 # Default to the evidence-governance boundary; CI rotates additional targets.
-paths_to_mutate = "fitz_sage/engines/fitz_krag/evidence_contract.py,fitz_sage/engines/fitz_krag/evidence_compiler.py,fitz_sage/engines/fitz_krag/evidence_closure.py,fitz_sage/engines/fitz_krag/governance_cutoff.py"
+paths_to_mutate = "fitz_sage/engines/fitz_krag/evidence_contract.py,fitz_sage/engines/fitz_krag/evidence_compiler.py,fitz_sage/engines/fitz_krag/evidence_closure.py,fitz_sage/integrations/pyrrho.py"
 # Run unit + integration tests for thorough coverage
 runner = "python -m pytest tests/unit/ tests/integration/ -x -q --tb=no"
 # Test execution timeout (generous for full suite)

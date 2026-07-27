@@ -10,10 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from .answer_mode import AnswerMode
 from .evidence import EvidencePack
 
-RETRIEVAL_RUN_SCHEMA_VERSION = "1.0"
+RETRIEVAL_RUN_SCHEMA_VERSION = "2.0"
 
 
 def _require_supported_schema(value: Any) -> str:
@@ -67,7 +66,7 @@ class QueryTerm:
 
 @dataclass(frozen=True)
 class QueryExecution:
-    """Stable query-planning fields that materially affect retrieval and cutoff."""
+    """Stable query-planning fields that materially affect retrieval."""
 
     source_text: str
     sanitized_text: str
@@ -210,92 +209,41 @@ class CandidateStage:
 
 
 @dataclass(frozen=True)
-class GovernanceStep:
-    """One Pyrrho decision over an evidence prefix."""
+class PyrrhoExecution:
+    """Pyrrho's authoritative decision over the delivered evidence."""
 
-    prefix_size: int
-    mode: str
-    probabilities: dict[str, float] = field(default_factory=dict)
-    reason: str | None = None
-    input_tokens: int | None = None
-    max_input_tokens: int | None = None
-    input_truncated: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "prefix_size": self.prefix_size,
-            "mode": self.mode,
-            "probabilities": dict(self.probabilities),
-            "reason": self.reason,
-            "input_tokens": self.input_tokens,
-            "max_input_tokens": self.max_input_tokens,
-            "input_truncated": self.input_truncated,
-        }
-
-    @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "GovernanceStep":
-        probabilities = raw.get("probabilities")
-        return cls(
-            prefix_size=max(0, _int(raw.get("prefix_size"))),
-            mode=str(raw.get("mode") or AnswerMode.INSUFFICIENT.value),
-            probabilities={
-                str(key): float(value)
-                for key, value in (probabilities.items() if isinstance(probabilities, dict) else ())
-            },
-            reason=_optional_text(raw.get("reason")),
-            input_tokens=_optional_int(raw.get("input_tokens")),
-            max_input_tokens=_optional_int(raw.get("max_input_tokens")),
-            input_truncated=bool(raw.get("input_truncated", False)),
-        )
-
-
-@dataclass(frozen=True)
-class GovernanceExecution:
-    """Stable result and trajectory of the evidence-prefix cutoff."""
-
-    mode: str
-    evaluated: int
-    selected: int
-    max_documents: int
-    query_shape: str
-    minimum_sufficient_documents: int
-    stop_reason: str | None = None
+    verdict: str
+    evidence_count: int
     reasons: tuple[str, ...] = ()
-    trajectory: tuple[GovernanceStep, ...] = ()
+    decision: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "mode": self.mode,
-            "evaluated": self.evaluated,
-            "selected": self.selected,
-            "max_documents": self.max_documents,
-            "query_shape": self.query_shape,
-            "minimum_sufficient_documents": self.minimum_sufficient_documents,
-            "stop_reason": self.stop_reason,
+            "verdict": self.verdict,
+            "evidence_count": self.evidence_count,
             "reasons": list(self.reasons),
-            "trajectory": [step.to_dict() for step in self.trajectory],
+            "decision": dict(self.decision),
         }
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "GovernanceExecution":
+    def from_dict(cls, raw: dict[str, Any]) -> "PyrrhoExecution":
+        decision = raw.get("decision")
+        if not isinstance(decision, dict):
+            raise ValueError("Pyrrho execution is missing its serialized decision.")
+        verdict = _required_text(raw, "verdict")
+        if decision.get("verdict") != verdict:
+            raise ValueError("Pyrrho execution verdict differs from its serialized decision.")
         return cls(
-            mode=str(raw.get("mode") or AnswerMode.INSUFFICIENT.value),
-            evaluated=max(0, _int(raw.get("evaluated"))),
-            selected=max(0, _int(raw.get("selected"))),
-            max_documents=max(0, _int(raw.get("max_documents"))),
-            query_shape=str(raw.get("query_shape") or "narrow"),
-            minimum_sufficient_documents=max(0, _int(raw.get("minimum_sufficient_documents"))),
-            stop_reason=_optional_text(raw.get("stop_reason")),
+            verdict=verdict,
+            evidence_count=max(0, _int(raw.get("evidence_count"))),
             reasons=_text_tuple(raw.get("reasons")),
-            trajectory=tuple(
-                GovernanceStep.from_dict(item) for item in _dict_items(raw.get("trajectory"))
-            ),
+            decision=dict(decision),
         )
 
 
 @dataclass(frozen=True)
 class FrozenEvidence:
-    """Replayable evidence after compilation and before governance cutoff."""
+    """Content-bearing evidence frozen at a named retrieval boundary."""
 
     rank: int
     source_id: str
@@ -457,8 +405,9 @@ class RetrievalRun:
     evidence: EvidencePack
     strategies: tuple[StrategyExecution, ...]
     candidate_stages: tuple[CandidateStage, ...]
-    governance: GovernanceExecution
+    pyrrho: PyrrhoExecution
     ranked_evidence: tuple[FrozenEvidence, ...]
+    pyrrho_evidence: tuple[FrozenEvidence, ...]
     environment: RunEnvironment
     warnings: tuple[str, ...] = ()
     schema_version: str = RETRIEVAL_RUN_SCHEMA_VERSION
@@ -490,9 +439,12 @@ class RetrievalRun:
             "evidence": evidence,
             "strategies": [strategy.to_dict() for strategy in self.strategies],
             "candidate_stages": [stage.to_dict() for stage in self.candidate_stages],
-            "governance": self.governance.to_dict(),
+            "pyrrho": self.pyrrho.to_dict(),
             "ranked_evidence": [
                 item.to_dict(include_content=include_content) for item in self.ranked_evidence
+            ],
+            "pyrrho_evidence": [
+                item.to_dict(include_content=include_content) for item in self.pyrrho_evidence
             ],
             "environment": self.environment.to_dict(),
             "warnings": list(self.warnings),
@@ -523,9 +475,9 @@ class RetrievalRun:
         schema_version = _require_supported_schema(raw.get("schema_version"))
         evidence = raw.get("evidence")
         query = raw.get("query")
-        governance = raw.get("governance")
+        pyrrho = raw.get("pyrrho")
         environment = raw.get("environment")
-        if not all(isinstance(value, dict) for value in (evidence, query, governance, environment)):
+        if not all(isinstance(value, dict) for value in (evidence, query, pyrrho, environment)):
             raise ValueError("Retrieval run is missing required structured fields.")
         content_included = bool(raw.get("content_included", False))
         run = cls(
@@ -539,9 +491,12 @@ class RetrievalRun:
             candidate_stages=tuple(
                 CandidateStage.from_dict(item) for item in _dict_items(raw.get("candidate_stages"))
             ),
-            governance=GovernanceExecution.from_dict(cast(dict[str, Any], governance)),
+            pyrrho=PyrrhoExecution.from_dict(cast(dict[str, Any], pyrrho)),
             ranked_evidence=tuple(
                 FrozenEvidence.from_dict(item) for item in _dict_items(raw.get("ranked_evidence"))
+            ),
+            pyrrho_evidence=tuple(
+                FrozenEvidence.from_dict(item) for item in _dict_items(raw.get("pyrrho_evidence"))
             ),
             environment=RunEnvironment.from_dict(cast(dict[str, Any], environment)),
             warnings=_text_tuple(raw.get("warnings")),
@@ -549,11 +504,35 @@ class RetrievalRun:
             content_included=content_included,
         )
         if content_included:
-            invalid = [item.rank for item in run.ranked_evidence if not item.verify_content()]
+            if len(run.pyrrho_evidence) != run.pyrrho.evidence_count:
+                raise ValueError("Pyrrho evidence count differs from the recorded decision input.")
+            if len(run.evidence.items) != len(run.pyrrho_evidence):
+                raise ValueError("Delivered evidence differs from the recorded Pyrrho input.")
+            invalid = [
+                item.rank
+                for item in (*run.ranked_evidence, *run.pyrrho_evidence)
+                if not item.verify_content()
+            ]
             if invalid:
                 raise ValueError(
                     "Retrieval-run evidence content failed integrity checks at ranks "
                     + ", ".join(str(rank) for rank in invalid)
+                    + "."
+                )
+            mismatched = [
+                frozen.rank
+                for delivered, frozen in zip(
+                    run.evidence.items,
+                    run.pyrrho_evidence,
+                    strict=True,
+                )
+                if delivered.source_id != frozen.source_id
+                or _content_sha256(delivered.content) != frozen.content_sha256
+            ]
+            if mismatched:
+                raise ValueError(
+                    "Delivered evidence differs from Pyrrho input at ranks "
+                    + ", ".join(str(rank) for rank in mismatched)
                     + "."
                 )
         return run
@@ -597,18 +576,7 @@ class RetrievalRun:
                     f"{stage.name}={len(stage.candidates)}" for stage in self.candidate_stages
                 )
             )
-        lines.append(
-            "Governance: "
-            f"{self.governance.mode}; evaluated={self.governance.evaluated}; "
-            f"selected={self.governance.selected}; stop={self.governance.stop_reason or 'n/a'}"
-        )
-        if self.governance.trajectory:
-            lines.append(
-                "Trajectory: "
-                + " -> ".join(
-                    f"{step.prefix_size}:{step.mode}" for step in self.governance.trajectory
-                )
-            )
+        lines.append(f"Pyrrho: {self.pyrrho.verdict}; evidence={self.pyrrho.evidence_count}")
         if self.evidence.items:
             lines.append("Evidence:")
             lines.extend(
@@ -629,17 +597,17 @@ class RetrievalRun:
 
 
 @dataclass
-class GovernanceReplay:
-    """Comparison between recorded and replayed governance over frozen evidence."""
+class PyrrhoReplay:
+    """Comparison between recorded and replayed Pyrrho decisions."""
 
     replay_id: str
     source_run_id: str
     created_at: str
-    governance_spec: str
+    pyrrho_spec: str
     source_fitz_sage_version: str
     replay_fitz_sage_version: str
-    original: GovernanceExecution
-    replayed: GovernanceExecution
+    original: PyrrhoExecution
+    replayed: PyrrhoExecution
     evidence: EvidencePack
     duration_seconds: float
     schema_version: str = RETRIEVAL_RUN_SCHEMA_VERSION
@@ -657,18 +625,17 @@ class GovernanceReplay:
                 item["metadata"] = _redacted_metadata(item.get("metadata"))
         return {
             "schema_version": self.schema_version,
-            "record_type": "governance_replay",
+            "record_type": "pyrrho_replay",
             "replay_id": self.replay_id,
             "source_run_id": self.source_run_id,
             "created_at": self.created_at,
-            "governance_spec": self.governance_spec,
+            "pyrrho_spec": self.pyrrho_spec,
             "source_fitz_sage_version": self.source_fitz_sage_version,
             "replay_fitz_sage_version": self.replay_fitz_sage_version,
             "content_included": include_content,
             "original": self.original.to_dict(),
             "replayed": self.replayed.to_dict(),
-            "changed": self.original.mode != self.replayed.mode
-            or self.original.selected != self.replayed.selected,
+            "changed": self.original.verdict != self.replayed.verdict,
             "duration_seconds": self.duration_seconds,
             "evidence": evidence,
         }
@@ -691,20 +658,20 @@ class GovernanceReplay:
         return output
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "GovernanceReplay":
-        if raw.get("record_type") != "governance_replay":
-            raise ValueError("JSON record is not a governance replay.")
+    def from_dict(cls, raw: dict[str, Any]) -> "PyrrhoReplay":
+        if raw.get("record_type") != "pyrrho_replay":
+            raise ValueError("JSON record is not a Pyrrho replay.")
         schema_version = _require_supported_schema(raw.get("schema_version"))
         original = raw.get("original")
         replayed = raw.get("replayed")
         evidence = raw.get("evidence")
         if not all(isinstance(value, dict) for value in (original, replayed, evidence)):
-            raise ValueError("Governance replay is missing required structured fields.")
+            raise ValueError("Pyrrho replay is missing required structured fields.")
         return cls(
             replay_id=_required_text(raw, "replay_id"),
             source_run_id=_required_text(raw, "source_run_id"),
             created_at=_required_text(raw, "created_at"),
-            governance_spec=_required_text(raw, "governance_spec"),
+            pyrrho_spec=_required_text(raw, "pyrrho_spec"),
             source_fitz_sage_version=_required_text(
                 raw,
                 "source_fitz_sage_version",
@@ -713,8 +680,8 @@ class GovernanceReplay:
                 raw,
                 "replay_fitz_sage_version",
             ),
-            original=GovernanceExecution.from_dict(cast(dict[str, Any], original)),
-            replayed=GovernanceExecution.from_dict(cast(dict[str, Any], replayed)),
+            original=PyrrhoExecution.from_dict(cast(dict[str, Any], original)),
+            replayed=PyrrhoExecution.from_dict(cast(dict[str, Any], replayed)),
             evidence=EvidencePack.from_dict(cast(dict[str, Any], evidence)),
             duration_seconds=_float(raw.get("duration_seconds")),
             schema_version=schema_version,
@@ -722,38 +689,29 @@ class GovernanceReplay:
         )
 
     @classmethod
-    def from_json(cls, payload: str) -> "GovernanceReplay":
+    def from_json(cls, payload: str) -> "PyrrhoReplay":
         try:
             raw = json.loads(payload)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid governance-replay JSON: {exc}") from exc
+            raise ValueError(f"Invalid Pyrrho-replay JSON: {exc}") from exc
         if not isinstance(raw, dict):
-            raise ValueError("Governance-replay JSON must contain an object.")
+            raise ValueError("Pyrrho-replay JSON must contain an object.")
         return cls.from_dict(raw)
 
     @classmethod
-    def read(cls, path: str | Path) -> "GovernanceReplay":
+    def read(cls, path: str | Path) -> "PyrrhoReplay":
         return cls.from_json(Path(path).expanduser().read_text(encoding="utf-8"))
 
     def explain(self) -> str:
-        changed = (
-            self.original.mode != self.replayed.mode
-            or self.original.selected != self.replayed.selected
-        )
+        changed = self.original.verdict != self.replayed.verdict
         return "\n".join(
             [
-                f"Governance replay {self.replay_id}",
+                f"Pyrrho replay {self.replay_id}",
                 f"Source run: {self.source_run_id}",
-                f"Provider: {self.governance_spec}",
+                f"Provider: {self.pyrrho_spec}",
                 (f"Fitz: {self.source_fitz_sage_version} -> " f"{self.replay_fitz_sage_version}"),
-                (
-                    f"Original: {self.original.mode}; "
-                    f"selected={self.original.selected}/{self.original.evaluated}"
-                ),
-                (
-                    f"Replayed: {self.replayed.mode}; "
-                    f"selected={self.replayed.selected}/{self.replayed.evaluated}"
-                ),
+                (f"Original: {self.original.verdict}; " f"evidence={self.original.evidence_count}"),
+                (f"Replayed: {self.replayed.verdict}; " f"evidence={self.replayed.evidence_count}"),
                 f"Changed: {'yes' if changed else 'no'}",
             ]
         )
@@ -817,15 +775,6 @@ def _int(value: Any, *, default: int = 0) -> int:
         return default
 
 
-def _optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _optional_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -847,9 +796,8 @@ __all__ = [
     "CandidateReference",
     "CandidateStage",
     "FrozenEvidence",
-    "GovernanceExecution",
-    "GovernanceReplay",
-    "GovernanceStep",
+    "PyrrhoExecution",
+    "PyrrhoReplay",
     "QueryExecution",
     "QueryTerm",
     "RetrievalRun",

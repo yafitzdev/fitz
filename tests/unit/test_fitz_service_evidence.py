@@ -28,7 +28,7 @@ def test_service_evidence_returns_engine_evidence_pack() -> None:
         reasons=["Pyrrho: sources support a confident answer."],
         timings={"retrieval": 0.01},
         indexing_status={"complete": True},
-        metadata={"governance_cutoff": {"selected": 1}},
+        metadata={"evidence_delivery": {"selected": 1}},
     )
     engine = Mock()
     engine.evidence.return_value = pack

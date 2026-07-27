@@ -2,9 +2,8 @@
 """
 Shared backend for INT8 ONNX encoders.
 
-`OnnxEncoderBackend` owns the parts that the pyrrho governance classifier
-and the ONNX cross-encoder reranker would otherwise duplicate line for
-line:
+`OnnxEncoderBackend` owns the shared mechanics used by Fitz-Sage's ONNX
+retrieval encoders, including the cross-encoder reranker:
 
 - a `threading.Lock`-guarded lazy load that runs once per process,
 - pulling a pre-built ONNX straight from a HuggingFace repo with

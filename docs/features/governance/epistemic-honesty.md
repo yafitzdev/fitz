@@ -12,7 +12,7 @@ The system cannot distinguish between "I have evidence" and "I'm making an educa
 
 ## Solution: Pyrrho evidence governance
 
-Every `(query, retrieved evidence prefix)` pair runs through a configured local
+Every `(query, delivered evidence set)` runs through a configured local
 **Pyrrho** classifier. The historical
 [`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
 package is quarantined at known-bad revision
@@ -30,17 +30,14 @@ A: "I cannot find Q4 revenue figures in the provided documents.
 
 ## How It Works
 
-### Prefix cutoff classification
+### Authoritative classification
 
 Each decision is one local classifier call on CPU, with no external LLM
 dependency. The v2 post-retrieval pass is evidence-conditioned.
 
-For evidence retrieval, Pyrrho runs incrementally:
-
-1. classify `query + top 1 evidence item`;
-2. if evidence is insufficient, classify `query + top 2`;
-3. continue until the evidence is sufficient, a dispute is stable, or the
-   cutoff is reached.
+Fitz-Sage fixes the delivered evidence count from `top_k` or `top_read`, then
+calls Pyrrho once. Pyrrho owns thresholds, consistency policy, and the verdict.
+Fitz-Sage does not retry prefixes or reinterpret the result.
 
 | Case it catches              | Resulting mode | Example                                                                        |
 | ---------------------------- | -------------- | ------------------------------------------------------------------------------ |
@@ -65,7 +62,9 @@ Every `EvidencePack` includes a **mode** indicating confidence level:
 
 3. **Explicit modes** - The mode field is first-class in the Answer dataclass, not a hidden flag.
 
-4. **Fail-safe defaults** - When in doubt, mark evidence insufficient. Better to return insufficient evidence than to invite hallucination.
+4. **One owner** - Any safety policy or model-head reconciliation belongs in
+   Pyrrho. Fitz-Sage reports provider failures as errors instead of fabricating
+   an insufficient verdict.
 
 5. **Transparent reasoning** - When evidence is insufficient or disputed, the system explains why.
 
@@ -80,7 +79,8 @@ governance: pyrrho//absolute/path/to/reviewed-clean-package
 
 ## Files
 
-- **Governance backend:** `fitz_sage/governance/pyrrho.py`
+- **Governance runtime:** independent `pyrrho` package
+- **Fitz-Sage adapter:** `fitz_sage/integrations/pyrrho.py`
 - **Answer modes:** `fitz_sage/core/answer_mode.py` (AnswerMode enum)
 - **Evidence contract:** `fitz_sage/core/evidence.py`
 

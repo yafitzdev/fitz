@@ -102,7 +102,8 @@ def main(argv: list[str] | None = None) -> int:
                     "query_profile": pack_dict.get("metadata", {}).get("query_profile", {}),
                     "retrieval_trace": pack_dict.get("metadata", {}).get("retrieval_trace", {}),
                     "evidence_compiler": pack_dict.get("metadata", {}).get("evidence_compiler", {}),
-                    "governance_cutoff": pack_dict.get("metadata", {}).get("governance_cutoff", {}),
+                    "evidence_delivery": pack_dict.get("metadata", {}).get("evidence_delivery", {}),
+                    "pyrrho": pack_dict.get("metadata", {}).get("pyrrho", {}),
                 }
             else:
                 record["result"] = compact_run(run)

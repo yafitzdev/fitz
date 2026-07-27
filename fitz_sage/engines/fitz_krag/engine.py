@@ -31,10 +31,16 @@ from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.core.collections import validate_collection_name
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.evidence_compiler import compile_evidence
-from fitz_sage.engines.fitz_krag.governance_cutoff import apply_governance_cutoff
+from fitz_sage.integrations.pyrrho import (
+    answer_mode_from_pyrrho,
+    decide,
+    decision_payload,
+)
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
+    from pyrrho import GovernanceDecision
+
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
     from fitz_sage.engines.fitz_krag.query_pipeline import RetrievalOutcome
     from fitz_sage.engines.fitz_krag.types import ReadResult
@@ -50,7 +56,26 @@ class _GovernedEvidenceResult:
     selected: list["ReadResult"]
     outcome: "RetrievalOutcome"
     compilation: Any
-    cutoff: Any
+    decision: "GovernanceDecision"
+
+
+def _evidence_delivery_limit(
+    result_count: int,
+    requested_limit: Any,
+    *,
+    default_limit: int,
+) -> int:
+    """Choose a fixed evidence budget without consulting a governance verdict."""
+    value = default_limit if requested_limit is None else requested_limit
+    if isinstance(value, bool):
+        raise ValueError("top_k must be a positive integer.")
+    try:
+        limit = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("top_k must be a positive integer.") from exc
+    if limit <= 0:
+        raise ValueError("top_k must be a positive integer.")
+    return min(result_count, limit)
 
 
 def _report_timings(
@@ -345,11 +370,10 @@ class FitzKragEngine:
         self._enricher_chat = standard_chat
         self._summarizer_chat = standard_chat
 
-        # Governance — mandatory Pyrrho g5 local classifier.
-        # The model lazily loads on first decide() so engine init stays fast.
-        from fitz_sage.governance import create_governance
+        # Pyrrho lazily loads its authoritative governance runtime on first use.
+        from fitz_sage.integrations.pyrrho import create_pyrrho
 
-        self._governance = create_governance(self._config.governance)
+        self._pyrrho = create_pyrrho(self._config.governance)
 
         # Table query handler
         from fitz_sage.engines.fitz_krag.retrieval.table_handler import TableQueryHandler
@@ -461,7 +485,7 @@ class FitzKragEngine:
             self._hop_controller = KragHopController(
                 retrieval_pass=self._retrieval_pass,
                 chat_factory=self._chat_factory,
-                governance=self._governance,
+                pyrrho=self._pyrrho,
                 max_hops=self._config.max_hops,
             )
 
@@ -679,7 +703,9 @@ class FitzKragEngine:
                 except Exception as e:
                     raise KnowledgeError(f"Retrieval failed: {e}") from e
 
-                answer_mode = pack.mode or AnswerMode.INSUFFICIENT
+                answer_mode = pack.mode
+                if answer_mode is None:
+                    raise KnowledgeError("Governed evidence pack is missing Pyrrho's verdict.")
                 if not selected:
                     early_gap_context = self._build_gap_context(pack.query, pack.reasons)
                     _report_timings(_progress, list(pack.timings.items()), pipeline_start)
@@ -689,16 +715,16 @@ class FitzKragEngine:
                             early_gap_context,
                         ),
                         provenance=[],
-                        mode=AnswerMode.INSUFFICIENT,
+                        mode=answer_mode,
                         metadata={
                             "engine": "fitz_krag",
                             "query": pack.query,
-                            "answer_mode": AnswerMode.INSUFFICIENT.value,
+                            "answer_mode": answer_mode.value,
                             "gap_context": early_gap_context,
                             "query_profile": pack.metadata.get("query_profile", {}),
                             "evidence_compiler": pack.metadata.get("evidence_compiler", {}),
                             "evidence_closure": pack.metadata.get("evidence_closure", {}),
-                            "governance_cutoff": pack.metadata.get("governance_cutoff", {}),
+                            "pyrrho": pack.metadata.get("pyrrho", {}),
                         },
                     )
 
@@ -728,7 +754,7 @@ class FitzKragEngine:
                 answer.metadata["query_profile"] = pack.metadata.get("query_profile", {})
                 answer.metadata["evidence_compiler"] = pack.metadata.get("evidence_compiler", {})
                 answer.metadata["evidence_closure"] = pack.metadata.get("evidence_closure", {})
-                answer.metadata["governance_cutoff"] = pack.metadata.get("governance_cutoff", {})
+                answer.metadata["pyrrho"] = pack.metadata.get("pyrrho", {})
                 timings = list(pack.timings.items())
                 timings.append(("Generation", time.perf_counter() - t0))
                 _report_timings(_progress, timings, pipeline_start)
@@ -826,7 +852,8 @@ class FitzKragEngine:
                     pack=result.pack,
                     outcome=result.outcome,
                     compilation=result.compilation,
-                    cutoff=result.cutoff,
+                    selected=result.selected,
+                    decision=result.decision,
                     config=self._config,
                     indexing_status=result.pack.indexing_status,
                     workspace=FitzPaths.workspace(),
@@ -843,7 +870,7 @@ class FitzKragEngine:
         progress: Callable[[str], None] | None = None,
         top_k: int | None = None,
     ) -> tuple[EvidencePack, list["ReadResult"]]:
-        """Run the canonical retrieval, closure, compilation, and cutoff path."""
+        """Run canonical retrieval, closure, compilation, and Pyrrho governance."""
         result = self._governed_result(
             query,
             progress=progress,
@@ -891,22 +918,31 @@ class FitzKragEngine:
                 profile=outcome.profile,
             )
 
-        requested_top_k = top_k or query.metadata.get("top_k")
-        cutoff = apply_governance_cutoff(
-            outcome.sanitized,
-            compilation.results,
-            self._governance,
-            profile=outcome.profile,
-            requested_top_k=requested_top_k,
+        requested_top_k = top_k if top_k is not None else query.metadata.get("top_k")
+        evidence_limit = _evidence_delivery_limit(
+            len(compilation.results),
+            requested_top_k,
+            default_limit=self._config.top_read,
         )
+        selected = list(compilation.results[:evidence_limit])
+        import time
+
+        pyrrho_start = time.perf_counter()
+        decision = decide(
+            self._pyrrho,
+            outcome.sanitized,
+            selected,
+        )
+        pyrrho_timing = ("Pyrrho", time.perf_counter() - pyrrho_start)
+        mode = answer_mode_from_pyrrho(decision)
         timings = list(outcome.timings)
-        timings.extend(cutoff.timings)
+        timings.append(pyrrho_timing)
         self._boost_queried_files(outcome)
         pack = EvidencePack(
             query=outcome.sanitized,
-            mode=cutoff.mode,
-            items=self._build_evidence_items(cutoff.selected),
-            reasons=cutoff.reasons,
+            mode=mode,
+            items=self._build_evidence_items(selected),
+            reasons=list(decision.reasons),
             timings={name: duration for name, duration in timings},
             indexing_status=self.indexing_status(),
             metadata={
@@ -916,15 +952,20 @@ class FitzKragEngine:
                 "retrieval_trace": outcome.retrieval_trace,
                 "evidence_closure": closure_metadata,
                 "evidence_compiler": compilation.metadata,
-                "governance_cutoff": cutoff.metadata,
+                "pyrrho": decision_payload(decision),
+                "evidence_delivery": {
+                    "available": len(compilation.results),
+                    "selected": len(selected),
+                    "limit": evidence_limit,
+                },
             },
         )
         return _GovernedEvidenceResult(
             pack=pack,
-            selected=cutoff.selected,
+            selected=selected,
             outcome=outcome,
             compilation=compilation,
-            cutoff=cutoff,
+            decision=decision,
         )
 
     @staticmethod
@@ -1059,7 +1100,7 @@ class FitzKragEngine:
             query_planner=getattr(self, "_query_planner", None),
             query_batcher=self._query_batcher,
             semantic_keyword_batcher=getattr(self, "_semantic_keyword_batcher", None),
-            governance=self._governance,
+            pyrrho=self._pyrrho,
             retrieval_pass=self._retrieval_pass,
             hop_controller=self._hop_controller,
             expander=self._expander,
@@ -1104,7 +1145,7 @@ class FitzKragEngine:
     def _build_gap_context(
         self,
         query: str,
-        governance_reasons: Sequence[str] = (),
+        decision_reasons: Sequence[str] = (),
     ) -> dict:
         """
         Build gap analysis context for actionable INSUFFICIENT messages.
@@ -1114,13 +1155,13 @@ class FitzKragEngine:
 
         Args:
             query: The user's query text
-            governance_reasons: Reasons from governance constraints
+            decision_reasons: Reasons returned by Pyrrho
 
         Returns:
-            Dict with related_topics, top_corpus_topics, governance_reasons,
+            Dict with related_topics, top_corpus_topics, decision_reasons,
             and corpus_document_count
         """
-        gap: dict = {"governance_reasons": governance_reasons}
+        gap: dict = {"decision_reasons": decision_reasons}
 
         if not self._entity_graph_store:
             return gap
@@ -1367,7 +1408,7 @@ class FitzKragEngine:
         Files transition to PARSED so the background worker skips them and
         starts with the summarize phase.
         """
-        from fitz_sage.engines.fitz_krag.ingestion.pipeline import EXTENSION_MAP
+        from fitz_sage.engines.fitz_krag.ingestion.formats import CODE_EXTENSION_MAP
         from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
 
         _progress = progress or (lambda _: None)
@@ -1376,7 +1417,7 @@ class FitzKragEngine:
         code_entries = [
             entry
             for entry in entries.values()
-            if entry.file_type in EXTENSION_MAP and entry.state.value == "registered"
+            if entry.file_type in CODE_EXTENSION_MAP and entry.state.value == "registered"
         ]
         if not code_entries:
             return

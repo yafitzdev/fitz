@@ -33,7 +33,7 @@ def diagnose_case(
         issues.append(
             {
                 "type": "forbidden_evidence",
-                "stage": "pre_governance_selection",
+                "stage": "compiled_ranking",
                 "rank": rank,
             }
         )
@@ -44,7 +44,7 @@ def diagnose_case(
             {
                 "type": "missing_delivered_evidence",
                 "expectation_index": index,
-                "stage": "governance_cutoff",
+                "stage": "evidence_delivery",
                 "expectation": _expectation_dict(case.required_evidence[index]),
             }
         )
@@ -52,7 +52,7 @@ def diagnose_case(
         issues.append(
             {
                 "type": "forbidden_delivered_evidence",
-                "stage": "governed_delivery",
+                "stage": "evidence_delivery",
                 "rank": rank,
             }
         )
@@ -60,10 +60,10 @@ def diagnose_case(
     if validation.governance_failures:
         issues.append(
             {
-                "type": "governance_mode",
-                "stage": "governance",
+                "type": "pyrrho_verdict",
+                "stage": "pyrrho",
                 "expected": case.expected_mode,
-                "actual": run.governance.mode,
+                "actual": run.pyrrho.verdict,
             }
         )
     for failure in validation.query_shape_failures:
@@ -115,7 +115,7 @@ def compact_run(run: RetrievalRun) -> dict[str, Any]:
         "candidate_stages": [
             {"name": stage.name, "count": len(stage.candidates)} for stage in run.candidate_stages
         ],
-        "governance": run.governance.to_dict(),
+        "pyrrho": run.pyrrho.to_dict(),
         "environment": run.environment.to_dict(),
         "warnings": list(run.warnings),
     }
@@ -161,7 +161,7 @@ def _missing_stage(expectation: EvidenceExpectation, run: RetrievalRun) -> str:
         for item in run.ranked_evidence
     ]
     if any(_matches(expectation, item) for item in ranked_items):
-        return "governance_cutoff"
+        return "evidence_delivery"
     if any(_scope_matches(expectation, item) for item in ranked_items):
         return "evidence_content"
 

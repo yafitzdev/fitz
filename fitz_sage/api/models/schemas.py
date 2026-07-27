@@ -58,7 +58,7 @@ class EvidenceItemResponse(BaseModel):
     line_range: Optional[List[int]] = Field(None, description="Line range when available")
     score: Optional[float] = Field(None, description="Retrieval or rerank score")
     excerpt: str = Field(..., description="Display excerpt")
-    content: str = Field(..., description="Fuller content passed to governance")
+    content: str = Field(..., description="Full evidence content passed to Pyrrho")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Item metadata")
 
 

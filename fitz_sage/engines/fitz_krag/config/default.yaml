@@ -42,10 +42,10 @@ fitz_krag:
   # heavier opt-in parsers for scanned PDFs, figures, and complex tables.
   parser: cpu
 
-  # Governance. 'pyrrho' = local Pyrrho v2 evidence classifier that evaluates
-  # evidence prefixes as SUFFICIENT / DISPUTED / INSUFFICIENT, bridged to
-  # SUFFICIENT / DISPUTED / INSUFFICIENT for the runtime.
-  # 'pyrrho/<hf-model-id>' or 'pyrrho/<local-package-path>' to swap packages.
+  # Governance. Pyrrho evaluates delivered evidence as SUFFICIENT / DISPUTED /
+  # INSUFFICIENT; Fitz-Sage maps that verdict without changing it. Until an
+  # approved default artifact exists, use 'pyrrho/<local-package-path>'.
+  # Remote packages must use 'pyrrho/<owner/repo@40-character-commit>'.
   governance: pyrrho
 
   collection: default

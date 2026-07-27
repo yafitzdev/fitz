@@ -147,8 +147,10 @@ class ContentReader:
             return None
         disk_path = str(disk_path_value)
         try:
+            from fitz_sage.engines.fitz_krag.ingestion.formats import (
+                RICH_DOCUMENT_EXTENSIONS,
+            )
             from fitz_sage.engines.fitz_krag.progressive.parsed_cache import (
-                RICH_DOC_EXTENSIONS,
                 get_parsed_text,
                 parse_document_text,
             )
@@ -157,7 +159,7 @@ class ContentReader:
             if not full_path.exists():
                 return None
             ext = full_path.suffix.lower()
-            if ext in RICH_DOC_EXTENSIONS:
+            if ext in RICH_DOCUMENT_EXTENSIONS:
                 content_hash = addr.metadata.get("content_hash", "")
                 cache_dir = getattr(self, "_cache_dir", None)
                 if cache_dir and content_hash:

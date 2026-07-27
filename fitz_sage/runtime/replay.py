@@ -1,4 +1,4 @@
-"""Governance replay over content-bearing retrieval-run records."""
+"""Pyrrho replay over content-bearing retrieval-run records."""
 
 from __future__ import annotations
 
@@ -6,19 +6,22 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from fitz_sage.core import (
     EvidenceItem,
     EvidencePack,
-    GovernanceReplay,
+    PyrrhoReplay,
     RetrievalRun,
 )
-from fitz_sage.engines.fitz_krag.governance_cutoff import apply_governance_cutoff
-from fitz_sage.engines.fitz_krag.run_trace import governance_execution
+from fitz_sage.engines.fitz_krag.run_trace import pyrrho_execution
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
-from fitz_sage.governance import create_governance
+from fitz_sage.integrations.pyrrho import (
+    answer_mode_from_pyrrho,
+    create_pyrrho,
+    decide,
+    decision_payload,
+)
 
 
 def load_retrieval_run(value: RetrievalRun | str | Path) -> RetrievalRun:
@@ -36,11 +39,11 @@ def load_retrieval_run(value: RetrievalRun | str | Path) -> RetrievalRun:
     return RetrievalRun.from_json(value)
 
 
-def replay_governance(
+def replay_pyrrho(
     value: RetrievalRun | str | Path,
-    governance: str | Any | None = None,
-) -> GovernanceReplay:
-    """Re-evaluate a frozen ranked evidence set with a governance provider.
+    pyrrho: str | Any | None = None,
+) -> PyrrhoReplay:
+    """Re-evaluate the exact frozen evidence set with Pyrrho.
 
     This intentionally does not rerun query preparation, retrieval, reranking,
     evidence closure, or compilation. The trace must have been exported with
@@ -48,44 +51,36 @@ def replay_governance(
     """
     run = load_retrieval_run(value)
     _validate_replayable(run)
-    classifier, spec = _resolve_governance(run, governance)
-    results = [_read_result(item) for item in run.ranked_evidence]
-    profile = _replay_profile(run)
+    runtime, spec = _resolve_pyrrho(run, pyrrho)
+    results = [_read_result(item) for item in run.pyrrho_evidence]
 
     started = time.perf_counter()
-    cutoff = apply_governance_cutoff(
-        run.query.sanitized_text,
-        results,
-        classifier,
-        profile=profile,
-        requested_top_k=run.governance.max_documents or None,
-    )
+    decision = decide(runtime, run.query.sanitized_text, results)
     duration = time.perf_counter() - started
-    replayed = governance_execution(cutoff.metadata, cutoff.reasons)
+    replayed = pyrrho_execution(decision, evidence_count=len(results))
+    mode = answer_mode_from_pyrrho(decision)
     pack = EvidencePack(
         query=run.query.sanitized_text,
-        mode=cutoff.mode,
-        items=[
-            _evidence_item(result, rank) for rank, result in enumerate(cutoff.selected, start=1)
-        ],
-        reasons=list(cutoff.reasons),
-        timings={"Governance replay": duration},
+        mode=mode,
+        items=[_evidence_item(result, rank) for rank, result in enumerate(results, start=1)],
+        reasons=list(decision.reasons),
+        timings={"Pyrrho replay": duration},
         indexing_status=dict(run.environment.indexing_status),
         metadata={
             "engine": run.environment.engine,
             "source_run_id": run.run_id,
-            "governance_spec": spec,
-            "governance_cutoff": cutoff.metadata,
+            "pyrrho_spec": spec,
+            "pyrrho": decision_payload(decision),
         },
     )
-    return GovernanceReplay(
+    return PyrrhoReplay(
         replay_id=str(uuid.uuid4()),
         source_run_id=run.run_id,
         created_at=_utc_now(),
-        governance_spec=spec,
+        pyrrho_spec=spec,
         source_fitz_sage_version=run.environment.fitz_sage_version,
         replay_fitz_sage_version=_fitz_version(),
-        original=run.governance,
+        original=run.pyrrho,
         replayed=replayed,
         evidence=pack,
         duration_seconds=duration,
@@ -94,12 +89,10 @@ def replay_governance(
 
 def _validate_replayable(run: RetrievalRun) -> None:
     if run.environment.engine != "fitz_krag":
-        raise ValueError("Governance replay currently supports fitz_krag retrieval runs only.")
+        raise ValueError("Pyrrho replay currently supports fitz_krag retrieval runs only.")
     if not run.content_included:
-        raise ValueError("Governance replay requires a trace exported with source content.")
-    if not run.ranked_evidence:
-        raise ValueError("Governance replay requires frozen ranked evidence.")
-    invalid = [item.rank for item in run.ranked_evidence if not item.verify_content()]
+        raise ValueError("Pyrrho replay requires a trace exported with source content.")
+    invalid = [item.rank for item in run.pyrrho_evidence if not item.verify_content()]
     if invalid:
         raise ValueError(
             "Frozen evidence failed integrity checks at ranks "
@@ -108,27 +101,26 @@ def _validate_replayable(run: RetrievalRun) -> None:
         )
 
 
-def _resolve_governance(
+def _resolve_pyrrho(
     run: RetrievalRun,
-    governance: str | Any | None,
+    pyrrho: str | Any | None,
 ) -> tuple[Any, str]:
-    if governance is None:
-        spec = run.environment.components.get("governance")
+    if pyrrho is None:
+        spec = run.environment.components.get("pyrrho")
         if not spec:
             raise ValueError(
-                "The trace does not identify a governance provider; "
-                "pass governance='pyrrho/<package>'."
+                "The trace does not identify Pyrrho; " "pass pyrrho='pyrrho/<package>'."
             )
-        return create_governance(spec), spec
-    if isinstance(governance, str):
-        return create_governance(governance), governance
-    if not callable(getattr(governance, "decide", None)):
-        raise TypeError("governance must be a provider spec or expose decide().")
+        return create_pyrrho(spec), spec
+    if isinstance(pyrrho, str):
+        return create_pyrrho(pyrrho), pyrrho
+    if not callable(getattr(pyrrho, "decide", None)):
+        raise TypeError("pyrrho must be a provider spec or expose decide().")
     spec = str(
-        getattr(governance, "_model_id", None)
-        or f"{type(governance).__module__}.{type(governance).__qualname__}"
+        getattr(pyrrho, "model_spec", None)
+        or f"{type(pyrrho).__module__}.{type(pyrrho).__qualname__}"
     )
-    return governance, spec
+    return pyrrho, spec
 
 
 def _read_result(item: Any) -> ReadResult:
@@ -176,22 +168,6 @@ def _evidence_item(result: ReadResult, rank: int) -> EvidenceItem:
     )
 
 
-def _replay_profile(run: RetrievalRun) -> SimpleNamespace:
-    query = run.query
-    return SimpleNamespace(
-        query_contract=query.query_contract,
-        specificity=query.specificity,
-        answer_type=query.answer_type,
-        retrieval_modality=query.retrieval_modality,
-        required_modalities=query.required_modalities,
-        comparison_queries=query.comparison_queries,
-        comparison_entities=query.comparison_entities,
-        has_comparison_intent=query.has_comparison_intent,
-        has_aggregation_intent=query.has_aggregation_intent,
-        inject_corpus_summaries=query.inject_corpus_summaries,
-    )
-
-
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -207,4 +183,4 @@ def _fitz_version() -> str:
         return __version__
 
 
-__all__ = ["load_retrieval_run", "replay_governance"]
+__all__ = ["load_retrieval_run", "replay_pyrrho"]

@@ -34,7 +34,7 @@ Query: "What's the battery warranty?"
    Top-K truly-relevant candidates
             │
             ▼
-   Pyrrho governance cutoff
+   fixed evidence delivery, then one Pyrrho decision
 ```
 
 **Default backbone:** [`Alibaba-NLP/gte-reranker-modernbert-base`](https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base) —
@@ -91,9 +91,9 @@ include" by design.
 
 1. **Standard rerank stage.** `rerank: onnx` is the default product path,
    and the engine config does not expose a normal "rerank off" mode.
-2. **Shared with pyrrho.** Both encoders subclass `OnnxEncoderBackend`
-   — one `onnxruntime` + `transformers` load path, no separate
-   infrastructure.
+2. **Fitz-Sage-owned runtime.** The reranker subclasses
+   `OnnxEncoderBackend` and uses Fitz-Sage's ONNX inference machinery.
+   Pyrrho is a separate package with its own runtime.
 3. **Override via spec.** `rerank: onnx/<hf-model-id>` lets users
    swap in any HF cross-encoder with a `SequenceClassification` head.
 4. **Lazy load.** Tokenizer + model load on first `rerank()` call,

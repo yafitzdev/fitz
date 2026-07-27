@@ -16,7 +16,7 @@ from fitz_sage.core import (
     Answer,
     ConfigurationError,
     EvidencePack,
-    GovernanceReplay,
+    PyrrhoReplay,
     Query,
     QueryError,
     RetrievalRun,
@@ -177,14 +177,14 @@ class fitz:
         return engine.trace(Query(text=question, metadata=self._metadata(conversation_context)))
 
     @staticmethod
-    def replay_governance(
+    def replay_pyrrho(
         run: RetrievalRun | str | Path,
-        governance: str | object | None = None,
-    ) -> GovernanceReplay:
-        """Replay governance over the frozen evidence in a content-bearing trace."""
-        from fitz_sage.runtime import replay_governance
+        pyrrho: str | object | None = None,
+    ) -> PyrrhoReplay:
+        """Replay Pyrrho over the frozen evidence in a content-bearing trace."""
+        from fitz_sage.runtime import replay_pyrrho
 
-        return replay_governance(run, governance)
+        return replay_pyrrho(run, pyrrho)
 
     def wait_for_indexing(self) -> None:
         """Block until background indexing reaches the query-ready keyword phase."""

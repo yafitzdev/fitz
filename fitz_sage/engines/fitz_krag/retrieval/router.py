@@ -68,8 +68,8 @@ class RetrievalRouter:
         Retrieve addresses using strategy weights from retrieval profile.
 
         When profile is provided, strategies with near-zero weight are skipped
-        and results are ranked using CrossStrategyRanker. Without profile,
-        all strategies run equally (backward compatible).
+        and results are ranked using CrossStrategyRanker. Without a profile,
+        all configured strategies run with equal weight.
         """
         from fitz_sage.engines.fitz_krag.retrieval.ranker import CrossStrategyRanker
 

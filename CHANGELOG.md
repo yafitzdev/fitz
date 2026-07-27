@@ -12,9 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added versioned `RetrievalRun` execution records with redacted-by-default
-  JSON export, deterministic explanations, typed query/candidate/governance
+  JSON export, deterministic explanations, typed query/candidate/Pyrrho
   traces, and environment fingerprints.
-- Added governance-only replay over integrity-checked frozen evidence through
+- Added Pyrrho-only replay over integrity-checked frozen evidence through
   the SDK and the new `fitz explain` / `fitz replay` CLI commands.
 
 ### Changed
@@ -24,8 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   semantic keywords remain the default broad-recall enhancement.
 - Evidence compilation now preserves raw retrieved content and historical
   sources instead of focusing paragraphs or suppressing older facts.
-- Governance cutoff now returns Pyrrho verdicts without local dispute
-  confidence thresholds, patience windows, or stability overrides.
+- Pyrrho is now a separate runtime dependency and the sole owner of epistemic
+  governance, including thresholds, head consistency, and final verdicts.
+  Fitz-Sage requires the compatible Pyrrho `0.1.x` runtime API.
+- Fitz-Sage now selects one fixed evidence set, passes its exact source IDs and
+  text to Pyrrho, and mechanically maps the returned verdict to `AnswerMode`.
+- Retrieval-run schema 2.0 records the exact Pyrrho input and serialized
+  decision; replay no longer reproduces a Fitz-Sage cutoff policy.
+
+### Removed
+
+- Removed Fitz-Sage's governance provider implementation, evidence-prefix
+  cutoff, local verdict overrides, and associated compatibility surfaces.
+- Removed the obsolete `tools/cli_map` package, which depended on deleted CLI
+  internals.
 
 ### Fixed
 

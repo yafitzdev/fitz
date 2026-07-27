@@ -13,8 +13,7 @@ from fitz_sage.core import (
     CandidateReference,
     CandidateStage,
     FrozenEvidence,
-    GovernanceExecution,
-    GovernanceStep,
+    PyrrhoExecution,
     QueryExecution,
     QueryTerm,
     RetrievalRun,
@@ -31,15 +30,15 @@ def build_retrieval_run(
     pack: Any,
     outcome: Any,
     compilation: Any,
-    cutoff: Any,
+    selected: Any,
+    decision: Any,
     config: Any,
     indexing_status: dict[str, Any],
     workspace: Path,
 ) -> RetrievalRun:
     """Build one public execution record from the canonical governed result."""
-    cutoff_metadata = dict(getattr(cutoff, "metadata", {}) or {})
     profile = getattr(outcome, "profile", None)
-    query_shape = str((cutoff_metadata.get("policy") or {}).get("query_shape") or "narrow")
+    query_shape = _query_shape(profile)
     query = QueryExecution(
         source_text=source_query,
         sanitized_text=str(getattr(outcome, "sanitized", "") or ""),
@@ -73,8 +72,9 @@ def build_retrieval_run(
         evidence=pack,
         strategies=_strategy_executions(getattr(outcome, "retrieval_trace", {})),
         candidate_stages=_candidate_stages(getattr(outcome, "retrieval_trace", {})),
-        governance=governance_execution(cutoff_metadata, getattr(cutoff, "reasons", [])),
+        pyrrho=pyrrho_execution(decision, evidence_count=len(selected)),
         ranked_evidence=_freeze_evidence(getattr(compilation, "results", [])),
+        pyrrho_evidence=_freeze_evidence(selected),
         environment=RunEnvironment(
             fitz_sage_version=_fitz_version(),
             engine="fitz_krag",
@@ -93,46 +93,19 @@ def build_retrieval_run(
     )
 
 
-def governance_execution(
-    metadata: dict[str, Any],
-    reasons: Any = (),
-) -> GovernanceExecution:
-    """Normalize cutoff metadata into the stable public governance contract."""
-    policy = metadata.get("policy")
-    policy = policy if isinstance(policy, dict) else {}
-    trajectory = metadata.get("trajectory")
-    steps: list[GovernanceStep] = []
-    if isinstance(trajectory, list):
-        for raw in trajectory:
-            if not isinstance(raw, dict):
-                continue
-            probabilities = raw.get("probabilities")
-            probabilities = probabilities if isinstance(probabilities, dict) else {}
-            steps.append(
-                GovernanceStep(
-                    prefix_size=_int(raw.get("prefix_n")),
-                    mode=str(raw.get("mode") or "insufficient"),
-                    probabilities={str(key): float(value) for key, value in probabilities.items()},
-                    reason=_optional_text(raw.get("reason")),
-                    input_tokens=_optional_int(raw.get("input_tokens")),
-                    max_input_tokens=_optional_int(raw.get("max_input_tokens")),
-                    input_truncated=bool(raw.get("input_truncated", False)),
-                )
-            )
-    return GovernanceExecution(
-        mode=str(metadata.get("mode") or "insufficient"),
-        evaluated=_int(metadata.get("evaluated")),
-        selected=_int(metadata.get("selected")),
-        max_documents=_int(metadata.get("max")),
-        query_shape=str(policy.get("query_shape") or "narrow"),
-        minimum_sufficient_documents=_int(policy.get("min_sufficient_docs")),
-        stop_reason=_optional_text(metadata.get("stop_reason")),
-        reasons=tuple(
-            str(reason)
-            for reason in (reasons if isinstance(reasons, (list, tuple)) else ())
-            if reason
-        ),
-        trajectory=tuple(steps),
+def pyrrho_execution(decision: Any, *, evidence_count: int) -> PyrrhoExecution:
+    """Record Pyrrho's public decision without reinterpretation."""
+    payload = decision.to_dict()
+    if not isinstance(payload, dict):
+        raise TypeError("Pyrrho decision.to_dict() must return a dictionary.")
+    verdict = getattr(decision, "verdict", None)
+    if not isinstance(verdict, str) or not verdict:
+        raise ValueError("Pyrrho decision is missing its verdict.")
+    return PyrrhoExecution(
+        verdict=verdict,
+        evidence_count=evidence_count,
+        reasons=tuple(str(reason) for reason in decision.reasons if reason),
+        decision=payload,
     )
 
 
@@ -300,7 +273,7 @@ def _component_specs(config: Any) -> dict[str, str]:
     output = {
         "semantic_keywords": f"onnx/{DEFAULT_QWEN_MODEL_ALIAS}",
         "reranker": reranker,
-        "governance": str(getattr(config, "governance", "unknown")),
+        "pyrrho": str(getattr(config, "governance", "unknown")),
     }
     for name in ("query_intelligence", "synthesizer", "parser", "vision"):
         value = getattr(config, name, None)
@@ -376,15 +349,6 @@ def _int(value: Any, *, default: int = 0) -> int:
         return default
 
 
-def _optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _optional_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -398,4 +362,14 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-__all__ = ["build_retrieval_run", "governance_execution"]
+def _query_shape(profile: Any) -> str:
+    if bool(getattr(profile, "has_comparison_intent", False)):
+        return "comparison"
+    if bool(getattr(profile, "has_aggregation_intent", False)):
+        return "broad"
+    if bool(getattr(profile, "has_temporal_intent", False)):
+        return "temporal"
+    return "narrow"
+
+
+__all__ = ["build_retrieval_run", "pyrrho_execution"]

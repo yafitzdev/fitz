@@ -61,9 +61,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Backwards-compatible alias for internal callers.
-EXTENSION_MAP = CODE_EXTENSION_MAP
-
 # Synthetic raw-file / section that carries the L2 corpus summary. Fixed IDs
 # so re-ingest upserts in place rather than accumulating duplicates.
 _CORPUS_FILE_ID = "__krag_corpus__"
@@ -184,7 +181,7 @@ class KragIngestPipeline:
         ext = abs_path.suffix.lower()
         counts = {"symbols": 0, "sections": 0, "tables": 0}
 
-        if ext in EXTENSION_MAP:
+        if ext in CODE_EXTENSION_MAP:
             counts["symbols"] = self._parse_code_file(rel_path, abs_path, file_id)
         elif ext in self._table_extensions:
             counts["tables"] = self._parse_table_file(rel_path, abs_path, file_id)
@@ -205,27 +202,27 @@ class KragIngestPipeline:
         if file_type in self._table_extensions:
             self._require_summarizer()
             self._summarize_table_file(file_id)
-        elif file_type not in EXTENSION_MAP:
+        elif file_type not in CODE_EXTENSION_MAP:
             self._require_summarizer()
             self._summarize_doc_file(file_id)
 
     def keyword_file(self, file_id: str, file_type: str) -> None:
         """Extract the minimum keyword index needed for query-ready retrieval."""
-        if file_type in EXTENSION_MAP:
+        if file_type in CODE_EXTENSION_MAP:
             self._keyword_code_file(file_id)
         elif file_type not in self._table_extensions:
             self._keyword_doc_file(file_id)
 
     def link_entities_file(self, file_id: str, file_type: str) -> None:
         """Extract entities and populate the entity graph for one file."""
-        if file_type in EXTENSION_MAP:
+        if file_type in CODE_EXTENSION_MAP:
             self._link_code_entities_file(file_id)
         elif file_type not in self._table_extensions:
             self._link_doc_entities_file(file_id)
 
     def build_hierarchy_file(self, file_id: str, file_type: str) -> None:
         """Generate file-level hierarchy summaries for one document file."""
-        if file_type not in EXTENSION_MAP and file_type not in self._table_extensions:
+        if file_type not in CODE_EXTENSION_MAP and file_type not in self._table_extensions:
             self._build_doc_hierarchy_file(file_id)
 
     def enrich_file(self, file_id: str, file_type: str) -> None:
@@ -238,7 +235,7 @@ class KragIngestPipeline:
         retrieval index. Table files are summarized separately and are not
         entity-enriched.
         """
-        if file_type in EXTENSION_MAP:
+        if file_type in CODE_EXTENSION_MAP:
             self._enrich_code_file(file_id)
         elif file_type not in self._table_extensions:
             self._enrich_doc_file(file_id)
@@ -390,7 +387,7 @@ class KragIngestPipeline:
     def _parse_code_file(self, rel_path: str, abs_path: Path, file_id: str) -> int:
         """Store raw content + extract/store symbols and imports. Returns symbol count."""
         ext = abs_path.suffix.lower()
-        lang = EXTENSION_MAP.get(ext)
+        lang = CODE_EXTENSION_MAP.get(ext)
         if not lang or lang not in self._strategies:
             return 0
 

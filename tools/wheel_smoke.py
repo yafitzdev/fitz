@@ -130,6 +130,8 @@ def validate_wheel_contents(wheel: Path) -> None:
         "fitz_sage/core/utils.py",
         "fitz_sage/core/paths/cache.py",
         "fitz_sage/core/paths/ingestion.py",
+        "fitz_sage/engines/fitz_krag/governance_cutoff.py",
+        "fitz_sage/governance/",
         "fitz_sage/ingestion/chunking/",
         "fitz_sage/ingestion/detection.py",
         "fitz_sage/ingestion/exceptions/",
