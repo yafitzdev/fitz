@@ -71,7 +71,6 @@ class QueryPipeline:
         semantic_keyword_batcher: Any,
         pyrrho: Any,
         retrieval_pass: Any,
-        hop_controller: Any,
         expander: Any,
         table_handler: Any,
         retrieval_strategy_scope: Callable[[bool], AbstractContextManager[Any]],
@@ -85,7 +84,6 @@ class QueryPipeline:
         self._semantic_keyword_batcher = semantic_keyword_batcher
         self._pyrrho = pyrrho
         self._retrieval_pass = retrieval_pass
-        self._hop_controller = hop_controller
         self._expander = expander
         self._table_handler = table_handler
         self._retrieval_strategy_scope = retrieval_strategy_scope
@@ -145,25 +143,17 @@ class QueryPipeline:
 
         _progress("Retrieving relevant sources...")
         t0 = time.perf_counter()
-        use_multi_hop = (
-            allow_llm_strategies and self._hop_controller and self._config.enable_multi_hop
-        )
         with self._retrieval_strategy_scope(allow_llm_strategies):
-            if use_multi_hop:
-                read_results = self._hop_controller.execute(plan.retrieval_query, profile)
-                retrieval_trace = {"multi_hop": True}
-            else:
-                read_results = self._retrieval_pass.run(
-                    plan.retrieval_query,
-                    profile,
-                    rewrite_result=plan.rewrite_result,
-                    progress=progress,
-                )
-                retrieval_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
+            read_results = self._retrieval_pass.run(
+                plan.retrieval_query,
+                profile,
+                rewrite_result=plan.rewrite_result,
+                progress=progress,
+            )
+            retrieval_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
         addresses = [result.address for result in read_results]
         retrieval_duration = time.perf_counter() - t0
-        if not use_multi_hop:
-            timings.extend(_retrieval_pass_timings(self._retrieval_pass))
+        timings.extend(_retrieval_pass_timings(self._retrieval_pass))
         timings.append(("Retrieval", retrieval_duration))
 
         if not read_results:
@@ -254,7 +244,6 @@ class QueryPipeline:
                 read_results = self._retrieval_pass.run(
                     request.query,
                     profile,
-                    exclude=None,
                     rewrite_result=None,
                     progress=progress,
                 )
@@ -589,6 +578,15 @@ def _select_closure_results(
         ]
         if exact_locations:
             results = exact_locations
+    elif request is not None and request.role.startswith("bridge_definition:"):
+        definition = _normalize_source_name(request.role.removeprefix("bridge_definition:"))
+        definition_matches = [
+            result
+            for result in results
+            if definition in _normalize_source_name(f"{result.address.location} {result.content}")
+        ]
+        if definition_matches:
+            results = definition_matches
     compilation = compile_evidence(query, results, profile=profile)
     if compilation.results:
         return compilation.results[:1]

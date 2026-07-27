@@ -47,7 +47,6 @@ def _sample_run() -> RetrievalRun:
                     "evidence_compiler": {
                         "rank": 1,
                         "alignment_score": 4,
-                        "min_sources": 1,
                         "roles": ["bridge:PRIVATE_BRIDGE"],
                     },
                 },
@@ -120,7 +119,6 @@ def _sample_run() -> RetrievalRun:
                 compiler_metadata={
                     "rank": 1,
                     "alignment_score": 4,
-                    "min_sources": 1,
                     "roles": ["bridge:PRIVATE_BRIDGE"],
                 },
             ),
@@ -139,7 +137,6 @@ def _sample_run() -> RetrievalRun:
                 compiler_metadata={
                     "rank": 1,
                     "alignment_score": 4,
-                    "min_sources": 1,
                     "roles": ["bridge:PRIVATE_BRIDGE"],
                 },
             ),
@@ -185,13 +182,11 @@ def test_redacted_serialization_removes_all_source_derived_text():
         "evidence_compiler": {
             "rank": 1,
             "alignment_score": 4,
-            "min_sources": 1,
         }
     }
     assert payload["ranked_evidence"][0]["compiler_metadata"] == {
         "rank": 1,
         "alignment_score": 4,
-        "min_sources": 1,
     }
     assert "content" not in payload["pyrrho_evidence"][0]
     assert payload["evidence"]["metadata"] == {"engine": "fitz_krag"}

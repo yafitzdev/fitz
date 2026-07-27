@@ -13,9 +13,7 @@ import pytest
 def _write_test_config(path, collection="default"):
     """Write a minimal valid config file for testing."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "synthesizer: null\n" "query_intelligence: null\n" f"collection: {collection}\n"
-    )
+    path.write_text(f"synthesizer: null\nquery_intelligence: null\ncollection: {collection}\n")
 
 
 class TestFitzInit:
@@ -82,8 +80,8 @@ class TestFitzConfigCreation:
             f._ensure_config()
 
 
-class TestFitzQuery:
-    """Tests for fitz.query() method."""
+class TestFitzAnswer:
+    """Tests for fitz.answer() method."""
 
     def test_raises_on_empty_question(self, tmp_path):
         """Test that QueryError is raised for empty question."""
@@ -95,7 +93,7 @@ class TestFitzQuery:
         f = fitz(config_path=config_path)
 
         with pytest.raises(QueryError, match="cannot be empty"):
-            f.query("")
+            f.answer("")
 
     def test_raises_on_whitespace_question(self, tmp_path):
         """Test that QueryError is raised for whitespace-only question."""
@@ -107,7 +105,7 @@ class TestFitzQuery:
         f = fitz(config_path=config_path)
 
         with pytest.raises(QueryError, match="cannot be empty"):
-            f.query("   ")
+            f.answer("   ")
 
 
 class TestFitzEvidence:
@@ -186,12 +184,12 @@ class TestFitzExports:
 
         assert fitz is not None
 
-    def test_module_level_query_exported(self):
-        """Test module-level query() is exported."""
+    def test_module_level_answer_exported_without_query_alias(self):
+        """Synthesis uses the explicit answer() API without a query() alias."""
         import fitz_sage
 
-        assert hasattr(fitz_sage, "query")
-        assert callable(fitz_sage.query)
+        assert callable(fitz_sage.answer)
+        assert not hasattr(fitz_sage, "query")
 
     def test_module_level_evidence_exported(self):
         """Test module-level evidence() is exported."""

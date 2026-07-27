@@ -33,11 +33,11 @@ def _to_conversation_context(history: list[ChatMessage]) -> ConversationContext 
     return ConversationContext(history=messages)
 
 
-@router.post("/query", response_model=QueryResponse)
+@router.post("/answer", response_model=QueryResponse)
 @handle_api_errors
-async def query(request: QueryRequest) -> QueryResponse:
+async def answer(request: QueryRequest) -> QueryResponse:
     """
-    Query the knowledge base.
+    Synthesize an answer from retrieved evidence.
 
     Submit a question and receive an answer with sources.
     Optionally include source to register documents before querying,
@@ -55,7 +55,7 @@ async def query(request: QueryRequest) -> QueryResponse:
 
     answer = await run_in_threadpool(
         partial(
-            service.query,
+            service.answer,
             question=request.question,
             collection=collection,
             conversation_context=context,
@@ -86,7 +86,7 @@ async def evidence(request: QueryRequest) -> EvidenceResponse:
     Retrieve governed evidence without answer synthesis.
 
     This is the retrieval-first endpoint: it returns ranked source units,
-    Pyrrho mode/reasons, cutoff metadata, and indexing status.
+    Pyrrho mode/reasons, fixed-delivery metadata, and indexing status.
     """
     service = get_service()
     collection = request.collection or "default"
@@ -127,7 +127,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     answer = await run_in_threadpool(
         partial(
-            service.query,
+            service.answer,
             question=request.message,
             collection=request.collection or "default",
             conversation_context=context,

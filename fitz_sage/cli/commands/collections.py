@@ -79,7 +79,7 @@ def command() -> None:
 
     if not collection_infos:
         ui.info("No collections found.")
-        ui.info("Run 'fitz query \"question\" --source ./docs' to create one.")
+        ui.info("Run 'fitz retrieve \"question\" --source ./docs' to create one.")
         return
 
     # Convert to display format

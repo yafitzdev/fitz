@@ -243,6 +243,35 @@ class TestAddressReranker:
             "Document: Roadmap, Metrics\nLaunch plan and customer feedback trends."
         ]
 
+    def test_rerank_uses_query_relevant_window_from_late_file_text(self):
+        """Late literal evidence must reach the bounded cross-encoder input."""
+        reranker_provider = MagicMock(name="reranker")
+        reranker_provider.rerank.return_value = [
+            _make_rerank_result(index=0, score=0.9),
+        ]
+        late_evidence = "RUN_9 final verdict is FAIL with ERR_RETAINED."
+        address = Address(
+            kind=AddressKind.FILE,
+            source_id="report",
+            location="long_report.txt",
+            summary="Long test report",
+            score=0.5,
+            metadata={
+                "text": ("Routine setup: no final verdict is recorded. " * 120) + late_evidence
+            },
+        )
+
+        reranker = AddressReranker(
+            reranker=reranker_provider,
+            k=1,
+            min_addresses=1,
+        )
+        reranker.rerank("What is the final verdict for RUN_9?", [address])
+
+        document = reranker_provider.rerank.call_args.args[1][0]
+        assert late_evidence in document
+        assert len(document) <= len(address.summary) + 1 + 1200
+
     def test_reranked_addresses_preserve_kind_and_metadata(self):
         """Reranked addresses retain kind, source_id, location, summary, metadata."""
         reranker_provider = MagicMock(name="reranker")

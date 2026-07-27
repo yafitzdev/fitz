@@ -112,6 +112,45 @@ class TestRetrieve:
         results = strategy.retrieve("query", limit=3)
         assert len(results) == 3
 
+    def test_address_carries_bounded_query_relevant_rerank_text(
+        self,
+        strategy,
+        mock_section_store,
+        mock_raw_store,
+    ):
+        target = "The retained seal for RUN_77 is KAPPA-END."
+        mock_raw_store.get.return_value = None
+        mock_section_store.search_bm25.return_value = [
+            _make_section_result(
+                content=("Routine observations continue. " * 120) + target,
+                bm25_score=0.9,
+            )
+        ]
+
+        result = strategy.retrieve("What is the retained seal for RUN_77?", limit=5)[0]
+
+        assert target in result.metadata["rerank_text"]
+        assert len(result.metadata["rerank_text"]) <= 1200
+
+    def test_short_sections_keep_the_established_summary_only_rerank_surface(
+        self,
+        strategy,
+        mock_section_store,
+        mock_raw_store,
+    ):
+        mock_raw_store.get.return_value = None
+        mock_section_store.search_bm25.return_value = [
+            _make_section_result(
+                content="A concise ordinary section with a complete summary.",
+                summary="Complete summary.",
+                bm25_score=0.9,
+            )
+        ]
+
+        result = strategy.retrieve("ordinary section", limit=5)[0]
+
+        assert "rerank_text" not in result.metadata
+
 
 class TestToAddress:
     def test_summary_from_section_summary(self, strategy):

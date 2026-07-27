@@ -9,7 +9,7 @@ OpenAI-compatible HTTP endpoints, and SQLite + FTS5 storage.
 ## Quick Diagnostics
 
 Open the workspace config file directly at `.fitz/config.yaml`. For
-`fitz query` / `fitz retrieve`, verify the collection and indexing status. For
+`fitz retrieve`, verify the collection and indexing status. For
 `fitz answer`, also verify `synthesizer`,
 `chat_base_url`, and the API-key environment variable if your endpoint
 requires one.
@@ -133,7 +133,7 @@ collection's `.db` and re-ingest. There is no in-place migration step.
 
 ```bash
 fitz collections delete my_collection
-fitz query "..." --source ./docs
+fitz retrieve "..." --source ./docs
 ```
 
 ---
@@ -196,7 +196,7 @@ ValueError: No documents found in ./path
    `.py`, `.go`, `.ts`, `.java`, `.sql`, `.xlsx`, `.csv`, etc.).
 3. Try with a specific file:
    ```bash
-   fitz query "test query" --source ./path/file.pdf
+   fitz retrieve "test query" --source ./path/file.pdf
    ```
 
 ---
@@ -223,11 +223,11 @@ TimeoutError: Request timed out
 
 ```bash
 # Linux / macOS
-FITZ_LOG_LEVEL=DEBUG fitz query "test" --source ./docs
+FITZ_LOG_LEVEL=DEBUG fitz retrieve "test" --source ./docs
 
 # PowerShell
 $env:FITZ_LOG_LEVEL = "DEBUG"
-fitz query "test" --source ./docs
+fitz retrieve "test" --source ./docs
 ```
 
 ### Inspect State File

@@ -266,7 +266,7 @@ class FitzKragEngine:
         logger.debug("Database initialized")
 
         _t1 = _t.perf_counter()
-        logger.debug(f"[init] providers+pg: {(_t1-_t0)*1000:.0f}ms")
+        logger.debug(f"[init] providers+pg: {(_t1 - _t0) * 1000:.0f}ms")
 
         # Ingestion stores
         from fitz_sage.engines.fitz_krag.ingestion.import_graph_store import ImportGraphStore
@@ -288,7 +288,7 @@ class FitzKragEngine:
         self._sqlite_table_store = SqliteTableStore(self._config.collection)
 
         _ts1 = _t.perf_counter()
-        logger.debug(f"[init] store objects: {(_ts1-_t1)*1000:.0f}ms")
+        logger.debug(f"[init] store objects: {(_ts1 - _t1) * 1000:.0f}ms")
 
         # Retrieval
         from fitz_sage.engines.fitz_krag.retrieval.expander import CodeExpander
@@ -336,7 +336,7 @@ class FitzKragEngine:
         )
 
         _t3 = _t.perf_counter()
-        logger.debug(f"[init] strategies: {(_t3-_ts1)*1000:.0f}ms")
+        logger.debug(f"[init] strategies: {(_t3 - _ts1) * 1000:.0f}ms")
 
         # Chat factory for optional tiered LLM paths. Retrieval-first defaults
         # leave chat tiers unset, so this stays None unless the user opts in.
@@ -477,28 +477,18 @@ class FitzKragEngine:
             config=self._config,
         )
 
-        # Multi-hop controller — loops the retrieval pass, pyrrho-gated.
-        self._hop_controller: Any = None
-        if self._config.enable_multi_hop and self._chat_factory:
-            from fitz_sage.engines.fitz_krag.retrieval.multihop import KragHopController
-
-            self._hop_controller = KragHopController(
-                retrieval_pass=self._retrieval_pass,
-                chat_factory=self._chat_factory,
-                pyrrho=self._pyrrho,
-                max_hops=self._config.max_hops,
-            )
-
         self._query_pipeline = self._build_query_pipeline()
 
         _t4 = _t.perf_counter()
-        logger.debug(f"[init] components: {(_t4-_t3)*1000:.0f}ms")
+        logger.debug(f"[init] components: {(_t4 - _t3) * 1000:.0f}ms")
 
         ensure_schema(self._connection_manager, self._config.collection)
         self._initialized_collection = self._config.collection
 
         _t5 = _t.perf_counter()
-        logger.debug(f"[init] schema: {(_t5-_t4)*1000:.0f}ms, " f"total: {(_t5-_t0)*1000:.0f}ms")
+        logger.debug(
+            f"[init] schema: {(_t5 - _t4) * 1000:.0f}ms, total: {(_t5 - _t0) * 1000:.0f}ms"
+        )
 
         # Retrieval-first init intentionally does not create or warm chat clients.
 
@@ -1102,7 +1092,6 @@ class FitzKragEngine:
             semantic_keyword_batcher=getattr(self, "_semantic_keyword_batcher", None),
             pyrrho=self._pyrrho,
             retrieval_pass=self._retrieval_pass,
-            hop_controller=self._hop_controller,
             expander=self._expander,
             table_handler=self._table_handler,
             retrieval_strategy_scope=self._retrieval_strategy_scope,
@@ -1292,7 +1281,7 @@ class FitzKragEngine:
         ):
             self._ensure_standard_llm_available(progress)
 
-        # 2. Persist source_dir so `fitz query` can find it across processes
+        # 2. Persist source_dir so `fitz retrieve` can find it across processes
         col_dir.mkdir(parents=True, exist_ok=True)
         (col_dir / "source_dir.txt").write_text(str(source_dir), encoding="utf-8")
 

@@ -4,7 +4,7 @@
 fitz-sage is retrieval-first. The default product surface returns a governed
 `EvidencePack`: ranked source units, Pyrrho metadata, indexing status, timings,
 and enough provenance for another application to decide what to do next.
-Generated answers are optional and live behind `fitz answer` / `fitz_sage.query()`.
+Generated answers are optional and live behind `fitz answer` / `fitz_sage.answer()`.
 
 For the retrieval strategy itself, see
 [Three-Stage Retrieval Strategy](features/retrieval/three-stage-strategy.md).
@@ -18,7 +18,7 @@ object shape, see [Evidence Pack](EVIDENCE_PACK.md).
 The intended CLI journey is one command:
 
 ```bash
-fitz query "Which documents are relevant?"
+fitz retrieve "Which documents are relevant?"
 ```
 
 When run from a document folder, this command:
@@ -29,8 +29,8 @@ When run from a document folder, this command:
 4. Returns governed evidence.
 5. Starts a detached indexing daemon when Qwen enrichment is still pending.
 
-Use `fitz retrieve` only when you need advanced evidence controls such as
-`--format json` or `--top-k`.
+The same command exposes advanced evidence controls such as `--format json`
+and `--top-k`.
 
 ---
 
@@ -38,7 +38,7 @@ Use `fitz retrieve` only when you need advanced evidence controls such as
 
 ```mermaid
 flowchart TD
-    A["fitz query / fitz retrieve"] --> B{"Source supplied?"}
+    A["fitz retrieve"] --> B{"Source supplied?"}
     B -->|"yes"| C["Register source into collection"]
     B -->|"no, no collection"| D["Use current directory as source"]
     B -->|"collection supplied"| E["Load existing collection"]
@@ -70,7 +70,8 @@ flowchart TD
     P --> R["Broad recall"]
     R --> X["Cross-strategy fusion"]
     X --> K["ONNX reranker"]
-    K --> G["Pyrrho cutoff loop"]
+    K --> F["Compile fixed evidence set"]
+    F --> G["One Pyrrho decision"]
     G --> E["EvidencePack"]
 
     C --> C1["deterministic query profile"]
@@ -84,14 +85,10 @@ flowchart TD
     R --> R3["Table metadata search"]
     R --> R4["Unindexed scan for files not query-ready"]
 
-    G --> G1["Shape-aware evidence prefix"]
-    G1 --> G2["Evaluate query + top 1"]
-    G2 --> G3{"SUFFICIENT?"}
-    G3 -->|"yes"| E
-    G3 -->|"no"| G4["Evaluate query + top 2"]
-    G4 --> G5{"Enough evidence or max cutoff?"}
-    G5 -->|"continue"| G4
-    G5 -->|"stop"| E
+    F --> F1["Contract-aware ordering and fixed delivery budget"]
+    G --> G1["Evaluate query + exact delivered evidence"]
+    G1 --> G2["SUFFICIENT / DISPUTED / INSUFFICIENT"]
+    G2 --> E
 ```
 
 ### Stage 1: Broad Recall
@@ -100,7 +97,7 @@ Broad recall is intentionally permissive. It uses literal query terms,
 managed Qwen semantic keywords, and intent fanout for
 comparison, temporal, aggregation, and freshness queries. False positives are
 acceptable because the reranker and fixed evidence delivery handle precision.
-The configured reviewed Pyrrho v2 package is evidence-conditioned. Query profiling comes
+The configured accepted Pyrrho v2 package is evidence-conditioned. Query profiling comes
 from deterministic signals, managed Qwen semantic keywords, and optional
 query-intelligence providers.
 
@@ -119,28 +116,23 @@ The ONNX cross-encoder reranker scores `(query, candidate)` pairs after broad
 recall. It is the precision stage. The default backend is
 `Alibaba-NLP/gte-reranker-modernbert-base` through `onnxruntime`.
 
-### Stage 3: Pyrrho Cutoff
+### Stage 3: Fixed Delivery And Pyrrho
 
-Pyrrho does not answer the query. It decides whether the ranked evidence prefix
-is sufficient.
+Pyrrho does not answer the query or control retrieval. Fitz-Sage compiles one
+fixed evidence set, sends the exact query and source text once, and maps the
+returned verdict mechanically.
 
 ```mermaid
 flowchart TD
-    A["Reranked candidates"] --> B["Take prefix of size 1"]
-    B --> C["Pyrrho(query, prefix)"]
-    C --> D{"Verdict"}
-    D -->|"SUFFICIENT"| T["Stop: enough evidence"]
-    D -->|"INSUFFICIENT"| E{"Reached max cutoff?"}
-    D -->|"DISPUTED"| F{"Dispute stable enough?"}
-    F -->|"yes"| U["Stop: return disputed evidence"]
-    F -->|"no"| N["Add next document"]
-    E -->|"no"| N
-    E -->|"yes"| A0["Stop: insufficient"]
-    N --> C
+    A["Reranked candidates"] --> B["Contract-aware compilation"]
+    B --> C["Fixed top_k / top_read delivery"]
+    C --> D["Pyrrho(query, exact evidence set)"]
+    D --> E["Return exact verdict and same evidence"]
 ```
 
-The default cutoff inspects at most the top 10 evidence items, or fewer when
-the caller requested a smaller `top_k`.
+The default delivery contains at most the configured `top_read` evidence items,
+or fewer when the caller requests a smaller `top_k`. Fitz-Sage does not retry
+different prefixes or reinterpret Pyrrho's decision.
 
 ---
 
@@ -177,7 +169,7 @@ stateDiagram-v2
 
 ### Case 1: No collection exists
 
-`fitz query "..."` registers the current directory, parses it, retrieves a
+`fitz retrieve "..."` registers the current directory, parses it, retrieves a
 best-effort evidence pack, and starts the daemon if enrichment remains.
 
 ### Case 2: Source registered, search surface not ready
@@ -222,8 +214,8 @@ the configured synthesizer. This is separate from the retrieval package default.
 | Hierarchical summaries | Fully indexed recall for broad analytical questions. |
 | Unindexed scan | Temporary bridge while files are not query-ready. |
 | ONNX reranker | Precision stage before governance. |
-| Pyrrho | Mandatory sufficiency, dispute, and insufficiency cutoff for evidence packs. Comparison-shaped metric queries seed cutoff with direct metric/table evidence before Pyrrho can stop. |
-| Multi-hop | Bounded bridge retrieval when the first pass is still insufficient and the answer appears one hop away. |
+| Pyrrho | Mandatory single sufficiency, dispute, or insufficiency decision over the fixed delivered evidence set. |
+| Evidence closure | Deterministic bounded follow-up retrieval for unresolved query-contract obligations before compilation. |
 
 Synthetic corpus summaries are not normal section hits. They are schema-versioned,
 deleted before regeneration, excluded from ordinary BM25, and injected only when

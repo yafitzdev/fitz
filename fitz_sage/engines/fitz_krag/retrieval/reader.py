@@ -84,7 +84,7 @@ class ContentReader:
         else:
             return None
 
-        # Propagate address score so guardrails feature extractor can see it
+        # Keep the retrieval score available to downstream evidence ranking.
         if result and addr.score and "score" not in result.metadata:
             result.metadata["score"] = addr.score
 

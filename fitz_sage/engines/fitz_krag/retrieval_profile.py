@@ -297,27 +297,12 @@ def build_retrieval_profile(
             _TEMPORAL_TERMS,
         )
     )
-    has_deterministic_shape = (
-        deterministic_aggregation or deterministic_comparison or deterministic_temporal
-    )
-    if has_deterministic_shape:
-        has_aggregation_intent = deterministic_aggregation
-        has_comparison_intent = deterministic_comparison
-        has_temporal_intent = deterministic_temporal
-    else:
-        has_aggregation_intent = (
-            contract_label == "exhaustive_coverage"
-            or shape_label == "set_answer"
-            or "needs_broad_coverage" in retrieval_intents
-        )
-        has_comparison_intent = (
-            contract_label == "comparison_coverage"
-            or "needs_comparison_or_set" in retrieval_intents
-        )
-        has_temporal_intent = (
-            contract_label == "temporal_grounding"
-            or "needs_temporal_resolution" in retrieval_intents
-        )
+    # Query-shape fields describe the user's request. Pyrrho PRE heads describe
+    # evidence obligations and remain available in retrieval_intents/metadata;
+    # they must not relabel a narrow query as comparison, aggregation, or time.
+    has_aggregation_intent = deterministic_aggregation
+    has_comparison_intent = deterministic_comparison
+    has_temporal_intent = deterministic_temporal
     boost_recency = has_temporal_intent
 
     # --- top_k: base * fetch_multiplier * specificity adjustment ---
@@ -687,6 +672,11 @@ def _profile_metadata(profile: RetrievalProfile) -> dict[str, Any]:
         "retrieval_intents": list(profile.retrieval_intents),
         "evidence_kinds": list(profile.evidence_kinds),
         "required_modalities": list(profile.required_modalities),
+        "keywords": list(profile.keywords),
+        "query_variations": list(profile.query_variations),
+        "comparison_queries": list(profile.comparison_queries),
+        "comparison_entities": list(profile.comparison_entities),
+        "temporal_references": list(profile.temporal_references),
         "domain": profile.domain,
         "specificity": profile.specificity,
         "answer_type": profile.answer_type,

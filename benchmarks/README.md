@@ -92,7 +92,7 @@ The starter corpus covers:
 - explicit in-corpus acronym bridges
 - filtered table lookups and comparisons
 - stale documentation versus implementation conflicts
-- cross-domain multi-hop retrieval
+- cross-domain evidence closure
 
 Available suites:
 
@@ -130,7 +130,7 @@ reload-stability, optional-format, and intentional-limitations suites:
 
 ```bash
 python -m benchmarks.fitz_bench.production_runner \
-  --governance "pyrrho/C:\path\to\reviewed-clean-onnx-package"
+  --output production-report.json
 ```
 
 The required matrix currently contains:
@@ -140,21 +140,21 @@ The required matrix currently contains:
 - reload stability over the grown corpus
 - 60 explicit temporal, comparison, aggregation, and narrow query-shape cases
 - PDF, DOCX, PPTX, SQL, Python, Go, Java, and TypeScript evidence
+- an 11-case required hardening gate for difficult retrieval boundaries
 - measured, non-gating XLSX and known-limitations suites
 
 Required retrieval suites gate at 85%. The query-shape suite gates its own
 signals at 85%. Corpus growth fails the production gate if a shared case
-regresses even when the aggregate rate remains above threshold. Governance is
-measured separately because Pyrrho has its own fixed-evidence evaluation and
-release lifecycle. Supported-file ingestion failures always fail a required
-suite.
+regresses even when the aggregate rate remains above threshold. Pyrrho outcomes
+remain visible but are measured separately because model evaluation belongs to
+Pyrrho's own release lifecycle. Supported-file ingestion failures always fail
+a required suite.
 
 Run one suite while developing:
 
 ```bash
 python -m benchmarks.fitz_bench.production_runner \
-  --suite-id base_formats \
-  --governance "pyrrho/C:\path\to\reviewed-clean-onnx-package"
+  --suite-id hardened_boundaries
 ```
 
 ## Metric Boundaries
@@ -178,20 +178,5 @@ python -m benchmarks.fitz_bench.production_runner \
 Every rate includes an `*_evaluated` denominator. Cases without an assertion
 for that metric do not receive automatic credit. Do not use the full pass rate
 to describe retrieval quality. A mode-only Pyrrho error is reported as a
-Pyrrho failure; a correct item excluded by the fixed budget is a delivery failure, not
-a recall failure.
-
-## Balanced Governance
-
-The retrieval suites above are product/integration benchmarks. They are not
-class-balanced: most cases are expected to be sufficient. To compare Pyrrho
-governance models directly, use the fixed-evidence balanced benchmark:
-
-```bash
-python -m benchmarks.fitz_bench.governance_runner --pyrrho "pyrrho/C:\path\to\pyrrho\best_model" --output benchmarks/results/governance_balanced_model.json --markdown benchmarks/results/governance_balanced_model.md
-```
-
-This suite bypasses live retrieval and feeds Pyrrho 120 fixed evidence packs:
-40 sufficient, 40 disputed, and 40 insufficient. It reports accuracy, macro
-recall, per-class recall, false-sufficient rate, and false-reject-sufficient
-rate.
+Pyrrho failure; a correct item excluded by the fixed budget is a delivery
+failure, not a recall failure.

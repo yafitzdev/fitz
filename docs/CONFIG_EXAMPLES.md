@@ -8,8 +8,8 @@ Working configs for the managed-ONNX / SQLite world. The schema rules:
 - **Provider presence** controls optional endpoint-backed features
   (`synthesizer: null` means no generated answer; `query_intelligence: null`
   means deterministic query prep plus managed Qwen semantic keywords).
-- **Governance is mandatory** — configure an explicitly reviewed local Pyrrho
-  package while the historical remote default is quarantined.
+- **Governance is mandatory** — bare `pyrrho` uses the accepted immutable
+  default; advanced users can select a local or commit-pinned package.
 - **Sensible defaults** — `collection` is the only thing every config
   must set; the rest can be overridden per-invocation via CLI flags.
 
@@ -22,13 +22,13 @@ Working configs for the managed-ONNX / SQLite world. The schema rules:
 collection: my_docs
 parser: cpu
 rerank: onnx
-governance: pyrrho//absolute/path/to/reviewed-clean-package
+governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-No hosted API key or external inference server is needed for `fitz query`,
+No hosted API key or external inference server is needed for `fitz retrieve`,
 `fitz retrieve`, or `fitz_sage.evidence(...)`. See
 [Managed Models](MANAGED_MODELS.md) for exact local model IDs, runtimes, cache
 locations, and the smoke command.

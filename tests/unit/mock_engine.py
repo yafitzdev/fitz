@@ -26,8 +26,8 @@ from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
 def build_mock_engine(**config_overrides) -> FitzKragEngine:
     """Build a `FitzKragEngine` with every component replaced by a mock.
 
-    Bypasses `__init__` entirely — no real imports, no stores. Detection,
-    multi-hop and rewriting are disabled; the query batcher
+    Bypasses `__init__` entirely — no real imports, no stores. Detection and
+    rewriting are disabled; the query batcher
     returns a neutral `GENERAL` analysis. Pass `**config_overrides` to
     tweak the `FitzKragConfig` (`collection` defaults to `test_collection`).
     """
@@ -84,7 +84,6 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     )
     engine._query_rewriter = None
     engine._address_reranker = None
-    engine._hop_controller = None
     engine._retrieval_pass = RetrievalPass(
         engine._retrieval_router, engine._address_reranker, engine._reader, engine._config
     )

@@ -61,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
             runner_args.append("--reload-check")
         if suite.get("allow_ingestion_failures"):
             runner_args.append("--allow-ingestion-failures")
+        for case_id in suite.get("case_ids", []):
+            runner_args.extend(["--case-id", str(case_id)])
 
         exit_code = runner.main(runner_args)
         report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -355,8 +357,7 @@ def _markdown(report: dict[str, Any]) -> str:
         f"- Retrieval pass rate: {_format_rate(summary['retrieval_pass_rate'])}",
         f"- Governed delivery pass rate: {_format_rate(summary['delivery_pass_rate'])}",
         f"- Query-shape pass rate: {_format_rate(summary['query_shape_pass_rate'])}",
-        f"- Non-governance capability pass rate: "
-        f"{_format_rate(summary['capability_pass_rate'])}",
+        f"- Non-governance capability pass rate: {_format_rate(summary['capability_pass_rate'])}",
         f"- Full governed pass rate: {summary['full_pass_rate']:.3f}",
         "- Corpus-growth regressions: "
         + ("none" if summary["growth_regression_passed"] else "present"),

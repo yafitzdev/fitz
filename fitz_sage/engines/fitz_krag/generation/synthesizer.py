@@ -269,7 +269,7 @@ class CodeSynthesizer:
         if corpus_size == 0:
             lines.append("  - Documents or code files covering this topic")
             lines.append(
-                "  - Use fitz_sage.query('your question', source='./path') to query a directory"
+                "  - Use fitz_sage.answer('your question', source='./path') to answer from a directory"
             )
         else:
             lines.append("  - Documents covering the specific topic of this question")

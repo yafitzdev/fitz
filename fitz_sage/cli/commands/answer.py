@@ -1,20 +1,20 @@
-# fitz_sage/cli/commands/query.py
+# fitz_sage/cli/commands/answer.py
 """
-Query command - Engine-agnostic query interface.
+Answer command - Engine-agnostic optional synthesis.
 
 Uses the default engine (set via 'fitz engine'). Override with --engine.
 
 Usage:
-    fitz query "What is RAG?"                      # Query existing collection
-    fitz query "What is RAG?" --source ./docs      # Point at docs first, then query
-    fitz query -c my_collection                    # Specify collection
-    fitz query --engine custom                     # Use a custom engine
+    fitz answer "What is RAG?"                      # Answer from an existing collection
+    fitz answer "What is RAG?" --source ./docs      # Point at docs first, then answer
+    fitz answer -c my_collection                    # Specify collection
+    fitz answer --engine custom                     # Use a custom engine
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import typer
 
@@ -96,7 +96,7 @@ def _apply_chat_overrides(
     base_config = registry.load_config("fitz_krag", None)
 
     # base_config is a FitzKragConfig (pydantic). Build a mutated copy.
-    overrides: Dict[str, Any] = {}
+    overrides: dict[str, Any] = {}
 
     if endpoint is not None:
         overrides["chat_base_url"] = endpoint
@@ -163,7 +163,7 @@ def command(
     model: Optional[str] = None,
     api_key_env: Optional[str] = None,
 ) -> None:
-    """Query your knowledge base."""
+    """Synthesize an answer from retrieved evidence."""
     # =========================================================================
     # First-run setup (auto-detect providers if no config exists)
     # =========================================================================
@@ -196,7 +196,7 @@ def command(
 
     # Engines that need documents loaded first can't do standalone queries
     if caps.requires_documents_at_query:
-        _show_documents_required_message(engine, caps)
+        _show_documents_required_message(engine)
         raise typer.Exit(0)
 
     # Validate --source path if provided
@@ -215,7 +215,7 @@ def command(
 
     # Engines with persistent ingest support
     if caps.supports_persistent_ingest:
-        _run_persistent_ingest_query(
+        _run_persistent_ingest_answer(
             question,
             source,
             collection,
@@ -225,19 +225,16 @@ def command(
         )
     # Engines with collection support use FitzService
     elif caps.supports_collections:
-        _run_collection_query(question, collection, engine, override_config=override_config)
+        _run_collection_answer(question, collection, engine, override_config=override_config)
     else:
         # Engines without collections use generic runtime path
-        _run_generic_query(question, engine, override_config=override_config)
+        _run_generic_answer(question, engine, override_config=override_config)
 
 
-def _show_documents_required_message(engine_name: str, caps) -> None:
+def _show_documents_required_message(engine_name: str) -> None:
     """Show message for engines that require documents at query time."""
-    if caps.cli_query_message:
-        ui.warning(caps.cli_query_message)
-    else:
-        ui.warning(f"Engine '{engine_name}' requires documents to be loaded first.")
-        ui.info(f"Use 'fitz query \"question\" --source <folder> --engine {engine_name}' instead.")
+    ui.warning(f"Engine '{engine_name}' requires documents to be loaded first.")
+    ui.info(f"Use 'fitz answer \"question\" --source <folder> --engine {engine_name}' instead.")
     print()
     ui.info("Or use the Python API:")
     print()
@@ -257,7 +254,7 @@ def _select_collection(service: FitzService, requested: Optional[str]) -> str:
     if not collections:
         print()
         ui.warning("No collections found.")
-        ui.info("Run 'fitz query \"question\" --source ./docs' to get started.")
+        ui.info("Run 'fitz answer \"question\" --source ./docs' to get started.")
         raise typer.Exit(0)
 
     collection_names = [c.name for c in collections]
@@ -282,7 +279,7 @@ def _select_collection(service: FitzService, requested: Optional[str]) -> str:
     return ui.prompt_numbered_choice("Collection", collection_names, collection_names[0])
 
 
-def _run_persistent_ingest_query(
+def _run_persistent_ingest_answer(
     question: Optional[str],
     source: Optional[Path],
     collection: Optional[str],
@@ -291,7 +288,7 @@ def _run_persistent_ingest_query(
     chat: bool = False,
     override_config: Any = None,
 ) -> None:
-    """Run query using an engine with persistent ingest support."""
+    """Run answer synthesis using an engine with persistent ingest support."""
 
     # If --source provided, point first (auto-creates collection)
     if source is not None:
@@ -303,7 +300,7 @@ def _run_persistent_ingest_query(
 
         if not collections:
             ui.warning("No collections found.")
-            ui.info("Run 'fitz query \"question\" --source ./docs' to get started.")
+            ui.info("Run 'fitz answer \"question\" --source ./docs' to get started.")
             raise typer.Exit(0)
 
         if collection is None:
@@ -363,19 +360,19 @@ def _run_persistent_ingest_query(
             display_answer(answer)
     except Exception as e:
         # Show clean error message, full traceback only at debug level
-        ui.error(f"Query failed: {_get_root_cause(e)}")
-        logger.debug("Query error", exc_info=True)
+        ui.error(f"Answer failed: {_get_root_cause(e)}")
+        logger.debug("Answer error", exc_info=True)
         raise typer.Exit(1)
 
 
-def _run_collection_query(
+def _run_collection_answer(
     question: Optional[str],
     collection: Optional[str],
     engine_name: str,
     *,
     override_config: Any = None,
 ) -> None:
-    """Run query using FitzService for fitz_krag engine."""
+    """Run answer synthesis through FitzService for fitz_krag."""
     if override_config is not None:
         ui.warning(
             "--endpoint / --synthesizer / --model overrides are not yet plumbed through "
@@ -398,9 +395,9 @@ def _run_collection_query(
     ui.info(f"Engine: {engine_name} | Collection: {selected_collection}")
     print()
 
-    # Execute query via FitzService
+    # Execute answer synthesis via FitzService.
     try:
-        answer = service.query(
+        answer = service.answer(
             question=question_text,
             collection=selected_collection,
             engine=engine_name,
@@ -412,18 +409,18 @@ def _run_collection_query(
         raise typer.Exit(1)
     except QueryError as e:
         # Show clean error message, full traceback only at debug level
-        ui.error(f"Query failed: {_get_root_cause(e)}")
-        logger.debug("Query error", exc_info=True)
+        ui.error(f"Answer failed: {_get_root_cause(e)}")
+        logger.debug("Answer error", exc_info=True)
         raise typer.Exit(1)
 
 
-def _run_generic_query(
+def _run_generic_answer(
     question: Optional[str],
     engine_name: str,
     *,
     override_config: Any = None,
 ) -> None:
-    """Run query using generic runtime path."""
+    """Run answer synthesis through the generic runtime path."""
     # Prompt for question if not provided
     if question is None:
         question_text = ui.prompt_text("Question")
@@ -443,8 +440,8 @@ def _run_generic_query(
         display_answer(answer)
     except Exception as e:
         # Show clean error message, full traceback only at debug level
-        ui.error(f"Query failed: {_get_root_cause(e)}")
-        logger.debug("Query error", exc_info=True)
+        ui.error(f"Answer failed: {_get_root_cause(e)}")
+        logger.debug("Answer error", exc_info=True)
         raise typer.Exit(1)
 
 
@@ -454,7 +451,7 @@ def _run_generic_query(
 
 
 def _chat_loop(engine: Any, collection: str) -> None:
-    """Interactive chat loop with conversation history."""
+    """Run an interactive sequence of independent answer requests."""
     from fitz_sage.core import Query
 
     if RICH:
@@ -465,8 +462,6 @@ def _chat_loop(engine: Any, collection: str) -> None:
     else:
         print(f"\nChat started with collection: {collection}")
         print("Type 'exit' or 'quit' to end. Press Ctrl+C to interrupt.\n")
-
-    history: List[Dict[str, str]] = []
 
     try:
         while True:
@@ -489,8 +484,8 @@ def _chat_loop(engine: Any, collection: str) -> None:
             try:
                 answer = engine.answer(Query(text=user_input), progress=ui.info)
             except Exception as e:
-                ui.error(f"Query failed: {e}")
-                logger.debug("Query error", exc_info=True)
+                ui.error(f"Answer failed: {e}")
+                logger.debug("Answer error", exc_info=True)
                 continue
 
             # Display response
@@ -516,9 +511,6 @@ def _chat_loop(engine: Any, collection: str) -> None:
                 from fitz_sage.cli.ui import display_sources
 
                 display_sources(answer.provenance, indent=12)
-
-            history.append({"role": "user", "content": user_input})
-            history.append({"role": "assistant", "content": answer.text})
 
     except KeyboardInterrupt:
         pass

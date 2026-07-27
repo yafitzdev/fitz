@@ -326,7 +326,7 @@ class TestAnswer:
     """Tests for the answer() pipeline."""
 
     def test_answer_full_flow(self):
-        """Synthesis consumes the same governed evidence prefix as evidence()."""
+        """Synthesis consumes the same governed evidence set as evidence()."""
         engine = _make_engine()
         query = _make_query(
             "What does the login function do when the user provides invalid credentials?"

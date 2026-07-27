@@ -3,8 +3,8 @@
 Fitz CLI - Clean, minimal CLI.
 
 Usage:
-    fitz query "question" --source ./docs            # Register + query
-    fitz query "question"                            # Query existing collection
+    fitz retrieve "question" --source ./docs         # Register + retrieve
+    fitz retrieve "question"                         # Retrieve from an existing collection
     fitz collections                                 # List/manage collections
     fitz serve                                       # Start REST API
 

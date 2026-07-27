@@ -27,7 +27,7 @@ The architecture has three load-bearing decisions:
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                          │
 │  │  CLI        │  │  Python SDK │  │  REST API   │                          │
-│  │  fitz ...   │  │  import ... │  │  /query     │                          │
+│  │  fitz ...   │  │  import ... │  │  /answer    │                          │
 │  └─────────────┘  └─────────────┘  └─────────────┘                          │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -90,9 +90,10 @@ Strict import rules enforce separation of concerns (verified by
 
 ### Query
 
-Retrieval runs as a broad recall → rerank → deliver → Pyrrho pipeline. A
-`RetrievalPass` is retrieve → fuse → rerank → read; multi-hop may loop that
-pass on a bridge query when pyrrho judges the evidence insufficient.
+Retrieval runs as a broad recall → rerank → compile → deliver → Pyrrho
+pipeline. A `RetrievalPass` is retrieve → fuse → rerank → read;
+contract-driven evidence closure may issue bounded follow-up retrieval before
+the fixed delivery set is submitted to Pyrrho.
 
 ```
 1  Query prep      deterministic plan + Qwen semantic keywords
@@ -198,7 +199,7 @@ public provider knob.
 ```yaml
 # ENABLED — a provider is named
 rerank: onnx
-governance: pyrrho//absolute/path/to/reviewed-clean-package
+governance: pyrrho
 synthesizer: endpoint/qwen2.5-7b-instruct
 chat_base_url: http://localhost:8080/v1
 
@@ -261,14 +262,15 @@ Minimal local config:
 collection: default
 parser: cpu
 rerank: onnx
-governance: pyrrho//absolute/path/to/reviewed-clean-package
+governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-The bare `governance: pyrrho` value is the logical default, but currently
-fails closed until a reviewed clean default model package is promoted.
+The bare `governance: pyrrho` value uses Pyrrho's accepted immutable default.
+Local package directories and remote packages pinned to full commits are
+available for advanced deployments.
 
 Override per-invocation:
 
@@ -330,7 +332,7 @@ fitz_sage/
 ## See Also
 
 - [Unified Storage](features/platform/unified-storage.md) — SQLite + FTS5
-- [Retrieval Pipeline](RETRIEVAL_PIPELINE.md) — query flow, cutoff, and indexing states
+- [Retrieval Pipeline](RETRIEVAL_PIPELINE.md) — query flow, fixed evidence delivery, and indexing states
 - [PLUGINS.md](PLUGINS.md) — plugin development guide
 - [CONFIG.md](CONFIG.md) — configuration reference
 - [FEATURE_CONTROL.md](FEATURE_CONTROL.md) — feature-control architecture

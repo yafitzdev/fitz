@@ -5,8 +5,8 @@ fitz-sage does not expose a separate `ingest` command. Ingestion starts when
 you point a query at a source:
 
 ```bash
-fitz query "Which documents are relevant?"
-fitz query "Which documents are relevant?" --source ./docs
+fitz retrieve "Which documents are relevant?"
+fitz retrieve "Which documents are relevant?" --source ./docs
 ```
 
 The foreground command waits only until parsed retrieval units are searchable.
@@ -147,10 +147,10 @@ Extensionless files and `.env` files are not indexed by default.
 
 ```bash
 # Default: current directory is the source
-fitz query "What is in this corpus?"
+fitz retrieve "What is in this corpus?"
 
 # Explicit source and collection
-fitz query "What is in this corpus?" --source ./docs --collection docs
+fitz retrieve "What is in this corpus?" --source ./docs --collection docs
 
 # Evidence controls
 fitz retrieve "What is in this corpus?" --source ./docs --top-k 8

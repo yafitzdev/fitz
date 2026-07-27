@@ -560,7 +560,7 @@ class RetrievalRun:
         lines = [
             f"Retrieval run {self.run_id}",
             f"Query: {self.query.source_text}",
-            (f"Plan: {self.query.query_shape}; retrieval query: " f"{self.query.retrieval_text!r}"),
+            (f"Plan: {self.query.query_shape}; retrieval query: {self.query.retrieval_text!r}"),
         ]
         for origin, terms in term_groups.items():
             lines.append(f"Terms ({origin}): {', '.join(terms)}")
@@ -709,9 +709,9 @@ class PyrrhoReplay:
                 f"Pyrrho replay {self.replay_id}",
                 f"Source run: {self.source_run_id}",
                 f"Provider: {self.pyrrho_spec}",
-                (f"Fitz: {self.source_fitz_sage_version} -> " f"{self.replay_fitz_sage_version}"),
-                (f"Original: {self.original.verdict}; " f"evidence={self.original.evidence_count}"),
-                (f"Replayed: {self.replayed.verdict}; " f"evidence={self.replayed.evidence_count}"),
+                (f"Fitz: {self.source_fitz_sage_version} -> {self.replay_fitz_sage_version}"),
+                (f"Original: {self.original.verdict}; evidence={self.original.evidence_count}"),
+                (f"Replayed: {self.replayed.verdict}; evidence={self.replayed.evidence_count}"),
                 f"Changed: {'yes' if changed else 'no'}",
             ]
         )
@@ -730,7 +730,7 @@ def _redacted_compiler_metadata(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
     safe: dict[str, Any] = {}
-    for key in ("rank", "alignment_score", "min_sources"):
+    for key in ("rank", "alignment_score"):
         field_value = value.get(key)
         if isinstance(field_value, (int, float)) and not isinstance(field_value, bool):
             safe[key] = field_value

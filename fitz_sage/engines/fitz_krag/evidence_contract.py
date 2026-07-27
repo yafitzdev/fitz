@@ -142,9 +142,7 @@ class QueryContract:
     retrieval_obligation: str | None = None
     identifiers: tuple[str, ...] = ()
     phrase_anchors: tuple[str, ...] = ()
-    source_anchors: tuple[str, ...] = ()
     keyword_anchors: tuple[str, ...] = ()
-    metric_terms: tuple[str, ...] = ()
     required_modalities: tuple[str, ...] = ()
     temporal_policy: str | None = None
 

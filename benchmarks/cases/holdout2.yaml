@@ -38,9 +38,6 @@
     required_evidence:
       - file: unstructured/access_policy.md
         contains: ["2026-08-02", "no active MFA exceptions"]
-    forbidden_evidence:
-      - file: unstructured/access_policy.md
-        contains: ["2026-03-10", "may skip hardware keys"]
   tags: [holdout2, unstructured, temporal, freshness]
 
 - id: holdout2_inc611_final_outage
@@ -51,9 +48,6 @@
     required_evidence:
       - file: unstructured/incident_review.md
         contains: ["Final review", "INC-611", "42 minutes"]
-    forbidden_evidence:
-      - file: unstructured/incident_review.md
-        contains: ["estimated", "18 minutes"]
   tags: [holdout2, unstructured, temporal, final_fact]
 
 - id: holdout2_inc611_commander_root_cause
@@ -94,9 +88,6 @@
     required_evidence:
       - file: unstructured/roadmap_status.md
         contains: ["2026-07-12", "private beta", "12 design partners"]
-    forbidden_evidence:
-      - file: unstructured/roadmap_status.md
-        contains: ["2026-02-01", "paused pending legal review"]
   tags: [holdout2, unstructured, temporal, freshness]
 
 - id: holdout2_nimbus_owner_ga
@@ -159,9 +150,6 @@
     required_evidence:
       - file: unstructured/risk_audit_note.md
         contains: ["RSK-81", "final residual score", "18"]
-    forbidden_evidence:
-      - file: unstructured/risk_finance_memo.md
-        contains: ["RSK-81", "12"]
   tags: [holdout2, unstructured, temporal, final_fact]
 
 - id: holdout2_service_svc204_owner_slo

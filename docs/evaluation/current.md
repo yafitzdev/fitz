@@ -11,7 +11,7 @@ but they are not the product contract.
 |---|---|---|
 | Retrieval recall | Hit@K / nDCG over fixture corpora | Broad recall must surface the right typed units before reranking. |
 | Reranking | Hit@1 / MRR after ONNX rerank | The reranker should move the answerable source near the top. |
-| Pyrrho governance | False-sufficient rate, insufficient recall, disputed recall | Pyrrho must avoid trusting weak or contradictory evidence. |
+| Pyrrho integration | Exact input/output identity, one decision per retrieval, replay parity | Fitz must not reinterpret or override Pyrrho. |
 | Progressive indexing | time-to-first-evidence, query-ready latency, full-enrichment latency | The user experience depends on useful evidence before deep indexing completes. |
 | Modality routing | accuracy by text/table/code/log/config route | Bad routing makes good retrieval strategies invisible. |
 | Structured/table evidence | SQL correctness, aggregation completeness, unit/filter correctness | Table evidence has failure modes that text governance does not cover. |
@@ -19,7 +19,7 @@ but they are not the product contract.
 
 ## Current Baseline Expectations
 
-- `fitz query` returns an `EvidencePack` with provenance and Pyrrho mode.
+- `fitz retrieve` returns an `EvidencePack` with provenance and Pyrrho mode.
 - Retrieval uses FTS5/BM25, typed-unit routing, structural expansion, and ONNX
   reranking.
 - Fitz-Sage consumes Pyrrho's query-only intent and evidence-kind heads as
@@ -30,8 +30,9 @@ but they are not the product contract.
 ## Gaps To Fill
 
 1. A maintained retrieval benchmark over the current KRAG fixture corpora.
-2. A governance evaluation split by evidence modality: text, table, code, logs,
-   and mixed evidence.
+2. Cross-modality integration cases that preserve the exact accepted Pyrrho
+   output without treating it as Fitz retrieval quality. Pyrrho owns
+   false-sufficient, class-recall, and calibration evaluation.
 3. A progressive-indexing latency benchmark that reports both query-ready and
    fully-enriched milestones.
 4. A public regression report format that can be updated without turning the

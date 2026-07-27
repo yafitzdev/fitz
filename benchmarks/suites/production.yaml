@@ -52,6 +52,25 @@ suites:
     gate: retrieval
     minimum_pass_rate: 0.85
 
+  - id: hardened_boundaries
+    corpus: benchmarks/corpora/limits
+    cases: benchmarks/cases/limits.yaml
+    case_ids:
+      - long_headingless_late_fact
+      - long_headingless_late_fact_non_temporal
+      - long_single_paragraph_final_fact
+      - segmented_late_fact_control
+      - expanded_abbreviation_control
+      - abbreviation_bridge
+      - similar_identifier_precision
+      - structured_edge_alpha_shortest_duration
+      - structured_edge_beta_highest_score
+      - structured_edge_delta_fail_owner
+      - structured_edge_gamma_blocked_duration
+    required: true
+    gate: retrieval
+    minimum_pass_rate: 1.0
+
   - id: xlsx_optional
     corpus: benchmarks/corpora/formats/xlsx
     cases: benchmarks/cases/formats_xlsx.yaml

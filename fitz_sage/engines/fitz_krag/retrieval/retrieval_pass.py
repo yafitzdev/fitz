@@ -9,9 +9,8 @@ One retrieval pass — candidate generation, fusion, precision rerank, read.
     Tier 3  precision rerank       ── AddressReranker.rerank()
     Tier 4  read content           ── ContentReader.read()
 
-Query in, `ReadResult`s out. A single-hop query runs one pass; the
-multi-hop controller loops it. Reranking lives *inside* the pass, so it
-runs on every query regardless of how many hops there are.
+Query in, `ReadResult`s out. Reranking lives inside the pass so every
+retrieval route uses the same precision stage.
 """
 
 from __future__ import annotations
@@ -109,17 +108,14 @@ class RetrievalPass:
         query: str,
         profile: Any = None,
         *,
-        exclude: set[tuple[str, str]] | None = None,
         rewrite_result: Any = None,
         progress: "Callable[[str], None] | None" = None,
     ) -> list[ReadResult]:
-        """Run one retrieval pass: retrieve -> drop excluded -> rerank -> read.
+        """Run one retrieval pass: retrieve -> rerank -> read.
 
         Args:
             query: the retrieval query (rewritten or bridge query, not raw).
             profile: the RetrievalProfile carrying gates + strategy weights.
-            exclude: address keys ``(source_id, location)`` to drop before
-                reranking — used by multi-hop to skip already-read addresses.
             rewrite_result: the QueryRewriter result, forwarded to the router
                 so it can reuse decomposed query variations.
             progress: optional status callback, forwarded to the router.
@@ -138,21 +134,15 @@ class RetrievalPass:
         self.last_timings["recall"] = time.perf_counter() - t0
         recall_addresses = list(addresses)
         router_trace = dict(getattr(self._router, "last_trace", {}) or {})
-        if exclude:
-            addresses = [a for a in addresses if (a.source_id, a.location) not in exclude]
-        after_exclude = list(addresses)
         if not addresses:
             self.last_timings["rerank"] = 0.0
             self.last_timings["read"] = 0.0
             self.last_trace = {
                 "query": query,
                 "profile": _profile_trace(profile),
-                "exclude_count": len(exclude or set()),
                 "router": router_trace,
                 "recall_count": len(recall_addresses),
                 "recall": addresses_trace(recall_addresses),
-                "after_exclude_count": len(after_exclude),
-                "after_exclude": addresses_trace(after_exclude),
                 "reranker": {"used": False, "reason": "no_addresses"},
                 "final_addresses": [],
                 "read_results": [],
@@ -165,6 +155,7 @@ class RetrievalPass:
             addresses = self._reranker.rerank(query, addresses)
             self.last_timings["rerank"] = time.perf_counter() - t0
             reranker_trace = dict(getattr(self._reranker, "last_trace", {}) or {})
+            addresses = _ensure_concrete_row_coverage(candidates, addresses, profile)
             addresses = order_addresses_for_contract(
                 query,
                 candidates,
@@ -173,7 +164,6 @@ class RetrievalPass:
                 limit=len(addresses),
             )
             addresses = _ensure_broad_corpus_coverage(query, candidates, addresses, profile)
-            addresses = _ensure_concrete_row_coverage(candidates, addresses, profile)
         else:
             self.last_timings["rerank"] = 0.0
             reranker_trace = {"used": False, "reason": "no_reranker"}
@@ -189,12 +179,9 @@ class RetrievalPass:
         self.last_trace = {
             "query": query,
             "profile": _profile_trace(profile),
-            "exclude_count": len(exclude or set()),
             "router": router_trace,
             "recall_count": len(recall_addresses),
             "recall": addresses_trace(recall_addresses),
-            "after_exclude_count": len(after_exclude),
-            "after_exclude": addresses_trace(after_exclude),
             "reranker": reranker_trace,
             "final_address_count": len(final_addresses),
             "final_addresses": addresses_trace(final_addresses),
@@ -476,7 +463,7 @@ def _enforce_broad_group_diversity(
     addresses: list[Any],
     profile: Any = None,
 ) -> list[Any]:
-    """For corpus overview queries, seed the cutoff window with corpus-family coverage."""
+    """For corpus overviews, seed final delivery with corpus-family coverage."""
     if not _should_apply_broad_corpus_prior(query, profile):
         return addresses
     if len(addresses) <= _BROAD_GROUP_TARGET:

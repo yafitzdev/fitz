@@ -1,5 +1,9 @@
 # fitz-gov 5.0 Benchmark Results
 
+> **Historical record.** This report describes a retired, pre-Pyrrho
+> governance implementation. The named Fitz-Sage models, modules, commands,
+> and recommendations are not part of the current product.
+
 **Version**: fitz-gov 5.0 (2,910 governance cases)
 **Date**: February 2026
 **Decision method**: 4-question cascade (GBT × 3)

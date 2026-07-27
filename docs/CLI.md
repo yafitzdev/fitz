@@ -15,10 +15,10 @@ fitz <command> --help
 
 ```bash
 # From inside a document folder: register the current directory and return evidence
-fitz query "Which documents are relevant to the refund policy?"
+fitz retrieve "Which documents are relevant to the refund policy?"
 
 # Point at a different source folder
-fitz query "Which documents are relevant to the refund policy?" --source ./docs
+fitz retrieve "Which documents are relevant to the refund policy?" --source ./docs
 
 # Advanced evidence controls
 fitz retrieve "Which documents are relevant?" --source ./docs --top-k 8
@@ -30,7 +30,7 @@ fitz answer "What is the refund policy?" --source ./docs \
   --synthesizer endpoint/qwen2.5-7b-instruct
 ```
 
-`fitz query` is the product default. It returns a ranked `EvidencePack`; it does
+`fitz retrieve` is the product default. It returns a ranked `EvidencePack`; it does
 not generate an answer. Required retrieval enrichment runs through the managed
 Qwen3 0.6B ONNX GenAI model on CPU, so no API key or external inference server is
 needed for retrieval.
@@ -39,21 +39,21 @@ needed for retrieval.
 
 ## Commands
 
-The main commands are `query`, `retrieve`, `answer`, `collections`, and `serve`.
+The main commands are `retrieve`, `answer`, `collections`, and `serve`.
 Configuration is auto-created on first run; there is no separate init or ingest
 step.
 
-### `fitz query`
+### `fitz retrieve`
 
-Return governed evidence with the fewest flags. If neither `--source` nor
-`--collection` is provided, `fitz query` uses the current working directory as
+Return governed evidence. If neither `--source` nor
+`--collection` is provided, `fitz retrieve` uses the current working directory as
 the source and derives the collection name from that folder.
 
 ```bash
-fitz query "Your question"
-fitz query "Your question" --source ./docs
-fitz query "Your question" --collection product_docs
-fitz query "Your question" --source ./docs --collection product_docs
+fitz retrieve "Your question"
+fitz retrieve "Your question" --source ./docs
+fitz retrieve "Your question" --collection product_docs
+fitz retrieve "Your question" --source ./docs --collection product_docs
 ```
 
 **Arguments**
@@ -63,6 +63,11 @@ fitz query "Your question" --source ./docs --collection product_docs
 - `-s, --source PATH` - file or directory to register before retrieval
 - `-c, --collection TEXT` - collection name; defaults to the source folder name
 - `-e, --engine TEXT` - engine name; defaults to `fitz_krag`
+- `--format text|json` - human-readable table or serialized `EvidencePack`
+- `--top-k INT` - maximum evidence items to show
+- `--trace PATH` - write a versioned retrieval execution record
+- `--trace-content` - include source content so Pyrrho can be replayed;
+  requires `--trace`
 
 **What the user sees**
 
@@ -75,29 +80,6 @@ fitz query "Your question" --source ./docs --collection product_docs
 If enrichment is still pending after the first evidence pack is shown, the CLI
 starts a detached `index-daemon` process so the collection keeps improving after
 the foreground command exits.
-
-### `fitz retrieve`
-
-Same evidence workflow as `fitz query`, with explicit output controls. Use it
-when scripts need JSON or a fixed evidence count.
-
-```bash
-fitz retrieve "Your question"
-fitz retrieve "What is this about?" --source ./docs
-fitz retrieve "Which test failed?" -c my_collection --source ./docs --top-k 10
-fitz retrieve "Which test failed?" --format json
-fitz retrieve "Which test failed?" -c my_collection --trace run.json
-```
-
-**Options**
-- `-s, --source PATH` - file or directory to register before retrieval
-- `-c, --collection TEXT` - collection name; defaults to the source folder name
-- `-e, --engine TEXT` - engine name; defaults to `fitz_krag`
-- `--format text|json` - human-readable table or serialized `EvidencePack`
-- `--top-k INT` - maximum evidence items to show
-- `--trace PATH` - write a versioned retrieval execution record
-- `--trace-content` - include source content so Pyrrho can be replayed;
-  requires `--trace`
 
 Trace capture and the displayed `EvidencePack` come from one execution. Source
 content is redacted unless `--trace-content` is explicitly set.
@@ -209,17 +191,15 @@ The minimum on-disk config (`.fitz/config.yaml` in the current workspace) is:
 collection: default
 parser: cpu
 rerank: onnx
-governance: pyrrho//absolute/path/to/reviewed-clean-package
+governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-With a reviewed local Pyrrho package, this is enough for `fitz query`,
-`fitz retrieve`, and `fitz_sage.evidence(...)`. Managed Qwen3 0.6B ONNX GenAI
-enrichment, the ONNX reranker, and Pyrrho governance all run locally on CPU.
-The bare `governance: pyrrho` value fails closed until a clean default model is
-promoted.
+This is enough for `fitz retrieve` and
+`fitz_sage.evidence(...)`. Managed Qwen3 0.6B ONNX GenAI enrichment, the ONNX
+reranker, and the accepted immutable Pyrrho default all run locally on CPU.
 
 See [CONFIG.md](CONFIG.md) for every key and
 [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) for deployment examples.

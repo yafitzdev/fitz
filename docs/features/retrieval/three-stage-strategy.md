@@ -9,7 +9,7 @@ The retrieval strategy is deliberately split into three jobs:
 
 1. **Recall** — find a broad candidate set.
 2. **Rerank** — impose relevance order on that candidate set.
-3. **Pyrrho** — decide how much ranked evidence is enough.
+3. **Pyrrho** — judge one fixed delivered evidence set.
 
 This split matters because each stage optimizes a different failure mode. Recall
 is allowed to be noisy. Reranking is where precision belongs. Pyrrho decides
@@ -29,8 +29,8 @@ flowchart LR
     R --> C["Candidate evidence pool"]
     C --> K["2. ONNX rerank"]
     K --> L["Ranked evidence list"]
-    L --> S["Shape-aware prefix ordering"]
-    S --> P["3. Pyrrho cutoff"]
+    L --> S["Contract-aware fixed evidence compilation"]
+    S --> P["3. One Pyrrho decision"]
     P --> E["EvidencePack"]
 
     QC --> QC1["Deterministic query profile"]
@@ -58,7 +58,7 @@ The core rule is simple:
 ## Stage 1: Broad Recall
 
 Broad recall builds the candidate pool. It is intentionally permissive and cheap.
-False positives are acceptable because later stages filter and stop.
+False positives are acceptable because later stages rank and compile.
 
 Inputs:
 
@@ -190,7 +190,7 @@ stage.
 | Supplemental scan | Recall | Covers registered files that are not fully query-ready yet. |
 | ONNX reranker | Rerank | Sorts noisy recall candidates by relevance. |
 | Metric comparison compilation | Compile | Promotes direct metric/table evidence before fixed delivery. |
-| Multi-hop | Retrieval loop | Runs another retrieval pass when Pyrrho marks evidence insufficient and a bridge is available. |
+| Evidence closure | Recall / expansion | Runs bounded contract-driven bridge retrieval before compilation; it does not react to Pyrrho. |
 | Pyrrho | Governance | Decides enough / disputed / not enough over the delivered evidence set. |
 
 Nothing in this model makes enrichment optional. Required enrichment improves

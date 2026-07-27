@@ -5,7 +5,6 @@ Fitz CLI - Main application.
 Commands:
     fitz retrieve      Retrieve governed evidence (--source to register)
     fitz answer        Generate an optional synthesized answer
-    fitz query         Compatibility synthesized-answer command
     fitz collections   Manage collections (list, info, delete)
     fitz serve         Start the REST API server
 
@@ -34,7 +33,7 @@ import typer  # noqa: E402
 
 app = typer.Typer(
     name="fitz",
-    help='Fitz - local-first retrieval. Start with: fitz query "your question"',
+    help='Fitz - local-first retrieval. Start with: fitz retrieve "your question"',
     no_args_is_help=True,
     add_completion=False,
 )
@@ -45,36 +44,6 @@ app = typer.Typer(
 # =============================================================================
 # Each command is a thin wrapper that imports the real implementation only when invoked.
 # This keeps CLI startup fast by avoiding heavy imports (torch, pydantic models, etc.).
-
-
-@app.command("query")
-def query(
-    question: Optional[str] = typer.Argument(None, help="Question to retrieve evidence for."),
-    source: Optional[Path] = typer.Option(
-        None,
-        "--source",
-        "-s",
-        help="Path to documents. Defaults to the current directory.",
-    ),
-    collection: Optional[str] = typer.Option(
-        None,
-        "--collection",
-        "-c",
-        help="Collection name. Defaults to the source folder name.",
-    ),
-    engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
-) -> None:
-    """Retrieve governed evidence. Defaults to indexing the current directory."""
-    from fitz_sage.cli.commands import retrieve as mod
-
-    mod.command(
-        question=question,
-        source=source,
-        collection=collection,
-        engine=engine,
-        output_format="text",
-        top_k=None,
-    )
 
 
 @app.command("retrieve")
@@ -193,7 +162,7 @@ def answer(
         None,
         "--synthesizer",
         help=(
-            "Provider/model spec for answer synthesis " "(e.g. endpoint/qwen2.5-7b, openai/gpt-4o)."
+            "Provider/model spec for answer synthesis (e.g. endpoint/qwen2.5-7b, openai/gpt-4o)."
         ),
     ),
     model: Optional[str] = typer.Option(
@@ -209,7 +178,7 @@ def answer(
     ),
 ) -> None:
     """Answer with optional synthesis; use retrieve for evidence-only output."""
-    from fitz_sage.cli.commands import query as mod
+    from fitz_sage.cli.commands import answer as mod
 
     mod.command(
         question=question,

@@ -62,10 +62,6 @@ class EngineCapabilities:
     api_key_env_var: Optional[str] = None
     """Environment variable name for API key"""
 
-    # CLI hints
-    cli_query_message: Optional[str] = None
-    """Custom message to show in query command (e.g., 'use quickstart instead')"""
-
 
 @dataclass
 class EngineRegistration:

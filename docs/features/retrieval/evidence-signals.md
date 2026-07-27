@@ -45,7 +45,7 @@ managed Qwen query keywords, and optional query intelligence.
 
 | Signal | Meaning | Retrieval effect |
 |---|---|---|
-| `analysis_type` | Query shape such as general, lookup, comparison, temporal, aggregation, or overview. | Sets breadth and candidate fanout. |
+| `analysis_type` | Primary surface such as general, code, documentation, data, or cross-surface. | Seeds strategy weights and entity targeting. |
 | `keywords` | Managed Qwen and deterministic semantic query terms. | Improves lexical recall without embeddings. |
 | `comparison_entities` | Entities or sides that must both appear for comparison questions. | Helps avoid one-sided evidence packs. |
 | `temporal_references` | Dates, versions, quarters, or recency markers found in the query. | Boosts matching periods and freshness-sensitive evidence. |
@@ -54,6 +54,10 @@ managed Qwen query keywords, and optional query intelligence.
 | `required_modalities` | Evidence surfaces that should be present when known. | Ensures table, symbol, or section evidence remains eligible. |
 
 The profile is stored in `EvidencePack.metadata.query_profile.profile`.
+Its `has_*_intent` fields are Fitz-owned readings of the user's query.
+Pyrrho PRE retrieval obligations are preserved separately under
+`metadata.query_profile.pyrrho_pre` and in `retrieval_intents`; they can steer
+evidence coverage without relabeling user intent.
 
 Example:
 
@@ -227,9 +231,9 @@ Useful governance metadata:
 | Show evidence directly | source evidence, `mode`, `reasons` |
 | Generate prose only when safe | `mode`, `probabilities`, `evidence_verdict` |
 | Ask for more documents | `mode`, `failure_mode`, `retrieval_intents`, `evidence_kinds` |
-| Run a focused retry | `stop_reason`, `retrieval_intents`, `evidence_kinds`, retrieval trace |
+| Run a focused retry | `retrieval_intents`, `evidence_kinds`, retrieval trace, compiler roles |
 | Explain disputes | `mode`, `failure_mode`, source evidence |
-| Build audit logs | source evidence, `stop_reason`, `trajectory`, Pyrrho v2 heads |
+| Build audit logs | fixed delivered evidence, content hashes, exact Pyrrho input/output, runtime fingerprints |
 | Tune retrieval quality | `query_profile`, `retrieval_trace`, `evidence_delivery` |
 
 The core rule:

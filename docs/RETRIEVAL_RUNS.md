@@ -86,9 +86,6 @@ The collection fingerprint hashes the collection manifest and recorded
 indexing status. It is a change detector, not a byte-for-byte snapshot of the
 SQLite indexes.
 
-Multi-hop runs remain valid records, but currently include a warning because
-the hop controller does not expose every per-hop candidate boundary.
-
 ## Redaction
 
 `RetrievalRun.to_dict()`, `to_json()`, and `write()` redact source content by
@@ -117,7 +114,7 @@ stored in a content-bearing trace:
 # Use the provider recorded in the trace.
 fitz replay run-with-content.json
 
-# Evaluate a different reviewed package.
+# Evaluate a different accepted package.
 fitz replay run-with-content.json \
   --pyrrho pyrrho/C:/models/pyrrho-candidate \
   --output replay.json

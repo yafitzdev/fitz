@@ -92,7 +92,8 @@ fitz-sage asks Qwen for a small keyword-only expansion and merges those terms
 with literal deterministic query terms.
 
 That keyword set becomes one extra BM25 leg in broad recall. It is cheap and
-recall-oriented; precision belongs to the ONNX reranker and Pyrrho cutoff.
+recall-oriented; precision belongs to the ONNX reranker, while Pyrrho judges
+the fixed delivered evidence.
 
 ---
 

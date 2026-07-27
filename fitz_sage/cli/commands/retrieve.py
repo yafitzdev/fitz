@@ -290,7 +290,7 @@ def _select_collection(
     collections = [str(name) for name in registry.get_list_collections(engine_name)]
     if not collections:
         ui.warning("No collections found.")
-        ui.info("Run 'fitz query \"question\"' from your documents folder to get started.")
+        ui.info("Run 'fitz retrieve \"question\"' from your documents folder to get started.")
         raise typer.Exit(0)
 
     if requested is not None:

@@ -6,7 +6,7 @@ Core data models and protocols for fitz-sage.
 
 ### EvidencePack
 
-The retrieval-first response contract. `fitz query`, `fitz retrieve`, and
+The retrieval-first response contract. `fitz retrieve` and
 `fitz_sage.evidence()` return this shape.
 
 For the product-level contract, Pyrrho metadata, and indexing-status examples,

@@ -3,7 +3,6 @@
 
 `EvidencePack` is the retrieval-first response contract. It is returned by:
 
-- `fitz query`
 - `fitz retrieve`
 - `fitz_sage.evidence()`
 
@@ -61,8 +60,8 @@ The most important metadata blocks are:
 | Block | Meaning |
 |---|---|
 | `query_profile` | The effective retrieval profile used before recall. |
-| `retrieval_trace` | Candidate generation, reranking, final reads, and retries. |
-| `evidence_compiler` | Mechanical evidence roles, anchors, and source-count constraints. |
+| `retrieval_trace` | Candidate generation, reranking, final reads, and evidence-closure passes. |
+| `evidence_compiler` | Mechanical evidence roles, anchors, and ordering. |
 | `evidence_delivery` | Fixed evidence budget applied before Pyrrho runs. |
 | `pyrrho` | Pyrrho's exact serialized governance decision. |
 
@@ -71,6 +70,9 @@ The most important metadata blocks are:
 `metadata.query_profile` records how Fitz searched before governance ran. It
 contains query-shape metadata, managed Qwen query keywords, strategy weights,
 fetch limits, and intent flags.
+The `has_*_intent` fields describe Fitz's deterministic reading of the user's
+query. Exact Pyrrho PRE evidence obligations remain separate in
+`query_profile.pyrrho_pre` and `retrieval_intents`.
 
 ```json
 {
@@ -190,8 +192,7 @@ inspect how a pack was produced:
         "output": []
       },
       "final_addresses": [],
-      "read_results": [],
-      "retries": []
+      "read_results": []
     }
   }
 }
@@ -199,13 +200,13 @@ inspect how a pack was produced:
 
 The trace is not a separate debug API. It is part of the retrieval-first
 contract because benchmark reports need candidate frontiers, strategy scores,
-reranker order, and retry behavior alongside the selected evidence.
+reranker order, and evidence-closure behavior alongside the selected evidence.
 
 ### Evidence Compiler
 
 `metadata.evidence_compiler` records mechanical evidence constraints before
-fixed delivery: literal anchors, required source count, how many evidence items
-entered and left compilation, and selected evidence roles.
+fixed delivery: literal anchors, how many evidence items entered and left
+compilation, and selected evidence roles.
 
 ```json
 {
@@ -214,15 +215,12 @@ entered and left compilation, and selected evidence roles.
       "contract": {
         "identifiers": ["INC-101"],
         "phrase_anchors": ["Project Orion"],
-        "source_anchors": [],
         "keyword_anchors": ["latest", "status"],
-        "metric_terms": [],
         "required_modalities": ["table"],
         "temporal_policy": "temporal"
       },
       "input_count": 4,
       "output_count": 2,
-      "min_sources": 2,
       "filtered_all": false,
       "selected": []
     }

@@ -149,7 +149,7 @@ behaviour *and* OAuth2 configuration.
 ## Related
 
 - **Enrichment** — extracts the entities during ingest
-- [Multi-Hop Reasoning](multi-hop-reasoning.md) — can use the entity
-  graph for bridge extraction
+- [Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) — bounded evidence closure
+  can use entity-linked source context
 - [Comparison Queries](comparison-queries.md) — entity graph helps
   retrieve both compared entities

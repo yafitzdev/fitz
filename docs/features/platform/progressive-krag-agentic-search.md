@@ -5,11 +5,11 @@ fitz-sage builds just enough index to return governed evidence, then keeps
 improving the collection in the background.
 
 ```bash
-fitz query "Which documents are relevant?"
-fitz query "Which documents are relevant?" --source ./docs
+fitz retrieve "Which documents are relevant?"
+fitz retrieve "Which documents are relevant?" --source ./docs
 ```
 
-`fitz query` defaults to the current directory when no `--source` or
+`fitz retrieve` defaults to the current directory when no `--source` or
 `--collection` is supplied.
 
 ---
@@ -18,7 +18,7 @@ fitz query "Which documents are relevant?" --source ./docs
 
 ```mermaid
 flowchart TD
-    A["User runs fitz query"] --> B["Register source / load collection"]
+    A["User runs fitz retrieve"] --> B["Register source / load collection"]
     B --> C["Parse files into typed units"]
     C --> D["Search surface ready"]
     D --> E["Return EvidencePack"]
@@ -115,7 +115,7 @@ fusion, rerank, read, and governance path as indexed results.
 ## Why This Shape
 
 **No separate ingest command.** A separate command forces users to understand
-index lifecycle before they can ask their first question. `fitz query` is the
+index lifecycle before they can ask their first question. `fitz retrieve` is the
 only required action.
 
 **Parse first, enrich later.** Parsing is the cheapest broad action that unlocks
@@ -123,8 +123,8 @@ most of the corpus. Qwen enrichment is mandatory for the full index, but it does
 not need to block the first evidence pack.
 
 **Broad recall first.** Early retrieval is allowed to include false positives.
-The ONNX reranker and Pyrrho cutoff decide which evidence is actually worth
-showing.
+The ONNX reranker orders the fixed delivered evidence, and Pyrrho reports
+whether that evidence is sufficient, disputed, or insufficient.
 
 **Synchronous core, background worker.** The engine is synchronous, so the
 worker uses threads/events rather than an async runtime. Detached CLI indexing
@@ -140,7 +140,7 @@ uses `fitz index-daemon`, hidden from normal users.
 | `fitz_sage/engines/fitz_krag/progressive/builder.py` | source scan and cheap structure extraction |
 | `fitz_sage/engines/fitz_krag/progressive/worker.py` | staged background indexing |
 | `fitz_sage/engines/fitz_krag/retrieval/strategies/agentic_search.py` | not-query-ready file bridge |
-| `fitz_sage/cli/commands/retrieve.py` | `fitz query`/`fitz retrieve` foreground flow and daemon spawn |
+| `fitz_sage/cli/commands/retrieve.py` | `fitz retrieve` foreground flow and daemon spawn |
 
 ---
 

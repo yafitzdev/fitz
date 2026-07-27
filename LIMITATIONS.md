@@ -89,15 +89,27 @@ sufficient or disputed.
 
 ## Tables
 
-Literal row lookup is supported for exact identifiers. fitz-sage does not
-rewrite row keys to find separator variants by default.
+Literal row lookup is supported for exact identifiers. Clear requests for
+records with a property or status can also trigger a bounded structured-row
+scan. fitz-sage does not rewrite row keys to find separator variants by
+default.
 
 Known hard cases:
 
 - row keys with inconsistent formatting across files
 - superlatives over noisy tables
 - comparison queries that require multiple rows and prose context
-- large tables when the queried key is absent or misspelled
+- large tables beyond the bounded scan when the queried key is absent or
+  misspelled
+
+## Long Documents
+
+Reranking uses a bounded query-centered excerpt while selected evidence retains
+the original source text. This prevents a late literal fact from being hidden
+solely because a document is long or headingless, but it is not an unlimited
+long-context guarantee. Poorly segmented documents can still crowd several
+relevant regions into one candidate, and Pyrrho currently evaluates at most
+2,048 tokens.
 
 ## Conflicts
 
@@ -126,55 +138,54 @@ step.
 The limitations benchmark intentionally contains cases that should fail or
 surface product boundaries. It is not a marketing benchmark.
 
-The 2026-07-27 governance-ownership run measured 60 limitation cases. Of the 52
-cases with evidence assertions, 49 passed retrieval and delivery (94.2%). No
-forbidden evidence was returned by this suite. The three package capability
-misses were:
+The 2026-07-27 hardening run measured 60 limitation cases. All 52 cases with
+evidence assertions passed retrieval and fixed evidence delivery (100%),
+required recall was 100%, and no forbidden evidence was returned. The three
+former package misses now pass through general mechanisms:
 
-- one final fact buried in a long single-paragraph document, dropped during
-  reranking
-- one explicit private-abbreviation bridge whose companion source was not
-  retained during evidence reading/compilation
-- one filtered table lookup whose target row was missed during recall
+- query-centered reranking excerpts for facts late in long documents
+- a query-bound bridge for explicit definitions such as `QRS means Queue
+  Recovery Service`
+- a bounded scan for clearly structured record/property requests
 
-These failures stay in the suite. They should only turn green after a general
-retrieval improvement, not a case-specific synonym or identifier rule.
+These mechanisms preserve raw source text. They do not normalize identifiers,
+invent expansions, or create a persistent synonym dictionary.
 
-The same run passed 35 of 60 complete contracts. Pyrrho disagreed with the
-expected mode on 25 cases, including the three package misses. Temporal,
-comparison, and version-scope groups passed completely. Abbreviation and
-cross-source-bridge mode expectations passed 0%. The run used the explicit local
-`pyrrho-v2-nano-g1` package at its 2,048-token contract. Its exact decisions are
-preserved in the report; improving those 25 mode failures belongs in Pyrrho
-training and release work, not in Fitz-Sage policy code.
+The same run passed 35 of 60 complete contracts. All 25 failures were attributed
+to Pyrrho verdicts or failure modes, while retrieval and delivery still passed.
+The run used the accepted immutable `pyrrho-v2-nano-g1` default at its current
+2,048-token contract. Pyrrho's training data included benchmark-derived
+deterministic rows, so the 35/60 result is diagnostic integration evidence, not
+an independent model-quality claim. Improving those 25 decisions belongs in
+Pyrrho training and release work, not in Fitz-Sage policy code.
 
 The required production suites measured:
 
-- 175/181 retrieval contracts (96.7%)
-- 175/181 governed evidence-delivery contracts (96.7%)
-- 58/60 query-shape contracts (96.7%)
-- 233/241 combined package capability contracts (96.7%)
+- 186/192 retrieval contracts (96.9%)
+- 186/192 governed evidence-delivery contracts (96.9%)
+- 60/60 query-shape contracts (100%)
+- 246/252 combined package capability contracts (97.6%)
 - 20/20 core retrieval contracts after adding 80 near-neighbor documents
 - 100% retrieval, delivery, and governance identity stability after reload
 
-The remaining required-suite package misses cover:
+The remaining six required-suite package misses cover:
 
-- a grouped code constant whose individual environment-variable values were
+- a grouped code constant whose individual deployment environment values were
   not compiled into the required symbol evidence
-- a multi-intent question whose two unrelated source requests had no explicit
-  bridge
-- one latest-state case where stale evidence remained in the ranking
-- three mixed table/code cases where a required companion row or code fragment
-  was absent from compiled evidence
+- two coordinated prose requests where the second clause was absent from
+  compiled evidence
+- a table superlative whose winning row was absent from compiled evidence
+- a mixed service-owner request whose companion service row was not recalled
+- a mixed table/code request whose scheduler expression was absent from
+  compiled evidence
 
-Two of 60 query-shape controls also remain red: one narrow rotation-duration
-query was classified as comparative, and one narrow route-path query was
-classified as aggregative.
+All 60 query-shape controls pass. These misses remain visible because the
+benchmark is a boundary record, not a target to fit case by case.
 
 Performance is measured, not guaranteed. On the benchmark machine, indexing
-the 98-file noisy corpus took 323.5 seconds (0.30 files/second), and ordinary
-suite queries averaged roughly 3-4 seconds. A pathological limitation query
-took 50 seconds. Many small enriched files and unusually broad/long evidence
+the 98-file noisy corpus took 335.5 seconds (0.29 files/second), and required
+suite queries averaged 4.1 seconds with a 3.6-second median. The slowest
+limitation query took 27.9 seconds. Many small enriched files and broad evidence
 can therefore be operational bottlenecks even when retrieval is correct.
 
 Use this file as the public contract. Use the benchmark to decide which

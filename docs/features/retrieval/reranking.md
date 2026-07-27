@@ -58,8 +58,8 @@ scoring:
    solution for pairwise relevance scoring.
 
 The same ModernBERT-base family used by Pyrrho governance: local CPU inference,
-lazy loading, and a process-lifetime cache. The historical linked Pyrrho Hub
-package is quarantined; normal governance uses a reviewed local ONNX package.
+lazy loading, and a process-lifetime cache. Pyrrho resolves its accepted default
+at an immutable Hub revision.
 
 ## How it works
 
@@ -155,13 +155,13 @@ battery-spec candidates. Raw logits — magnitudes vary by backbone.
 | Sparse search (FTS5)   | Runs *before* reranking; produces the candidate pool               |
 | Query expansion        | Runs *before* reranking; all expanded results land in one pool     |
 | KRAG routing           | Cross-encoder sees the rewritten query, not the raw user text      |
-| Multi-hop              | Reranker runs inside each hop independently                        |
+| Evidence closure       | Follow-up retrieval uses the same reranking path before compilation |
 | Governance (pyrrho)    | Reranker output feeds the pyrrho classifier; reranker doesn't see  |
 |                        | governance decisions                                                |
 
 ## Related
 
 - [Sparse Search (FTS5 + bm25)](sparse-search.md) — the recall layer
-- [Multi-Hop Reasoning](multi-hop-reasoning.md) — reranker runs inside each hop
+- [Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) — reranking and bounded evidence closure
 - [Unified Storage](../platform/unified-storage.md) — SQLite + FTS5 layer
 - [Epistemic Governance (pyrrho)](../../CONSTRAINTS.md) — the next encoder in the pipeline

@@ -26,7 +26,7 @@ def display_answer(answer, show_sources: bool = True) -> None:
     """
     Display an answer with optional sources.
 
-    Used by `fitz query` for consistent output.
+    Used by `fitz retrieve` for consistent output.
     Supports both core Answer (.text, .provenance) and RGSAnswer (.answer, .sources).
 
     Args:
@@ -128,7 +128,7 @@ def display_sources(sources, max_sources: int = 5, indent: int = 0) -> None:
     """
     Display answer provenance in a table.
 
-    Used by `fitz query` and `fitz chat` for consistent output.
+    Used by `fitz answer` for consistent output.
 
     Args:
         sources: Source objects with content or excerpt plus metadata

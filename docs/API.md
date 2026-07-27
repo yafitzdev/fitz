@@ -76,7 +76,7 @@ normalize explicit names, so `project-a` and `project_a` remain distinct.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/query` | Query knowledge base and return an answer |
+| POST | `/answer` | Retrieve evidence and synthesize an answer |
 | POST | `/evidence` | Retrieve governed evidence without answer synthesis |
 | POST | `/chat` | Multi-turn chat |
 | GET | `/collections` | List collections |
@@ -88,7 +88,7 @@ normalize explicit names, so `project-a` and `project_a` remain distinct.
 
 ---
 
-## POST /query
+## POST /answer
 
 Query the knowledge base with a single question and return answer text plus
 source attribution.
@@ -139,7 +139,7 @@ source attribution.
 ### Example
 
 ```bash
-curl -X POST http://localhost:8000/query \
+curl -X POST http://localhost:8000/answer \
   -H "Content-Type: application/json" \
   -d '{"question": "What is the refund policy?"}'
 ```
@@ -149,7 +149,7 @@ curl -X POST http://localhost:8000/query \
 ## POST /evidence
 
 Retrieve a governed `EvidencePack` without answer synthesis. This is the REST
-equivalent of `fitz query`, `fitz retrieve`, and `fitz_sage.evidence()`.
+equivalent of `fitz retrieve` and `fitz_sage.evidence()`.
 
 ### Request
 
@@ -242,7 +242,7 @@ The server is **stateless** - the client must manage and send conversation histo
 
 ### Response
 
-Same as `/query`:
+Same as `/answer`:
 
 ```json
 {
@@ -456,7 +456,7 @@ import requests
 BASE_URL = "http://localhost:8000"
 
 # Query
-response = requests.post(f"{BASE_URL}/query", json={
+response = requests.post(f"{BASE_URL}/answer", json={
     "question": "What is the refund policy?",
     "collection": "default"
 })
@@ -493,7 +493,7 @@ const BASE_URL = 'http://localhost:8000';
 
 // Query
 async function query(question) {
-  const response = await fetch(`${BASE_URL}/query`, {
+  const response = await fetch(`${BASE_URL}/answer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question })

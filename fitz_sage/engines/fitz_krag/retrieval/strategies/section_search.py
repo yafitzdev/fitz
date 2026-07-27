@@ -17,11 +17,14 @@ from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import (
     apply_recency_boost,
     rrf_score,
 )
+from fitz_sage.engines.fitz_krag.retrieval.snippets import query_relevant_excerpt
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.ingestion.section_store import SectionStore
+
+_RERANK_TEXT_CHARS = 1200
 
 
 class SectionSearchStrategy:
@@ -54,7 +57,9 @@ class SectionSearchStrategy:
         4. Parent-title breadcrumb enrichment
         """
         if inject_corpus_summaries:
-            return [self._to_address(s) for s in self._section_store.get_corpus_summaries()]
+            return [
+                self._to_address(s, query=query) for s in self._section_store.get_corpus_summaries()
+            ]
         fetch_limit = limit * 2
 
         # 1. BM25 search — the canonical retrieval signal.
@@ -75,7 +80,7 @@ class SectionSearchStrategy:
         self._enrich_with_parent_titles(top_results)
 
         # 6. Convert to Address objects
-        return [self._to_address(r) for r in top_results]
+        return [self._to_address(r, query=query) for r in top_results]
 
     def _enrich_with_parent_titles(self, results: list[dict[str, Any]]) -> None:
         """Batch-fetch parent section titles and attach to results.
@@ -98,7 +103,7 @@ class SectionSearchStrategy:
             if pid and pid in parent_titles:
                 r["parent_title"] = parent_titles[pid]
 
-    def _to_address(self, section: dict[str, Any]) -> Address:
+    def _to_address(self, section: dict[str, Any], *, query: str = "") -> Address:
         """Convert a section store row to an Address."""
         # Build breadcrumb location from parent title when available
         title = section["title"]
@@ -115,6 +120,13 @@ class SectionSearchStrategy:
             summary = f"{title}: {content[:300]}" if content else title
 
         metadata = dict(section.get("metadata") or {})
+        content = (section.get("content") or "").strip()
+        if query and len(content) > _RERANK_TEXT_CHARS:
+            metadata["rerank_text"] = query_relevant_excerpt(
+                query,
+                content,
+                max_chars=_RERANK_TEXT_CHARS,
+            )
         raw_file = self._raw_store.get(section["raw_file_id"]) if self._raw_store else None
         if raw_file and raw_file.get("path"):
             metadata["source_path"] = raw_file["path"]

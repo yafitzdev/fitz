@@ -23,6 +23,7 @@ from fitz_sage.tabular.store.base import StoredTable, compute_hash
 
 logger = get_logger(__name__)
 
+_MAX_ROW_SEARCH_TEXTS = 5
 _ROW_SEARCH_STOPWORDS = frozenset(
     {
         "a",
@@ -449,6 +450,7 @@ class SqliteTableStore:
                     "bm25_score": -float(rank) if rank is not None else 0.0,
                     "matched_rows": 0,
                     "row_numbers": [],
+                    "row_texts": [],
                     "query_terms": list(query_terms),
                     "matched_terms": [],
                     "term_coverage": 0.0,
@@ -457,6 +459,8 @@ class SqliteTableStore:
             entry["matched_rows"] += 1
             if len(entry["row_numbers"]) < 20:
                 entry["row_numbers"].append(int(row_num))
+            if content and len(entry["row_texts"]) < _MAX_ROW_SEARCH_TEXTS:
+                entry["row_texts"].append(str(content))
             if coverage > float(entry["term_coverage"]):
                 entry["matched_terms"] = matched_terms
                 entry["term_coverage"] = coverage

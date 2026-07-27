@@ -73,7 +73,7 @@ Query
  ├─► Router (symbol search · section search · table metadata)
 │    └─► FTS5 + bm25() over per-collection .db
  ├─► OnnxReranker (ONNX cross-encoder, ~30 ms CPU)
- ├─► Governance cutoff (Pyrrho v2 → SUFFICIENT / DISPUTED / INSUFFICIENT)
+ ├─► One Pyrrho decision (SUFFICIENT / DISPUTED / INSUFFICIENT)
  ├─► EvidencePack
  └─► Optional synthesizer → Answer (+ provenance + mode)
 ```
@@ -96,7 +96,7 @@ pack = engine.evidence(Query(text="What is X?"))
 ### Retrieval-first evidence
 
 `evidence()` returns the governed, serializable evidence pack. This is the
-contract used by `fitz query` and `fitz retrieve`:
+contract used by `fitz retrieve`:
 
 ```python
 pack = engine.evidence(Query(text="Where is auth handled?"))
@@ -130,7 +130,7 @@ query intelligence, or vision parsing. Managed Qwen enrichment is internal.
 | Import graph traversal  | Code: walks references and imports across files               |
 | Entity linking          | Cross-source linking via shared named entities                |
 | Hierarchical summaries  | L1 file summaries and L2 corpus overview built during enrichment |
-| Multi-hop retrieval     | Iterative bridge extraction for compound questions            |
+| Evidence closure        | Bounded bridge retrieval for unresolved query obligations      |
 | ONNX reranker           | INT8 cross-encoder, single forward pass on CPU                |
 | Epistemic governance    | Pyrrho v2 sufficient / disputed / insufficient evidence verdicts |
 | Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
@@ -150,7 +150,7 @@ answer = run("What is X?", engine="fitz_krag")
 ```
 
 ```bash
-fitz query "What is X?" --engine fitz_krag --source ./docs
+fitz retrieve "What is X?" --engine fitz_krag --source ./docs
 ```
 
 ### Available engines

@@ -133,15 +133,15 @@ follows the same declaration pattern — the `governance:` key declares the
 classifier:
 
 ```yaml
-governance: pyrrho//absolute/path/to/reviewed-clean-package
-# Remote packages require pyrrho/<owner>/<repo>@<40-character-commit>.
+governance: pyrrho
+# Custom remote packages require pyrrho/<owner/repo@40-character-commit>.
+# Local package directories use pyrrho/<absolute-path>.
 ```
 
-The bare `governance: pyrrho` value is retained in the schema but currently
-fails closed because its historical remote artifact is quarantined. A reviewed
-local package runs evidence-prefix checks in the cutoff loop.
-Pyrrho owns v2 query-planning heads and evidence governance; Fitz/KRAG owns the
-retrieval mechanics that consume those signals.
+The bare value uses Pyrrho's accepted immutable default. Pyrrho owns v2
+query-planning heads and the one authoritative decision over the fixed delivered
+evidence set; Fitz/KRAG owns the retrieval mechanics that consume planning
+signals.
 
 ## Managed enrichment
 
@@ -201,7 +201,7 @@ answer_expander: endpoint/expander
 | Feature | Config key | Product default |
 |---------|------------|-----------------|
 | Managed Qwen enrichment | internal | local CPU runtime |
-| Pyrrho governance | `governance:` | reviewed local package required |
+| Pyrrho governance | `governance:` | accepted immutable default |
 | ONNX reranker | `rerank:` | `rerank: onnx` |
 | Answer synthesis | `synthesizer:` | `null`, enabled only by explicit provider |
 | Query intelligence | `query_intelligence:` | `null`, deterministic prep + Qwen keywords |

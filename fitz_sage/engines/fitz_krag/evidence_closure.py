@@ -37,6 +37,16 @@ _SOURCE_FILE_TOKEN_PATTERN = re.compile(
     r"\b[A-Za-z0-9_.-]+\.(?:py|js|ts|tsx|jsx|java|go|rs|rb|php|cs|cpp|c|h|hpp|md|csv|json|yaml|yml|toml)\b",
     re.IGNORECASE,
 )
+_EXPLICIT_DEFINITION_PATTERN = re.compile(
+    r"\b(?P<label>[A-Z][A-Z0-9_-]{1,11})\s+"
+    r"(?:means|stands\s+for|refers\s+to|is\s+short\s+for)\s+"
+    r"(?P<definition>[^\n.;:!?]{3,120})"
+)
+_DEFINITION_CONTEXT_TAIL = re.compile(
+    r"\s+(?:according\s+to|for\s+(?:this|the)|in\s+(?:this|the)|"
+    r"throughout\s+(?:this|the)|within\s+(?:this|the))\b.*$",
+    re.IGNORECASE,
+)
 _TABLE_HINTS = {
     "alert",
     "alerts",
@@ -127,6 +137,11 @@ def plan_evidence_closure(
     """Plan bounded follow-up searches for unresolved Pyrrho obligations."""
     contract = build_query_contract(query, profile)
     existing_roles = _existing_compiler_roles(compilation.results)
+    definition_bridges = _definition_bridge_phrases(
+        query,
+        current_results,
+        compilation.results,
+    )
     bridge_terms = _bridge_terms(query, current_results, compilation.results, contract)
     existing_modalities = _existing_modalities(compilation.results or current_results)
 
@@ -173,6 +188,17 @@ def plan_evidence_closure(
             primary_terms=[modality],
         )
 
+    for definition in definition_bridges:
+        role = f"bridge_definition:{_normalize(definition)}"
+        if role in existing_roles:
+            continue
+        add(
+            modality="section",
+            role=role,
+            reason="bridge_definition",
+            primary_terms=[definition],
+        )
+
     if "section" in contract.required_modalities:
         for document in _document_bridge_terms(bridge_terms):
             role = f"bridge_document:{_normalize(document)}"
@@ -207,13 +233,13 @@ def plan_evidence_closure(
             "retrieval_modality": contract.retrieval_modality,
             "retrieval_obligation": contract.retrieval_obligation,
             "identifiers": list(contract.identifiers),
-            "source_anchors": list(contract.source_anchors),
             "required_modalities": list(contract.required_modalities),
             "temporal_policy": contract.temporal_policy,
         },
         "existing_roles": sorted(existing_roles),
         "existing_modalities": sorted(existing_modalities),
         "bridge_terms": bridge_terms,
+        "definition_bridges": definition_bridges,
         "request_count": len(requests),
         "requests": [request_metadata(request) for request in requests],
     }
@@ -238,7 +264,6 @@ def annotate_closure_result(
         "bridges": list(request.bridges),
         "contract_identifiers": list(contract.identifiers),
         "contract_phrase_anchors": list(contract.phrase_anchors),
-        "contract_source_anchors": list(contract.source_anchors),
     }
     return ReadResult(
         address=result.address,
@@ -314,9 +339,10 @@ def _bridge_terms(
     for value in _specific_query_terms(contract):
         add(value)
 
-    evidence = [result for result in compiled_results if _result_has_bridge_seed_role(result)]
-    if not evidence and not compiled_results:
-        evidence = list(current_results)
+    evidence = _bridge_seed_results(current_results, compiled_results)
+
+    for value in _definition_bridge_phrases(query, current_results, compiled_results):
+        add(value)
 
     for result in evidence[:10]:
         if _result_kind(result) == "table":
@@ -341,6 +367,54 @@ def _bridge_terms(
     return terms[:32]
 
 
+def _bridge_seed_results(
+    current_results: list[ReadResult],
+    compiled_results: list[ReadResult],
+) -> list[ReadResult]:
+    """Return only evidence selected for a real contract obligation."""
+    evidence = [result for result in compiled_results if _result_has_bridge_seed_role(result)]
+    if not evidence and not compiled_results:
+        return list(current_results)
+    return evidence
+
+
+def _definition_bridge_phrases(
+    query: str,
+    current_results: list[ReadResult],
+    compiled_results: list[ReadResult],
+) -> list[str]:
+    """Extract corpus-stated expansions for labels that occur in the query."""
+    phrases: list[str] = []
+    seen: set[str] = set()
+    for result in _bridge_seed_results(current_results, compiled_results)[:10]:
+        if _result_kind(result) == "table":
+            continue
+        for match in _EXPLICIT_DEFINITION_PATTERN.finditer(_result_text(result)):
+            label = match.group("label")
+            if not re.search(
+                rf"(?<![A-Za-z0-9_]){re.escape(label)}(?![A-Za-z0-9_])",
+                query,
+                re.IGNORECASE,
+            ):
+                continue
+            phrase = _DEFINITION_CONTEXT_TAIL.sub(
+                "",
+                match.group("definition").strip().strip("\"'()[]{}"),
+            ).strip()
+            normalized = _normalize(phrase)
+            word_count = len(normalized.split())
+            if (
+                word_count < 2
+                or word_count > 10
+                or normalized in seen
+                or normalized in _normalize(query)
+            ):
+                continue
+            seen.add(normalized)
+            phrases.append(phrase)
+    return phrases[:8]
+
+
 def _result_kind(result: ReadResult) -> str | None:
     kind = getattr(getattr(result, "address", None), "kind", None)
     if kind is None:
@@ -361,8 +435,10 @@ def _result_has_bridge_seed_role(result: ReadResult) -> bool:
             (
                 "required_",
                 "anchor_identifier:",
+                "anchor_keyword:",
                 "anchor_phrase:",
                 "bridge:",
+                "bridge_definition:",
                 "bridge_document:",
             )
         )

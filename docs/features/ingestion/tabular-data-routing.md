@@ -169,5 +169,6 @@ WHERE d.dept_name = 'R&D'
 ## Related Features
 
 - **Keyword Vocabulary** - Exact matching helps find table names and column names
-- **Multi-Hop Reasoning** - Can traverse table → references → other tables
+- **Evidence closure** - Can follow explicit table references through bounded
+  contract-driven retrieval
 - **Epistemic Honesty** - Mark evidence insufficient if the table does not contain requested data

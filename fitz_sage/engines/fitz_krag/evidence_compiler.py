@@ -20,10 +20,6 @@ from fitz_sage.engines.fitz_krag.evidence_contract import (
 from fitz_sage.engines.fitz_krag.evidence_contract import normalize_text as _normalize_text
 from fitz_sage.engines.fitz_krag.types import Address, ReadResult
 
-_NUMBER_PATTERN = re.compile(
-    r"\b\d+(?:\.\d+)?(?:\s*(?:billion|million|percent|minutes?|days?|hours?))?\b",
-    re.IGNORECASE,
-)
 _ISO_DATE_PATTERN = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
 
 
@@ -39,7 +35,6 @@ class EvidenceUnit:
     content_text: str
     result: ReadResult | None = None
     address: Address | None = None
-    numbers: tuple[str, ...] = ()
     alignment_score: int = 0
     roles: tuple[str, ...] = ()
 
@@ -60,27 +55,25 @@ def compile_evidence(
     """Compile ranked read results into an evidence-contract order."""
     contract = _build_query_contract(query, profile)
     if not results:
-        return EvidenceCompilation([], _metadata(contract, [], [], 0))
+        return EvidenceCompilation([], _metadata(contract, [], []))
 
     units = [_read_result_unit(index, result, contract) for index, result in enumerate(results)]
     aligned = _aligned_units(contract, units)
     if contract.has_hard_anchors and not aligned:
-        return EvidenceCompilation([], _metadata(contract, units, [], 0, filtered_all=True))
+        return EvidenceCompilation([], _metadata(contract, units, [], filtered_all=True))
 
     working = aligned if aligned else units
     ordered = _compile_order(contract, working, all_units=units)
     # Preserve retrieved evidence verbatim. Query-shape logic may reorder evidence,
     # but authority resolution and conflict judgment belong to Pyrrho and the caller.
-    suppressed: list[EvidenceUnit] = []
-    min_sources = _minimum_sources(contract, ordered)
     compiled: list[ReadResult] = []
     for rank, unit in enumerate(ordered, start=1):
         result = unit.result
         if result is not None:
-            compiled.append(_with_compiler_metadata(result, unit, rank, min_sources, contract))
+            compiled.append(_with_compiler_metadata(result, unit, rank, contract))
     return EvidenceCompilation(
         compiled,
-        _metadata(contract, units, ordered, min_sources, suppressed=suppressed),
+        _metadata(contract, units, ordered),
     )
 
 
@@ -115,6 +108,14 @@ def order_addresses_for_contract(
             continue
         selected_keys.add((match.address.source_id, match.address.location))
         rescued.append(match.address)
+
+    literal_match = _literal_recall_match(contract, candidate_units)
+    literal_unit = literal_match[1] if literal_match is not None else None
+    if literal_unit is not None and literal_unit.address is not None:
+        literal_key = (literal_unit.address.source_id, literal_unit.address.location)
+        if literal_key not in selected_keys:
+            selected_keys.add(literal_key)
+            rescued.append(literal_unit.address)
 
     if not rescued:
         return selected
@@ -239,6 +240,13 @@ def _compile_order(
         if match is not None:
             add(match, f"required_{modality}")
 
+    literal_match = _literal_recall_match(contract, units)
+    if literal_match is not None:
+        term, unit = literal_match
+        key = (unit.kind, unit.file_path, unit.location)
+        if key not in selected_positions:
+            add(unit, f"anchor_keyword:{term}")
+
     for unit, term in _bridge_companion_units(contract, search_units, selected):
         add(unit, f"bridge:{term}")
 
@@ -261,32 +269,12 @@ def _aligned_units(contract: _QueryContract, units: list[EvidenceUnit]) -> list[
             or _closure_bridge_content_score(unit) > 0
         ]
     if contract.keyword_anchors:
-        return [unit for unit in units if unit.alignment_score > 0]
+        return [
+            unit
+            for unit in units
+            if unit.alignment_score > 0 or _closure_bridge_content_score(unit) > 0
+        ]
     return units
-
-
-def _minimum_sources(contract: _QueryContract, units: list[EvidenceUnit]) -> int:
-    """Return how many compiled sources Pyrrho should inspect before trusting."""
-    if not units:
-        return 0
-    required = 1
-    required = max(required, len(contract.required_modalities))
-    if contract.query_contract == "comparison_coverage":
-        required = max(required, 2)
-    if contract.query_contract == "exhaustive_coverage":
-        required = max(required, 3)
-    if contract.answerability_shape == "set_answer":
-        required = max(required, 3)
-    if contract.retrieval_modality == "mixed":
-        required = max(required, 2)
-    floor_roles = {
-        role
-        for unit in units
-        for role in unit.roles
-        if _role_requires_prefix_floor(role, unit.kind)
-    }
-    required = max(required, len(floor_roles))
-    return min(required, len(units))
 
 
 def _read_result_unit(index: int, result: ReadResult, contract: _QueryContract) -> EvidenceUnit:
@@ -310,7 +298,6 @@ def _read_result_unit(index: int, result: ReadResult, contract: _QueryContract) 
         text=text,
         content_text=content_text,
         result=result,
-        numbers=_numbers(content_text),
         alignment_score=_alignment_score(contract, text),
         roles=_initial_result_roles(result),
     )
@@ -335,7 +322,6 @@ def _address_unit(index: int, address: Address, contract: _QueryContract) -> Evi
         text=text,
         content_text=content_text,
         address=address,
-        numbers=_numbers(content_text),
         alignment_score=_alignment_score(contract, text),
     )
 
@@ -344,7 +330,6 @@ def _with_compiler_metadata(
     result: ReadResult,
     unit: EvidenceUnit,
     rank: int,
-    min_sources: int,
     contract: _QueryContract,
 ) -> ReadResult:
     """Return a copy of a read result annotated with compiler metadata."""
@@ -353,7 +338,6 @@ def _with_compiler_metadata(
         "rank": rank,
         "alignment_score": unit.alignment_score,
         "roles": list(unit.roles),
-        "min_sources": min_sources,
         "contract": _contract_snapshot(contract),
     }
     return ReadResult(
@@ -391,6 +375,13 @@ def _initial_result_roles(result: ReadResult) -> tuple[str, ...]:
             document,
         ):
             roles.append(role)
+    elif role.startswith("bridge_definition:"):
+        definition = role.removeprefix("bridge_definition:")
+        if _contains_phrase(
+            _unit_text(result.content, result.file_path, result.address.location),
+            definition,
+        ):
+            roles.append(role)
     for bridge in closure.get("bridges", []):
         bridge_text = str(bridge)
         if not _EXACT_IDENTIFIER_PATTERN.fullmatch(bridge_text):
@@ -404,17 +395,14 @@ def _metadata(
     contract: _QueryContract,
     units: list[EvidenceUnit],
     ordered: list[EvidenceUnit],
-    min_sources: int,
     *,
     filtered_all: bool = False,
-    suppressed: list[EvidenceUnit] | None = None,
 ) -> dict[str, Any]:
     """Build serializable compiler trace metadata."""
     return {
         "contract": _contract_snapshot(contract),
         "input_count": len(units),
         "output_count": len(ordered),
-        "min_sources": min_sources,
         "filtered_all": filtered_all,
         "selected": [
             {
@@ -426,17 +414,6 @@ def _metadata(
                 "roles": list(unit.roles),
             }
             for index, unit in enumerate(ordered, start=1)
-        ],
-        "suppressed": [
-            {
-                "kind": unit.kind,
-                "file_path": unit.file_path,
-                "location": unit.location,
-                "alignment_score": unit.alignment_score,
-                "roles": list(unit.roles),
-                "reason": "superseded_temporal_evidence",
-            }
-            for unit in (suppressed or [])
         ],
     }
 
@@ -450,9 +427,7 @@ def _contract_snapshot(contract: _QueryContract) -> dict[str, Any]:
         "retrieval_obligation": contract.retrieval_obligation,
         "identifiers": list(contract.identifiers),
         "phrase_anchors": list(contract.phrase_anchors),
-        "source_anchors": list(contract.source_anchors),
         "keyword_anchors": list(contract.keyword_anchors),
-        "metric_terms": list(contract.metric_terms),
         "required_modalities": list(contract.required_modalities),
         "temporal_policy": contract.temporal_policy,
     }
@@ -504,7 +479,27 @@ def _closure_bridge_content_score(unit: EvidenceUnit) -> int:
         if any(_normalize_text(anchor) in observed_bridges for anchor in hard_anchors):
             return 4
     role = str(closure.get("role") or "")
-    if not (role.startswith("required_") or role.startswith("bridge:")):
+    if role.startswith("bridge_definition:"):
+        if role not in unit.roles:
+            return 0
+        definition = role.removeprefix("bridge_definition:")
+        if _contains_phrase(
+            _unit_text(unit.content_text, unit.location, unit.file_path),
+            definition,
+        ):
+            return 4
+    if role.startswith("required_"):
+        if role not in unit.roles:
+            return 0
+        return sum(
+            4
+            for bridge in closure.get("bridges", [])
+            if _EXACT_IDENTIFIER_PATTERN.fullmatch(str(bridge))
+            and _contains_identifier(unit.content_text, str(bridge))
+        )
+    if not role.startswith("bridge:"):
+        return 0
+    if role not in unit.roles:
         return 0
     score = 0
     for bridge in closure.get("bridges", []):
@@ -632,7 +627,32 @@ def _specific_anchor_terms(contract: _QueryContract) -> tuple[str, ...]:
 
 def _needs_candidate_rescue(contract: _QueryContract) -> bool:
     """Return whether pre-read address rescue should run."""
-    return bool(contract.required_modalities)
+    return bool(contract.required_modalities or contract.keyword_anchors)
+
+
+def _literal_recall_match(
+    contract: _QueryContract,
+    units: list[EvidenceUnit],
+) -> tuple[str, EvidenceUnit] | None:
+    """Keep one rare literal BM25 hit available to the evidence reader."""
+    identifier_terms = {
+        term for identifier in contract.identifiers for term in _normalize_text(identifier).split()
+    }
+    term_matches: list[tuple[int, int, int, str, list[EvidenceUnit]]] = []
+    for term_index, term in enumerate(contract.keyword_anchors):
+        if term in identifier_terms:
+            continue
+        matches = [
+            unit for unit in units if _contains_normalized_term(_normalize_text(unit.text), term)
+        ]
+        if not matches:
+            continue
+        term_matches.append((len(matches), -len(term), term_index, term, matches))
+    if not term_matches:
+        return None
+    _, _, _, term, rarest_matches = min(term_matches, key=lambda item: item[:3])
+    match = _best_unit(contract, rarest_matches)
+    return (term, match) if match is not None else None
 
 
 def _role_is_contract_obligation(role: str) -> bool:
@@ -640,8 +660,10 @@ def _role_is_contract_obligation(role: str) -> bool:
     return (
         role.startswith("required_")
         or role.startswith("anchor_identifier:")
+        or role.startswith("anchor_keyword:")
         or role.startswith("anchor_phrase:")
         or role.startswith("bridge:")
+        or role.startswith("bridge_definition:")
         or role.startswith("bridge_document:")
     )
 
@@ -787,20 +809,6 @@ def _bridge_companion_score(term: str, unit: EvidenceUnit) -> int:
     return score
 
 
-def _role_requires_prefix_floor(role: str, kind: str | None = None) -> bool:
-    """Return whether a compiler role should force Pyrrho to wait for this source."""
-    if role.startswith("required_"):
-        modality = role.removeprefix("required_")
-        return kind is None or kind == modality
-    return (
-        role.startswith("anchor_identifier:")
-        or role.startswith("anchor_phrase:")
-        or role.startswith("source_anchor:")
-        or role.startswith("bridge:")
-        or role in {"conflict_value", "latest", "final"}
-    )
-
-
 def _with_role(unit: EvidenceUnit, role: str) -> EvidenceUnit:
     """Return a unit copy with an additional compiler role."""
     roles = tuple(dict.fromkeys((*unit.roles, role)))
@@ -813,15 +821,9 @@ def _with_role(unit: EvidenceUnit, role: str) -> EvidenceUnit:
         content_text=unit.content_text,
         result=unit.result,
         address=unit.address,
-        numbers=unit.numbers,
         alignment_score=unit.alignment_score,
         roles=roles,
     )
-
-
-def _numbers(text: str) -> tuple[str, ...]:
-    """Extract numeric facts as observed evidence metadata."""
-    return tuple(dict.fromkeys(match.group(0).lower() for match in _NUMBER_PATTERN.finditer(text)))
 
 
 def _unit_text(*parts: Any) -> str:

@@ -50,7 +50,7 @@ class QueryResponse(BaseModel):
 class EvidenceItemResponse(BaseModel):
     """One ranked evidence item returned by retrieval-first endpoints."""
 
-    rank: int = Field(..., description="Rank within the selected evidence prefix")
+    rank: int = Field(..., description="Rank within the delivered evidence set")
     source_id: str = Field(..., description="Stable source identifier")
     file_path: str = Field(..., description="Source file path")
     address_kind: str = Field(..., description="Typed unit kind: section, symbol, table, or file")

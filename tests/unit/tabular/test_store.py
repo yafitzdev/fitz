@@ -139,6 +139,7 @@ def test_row_bm25_search_ranks_tables_by_concrete_values() -> None:
 
     assert results[0]["table_id"] == "rollouts"
     assert results[0]["matched_rows"] == 1
+    assert results[0]["row_texts"] == ["token_rotation eu 2026.05 enabled"]
     assert results[0]["matched_terms"] == ["enabled", "token", "rotation", "eu"]
     assert results[0]["query_terms"] == [
         "release",

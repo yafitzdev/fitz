@@ -273,7 +273,7 @@ class FitzKragConfig(BasePluginConfig):
             "SUFFICIENT / DISPUTED / INSUFFICIENT to the runtime modes; "
             "use 'pyrrho/<local-package-path>' or "
             "'pyrrho/<owner/repo@40-character-commit>'. The bare 'pyrrho' "
-            "default requires an approved default artifact."
+            "default uses Pyrrho's immutable approved model revision."
         ),
     )
 
@@ -347,24 +347,4 @@ class FitzKragConfig(BasePluginConfig):
         ge=0.0,
         le=1.0,
         description="Weight for BM25 search in code hybrid merge",
-    )
-
-    # ==========================================================================
-    # Multi-Hop
-    # ==========================================================================
-
-    enable_multi_hop: bool = Field(
-        default=True,
-        description=(
-            "Multi-hop iterative retrieval. Each hop's sufficiency is judged "
-            "by the pyrrho governance classifier (no chat call), so a single "
-            "hop is the common case."
-        ),
-    )
-
-    max_hops: int = Field(
-        default=2,
-        ge=1,
-        le=5,
-        description="Maximum retrieval hops for multi-hop reasoning",
     )

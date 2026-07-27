@@ -46,6 +46,7 @@ def run(
     cwd: Path,
     env: dict[str, str] | None = None,
     capture: bool = False,
+    echo_output: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run a subprocess with consistent logging and failure handling."""
     print(f"$ {' '.join(cmd)}", flush=True)
@@ -60,12 +61,14 @@ def run(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        if result.stdout:
+        if result.stdout and echo_output:
             print_console_safe(result.stdout)
     else:
         result = subprocess.run(cmd, cwd=cwd, env=env, text=True)
 
     if result.returncode != 0:
+        if result.stdout and not echo_output:
+            print_console_safe(result.stdout)
         raise RuntimeError(f"Command failed with exit {result.returncode}: {' '.join(cmd)}")
     return result
 
@@ -118,6 +121,7 @@ def validate_wheel_contents(wheel: Path) -> None:
     """Reject stale files from subsystems removed from the source tree."""
     forbidden = (
         "fitz_sage/cli/context.py",
+        "fitz_sage/cli/commands/query.py",
         "fitz_sage/cli/utils.py",
         "fitz_sage/cli/ui/engine_selection.py",
         "fitz_sage/cli/ui/progress.py",
@@ -131,6 +135,7 @@ def validate_wheel_contents(wheel: Path) -> None:
         "fitz_sage/core/paths/cache.py",
         "fitz_sage/core/paths/ingestion.py",
         "fitz_sage/engines/fitz_krag/governance_cutoff.py",
+        "fitz_sage/engines/fitz_krag/retrieval/multihop.py",
         "fitz_sage/governance/",
         "fitz_sage/ingestion/chunking/",
         "fitz_sage/ingestion/detection.py",
@@ -183,10 +188,16 @@ def create_smoke_env(temp_root: Path) -> SmokePaths:
     return SmokePaths(root=temp_root, venv_dir=venv_dir, python=python, fitz=fitz)
 
 
-def install_wheel(paths: SmokePaths, wheel: Path) -> None:
+def install_wheel(
+    paths: SmokePaths,
+    wheel: Path,
+    *,
+    pyrrho_wheel: Path | None = None,
+) -> None:
     """Install the wheel and verify its dependency graph."""
     run([str(paths.python), "-m", "pip", "install", "--upgrade", "pip"], cwd=paths.root)
-    run([str(paths.python), "-m", "pip", "install", str(wheel)], cwd=paths.root)
+    targets = [str(path) for path in (pyrrho_wheel, wheel) if path is not None]
+    run([str(paths.python), "-m", "pip", "install", *targets], cwd=paths.root)
     run([str(paths.python), "-m", "pip", "check"], cwd=paths.root)
 
 
@@ -199,6 +210,12 @@ def smoke_import(paths: SmokePaths) -> None:
     code = (
         "from importlib.resources import files; "
         "assert files('fitz_sage').joinpath('py.typed').is_file(); "
+        "from pyrrho import DEFAULT_MODEL_REVISION; "
+        "assert len(DEFAULT_MODEL_REVISION) == 40; "
+        "import fitz_sage; "
+        "assert hasattr(fitz_sage, 'answer') and not hasattr(fitz_sage, 'query'); "
+        "from fitz_sage.services import FitzService; "
+        "assert hasattr(FitzService, 'answer') and not hasattr(FitzService, 'query'); "
         "from fitz_sage.runtime import create_engine; "
         "engine = create_engine('fitz_krag'); "
         "print(type(engine).__name__)"
@@ -207,9 +224,9 @@ def smoke_import(paths: SmokePaths) -> None:
 
 
 def smoke_retrieve(paths: SmokePaths) -> None:
-    """Run a first-run retrieve command from the installed wheel."""
-    smoke_cwd = paths.root / "retrieve-smoke"
-    source_dir = smoke_cwd / "docs"
+    """Run representative folder retrievals from the installed wheel."""
+    smoke_cwd = paths.root / "company-folder-smoke"
+    source_dir = smoke_cwd / "company_docs"
     source_dir.mkdir(parents=True)
     (source_dir / "release_notes.md").write_text(
         "\n".join(
@@ -224,29 +241,169 @@ def smoke_retrieve(paths: SmokePaths) -> None:
         ),
         encoding="utf-8",
     )
+    (source_dir / "long_validation.txt").write_text(
+        "\n".join(
+            [
+                "Condensed validation report for batch OMEGA.",
+                *[
+                    (
+                        f"Frame {index:03d} contains routine observations with no final "
+                        "verdict or release gate."
+                    )
+                    for index in range(1, 46)
+                ],
+                (
+                    "RUN_WHEEL_77 final verdict is FAIL with ERR_WHEEL_LATE; "
+                    "the release gate is RED."
+                ),
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (source_dir / "glossary.md").write_text(
+        "# Glossary\n\nNRT means Network Recovery Task in this corpus.\n",
+        encoding="utf-8",
+    )
+    (source_dir / "ownership.md").write_text(
+        "\n".join(
+            [
+                "# Network Recovery Task",
+                "",
+                "Network Recovery Task is owned by Orion Systems.",
+                "Its escalation channel is NRT-OPS.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (source_dir / "edge_records.csv").write_text(
+        "\n".join(
+            [
+                "record_id,station,status,duration_ms,score,owner,release",
+                "EDGE-206,delta,fail,390,31,Rhea,REL-2026.04",
+                "EDGE-207,delta,pass,210,89,Ivo,REL-2026.04",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     env = isolated_env(paths.root)
+    first_output = retrieve_output(
+        paths,
+        cwd=smoke_cwd,
+        env=env,
+        source=source_dir,
+        collection="company_docs",
+        query="Which test case validates checkout regression?",
+    )
+    assert_output(first_output, expected=("TC-4812",))
+
+    long_output = retrieve_output(
+        paths,
+        cwd=smoke_cwd,
+        env=env,
+        source=source_dir,
+        collection="company_docs",
+        query="What was the final verdict for RUN_WHEEL_77?",
+    )
+    assert_output(
+        long_output,
+        expected=("RUN_WHEEL_77", "ERR_WHEEL_LATE", "release gate is RED"),
+    )
+
+    record_output = retrieve_output(
+        paths,
+        cwd=smoke_cwd,
+        env=env,
+        source=source_dir,
+        collection="company_docs",
+        query="Who owns the failed delta edge record?",
+    )
+    assert_output(record_output, expected=("EDGE-206", "Rhea"))
+
+    bridge_output = retrieve_output(
+        paths,
+        cwd=smoke_cwd,
+        env=env,
+        source=source_dir,
+        collection="company_docs",
+        query="Who owns NRT?",
+    )
+    assert_output(
+        bridge_output,
+        expected=("NRT means Network Recovery Task", "Orion Systems", "NRT-OPS"),
+    )
+
+    isolated_cwd = paths.root / "isolated-folder-smoke"
+    isolated_source = isolated_cwd / "policy_docs"
+    isolated_source.mkdir(parents=True)
+    (isolated_source / "retention.md").write_text(
+        "# Project Lantern Retention\n\n"
+        "Project Lantern retains audit records for 27 days under policy RET-27.\n",
+        encoding="utf-8",
+    )
+    isolated_output = retrieve_output(
+        paths,
+        cwd=isolated_cwd,
+        env=env,
+        source=isolated_source,
+        collection="policy_docs",
+        query="How long does Project Lantern retain audit records?",
+    )
+    assert_output(
+        isolated_output,
+        expected=("Project Lantern", "27 days", "RET-27"),
+        forbidden=("TC-4812", "RUN_WHEEL_77", "EDGE-206"),
+    )
+
+
+def retrieve_output(
+    paths: SmokePaths,
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    source: Path,
+    collection: str,
+    query: str,
+) -> str:
+    """Run one installed CLI retrieval and return its console output."""
     result = run(
         [
             str(paths.fitz),
             "retrieve",
-            "Which test case validates checkout regression?",
+            query,
             "--source",
-            str(source_dir),
+            str(source),
             "--collection",
-            "wheel_smoke",
+            collection,
             "--top-k",
-            "5",
+            "8",
+            "--format",
+            "json",
         ],
-        cwd=smoke_cwd,
+        cwd=cwd,
         env=env,
         capture=True,
+        echo_output=False,
     )
-    output = result.stdout or ""
-    if "TC-4812" not in output:
-        raise RuntimeError("Wheel retrieve smoke did not return TC-4812 evidence")
-    if "Preparing managed Qwen" not in output:
-        raise RuntimeError("Wheel retrieve smoke did not preflight managed Qwen")
+    return result.stdout or ""
+
+
+def assert_output(
+    output: str,
+    *,
+    expected: tuple[str, ...],
+    forbidden: tuple[str, ...] = (),
+) -> None:
+    """Validate evidence text emitted by one installed CLI retrieval."""
+    missing = [value for value in expected if value not in output]
+    unexpected = [value for value in forbidden if value in output]
+    if missing:
+        raise RuntimeError(f"Wheel retrieve smoke missed evidence: {', '.join(missing)}")
+    if unexpected:
+        raise RuntimeError(f"Wheel retrieve smoke leaked another corpus: {', '.join(unexpected)}")
 
 
 def isolated_env(temp_root: Path) -> dict[str, str]:
@@ -258,6 +415,7 @@ def isolated_env(temp_root: Path) -> dict[str, str]:
     env["TOKENIZERS_PARALLELISM"] = "false"
     env["HF_HOME"] = str(temp_root / "hf_home")
     env["HF_HUB_CACHE"] = str(temp_root / "hf_cache")
+    env["PYRRHO_HOME"] = str(temp_root / "pyrrho_home")
     return env
 
 
@@ -265,6 +423,10 @@ def parse_args() -> argparse.Namespace:
     """Parse CLI arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wheel", help="Existing wheel file to test.")
+    parser.add_argument(
+        "--pyrrho-wheel",
+        help="Optional local Pyrrho wheel to install alongside the Fitz-Sage wheel.",
+    )
     parser.add_argument("--dist-dir", help="Directory to build into or read from.")
     parser.add_argument(
         "--skip-build",
@@ -295,8 +457,11 @@ def main() -> int:
         wheel = resolve_wheel(args, temp_root)
         print(f"Wheel under test: {wheel}", flush=True)
         validate_wheel_contents(wheel)
+        pyrrho_wheel = Path(args.pyrrho_wheel).resolve() if args.pyrrho_wheel else None
+        if pyrrho_wheel is not None and not pyrrho_wheel.exists():
+            raise FileNotFoundError(f"Pyrrho wheel not found: {pyrrho_wheel}")
         paths = create_smoke_env(temp_root)
-        install_wheel(paths, wheel)
+        install_wheel(paths, wheel, pyrrho_wheel=pyrrho_wheel)
         smoke_import(paths)
         if args.smoke == "retrieve":
             smoke_retrieve(paths)

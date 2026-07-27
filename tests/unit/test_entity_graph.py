@@ -205,9 +205,9 @@ class TestEntityGraphStore:
 class TestEntityGraphIntegration:
     """Integration tests for entity graph with retrieval."""
 
-    def test_multi_hop_scenario(self):
+    def test_entity_bridge_scenario(self):
         """
-        Test the classic multi-hop scenario:
+        Test entity-linked bridge expansion:
         - Chunk A: "Sarah Chen leads Acme Corp"
         - Chunk B: "Acme Corp manufactures widgets"
         - Query about Sarah's company's products should find both chunks

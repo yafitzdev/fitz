@@ -11,6 +11,7 @@ keyword match; precision comes from the ONNX cross-encoder reranker
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core.identifiers import exact_identifiers
@@ -27,7 +28,14 @@ if TYPE_CHECKING:
     from fitz_sage.tabular.store.sqlite import SqliteTableStore
 
 logger = logging.getLogger(__name__)
+_MAX_RERANK_ROWS = 5
 _ROW_SCAN_LIMIT = 500
+_ROW_REFERENCE_PATTERN = re.compile(r"\b(?:entry|entries|record|records|row|rows)\b", re.I)
+_ROW_ATTRIBUTE_PATTERN = re.compile(
+    r"\b(?:assigned|count|date|earliest|failed|failure|highest|latest|lowest|"
+    r"owner|owned|owns|passed|release|responsible|state|status|total|value|version)\b",
+    re.I,
+)
 
 
 class TableSearchStrategy:
@@ -156,6 +164,7 @@ class TableSearchStrategy:
                 "exact_identifier_lookup": exact_identifier_lookup,
                 "matched_rows": len(selected_rows),
                 "plan": plan.metadata,
+                "rerank_rows": selected_rows[:_MAX_RERANK_ROWS],
             }
             entry = {
                 **record,
@@ -172,7 +181,9 @@ class TableSearchStrategy:
         required = tuple(getattr(profile, "required_modalities", ()) or ())
         if "table" in required:
             return True
-        return bool(exact_identifiers(query))
+        if exact_identifiers(query):
+            return True
+        return bool(_ROW_REFERENCE_PATTERN.search(query) and _ROW_ATTRIBUTE_PATTERN.search(query))
 
     def _to_address(self, record: dict[str, Any]) -> Address:
         """Convert a table store row to an Address."""
@@ -190,6 +201,10 @@ class TableSearchStrategy:
                 "row_count": record["row_count"],
             }
         )
+        row_context = _table_row_context(metadata, columns)
+        if row_context:
+            existing_context = metadata.get("rerank_text")
+            metadata["rerank_text"] = _join_distinct_text(existing_context, row_context)
         return Address(
             kind=AddressKind.TABLE,
             source_id=record["raw_file_id"],
@@ -209,12 +224,56 @@ def _merge_table_results(
         for result in result_set:
             table_index_id = str(result["id"])
             current = by_id.get(table_index_id)
-            if current is None or result.get("combined_score", 0.0) > current.get(
-                "combined_score",
-                0.0,
-            ):
+            if current is None:
                 by_id[table_index_id] = result
+                continue
+            if result.get("combined_score", 0.0) > current.get("combined_score", 0.0):
+                winner, other = result, current
+            else:
+                winner, other = current, result
+            merged = dict(winner)
+            metadata = dict(other.get("metadata") or {})
+            metadata.update(dict(winner.get("metadata") or {}))
+            merged["metadata"] = metadata
+            by_id[table_index_id] = merged
     return sorted(by_id.values(), key=lambda item: item.get("combined_score", 0.0), reverse=True)
+
+
+def _table_row_context(metadata: dict[str, Any], columns: list[str]) -> str:
+    """Return a bounded, source-faithful preview of rows found during retrieval."""
+    row_search = metadata.get("row_search")
+    if isinstance(row_search, dict):
+        row_texts = row_search.get("row_texts")
+        if isinstance(row_texts, list):
+            values = [str(value).strip() for value in row_texts if str(value).strip()]
+            if values:
+                return "\n".join(
+                    [f"Columns: {' | '.join(columns)}", *(f"Row: {value}" for value in values)]
+                )
+
+    row_match = metadata.get("row_match")
+    if not isinstance(row_match, dict):
+        return ""
+    rows = row_match.get("rerank_rows")
+    if not isinstance(rows, list):
+        return ""
+    rendered_rows = [
+        " | ".join(str(value) for value in row) for row in rows if isinstance(row, list) and row
+    ]
+    if not rendered_rows:
+        return ""
+    return "\n".join(
+        [f"Columns: {' | '.join(columns)}", *(f"Row: {value}" for value in rendered_rows)]
+    )
+
+
+def _join_distinct_text(existing: Any, additional: str) -> str:
+    """Append retrieval context without duplicating an existing identical value."""
+    if not isinstance(existing, str) or not existing.strip():
+        return additional
+    if additional in existing:
+        return existing
+    return f"{existing.strip()}\n{additional}"
 
 
 def _indexed_row_score(hit: dict[str, Any]) -> float:

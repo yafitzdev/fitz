@@ -20,7 +20,7 @@ for item in pack.items:
 ## Module-Level API
 
 The simplest retrieval-first SDK call is `fitz_sage.evidence(...)`. It matches
-the default `fitz query` CLI behavior.
+the default `fitz retrieve` CLI behavior.
 
 ### fitz_sage.evidence()
 
@@ -77,13 +77,13 @@ result = fitz_sage.replay_pyrrho(
 See [Retrieval Execution Records](RETRIEVAL_RUNS.md) for security and replay
 semantics.
 
-### fitz_sage.query()
+### fitz_sage.answer()
 
 Generate a synthesized answer. This requires a configured synthesizer provider;
 use `evidence()` for the default retrieval path.
 
 ```python
-fitz_sage.query(
+fitz_sage.answer(
     question: str,                 # The question to ask
     source: str | Path = None,     # If provided, registers documents before querying
     collection: str = None,        # Collection name (uses default if not specified)
@@ -95,7 +95,7 @@ fitz_sage.query(
 **Examples:**
 
 ```python
-answer = fitz_sage.query("What is the refund policy?")
+answer = fitz_sage.answer("What is the refund policy?")
 print(answer.text)
 print(answer.mode)  # runtime AnswerMode: SUFFICIENT, DISPUTED, or INSUFFICIENT
 
@@ -133,10 +133,10 @@ f = fitz(
 
 ### Methods
 
-#### query()
+#### answer()
 
 ```python
-f.query(
+f.answer(
     question: str,
     source: str | Path = None,  # If provided, registers documents before querying
 ) -> Answer  # synthesized answer: text, provenance, mode

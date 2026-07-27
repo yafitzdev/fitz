@@ -50,7 +50,7 @@ def test_mixed_evidence_query_keeps_all_required_modalities_alive():
     assert profile.retrieval_modality == "mixed"
     assert profile.retrieval_obligation == "prose_plus_table"
     assert profile.required_modalities == ("section", "table", "symbol")
-    assert profile.has_comparison_intent is True
+    assert profile.has_comparison_intent is False
     assert profile.strategy_weights["section"] >= 0.45
     assert profile.strategy_weights["table"] >= 0.55
     assert profile.strategy_weights["code"] >= 0.60
@@ -226,6 +226,44 @@ def test_pyrrho_pre_heads_own_retrieval_profile_when_available():
     ]
 
 
+def test_pyrrho_pre_obligations_do_not_relabel_query_shape() -> None:
+    """Model evidence obligations remain distinct from Fitz query intent."""
+    config = SimpleNamespace(top_addresses=20, top_read=10)
+    detection = SimpleNamespace(
+        has_aggregation_intent=False,
+        has_comparison_intent=False,
+        has_temporal_intent=False,
+        has_freshness_intent=False,
+    )
+    pyrrho_plan = SimpleNamespace(
+        retrieval_intents=SimpleNamespace(
+            final_labels=("needs_lookup", "needs_broad_coverage"),
+            final_label="needs_lookup",
+        ),
+        evidence_kinds=SimpleNamespace(
+            final_labels=("needs_code_or_symbol",),
+            final_label="needs_code_or_symbol",
+        ),
+    )
+
+    profile = build_retrieval_profile(
+        QueryAnalysis(
+            primary_type=QueryType.CODE,
+            confidence=0.8,
+            refined_query="What does should_auto_rollback return?",
+        ),
+        detection,
+        config,
+        pyrrho_plan=pyrrho_plan,
+    )
+
+    assert "needs_broad_coverage" in profile.retrieval_intents
+    assert profile.query_contract == "exhaustive_coverage"
+    assert profile.has_aggregation_intent is False
+    assert profile.has_comparison_intent is False
+    assert profile.has_temporal_intent is False
+
+
 def test_query_profile_metadata_has_no_external_signal_section():
     """Profile metadata should not serialize removed Pyrrho query-head signals."""
     config = SimpleNamespace(top_addresses=20, top_read=10)
@@ -245,3 +283,6 @@ def test_query_profile_metadata_has_no_external_signal_section():
     assert "signals" not in metadata
     assert metadata["profile"]["planning_owner"] == "fitz_krag"
     assert metadata["profile"]["auxiliary_signal_policy"] == "deterministic_profile"
+    assert metadata["profile"]["keywords"] == []
+    assert metadata["profile"]["comparison_entities"] == []
+    assert metadata["profile"]["temporal_references"] == []

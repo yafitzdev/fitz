@@ -63,7 +63,7 @@ A: "I don't have enough information
 ### Where to start 🚀
 
 > [!IMPORTANT]
-> `fitz query` runs locally by default. SQLite stores the index; ONNX models handle enrichment,
+> `fitz retrieve` runs locally by default. SQLite stores the index; ONNX models handle enrichment,
 > reranking, and Pyrrho governance. An OpenAI-compatible endpoint is only needed when you choose
 > generated prose with `fitz answer`.
 
@@ -71,7 +71,7 @@ A: "I don't have enough information
 pip install fitz-sage
 
 # From a docs folder, --source is optional.
-fitz query "What is our refund policy?" --source ./docs
+fitz retrieve "What is our refund policy?" --source ./docs
 ```
 
 The result is an `EvidencePack`: relevant source units, provenance, a governance verdict, and the signals needed to decide
@@ -90,7 +90,7 @@ as symbols, documents as sections, and tables as SQLite-backed data. Queries are
 typed surfaces with retrieval strategies that match the source structure.
 
 ⭐ Governance is enforced by [Pyrrho](https://huggingface.co/yafitzdev) in a local CPU forward pass. Pyrrho evaluates the
-selected evidence prefix as `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`.
+fixed delivered evidence set as `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`.
 
 Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](https://github.com/yafitzdev), [HuggingFace](https://huggingface.co/yafitzdev)).
 
@@ -135,7 +135,7 @@ Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](
 > Try fitz on itself:
 >
 > ```bash
-> fitz query "How does the retrieval pipeline work?" --source ./fitz_sage
+> fitz retrieve "How does the retrieval pipeline work?" --source ./fitz_sage
 > ```
 
 ---
@@ -190,7 +190,6 @@ entity graph links, corpus summaries, and richer context expansion.
 | ✅ [**epistemic-honesty**](docs/features/governance/epistemic-honesty.md) | "What was our Q4 revenue?" | Pyrrho verdict and insufficient-evidence reasons |
 | ✅ [**keyword-vocabulary**](docs/features/retrieval/keyword-vocabulary.md) | "Find TC_1000" | Exact identifier matching |
 | ✅ [**sparse-search**](docs/features/retrieval/sparse-search.md) | "error code E_AUTH_401" | SQLite FTS5 + native `bm25()` |
-| ✅ [**multi-hop**](docs/features/retrieval/multi-hop-reasoning.md) | "Who wrote the paper cited by the 2023 review?" | Iterative retrieval |
 | ✅ [**hierarchical-rag**](docs/features/ingestion/hierarchical-rag.md) | "What are the design principles?" | Hierarchical summaries |
 | ✅ [**multi-query**](docs/features/retrieval/multi-query-rag.md) | *[User pastes 500-char test report]* "What failed and why?" | Multi-query decomposition |
 | ✅ [**comparison-queries**](docs/features/retrieval/comparison-queries.md) | "Compare React vs Vue performance" | Multi-entity retrieval coverage |
@@ -269,11 +268,12 @@ explicit opt-in and enable Pyrrho-only replay over frozen evidence. See
 
 #### Measured production boundary
 
-The 2026-07-27 folder-to-evidence matrix passed 175/181 required retrieval and
-delivery contracts, 58/60 query-shape contracts, all tested format gates, and
+The 2026-07-27 folder-to-evidence matrix passed 186/192 required retrieval and
+delivery contracts, 60/60 query-shape contracts, all tested format gates, and
 20/20 core cases after adding 80 near-neighbor documents and reloading the
-index. Retrieval, delivery, query interpretation, and Pyrrho decisions are
-reported separately.
+index. A separate 60-case limitations run passed 52/52 evaluated retrieval and
+delivery contracts with zero forbidden hits. Retrieval, delivery, query
+interpretation, and Pyrrho decisions are reported separately.
 
 This is not a claim that arbitrary files work without preparation. Fitz does
 not compress raw logs, perform domain cleanup, silently equate identifier
@@ -287,20 +287,20 @@ remain measured boundaries. See
 
 ### Governance — `Pyrrho`
 
-> **Current safety status:** the historical default remote Pyrrho package is
-> quarantined and fails closed because its training corpus was contaminated.
-> Supply an explicitly reviewed local clean model directory. The environment
-> escape hatch documented in [Epistemic Governance](docs/CONSTRAINTS.md) exists
-> only for forensic reproduction pinned to the known-bad revision
-> `948f0500b74871cfaec7689a01d4eab0dd516e1b`.
+> **Current model status:** bare `pyrrho` resolves
+> `yafitzdev/pyrrho-v2-nano-g1` at immutable revision
+> `948f0500b74871cfaec7689a01d4eab0dd516e1b`. That model is accepted for the
+> current release, but its training data included benchmark-derived
+> deterministic rows. Scores on related fixed-evidence cases are therefore not
+> independent evidence of generalization.
 
 [Feature docs](docs/CONSTRAINTS.md) • [Pyrrho on Hugging Face](https://huggingface.co/yafitzdev) • [fitz-gov on Hugging Face](https://huggingface.co/datasets/yafitzdev/fitz-gov-v2)
 
-Pyrrho is the local governance model behind `fitz-sage`. No remote Pyrrho
-artifact is currently approved as a default. The historical CPU-local ONNX
-ModernBERT package
+Pyrrho is the local governance model behind `fitz-sage`. Its default CPU-local
+ONNX ModernBERT package
 [`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
-is quarantined and retained only for forensic continuity.
+is resolved and cached by the independent Pyrrho runtime at the exact revision
+above.
 
 <br>
 
@@ -337,10 +337,11 @@ answer, retry, show conflict, or request more source material.
 
 <br>
 
-Previously reported Pyrrho development metrics and fixed-evidence benchmark
-scores are withdrawn as release evidence because the contaminated training
-tranche duplicated benchmark wording. Clean retraining and independent
-evaluation must finish before replacement quality claims are published.
+Pyrrho's exact decisions remain visible in Fitz reports. Because its training
+tranche included benchmark-derived wording, related development and
+fixed-evidence scores must not be presented as independent release evidence.
+Future Pyrrho retraining and independent evaluation remain separate from
+Fitz-Sage retrieval work.
 
 <br>
 
@@ -366,16 +367,16 @@ evaluation must finish before replacement quality claims are published.
 
 <br>
 
-> Governed queries currently require `governance: pyrrho/<absolute-local-path>`
-> pointing to an explicitly reviewed clean package. The bare `pyrrho` setting
-> intentionally refuses the quarantined historical remote artifact.
+> `governance: pyrrho` uses the accepted immutable default. Advanced users may
+> instead configure `pyrrho/<absolute-local-path>` or an explicitly pinned
+> `pyrrho/<owner/repo@40-character-commit>`.
 
 #### CLI
 >
 >```bash
 >pip install fitz-sage
 >
->fitz query "Your question here" --source ./docs
+>fitz retrieve "Your question here" --source ./docs
 >```
 >
 >`fitz-sage` creates a local retrieval config on first run:
@@ -408,8 +409,8 @@ evaluation must finish before replacement quality claims are published.
 >```
 >
 >The SDK provides:
->- Module-level `evidence()` matching `fitz query`
->- Module-level `query()` for generated prose from evidence
+>- Module-level `evidence()` matching `fitz retrieve`
+>- Module-level `answer()` for generated prose from evidence
 >- Local config creation
 >- Full provenance tracking
 >- Governance metadata
@@ -429,10 +430,10 @@ evaluation must finish before replacement quality claims are published.
 >```bash
 >pip install fitz-sage
 >
->fitz query "Your question here" --source ./docs
+>fitz retrieve "Your question here" --source ./docs
 >```
 >
->Reranking, governance, and required enrichment run locally. No data leaves your machine for `fitz query`.
+>Reranking, governance, and required enrichment run locally. No data leaves your machine for `fitz retrieve`.
 >
 >Optional synthesis can use [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai),
 >[Ollama](https://ollama.ai) in `/v1/` mode, [TabbyAPI](https://github.com/theroyallab/tabbyAPI), OpenAI, Together,
@@ -448,7 +449,8 @@ evaluation must finish before replacement quality claims are published.
 
 <br>
 
-`fitz-sage` is a retrieval foundation. It manages indexing, search, reranking, governance, and provenance so products can
+`fitz-sage` is a retrieval foundation. It manages indexing, search, reranking,
+Pyrrho integration, and provenance so products can
 build on source evidence.
 
 <br>
@@ -516,9 +518,9 @@ build on source evidence.
 │                         fitz-sage                               │
 ├─────────────────────────────────────────────────────────────────┤
 │  User Interfaces                                                │
-│  CLI: query | retrieve | answer | collections | serve           │
+│  CLI: retrieve | answer | collections | serve                   │
 │  SDK: fitz_sage.evidence(source=...)                            │
-│  API: /query | /chat | /collections | /health                   │
+│  API: /answer | /evidence | /chat | /collections | /health      │
 ├─────────────────────────────────────────────────────────────────┤
 │  Engine                                                         │
 │  FitzKRAG: typed retrieval over code, documents, and tables     │
@@ -551,8 +553,8 @@ build on source evidence.
 <br>
 
 ```bash
-fitz query "question" --source ./docs     # Return governed evidence
-fitz query "question"                     # Use current folder or existing collection
+fitz retrieve "question" --source ./docs     # Return governed evidence
+fitz retrieve "question"                     # Use current folder or existing collection
 fitz retrieve "question" --format json    # Evidence with script-friendly controls
 fitz answer "question" --synthesizer ...  # Generated prose from evidence
 fitz collections                          # List and delete knowledge collections
@@ -636,7 +638,8 @@ fitz serve --host 0.0.0.0     # remote access requires the API key
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/query` | Return a governed evidence response |
+| POST | `/answer` | Return an optional synthesized answer |
+| POST | `/evidence` | Return governed evidence without synthesis |
 | POST | `/chat` | Return generated prose from retrieved evidence |
 | GET | `/collections` | List all collections |
 | GET | `/collections/{name}` | Get collection stats |
@@ -648,7 +651,7 @@ fitz serve --host 0.0.0.0     # remote access requires the API key
 **Example request:**
 
 ```bash
-curl -X POST http://localhost:8000/query \
+curl -X POST http://localhost:8000/answer \
   -H "Content-Type: application/json" \
   -d '{"question": "What is the refund policy?", "collection": "default"}'
 ```
@@ -671,7 +674,7 @@ curl -X POST http://localhost:8000/query \
 > `pip install fitz-sage[docs]`
 
 **"Connection refused at localhost:8080" error**
-> This applies to optional endpoint-backed synthesis or query intelligence. `fitz query "..."` returns evidence without an
+> This applies to optional endpoint-backed synthesis or query intelligence. `fitz retrieve "..."` returns evidence without an
 > endpoint server. For generated prose:
 > `fitz answer "..." --synthesizer openai/gpt-4o`.
 

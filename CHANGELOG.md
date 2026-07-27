@@ -31,13 +31,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text to Pyrrho, and mechanically maps the returned verdict to `AnswerMode`.
 - Retrieval-run schema 2.0 records the exact Pyrrho input and serialized
   decision; replay no longer reproduces a Fitz-Sage cutoff policy.
+- Bare `governance: pyrrho` now uses Pyrrho's accepted default model at an
+  immutable commit. The benchmark-derived training-data caveat is documented,
+  and Pyrrho outcomes remain separate from Fitz-Sage retrieval metrics.
 
 ### Removed
 
 - Removed Fitz-Sage's governance provider implementation, evidence-prefix
   cutoff, local verdict overrides, and associated compatibility surfaces.
+- Removed the duplicate `fitz query` CLI alias and ambiguous synthesis
+  `query()` helpers. Use `fitz retrieve` / `evidence()` for evidence and
+  `fitz answer` / `answer()` for optional synthesis.
+- Removed the REST `/query` synthesis alias and `FitzService.query()`. Use
+  `/answer` and `FitzService.answer()`.
+- Removed the optional chat-generated multi-hop controller and its Pyrrho-gated
+  retrieval loop. Contract-driven evidence closure remains deterministic and
+  runs before Fitz submits one fixed evidence set to Pyrrho.
 - Removed the obsolete `tools/cli_map` package, which depended on deleted CLI
   internals.
+- Removed the standalone fixed-evidence Pyrrho benchmark. Direct governance
+  model evaluation belongs to Pyrrho; Fitz benchmarks retain only live
+  integration outcomes alongside retrieval metrics.
 
 ### Fixed
 
@@ -46,8 +60,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Evidence closure now derives bridges from compiler-selected evidence and no
   longer replaces precise table rows merely because a follow-up has closure
   metadata.
+- Reranking now uses a bounded query-centered excerpt so literal facts late in
+  long or headingless documents can influence ranking without rewriting source
+  text.
+- Evidence closure can follow explicit query-bound source definitions such as
+  `QRS means Queue Recovery Service` without inventing or persisting aliases.
+- Clear structured record/property requests perform a bounded row scan, and
+  evidence compilation preserves one rare literal BM25 anchor where possible.
+- Table row retrieval now gives the reranker a bounded preview of the concrete
+  rows BM25 or deterministic filtering already matched, rather than only the
+  table schema.
+- Evidence closure no longer lets generic bridge metadata bypass a required
+  literal phrase anchor.
+- Temporal benchmark cases retain historical sources in the evidence pack
+  instead of treating their presence as forbidden retrieval.
 - Added the 60-case limitations benchmark, focused `--case-id` benchmark runs,
-  per-case progress, and a versioned `LIMITATIONS.md` product contract.
+  per-case progress, an 11-case required hardening gate, and a versioned
+  `LIMITATIONS.md` product contract.
 
 ## [0.15.0] - 2026-07-08
 

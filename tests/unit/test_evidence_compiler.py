@@ -14,8 +14,8 @@ from fitz_sage.engines.fitz_krag.evidence_contract import build_query_contract
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
 
-def test_pyrrho_comparison_contract_sets_prefix_floor() -> None:
-    """Comparison coverage is a Pyrrho contract signal, not a numeric regex gate."""
+def test_comparison_contract_orders_companion_evidence() -> None:
+    """Comparison coverage places both relevant sources first."""
     finance = _result(
         "The finance team reported Q1 revenue of 1.2 billion dollars.",
         "unstructured/finance_q1_report.md",
@@ -35,7 +35,6 @@ def test_pyrrho_comparison_contract_sets_prefix_floor() -> None:
         "unstructured/finance_q1_report.md",
         "unstructured/audit_q1_note.md",
     ]
-    assert compiled.results[0].metadata["evidence_compiler"]["min_sources"] == 2
 
 
 def test_compiler_filters_unaligned_hard_anchor_results() -> None:
@@ -71,6 +70,45 @@ def test_compiler_requires_anchor_in_evidence_not_closure_metadata() -> None:
     )
 
     compiled = compile_evidence("What is the Project Nebula budget?", [closure_result])
+
+    assert compiled.results == []
+    assert compiled.metadata["filtered_all"] is True
+
+
+def test_compiler_rejects_wrong_modality_closure_result_without_anchor() -> None:
+    """A table obligation must not admit an unrelated section around a named entity."""
+    closure_result = _result(
+        "Project Atlas FY27 pipeline is expected to reach 7.8 million ARR.",
+        "unstructured/finance_forecast.md",
+        metadata={
+            "evidence_closure": {
+                "role": "required_table",
+                "bridges": ["Project", "Helios", "budget"],
+            }
+        },
+    )
+
+    compiled = compile_evidence("What is the Project Helios budget?", [closure_result])
+
+    assert compiled.results == []
+    assert compiled.metadata["filtered_all"] is True
+
+
+def test_compiler_rejects_generic_bridge_overlap_without_named_entity() -> None:
+    """A required table cannot replace a missing title-cased query anchor."""
+    closure_result = _result(
+        "project | pipeline\nProject Atlas | 7.8 million ARR",
+        "structured/projects.csv",
+        kind=AddressKind.TABLE,
+        metadata={
+            "evidence_closure": {
+                "role": "required_table",
+                "bridges": ["Project", "Helios", "budget"],
+            }
+        },
+    )
+
+    compiled = compile_evidence("What is the Project Helios budget?", [closure_result])
 
     assert compiled.results == []
     assert compiled.metadata["filtered_all"] is True
@@ -123,7 +161,6 @@ def test_compiler_keeps_authoritative_latest_section_when_it_contains_old_histor
     assert compiled.results[0].address.location == "Project Atlas APAC"
     assert "limited general availability" in compiled.results[0].content
     assert "entered a pilot" in compiled.results[0].content
-    assert compiled.metadata["suppressed"] == []
 
 
 def test_compiler_does_not_count_parser_toc_as_evidence_body() -> None:
@@ -312,7 +349,6 @@ def test_compiler_keeps_same_source_initial_estimate_and_final_evidence() -> Non
     )
 
     assert [result.content for result in compiled.results] == [final.content, initial.content]
-    assert compiled.metadata["suppressed"] == []
 
 
 def test_compiler_keeps_cross_source_stale_and_final_evidence() -> None:
@@ -338,7 +374,6 @@ def test_compiler_keeps_cross_source_stale_and_final_evidence() -> None:
         "unstructured/risk_audit_note.md",
         "unstructured/risk_finance_memo.md",
     ]
-    assert compiled.metadata["suppressed"] == []
 
 
 def test_compiler_promotes_required_code_symbol() -> None:
@@ -475,6 +510,43 @@ def test_address_rescue_does_not_add_second_best_required_candidate() -> None:
     )
 
     assert ordered == [best_table]
+
+
+def test_address_rescue_preserves_one_rare_literal_bm25_hit() -> None:
+    """A direct rare query-token hit must remain readable after reranking."""
+    glossary = _address(
+        AddressKind.SECTION,
+        "unstructured/glossary.md",
+        "CBT",
+        "CBT means Cell Balancing Task.",
+    )
+    table = _address(
+        AddressKind.TABLE,
+        "structured/records.csv",
+        "Records",
+        "Table Records columns: record_id, owner.",
+    )
+    distractors = [
+        _address(
+            AddressKind.SECTION,
+            f"unstructured/owner_{index}.md",
+            f"Owner {index}",
+            "Ownership details for another system.",
+        )
+        for index in range(10)
+    ]
+
+    ordered = order_addresses_for_contract(
+        "Who owns CBT?",
+        [glossary, table, *distractors],
+        [table, *distractors[:9]],
+        profile=_profile(modality="structured_table"),
+        limit=10,
+    )
+
+    assert len(ordered) == 10
+    assert glossary in ordered
+    assert table in ordered
 
 
 def test_query_contract_does_not_make_question_prefix_an_entity() -> None:
@@ -771,7 +843,6 @@ def test_compiler_does_not_make_policy_terms_source_authority() -> None:
         for role in result.metadata["evidence_compiler"]["roles"]
     ]
     assert not any(role.startswith("source_anchor:") for role in roles)
-    assert compiled.metadata["contract"]["source_anchors"] == []
 
 
 def test_query_contract_does_not_force_table_for_generic_incident() -> None:
@@ -876,20 +947,6 @@ def test_compiler_keeps_temporal_candidates_for_pyrrho_review() -> None:
     assert any("legacy_sync" in result.content for result in compiled.results)
 
 
-def test_compiler_does_not_make_single_unit_multi_number_fact_a_conflict() -> None:
-    """Multiple numeric facts inside one aligned source are not conflicting sources."""
-    sla = _result(
-        "Platinum SEV0 pages after 30 minutes and requires acknowledgement within 5 minutes.",
-        "unstructured/observability_sla.md",
-        location="Observability SLA",
-    )
-
-    compiled = compile_evidence("What is the Platinum SEV0 acknowledgement time?", [sla])
-
-    assert compiled.results[0].metadata["evidence_compiler"]["min_sources"] == 1
-    assert "conflict_value" not in compiled.results[0].metadata["evidence_compiler"]["roles"]
-
-
 def test_compiler_prefers_requested_symbol_granularity() -> None:
     """Method/function queries should select the method over the enclosing class."""
     class_symbol = _result(
@@ -923,8 +980,8 @@ def test_compiler_prefers_requested_symbol_granularity() -> None:
     assert compiled.results[0].address.location == "flags.FeatureGate.is_eligible"
 
 
-def test_behavioral_code_query_does_not_infer_documentation_conflict() -> None:
-    """Code/doc conflict labels belong to Pyrrho, not compiler polarity regex."""
+def test_behavioral_code_query_preserves_code_and_documentation() -> None:
+    """Fitz keeps both source types available for Pyrrho's judgment."""
     symbol = _result(
         "if user.get('archived') == 'true':\n    return False",
         "code/feature_flag_service.py",
@@ -953,12 +1010,11 @@ def test_behavioral_code_query_does_not_infer_documentation_conflict() -> None:
         for result in compiled.results
     }
     assert "required_symbol" in roles_by_file["code/feature_flag_service.py"]
-    assert "conflict_value" not in roles_by_file["code/feature_flag_service.py"]
-    assert "conflict_companion:documentation" not in roles_by_file["code/README.md"]
+    assert "code/README.md" in roles_by_file
 
 
-def test_code_notes_export_claim_conflict_is_not_compiler_owned() -> None:
-    """Opposing code/prose claims are evidence for Pyrrho, not compiler verdicts."""
+def test_code_notes_export_claims_are_both_preserved() -> None:
+    """Opposing code/prose claims remain raw evidence for Pyrrho."""
     symbol = _result(
         'if user.get("type") == "guest":\n    return False',
         "code/access_control.py",
@@ -982,13 +1038,10 @@ def test_code_notes_export_claim_conflict_is_not_compiler_owned() -> None:
         profile=_profile(modality="code"),
     )
 
-    roles_by_file = {
-        result.file_path: result.metadata["evidence_compiler"]["roles"]
-        for result in compiled.results
+    assert {result.file_path for result in compiled.results} == {
+        "code/access_control.py",
+        "code/README.md",
     }
-    assert "conflict_value" not in roles_by_file["code/access_control.py"]
-    assert "conflict_value" not in roles_by_file["code/README.md"]
-    assert "conflict_companion:documentation" not in roles_by_file["code/README.md"]
 
 
 def _profile(

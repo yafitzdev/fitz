@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from benchmarks.fitz_bench import runner
 from benchmarks.fitz_bench.production_runner import (
@@ -73,6 +74,23 @@ def test_query_shape_suite_has_balanced_positive_and_negative_controls() -> None
     assert all(len(case.expected_signals) == 3 for case in cases)
     for tag in ("temporal", "comparison", "aggregation", "narrow"):
         assert sum(tag in case.tags for case in cases) == 15
+
+
+def test_hardened_boundary_suite_is_required_and_reuses_limit_cases() -> None:
+    root = Path(__file__).resolve().parents[2]
+    manifest = yaml.safe_load(
+        (root / "benchmarks" / "suites" / "production.yaml").read_text(encoding="utf-8")
+    )
+    suite = next(item for item in manifest["suites"] if item["id"] == "hardened_boundaries")
+    available = {
+        case.case_id for case in runner._load_cases(root / "benchmarks" / "cases" / "limits.yaml")
+    }
+
+    assert suite["required"] is True
+    assert suite["gate"] == "retrieval"
+    assert suite["minimum_pass_rate"] == 1.0
+    assert len(suite["case_ids"]) >= 10
+    assert set(suite["case_ids"]) <= available
 
 
 def test_governance_identity_records_local_graph_and_release_status(tmp_path) -> None:

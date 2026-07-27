@@ -85,7 +85,7 @@ GraphRAG:
 
 KRAG:
   Document → [symbols] [sections] [tables] → FTS5 + structure → routed search
-           → ONNX rerank → Pyrrho v2 cutoff → EvidencePack
+           → ONNX rerank → fixed evidence → Pyrrho v2 → EvidencePack
 ```
 
 KRAG does not use vector similarity search. The index is structural and lexical:
@@ -181,12 +181,8 @@ pre-built ONNX graphs on CPU.
 
 ## Where KRAG uses agent-style techniques
 
-KRAG isn't anti-agent. It uses agent-inspired techniques where they
-add value — but bounded and deterministic:
+KRAG keeps endpoint-backed query intelligence opt-in and bounded:
 
-- **Multi-hop reasoning** for compound questions, with a fixed hop
-  limit and deterministic bridge extraction. Not open-ended agent
-  loops.
 - **Query rewriting** to resolve pronouns / context when optional
   `query_intelligence` is configured — one chat call, not an agent loop.
 - **Detection-based routing** that classifies query intent (temporal,
@@ -235,7 +231,7 @@ use endpoint LLMs only for optional query intelligence or generated answers.
                     │           OnnxReranker (ONNX cross-encoder)│
                     │              │                            │
                     │              ▼                            │
-                    │         Read + Pyrrho cutoff              │
+                    │     Read + compile + Pyrrho decision      │
                     │           → EvidencePack                  │
                     └───────────────────────────────────────────┘
 ```
@@ -247,8 +243,8 @@ use endpoint LLMs only for optional query intelligence or generated answers.
 KRAG exposes its pipeline three ways:
 
 - **`evidence(query)`** — return a governed `EvidencePack` with ranked
-  source items, Pyrrho probabilities, cutoff metadata, timings, and indexing
-  status. This is the `fitz query` / `fitz retrieve` contract.
+  source items, Pyrrho probabilities, fixed-delivery metadata, timings, and indexing
+  status. This is the `fitz retrieve` contract.
 - **`retrieve(query)`** — run retrieval only and return the expanded
   sources as `list[ReadResult]`, without evidence packaging.
 - **`answer(query)`** — optional synthesis from the retrieved/governed context
@@ -272,7 +268,7 @@ See [ENGINES.md](../../ENGINES.md) for usage.
 | Table search                    | `fitz_sage/engines/fitz_krag/retrieval/strategies/table_search.py` |
 | Context expander                | `fitz_sage/engines/fitz_krag/retrieval/expander.py`              |
 | ONNX reranker                   | `fitz_sage/engines/fitz_krag/retrieval/reranker.py` + `fitz_sage/llm/providers/onnx_reranker.py` |
-| Multi-hop                       | `fitz_sage/engines/fitz_krag/retrieval/multihop.py`              |
+| Evidence closure                | `fitz_sage/engines/fitz_krag/evidence_closure.py`                |
 | Symbol store                    | `fitz_sage/engines/fitz_krag/ingestion/symbol_store.py`          |
 | Section store                   | `fitz_sage/engines/fitz_krag/ingestion/section_store.py`         |
 | Table store                     | `fitz_sage/engines/fitz_krag/ingestion/table_store.py`           |
@@ -283,7 +279,7 @@ See [ENGINES.md](../../ENGINES.md) for usage.
 
 ## Related Features
 
-- [Multi-Hop Reasoning](../retrieval/multi-hop-reasoning.md) — iterative retrieval for compound questions
+- [Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) — bounded contract-driven evidence closure
 - [Entity Graph](../retrieval/entity-graph.md) — entity-based linking across retrieval units
 - [Hierarchical RAG](../ingestion/hierarchical-rag.md) — L1 / L2 summaries for corpus-level context
 - [Sparse Search](../retrieval/sparse-search.md) — FTS5 + `bm25()` ranking

@@ -3,8 +3,8 @@
 Fitz class - stateful SDK for the Fitz KRAG retrieval engine.
 
 A thin, stateful wrapper around a single engine instance bound to one
-collection. It is the complete programmatic front door — point, query,
-retrieve, and wait — so consumers never need to drop down to create_engine.
+collection. It is the complete programmatic front door — point, retrieve,
+answer, and wait — so consumers never need to drop down to create_engine.
 """
 
 from __future__ import annotations
@@ -41,10 +41,10 @@ class fitz:
         f.point("./docs")                  # register documents
         f.wait_for_indexing()              # block for required enrichment
         pack = f.evidence("What is X?")    # governed evidence
-        answer = f.query("What is X?")     # optional synthesized answer
+        answer = f.answer("What is X?")    # optional synthesized answer
 
-    Pointing starts indexing; call ``f.wait_for_indexing()`` before querying when
-    using separate ``point`` / ``query`` calls. Convenience methods that receive
+    Pointing starts indexing; call ``f.wait_for_indexing()`` before retrieval when
+    using separate ``point`` / ``evidence`` or ``answer`` calls. Convenience methods that receive
     ``source=`` block until required enrichment finishes.
 
     Examples:
@@ -99,14 +99,14 @@ class fitz:
         """
         self._get_engine().point(self._resolve_source(source), self._collection)
 
-    def query(
+    def answer(
         self,
         question: str,
         source: Optional[Union[str, Path]] = None,
         conversation_context: Optional["ConversationContext"] = None,
     ) -> Answer:
         """
-        Query the knowledge base. Optionally point at a source first.
+        Synthesize an answer from retrieved evidence. Optionally point at a source first.
 
         Args:
             question: The question to ask.

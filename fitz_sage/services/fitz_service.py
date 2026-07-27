@@ -22,8 +22,8 @@ Usage:
     # Point at docs (progressive querying)
     manifest = service.point("/path/to/docs", collection="docs")
 
-    # Query
-    answer = service.query("What is RAG?", collection="docs")
+    # Optional answer synthesis
+    answer = service.answer("What is RAG?", collection="docs")
 
     # Collections
     collections = service.list_collections()
@@ -133,10 +133,10 @@ class FitzService:
         self._cache_lock = RLock()
 
     # =========================================================================
-    # Query Operations
+    # Answer Operations
     # =========================================================================
 
-    def query(
+    def answer(
         self,
         question: str,
         collection: str,
@@ -145,7 +145,7 @@ class FitzService:
         engine: str | None = None,
     ) -> Answer:
         """
-        Query the knowledge base.
+        Synthesize an answer from retrieved evidence.
 
         Args:
             question: The question to ask
@@ -171,8 +171,8 @@ class FitzService:
                 return cast(Answer, engine_instance.answer(Query(text=question, metadata=metadata)))
 
         except Exception as e:
-            logger.error(f"Query failed (collection={collection}): {e}", exc_info=True)
-            raise QueryError(f"Query failed: {e}") from e
+            logger.error(f"Answer failed (collection={collection}): {e}", exc_info=True)
+            raise QueryError(f"Answer failed: {e}") from e
 
     def evidence(
         self,
@@ -468,7 +468,7 @@ def _collection_item_count(cm: Any, name: str) -> int:
     try:
         with cm.connection(name) as conn:
             exists = conn.execute(
-                "SELECT name FROM sqlite_master " "WHERE type='table' AND name='krag_section_index'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='krag_section_index'"
             ).fetchone()
             if not exists:
                 return 0

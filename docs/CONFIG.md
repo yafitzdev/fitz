@@ -19,15 +19,14 @@ at that explicit boundary.
 collection: default
 parser: cpu
 rerank: onnx
-governance: pyrrho//absolute/path/to/reviewed-clean-package
+governance: pyrrho
 query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-This is enough for `fitz query`, `fitz retrieve`, and `fitz_sage.evidence(...)`
-with local enrichment once the reviewed package path is replaced. No hosted API
-key or external inference server is required.
+This is enough for `fitz retrieve` and `fitz_sage.evidence(...)`.
+No hosted API key or external inference server is required.
 For exact local model IDs, runtimes, cache locations, and the smoke command,
 see [Managed Models](MANAGED_MODELS.md).
 
@@ -107,7 +106,7 @@ not boolean flags:
 | ------------------ | ---------------------------------------- | ----------------------------------- |
 | Managed enrichment | always uses local `onnx/qwen3-0.6b`    | not disabled                        |
 | ONNX reranker      | `rerank: onnx` (default)                 | not disabled                        |
-| Governance         | reviewed local `pyrrho/<path>` required  | not disabled                        |
+| Governance         | accepted local `pyrrho/<path>` required  | not disabled                        |
 | Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |
 | Answer synthesis   | `synthesizer: <provider/model>`          | `synthesizer: null`                 |
 | VLM in parser      | `parser: docling_vision` + `vision:` set | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
@@ -182,7 +181,7 @@ For enterprise (M2M / mTLS) deployments see
 top_addresses: 50      # candidates fetched during broad recall
 top_read: 50           # candidates read after rerank
 retrieval_workers: 4   # max retrieval strategies run concurrently
-governance: pyrrho//absolute/path/to/reviewed-clean-package
+governance: pyrrho
 rerank: onnx
 ```
 
@@ -219,7 +218,7 @@ fitz answer "What is X?" \
 ```
 
 `fitz answer` uses these flags to configure the synthesizer for that invocation.
-`fitz query` and `fitz retrieve` ignore synthesis override flags because they do
+`fitz retrieve` ignores synthesis override flags because it does
 not synthesize.
 
 ---

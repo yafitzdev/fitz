@@ -75,17 +75,6 @@ class TestRetrievalPass:
         reranker.rerank.assert_not_called()
         reader.read.assert_not_called()
 
-    def test_exclude_filters_before_rerank(self):
-        a1 = _addr(location="a", source_id="s1")
-        a2 = _addr(location="b", source_id="s2")
-        rp, router, reranker, reader = _build([a1, a2])
-
-        rp.run("query", exclude={("s1", "a")})
-
-        # The excluded address is dropped before it reaches the reranker.
-        reranked_input = reranker.rerank.call_args[0][1]
-        assert [a.location for a in reranked_input] == ["b"]
-
     def test_no_reranker_skips_rerank(self):
         a1 = _addr("a")
         rp, router, _reranker, reader = _build([a1], with_reranker=False)
@@ -210,6 +199,46 @@ class TestRetrievalPass:
 
         assert len(results) == 10
         assert all(result.address.kind is AddressKind.SECTION for result in results)
+
+    def test_literal_recall_rescue_survives_concrete_row_coverage(self):
+        """Structural rescues must not overwrite a rare literal BM25 hit."""
+        glossary = _addr(
+            location="CBT",
+            source_id="glossary",
+            summary="CBT means Cell Balancing Task.",
+            kind=AddressKind.SECTION,
+        )
+        table = _addr(
+            location="records",
+            source_id="records",
+            kind=AddressKind.TABLE,
+            metadata={
+                "row_match": {
+                    "matched_rows": 1,
+                }
+            },
+        )
+        distractors = [
+            _addr(
+                location=f"owner-{index}",
+                source_id=f"owner-{index}",
+                summary="Ownership details for another system.",
+                kind=AddressKind.SECTION,
+            )
+            for index in range(10)
+        ]
+        rp, _router, reranker, _reader = _build([glossary, table, *distractors])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = [*distractors[:9], table]
+        profile = SimpleNamespace(required_modalities=("table",))
+
+        results = rp.run("Who owns CBT?", profile=profile)
+
+        assert len(results) == 10
+        assert {result.address.source_id for result in results} >= {
+            "glossary",
+            "records",
+        }
 
     def test_broad_query_defers_duplicate_files_after_rerank(self):
         a1 = _addr(location="doc-a-file", source_id="doc-a")
@@ -344,7 +373,7 @@ class TestRetrievalPass:
             ),
         ]
 
-    def test_broad_corpus_query_seeds_cutoff_window_with_corpus_family_diversity(self):
+    def test_broad_corpus_query_seeds_delivery_with_corpus_family_diversity(self):
         q2 = _addr(
             location="Key Metrics Progression",
             source_id="q2-id",
@@ -428,8 +457,7 @@ class TestRetrievalPass:
             summary="Formal eval harness glossary fixture",
             metadata={
                 "source_path": (
-                    "retrieval_logic/formal_eval_harness/artifcats/"
-                    "A10_glossary_internal_terms.txt"
+                    "retrieval_logic/formal_eval_harness/artifcats/A10_glossary_internal_terms.txt"
                 )
             },
         )

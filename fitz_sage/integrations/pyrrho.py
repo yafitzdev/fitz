@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from pyrrho import GovernanceDecision, Pyrrho, QueryPlan
+from pyrrho import GovernanceDecision, Pyrrho
 
 from fitz_sage.core.answer_mode import AnswerMode
 
@@ -26,8 +26,7 @@ def create_pyrrho(spec: str) -> Pyrrho:
     provider, separator, model_spec = spec.strip().partition("/")
     if provider != "pyrrho":
         raise ValueError(
-            f"Unknown governance provider: {provider!r}. "
-            "Supported: 'pyrrho' or 'pyrrho/<package>'."
+            f"Unknown governance provider: {provider!r}. Supported: 'pyrrho' or 'pyrrho/<package>'."
         )
     if separator and not model_spec.strip():
         raise ValueError("Pyrrho package specification cannot be empty.")
@@ -79,7 +78,6 @@ def decision_payload(decision: GovernanceDecision) -> dict[str, Any]:
 __all__ = [
     "GovernanceDecision",
     "Pyrrho",
-    "QueryPlan",
     "answer_mode_from_pyrrho",
     "create_pyrrho",
     "decide",

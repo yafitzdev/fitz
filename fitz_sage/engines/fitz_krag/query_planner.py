@@ -86,7 +86,8 @@ _CODE_TERMS = {
 _DATA_TERMS = {"csv", "table", "spreadsheet", "row", "column", "sql"}
 _DOC_TERMS = {"section", "document", "policy", "procedure", "manual", "spec"}
 _COMPARATIVE_PATTERN = (
-    r"\b(compare|contrast|differ|differs|differences?|difference between|different from|"
+    r"\b(compare|contrast|differ|differs|differences?|difference between|"
+    r"different (?:about|from)|"
     r"changed between|changes between|change between|better|worse|higher|lower|greater|"
     r"less|more|fewer|larger|smaller|highest|lowest|best|worst)\b"
 )
@@ -276,13 +277,32 @@ def _aggregation_detection(query: str):
                 "fetch_multiplier": 3,
             }
         )
+    if re.search(
+        r"^\s*(?:what|which)\s+(?:[a-z0-9_-]+\s+){0,3}"
+        r"[a-z][a-z0-9_-]*s\s+"
+        r"(?:are|were|have|had|do|did|"
+        r"affected|apply|exist|include|contain|use|support|belong)\b",
+        lower,
+    ):
+        return AggregationModule().parse_result(
+            {
+                "detected": True,
+                "type": AggregationType.LIST.value,
+                "target": None,
+                "fetch_multiplier": 3,
+            }
+        )
     return AggregationModule().not_detected()
 
 
 def _comparison_detection(query: str):
     lower = query.lower()
     entities = _comparison_entities(query)
-    detected = bool(entities) or bool(re.search(_COMPARATIVE_PATTERN, lower))
+    how_different = re.search(
+        r"^\s*how\s+(?:is|are|was|were)\b.{0,120}\bdifferent\s*[?.]?\s*$",
+        lower,
+    )
+    detected = bool(entities) or bool(re.search(_COMPARATIVE_PATTERN, lower)) or bool(how_different)
     if not detected:
         return ComparisonModule().not_detected()
 
@@ -310,10 +330,15 @@ def _temporal_references(lower_query: str) -> list[str]:
         _MONTH_PATTERN,
         r"(?<![\d.])\b\d{4}\b(?![\d.])",
         r"\b(?:last|next)\s+(?:week|month|quarter|year)\b",
+        r"\b(?:latest|newest|current|final|recent|recently|most recent|most recently)\b",
         r"\b(?:today|yesterday|tomorrow)\b",
         r"\b(?:since|before|after)\s+[A-Za-z0-9_-]+\b",
         r"\b(?:as of|at that time|effective now)\b",
         r"\b(?:currently|now|previous|prior|original|superseded|formerly)\b",
+        r"\b(?:at|during)\s+(?:the\s+)?"
+        r"(?:launch|release|deployment|migration|rollout|incident|outage|cutover)\b",
+        r"\bwhen\s+(?:[A-Za-z0-9_.-]+\s+){0,4}"
+        r"(?:launched|released|deployed|migrated|started|ended|failed|recovered)\b",
     )
     seen: set[str] = set()
     refs: list[str] = []

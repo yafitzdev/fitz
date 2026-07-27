@@ -1,6 +1,6 @@
-# tests/unit/test_cli_endpoint_flags.py
+# tests/unit/test_cli_answer.py
 """
-Unit tests for `fitz query --endpoint / --synthesizer / --model / --api-key-env` flags.
+Unit tests for `fitz answer --endpoint / --synthesizer / --model / --api-key-env` flags.
 
 These flags let users point the CLI at any OpenAI-compatible HTTP
 server without editing engine YAML — the canonical UX for the
@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import typer
 
-from fitz_sage.cli.commands.query import _apply_chat_overrides
+from fitz_sage.cli.commands.answer import _apply_chat_overrides
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +33,7 @@ class TestApplyChatOverrides:
 
     def test_unknown_engine_warns_and_returns_none(self) -> None:
         """Unsupported engines fall through with a warning."""
-        with patch("fitz_sage.cli.commands.query.ui") as mock_ui:
+        with patch("fitz_sage.cli.commands.answer.ui") as mock_ui:
             result = _apply_chat_overrides(
                 "some_other_engine",
                 "http://localhost:8080/v1",
@@ -131,7 +131,7 @@ class TestApplyChatOverrides:
                 "fitz_sage.runtime.registry.get_engine_registry",
                 return_value=mock_registry,
             ),
-            patch("fitz_sage.cli.commands.query.ui"),
+            patch("fitz_sage.cli.commands.answer.ui"),
             pytest.raises(typer.Exit),
         ):
             _apply_chat_overrides(
@@ -153,7 +153,7 @@ class TestApplyChatOverrides:
                 "fitz_sage.runtime.registry.get_engine_registry",
                 return_value=mock_registry,
             ),
-            patch("fitz_sage.cli.commands.query.ui"),
+            patch("fitz_sage.cli.commands.answer.ui"),
             pytest.raises(typer.Exit),
         ):
             _apply_chat_overrides(
@@ -223,7 +223,7 @@ class TestApplyChatOverrides:
                 "fitz_sage.runtime.registry.get_engine_registry",
                 return_value=mock_registry,
             ),
-            patch("fitz_sage.cli.commands.query.ui"),
+            patch("fitz_sage.cli.commands.answer.ui"),
             pytest.raises(typer.Exit),
         ):
             _apply_chat_overrides(
@@ -281,17 +281,17 @@ class TestApplyChatOverrides:
         assert update["chat_api_key_env"] == "TOGETHER_API_KEY"
 
 
-class TestQueryCommandFlagPlumbing:
+class TestAnswerCommandFlagPlumbing:
     """End-to-end flag plumbing through the CLI runner."""
 
-    def test_query_help_stays_minimal(self) -> None:
+    def test_retrieve_help_has_no_synthesis_flags(self) -> None:
         import re
 
         from typer.testing import CliRunner
 
         from fitz_sage.cli.cli import app
 
-        result = CliRunner().invoke(app, ["query", "--help"])
+        result = CliRunner().invoke(app, ["retrieve", "--help"])
         assert result.exit_code == 0
         # CI runners emit ANSI escape codes inside the rendered help (rich
         # interleaves color codes between the two dashes of long flags),

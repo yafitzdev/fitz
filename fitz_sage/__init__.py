@@ -111,7 +111,7 @@ def __getattr__(name: str):
 
 
 # =============================================================================
-# MODULE-LEVEL SDK (matches CLI: fitz point, fitz query)
+# MODULE-LEVEL SDK (matches CLI: fitz point, fitz retrieve)
 # =============================================================================
 
 _default_fitz = None
@@ -127,11 +127,11 @@ def _get_default_fitz():
     return _default_fitz
 
 
-def query(question: str, source=None, collection: str | None = None):
+def answer(question: str, source=None, collection: str | None = None):
     """
-    Query the knowledge base.
+    Synthesize an answer from retrieved evidence.
 
-    Module-level convenience function matching `fitz query` CLI.
+    Module-level convenience function matching `fitz answer` CLI.
 
     Args:
         question: The question to ask.
@@ -153,7 +153,7 @@ def query(question: str, source=None, collection: str | None = None):
 
         _default_fitz = fitz(collection=collection)
     f = _get_default_fitz()
-    return f.query(question, source=source)
+    return f.answer(question, source=source)
 
 
 def evidence(question: str, source=None, collection: str | None = None):
@@ -237,8 +237,8 @@ __all__ = [
     "load_retrieval_run",
     "replay_pyrrho",
     # SDK
+    "answer",
     "fitz",
     "evidence",
-    "query",
     "trace",
 ]

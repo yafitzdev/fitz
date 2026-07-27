@@ -88,7 +88,7 @@ def build_retrieval_run(
             components=_component_specs(config),
             indexing_status=dict(indexing_status),
         ),
-        warnings=_trace_warnings(getattr(outcome, "retrieval_trace", {})),
+        warnings=(),
         content_included=True,
     )
 
@@ -255,12 +255,6 @@ def _freeze_evidence(results: Any) -> tuple[FrozenEvidence, ...]:
             )
         )
     return tuple(frozen)
-
-
-def _trace_warnings(trace: Any) -> tuple[str, ...]:
-    if isinstance(trace, dict) and trace.get("multi_hop") is True:
-        return ("This run used multi-hop retrieval; per-hop candidates were not available.",)
-    return ()
 
 
 def _component_specs(config: Any) -> dict[str, str]:

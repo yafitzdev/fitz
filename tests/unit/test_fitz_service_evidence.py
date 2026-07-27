@@ -7,6 +7,11 @@ from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.services.fitz_service import FitzService
 
 
+def test_service_exposes_answer_without_query_alias() -> None:
+    assert hasattr(FitzService, "answer")
+    assert not hasattr(FitzService, "query")
+
+
 def test_service_evidence_returns_engine_evidence_pack() -> None:
     pack = EvidencePack(
         query="What is indexed?",

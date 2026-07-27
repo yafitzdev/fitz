@@ -10,7 +10,7 @@ The standard retrieval path uses local CPU models.
 |---|---|---|---|
 | Enrichment and semantic query keywords | `onnx-community/Qwen3-0.6B-DQ-ONNX` (`qwen3-0.6b`) | `onnxruntime-genai`, CPU | Required metadata backbone for better recall. |
 | Reranking | `Alibaba-NLP/gte-reranker-modernbert-base` | raw `onnxruntime`, CPU | Cross-encoder precision over broad recall candidates. |
-| Governance | Explicitly reviewed local Pyrrho package required | raw `onnxruntime`, CPU | No remote artifact is currently approved; the historical `yafitzdev/pyrrho-v2-nano-g1` revision `948f0500b74871cfaec7689a01d4eab0dd516e1b` is quarantined. |
+| Governance | `yafitzdev/pyrrho-v2-nano-g1` at revision `948f0500b74871cfaec7689a01d4eab0dd516e1b` | raw `onnxruntime`, CPU | Accepted immutable Pyrrho default; custom local or commit-pinned packages are supported. |
 
 None of these models require `optimum`, `llama.cpp`, GGUF, or an
 OpenAI-compatible server. Qwen uses ONNX Runtime GenAI; the reranker and Pyrrho
@@ -18,16 +18,14 @@ v2 load pre-built ONNX graphs through plain ONNX Runtime.
 
 ## Download Behavior
 
-Qwen and the reranker are downloaded lazily from Hugging Face and use the Hub
-cache. Normal Pyrrho use does not download a remote default: configure an
-explicitly reviewed local package. The managed Pyrrho cache is used only for
-immutable remote packages or deliberate forensic reproduction.
+Qwen, the reranker, and Pyrrho are downloaded lazily. Qwen and the reranker use
+the Hugging Face cache; Pyrrho manages its own immutable package cache.
 
 | Model | Trigger |
 |---|---|
 | Qwen3 0.6B ONNX GenAI | First query or ingest that can use local enrichment or semantic query keywords. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
-| Pyrrho v2 | First query-plan or evidence-decision call; fails explicitly unless a reviewed local package is configured. |
+| Pyrrho v2 | First query-plan or evidence-decision call. |
 
 The CLI may print messages such as:
 
@@ -46,9 +44,8 @@ Run the standard local CPU path against a tiny generated corpus:
 python tools/smoke_local_retrieval.py
 ```
 
-The script initializes managed Qwen and indexes the corpus. Its governed query
-path additionally requires an explicitly configured clean local Pyrrho package.
-It is a runtime smoke check, not a retrieval-quality benchmark.
+The script initializes managed Qwen, Pyrrho, and the reranker, then indexes the
+corpus. It is a runtime smoke check, not a retrieval-quality benchmark.
 
 ## Offline and Air-Gapped Use
 
@@ -60,7 +57,7 @@ Warm the standard model set:
 ```bash
 python -c "from fitz_sage.llm.providers.onnx_chat import OnnxChat; OnnxChat().ensure_available(include_checksum=True)"
 python -c "from fitz_sage.llm.providers.onnx_reranker import OnnxReranker; OnnxReranker().rerank('warmup', ['one', 'two'])"
-python -c "from fitz_sage.integrations.pyrrho import create_pyrrho; create_pyrrho('pyrrho/C:/reviewed/clean/pyrrho-package').decide('warmup', [{'source_id': 'warmup', 'text': 'warmup evidence'}])"
+python -c "from fitz_sage.integrations.pyrrho import create_pyrrho; create_pyrrho('pyrrho').decide('warmup', [{'source_id': 'warmup', 'text': 'warmup evidence'}])"
 ```
 
 Copy both cache roots:
@@ -68,7 +65,7 @@ Copy both cache roots:
 | Cache | What it contains |
 |---|---|
 | Hugging Face cache (`HF_HOME`, or the platform default) | Qwen ONNX snapshot, reranker ONNX file, tokenizers, configs |
-| Reviewed local package path | Clean Pyrrho ONNX package selected by configuration |
+| Pyrrho cache (`PYRRHO_HOME`, or the platform default) | Immutable default or custom remote Pyrrho package |
 
 On the target machine, point `HF_HOME` at the copied Hugging Face cache and set
 Hugging Face offline mode:
@@ -78,16 +75,16 @@ export HF_HOME=/opt/fitz/hf-cache
 export HF_HUB_OFFLINE=1
 ```
 
-Copy the reviewed Pyrrho package to the target machine and configure its exact
-unpacked local path:
+Copy the warmed Pyrrho cache, or copy an unpacked custom package and configure
+its exact local path:
 
 ```yaml
-governance: pyrrho//opt/fitz/models/pyrrho/reviewed-clean-release
+governance: pyrrho//opt/fitz/models/pyrrho/custom-release
 ```
 
 The double slash after `pyrrho/` is intentional for absolute Unix paths. On
 Windows, use a normal absolute path after the provider prefix, for example
-`pyrrho/C:\fitz\models\pyrrho\reviewed-clean-release`.
+`pyrrho/C:\fitz\models\pyrrho\custom-release`.
 
 ## Qwen Enrichment
 
@@ -107,7 +104,7 @@ before all deep enrichment is complete after the managed runtime is available.
 
 ## Optional Synthesis Is Separate
 
-Answer synthesis is not part of `fitz query`. If a user explicitly runs
+Answer synthesis is not part of `fitz retrieve`. If a user explicitly runs
 `fitz answer`, synthesis may use an OpenAI-compatible endpoint configured by the
 user. That endpoint is separate from the managed ONNX models above.
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from fitz_sage.engines.fitz_krag.retrieval.snippets import query_relevant_excerpt
 from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace
 from fitz_sage.engines.fitz_krag.types import Address
 
@@ -62,7 +63,7 @@ class AddressReranker:
             }
             return addresses[: self._k]
 
-        documents = [_rerank_document(addr) for addr in addresses]
+        documents = [_rerank_document(query, addr) for addr in addresses]
 
         try:
             ranked = self._reranker.rerank(query, documents, top_n=self._k)
@@ -117,10 +118,18 @@ class AddressReranker:
             return selected
 
 
-def _rerank_document(addr: Address) -> str:
+def _rerank_document(query: str, addr: Address) -> str:
     """Build the text shown to the cross-encoder for one address."""
     parts = [addr.summary or addr.location]
-    text = addr.metadata.get("text")
+    text = addr.metadata.get("rerank_text")
+    if not isinstance(text, str) or not text.strip():
+        text = addr.metadata.get("text")
     if isinstance(text, str) and text.strip():
-        parts.append(text.strip()[:_MAX_RERANK_TEXT_CHARS])
+        parts.append(
+            query_relevant_excerpt(
+                query,
+                text,
+                max_chars=_MAX_RERANK_TEXT_CHARS,
+            )
+        )
     return "\n".join(part for part in parts if part).strip() or addr.location

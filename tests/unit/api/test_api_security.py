@@ -73,7 +73,7 @@ def test_api_source_must_stay_within_allowed_roots(
         resolve_api_source(outside)
 
 
-def test_query_source_waits_for_searchable_surface(
+def test_answer_source_waits_for_searchable_surface(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = tmp_path / "docs"
@@ -81,7 +81,7 @@ def test_query_source_waits_for_searchable_surface(
     monkeypatch.setenv(API_KEY_ENV, "secret")
     monkeypatch.setenv(SOURCE_ROOTS_ENV, str(tmp_path))
     service = MagicMock()
-    service.query.return_value = Answer(
+    service.answer.return_value = Answer(
         text="answer",
         mode=AnswerMode.SUFFICIENT,
         provenance=[],
@@ -89,7 +89,7 @@ def test_query_source_waits_for_searchable_surface(
 
     with patch("fitz_sage.api.routes.query.get_service", return_value=service):
         response = TestClient(create_app()).post(
-            "/query",
+            "/answer",
             headers={"X-Fitz-API-Key": "secret"},
             json={"question": "question", "source": str(source), "collection": "docs"},
         )
@@ -97,7 +97,19 @@ def test_query_source_waits_for_searchable_surface(
     assert response.status_code == 200
     service.point.assert_called_once_with(source=source.resolve(), collection="docs")
     service.wait_for_query_surface.assert_called_once_with("docs")
-    service.query.assert_called_once()
+    service.answer.assert_called_once()
+
+
+def test_query_synthesis_route_is_removed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(API_KEY_ENV, "secret")
+
+    response = TestClient(create_app()).post(
+        "/query",
+        headers={"X-Fitz-API-Key": "secret"},
+        json={"question": "question", "collection": "docs"},
+    )
+
+    assert response.status_code == 404
 
 
 def test_missing_collection_maps_to_404(monkeypatch: pytest.MonkeyPatch) -> None:

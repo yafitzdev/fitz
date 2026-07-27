@@ -139,6 +139,9 @@ class TestTableSearchStrategy:
         assert len(addresses) == 1
         assert addresses[0].location == "Vendors"
         assert addresses[0].metadata["row_match"]["matched_rows"] == 1
+        assert addresses[0].metadata["rerank_text"] == (
+            "Columns: vendor_id | vendor | notice_days\nRow: VEN-301 | MeridianAI | 75"
+        )
 
     def test_retrieve_searches_row_values_without_table_classification(self):
         """Ordinary lookups must find table rows even when query profiling misses the modality."""
@@ -157,6 +160,7 @@ class TestTableSearchStrategy:
                 "bm25_score": 3.2,
                 "matched_rows": 1,
                 "row_numbers": [1],
+                "row_texts": ["token_rotation eu 2026.05 enabled"],
             }
         ]
         strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
@@ -170,6 +174,9 @@ class TestTableSearchStrategy:
 
         assert [address.location for address in addresses] == ["Rollout Matrix"]
         assert addresses[0].metadata["row_search"]["matched_rows"] == 1
+        assert addresses[0].metadata["rerank_text"] == (
+            "Columns: feature | region | release | status\nRow: token_rotation eu 2026.05 enabled"
+        )
         sqlite_store.scan_rows.assert_not_called()
 
     def test_retrieve_uses_full_table_exact_identifier_lookup(self):
@@ -194,4 +201,57 @@ class TestTableSearchStrategy:
 
         assert len(addresses) == 1
         assert addresses[0].metadata["row_match"]["exact_identifier_lookup"] is True
+        sqlite_store.scan_rows.assert_not_called()
+
+    def test_retrieve_scans_rows_for_explicit_structured_record_shape(self):
+        """Record-property questions warrant a bounded row scan without an exact ID."""
+        record = _make_table_record(
+            record_id="rec-edges",
+            table_id="tbl_edges",
+            name="Edge Records",
+            columns=[
+                "edge_id",
+                "station",
+                "status",
+                "latency_ms",
+                "retries",
+                "owner",
+                "release",
+            ],
+            row_count=2,
+        )
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = []
+        sqlite_store.catalog.return_value = [{"table_id": "tbl_edges"}]
+        sqlite_store.scan_rows.return_value = (
+            record["columns"],
+            [
+                ["EDGE-106", "delta", "fail", "390", "31", "Rhea", "REL-2026.04"],
+                ["EDGE-107", "delta", "pass", "210", "4", "Ivo", "REL-2026.04"],
+            ],
+        )
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+        strategy._table_store.get_by_table_id.return_value = record
+
+        addresses = strategy.retrieve(
+            "Who owns the failed delta edge record?",
+            limit=5,
+        )
+
+        assert [address.location for address in addresses] == ["Edge Records"]
+        assert addresses[0].metadata["row_match"]["matched_rows"] >= 1
+        sqlite_store.scan_rows.assert_called_once_with("tbl_edges", limit=500)
+
+    def test_prose_record_reference_does_not_trigger_row_scan(self):
+        """The noun 'record' alone is not sufficient structured-data intent."""
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = []
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+
+        strategy.retrieve(
+            "What does the records retention policy require?",
+            limit=5,
+        )
+
+        sqlite_store.catalog.assert_not_called()
         sqlite_store.scan_rows.assert_not_called()

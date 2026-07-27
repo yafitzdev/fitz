@@ -308,6 +308,94 @@ def test_closure_follows_explicit_document_reference() -> None:
     assert any(request.role == "bridge_document:procurement policy" for request in plan.requests)
 
 
+def test_closure_follows_explicit_definition_for_queried_label() -> None:
+    """A corpus-stated label expansion may bridge to another source."""
+    query = "Who owns CBT?"
+    glossary = _result(
+        AddressKind.SECTION,
+        "unstructured/acronym_glossary.md",
+        "CBT",
+        "CBT means Cell Balancing Task in this corpus.",
+    )
+    profile = _profile(modality="structured_table")
+    compilation = compile_evidence(query, [glossary], profile=profile)
+
+    plan = plan_evidence_closure(query, [glossary], compilation, profile=profile)
+
+    request = next(item for item in plan.requests if item.reason == "bridge_definition")
+    assert request.role == "bridge_definition:cell balancing task"
+    assert request.query.startswith("Cell Balancing Task")
+    assert plan.metadata["definition_bridges"] == ["Cell Balancing Task"]
+
+
+def test_closure_does_not_invent_or_apply_an_unqueried_definition() -> None:
+    """Definitions are followed only when their literal label occurs in the query."""
+    glossary = _result(
+        AddressKind.SECTION,
+        "unstructured/acronym_glossary.md",
+        "Glossary",
+        "CBT means Cell Balancing Task. NDX means Nova Diagnostics.",
+    )
+    profile = _profile(modality="unstructured_text")
+    compilation = compile_evidence(
+        "Who owns the balancing workflow?",
+        [glossary],
+        profile=profile,
+    )
+
+    plan = plan_evidence_closure(
+        "Who owns the balancing workflow?",
+        [glossary],
+        compilation,
+        profile=profile,
+    )
+
+    assert not any(item.reason == "bridge_definition" for item in plan.requests)
+
+
+def test_compiler_keeps_explicit_definition_bridge_evidence() -> None:
+    """Definition provenance makes the expanded source a real obligation."""
+    query = "Who owns CBT?"
+    glossary = _result(
+        AddressKind.SECTION,
+        "unstructured/acronym_glossary.md",
+        "CBT",
+        "CBT means Cell Balancing Task.",
+    )
+    ownership = _result(
+        AddressKind.SECTION,
+        "unstructured/system_ownership.md",
+        "Cell Balancing Task",
+        "Cell Balancing Task is owned by Nova Diagnostics.",
+    )
+    ownership = annotate_closure_result(
+        ownership,
+        EvidenceClosureRequest(
+            query="Cell Balancing Task owns CBT",
+            modality="section",
+            role="bridge_definition:cell balancing task",
+            reason="bridge_definition",
+            bridges=("CBT", "Cell Balancing Task"),
+        ),
+        contract=build_query_contract(query),
+        run_index=1,
+    )
+
+    compilation = compile_evidence(
+        query,
+        [glossary, ownership],
+        profile=_profile(modality="unstructured_text"),
+    )
+
+    roles_by_path = {
+        result.file_path: result.metadata["evidence_compiler"]["roles"]
+        for result in compilation.results
+    }
+    assert (
+        "bridge_definition:cell balancing task" in roles_by_path["unstructured/system_ownership.md"]
+    )
+
+
 def test_closure_prioritizes_explicit_document_reference_over_discovered_ids() -> None:
     """A named companion document must not lose the bounded budget to incidental IDs."""
     brief = _result(

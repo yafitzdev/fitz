@@ -59,6 +59,28 @@ class TestDeterministicQueryPlanner:
         assert plan.detection is not None
         assert plan.detection.has_aggregation_intent
 
+    def test_plans_implicit_plural_set_questions_as_aggregation(self):
+        """Plural wh-questions should request complete set coverage."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "Which incidents affected the west region?",
+            "What access policies are documented?",
+            "Which vendors support SAML?",
+        ):
+            plan = planner.plan(query)
+            assert plan.detection is not None
+            assert plan.detection.has_aggregation_intent
+
+    def test_singular_process_with_modal_is_not_a_set_request(self):
+        """A noun ending in s plus a modal is not reliable plural grammar."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("Which process should use the emergency route?")
+
+        assert plan.detection is not None
+        assert not plan.detection.has_aggregation_intent
+
     def test_scalar_measurement_is_not_a_corpus_aggregation(self):
         """A singular duration lookup should remain a narrow fact request."""
         planner = DeterministicQueryPlanner()
@@ -98,6 +120,27 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.has_comparison_intent
         assert plan.detection.comparison_entities == ["Q1", "Q2 2024"]
 
+    def test_detects_general_difference_wording(self):
+        """Difference requests need comparison coverage without a fixed preposition."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "What is different about the two vendor contracts?",
+            "How are the regional policies different?",
+        ):
+            plan = planner.plan(query)
+            assert plan.detection is not None
+            assert plan.detection.has_comparison_intent
+
+    def test_different_adjective_does_not_imply_comparison(self):
+        """The adjective 'different' can introduce a set without comparing it."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("What different policies apply to contractors?")
+
+        assert plan.detection is not None
+        assert not plan.detection.has_comparison_intent
+
     def test_temporal_detection_recognizes_month_names(self):
         """Month-scoped queries should carry temporal references."""
         planner = DeterministicQueryPlanner()
@@ -116,6 +159,9 @@ class TestDeterministicQueryPlanner:
             "Which retention rule is effective now?",
             "What was the original deadline?",
             "Who owned the account at that time?",
+            "Which region was active when Project Vega launched?",
+            "Which policy applied during the migration?",
+            "Which release most recently enabled token rotation?",
         ):
             plan = planner.plan(query)
             assert plan.detection is not None

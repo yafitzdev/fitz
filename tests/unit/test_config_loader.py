@@ -85,7 +85,7 @@ def test_config_none_for_optional_vision():
 
 def test_create_pyrrho_dispatch(tmp_path):
     """`create_pyrrho` maps a config spec to the independent runtime."""
-    from pyrrho import DEFAULT_MODEL_ID, DEFAULT_SUFFICIENT_THRESHOLD, Pyrrho
+    from pyrrho import DEFAULT_MODEL_ID, Pyrrho
 
     from fitz_sage.integrations.pyrrho import create_pyrrho
 
@@ -93,11 +93,11 @@ def test_create_pyrrho_dispatch(tmp_path):
     assert isinstance(default, Pyrrho)
     assert default.model_spec == DEFAULT_MODEL_ID
     assert DEFAULT_MODEL_ID == "yafitzdev/pyrrho-v2-nano-g1"
-    assert DEFAULT_SUFFICIENT_THRESHOLD == 0.34
 
-    custom = create_pyrrho("pyrrho/acme/custom-fine-tune")
+    custom_spec = f"acme/custom-fine-tune@{'a' * 40}"
+    custom = create_pyrrho(f"pyrrho/{custom_spec}")
     assert isinstance(custom, Pyrrho)
-    assert custom.model_spec == "acme/custom-fine-tune"
+    assert custom.model_spec == custom_spec
 
     local_package = tmp_path / "pyrrho-v2-nano-g1"
     local_package.mkdir()
