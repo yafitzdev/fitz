@@ -8,7 +8,7 @@ The standard retrieval path uses local CPU models.
 
 | Job | Model | Runtime | Why it exists |
 |---|---|---|---|
-| Enrichment and semantic query keywords | `onnx-community/Qwen3-0.6B-DQ-ONNX` (`qwen3-0.6b`) | `onnxruntime-genai`, CPU | Required metadata backbone for better recall. |
+| Enrichment and semantic query keywords | `onnx-community/Qwen3-0.6B-DQ-ONNX` (`qwen3-0.6b`) | `onnxruntime-genai`, CPU | Optional entity/hierarchy metadata and query expansion. |
 | Reranking | `Alibaba-NLP/gte-reranker-modernbert-base` | raw `onnxruntime`, CPU | Cross-encoder precision over broad recall candidates. |
 | Governance | `yafitzdev/pyrrho-v2-nano-g1` at revision `948f0500b74871cfaec7689a01d4eab0dd516e1b` | raw `onnxruntime`, CPU | Accepted immutable Pyrrho default; custom local or commit-pinned packages are supported. |
 
@@ -23,16 +23,9 @@ the Hugging Face cache; Pyrrho manages its own immutable package cache.
 
 | Model | Trigger |
 |---|---|
-| Qwen3 0.6B ONNX GenAI | First query or ingest that can use local enrichment or semantic query keywords. |
+| Qwen3 0.6B ONNX GenAI | First background-enrichment or semantic-query-keyword operation. `point()` does not load it. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
 | Pyrrho v2 | First query-plan or evidence-decision call. |
-
-The CLI may print messages such as:
-
-```text
-Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...
-Managed Qwen snapshot ready (<revision>).
-```
 
 After the first download, subsequent runs reuse the cached snapshots.
 

@@ -145,10 +145,9 @@ signals.
 
 ## Managed enrichment
 
-Managed Qwen enrichment does not follow provider presence because it is part of
-the product path. It is the standard local runtime for:
+Managed Qwen enrichment does not follow endpoint-provider presence. It is the
+standard local runtime for:
 
-- ingestion keywords and aliases;
 - entity extraction for the entity graph;
 - hierarchy summaries;
 - default semantic query keywords.
@@ -156,8 +155,8 @@ the product path. It is the standard local runtime for:
 Exact model/runtime details live in [Managed Models](MANAGED_MODELS.md).
 
 There is no `enrichment:` provider key. The managed runtime is local CPU
-infrastructure; if it cannot load, fitz-sage raises an error instead of routing
-to an external API or silently weakening the retrieval index.
+infrastructure. Source indexing does not load it; an unavailable runtime is
+reported as an enrichment failure without weakening the stored source index.
 
 ---
 

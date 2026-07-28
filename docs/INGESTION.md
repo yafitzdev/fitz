@@ -1,174 +1,152 @@
 <!-- docs/INGESTION.md -->
 # Ingestion Pipeline
 
-fitz-sage does not expose a separate `ingest` command. Ingestion starts when
-you point a query at a source:
+Fitz-Sage has one explicit indexing boundary:
+
+```python
+manifest = engine.point(source, collection="docs")
+```
+
+When `point()` returns, every supported file is either searchable through the
+ordinary SQLite/FTS5 retrieval path or listed as an indexing failure. Query
+readiness never depends on Qwen, model download, entity extraction, or summary
+generation.
+
+The CLI calls the same operation automatically:
 
 ```bash
-fitz retrieve "Which documents are relevant?"
 fitz retrieve "Which documents are relevant?" --source ./docs
 ```
 
-The foreground command waits only until parsed retrieval units are searchable.
-Managed Qwen enrichment continues in the background.
-
----
-
-## Pipeline Overview
+## Pipeline
 
 ```mermaid
 flowchart TD
-    A["Source file or directory"] --> B["ManifestBuilder"]
-    B --> C["REGISTERED"]
-    C --> D["Parse file"]
-    D --> E["Store typed units in SQLite + FTS5"]
-    E --> F["PARSED: search surface ready"]
-    F --> G["Qwen keywords"]
-    G --> H["QUERY_READY"]
-    H --> I["Qwen entities + entity graph"]
-    I --> J["Qwen hierarchy summaries"]
-    J --> K["ENRICHED"]
-    K --> L["Demand summaries for queried files"]
+    A["Source file or directory"] --> B["Scan and hash"]
+    B --> C["Parse changed supported files"]
+    C --> D["Store raw source and typed units"]
+    D --> E["Update SQLite FTS5 indexes"]
+    E --> F["Resolve code imports"]
+    F --> G["INDEXED: point returns"]
+    G --> H["Optional background entity linking"]
+    H --> I["Optional file hierarchy"]
+    I --> J["Optional corpus hierarchy"]
+    J --> K["Demand summaries for queried files"]
 ```
 
-The same `KragIngestPipeline` core performs the work whether it is called from
-the foreground command, the in-process worker thread, or the detached
-`index-daemon`.
+There is no secondary pre-index search path. A query reads the persisted source
+index regardless of enrichment state.
 
----
+## Foreground Indexing
 
-## Stages
+### Discovery and Change Detection
 
-### 1. Manifest Build
+`ManifestBuilder` scans enabled file extensions and hashes file bytes. An
+unchanged file keeps its existing index and enrichment state. A changed file
+returns to `REGISTERED`; removed files are deleted from all stores.
 
-`ManifestBuilder` scans the source, hashes files, extracts cheap structural
-hints, and records every file under `.fitz/collections/<collection>/`.
+Discovery does not parse files and does not invoke a model.
 
-For code, it records function/class/method names and line ranges when available.
-For prose, it records headings. This stage has no LLM calls.
+### Parsing and Storage
 
-### 2. Parse
+`KragIngestPipeline.parse_file()` stores raw source and typed retrieval units:
 
-`parse_file` stores raw content and typed units:
+| Content | Searchable unit | Store |
+|---|---|---|
+| Python, TypeScript, Java, Go | symbols | `SymbolStore` |
+| Markdown, text, configuration, rich documents | sections | `SectionStore` |
+| CSV, TSV, detected tables | table metadata and rows | `TableStore` / `SqliteTableStore` |
 
-| Content | Stored unit | Store |
-|---------|-------------|-------|
-| Python / TypeScript / Java / Go | symbols | `SymbolStore` |
-| Markdown, text, rich documents | sections | `SectionStore` |
-| CSV / TSV / tables | table metadata, native rows, and row-value FTS | `TableStore` / `SqliteTableStore` |
-| Generic fallback text | file/section fallback | `SectionStore` |
+Documents are searchable using their source text immediately. Missing
+model-generated summaries fall back to bounded source excerpts for reranking.
 
-After parse, FTS5/BM25 can already search the collection. This is the gate the
-CLI waits for before returning the first evidence pack.
+### Import Resolution
 
-### 3. Keyword Enrichment
+After all changed files are stored, `resolve_imports()` connects code imports to
+the indexed target files. This is deterministic and remains part of the
+foreground indexing contract.
 
-`keyword_file` uses managed Qwen3 0.6B ONNX GenAI to add semantic keywords and
-aliases. Once a file reaches `QUERY_READY`, it has the minimum Qwen enrichment
-needed by steady-state retrieval.
+## Background Enrichment
 
-### 4. Deep Enrichment
+After `point()` returns, an optional worker can add:
 
-Deep enrichment continues after the first query:
+- entities and temporal metadata;
+- per-file hierarchy summaries;
+- a corpus hierarchy summary;
+- demand summaries for files surfaced by queries.
 
-- `link_entities_file` populates entity metadata and the entity graph.
-- `build_hierarchy_file` creates L1 per-file hierarchy summaries.
-- `finalize` creates corpus-level structures such as import graph rollups and
-  the L2 corpus overview.
+This state is tracked separately from source indexing. An enrichment failure
+does not remove source text, sections, symbols, tables, or query availability.
+The CLI can hand pending work to the hidden `enrichment-daemon` after returning
+evidence.
 
-Deep enrichment is mandatory for the full index, but it does not block the
-first evidence pack.
+Fitz-Sage does not generate per-file semantic keyword aliases during ingestion.
+Literal source terms are indexed directly. Query-time semantic keywords remain
+available, and user-owned mapping keywords can be added through the query
+vocabulary interface when that public extension point is introduced.
 
-### 5. Demand Summaries
+## Status Contract
 
-Summaries for individual surfaced files are generated after the file has been
-queried. Files no query ever touches are not summarized eagerly. This keeps the
-first-run cost focused on the metadata that moves retrieval quality most.
-
----
-
-## Indexing Status
-
-`indexing_status()` reports both query readiness and deep enrichment:
+`indexing_status()` separates source-index health from optional enrichment:
 
 ```json
 {
   "discovered": 67,
   "total": 65,
-  "indexed": 63,
-  "pending": 2,
-  "failed": 0,
+  "indexed": 64,
+  "pending": 0,
+  "failed": 1,
   "unsupported": 2,
-  "healthy": true,
+  "healthy": false,
   "complete": false,
-  "query_ready": false,
-  "deep_pending": 40,
-  "fully_enriched": false,
-  "by_state": {
-    "parsed": 2,
-    "query_ready": 23,
-    "enriched": 40
+  "query_ready": true,
+  "by_index_state": {
+    "indexed": 64,
+    "failed": 1,
+    "unsupported": 2
+  },
+  "enrichment": {
+    "total": 64,
+    "completed": 40,
+    "pending": 23,
+    "failed": 1,
+    "finalization": "pending",
+    "complete": false
+  },
+  "by_enrichment_state": {
+    "complete": 40,
+    "pending": 23,
+    "failed": 1
   }
 }
 ```
 
-`discovered` includes unsupported files. `total` contains supported files,
-including failures. `complete` means all supported files indexed successfully;
-`query_ready` means none are still pending and can therefore be true for a
-partial collection with explicit failures. `fully_enriched` means the
-entity/hierarchy stages are done and no supported file failed.
+- `query_ready` means no supported file is still waiting to be indexed.
+- `complete` means indexing settled without a supported-file failure.
+- `failed_files` contains source-index failures.
+- `enrichment.failed_files` contains optional enrichment failures.
+- `unsupported_files` contains files outside the enabled format contract.
 
-`failed_files` records the path, stage, and error. `unsupported_files` records
-the path and extension. Neither condition is silently represented as success.
+These conditions are never silently represented as success.
 
----
+## Parser Selection
 
-## File Format Support
+| Format | Default `parser: cpu` path |
+|---|---|
+| `.pdf` | deterministic CPU PDF parser |
+| `.docx` | lightweight DOCX parser |
+| `.pptx` | lightweight PPTX parser |
+| `.md`, `.rst`, `.txt`, config and markup formats | plaintext/section parser |
+| `.py` | Python symbol extraction |
+| `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.go` | language-specific symbol extraction |
+| `.csv`, `.tsv` | native table storage and row-value FTS |
 
-| Format | Path |
-|--------|------|
-| `.pdf` | `parser: cpu` by default; `docling`, `docling_vision`, or `glm_ocr` are optional heavier parsers |
-| `.docx`, `.pptx` | Docling-backed document parsing when installed |
-| `.md`, `.rst`, `.txt` | section extraction and heading-aware storage |
-| `.cfg`, `.conf`, `.ini`, `.toml` | text/section fallback |
-| `.gql`, `.graphql`, `.json`, `.jsonl`, `.xml`, `.yaml`, `.yml`, `.sql` | text/section fallback |
-| `.htm`, `.html` | document parsing |
-| `.py` | AST-backed symbol extraction |
-| `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.go` | tree-sitter-backed symbol extraction when installed, with language-specific fallback extraction |
-| `.csv`, `.tsv` | native SQLite table storage plus metadata and row-value BM25 search |
-| `.xlsx` | optional Docling-backed document extraction |
+Installing Docling does not change the CPU parser's behavior. Select `docling`,
+`docling_vision`, or `glm_ocr` explicitly when those heavier parser contracts
+are wanted. Unsupported files and files with no extractable searchable content
+are reported.
 
-Unsupported files are reported rather than forcing a broken generic parse.
-Extensionless files and `.env` files are not indexed by default.
-
----
-
-## CLI Usage
-
-```bash
-# Default: current directory is the source
-fitz retrieve "What is in this corpus?"
-
-# Explicit source and collection
-fitz retrieve "What is in this corpus?" --source ./docs --collection docs
-
-# Evidence controls
-fitz retrieve "What is in this corpus?" --source ./docs --top-k 8
-```
-
----
-
-## Python API
-
-```python
-import fitz_sage
-
-pack = fitz_sage.evidence("Which documents are relevant?", source="./docs")
-for item in pack.items:
-    print(item.file_path, item.excerpt)
-```
-
-Advanced lifecycle:
+## Python Lifecycle
 
 ```python
 from pathlib import Path
@@ -178,36 +156,44 @@ from fitz_sage import Query, create_engine
 engine = create_engine("fitz_krag")
 engine.load("my_collection")
 engine.point(Path("./docs"), collection="my_collection")
-engine.wait_for_query_surface()
 
+# The source index is searchable now.
 pack = engine.evidence(Query(text="What is in these docs?"))
+
+# Optional: block for entity and hierarchy enrichment.
+engine.wait_for_enrichment()
 status = engine.indexing_status()
 ```
 
-Use `wait_for_indexing()` only when you explicitly want to block until the
-query-ready keyword phase completes. Deep enrichment may still continue after
-that until `fully_enriched` is true.
+## Throughput Benchmark
 
----
+The dedicated benchmark measures only the query-ready contract:
+
+```bash
+python -m benchmarks.fitz_bench.ingestion_benchmark \
+  --source benchmarks/corpora/core \
+  --iterations 3 \
+  --target-files-per-second 1
+```
+
+It calls `point(..., start_worker=False)`, reports cold files per second,
+indexing failures, and no-change re-point time, and exits nonzero when the
+target is missed.
 
 ## Key Files
 
 | File | Purpose |
-|------|---------|
-| `fitz_sage/engines/fitz_krag/progressive/builder.py` | fast source scan and manifest construction |
-| `fitz_sage/engines/fitz_krag/progressive/manifest.py` | file state machine and indexing status |
-| `fitz_sage/engines/fitz_krag/progressive/worker.py` | background worker and detached daemon path |
-| `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | parse/keyword/entity/hierarchy/finalize core |
-| `fitz_sage/engines/fitz_krag/ingestion/enricher.py` | Qwen keyword/entity/temporal extraction |
-| `fitz_sage/engines/fitz_krag/ingestion/section_store.py` | document section storage and FTS5 search |
-| `fitz_sage/engines/fitz_krag/ingestion/symbol_store.py` | code symbol storage and FTS5 search |
+|---|---|
+| `fitz_sage/engines/fitz_krag/progressive/builder.py` | source scan and manifest construction |
+| `fitz_sage/engines/fitz_krag/progressive/manifest.py` | independent index and enrichment state |
+| `fitz_sage/engines/fitz_krag/progressive/worker.py` | background enrichment scheduler |
+| `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | indexing and enrichment operations |
+| `fitz_sage/engines/fitz_krag/ingestion/section_store.py` | document section storage and FTS5 |
+| `fitz_sage/engines/fitz_krag/ingestion/symbol_store.py` | code symbol storage and FTS5 |
 | `fitz_sage/engines/fitz_krag/ingestion/table_store.py` | table metadata storage |
-
----
 
 ## See Also
 
-- [RETRIEVAL_PIPELINE.md](RETRIEVAL_PIPELINE.md) - query flow and indexing states
-- [ENRICHMENT.md](ENRICHMENT.md) - managed Qwen enrichment details
-- [CONFIG.md](CONFIG.md) - configuration reference
-- [features/platform/progressive-krag-agentic-search.md](features/platform/progressive-krag-agentic-search.md)
+- [Enrichment](ENRICHMENT.md)
+- [Retrieval Pipeline](RETRIEVAL_PIPELINE.md)
+- [Searchable Index and Background Enrichment](features/platform/searchable-index-background-enrichment.md)

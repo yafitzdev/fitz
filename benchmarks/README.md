@@ -40,7 +40,7 @@ Defaults:
 - JSON report: `benchmarks/results/latest.json`
 - Markdown summary: `benchmarks/results/latest.md`
 - workspace: `.bench_workspace/<collection>`
-- index mode: `complete`
+- index mode: `complete` (use `source` to measure retrieval without enrichment)
 - report detail: `compact`
 - gate: all assertions, including governance
 
@@ -49,6 +49,20 @@ For a quick smoke run:
 ```bash
 python -m benchmarks.fitz_bench.runner --limit 2 --index-mode progressive
 ```
+
+Measure cold query-ready ingestion separately from optional Qwen enrichment:
+
+```bash
+python -m benchmarks.fitz_bench.ingestion_benchmark \
+  --source benchmarks/corpora/core \
+  --iterations 3 \
+  --target-files-per-second 1
+```
+
+The report contains `query_ready_seconds`, `files_per_second`, indexing
+failures, and no-change re-point time. It always calls `point(...,
+start_worker=False)`, so model download, entity extraction, and hierarchy
+summaries cannot distort the source-index throughput metric.
 
 Generated reports under `benchmarks/results/` and benchmark workspaces under
 `.bench_workspace/` are ignored by git.

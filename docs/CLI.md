@@ -71,15 +71,15 @@ fitz retrieve "Your question" --source ./docs --collection product_docs
 
 **What the user sees**
 
-1. A short progress feed: source registration, managed Qwen readiness, parsing,
-   query analysis, and retrieval.
+1. A short progress feed: source discovery, indexing, query analysis, and
+   retrieval.
 2. A ranked evidence table.
 3. Pyrrho's verdict, probabilities, reasons, and fixed evidence-delivery count.
-4. An indexing status line when Qwen keyword/deep enrichment is still running.
+4. An enrichment status line when optional entity/hierarchy work is running.
 
 If enrichment is still pending after the first evidence pack is shown, the CLI
-starts a detached `index-daemon` process so the collection keeps improving after
-the foreground command exits.
+starts a detached `enrichment-daemon` process so the collection keeps improving
+after the foreground command exits.
 
 Trace capture and the displayed `EvidencePack` come from one execution. Source
 content is redacted unless `--trace-content` is explicitly set.

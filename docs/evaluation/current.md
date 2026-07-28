@@ -12,7 +12,8 @@ but they are not the product contract.
 | Retrieval recall | Hit@K / nDCG over fixture corpora | Broad recall must surface the right typed units before reranking. |
 | Reranking | Hit@1 / MRR after ONNX rerank | The reranker should move the answerable source near the top. |
 | Pyrrho integration | Exact input/output identity, one decision per retrieval, replay parity | Fitz must not reinterpret or override Pyrrho. |
-| Progressive indexing | time-to-first-evidence, query-ready latency, full-enrichment latency | The user experience depends on useful evidence before deep indexing completes. |
+| Source indexing | cold query-ready files/second, failures, no-change re-point latency | `point()` must make the ordinary retrieval index available quickly and deterministically. |
+| Background enrichment | entity/hierarchy completion latency and failure inventory | Optional model work must not be confused with source availability. |
 | Modality routing | accuracy by text/table/code/log/config route | Bad routing makes good retrieval strategies invisible. |
 | Structured/table evidence | SQL correctness, aggregation completeness, unit/filter correctness | Table evidence has failure modes that text governance does not cover. |
 | Code evidence | symbol hit rate, caller/callee coverage, test/doc conflict detection | Code answers need source-level sufficiency, not just topical relevance. |
@@ -33,8 +34,8 @@ but they are not the product contract.
 2. Cross-modality integration cases that preserve the exact accepted Pyrrho
    output without treating it as Fitz retrieval quality. Pyrrho owns
    false-sufficient, class-recall, and calibration evaluation.
-3. A progressive-indexing latency benchmark that reports both query-ready and
-   fully-enriched milestones.
+3. Keep the query-ready ingestion benchmark representative across small files,
+   long documents, code, tables, and explicitly selected rich parsers.
 4. A public regression report format that can be updated without turning the
    docs into release notes.
 

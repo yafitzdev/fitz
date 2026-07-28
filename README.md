@@ -108,9 +108,9 @@ Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](
 > Source files become typed retrieval units: code symbols, document sections, and tables. Each unit type
 > keeps the structure needed to retrieve it well.
 
-**Zero-wait querying 🐆** → [Progressive KRAG](docs/features/platform/progressive-krag-agentic-search.md)
-> Ask immediately. `fitz-sage` builds the query-ready search surface first, returns governed evidence, and lets the
-> background worker finish managed Qwen keyword/entity/hierarchy enrichment.
+**Query-ready indexing 🐆** → [Searchable Index](docs/features/platform/searchable-index-background-enrichment.md)
+> `point()` parses and stores supported files before returning. Retrieval can start immediately afterward while the
+> background worker adds optional entity and hierarchy metadata.
 
 **Pyrrho-governed retrieval 🧭** → [Pyrrho docs](docs/CONSTRAINTS.md)
 > Fitz profiles the query before retrieval, then Pyrrho judges the selected evidence after reranking. The retrieval profile,
@@ -188,7 +188,7 @@ entity graph links, corpus summaries, and richer context expansion.
 | Feature | Query | What Fitz Uses |
 |---------|-------|----------------|
 | ✅ [**epistemic-honesty**](docs/features/governance/epistemic-honesty.md) | "What was our Q4 revenue?" | Pyrrho verdict and insufficient-evidence reasons |
-| ✅ [**keyword-vocabulary**](docs/features/retrieval/keyword-vocabulary.md) | "Find TC_1000" | Exact identifier matching |
+| ✅ [**keyword-vocabulary**](docs/features/retrieval/keyword-vocabulary.md) | "Find TC_1000" | Literal identifier search |
 | ✅ [**sparse-search**](docs/features/retrieval/sparse-search.md) | "error code E_AUTH_401" | SQLite FTS5 + native `bm25()` |
 | ✅ [**hierarchical-rag**](docs/features/ingestion/hierarchical-rag.md) | "What are the design principles?" | Hierarchical summaries |
 | ✅ [**multi-query**](docs/features/retrieval/multi-query-rag.md) | *[User pastes 500-char test report]* "What failed and why?" | Multi-query decomposition |
@@ -433,7 +433,7 @@ Fitz-Sage retrieval work.
 >fitz retrieve "Your question here" --source ./docs
 >```
 >
->Reranking, governance, and required enrichment run locally. No data leaves your machine for `fitz retrieve`.
+>Reranking, governance, query-time expansion, and optional background enrichment run locally. No data leaves your machine for `fitz retrieve`.
 >
 >Optional synthesis can use [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai),
 >[Ollama](https://ollama.ai) in `/v1/` mode, [TabbyAPI](https://github.com/theroyallab/tabbyAPI), OpenAI, Together,
@@ -743,7 +743,7 @@ MIT
 - [Configuration Guide](docs/CONFIG.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Unified Storage (SQLite + FTS5)](docs/features/platform/unified-storage.md)
-- [Progressive KRAG & Agentic Search](docs/features/platform/progressive-krag-agentic-search.md)
+- [Searchable Index & Background Enrichment](docs/features/platform/searchable-index-background-enrichment.md)
 - [Ingestion Pipeline](docs/INGESTION.md)
 - [Enrichment (Hierarchies, Entities)](docs/ENRICHMENT.md)
 - [Epistemic Governance (Pyrrho)](docs/CONSTRAINTS.md)

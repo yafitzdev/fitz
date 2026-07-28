@@ -98,9 +98,8 @@ the fixed delivery set is submitted to Pyrrho.
 ```
 1  Query prep      deterministic plan + Qwen semantic keywords
                    optional query_intelligence rewrite/analyze/detect
-2  Broad recall    symbol / section / table BM25, intent fanout,
-                   unindexed scan when files are not query-ready
-3  Fuse            merge across strategies, dedup, keyword and freshness boosts
+2  Broad recall    symbol / section / table BM25 and intent fanout
+3  Fuse            merge across strategies, dedup, and freshness boosts
 4  Rerank          ONNX cross-encoder (gte-reranker-modernbert-base)
 5  Read            fetch content for surviving addresses
 6  Compile         enforce query-shape evidence obligations
@@ -123,11 +122,11 @@ Files → Register manifest
       → Parse (CPU parser by default, Docling/vision/OCR optional,
         tree-sitter/AST for code, native table parsers)
       → Store typed units (symbols, sections, tables) in SQLite + FTS5
-      → Search surface ready
-      → Required staged enrichment:
-        Qwen keywords → query-ready
-        entity graph + hierarchy → fully enriched
-        demand summaries → only for files surfaced by queries
+      → Resolve imports
+      → Searchable source index ready
+      → Optional background enrichment:
+        entity graph + hierarchy
+        demand summaries only for files surfaced by queries
 ```
 
 ---

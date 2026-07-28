@@ -182,11 +182,29 @@ The remaining six required-suite package misses cover:
 All 60 query-shape controls pass. These misses remain visible because the
 benchmark is a boundary record, not a target to fit case by case.
 
-Performance is measured, not guaranteed. On the benchmark machine, indexing
-the 98-file noisy corpus took 335.5 seconds (0.29 files/second), and required
-suite queries averaged 4.1 seconds with a 3.6-second median. The slowest
-limitation query took 27.9 seconds. Many small enriched files and broad evidence
-can therefore be operational bottlenecks even when retrieval is correct.
+Performance is measured, not guaranteed. The former 335.5-second figure for a
+98-file noisy corpus included model-backed keyword/entity/hierarchy work and
+therefore did not measure source indexing alone.
+
+After separating the lifecycle, the 2026-07-28 CPU benchmark measured:
+
+- 18 core files query-ready in a median 0.296 seconds across three cold runs
+  (60.8 files/second, zero indexing failures)
+- 93 mixed benchmark files query-ready in 1.803 seconds
+  (51.6 files/second, zero indexing failures, one unsupported XLSX under the
+  default CPU parser)
+- unchanged 18-file re-pointing in roughly 0.02-0.03 seconds
+
+The source-only core retrieval run passed 20/20 retrieval, evidence-delivery,
+and package-capability contracts with 100% required recall, without entity or
+hierarchy enrichment. It passed 14/20 complete contracts; all six remaining
+failures were attributed to the accepted Pyrrho outputs.
+
+These fixture corpora contain many small files and are not a large-document
+throughput guarantee. Rich parsers, very large documents, slow storage, and
+background Qwen enrichment need separate capacity tests. Required-suite queries
+previously averaged 4.1 seconds with a 3.6-second median; the slowest limitation
+query took 27.9 seconds.
 
 Use this file as the public contract. Use the benchmark to decide which
 limitations are worth removing later.

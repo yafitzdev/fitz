@@ -134,7 +134,7 @@ query intelligence, or vision parsing. Managed Qwen enrichment is internal.
 | ONNX reranker           | INT8 cross-encoder, single forward pass on CPU                |
 | Epistemic governance    | Pyrrho v2 sufficient / disputed / insufficient evidence verdicts |
 | Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
-| Progressive ingestion   | Parse first, return evidence, continue Qwen enrichment in daemon |
+| Source indexing         | Parse and persist before `point()` returns; enrich afterward |
 
 ---
 

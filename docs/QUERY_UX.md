@@ -1,83 +1,63 @@
 <!-- docs/QUERY_UX.md -->
 # Query UX
 
-The intended fitz-sage user journey is one command from the folder the user
-wants to search:
+The common journey is one command from the folder to search:
 
 ```bash
 fitz retrieve "Which documents are relevant?"
 ```
 
-`fitz retrieve` returns governed evidence, not a generated answer. It should need no
-flags for the common case.
+`fitz retrieve` returns governed evidence, not a generated answer.
 
 ## First Run
 
 ```mermaid
 flowchart TD
     A["User runs fitz retrieve"] --> B["Use current directory as source"]
-    B --> C["Derive collection name from folder"]
-    C --> D["Register files in manifest"]
-    D --> E{"Small surface?"}
-    E -->|"under router threshold"| F["Finish query-ready indexing in foreground"]
-    E -->|"larger corpus"| G["Build fast query-ready surface"]
-    F --> H["Recall -> rerank -> Pyrrho"]
-    G --> H
-    H --> I["Return EvidencePack"]
-    I --> J{"Deep enrichment pending?"}
-    J -->|"yes"| K["Start background daemon"]
-    J -->|"no"| L["Done"]
+    B --> C["Scan and hash source"]
+    C --> D["Parse and persist changed files"]
+    D --> E["Searchable source index ready"]
+    E --> F["Recall -> rerank -> Pyrrho"]
+    F --> G["Return EvidencePack"]
+    G --> H{"Optional enrichment pending?"}
+    H -->|"yes"| I["Start enrichment daemon"]
+    H -->|"no"| J["Done"]
 ```
 
-The first-run foreground work is limited to making retrieval usable. Required
-deep enrichment continues after the evidence pack is returned.
+There is one foreground guarantee: when source registration returns, supported
+files are searchable or explicitly listed as failures. Qwen is not loaded on
+that critical path.
 
 ## Repeat Query
 
 ```mermaid
 flowchart TD
-    A["User runs fitz retrieve"] --> B["Load existing collection manifest"]
-    B --> C{"Query-ready index complete?"}
-    C -->|"yes"| D["Search indexed typed units"]
-    C -->|"no"| E["Search ready units + supplemental unindexed scan"]
-    D --> F["Recall -> rerank -> Pyrrho"]
-    E --> F
-    F --> G["Return EvidencePack"]
-    G --> H["Bump surfaced files to high priority for daemon"]
+    A["User runs fitz retrieve"] --> B["Load existing collection"]
+    B --> C["Search persisted typed units"]
+    C --> D["Recall -> rerank -> Pyrrho"]
+    D --> E["Return EvidencePack"]
+    E --> F["Prioritize surfaced files for optional enrichment"]
 ```
 
-Repeat queries should feel immediate once the collection has a query-ready
-surface. If files are still registered but not query-ready, the supplemental
-scan can still surface relevant files while the daemon catches up.
-When every file is already query-ready, the supplemental scan is skipped and no
-scan progress line is shown.
+When a source is pointed again, unchanged files keep their stored index and
+enrichment state. Only changed files are reparsed.
 
 ## User-Facing Feed
 
-The CLI feed should say what is happening without exposing implementation
-flags:
-
 | Message | Meaning |
 |---|---|
-| `Registering ...` | fitz-sage found a source directory and collection target. |
-| `Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...` | Local enrichment model files are being downloaded or verified. |
-| `Parsing documents...` | Foreground indexing is building the query-ready surface. |
-| `Search surface ready; enrichment continues.` | Retrieval can run while deeper enrichment proceeds. |
+| `Registering ...` | A source and collection were selected. |
+| `Discovered N supported file(s).` | Scanning and hashing completed. |
+| `Indexing N changed file(s)...` | Changed source is being parsed and stored. |
+| `Searchable source index ready (N/N changed files).` | `point()` has reached its query-ready boundary. |
 | `Analyzing query...` | Query profile and semantic keywords are being prepared. |
-| `Retrieving relevant sources...` | Recall, rerank, evidence compilation, and Pyrrho are running. |
-| `Supplemental scan: ...` | Only appears when files are still below query-ready and disk fallback is useful. |
-| `Indexing pending: X/Y` | Some files are not query-ready yet. |
-| `Enrichment pending: X/Y` | Query-ready retrieval works, but deeper entity/hierarchy enrichment is still running. |
+| `Retrieving relevant sources...` | Recall, reranking, evidence compilation, and Pyrrho are running. |
+| `Enrichment pending: X/Y` | Source retrieval works while optional entity/hierarchy work remains. |
 
 ## Defaults
 
-`fitz retrieve` defaults:
-
-- `source`: current working directory
-- `collection`: derived from the source folder name
-- retrieval: broad recall -> ONNX rerank -> fixed evidence -> Pyrrho
-- enrichment: managed Qwen3 0.6B ONNX GenAI, required
+- source: current working directory
+- collection: derived from the source folder name
+- retrieval: broad recall, ONNX rerank, fixed evidence, Pyrrho
+- enrichment: managed local Qwen entities/hierarchy, optional for query readiness
 - answer synthesis: not used
-
-Users should use `fitz retrieve` for evidence workflows and `fitz answer` only
-when they explicitly want optional synthesis after retrieval.

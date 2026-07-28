@@ -10,7 +10,7 @@ historical implementation notes.
 |---|---|
 | `features/retrieval/three-stage-strategy.md` | Retrieval strategy: broad recall -> ONNX rerank -> fixed evidence -> Pyrrho |
 | `features/retrieval/evidence-signals.md` | Pre-retrieval planning and post-retrieval evidence signals |
-| `RETRIEVAL_PIPELINE.md` | End-to-end query and progressive indexing flow |
+| `RETRIEVAL_PIPELINE.md` | End-to-end query and source-index lifecycle |
 | `QUERY_UX.md` | One-command CLI user journey and background indexing behavior |
 | `EVIDENCE_PACK.md` | Governed evidence response contract |
 | `MANAGED_MODELS.md` | Local ONNX models, download behavior, and cache expectations |
@@ -40,4 +40,4 @@ historical implementation notes.
 | `features/retrieval/` | Sparse search, semantic keywords, reranking, evidence closure, entity graph, freshness, temporal, aggregation, comparison |
 | `features/governance/` | Epistemic honesty and Pyrrho governance |
 | `features/ingestion/` | Code symbols, tabular routing, hierarchy |
-| `features/platform/` | KRAG, progressive indexing, unified storage, endpoint integration |
+| `features/platform/` | KRAG, source indexing, unified storage, endpoint integration |

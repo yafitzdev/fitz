@@ -313,9 +313,9 @@ curl http://localhost:8000/collections/default
 
 ## POST /collections/{name}/documents
 
-Register documents into a collection. Indexing runs in the background — queries
-work immediately and improve as it completes. Returns `202 Accepted` with the
-current indexing status; poll `GET /collections/{name}/status` for progress.
+Register documents into a collection. The request returns after supported files
+are stored in the searchable source index. Optional model-backed enrichment may
+continue afterward.
 
 ### Request
 
@@ -327,10 +327,26 @@ current indexing status; poll `GET /collections/{name}/status` for progress.
 |-------|------|----------|-------------|
 | `source` | string | Yes | Allowed server-local file or directory to ingest |
 
-### Response (`202 Accepted`)
+### Response (`200 OK`)
 
 ```json
-{"total": 42, "indexed": 0, "pending": 42, "complete": false, "by_state": {"registered": 42}}
+{
+  "total": 42,
+  "indexed": 42,
+  "pending": 0,
+  "failed": 0,
+  "complete": true,
+  "query_ready": true,
+  "by_index_state": {"indexed": 42},
+  "enrichment": {
+    "total": 42,
+    "completed": 0,
+    "pending": 42,
+    "failed": 0,
+    "finalization": "pending",
+    "complete": false
+  }
+}
 ```
 
 ### Example
@@ -345,21 +361,40 @@ curl -X POST http://localhost:8000/collections/default/documents \
 
 ## GET /collections/{name}/status
 
-Background-indexing progress for a collection.
+Source-index health and optional enrichment progress for a collection.
 
 ### Response
 
 ```json
-{"total": 42, "indexed": 30, "pending": 12, "complete": false, "by_state": {"enriched": 30, "parsed": 12}}
+{
+  "total": 42,
+  "indexed": 42,
+  "pending": 0,
+  "failed": 0,
+  "complete": true,
+  "query_ready": true,
+  "by_index_state": {"indexed": 42},
+  "enrichment": {
+    "total": 42,
+    "completed": 30,
+    "pending": 12,
+    "failed": 0,
+    "finalization": "pending",
+    "complete": false
+  }
+}
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `total` | integer | Files registered |
-| `indexed` | integer | Files indexed (enriched or summarized) |
-| `pending` | integer | Files still pending (registered or parsed) |
-| `complete` | boolean | True when no files remain pending |
-| `by_state` | object | File counts per indexing state |
+| `total` | integer | Supported files, including indexing failures |
+| `indexed` | integer | Files stored in the searchable source index |
+| `pending` | integer | Files not yet settled by source indexing |
+| `failed` | integer | Supported files that failed source indexing |
+| `complete` | boolean | True when every supported file indexed successfully |
+| `query_ready` | boolean | True when no supported file remains pending |
+| `by_index_state` | object | File counts per source-index state |
+| `enrichment` | object | Independent entity/hierarchy progress and failures |
 
 ### Example
 
@@ -371,7 +406,7 @@ curl http://localhost:8000/collections/default/status
 
 ## DELETE /collections/{name}
 
-Delete a collection and its manifest, parsed cache, and SQLite data.
+Delete a collection and its manifest and SQLite data.
 
 ### Response
 

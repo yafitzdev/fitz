@@ -231,22 +231,28 @@ compilation, and selected evidence roles.
 ## Indexing Status
 
 `indexing_status` describes whether the collection can answer retrieval queries
-and whether required deep enrichment is complete.
+and whether optional enrichment is complete.
 
 ```json
 {
   "indexing_status": {
     "total": 65,
     "indexed": 64,
-    "pending": 1,
+    "pending": 0,
+    "failed": 1,
     "complete": false,
-    "query_ready": false,
-    "deep_pending": 22,
-    "fully_enriched": false,
-    "by_state": {
-      "query_ready": 43,
-      "enriched": 21,
-      "registered": 1
+    "query_ready": true,
+    "by_index_state": {
+      "indexed": 64,
+      "failed": 1
+    },
+    "enrichment": {
+      "total": 64,
+      "completed": 42,
+      "pending": 22,
+      "failed": 0,
+      "finalization": "pending",
+      "complete": false
     }
   }
 }
@@ -254,14 +260,14 @@ and whether required deep enrichment is complete.
 
 | Field | Meaning |
 |---|---|
-| `total` | Files tracked by the collection manifest. |
-| `indexed` | Files in a query-ready state. |
-| `pending` | Files not query-ready yet. |
-| `complete` | `pending == 0`; the query-ready index is complete. |
-| `query_ready` | Same readiness signal as `complete`. |
-| `deep_pending` | Files still missing full required enrichment. |
-| `fully_enriched` | `deep_pending == 0`. |
-| `by_state` | Manifest state counts. |
+| `total` | Supported files, including source-index failures. |
+| `indexed` | Files stored in the searchable source index. |
+| `pending` | Files not yet settled by source indexing. |
+| `failed` | Supported files that failed source indexing. |
+| `complete` | Every supported file indexed successfully. |
+| `query_ready` | No supported file remains pending. |
+| `by_index_state` | Source-index state counts. |
+| `enrichment` | Independent entity/hierarchy progress and failures. |
 
 ## Item Metadata
 
@@ -272,7 +278,7 @@ Evidence items are typed retrieval units. `address_kind` identifies the unit:
 | `section` | Markdown, PDF, DOCX, PPTX, HTML, text, or parsed prose section. |
 | `symbol` | Code function, class, method, constant, or module-level symbol. |
 | `table` | CSV/table metadata or extracted document table. |
-| `file` | Supplemental file-level match before full indexing. |
+| `file` | Code file selected or added through structural expansion. |
 
 `excerpt` is display text. `content` is the fuller text passed into Pyrrho and
 optional synthesis.

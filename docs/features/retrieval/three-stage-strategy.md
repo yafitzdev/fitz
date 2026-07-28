@@ -90,7 +90,7 @@ Fully indexed retrieval adds more surfaces:
 - L1/hierarchy summaries for broad corpus questions
 - entity graph links for related-document expansion
 - demand summaries for files repeatedly surfaced by queries
-- richer keyword/entity metadata from required enrichment
+- optional entity metadata for related-topic traversal
 
 ---
 

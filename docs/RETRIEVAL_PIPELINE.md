@@ -25,9 +25,9 @@ When run from a document folder, this command:
 
 1. Registers the current directory as the source.
 2. Derives the collection name from the folder name.
-3. Parses enough structure to make the corpus searchable.
+3. Parses and persists all supported changed files.
 4. Returns governed evidence.
-5. Starts a detached indexing daemon when Qwen enrichment is still pending.
+5. Starts a detached enrichment daemon when optional work remains.
 
 The same command exposes advanced evidence controls such as `--format json`
 and `--top-k`.
@@ -45,19 +45,18 @@ flowchart TD
     D --> C
     C --> F["Build/update manifest"]
     F --> G["Parse files into searchable units"]
-    G --> H["Search surface ready"]
+    G --> H["Searchable source index ready"]
     E --> I["Run retrieval pipeline"]
     H --> I
     I --> J["Return EvidencePack"]
-    J --> K{"Deep enrichment complete?"}
+    J --> K{"Enrichment complete?"}
     K -->|"yes"| L["Exit"]
-    K -->|"no"| M["Spawn index-daemon"]
+    K -->|"no"| M["Spawn enrichment-daemon"]
     M --> L
 ```
 
-The foreground command waits for the search surface, not for full enrichment.
-That gives the user a fast first evidence pack while the daemon keeps building
-the richer index in the background.
+`point()` completes the source index before retrieval starts. Entity and
+hierarchy enrichment are separate and may continue after evidence is returned.
 
 ---
 
@@ -83,7 +82,6 @@ flowchart TD
     R --> R1["Section BM25 over FTS5"]
     R --> R2["Code symbol BM25 / name search"]
     R --> R3["Table metadata search"]
-    R --> R4["Unindexed scan for files not query-ready"]
 
     F --> F1["Contract-aware ordering and fixed delivery budget"]
     G --> G1["Evaluate query + exact delivered evidence"]
@@ -108,7 +106,6 @@ Primary stores:
 | `SectionStore` | document sections and synthetic summaries | SQLite FTS5 + `bm25()` |
 | `SymbolStore` | code symbols | name search + SQLite FTS5 + `bm25()` |
 | `TableStore` / `SqliteTableStore` | table metadata and concrete row values | name/schema search plus row-value BM25 |
-| Manifest scan | files not yet query-ready | path/heading/symbol BM25, optional file-selection LLM if configured |
 
 ### Stage 2: Rerank
 
@@ -136,32 +133,32 @@ different prefixes or reinterpret Pyrrho's decision.
 
 ---
 
-## Indexing State Machine
+## Index And Enrichment State
 
 ```mermaid
 stateDiagram-v2
     [*] --> REGISTERED
-    REGISTERED --> PARSED: parse_file
-    PARSED --> KEYWORDED: Qwen keyword_file
-    KEYWORDED --> QUERY_READY
-    QUERY_READY --> ENTITY_LINKED: link_entities_file
-    ENTITY_LINKED --> HIERARCHY_READY: build_hierarchy_file
-    HIERARCHY_READY --> ENRICHED
-    ENRICHED --> SUMMARIZED: demand summarize_file
+    REGISTERED --> INDEXED: parse and persist
+    REGISTERED --> FAILED: indexing error
+    INDEXED --> ENTITY_LINKED: optional entity step
+    ENTITY_LINKED --> COMPLETE: optional hierarchy step
+    COMPLETE --> SUMMARIZED: queried-file warmup
+    INDEXED --> ENRICHMENT_FAILED: optional model error
+    ENTITY_LINKED --> ENRICHMENT_FAILED: optional model error
 ```
 
 | State | User impact |
 |-------|-------------|
 | `REGISTERED` | File is known but not searchable yet. |
-| `PARSED` | Raw content, symbols, sections, and tables are searchable. This is the foreground gate. |
-| `QUERY_READY` | Managed Qwen keyword enrichment is complete for that file. |
+| `INDEXED` | Raw content, symbols, sections, and tables are searchable. |
+| `FAILED` | Source indexing failed and the file is named in status. |
 | `ENTITY_LINKED` | Entity graph links are available. |
-| `HIERARCHY_READY` | L1 hierarchy summaries are available. |
-| `ENRICHED` | Required deep enrichment is complete. |
+| `COMPLETE` | Optional file entity/hierarchy enrichment is complete. |
 | `SUMMARIZED` | Demand summary exists because a query surfaced this file. |
+| `ENRICHMENT_FAILED` | Optional enrichment failed; source retrieval remains available. |
 
-`complete` in `indexing_status` means the query-ready keyword phase is done.
-`fully_enriched` means entity/hierarchy enrichment is also done.
+`indexing_status.complete` describes source-index success.
+`indexing_status.enrichment.complete` describes independent optional work.
 
 ---
 
@@ -169,30 +166,24 @@ stateDiagram-v2
 
 ### Case 1: No collection exists
 
-`fitz retrieve "..."` registers the current directory, parses it, retrieves a
-best-effort evidence pack, and starts the daemon if enrichment remains.
+`fitz retrieve "..."` registers the current directory, indexes it, retrieves an
+evidence pack, and starts the enrichment daemon if optional work remains.
 
-### Case 2: Source registered, search surface not ready
+### Case 2: Source indexing is running
 
-The CLI waits while parsing runs. It may show `Parsing documents... N/M`.
-Retrieval starts once parsed units are searchable.
+The CLI waits inside `point()`. Retrieval starts only after supported files are
+indexed or explicitly failed.
 
 ### Case 3: Search surface ready, enrichment still pending
 
-Retrieval uses parsed sections, symbols, tables, and the unindexed scan for any
-files not yet query-ready. The output may show `Indexing pending`,
-`Enrichment pending`, or `Deep enrichment pending`. The daemon continues Qwen
-keywords, entities, hierarchy, and demand summaries.
+Retrieval uses the same persisted sections, symbols, and tables before and after
+enrichment. The output may show `Enrichment pending`. The daemon continues
+entities, hierarchy, and demand summaries.
 
-The supplemental scan only runs when the manifest still has files below
-query-ready. Fully query-ready collections do not print scan progress or touch
-disk fallback.
+### Case 4: Enrichment is complete
 
-### Case 4: Index is complete
-
-Retrieval uses the fully populated stores. No daemon is spawned, and later
-queries should be faster because Qwen keyword/entity/hierarchy enrichment has
-already run.
+Retrieval may additionally use entity links and hierarchy summaries. No daemon
+is spawned. The underlying source-index path is unchanged.
 
 ### Case 5: Optional answer synthesis
 
@@ -212,7 +203,6 @@ the configured synthesizer. This is separate from the retrieval package default.
 | Comparison / temporal / aggregation / freshness detection | Deterministic default signals, optionally improved by query intelligence. |
 | Entity graph | Context expansion after full enrichment. |
 | Hierarchical summaries | Fully indexed recall for broad analytical questions. |
-| Unindexed scan | Temporary bridge while files are not query-ready. |
 | ONNX reranker | Precision stage before governance. |
 | Pyrrho | Mandatory single sufficiency, dispute, or insufficiency decision over the fixed delivered evidence set. |
 | Evidence closure | Deterministic bounded follow-up retrieval for unresolved query-contract obligations before compilation. |
@@ -227,7 +217,7 @@ the query contract/profile calls for a representative corpus overview.
 
 | Model/runtime | Required? | Used for |
 |---------------|-----------|----------|
-| Managed Qwen3 0.6B ONNX GenAI | yes | ingestion keywords/entities/hierarchy and default semantic query keywords |
+| Managed Qwen3 0.6B ONNX GenAI | for semantic expansion/enrichment | query semantic keywords, entities, and hierarchy |
 | ONNX reranker | default | candidate precision after broad recall |
 | Reviewed local Pyrrho v2 package | required product governance | native evidence verdict, failure mode, retrieval intents, and evidence-kind metadata |
 | OpenAI-compatible endpoint | optional | answer synthesis, optional query intelligence, optional vision parser |

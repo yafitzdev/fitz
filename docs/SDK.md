@@ -188,13 +188,15 @@ For KRAG, returns `ReadResult` objects with `content`, `file_path`, and
 f.retrieve(question: str) -> list
 ```
 
-#### wait_for_query_surface() / wait_for_indexing() / indexing_status()
+#### wait_for_enrichment() / indexing_status()
 
 ```python
-f.wait_for_query_surface() -> None  # block until parsed units are searchable
-f.wait_for_indexing() -> None       # block until query-ready keywording completes
-f.indexing_status() -> dict         # query-ready + deep-enrichment progress
+f.wait_for_enrichment() -> None  # optional entity/hierarchy completion
+f.indexing_status() -> dict      # source-index health + enrichment progress
 ```
+
+`point()` itself is the query-ready boundary. It returns after supported files
+are either searchable or reported as indexing failures.
 
 ### Properties
 
@@ -332,8 +334,7 @@ from fitz_sage import create_engine, Query
 
 engine = create_engine("fitz_krag")
 engine.load("default")                  # bind to a collection
-engine.point(Path("./docs"))            # register a source
-engine.wait_for_query_surface()         # parsed units are searchable
+engine.point(Path("./docs"))            # build the searchable source index
 
 pack = engine.evidence(Query(text="What is X?"))     # governed evidence
 answer = engine.answer(Query(text="What is X?"))     # synthesized answer

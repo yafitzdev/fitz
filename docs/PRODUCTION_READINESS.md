@@ -148,10 +148,23 @@ See [Limitations](../LIMITATIONS.md) for the case-level boundary record.
 
 ## Performance Evidence
 
-The matrix took 2,455.3 seconds on the benchmark machine. The 98-file noisy
-corpus took 335.5 seconds to index, or about 0.29 files/second. Required-suite
-queries averaged 4.1 seconds with a 3.6-second median, including cold starts;
-the slowest limitation query took 27.9 seconds.
+The historical matrix took 2,455.3 seconds on the benchmark machine. Its
+335.5-second figure for a 98-file noisy corpus included model-backed
+keyword/entity/hierarchy work and is not source-index throughput.
+
+With source indexing separated from optional enrichment, the 2026-07-28 CPU
+benchmark made 18 core files query-ready in a median 0.296 seconds across three
+cold runs (60.8 files/second), and 93 mixed files query-ready in 1.803 seconds
+(51.6 files/second). Both runs had zero source-index failures; the mixed run
+reported one XLSX as unsupported under the default CPU parser.
+
+The source-only core run passed 20/20 retrieval, delivery, and package-capability
+contracts with 100% required recall and no forbidden evidence. It passed 14/20
+complete contracts; all six failures were attributed to accepted Pyrrho
+outputs, not missing source retrieval.
+
+Required-suite queries averaged 4.1 seconds with a 3.6-second median, including
+cold starts; the slowest limitation query took 27.9 seconds.
 
 These figures are observations, not an SLA. They show that enrichment of many
 small files and broad retrieval over pathological documents need production

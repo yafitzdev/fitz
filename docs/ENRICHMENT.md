@@ -1,151 +1,91 @@
 <!-- docs/ENRICHMENT.md -->
-# Enrichment
+# Background Enrichment
 
-Enrichment is retrieval infrastructure. It is not a feature flag and it is not
-delegated to a user-selected endpoint. fitz-sage uses its managed local Qwen
-runtime on CPU. Runtime failures are surfaced as product errors because
-enrichment is part of the retrieval contract.
+Enrichment improves an already-searchable collection. It is not indexing and it
+is not a prerequisite for retrieval.
 
-For the full local model inventory and download behavior, see
-[Managed Models](MANAGED_MODELS.md).
+## Ownership
 
-The first query does not wait for every enrichment stage. It waits for a parsed
-search surface, returns governed evidence, and lets the background daemon finish
-keyword, entity, hierarchy, and demand-summary work.
+Foreground indexing owns:
 
----
+- parsing source files;
+- storing raw source, sections, symbols, tables, and FTS5 rows;
+- deterministic code-import resolution.
 
-## Staged Model
+Background enrichment owns:
+
+- entity and temporal metadata extraction;
+- entity-graph population;
+- per-file hierarchy summaries;
+- the corpus hierarchy summary;
+- summaries generated on demand for queried files.
+
+Fitz-Sage does not use enrichment to normalize source identifiers, repair
+abbreviations, rewrite logs, compress documents, or infer that differently
+spelled values are equivalent. Document preparation and domain mapping remain
+user-owned.
+
+## State Machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> REGISTERED
-    REGISTERED --> PARSED: parse_file
-    PARSED --> KEYWORDED: Qwen keyword_file
-    KEYWORDED --> QUERY_READY
-    QUERY_READY --> ENTITY_LINKED: link_entities_file
-    ENTITY_LINKED --> HIERARCHY_READY: build_hierarchy_file
-    HIERARCHY_READY --> ENRICHED
-    ENRICHED --> SUMMARIZED: demand summarize_file
+    [*] --> PENDING: source indexed
+    PENDING --> ENTITY_LINKED: entity step succeeds
+    ENTITY_LINKED --> COMPLETE: file hierarchy succeeds
+    COMPLETE --> SUMMARIZED: queried file is warmed
+    PENDING --> FAILED: entity step fails
+    ENTITY_LINKED --> FAILED: hierarchy step fails
+    FAILED --> PENDING: retry entity step
+    FAILED --> ENTITY_LINKED: retry hierarchy step
 ```
 
-| Stage | Blocks first evidence pack? | Runtime | Purpose |
-|-------|-----------------------------|---------|---------|
-| Parse | yes | CPU parser / AST / table parsers | Store raw content, sections, symbols, tables. |
-| Keyword | no | managed Qwen ONNX GenAI | Add semantic keywords for broad recall. |
-| Entity link | no | managed Qwen ONNX GenAI + SQLite | Populate entity graph links for expansion. |
-| Hierarchy | no | managed Qwen ONNX GenAI | Build L1 file summaries and L2 corpus overview. |
-| Demand summary | no | managed Qwen ONNX GenAI | Summarize only files that queries actually surfaced. |
+The file remains `INDEXED` through every enrichment transition. Collection
+hierarchy finalization has its own `PENDING`, `COMPLETE`, or `FAILED` state.
 
-The CLI prints `Search surface ready; enrichment continues.` when parsing has
-finished and retrieval can start. If later stages remain, it spawns
-`index-daemon` so enrichment continues after the command exits.
+## Scheduling
 
----
+`BackgroundEnrichmentWorker` processes smaller and higher-priority files first.
+Files returned by a query move to priority 1; their directory siblings move to
+priority 2. The worker pauses before model work while a query is active.
 
-## What Qwen Adds
+The in-process worker begins after `point()` returns. A short-lived CLI process
+stops that thread and launches the hidden `enrichment-daemon` when work remains.
+The manifest is written atomically so the query process and detached process
+never observe partial JSON.
 
-### Keywords
+## Failure Behavior
 
-Exact and semantic retrieval terms: identifiers, domain terms,
-acronyms, issue IDs, version strings, endpoint names, class names, and
-near-synonyms that improve broad BM25 recall.
+Per-file model errors are recorded under `enrichment.failed_files`. They do not
+change source-index health and do not delete searchable data. A later
+`continue_enrichment()` retries from the last durable stage.
 
-Examples: `TC-1001`, `JIRA-4521`, `v2.0.1`, `AuthService`,
-`MAX_RETRIES`, `/api/v2/users`, `database`, `configuration`.
-
-### Entities
-
-Named concepts used for graph expansion after the initial ranking:
-
-- classes and functions
-- people and organizations
-- technologies and products
-- business concepts
-
-Entities are stored on each symbol/section and fed into
-`EntityGraphStore`, so later queries can expand from one source unit to related
-units.
-
-### Temporal Metadata
-
-Dates, version numbers, quarters, release names, and relative time references
-that help temporal/freshness retrieval.
-
-### Hierarchy
-
-Document collections get hierarchy summaries:
-
-- **L1:** one per-file group summary, stored on section metadata.
-- **L2:** one corpus overview, stored as a synthetic retrievable section.
-
-These summaries help broad analytical queries such as "What are the main
-themes?" after deep enrichment has completed. They are not required for the
-near-instant first evidence pack.
-
----
-
-## Query-Time Semantic Keywords
-
-The default no-endpoint query path uses managed Qwen. During query prep,
-fitz-sage asks Qwen for a small keyword-only expansion and merges those terms
-with literal deterministic query terms.
-
-That keyword set becomes one extra BM25 leg in broad recall. It is cheap and
-recall-oriented; precision belongs to the ONNX reranker, while Pyrrho judges
-the fixed delivered evidence.
-
----
-
-## Failure Semantics
-
-Enrichment retries malformed model JSON once with a stricter prompt. If the
-managed Qwen provider cannot initialize or still returns unusable JSON, the
-worker raises an error instead of silently weakening the retrieval index.
-
-Deep hierarchy and demand summaries use the same local runtime. The engine does
-not call an external API or require a GPU for enrichment.
-
----
-
-## Configuration
-
-There is no public provider config for Qwen enrichment. It is the standard
-runtime:
-
-```yaml
-summary_batch_size: 15
-```
-
-`summary_batch_size` controls enrichment batch size. The managed model bundle
-is downloaded through `huggingface-hub` on first use and cached locally.
-
-To inspect the exact managed model snapshot:
+Use:
 
 ```python
-from fitz_sage.llm.providers.onnx_chat import OnnxChat
-
-info = OnnxChat().model_info(include_checksum=True)
-print(info.repo_id, info.revision, info.onnx_path, info.bundle_sha256)
+engine.continue_enrichment()   # synchronous completion attempt
+engine.wait_for_enrichment()   # wait for the current in-process worker
+engine.stop_background_enrichment()
 ```
 
----
+## Qwen Work
 
-## Key Files
+The managed local Qwen runtime is loaded only when an enrichment operation or a
+query-time semantic-keyword operation actually needs it. `point()` does not
+ensure, load, or call Qwen.
 
-| File | Purpose |
-|------|---------|
-| `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` | `KragIngestPipeline` parse/keyword/entity/hierarchy/finalize operations |
-| `fitz_sage/engines/fitz_krag/ingestion/enricher.py` | Batched keyword/entity/temporal extraction |
-| `fitz_sage/engines/fitz_krag/progressive/worker.py` | Background worker state machine |
-| `fitz_sage/llm/providers/onnx_chat.py` | Managed Qwen3 0.6B ONNX GenAI runtime |
-| `fitz_sage/retrieval/entity_graph/` | Entity graph store populated from extracted entities |
+There is no ingestion-time keyword generation. This removes duplicated semantic
+work from every document and keeps the source-index latency proportional to
+parsing and SQLite writes. Query-time semantic expansion remains bounded to the
+queries users actually make.
 
----
+## Demand Summaries
 
-## See Also
+Source sections are rerankable before summaries exist because retrieval supplies
+a bounded source excerpt. Once a query surfaces a file, the warm loop may
+generate and persist its summary. Unqueried files are not summarized eagerly.
 
-- [RETRIEVAL_PIPELINE.md](RETRIEVAL_PIPELINE.md) - query flow and indexing states
-- [INGESTION.md](INGESTION.md) - ingestion pipeline
-- [CONFIG.md](CONFIG.md) - configuration reference
-- [features/retrieval/query-expansion.md](features/retrieval/query-expansion.md) - query-time keyword expansion
+## Related
+
+- [Ingestion Pipeline](INGESTION.md)
+- [Managed Models](MANAGED_MODELS.md)
+- [Entity Graph](features/retrieval/entity-graph.md)
