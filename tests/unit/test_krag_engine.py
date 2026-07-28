@@ -959,17 +959,15 @@ class TestEvidence:
 
 
 class TestPoint:
-    """Tests for source registration and collection routing."""
+    """Tests for synchronous source indexing and collection routing."""
 
     def test_point_collection_override_rebinds_collection_components(self, tmp_path):
-        """point(..., collection=...) binds background ingestion to that collection."""
+        """point(..., collection=...) binds ingestion to that collection."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._config = _make_config(collection="default")
-        engine._bg_worker = None
+        engine._enrichment_worker = None
         engine._manifest = None
         engine._source_dir = None
-        engine._retrieval_router = MagicMock()
-        engine._reader = MagicMock()
         engine._chat_factory = None
         engine._chat = None
         engine._connection_manager = MagicMock()
@@ -978,7 +976,6 @@ class TestPoint:
         engine._entity_graph_store = None
         engine._enricher_chat = None
         engine._summarizer_chat = None
-        engine._fast_index_code_files = MagicMock()
 
         source = tmp_path / "docs"
         source.mkdir()
@@ -993,10 +990,6 @@ class TestPoint:
             patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
             patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
             patch(
-                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
-                ".AgenticSearchStrategy"
-            ),
-            patch(
                 "fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline"
             ) as pipeline_cls,
         ):
@@ -1010,62 +1003,69 @@ class TestPoint:
         build_manifest_path = builder_cls.return_value.build.call_args.args[1]
         assert build_manifest_path == workspace / "collections" / "custom" / "manifest.json"
 
-    def test_point_prepares_managed_qwen_snapshot_for_sources(self, tmp_path):
-        """Source registration validates managed Qwen model files early."""
+    def test_point_indexes_registered_files_without_loading_qwen(self, tmp_path):
+        """Every supported changed file is searchable before point returns."""
+        from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
+
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._config = _make_config(collection="default")
-        engine._bg_worker = None
+        engine._enrichment_worker = None
         engine._manifest = None
         engine._source_dir = None
-        engine._retrieval_router = MagicMock()
-        engine._reader = MagicMock()
         engine._chat_factory = None
         engine._chat = None
         engine._connection_manager = MagicMock()
         engine._table_store = MagicMock()
         engine._sqlite_table_store = MagicMock()
         engine._entity_graph_store = None
-        engine._summarizer_chat = MagicMock()
-        engine._fast_index_code_files = MagicMock()
-
-        model_info = MagicMock()
-        model_info.revision = "abc123456789def"
         engine._enricher_chat = MagicMock()
-        engine._enricher_chat.ensure_available.return_value = model_info
+        engine._summarizer_chat = MagicMock()
 
         source = tmp_path / "docs"
         source.mkdir()
+        document = source / "release_notes.md"
+        document.write_text("# Release\nSearchable content", encoding="utf-8")
         workspace = tmp_path / ".fitz"
         manifest = MagicMock()
-        manifest.entries.return_value = {"release_notes.md": MagicMock()}
+        entry = MagicMock(
+            rel_path="release_notes.md",
+            abs_path=str(document),
+            file_id="file-1",
+            state=FileState.REGISTERED,
+        )
+        manifest.entries.return_value = {"release_notes.md": entry}
         progress = MagicMock()
+        pipeline = MagicMock()
 
         with (
             patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
             patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
             patch(
-                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
-                ".AgenticSearchStrategy"
+                "fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline",
+                return_value=pipeline,
             ),
-            patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline"),
         ):
             builder_cls.return_value.build.return_value = manifest
 
             engine.point(source, start_worker=False, progress=progress)
 
-        engine._enricher_chat.ensure_available.assert_called_once()
-        progress.assert_any_call("Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...")
-        progress.assert_any_call("Managed Qwen snapshot ready (abc123456789).")
+        pipeline.parse_file.assert_called_once_with(
+            "release_notes.md",
+            document,
+            "file-1",
+        )
+        pipeline.resolve_imports.assert_called_once()
+        manifest.update_state.assert_called_once_with("release_notes.md", FileState.INDEXED)
+        engine._enricher_chat.ensure_available.assert_not_called()
+        progress.assert_any_call("Searchable source index ready (1/1 changed files).")
 
     def test_point_deletes_stale_files_outside_current_manifest(self, tmp_path):
         """Re-pointing cleans previously indexed files that the scanner now excludes."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._config = _make_config(collection="rag_test_corpus")
-        engine._bg_worker = None
+        engine._enrichment_worker = None
         engine._manifest = None
         engine._source_dir = None
-        engine._retrieval_router = MagicMock()
-        engine._reader = MagicMock()
         engine._chat_factory = None
         engine._chat = None
         engine._connection_manager = MagicMock()
@@ -1074,25 +1074,17 @@ class TestPoint:
         engine._entity_graph_store = None
         engine._enricher_chat = None
         engine._summarizer_chat = None
-        engine._fast_index_code_files = MagicMock()
 
         source = tmp_path / "rag_test_corpus"
         source.mkdir()
         workspace = source / ".fitz"
         manifest = MagicMock()
-        manifest.entries.return_value = {
-            "README.md": MagicMock(),
-            "hierarchical_rag/feedback.md": MagicMock(),
-        }
+        manifest.entries.return_value = {}
         pipeline_core = MagicMock()
 
         with (
             patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
             patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
-            patch(
-                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
-                ".AgenticSearchStrategy"
-            ),
             patch(
                 "fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline",
                 return_value=pipeline_core,
@@ -1102,28 +1094,26 @@ class TestPoint:
 
             engine.point(source, start_worker=False)
 
-        pipeline_core.delete_files_not_in_paths.assert_called_once_with(
-            {"README.md", "hierarchical_rag/feedback.md"}
-        )
+        pipeline_core.delete_files_not_in_paths.assert_called_once_with(set())
 
-    def test_continue_indexing_runs_worker_to_deep_completion(self, tmp_path):
-        """Persisted indexing resumes without rebuilding the manifest."""
+    def test_continue_enrichment_runs_worker_to_completion(self, tmp_path):
+        """Persisted enrichment resumes without rebuilding the source index."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._manifest = MagicMock()
         engine._source_dir = tmp_path / "docs"
         engine._build_ingest_core = MagicMock(return_value=MagicMock())
 
         with patch(
-            "fitz_sage.engines.fitz_krag.progressive.worker.BackgroundIngestWorker"
+            "fitz_sage.engines.fitz_krag.progressive.worker.BackgroundEnrichmentWorker"
         ) as worker_cls:
             worker = worker_cls.return_value
 
-            engine.continue_indexing()
+            engine.continue_enrichment()
 
         worker_cls.assert_called_once()
         assert worker_cls.call_args.kwargs["manifest"] is engine._manifest
-        assert worker_cls.call_args.kwargs["source_dir"] == engine._source_dir
-        worker.run_until_deep_complete.assert_called_once()
+        engine._manifest.prepare_enrichment_retry.assert_called_once()
+        worker.run_until_complete.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

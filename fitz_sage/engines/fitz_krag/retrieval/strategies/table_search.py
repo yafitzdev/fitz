@@ -20,6 +20,7 @@ from fitz_sage.engines.fitz_krag.retrieval.table_plan import (
     build_table_query_plan,
     execute_table_query_plan,
 )
+from fitz_sage.engines.fitz_krag.query_planner import content_terms
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
 if TYPE_CHECKING:
@@ -30,6 +31,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _MAX_RERANK_ROWS = 5
 _ROW_SCAN_LIMIT = 500
+_ROW_SCAN_TOTAL_LIMIT = 2000
+_ROW_LOOKUP_TABLE_LIMIT = 8
 _ROW_REFERENCE_PATTERN = re.compile(r"\b(?:entry|entries|record|records|row|rows)\b", re.I)
 _ROW_ATTRIBUTE_PATTERN = re.compile(
     r"\b(?:assigned|count|date|earliest|failed|failure|highest|latest|lowest|"
@@ -62,7 +65,15 @@ class TableSearchStrategy:
 
         keyword_results = self._table_store.search_by_name(query, limit=fetch_limit)
         indexed_row_results = self._indexed_row_results(query, limit=fetch_limit)
-        row_results = self._row_results(query, limit=fetch_limit, profile=detection)
+        row_results = self._row_results(
+            query,
+            limit=fetch_limit,
+            profile=detection,
+            preferred_table_ids=_preferred_table_ids(
+                keyword_results,
+                indexed_row_results,
+            ),
+        )
 
         scored = _merge_table_results(
             rrf_score(keyword_results),
@@ -79,11 +90,9 @@ class TableSearchStrategy:
         limit: int,
     ) -> list[dict[str, Any]]:
         """Return table records surfaced by BM25 over concrete row values."""
-        search_rows = getattr(self._sqlite_table_store, "search_rows_bm25", None)
-        get_by_table_id = getattr(self._table_store, "get_by_table_id", None)
-        if not callable(search_rows) or not callable(get_by_table_id):
+        if self._sqlite_table_store is None:
             return []
-        hits = search_rows(query, limit=limit)
+        hits = self._sqlite_table_store.search_rows_bm25(query, limit=limit)
         if not isinstance(hits, list):
             return []
 
@@ -91,7 +100,7 @@ class TableSearchStrategy:
         for hit in hits:
             if not isinstance(hit, dict):
                 continue
-            record = get_by_table_id(str(hit.get("table_id") or ""))
+            record = self._table_store.get_by_table_id(str(hit.get("table_id") or ""))
             if not record:
                 continue
             metadata = dict(record.get("metadata") or {})
@@ -111,31 +120,24 @@ class TableSearchStrategy:
         *,
         limit: int,
         profile: Any = None,
+        preferred_table_ids: tuple[str, ...] = (),
     ) -> list[dict[str, Any]]:
         """Return table-index rows whose concrete data satisfies the query."""
-        if not self._should_scan_rows(query, profile):
+        if not self._should_scan_rows(query, profile) or self._sqlite_table_store is None:
             return []
-        catalog = getattr(self._sqlite_table_store, "catalog", None)
-        scan_rows = getattr(self._sqlite_table_store, "scan_rows", None)
-        find_rows_by_identifiers = getattr(
-            self._sqlite_table_store,
-            "find_rows_by_identifiers",
-            None,
+        table_ids = _bounded_table_ids(
+            query,
+            self._sqlite_table_store.catalog(),
+            preferred_table_ids,
         )
-        get_by_table_id = getattr(self._table_store, "get_by_table_id", None)
-        if not callable(catalog) or not callable(get_by_table_id):
-            return []
-
         identifiers = tuple(exact_identifiers(query))
         matches: list[dict[str, Any]] = []
-        for table in catalog():
-            table_id = str(table.get("table_id") or "")
-            if not table_id:
-                continue
+        remaining_scan_rows = _ROW_SCAN_TOTAL_LIMIT
+        for table_id in table_ids:
             row_data: tuple[list[str], list[list[Any]]] | None = None
             exact_identifier_lookup = False
-            if identifiers and callable(find_rows_by_identifiers):
-                candidate = find_rows_by_identifiers(
+            if identifiers:
+                candidate = self._sqlite_table_store.find_rows_by_identifiers(
                     table_id,
                     identifiers,
                     limit=max(limit, len(identifiers)),
@@ -143,8 +145,13 @@ class TableSearchStrategy:
                 if _is_row_data(candidate):
                     row_data = candidate
                     exact_identifier_lookup = True
-            if row_data is None and callable(scan_rows):
-                candidate = scan_rows(table_id, limit=_ROW_SCAN_LIMIT)
+            if row_data is None and remaining_scan_rows > 0:
+                scan_limit = min(_ROW_SCAN_LIMIT, remaining_scan_rows)
+                remaining_scan_rows -= scan_limit
+                candidate = self._sqlite_table_store.scan_rows(
+                    table_id,
+                    limit=scan_limit,
+                )
                 if _is_row_data(candidate):
                     row_data = candidate
             if row_data is None:
@@ -156,7 +163,7 @@ class TableSearchStrategy:
             selected_rows = execute_table_query_plan(plan, rows)
             if not selected_rows:
                 continue
-            record = get_by_table_id(table_id)
+            record = self._table_store.get_by_table_id(table_id)
             if not record:
                 continue
             metadata = dict(record.get("metadata") or {})
@@ -234,13 +241,73 @@ def _merge_table_results(
             merged = dict(winner)
             metadata = dict(other.get("metadata") or {})
             metadata.update(dict(winner.get("metadata") or {}))
+            if _has_constrained_row_match(metadata):
+                metadata.pop("row_search", None)
             merged["metadata"] = metadata
             by_id[table_index_id] = merged
     return sorted(by_id.values(), key=lambda item: item.get("combined_score", 0.0), reverse=True)
 
 
+def _preferred_table_ids(*result_sets: list[dict[str, Any]]) -> tuple[str, ...]:
+    """Return table IDs in retrieval order without duplicates."""
+    identifiers: list[str] = []
+    seen: set[str] = set()
+    for result_set in result_sets:
+        for result in result_set:
+            table_id = str(result.get("table_id") or "")
+            if table_id and table_id not in seen:
+                seen.add(table_id)
+                identifiers.append(table_id)
+    return tuple(identifiers)
+
+
+def _bounded_table_ids(
+    query: str,
+    catalog: list[dict[str, Any]],
+    preferred_table_ids: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Spend the fallback lookup budget on retrieved and lexically aligned tables."""
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    def add(table_id: str) -> None:
+        if table_id and table_id not in seen and len(selected) < _ROW_LOOKUP_TABLE_LIMIT:
+            seen.add(table_id)
+            selected.append(table_id)
+
+    for table_id in preferred_table_ids:
+        add(table_id)
+
+    ranked_catalog = sorted(
+        enumerate(catalog),
+        key=lambda item: (-_catalog_alignment(query, item[1]), item[0]),
+    )
+    for _, table in ranked_catalog:
+        add(str(table.get("table_id") or ""))
+    return tuple(selected)
+
+
+def _catalog_alignment(query: str, table: dict[str, Any]) -> int:
+    """Score literal query overlap with table identity and columns."""
+    query_terms = {term.casefold() for term in content_terms(query)}
+    columns = table.get("columns") or table.get("original_columns") or ()
+    table_text = " ".join(
+        (
+            str(table.get("table_name") or ""),
+            str(table.get("source_file") or ""),
+            *(str(column) for column in columns),
+        )
+    )
+    table_terms = {term.casefold() for term in content_terms(table_text)}
+    return sum(len(term) for term in query_terms & table_terms)
+
+
 def _table_row_context(metadata: dict[str, Any], columns: list[str]) -> str:
     """Return a bounded, source-faithful preview of rows found during retrieval."""
+    row_match_context = _row_match_context(metadata.get("row_match"), columns)
+    if row_match_context and _has_constrained_row_match(metadata):
+        return row_match_context
+
     row_search = metadata.get("row_search")
     if isinstance(row_search, dict):
         row_texts = row_search.get("row_texts")
@@ -251,7 +318,11 @@ def _table_row_context(metadata: dict[str, Any], columns: list[str]) -> str:
                     [f"Columns: {' | '.join(columns)}", *(f"Row: {value}" for value in values)]
                 )
 
-    row_match = metadata.get("row_match")
+    return row_match_context
+
+
+def _row_match_context(row_match: Any, columns: list[str]) -> str:
+    """Render rows selected by a deterministic table plan."""
     if not isinstance(row_match, dict):
         return ""
     rows = row_match.get("rerank_rows")
@@ -265,6 +336,17 @@ def _table_row_context(metadata: dict[str, Any], columns: list[str]) -> str:
     return "\n".join(
         [f"Columns: {' | '.join(columns)}", *(f"Row: {value}" for value in rendered_rows)]
     )
+
+
+def _has_constrained_row_match(metadata: dict[str, Any]) -> bool:
+    """Return whether row selection used an explicit typed operation."""
+    row_match = metadata.get("row_match")
+    if not isinstance(row_match, dict):
+        return False
+    plan = row_match.get("plan")
+    if not isinstance(plan, dict):
+        return False
+    return bool(plan.get("identifiers") or plan.get("predicates") or plan.get("sort"))
 
 
 def _join_distinct_text(existing: Any, additional: str) -> str:

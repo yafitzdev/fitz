@@ -1,18 +1,18 @@
 # fitz_sage/engines/fitz_krag/progressive/__init__.py
-"""Progressive KRAG — zero-ingestion with background indexing."""
+"""Searchable source indexing with progressive background enrichment."""
 
 from fitz_sage.engines.fitz_krag.progressive.manifest import (
+    EnrichmentState,
     FileManifest,
     FileState,
+    FinalizationState,
     ManifestEntry,
-    ManifestHeading,
-    ManifestSymbol,
 )
 
 __all__ = [
+    "EnrichmentState",
     "FileManifest",
     "FileState",
+    "FinalizationState",
     "ManifestEntry",
-    "ManifestHeading",
-    "ManifestSymbol",
 ]

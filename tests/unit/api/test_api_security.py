@@ -73,7 +73,7 @@ def test_api_source_must_stay_within_allowed_roots(
         resolve_api_source(outside)
 
 
-def test_answer_source_waits_for_searchable_surface(
+def test_answer_source_is_searchable_when_point_returns(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = tmp_path / "docs"
@@ -96,7 +96,6 @@ def test_answer_source_waits_for_searchable_surface(
 
     assert response.status_code == 200
     service.point.assert_called_once_with(source=source.resolve(), collection="docs")
-    service.wait_for_query_surface.assert_called_once_with("docs")
     service.answer.assert_called_once()
 
 

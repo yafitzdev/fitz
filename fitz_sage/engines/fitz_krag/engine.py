@@ -156,7 +156,7 @@ class FitzKragEngine:
         try:
             self._config = config
             self._initialized_collection: str | None = None
-            self._bg_worker: Any = None
+            self._enrichment_worker: Any = None
             self._manifest: Any = None
             self._source_dir: Path | None = None
             self._init_components()
@@ -165,8 +165,8 @@ class FitzKragEngine:
             if "ConnectError" in type(e).__name__ or "10061" in msg or "Connection refused" in msg:
                 raise ConfigurationError(
                     "Cannot connect to the configured endpoint chat provider.\n"
-                    "Required enrichment uses Fitz's managed local Qwen ONNX runtime; "
-                    "check chat_base_url only for optional endpoint synthesis."
+                    "Optional enrichment uses Fitz's managed local Qwen ONNX runtime; "
+                    "check chat_base_url only for endpoint-backed features."
                 ) from e
             raise ConfigurationError(f"Failed to initialize Fitz KRAG engine: {e}") from e
 
@@ -178,43 +178,17 @@ class FitzKragEngine:
                 self._try_load_persisted_manifest(collection)
             return
 
-        # Stop background worker when switching collections
-        if self._bg_worker and collection != self._config.collection:
-            self._bg_worker.stop()
-            self._bg_worker = None
+        if self._enrichment_worker and collection != self._config.collection:
+            self._enrichment_worker.stop()
+            self._enrichment_worker = None
             self._manifest = None
             self._source_dir = None
 
         self._config.collection = collection
         self._init_components()
 
-        # Re-wire progressive state if still active after reload
-        if self._manifest and self._source_dir:
-            self._wire_agentic_strategy()
-        else:
-            # Auto-detect persisted manifest from a previous `point()` call
+        if not self._manifest or not self._source_dir:
             self._try_load_persisted_manifest(collection)
-
-    def _wire_agentic_strategy(self) -> None:
-        """Wire agentic strategy + disk fallback from current manifest/source_dir."""
-        from fitz_sage.core.paths import FitzPaths
-        from fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search import (
-            AgenticSearchStrategy,
-        )
-
-        if self._manifest is None or self._source_dir is None:
-            raise RuntimeError("Agentic strategy requires an active source manifest")
-        col_dir = FitzPaths.workspace() / "collections" / self._config.collection
-        agentic = AgenticSearchStrategy(
-            manifest=self._manifest,
-            source_dir=self._source_dir,
-            chat_factory=self._chat_factory,
-            config=self._config,
-            cache_dir=col_dir / "parsed",
-        )
-        self._retrieval_router._agentic_strategy = agentic
-        self._retrieval_router._allow_llm_agentic = self._chat_factory is not None
-        self._reader._source_dir = self._source_dir
 
     def _try_load_persisted_manifest(self, collection: str) -> None:
         """Load manifest + source_dir from disk if they exist from a prior point() call."""
@@ -237,7 +211,6 @@ class FitzKragEngine:
 
             self._manifest = FileManifest(manifest_path)
             self._source_dir = source_dir
-            self._wire_agentic_strategy()
             logger.info(
                 f"Loaded manifest for collection '{collection}' ({len(self._manifest.entries())} files)"
             )
@@ -1015,29 +988,24 @@ class FitzKragEngine:
         return text[: max_chars - 3].rstrip() + "..."
 
     def _boost_queried_files(self, outcome: "RetrievalOutcome") -> None:
-        """Flag the files this query surfaced for the background worker.
+        """Flag files this query surfaced for demand-driven enrichment.
 
-        Bumps them to P1 so the worker prioritizes their eager indexing and,
-        after the eager phases, summarizes them on demand (the warm loop).
-        Agentic results carry the rel_path in metadata; section/code/table
-        results carry the file id in ``source_id``, resolved via the manifest.
+        Results carry a file id in ``source_id``, resolved through the manifest.
         """
-        if not self._bg_worker or not self._manifest:
+        worker = getattr(self, "_enrichment_worker", None)
+        if not worker or not self._manifest:
             return
         rel_by_id = {e.file_id: rp for rp, e in self._manifest.entries().items()}
         rel_paths: set[str] = set()
         for addr in outcome.addresses:
-            disk_path = addr.metadata.get("disk_path")
-            if disk_path:
-                rel_paths.add(disk_path)
-            elif addr.source_id in rel_by_id:
+            if addr.source_id in rel_by_id:
                 rel_paths.add(rel_by_id[addr.source_id])
         if rel_paths:
-            self._bg_worker.boost_files(list(rel_paths))
+            worker.boost_files(list(rel_paths))
 
     @contextmanager
     def _query_scope(self) -> Any:
-        """Query-scoped logging context + background-worker signalling.
+        """Query-scoped logging context and enrichment-worker signalling.
 
         Shared by answer() and retrieve() — both are queries from the
         background worker's perspective.
@@ -1047,13 +1015,14 @@ class FitzKragEngine:
         from fitz_sage.logging import clear_query_context, set_query_context
 
         set_query_context(query_id=f"q-{uuid.uuid4().hex[:8]}")
-        if self._bg_worker:
-            self._bg_worker.signal_query_start()
+        worker = getattr(self, "_enrichment_worker", None)
+        if worker:
+            worker.signal_query_start()
         try:
             yield
         finally:
-            if self._bg_worker:
-                self._bg_worker.signal_query_end()
+            if worker:
+                worker.signal_query_end()
             clear_query_context()
 
     @contextmanager
@@ -1065,21 +1034,16 @@ class FitzKragEngine:
 
         router = self._retrieval_router
         original_code_strategy = getattr(router, "_code_strategy", None)
-        original_allow_agentic = getattr(router, "_allow_llm_agentic", True)
 
         fallback = getattr(original_code_strategy, "_fallback", None)
         if fallback is not None:
             router._code_strategy = fallback
-        if hasattr(router, "_allow_llm_agentic"):
-            router._allow_llm_agentic = False
 
         try:
             yield
         finally:
             if original_code_strategy is not None:
                 router._code_strategy = original_code_strategy
-            if hasattr(router, "_allow_llm_agentic"):
-                router._allow_llm_agentic = original_allow_agentic
 
     def _build_query_pipeline(self) -> Any:
         """Build the query-side retrieval pipeline from current engine components."""
@@ -1229,29 +1193,23 @@ class FitzKragEngine:
         start_worker: bool = True,
         progress: Callable[[str], None] | None = None,
     ) -> Any:
-        """Register source directory for progressive querying.
+        """Build a searchable source index, then start optional enrichment.
 
-        1. Build manifest (fast, no LLM; parses + caches rich docs)
-        2. Persist source_dir so future processes can find it
-        3. Create AgenticSearchStrategy, wire into router
-        4. Set source_dir on ContentReader (disk fallback)
-        5. Optionally start BackgroundIngestWorker
-        6. Return manifest immediately
+        ``point`` returns only after every supported file is either searchable
+        in SQLite/FTS5 or recorded as an indexing failure. No model is loaded or
+        invoked on this critical path.
 
         Args:
             source: Path to source directory or file
             collection: Collection name override
-            start_worker: Whether to start background indexing (False for CLI)
+            start_worker: Whether to start model-backed enrichment
             progress: Optional callback for status updates
 
         Returns:
-            FileManifest with registered files
+            FileManifest with indexed files
         """
         from fitz_sage.core.paths import FitzPaths
         from fitz_sage.engines.fitz_krag.progressive.builder import ManifestBuilder
-        from fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search import (
-            AgenticSearchStrategy,
-        )
 
         col = validate_collection_name(collection or self._config.collection)
         source = Path(source).resolve()
@@ -1262,12 +1220,10 @@ class FitzKragEngine:
         # When source is a single file, use its parent as the source directory
         source_dir = source.parent if source.is_file() else source
 
-        # 0. Stop existing background worker if re-pointing
-        if self._bg_worker:
-            self._bg_worker.stop()
-            self._bg_worker = None
+        if self._enrichment_worker:
+            self._enrichment_worker.stop()
+            self._enrichment_worker = None
 
-        # 1. Build manifest
         col_dir = FitzPaths.workspace() / "collections" / col
         manifest_path = col_dir / "manifest.json"
         builder = ManifestBuilder(self._config)
@@ -1275,79 +1231,56 @@ class FitzKragEngine:
         manifest_entries = manifest.entries()
         self._manifest = manifest
         self._source_dir = source_dir
-        if any(
-            entry.state.value not in {"failed", "unsupported"}
-            for entry in manifest_entries.values()
-        ):
-            self._ensure_standard_llm_available(progress)
 
-        # 2. Persist source_dir so `fitz retrieve` can find it across processes
         col_dir.mkdir(parents=True, exist_ok=True)
         (col_dir / "source_dir.txt").write_text(str(source_dir), encoding="utf-8")
 
-        # 3. Create agentic strategy and wire into router
-        agentic = AgenticSearchStrategy(
-            manifest=manifest,
-            source_dir=source_dir,
-            chat_factory=self._chat_factory,
-            config=self._config,
-            cache_dir=col_dir / "parsed",
-        )
-        self._retrieval_router._agentic_strategy = agentic
-        self._retrieval_router._allow_llm_agentic = self._chat_factory is not None
-
-        # 4. Set source_dir on ContentReader for disk fallback
-        self._reader._source_dir = source_dir
-
-        # 4.5. Build the ingestion core — the single parse/summarize/enrich
-        # implementation shared by the synchronous bootstrap below and the
-        # background worker. Bound to the engine's collection so it writes
-        # the same stores retrieval reads.
         core = self._build_ingest_core()
         core.delete_files_not_in_paths(set(manifest_entries))
         for entry in manifest_entries.values():
             if entry.state.value in {"failed", "unsupported"}:
                 core.discard_file(entry.file_id)
 
-        # Fast synchronous symbol indexing (AST only, no LLM) via the core's
-        # parse op. Populates symbol_store + import_store so LLM code search
-        # works on the first query. The background worker skips these files
-        # (already PARSED) and starts with summaries.
-        self._fast_index_code_files(manifest, source_dir, core, progress)
+        self._index_registered_files(manifest, source_dir, core, progress)
+        core.resolve_imports()
+        manifest.save()
 
-        # 5. Start background worker (skip for short-lived CLI processes)
-        if start_worker:
-            from fitz_sage.engines.fitz_krag.progressive.worker import BackgroundIngestWorker
+        if start_worker and self._enrichment_is_pending(manifest):
+            from fitz_sage.engines.fitz_krag.progressive.worker import (
+                BackgroundEnrichmentWorker,
+            )
 
-            self._bg_worker = BackgroundIngestWorker(
+            manifest.prepare_enrichment_retry()
+            self._enrichment_worker = BackgroundEnrichmentWorker(
                 manifest=manifest,
-                source_dir=source_dir,
                 core=core,
             )
-            self._bg_worker.start()
+            self._enrichment_worker.start()
 
         return manifest
 
-    def continue_indexing(self) -> None:
-        """Continue persisted indexing for the loaded collection, then exit."""
+    def continue_enrichment(self) -> None:
+        """Complete persisted model-backed enrichment, then exit."""
         if not self._manifest or not self._source_dir:
             return
 
-        from fitz_sage.engines.fitz_krag.progressive.worker import BackgroundIngestWorker
+        from fitz_sage.engines.fitz_krag.progressive.worker import (
+            BackgroundEnrichmentWorker,
+        )
 
+        self._manifest.prepare_enrichment_retry()
         core = self._build_ingest_core()
-        worker = BackgroundIngestWorker(
+        worker = BackgroundEnrichmentWorker(
             manifest=self._manifest,
-            source_dir=self._source_dir,
             core=core,
         )
-        worker.run_until_deep_complete()
+        worker.run_until_complete()
 
-    def stop_background_indexing(self) -> None:
-        """Stop the in-process background worker if one is running."""
-        if self._bg_worker:
-            self._bg_worker.stop()
-            self._bg_worker = None
+    def stop_background_enrichment(self) -> None:
+        """Stop the in-process enrichment worker if one is running."""
+        if self._enrichment_worker:
+            self._enrichment_worker.stop()
+            self._enrichment_worker = None
 
     def _build_ingest_core(self) -> Any:
         """Build the shared KRAG ingestion core for the current collection."""
@@ -1365,66 +1298,44 @@ class FitzKragEngine:
             summarizer_chat=self._summarizer_chat,
         )
 
-    def _ensure_standard_llm_available(
-        self,
-        progress: Callable[[str], None] | None = None,
-    ) -> None:
-        """Download and validate the managed Qwen runtime before enrichment starts."""
-        ensure_available = getattr(self._enricher_chat, "ensure_available", None)
-        if not callable(ensure_available):
-            return
-
-        _progress = progress or (lambda _: None)
-        _progress("Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...")
-        info = ensure_available()
-        revision = getattr(info, "revision", "")
-        short_revision = revision[:12] if revision else "unknown"
-        _progress(f"Managed Qwen snapshot ready ({short_revision}).")
-
-    def _fast_index_code_files(
+    def _index_registered_files(
         self,
         manifest: Any,
         source_dir: Path,
         core: Any,
         progress: Callable[[str], None] | None = None,
     ) -> None:
-        """Fast synchronous AST symbol extraction for code files.
-
-        Calls the ingestion core's ``parse_file`` op for each code file so
-        LLM and hybrid code search work on the very first query — symbol
-        signatures are indexed before LLM summaries exist.
-
-        Files transition to PARSED so the background worker skips them and
-        starts with the summarize phase.
-        """
-        from fitz_sage.engines.fitz_krag.ingestion.formats import CODE_EXTENSION_MAP
+        """Parse and persist every changed file before ``point`` returns."""
         from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
 
         _progress = progress or (lambda _: None)
 
         entries = manifest.entries()
-        code_entries = [
+        pending_entries = [
             entry
             for entry in entries.values()
-            if entry.file_type in CODE_EXTENSION_MAP and entry.state.value == "registered"
+            if entry.state == FileState.REGISTERED
         ]
-        if not code_entries:
+        if not pending_entries:
             return
 
-        _progress(f"Indexing {len(code_entries)} code files...")
+        _progress(f"Indexing {len(pending_entries)} changed file(s)...")
 
         indexed = 0
-        for entry in code_entries:
+        for position, entry in enumerate(pending_entries, start=1):
             try:
                 path = Path(entry.abs_path)
                 if not path.exists():
                     path = source_dir / entry.rel_path
                 if not path.exists():
-                    continue
+                    raise FileNotFoundError(path)
 
                 core.parse_file(entry.rel_path, path, entry.file_id)
-                manifest.update_state(entry.rel_path, FileState.PARSED)
+                manifest.update_state(entry.rel_path, FileState.INDEXED)
                 indexed += 1
+                _progress(
+                    f"Indexed {position}/{len(pending_entries)}: {entry.rel_path}"
+                )
 
             except Exception as e:
                 core.discard_file(entry.file_id)
@@ -1433,16 +1344,29 @@ class FitzKragEngine:
                     stage="parse",
                     message=str(e),
                 )
-                logger.debug(f"Fast index skipped {entry.rel_path}: {e}")
+                logger.warning("Indexing failed for %s: %s", entry.rel_path, e)
 
-        # Resolve import graph targets now that all code files are stored
-        if indexed > 0:
-            core.resolve_imports()
-            manifest.save()
-            _progress(f"Indexed {indexed} code files")
+        manifest.save()
+        _progress(f"Searchable source index ready ({indexed}/{len(pending_entries)} changed files).")
+
+    @staticmethod
+    def _enrichment_is_pending(manifest: Any) -> bool:
+        indexed_entries = [
+            entry
+            for entry in manifest.entries().values()
+            if entry.state.value == "indexed"
+        ]
+        if not indexed_entries:
+            return False
+        if any(
+            entry.enrichment_state.value in {"pending", "entity_linked", "failed"}
+            for entry in indexed_entries
+        ):
+            return True
+        return manifest.finalization_status()[0].value in {"pending", "failed"}
 
     def indexing_status(self) -> dict[str, Any]:
-        """Report background-indexing progress for the loaded collection.
+        """Report source-index health and background-enrichment progress.
 
         Reads the disk-persisted manifest, so it reflects progress made by the
         background worker (shared across engine instances via disk).
@@ -1453,27 +1377,16 @@ class FitzKragEngine:
 
         return _manifest_status(self._manifest)
 
-    def wait_for_indexing(self, progress: Callable[[str], None] | None = None) -> None:
-        """Block until background indexing reaches the query-ready keyword phase.
-
-        No-op when no background worker is running (e.g. querying an
-        already-loaded collection). Ctrl-C pauses indexing gracefully —
-        progress is persisted and resumes on the next run.
-        """
-        if not self._bg_worker:
+    def wait_for_enrichment(self, progress: Callable[[str], None] | None = None) -> None:
+        """Optionally block until model-backed background enrichment settles."""
+        if not self._enrichment_worker:
             return
         try:
-            self._bg_worker.wait(progress=progress)
+            self._enrichment_worker.wait(progress=progress)
         except KeyboardInterrupt:
-            self._bg_worker.stop()
+            self._enrichment_worker.stop()
             if progress:
-                progress("Indexing paused — it resumes on the next query.")
-
-    def wait_for_query_surface(self, progress: Callable[[str], None] | None = None) -> None:
-        """Block until parsed retrieval units are searchable."""
-        if not self._bg_worker:
-            return
-        self._bg_worker.wait_for_query_surface(progress=progress)
+                progress("Enrichment paused; indexed source retrieval remains available.")
 
     @property
     def config(self) -> FitzKragConfig:

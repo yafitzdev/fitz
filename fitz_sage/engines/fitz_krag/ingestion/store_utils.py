@@ -53,20 +53,19 @@ def delete_by_file(
         conn.commit()
 
 
-def update_enrichment_by_file(
+def update_entities_by_file(
     cm: "SqliteConnectionManager",
     collection: str,
     table: str,
     enriched_dicts: list[dict[str, Any]],
 ) -> None:
-    """Write keywords/entities/metadata enrichment back onto index rows by id."""
-    sql = f"UPDATE {table} SET keywords = ?, entities = ?, metadata = ? WHERE id = ?"
+    """Write entity and hierarchy metadata back onto index rows by id."""
+    sql = f"UPDATE {table} SET entities = ?, metadata = ? WHERE id = ?"
     with cm.connection(collection) as conn:
         for item in enriched_dicts:
             conn.execute(
                 sql,
                 (
-                    json.dumps(item.get("keywords", [])),
                     json.dumps(item.get("entities", [])),
                     json.dumps(item.get("metadata", {})),
                     item["id"],

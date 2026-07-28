@@ -61,14 +61,14 @@ async def delete_collection(name: str) -> dict:
     return {"deleted": deleted, "collection": name}
 
 
-@router.post("/{name}/documents", response_model=IndexingStatus, status_code=202)
+@router.post("/{name}/documents", response_model=IndexingStatus)
 @handle_api_errors
 async def ingest_documents(name: str, request: IngestRequest) -> IndexingStatus:
     """
     Register documents into a collection.
 
-    Indexing runs in the background — queries work immediately and improve as it
-    completes. Poll ``GET /collections/{name}/status`` for progress.
+    Source indexing completes before this endpoint returns. Optional model-backed
+    enrichment may continue afterward.
     """
     service = get_service()
     source = resolve_api_source(request.source)
@@ -80,7 +80,7 @@ async def ingest_documents(name: str, request: IngestRequest) -> IndexingStatus:
 @router.get("/{name}/status", response_model=IndexingStatus)
 @handle_api_errors
 async def collection_status(name: str) -> IndexingStatus:
-    """Report background-indexing progress for a collection."""
+    """Report source-index health and optional enrichment progress."""
     service = get_service()
     status = await run_in_threadpool(service.indexing_status, name)
     return IndexingStatus(**status)

@@ -47,8 +47,6 @@ class TestCodeSearchStrategy:
         mock_symbol_store.search_bm25.return_value = [
             {**_make_symbol("s2", "transform", "mod.transform"), "bm25_score": 0.9},
         ]
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("process data", limit=5)
 
@@ -59,8 +57,6 @@ class TestCodeSearchStrategy:
         sym = _make_symbol("s1", "func", "mod.func")
         mock_symbol_store.search_by_name.return_value = [sym]
         mock_symbol_store.search_bm25.return_value = [{**sym, "bm25_score": 0.8}]
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("func", limit=5)
 
@@ -71,8 +67,6 @@ class TestCodeSearchStrategy:
         syms = [_make_symbol(f"s{i}", f"func{i}", f"mod.func{i}") for i in range(20)]
         mock_symbol_store.search_by_name.return_value = syms
         mock_symbol_store.search_bm25.return_value = []
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("func", limit=3)
 
@@ -83,8 +77,6 @@ class TestCodeSearchStrategy:
             _make_symbol("s1", "my_func", "pkg.my_func"),
         ]
         mock_symbol_store.search_bm25.return_value = []
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("my_func", limit=5)
 
@@ -104,8 +96,6 @@ class TestCodeSearchStrategy:
 
         mock_symbol_store.search_by_name.side_effect = search_by_name
         mock_symbol_store.search_bm25.return_value = []
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("Which environment variable can waive late fees?", limit=5)
 

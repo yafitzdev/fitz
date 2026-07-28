@@ -31,7 +31,7 @@ __all__ = [
     "RerankResult",
 ]
 
-# Managed ONNX chat provider for required enrichment.
+# Managed ONNX chat provider for query expansion and optional enrichment.
 from fitz_sage.llm.providers.onnx_chat import (  # noqa: E402,F401
     OnnxChat,
     OnnxChatModelError,

@@ -132,7 +132,6 @@ class TestFitzEvidence:
 
         assert result is expected
         engine.point.assert_called_once_with(source.resolve(), "default")
-        engine.wait_for_query_surface.assert_called_once()
         engine.evidence.assert_called_once()
 
 
@@ -158,7 +157,6 @@ class TestFitzTrace:
 
         assert result is expected
         engine.point.assert_called_once_with(source.resolve(), "default")
-        engine.wait_for_query_surface.assert_called_once()
         engine.trace.assert_called_once()
 
     def test_trace_rejects_empty_question(self):

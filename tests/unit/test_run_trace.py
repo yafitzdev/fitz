@@ -61,7 +61,7 @@ def test_collection_fingerprint_tracks_manifest_and_indexing_state(tmp_path):
     assert first != second
 
 
-def test_strategy_trace_includes_supplemental_recall_paths():
+def test_strategy_trace_includes_corpus_summary_recall():
     strategies = _strategy_executions(
         {
             "query": "summarize incidents",
@@ -73,7 +73,6 @@ def test_strategy_trace_includes_supplemental_recall_paths():
                         "count": 4,
                     }
                 ],
-                "agentic": {"enabled": True, "count": 2},
                 "corpus_summary": {"enabled": True, "count": 1},
             },
         }
@@ -81,6 +80,5 @@ def test_strategy_trace_includes_supplemental_recall_paths():
 
     assert [strategy.strategy for strategy in strategies] == [
         "SectionSearchStrategy",
-        "agentic",
         "corpus_summary",
     ]

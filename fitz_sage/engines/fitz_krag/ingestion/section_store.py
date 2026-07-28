@@ -35,11 +35,11 @@ class SectionStore:
             INSERT INTO {TABLE}
                 (id, raw_file_id, title, level, page_start, page_end,
                  content, summary, parent_section_id,
-                 position, keywords, entities, metadata)
+                 position, entities, metadata)
             VALUES
                 (?, ?, ?, ?, ?, ?,
                  ?, ?, ?,
-                 ?, ?, ?, ?)
+                 ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 level = excluded.level,
@@ -49,7 +49,6 @@ class SectionStore:
                 summary = excluded.summary,
                 parent_section_id = excluded.parent_section_id,
                 position = excluded.position,
-                keywords = excluded.keywords,
                 entities = excluded.entities,
                 metadata = excluded.metadata
         """
@@ -68,7 +67,6 @@ class SectionStore:
                         sec.get("summary"),
                         sec.get("parent_section_id"),
                         sec["position"],
-                        json.dumps(sec.get("keywords", [])),
                         json.dumps(sec.get("entities", [])),
                         json.dumps(sec.get("metadata", {})),
                     ),
@@ -89,7 +87,7 @@ class SectionStore:
         sql = f"""
             SELECT s.id, s.raw_file_id, s.title, s.level,
                    s.page_start, s.page_end, s.content, s.summary,
-                   s.parent_section_id, s.position, s.keywords, s.entities, s.metadata,
+                   s.parent_section_id, s.position, s.entities, s.metadata,
                    bm25({FTS}) AS rank
             FROM {FTS}
             JOIN {TABLE} s ON s.rowid = {FTS}.rowid
@@ -108,17 +106,17 @@ class SectionStore:
             rows = conn.execute(sql, (fts_query, limit)).fetchall()
         results = []
         for row in rows:
-            d = _row_to_dict(row[:13])
+            d = _row_to_dict(row[:12])
             # bm25() returns negative numbers (lower=better); flip sign so
             # downstream code that treats higher-better is consistent.
-            d["bm25_score"] = -float(row[13]) if row[13] is not None else 0.0
+            d["bm25_score"] = -float(row[12]) if row[12] is not None else 0.0
             results.append(d)
         return results
 
     def get(self, section_id: str) -> dict[str, Any] | None:
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, keywords, entities, metadata
+                   content, summary, parent_section_id, position, entities, metadata
             FROM {TABLE} WHERE id = ?
         """
         with self._cm.connection(self._collection) as conn:
@@ -130,7 +128,7 @@ class SectionStore:
     def get_by_file(self, raw_file_id: str) -> list[dict[str, Any]]:
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, keywords, entities, metadata
+                   content, summary, parent_section_id, position, entities, metadata
             FROM {TABLE}
             WHERE raw_file_id = ?
             ORDER BY position
@@ -139,34 +137,10 @@ class SectionStore:
             rows = conn.execute(sql, (raw_file_id,)).fetchall()
         return [_row_to_dict(row) for row in rows]
 
-    def search_by_keywords(self, terms: list[str], limit: int = 20) -> list[dict[str, Any]]:
-        """Find sections with matching enriched keywords.
-
-        Keywords are stored as JSON; we expand them via ``json_each`` and
-        match against the term list with an IN clause.
-        """
-        if not terms:
-            return []
-        placeholders = ",".join(["?"] * len(terms))
-        sql = f"""
-            SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, keywords, entities, metadata
-            FROM {TABLE}
-            WHERE EXISTS (
-                SELECT 1 FROM json_each({TABLE}.keywords) k
-                WHERE k.value IN ({placeholders})
-            )
-            LIMIT ?
-        """
-        params = (*terms, limit)
-        with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [_row_to_dict(row) for row in rows]
-
     def get_children(self, section_id: str) -> list[dict[str, Any]]:
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, keywords, entities, metadata
+                   content, summary, parent_section_id, position, entities, metadata
             FROM {TABLE}
             WHERE parent_section_id = ?
             ORDER BY position
@@ -189,16 +163,16 @@ class SectionStore:
                     conn.execute(update_sql, (summaries[i], row[0]))
             conn.commit()
 
-    def update_enrichment_by_file(
+    def update_entities_by_file(
         self, raw_file_id: str, enriched_dicts: list[dict[str, Any]]
     ) -> None:
-        store_utils.update_enrichment_by_file(self._cm, self._collection, TABLE, enriched_dicts)
+        store_utils.update_entities_by_file(self._cm, self._collection, TABLE, enriched_dicts)
 
     def get_corpus_summaries(self) -> list[dict[str, Any]]:
         """Fetch all L2 corpus-level summary sections for this collection."""
         sql = f"""
             SELECT id, raw_file_id, title, level, page_start, page_end,
-                   content, summary, parent_section_id, position, keywords, entities, metadata
+                   content, summary, parent_section_id, position, entities, metadata
             FROM {TABLE}
             WHERE (
                 json_extract(metadata, '$.is_corpus_summary') = 'true'
@@ -231,9 +205,8 @@ class SectionStore:
 
 
 def _row_to_dict(row: tuple) -> dict[str, Any]:
-    keywords = store_utils.decode_json(row[10], [])
-    entities = store_utils.decode_json(row[11], [])
-    meta = store_utils.decode_json(row[12], {})
+    entities = store_utils.decode_json(row[10], [])
+    meta = store_utils.decode_json(row[11], {})
     return {
         "id": row[0],
         "raw_file_id": row[1],
@@ -245,7 +218,6 @@ def _row_to_dict(row: tuple) -> dict[str, Any]:
         "summary": row[7],
         "parent_section_id": row[8],
         "position": row[9],
-        "keywords": keywords if isinstance(keywords, list) else [],
         "entities": entities if isinstance(entities, list) else [],
         "metadata": meta,
     }

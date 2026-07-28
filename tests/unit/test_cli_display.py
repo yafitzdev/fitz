@@ -11,53 +11,58 @@ from fitz_sage.cli.ui.display import (
 )
 
 
-def test_format_indexing_status_shows_deep_enrichment_when_query_ready():
-    """Query-ready collections should not look like indexing is still blocked."""
+def test_format_indexing_status_shows_enrichment_when_query_ready():
+    """Query-ready collections report optional enrichment separately."""
     status = {
         "total": 63,
         "pending": 0,
         "complete": True,
         "query_ready": True,
-        "deep_pending": 62,
-        "fully_enriched": False,
+        "enrichment": {
+            "pending": 62,
+            "finalization": "pending",
+            "complete": False,
+        },
     }
 
-    assert _format_indexing_status(status) == "Deep enrichment pending: 62/63"
+    assert _format_indexing_status(status) == "Enrichment pending: 62/63"
 
 
-def test_format_indexing_status_names_single_deep_pending_file():
-    """A one-file deep-enrichment tail should be visible to the user."""
+def test_format_indexing_status_names_single_pending_enrichment_file():
+    """A one-file enrichment tail should be visible to the user."""
     status = {
         "total": 62,
         "pending": 0,
         "complete": True,
         "query_ready": True,
-        "deep_pending": 1,
-        "deep_pending_files": [
-            {"path": "pdf/1.0 BA Yan Fitzner.pdf", "state": "query_ready", "priority": 4}
-        ],
-        "fully_enriched": False,
+        "enrichment": {
+            "pending": 1,
+            "pending_files": [
+                {"path": "pdf/1.0 BA Yan Fitzner.pdf", "state": "pending", "priority": 4}
+            ],
+            "finalization": "pending",
+            "complete": False,
+        },
     }
 
     assert _format_indexing_status(status) == (
-        "Deep enrichment pending: 1/62 (pdf/1.0 BA Yan Fitzner.pdf, query_ready)"
+        "Enrichment pending: 1/62 (pdf/1.0 BA Yan Fitzner.pdf, pending)"
     )
 
 
-def test_format_indexing_status_shows_enrichment_after_parse_surface_ready():
-    """Parsed files are searchable, so remaining keyword work is enrichment."""
+def test_format_indexing_status_shows_indexing_failure_before_enrichment():
+    """Source-index failures remain distinct from optional enrichment."""
     status = {
-        "total": 63,
-        "indexed": 1,
-        "pending": 62,
+        "total": 3,
+        "indexed": 2,
+        "pending": 0,
+        "failed": 1,
+        "failed_files": [{"path": "broken.pdf", "stage": "parse", "error": "invalid"}],
         "complete": False,
-        "query_ready": False,
-        "deep_pending": 63,
-        "fully_enriched": False,
-        "by_state": {"parsed": 62, "query_ready": 1},
+        "query_ready": True,
     }
 
-    assert _format_indexing_status(status) == "Enrichment pending: 62/63"
+    assert _format_indexing_status(status) == "Indexing failures: 1/3 (broken.pdf, parse)"
 
 
 def test_format_indexing_status_shows_indexing_when_query_surface_is_pending():
@@ -67,8 +72,6 @@ def test_format_indexing_status_shows_indexing_when_query_surface_is_pending():
         "pending": 12,
         "complete": False,
         "query_ready": False,
-        "deep_pending": 63,
-        "fully_enriched": False,
     }
 
     assert _format_indexing_status(status) == "Indexing pending: 12/63"

@@ -179,6 +179,58 @@ class TestTableSearchStrategy:
         )
         sqlite_store.scan_rows.assert_not_called()
 
+    def test_typed_row_operation_takes_precedence_over_bm25_row_hit(self):
+        """A superlative must select its computed row, not BM25's lexical row."""
+        record = _make_table_record(
+            record_id="rec-exports",
+            table_id="tbl_exports",
+            name="Exports",
+            columns=["export_id", "dataset", "rows"],
+            row_count=3,
+        )
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = [
+            {
+                "table_id": "tbl_exports",
+                "rank": 1,
+                "row_numbers": [1],
+                "row_texts": ["EXP-501 customer_export_logs 120000"],
+            }
+        ]
+        sqlite_store.catalog.return_value = [
+            {
+                "table_id": "tbl_exports",
+                "table_name": "Exports",
+                "columns": record["columns"],
+            }
+        ]
+        sqlite_store.scan_rows.return_value = (
+            record["columns"],
+            [
+                ["EXP-501", "customer_export_logs", "120000"],
+                ["EXP-504", "audit_trail", "990000"],
+                ["EXP-505", "biometric_artifacts", "1200"],
+            ],
+        )
+        strategy = _make_strategy(keyword_results=[record], sqlite_table_store=sqlite_store)
+        strategy._table_store.get_by_table_id.return_value = record
+
+        addresses = strategy.retrieve(
+            "Which export has the most rows?",
+            limit=5,
+            detection=SimpleNamespace(required_modalities=("table",)),
+        )
+
+        assert len(addresses) == 1
+        assert "row_search" not in addresses[0].metadata
+        assert addresses[0].metadata["row_match"]["plan"]["sort"] == {
+            "column": "rows",
+            "direction": "max",
+        }
+        assert addresses[0].metadata["rerank_text"] == (
+            "Columns: export_id | dataset | rows\nRow: EXP-504 | audit_trail | 990000"
+        )
+
     def test_retrieve_uses_full_table_exact_identifier_lookup(self):
         """An exact ID beyond the bounded scan should still surface its table."""
         record = _make_table_record(
@@ -255,3 +307,29 @@ class TestTableSearchStrategy:
 
         sqlite_store.catalog.assert_not_called()
         sqlite_store.scan_rows.assert_not_called()
+
+    def test_row_scan_budget_is_global_across_the_collection(self):
+        """Fallback scanning must not multiply its row limit by every table."""
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = []
+        sqlite_store.catalog.return_value = [
+            {
+                "table_id": f"tbl_{index}",
+                "table_name": f"Records {index}",
+                "columns": ["record_id", "status", "owner"],
+            }
+            for index in range(20)
+        ]
+        sqlite_store.scan_rows.return_value = (
+            ["record_id", "status", "owner"],
+            [["OTHER", "pending", "Nobody"]],
+        )
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+
+        strategy.retrieve(
+            "Who owns the failed delta edge record?",
+            limit=5,
+        )
+
+        assert sqlite_store.scan_rows.call_count == 4
+        assert sum(call.kwargs["limit"] for call in sqlite_store.scan_rows.call_args_list) == 2000

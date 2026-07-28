@@ -23,23 +23,26 @@ _DAEMON_RUNNING = "running"
 _DAEMON_FAILED = "failed"
 
 
-def _indexing_needs_daemon(status: dict) -> bool:
+def _enrichment_needs_daemon(status: dict) -> bool:
     """Return whether a detached worker should continue enrichment."""
-    if not status:
+    enrichment = status.get("enrichment") if isinstance(status, dict) else None
+    if not isinstance(enrichment, dict):
         return False
-    if status.get("fully_enriched", status.get("complete", True)):
-        return False
-    return bool(status.get("total", 0))
+    return (
+        bool(enrichment.get("pending", 0))
+        or bool(enrichment.get("failed", 0))
+        or enrichment.get("finalization") in {"pending", "failed"}
+    )
 
 
 def _daemon_pid_path(collection: str, cwd: Path) -> Path:
-    """Return the PID file path for a collection's detached index worker."""
-    return cwd / ".fitz" / "collections" / collection / "index_daemon.pid"
+    """Return the PID file path for a collection's enrichment worker."""
+    return cwd / ".fitz" / "collections" / collection / "enrichment_daemon.pid"
 
 
 def _daemon_log_path(collection: str, cwd: Path) -> Path:
-    """Return the detached index worker log path."""
-    return cwd / ".fitz" / "collections" / collection / "index_daemon.log"
+    """Return the detached enrichment worker log path."""
+    return cwd / ".fitz" / "collections" / collection / "enrichment_daemon.log"
 
 
 def _pid_is_running(pid: int) -> bool:
@@ -83,8 +86,8 @@ def _read_running_daemon_pid(pid_path: Path) -> int | None:
     return pid if _pid_is_running(pid) else None
 
 
-def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
-    """Start a detached process that continues indexing this collection."""
+def _spawn_enrichment_daemon(collection: str, engine_name: str, cwd: Path) -> str:
+    """Start a detached process that enriches this collection."""
     pid_path = _daemon_pid_path(collection, cwd)
     if _read_running_daemon_pid(pid_path) is not None:
         return _DAEMON_RUNNING
@@ -93,7 +96,7 @@ def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
         sys.executable,
         "-m",
         "fitz_sage.cli.cli",
-        "index-daemon",
+        "enrichment-daemon",
         "--collection",
         collection,
         "--engine",
@@ -106,7 +109,7 @@ def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
     try:
         log_handle = log_path.open("ab")
     except Exception as e:
-        logger.debug(f"Failed to open index daemon log: {e}")
+        logger.debug(f"Failed to open enrichment daemon log: {e}")
         return _DAEMON_FAILED
 
     kwargs: dict = {
@@ -133,7 +136,7 @@ def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
         pid_path.write_text(str(process.pid), encoding="utf-8")
         return _DAEMON_SPAWNED
     except Exception as e:
-        logger.debug(f"Failed to spawn index daemon: {e}")
+        logger.debug(f"Failed to spawn enrichment daemon: {e}")
         return _DAEMON_FAILED
     finally:
         if log_handle is not None:
@@ -231,8 +234,12 @@ def command(
             else:
                 if progress:
                     progress(f"Registering {effective_source}...")
-                engine_instance.point(effective_source, selected_collection, progress=progress)
-                engine_instance.wait_for_query_surface(progress=progress)
+                engine_instance.point(
+                    effective_source,
+                    selected_collection,
+                    start_worker=False,
+                    progress=progress,
+                )
         else:
             if progress:
                 progress(f"Loading collection '{selected_collection}'...")
@@ -259,18 +266,18 @@ def command(
             print(pack.to_json())
         else:
             display_evidence_pack(pack, max_items=top_k or 10)
-        if _indexing_needs_daemon(pack.indexing_status):
-            stop_worker = getattr(engine_instance, "stop_background_indexing", None)
+        if _enrichment_needs_daemon(pack.indexing_status):
+            stop_worker = getattr(engine_instance, "stop_background_enrichment", None)
             if callable(stop_worker):
                 stop_worker()
             if output_format != "json":
-                daemon_status = _spawn_index_daemon(selected_collection, engine_name, cwd)
+                daemon_status = _spawn_enrichment_daemon(selected_collection, engine_name, cwd)
                 if daemon_status == _DAEMON_SPAWNED:
-                    ui.info("Indexing continues in the background.")
+                    ui.info("Enrichment continues in the background.")
                 elif daemon_status == _DAEMON_RUNNING:
-                    ui.info("Indexing daemon already running.")
+                    ui.info("Enrichment daemon already running.")
             elif output_format == "json":
-                _spawn_index_daemon(selected_collection, engine_name, cwd)
+                _spawn_enrichment_daemon(selected_collection, engine_name, cwd)
     except Exception as e:
         ui.error(f"Retrieve failed: {e}")
         logger.debug("Retrieve error", exc_info=True)

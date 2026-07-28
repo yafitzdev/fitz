@@ -241,8 +241,10 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
             print(f"[{item.rank}] {_short_path(item.file_path)} {location} score={score}")
             print(f"    {_compact_evidence_excerpt(item.excerpt)}")
 
+    enrichment = indexing_status.get("enrichment", {}) if indexing_status else {}
     if indexing_status and (
-        not indexing_status.get("complete", True) or not indexing_status.get("fully_enriched", True)
+        not indexing_status.get("complete", True)
+        or not enrichment.get("complete", True)
     ):
         status_line = _format_indexing_status(indexing_status)
         if RICH:
@@ -252,7 +254,7 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
 
 
 def _format_indexing_status(indexing_status: dict) -> str:
-    """Return a user-facing status line for query-ready vs deep enrichment work."""
+    """Return a user-facing source-index or enrichment status line."""
     total = indexing_status.get("total", "?")
     failed = int(indexing_status.get("failed", 0) or 0)
     if failed:
@@ -265,26 +267,39 @@ def _format_indexing_status(indexing_status: dict) -> str:
         detail = f" ({first_path}, {first_stage})" if first_path else ""
         return f"Indexing failures: {failed}/{total}{detail}"
 
-    by_state = indexing_status.get("by_state", {}) or {}
-    if by_state and not by_state.get("registered", 0):
-        if not indexing_status.get("complete", True):
-            pending = indexing_status.get("pending", "?")
-            return f"Enrichment pending: {pending}/{total}"
-        if not indexing_status.get("fully_enriched", True):
-            pending = indexing_status.get("deep_pending", "?")
-            return _pending_status_line("Deep enrichment pending", pending, total, indexing_status)
+    if not indexing_status.get("query_ready", False):
+        return f"Indexing pending: {indexing_status.get('pending', '?')}/{total}"
 
-    if indexing_status.get("query_ready") and not indexing_status.get("fully_enriched", True):
-        pending = indexing_status.get("deep_pending", "?")
-        return _pending_status_line("Deep enrichment pending", pending, total, indexing_status)
+    enrichment = indexing_status.get("enrichment", {}) or {}
+    enrichment_failed = int(enrichment.get("failed", 0) or 0)
+    if enrichment_failed:
+        return _pending_status_line(
+            "Enrichment failures",
+            enrichment_failed,
+            total,
+            enrichment.get("failed_files", []),
+        )
+    finalization = enrichment.get("finalization")
+    if finalization == "failed":
+        return "Collection hierarchy enrichment failed"
+    pending = enrichment.get("pending", 0)
+    if pending or finalization == "pending":
+        return _pending_status_line(
+            "Enrichment pending",
+            pending,
+            total,
+            enrichment.get("pending_files", []),
+        )
+    return "Source index ready"
 
-    pending = indexing_status.get("pending", "?")
-    return f"Indexing pending: {pending}/{total}"
 
-
-def _pending_status_line(label: str, pending: object, total: object, indexing_status: dict) -> str:
-    """Return a status line with the first deep-pending path when available."""
-    files = indexing_status.get("deep_pending_files", [])
+def _pending_status_line(
+    label: str,
+    pending: object,
+    total: object,
+    files: object,
+) -> str:
+    """Return a status line with the first affected path when available."""
     if not isinstance(files, list) or not files:
         return f"{label}: {pending}/{total}"
     first = files[0]

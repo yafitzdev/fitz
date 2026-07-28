@@ -287,6 +287,78 @@ def test_closure_ignores_bridge_terms_from_unselected_candidates() -> None:
     assert "OTHER-777" not in plan.metadata["bridge_terms"]
 
 
+def test_required_modality_rescue_does_not_seed_an_unrelated_identifier() -> None:
+    """A result kept only for modality coverage must not start a retrieval chain."""
+    query = "Which legal vendor lacks SOC 2?"
+    unrelated_brief = _result(
+        AddressKind.SECTION,
+        "mixed/pricing_brief.md",
+        "Pricing Brief",
+        "MeridianAI maps to vendor VEN-301 and category model_eval.",
+    )
+    correct_table = _result(
+        AddressKind.TABLE,
+        "structured/vendors.csv",
+        "Vendors",
+        "VEN-302 | Quartz Legal | legal | no",
+    )
+    profile = SimpleNamespace(
+        retrieval_modality="mixed",
+        retrieval_obligation="prose_plus_table",
+        required_modalities=("section", "table"),
+    )
+    compilation = compile_evidence(
+        query,
+        [unrelated_brief, correct_table],
+        profile=profile,
+    )
+
+    assert compilation.results[0].metadata["evidence_compiler"]["roles"] == [
+        "required_section"
+    ]
+
+    plan = plan_evidence_closure(
+        query,
+        [unrelated_brief, correct_table],
+        compilation,
+        profile=profile,
+    )
+
+    assert "VEN-301" not in plan.metadata["bridge_terms"]
+    assert all(request.role != "bridge:VEN-301" for request in plan.requests)
+
+
+def test_inferred_bridge_does_not_seed_a_second_identifier_hop() -> None:
+    """Compiler-inferred bridges are endpoint evidence, not new retrieval roots."""
+    query = "Which alert has the shortest MTTR?"
+    brief = _result(
+        AddressKind.SECTION,
+        "mixed/operations_brief.md",
+        "Operations Brief",
+        "Payments incident PAY-209 maps to alert ALT-501.",
+    )
+    postmortem = _result(
+        AddressKind.SECTION,
+        "unstructured/payments_postmortem.md",
+        "Final PAY-209 Postmortem",
+        "PAY-209 recovered after 37 minutes and used alert ALT-501.",
+    )
+    postmortem.metadata["evidence_compiler"] = {
+        "roles": ["bridge:PAY-209"],
+    }
+    compilation = SimpleNamespace(results=[postmortem])
+
+    plan = plan_evidence_closure(
+        query,
+        [brief, postmortem],
+        compilation,
+        profile=_profile(modality="structured_table"),
+    )
+
+    assert "ALT-501" not in plan.metadata["bridge_terms"]
+    assert all(request.role != "bridge:ALT-501" for request in plan.requests)
+
+
 def test_closure_follows_explicit_document_reference() -> None:
     """A real cross-document instruction should still create a bounded follow-up."""
     brief = _result(
@@ -596,6 +668,39 @@ def test_closure_selects_one_best_grounded_followup() -> None:
     )
 
     assert [result.file_path for result in selected] == ["unstructured/support_sla.md"]
+
+
+def test_closure_selects_the_requested_modality() -> None:
+    """A typed closure request must not be satisfied by a stronger wrong-kind hit."""
+    brief = _result(
+        AddressKind.SECTION,
+        "mixed/release_brief.md",
+        "Release Brief",
+        "Project Vega EMEA is tied to rollout ROL-401 and service SVC-202.",
+    )
+    rollout = _result(
+        AddressKind.TABLE,
+        "structured/rollouts.csv",
+        "Rollouts",
+        "ROL-401 | vega_private_beta | SVC-202 | emea | 35 | 2026-09-30",
+    )
+    request = EvidenceClosureRequest(
+        query="ROL-401 SVC-202 EMEA release table",
+        modality="table",
+        role="bridge:ROL-401",
+        reason="bridge_identifier",
+    )
+
+    selected = _select_closure_results(
+        request.query,
+        [brief, rollout],
+        _profile(modality="structured_table"),
+        request=request,
+    )
+
+    assert len(selected) == 1
+    assert selected[0].address.kind == AddressKind.TABLE
+    assert selected[0].file_path == "structured/rollouts.csv"
 
 
 def test_document_companion_prefers_exact_source_derived_location() -> None:

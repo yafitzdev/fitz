@@ -1,425 +1,113 @@
-# tests/unit/test_progressive_worker.py
-"""Unit tests for BackgroundIngestWorker — the progressive ingestion scheduler.
-
-The worker is a scheduler over the KragIngestPipeline core: it owns the
-manifest, priority queue, state machine, and query-pausing, and delegates all
-ingestion work to ``core.parse_file`` / ``keyword_file`` /
-``link_entities_file`` / ``build_hierarchy_file`` / ``summarize_file`` /
-``finalize``.
-"""
-
-from __future__ import annotations
-
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
+from fitz_sage.engines.fitz_krag.progressive.manifest import (
+    EnrichmentState,
+    FileManifest,
+    FileState,
+    FinalizationState,
+    ManifestEntry,
+)
+from fitz_sage.engines.fitz_krag.progressive.worker import BackgroundEnrichmentWorker
 
-from fitz_sage.engines.fitz_krag.progressive.manifest import FileManifest, FileState, ManifestEntry
-from fitz_sage.engines.fitz_krag.progressive.worker import BackgroundIngestWorker
 
-
-def _make_entry(
+def _entry(
     rel_path: str,
-    priority: int = 4,
-    size_bytes: int = 1000,
-    state: FileState = FileState.REGISTERED,
-    file_type: str | None = None,
+    *,
+    enrichment: EnrichmentState = EnrichmentState.PENDING,
 ) -> ManifestEntry:
-    """Build a ManifestEntry for testing."""
-    ext = file_type if file_type is not None else Path(rel_path).suffix
     return ManifestEntry(
         file_id=f"id-{rel_path}",
         rel_path=rel_path,
-        abs_path=f"/fake/{rel_path}",
-        content_hash="abc123",
-        file_type=ext,
-        size_bytes=size_bytes,
-        state=state,
-        symbols=[],
-        headings=[],
-        priority=priority,
+        abs_path=f"/src/{rel_path}",
+        content_hash="hash",
+        file_type=Path(rel_path).suffix,
+        size_bytes=100,
+        state=FileState.INDEXED,
+        enrichment_state=enrichment,
     )
 
 
-def _build_worker(
-    manifest: object | None = None,
-    core: MagicMock | None = None,
-    source_dir: Path = Path("/fake"),
-) -> BackgroundIngestWorker:
-    """Construct a BackgroundIngestWorker with a mocked core."""
-    if manifest is None:
-        manifest = MagicMock()
-    return BackgroundIngestWorker(
-        manifest=manifest,
-        source_dir=source_dir,
-        core=core or MagicMock(),
-    )
-
-
-# -------------------------------------------------------------------------
-# 1. _get_ordered_files sorts by (priority, size_bytes)
-# -------------------------------------------------------------------------
-
-
-class TestGetOrderedFiles:
-    def test_get_ordered_files_priority(self) -> None:
-        """P1 files come before P2, which come before P4."""
-        p4_big = _make_entry("a/large.py", priority=4, size_bytes=5000)
-        p1_small = _make_entry("b/hot.py", priority=1, size_bytes=200)
-        p2_med = _make_entry("c/sibling.py", priority=2, size_bytes=3000)
-
-        manifest = MagicMock()
-        manifest.files_in_state.return_value = [p4_big, p1_small, p2_med]
-
-        worker = _build_worker(manifest=manifest)
-        ordered = worker._get_ordered_files(FileState.REGISTERED)
-
-        assert ordered[0].rel_path == "b/hot.py", "P1 should be first"
-        assert ordered[1].rel_path == "c/sibling.py", "P2 should be second"
-        assert ordered[2].rel_path == "a/large.py", "P4 should be last"
-
-    def test_same_priority_sorted_by_size(self) -> None:
-        """Within the same priority, smaller files come first."""
-        big = _make_entry("big.py", priority=4, size_bytes=9999)
-        small = _make_entry("small.py", priority=4, size_bytes=100)
-
-        manifest = MagicMock()
-        manifest.files_in_state.return_value = [big, small]
-
-        worker = _build_worker(manifest=manifest)
-        ordered = worker._get_ordered_files(FileState.REGISTERED)
-
-        assert ordered[0].rel_path == "small.py"
-        assert ordered[1].rel_path == "big.py"
-
-
-# -------------------------------------------------------------------------
-# 2. _run drives the core through every phase
-# -------------------------------------------------------------------------
-
-
-class TestScheduling:
-    def test_run_drives_core_through_eager_phases(self, tmp_path: Path) -> None:
-        """Every REGISTERED file is parsed and keyworded before wait() returns.
-
-        Per-section summarization is demand-driven, so ``_run`` does not call
-        ``summarize_file`` during the eager phases — the warm loop does, and
-        only for files a query has surfaced.
-        """
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("src/main.py", file_type=".py"))
-        manifest.add(_make_entry("docs/readme.md", file_type=".md"))
-
-        core = MagicMock()
-        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-
-        keyword_calls = 0
-
-        def _keyword(_file_id: str, _file_type: str) -> None:
-            nonlocal keyword_calls
-            keyword_calls += 1
-            if keyword_calls == 2:
-                worker._stop_event.set()
-
-        core.keyword_file.side_effect = _keyword
-
-        worker.start()
-        worker.wait()  # returns once the query-ready index is done
-        worker.stop()
-
-        # Both files reached the query-ready state before deep enrichment.
-        assert manifest.get("src/main.py").state == FileState.QUERY_READY
-        assert manifest.get("docs/readme.md").state == FileState.QUERY_READY
-
-        # Core query-ready ops called once per file; deep work did not run yet.
-        assert core.parse_file.call_count == 2
-        assert core.keyword_file.call_count == 2
-        core.link_entities_file.assert_not_called()
-        core.build_hierarchy_file.assert_not_called()
-        core.finalize.assert_not_called()
-        core.summarize_file.assert_not_called()  # demand-driven — no query yet
-
-    def test_parse_phase_passes_file_identity_to_core(self, tmp_path: Path) -> None:
-        """The worker hands the core (rel_path, abs_path, file_id) for each file."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("src/main.py", file_type=".py"))
-
-        core = MagicMock()
-        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-        worker._parse_phase()
-
-        core.parse_file.assert_called_once()
-        rel_path, _abs_path, file_id = core.parse_file.call_args[0]
-        assert rel_path == "src/main.py"
-        assert file_id == "id-src/main.py"
-        assert manifest.get("src/main.py").state == FileState.PARSED
-
-    def test_keyword_phase_routes_by_file_type(self, tmp_path: Path) -> None:
-        """keyword_file receives the file's id/type; PARSED -> QUERY_READY."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("a.py", file_type=".py", state=FileState.PARSED))
-
-        core = MagicMock()
-        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-        worker._keyword_phase()
-
-        core.keyword_file.assert_called_once_with("id-a.py", ".py")
-        assert manifest.get("a.py").state == FileState.QUERY_READY
-
-    def test_keyword_failure_is_reported_without_blocking_collection(self, tmp_path: Path) -> None:
-        """A keyword failure is terminal for that file and visible in status."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("a.py", file_type=".py", state=FileState.PARSED))
-
-        core = MagicMock()
-        core.keyword_file.side_effect = RuntimeError("llm unavailable")
-        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-
-        worker._keyword_phase()
-
-        entry = manifest.get("a.py")
-        assert entry.state == FileState.FAILED
-        assert entry.failure_stage == "keywords"
-        assert entry.failure_message == "llm unavailable"
-        core.discard_file.assert_called_once_with("id-a.py")
-
-    def test_deep_enrich_phase_runs_remaining_stages(self, tmp_path: Path) -> None:
-        """Deep enrichment advances query-ready files through entities and hierarchy."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("a.py", file_type=".py", state=FileState.QUERY_READY))
-        manifest.add(_make_entry("b.md", file_type=".md", state=FileState.ENTITY_LINKED))
-        manifest.add(_make_entry("c.md", file_type=".md", state=FileState.HIERARCHY_READY))
-
-        core = MagicMock()
-        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-        worker._deep_enrich_phase()
-
-        core.link_entities_file.assert_called_once_with("id-a.py", ".py")
-        assert core.build_hierarchy_file.call_count == 2
-        assert manifest.get("a.py").state == FileState.ENRICHED
-        assert manifest.get("b.md").state == FileState.ENRICHED
-        assert manifest.get("c.md").state == FileState.ENRICHED
-
-    def test_parse_failure_does_not_block_other_files(self, tmp_path: Path) -> None:
-        """One file failing to parse leaves it behind but does not stop the rest."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("bad.py", file_type=".py"))
-        manifest.add(_make_entry("good.py", file_type=".py"))
-
-        core = MagicMock()
-
-        def _parse(rel_path, _abs_path, _file_id):
-            if rel_path == "bad.py":
-                raise RuntimeError("parse blew up")
-
-        core.parse_file.side_effect = _parse
-
-        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-        worker._parse_phase()
-
-        failed = manifest.get("bad.py")
-        assert failed.state == FileState.FAILED
-        assert failed.failure_stage == "parse"
-        assert failed.failure_message == "parse blew up"
-        assert manifest.get("good.py").state == FileState.PARSED
-        core.discard_file.assert_called_once_with("id-bad.py")
-
-    def test_stop_event_halts_processing(self, tmp_path: Path) -> None:
-        """A set stop event prevents any core work."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("src/app.py", file_type=".py"))
-
-        core = MagicMock()
-        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-        worker._stop_event.set()
-
-        worker._run()
-
-        core.parse_file.assert_not_called()
-        core.finalize.assert_not_called()
-        assert manifest.get("src/app.py").state == FileState.REGISTERED
-
-    def test_run_until_deep_complete_exits_after_finalize(self, tmp_path: Path) -> None:
-        """Detached daemon mode completes deep enrichment without warm-looping."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("docs/readme.md", file_type=".md"))
-
-        core = MagicMock()
-        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-        worker._warm_loop = MagicMock()
-
-        worker.run_until_deep_complete()
-
-        core.parse_file.assert_called_once()
-        core.keyword_file.assert_called_once_with("id-docs/readme.md", ".md")
-        core.link_entities_file.assert_called_once_with("id-docs/readme.md", ".md")
-        core.build_hierarchy_file.assert_called_once_with("id-docs/readme.md", ".md")
-        core.finalize.assert_called_once()
-        worker._warm_loop.assert_not_called()
-        assert manifest.get("docs/readme.md").state == FileState.ENRICHED
-
-
-# -------------------------------------------------------------------------
-# 3. boost_files sets P1 on queried files, P2 on directory siblings
-# -------------------------------------------------------------------------
-
-
-class TestBoostFiles:
-    def test_boost_files_sets_p1_and_siblings_p2(self) -> None:
-        """boost_files bumps queried files to P1 and same-dir siblings to P2."""
-        queried = _make_entry("src/main.py", state=FileState.PARSED, priority=4)
-        sibling = _make_entry("src/utils.py", state=FileState.PARSED, priority=4)
-        unrelated = _make_entry("docs/readme.md", state=FileState.PARSED, priority=4)
-        already_done = _make_entry("src/done.py", state=FileState.ENRICHED, priority=4)
-
-        manifest = MagicMock()
-        manifest.entries.return_value = {
-            "src/main.py": queried,
-            "src/utils.py": sibling,
-            "docs/readme.md": unrelated,
-            "src/done.py": already_done,
-        }
-
-        worker = _build_worker(manifest=manifest)
-        worker.boost_files(["src/main.py"])
-
-        # Queried file bumped to P1
-        manifest.bump_priority.assert_called_once_with(["src/main.py"])
-
-        # Sibling in same dir (src/) bumped to P2 — but NOT the queried file
-        # itself, NOT an unrelated dir, NOT a fully enriched file
-        manifest.bump_priority_level.assert_called_once()
-        call_args = manifest.bump_priority_level.call_args
-        siblings_arg = call_args[0][0]
-        level_arg = call_args[1]["level"] if "level" in call_args[1] else call_args[0][1]
-
-        assert "src/utils.py" in siblings_arg
-        assert "src/main.py" not in siblings_arg, "queried file should not be in siblings"
-        assert "docs/readme.md" not in siblings_arg, "unrelated dir should not be in siblings"
-        assert "src/done.py" not in siblings_arg, "fully enriched files should be excluded"
-        assert level_arg == 2
-
-
-# -------------------------------------------------------------------------
-# 4. wait() — block until indexing finishes, report coarse progress
-# -------------------------------------------------------------------------
-
-
-class TestWait:
-    def test_wait_is_noop_when_never_started(self) -> None:
-        """wait() returns immediately when the worker thread was never started."""
-        worker = _build_worker()
-        progress = MagicMock()
-        worker.wait(progress=progress)
-        progress.assert_not_called()
-
-    def test_status_line_counts_indexed_files(self, tmp_path: Path) -> None:
-        """_status_line counts query-ready-or-later files / total."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("a.py", state=FileState.QUERY_READY))
-        manifest.add(_make_entry("b.py", state=FileState.SUMMARIZED))
-        manifest.add(_make_entry("c.md", state=FileState.REGISTERED))
-
-        worker = _build_worker(manifest=manifest, source_dir=tmp_path)
+def test_worker_runs_only_background_enrichment(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_entry("guide.md"))
+    core = MagicMock()
+    worker = BackgroundEnrichmentWorker(manifest, core)
 
-        assert worker._status_line() == "Indexing documents... 2/3"
-
-    def test_status_line_empty_when_no_files(self, tmp_path: Path) -> None:
-        """_status_line is empty for an empty manifest."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        worker = _build_worker(manifest=manifest, source_dir=tmp_path)
-
-        assert worker._status_line() == ""
-
-    def test_wait_returns_when_query_ready_done(self, tmp_path: Path) -> None:
-        """wait() returns once query-ready indexing finishes and reports completion.
-
-        The worker thread stays alive afterwards — it keeps running the
-        deep enrichment and demand-driven warm loop — so wait() keys off the
-        query-ready event, not thread exit.
-        """
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("a.py", file_type=".py"))
-
-        worker = _build_worker(manifest=manifest, core=MagicMock(), source_dir=tmp_path)
-        progress = MagicMock()
-
-        worker.start()
-        worker.wait(progress=progress)
-
-        assert worker._eager_done.is_set()
-        progress.assert_any_call("Query-ready indexing complete; deep enrichment continues.")
-        worker.stop()
-
-    def test_wait_for_query_surface_returns_after_parse(self, tmp_path: Path) -> None:
-        """wait_for_query_surface() returns before keyword enrichment finishes."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("a.md", file_type=".md"))
-
-        core = MagicMock()
-        worker = _build_worker(manifest=manifest, core=core, source_dir=tmp_path)
-
-        def _keyword(_file_id: str, _file_type: str) -> None:
-            worker._stop_event.wait(timeout=5.0)
-
-        core.keyword_file.side_effect = _keyword
-        progress = MagicMock()
-
-        worker.start()
-        worker.wait_for_query_surface(progress=progress)
-
-        assert worker._parse_done.is_set()
-        assert manifest.get("a.md").state == FileState.PARSED
-        progress.assert_any_call("Search surface ready; enrichment continues.")
-        worker.stop()
-
-    def test_wait_for_query_surface_raises_fatal_worker_failure(self) -> None:
-        """A phase-level crash must not be hidden by the completion event."""
-        worker = _build_worker()
-        worker._parse_phase = MagicMock(side_effect=RuntimeError("worker crashed"))
-        worker.start()
-
-        with pytest.raises(RuntimeError, match="Indexing failed: worker crashed"):
-            worker.wait_for_query_surface()
-
-        worker.stop()
-
-
-# -------------------------------------------------------------------------
-# 5. Demand-driven warm loop — summarize only query-flagged files
-# -------------------------------------------------------------------------
-
-
-class TestWarmLoop:
-    def test_next_warm_target_picks_queried_enriched_file(self, tmp_path: Path) -> None:
-        """A query-flagged ENRICHED file is the warm loop's next target."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("hot.md", file_type=".md", state=FileState.ENRICHED))
-        manifest.add(_make_entry("cold.md", file_type=".md", state=FileState.ENRICHED))
-        manifest.bump_priority(["hot.md"])  # records last_queried_at
-
-        worker = _build_worker(manifest=manifest, core=MagicMock(), source_dir=tmp_path)
-        target = worker._next_warm_target()
-
-        assert target is not None
-        assert target.rel_path == "hot.md"
-
-    def test_next_warm_target_ignores_unqueried_files(self, tmp_path: Path) -> None:
-        """Files no query has surfaced are never summarized."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("cold.md", file_type=".md", state=FileState.ENRICHED))
-
-        worker = _build_worker(manifest=manifest, core=MagicMock(), source_dir=tmp_path)
-
-        assert worker._next_warm_target() is None
-
-    def test_next_warm_target_skips_already_summarized(self, tmp_path: Path) -> None:
-        """A queried file already SUMMARIZED is not picked again."""
-        manifest = FileManifest(tmp_path / "manifest.json")
-        manifest.add(_make_entry("done.md", file_type=".md", state=FileState.SUMMARIZED))
-        manifest.bump_priority(["done.md"])
-
-        worker = _build_worker(manifest=manifest, core=MagicMock(), source_dir=tmp_path)
-
-        assert worker._next_warm_target() is None
+    worker.run_until_complete()
+
+    core.link_entities_file.assert_called_once_with("id-guide.md", ".md")
+    core.build_hierarchy_file.assert_called_once_with("id-guide.md", ".md")
+    core.build_corpus_hierarchy.assert_called_once_with()
+    assert not hasattr(core, "parse_file") or core.parse_file.call_count == 0
+    entry = manifest.get("guide.md")
+    assert entry is not None
+    assert entry.state == FileState.INDEXED
+    assert entry.enrichment_state == EnrichmentState.COMPLETE
+    assert manifest.finalization_status()[0] == FinalizationState.COMPLETE
+
+
+def test_entity_failure_does_not_remove_source_index(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_entry("guide.md"))
+    core = MagicMock()
+    core.link_entities_file.side_effect = RuntimeError("model unavailable")
+
+    BackgroundEnrichmentWorker(manifest, core).run_until_complete()
+
+    entry = manifest.get("guide.md")
+    assert entry is not None
+    assert entry.state == FileState.INDEXED
+    assert entry.enrichment_state == EnrichmentState.FAILED
+    assert entry.enrichment_failure_stage == "entities"
+
+
+def test_hierarchy_retry_starts_after_entity_linking(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_entry("guide.md", enrichment=EnrichmentState.ENTITY_LINKED))
+    core = MagicMock()
+
+    BackgroundEnrichmentWorker(manifest, core).run_until_complete()
+
+    core.link_entities_file.assert_not_called()
+    core.build_hierarchy_file.assert_called_once()
+    assert manifest.get("guide.md").enrichment_state == EnrichmentState.COMPLETE
+
+
+def test_collection_failure_is_reported_separately(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_entry("guide.md", enrichment=EnrichmentState.COMPLETE))
+    core = MagicMock()
+    core.build_corpus_hierarchy.side_effect = RuntimeError("summary failed")
+
+    BackgroundEnrichmentWorker(manifest, core).run_until_complete()
+
+    state, failure = manifest.finalization_status()
+    assert state == FinalizationState.FAILED
+    assert failure == "summary failed"
+    assert manifest.get("guide.md").state == FileState.INDEXED
+
+
+def test_query_boost_prioritizes_file_and_sibling(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_entry("docs/hot.md"))
+    manifest.add(_entry("docs/sibling.md"))
+    manifest.add(_entry("other/cold.md"))
+    worker = BackgroundEnrichmentWorker(manifest, MagicMock())
+
+    worker.boost_files(["docs/hot.md"])
+
+    assert manifest.get("docs/hot.md").priority == 1
+    assert manifest.get("docs/sibling.md").priority == 2
+    assert manifest.get("other/cold.md").priority == 4
+
+
+def test_warm_target_requires_completed_enrichment_and_query(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(_entry("guide.md", enrichment=EnrichmentState.COMPLETE))
+    worker = BackgroundEnrichmentWorker(manifest, MagicMock())
+    assert worker._next_warm_target() is None
+
+    manifest.bump_priority(["guide.md"])
+
+    assert worker._next_warm_target().rel_path == "guide.md"

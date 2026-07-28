@@ -153,7 +153,6 @@ def _append_strategy_executions(
             )
         )
     for name, strategy_trace in (
-        ("agentic", router.get("agentic")),
         ("corpus_summary", router.get("corpus_summary")),
     ):
         if not isinstance(strategy_trace, dict) or not strategy_trace.get("enabled"):

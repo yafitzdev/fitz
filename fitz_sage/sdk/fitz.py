@@ -38,14 +38,13 @@ class fitz:
     Holds one engine bound to a collection and exposes the full lifecycle::
 
         f = fitz(collection="docs")
-        f.point("./docs")                  # register documents
-        f.wait_for_indexing()              # block for required enrichment
+        f.point("./docs")                  # searchable when this returns
+        f.wait_for_enrichment()            # optional derived metadata
         pack = f.evidence("What is X?")    # governed evidence
         answer = f.answer("What is X?")    # optional synthesized answer
 
-    Pointing starts indexing; call ``f.wait_for_indexing()`` before retrieval when
-    using separate ``point`` / ``evidence`` or ``answer`` calls. Convenience methods that receive
-    ``source=`` block until required enrichment finishes.
+    Pointing builds the searchable source index synchronously and starts
+    model-backed enrichment in the background.
 
     Examples:
         >>> f = fitz()
@@ -94,8 +93,8 @@ class fitz:
     def point(self, source: Union[str, Path]) -> None:
         """Register a source file or directory for querying.
 
-        Indexing runs in the background; call ``wait_for_indexing()`` to block
-        until required enrichment finishes before querying.
+        The source index is searchable when this method returns. Model-backed
+        hierarchy and entity enrichment continues in the background.
         """
         self._get_engine().point(self._resolve_source(source), self._collection)
 
@@ -126,7 +125,6 @@ class fitz:
         engine = self._get_engine()
         if source is not None:
             engine.point(self._resolve_source(source), self._collection)
-            engine.wait_for_query_surface()
         return engine.answer(Query(text=question, metadata=self._metadata(conversation_context)))
 
     def retrieve(
@@ -158,7 +156,6 @@ class fitz:
         engine = self._get_engine()
         if source is not None:
             engine.point(self._resolve_source(source), self._collection)
-            engine.wait_for_query_surface()
         return engine.evidence(Query(text=question, metadata=self._metadata(conversation_context)))
 
     def trace(
@@ -173,7 +170,6 @@ class fitz:
         engine = self._get_engine()
         if source is not None:
             engine.point(self._resolve_source(source), self._collection)
-            engine.wait_for_query_surface()
         return engine.trace(Query(text=question, metadata=self._metadata(conversation_context)))
 
     @staticmethod
@@ -186,16 +182,12 @@ class fitz:
 
         return replay_pyrrho(run, pyrrho)
 
-    def wait_for_indexing(self) -> None:
-        """Block until background indexing reaches the query-ready keyword phase."""
-        self._get_engine().wait_for_indexing()
-
-    def wait_for_query_surface(self) -> None:
-        """Block until parsed retrieval units are searchable."""
-        self._get_engine().wait_for_query_surface()
+    def wait_for_enrichment(self) -> None:
+        """Optionally block until model-backed background enrichment settles."""
+        self._get_engine().wait_for_enrichment()
 
     def indexing_status(self) -> dict:
-        """Background-indexing progress for this collection.
+        """Source-index health and background-enrichment progress.
 
         Returns query-ready progress plus explicit ``failed_files`` and
         ``unsupported_files`` inventories. ``complete`` is false when any

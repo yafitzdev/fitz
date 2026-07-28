@@ -117,12 +117,12 @@ class IngestRequest(BaseModel):
 
 
 class IndexingStatus(BaseModel):
-    """Background-indexing progress for a collection."""
+    """Source-index health and independent enrichment progress."""
 
     discovered: int = Field(0, description="All files discovered under the source")
     total: int = Field(..., description="Supported files, including failed files")
-    indexed: int = Field(..., description="Supported files that are query-ready")
-    pending: int = Field(..., description="Supported files still being indexed")
+    indexed: int = Field(..., description="Supported files stored in the searchable index")
+    pending: int = Field(..., description="Supported files not yet stored in the index")
     failed: int = Field(0, description="Supported files that failed indexing")
     failed_files: List[Dict[str, Any]] = Field(
         default_factory=list,
@@ -142,11 +142,16 @@ class IndexingStatus(BaseModel):
         False,
         description="True when no supported file remains pending",
     )
-    deep_pending: int = Field(0, description="Files awaiting deep enrichment")
-    deep_pending_files: List[Dict[str, Any]] = Field(default_factory=list)
-    fully_enriched: bool = Field(False)
-    by_state: Dict[str, int] = Field(
-        default_factory=dict, description="File counts per indexing state"
+    by_index_state: Dict[str, int] = Field(
+        default_factory=dict, description="File counts per source-index state"
+    )
+    enrichment: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Independent model-backed enrichment progress",
+    )
+    by_enrichment_state: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Indexed file counts per enrichment state",
     )
 
 

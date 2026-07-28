@@ -1,6 +1,6 @@
 # fitz_sage/engines/fitz_krag/retrieval/strategies/code_search.py
 """
-Symbol-index search: keyword + BM25 + keyword-enrichment boosts.
+Symbol-index search: exact-name and BM25 retrieval.
 
 fitz-sage uses no dense embeddings on symbols. Code retrieval relies
 on tree-sitter-extracted symbol names (qualified-name keyword match)
@@ -15,7 +15,6 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import (
-    apply_keyword_enrichment_boost,
     apply_recency_boost,
 )
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
@@ -70,7 +69,7 @@ class CodeSearchStrategy:
         1. Keyword search: query words against symbol names
         2. BM25 full-text search (when content_tsv exists)
         3. Merge with configurable keyword-vs-BM25 weights
-        4. Keyword-enrichment + freshness boosts
+        4. Optional freshness boost
         """
         fetch_limit = limit * 2
 
@@ -87,14 +86,11 @@ class CodeSearchStrategy:
         # 3. Merge keyword + BM25
         merged = self._merge_results(keyword_results, bm25_results)
 
-        # 4. Keyword enrichment boost (from stored keywords, domain-scaled)
-        merged = apply_keyword_enrichment_boost(query, merged, self._symbol_store, detection)
-
-        # 5. Freshness boost (when detection signals boost_recency)
+        # 4. Freshness boost (when detection signals boost_recency)
         if detection and getattr(detection, "boost_recency", False) and self._raw_store:
             merged = apply_recency_boost(merged, self._raw_store)
 
-        # 6. Convert to Address objects
+        # 5. Convert to Address objects
         return [self._to_address(r) for r in merged[:limit]]
 
     def _keyword_results(self, query: str, limit: int) -> list[dict[str, Any]]:

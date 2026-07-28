@@ -193,7 +193,7 @@ class TestRetrieveCommand:
         assert "--trace-content requires --trace PATH" in result.output
 
     def test_retrieve_with_source_waits_for_required_indexing(self, tmp_path):
-        """Source-backed retrieval waits for the query surface before evidence retrieval."""
+        """Source-backed retrieval indexes synchronously before evidence retrieval."""
         source = tmp_path / "docs"
         source.mkdir()
 
@@ -225,15 +225,14 @@ class TestRetrieveCommand:
             )
 
         assert result.exit_code == 0
-        assert [method[0] for method in mock_engine.method_calls[:3]] == [
+        assert [method[0] for method in mock_engine.method_calls[:2]] == [
             "point",
-            "wait_for_query_surface",
             "evidence",
         ]
         mock_engine.point.assert_called_once()
         assert mock_engine.point.call_args.args[0] == source
         assert mock_engine.point.call_args.args[1] == "docs"
-        mock_engine.wait_for_query_surface.assert_called_once()
+        assert mock_engine.point.call_args.kwargs["start_worker"] is False
         mock_engine.evidence.assert_called_once()
 
     def test_retrieve_defaults_to_current_directory(self, tmp_path):
@@ -264,7 +263,7 @@ class TestRetrieveCommand:
         mock_engine.point.assert_called_once()
         assert mock_engine.point.call_args.args[0] == tmp_path
         assert mock_engine.point.call_args.args[1] == tmp_path.name
-        mock_engine.wait_for_query_surface.assert_called_once()
+        assert mock_engine.point.call_args.kwargs["start_worker"] is False
         mock_engine.evidence.assert_called_once()
 
     def test_retrieve_reuses_current_directory_collection_when_source_matches(self, tmp_path):
@@ -299,12 +298,11 @@ class TestRetrieveCommand:
         assert result.exit_code == 0
         mock_engine.load.assert_called_once_with(tmp_path.name)
         mock_engine.point.assert_not_called()
-        mock_engine.wait_for_query_surface.assert_not_called()
         mock_engine.evidence.assert_called_once()
 
-    def test_spawn_index_daemon_reuses_running_pid(self, tmp_path):
+    def test_spawn_enrichment_daemon_reuses_running_pid(self, tmp_path):
         """A live PID file should prevent duplicate detached daemons."""
-        pid_path = tmp_path / ".fitz" / "collections" / "docs" / "index_daemon.pid"
+        pid_path = tmp_path / ".fitz" / "collections" / "docs" / "enrichment_daemon.pid"
         pid_path.parent.mkdir(parents=True)
         pid_path.write_text("123", encoding="utf-8")
 
@@ -314,20 +312,25 @@ class TestRetrieveCommand:
             patch("fitz_sage.cli.commands.retrieve._pid_is_running", return_value=True),
             patch("fitz_sage.cli.commands.retrieve.subprocess.Popen") as popen,
         ):
-            spawned = retrieve._spawn_index_daemon("docs", "fitz_krag", tmp_path)
+            spawned = retrieve._spawn_enrichment_daemon("docs", "fitz_krag", tmp_path)
 
         assert spawned == "running"
         popen.assert_not_called()
 
-    def test_retrieve_spawns_daemon_when_indexing_is_pending(self):
+    def test_retrieve_spawns_daemon_when_enrichment_is_pending(self):
         """CLI query returns evidence, then hands remaining enrichment to a daemon."""
         pack = EvidencePack(
             query="What changed?",
             mode=AnswerMode.SUFFICIENT,
             indexing_status={
                 "total": 3,
-                "complete": False,
-                "fully_enriched": False,
+                "complete": True,
+                "query_ready": True,
+                "enrichment": {
+                    "pending": 2,
+                    "finalization": "pending",
+                    "complete": False,
+                },
             },
         )
 
@@ -348,12 +351,26 @@ class TestRetrieveCommand:
             patch("fitz_sage.cli.commands.retrieve.get_default_engine", return_value="fitz_krag"),
             patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
             patch("fitz_sage.cli.commands.retrieve.display_evidence_pack"),
-            patch("fitz_sage.cli.commands.retrieve._spawn_index_daemon") as spawn,
+            patch("fitz_sage.cli.commands.retrieve._spawn_enrichment_daemon") as spawn,
         ):
             result = runner.invoke(app, ["retrieve", "What changed?", "--collection", "docs"])
 
         assert result.exit_code == 0
-        mock_engine.stop_background_indexing.assert_called_once()
+        mock_engine.stop_background_enrichment.assert_called_once()
         spawn.assert_called_once()
         assert spawn.call_args.args[0] == "docs"
         assert spawn.call_args.args[1] == "fitz_krag"
+
+    def test_retrieve_retries_failed_enrichment(self):
+        """Persisted enrichment failures should be handed back to the daemon."""
+        from fitz_sage.cli.commands.retrieve import _enrichment_needs_daemon
+
+        assert _enrichment_needs_daemon(
+            {
+                "enrichment": {
+                    "pending": 0,
+                    "failed": 1,
+                    "finalization": "failed",
+                }
+            }
+        )

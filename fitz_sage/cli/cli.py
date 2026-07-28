@@ -213,13 +213,13 @@ def serve(
     mod.command(host=host, port=port, reload=reload)
 
 
-@app.command("index-daemon", hidden=True)
-def index_daemon(
+@app.command("enrichment-daemon", hidden=True)
+def enrichment_daemon(
     collection: str = typer.Option(..., "--collection", "-c", help="Collection name."),
     engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
 ) -> None:
-    """Continue indexing a collection from a detached process."""
-    from fitz_sage.cli.commands import index_daemon as mod
+    """Continue enriching a collection from a detached process."""
+    from fitz_sage.cli.commands import enrichment_daemon as mod
 
     mod.command(collection=collection, engine=engine)
 

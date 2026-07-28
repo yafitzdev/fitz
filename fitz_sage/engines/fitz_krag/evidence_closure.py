@@ -9,7 +9,7 @@ from typing import Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import EvidenceCompilation
 from fitz_sage.engines.fitz_krag.evidence_contract import QueryContract, build_query_contract
-from fitz_sage.engines.fitz_krag.types import AddressKind, ReadResult
+from fitz_sage.engines.fitz_krag.types import ReadResult
 
 _BRIDGE_IDENTIFIER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"
@@ -298,14 +298,7 @@ def _existing_compiler_roles(results: list[ReadResult]) -> set[str]:
 
 
 def _existing_modalities(results: list[ReadResult]) -> set[str]:
-    modalities: set[str] = set()
-    for result in results:
-        kind = getattr(getattr(result, "address", None), "kind", None)
-        if isinstance(kind, AddressKind):
-            modalities.add(kind.value)
-        elif kind is not None:
-            modalities.add(str(kind))
-    return modalities
+    return {result.address.kind.value for result in results}
 
 
 def _bridge_terms(
@@ -339,7 +332,7 @@ def _bridge_terms(
     for value in _specific_query_terms(contract):
         add(value)
 
-    evidence = _bridge_seed_results(current_results, compiled_results)
+    evidence = _bridge_seed_results(query, current_results, compiled_results)
 
     for value in _definition_bridge_phrases(query, current_results, compiled_results):
         add(value)
@@ -364,18 +357,61 @@ def _bridge_terms(
             if re.search(rf"\b{re.escape(hint)}\b", _normalize(text)):
                 add(hint)
 
+    for result in _reference_seed_results(compiled_results)[:10]:
+        text = _result_text(result)
+        for match in _SOURCE_REFERENCE_PATTERN.finditer(text):
+            add(match.group(1))
+        for match in _SOURCE_FILE_TOKEN_PATTERN.finditer(text):
+            add(match.group(0))
+
     return terms[:32]
 
 
 def _bridge_seed_results(
+    query: str,
     current_results: list[ReadResult],
     compiled_results: list[ReadResult],
 ) -> list[ReadResult]:
     """Return only evidence selected for a real contract obligation."""
     evidence = [result for result in compiled_results if _result_has_bridge_seed_role(result)]
+    for result in _query_referenced_results(query, compiled_results):
+        if result not in evidence:
+            evidence.append(result)
     if not evidence and not compiled_results:
         return list(current_results)
     return evidence
+
+
+def _query_referenced_results(
+    query: str,
+    compiled_results: list[ReadResult],
+) -> list[ReadResult]:
+    """Return evidence whose source is explicitly named by the query."""
+    references = {
+        _normalize_document_bridge(match.group(1))
+        for match in _SOURCE_REFERENCE_PATTERN.finditer(query)
+    }
+    if not references:
+        return []
+
+    matches: list[ReadResult] = []
+    for result in compiled_results:
+        labels = {
+            _normalize_document_bridge(str(result.address.location)),
+            _normalize_document_bridge(str(result.address.metadata.get("document_title") or "")),
+        }
+        if references & labels:
+            matches.append(result)
+    return matches
+
+
+def _reference_seed_results(compiled_results: list[ReadResult]) -> list[ReadResult]:
+    """Return evidence allowed to contribute explicit source references only."""
+    return [
+        result
+        for result in compiled_results
+        if _result_has_compiler_role(result, ("required_",))
+    ]
 
 
 def _definition_bridge_phrases(
@@ -386,7 +422,7 @@ def _definition_bridge_phrases(
     """Extract corpus-stated expansions for labels that occur in the query."""
     phrases: list[str] = []
     seen: set[str] = set()
-    for result in _bridge_seed_results(current_results, compiled_results)[:10]:
+    for result in _bridge_seed_results(query, current_results, compiled_results)[:10]:
         if _result_kind(result) == "table":
             continue
         for match in _EXPLICIT_DEFINITION_PATTERN.finditer(_result_text(result)):
@@ -415,35 +451,31 @@ def _definition_bridge_phrases(
     return phrases[:8]
 
 
-def _result_kind(result: ReadResult) -> str | None:
-    kind = getattr(getattr(result, "address", None), "kind", None)
-    if kind is None:
-        return None
-    return str(getattr(kind, "value", kind))
+def _result_kind(result: ReadResult) -> str:
+    return result.address.kind.value
 
 
 def _result_has_bridge_seed_role(result: ReadResult) -> bool:
     """Return whether compilation selected this result for a real obligation."""
+    return _result_has_compiler_role(
+        result,
+        (
+            "anchor_identifier:",
+            "anchor_keyword:",
+            "anchor_phrase:",
+        ),
+    )
+
+
+def _result_has_compiler_role(result: ReadResult, prefixes: tuple[str, ...]) -> bool:
+    """Return whether evidence compilation assigned one of the given roles."""
     compiler = result.metadata.get("evidence_compiler")
     if not isinstance(compiler, dict):
         return False
     roles = compiler.get("roles")
     if not isinstance(roles, list):
         return False
-    return any(
-        str(role).startswith(
-            (
-                "required_",
-                "anchor_identifier:",
-                "anchor_keyword:",
-                "anchor_phrase:",
-                "bridge:",
-                "bridge_definition:",
-                "bridge_document:",
-            )
-        )
-        for role in roles
-    )
+    return any(str(role).startswith(prefixes) for role in roles)
 
 
 def _specific_query_terms(contract: QueryContract) -> list[str]:

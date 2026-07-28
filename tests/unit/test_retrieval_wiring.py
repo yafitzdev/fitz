@@ -1,7 +1,6 @@
 # tests/unit/test_retrieval_wiring.py
 """
-Tests for retrieval pipeline wiring: router dispatch logic, keyword enrichment
-boost, and freshness boost in section/code strategies.
+Tests for retrieval pipeline wiring, router dispatch, and freshness boosting.
 """
 
 from __future__ import annotations
@@ -196,39 +195,6 @@ def _make_section_strategy(
     return SectionSearchStrategy(store, raw_store or MagicMock(), cfg)
 
 
-class TestSectionKeywordBoostIncreasesScore:
-    """Test 7: keyword enrichment boost increases combined_score."""
-
-    def test_section_keyword_boost_increases_score(self):
-        section_store = MagicMock()
-        # BM25 returns one result
-        section_store.search_bm25.return_value = [
-            {
-                "id": "s1",
-                "raw_file_id": "f1",
-                "title": "Setup",
-                "summary": "setup guide",
-                "level": 1,
-                "bm25_score": 0.5,
-            }
-        ]
-        # Semantic returns empty
-        # Keyword enrichment returns a hit for s1
-        section_store.search_by_keywords.return_value = [{"id": "s1"}]
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
-        strategy = _make_section_strategy(section_store=section_store)
-        results = strategy.retrieve("setup guide test", limit=5)
-
-        # Score should include the 0.1 keyword boost on top of BM25 contribution
-        assert len(results) == 1
-        # RRF with k=60: BM25 only at rank 0 → 1/(60+0) = 1/60 ≈ 0.0167
-        # With keyword boost: 1/60 + 0.1 ≈ 0.1167
-        assert results[0].score == pytest.approx(1 / 60 + 0.1, abs=0.01)
-
-
 # ===========================================================================
 # Code strategy tests
 # ===========================================================================
@@ -241,70 +207,6 @@ def _make_code_strategy(symbol_store=None, config=None, raw_store=None) -> CodeS
     strategy = CodeSearchStrategy(store, cfg)
     strategy._raw_store = raw_store
     return strategy
-
-
-class TestCodeKeywordBoostIncreasesScore:
-    """Test 8: keyword enrichment boost increases combined_score for code."""
-
-    def test_code_keyword_boost_increases_score(self):
-        symbol_store = MagicMock()
-        # Keyword search by name returns one result
-        symbol_store.search_by_name.return_value = [
-            {
-                "id": "sym1",
-                "raw_file_id": "f1",
-                "name": "parse_config",
-                "qualified_name": "mod.parse_config",
-                "kind": "function",
-                "start_line": 10,
-                "end_line": 30,
-                "summary": "parses config",
-            }
-        ]
-        # BM25 returns empty
-        symbol_store.search_bm25.return_value = []
-        # Semantic returns empty
-        # Keyword enrichment returns a hit
-        symbol_store.search_by_keywords.return_value = [{"id": "sym1"}]
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
-        strategy = _make_code_strategy(symbol_store=symbol_store)
-        results = strategy.retrieve("parse config file", limit=5)
-
-        assert len(results) == 1
-        # Keyword rank score alone: keyword_weight * (1/(0+1)) = 0.4 * 1.0 = 0.4
-        # With keyword enrichment boost: 0.4 + 0.1 = 0.5
-        assert results[0].score == pytest.approx(0.5, abs=0.01)
-
-
-class TestKeywordBoostSkipsShortTerms:
-    """Test 9: query with only short words (<3 chars) gets no keyword boost."""
-
-    def test_keyword_boost_skips_short_terms(self):
-        section_store = MagicMock()
-        section_store.search_bm25.return_value = [
-            {
-                "id": "s1",
-                "raw_file_id": "f1",
-                "title": "A",
-                "summary": "a",
-                "level": 1,
-                "bm25_score": 0.5,
-            }
-        ]
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
-        strategy = _make_section_strategy(section_store=section_store)
-        # All words are shorter than 3 chars
-        results = strategy.retrieve("is a do", limit=5)
-
-        # search_by_keywords should NOT be called because all terms are < 3 chars
-        section_store.search_by_keywords.assert_not_called()
-        assert len(results) == 1
 
 
 class TestSectionFreshnessBoostWithRecency:
@@ -324,11 +226,6 @@ class TestSectionFreshnessBoostWithRecency:
             }
             for i in range(4)
         ]
-        section_store.search_by_keywords.return_value = []
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
         raw_store = MagicMock()
         # f0 is most recent, f3 is oldest
         raw_store.get_updated_timestamps.return_value = {
@@ -372,11 +269,6 @@ class TestFreshnessNoBoostWithoutFlag:
                 "bm25_score": 0.5,
             }
         ]
-        section_store.search_by_keywords.return_value = []
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
         raw_store = MagicMock()
 
         strategy = _make_section_strategy(
@@ -405,11 +297,6 @@ class TestFreshnessNoBoostWithoutRawStore:
                 "bm25_score": 0.5,
             }
         ]
-        section_store.search_by_keywords.return_value = []
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
         strategy = _make_section_strategy(
             section_store=section_store,
             raw_store=None,  # Explicitly None

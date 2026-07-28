@@ -1,5 +1,4 @@
-# tests/unit/test_cli_index_daemon.py
-"""Tests for the hidden indexing daemon command."""
+"""Tests for the hidden enrichment daemon command."""
 
 from __future__ import annotations
 
@@ -12,28 +11,28 @@ from fitz_sage.cli.cli import app
 runner = CliRunner()
 
 
-def test_index_daemon_loads_collection_and_continues_indexing() -> None:
-    """Hidden daemon command resumes the persisted collection."""
+def test_enrichment_daemon_loads_collection_and_continues_enrichment() -> None:
+    """Hidden daemon command resumes enrichment for the persisted collection."""
     mock_engine = MagicMock()
     mock_registry = MagicMock()
     mock_registry.list.return_value = ["fitz_krag"]
 
     with (
         patch(
-            "fitz_sage.cli.commands.index_daemon.get_engine_registry",
+            "fitz_sage.cli.commands.enrichment_daemon.get_engine_registry",
             return_value=mock_registry,
         ),
         patch(
-            "fitz_sage.cli.commands.index_daemon.get_default_engine",
+            "fitz_sage.cli.commands.enrichment_daemon.get_default_engine",
             return_value="fitz_krag",
         ),
-        patch("fitz_sage.cli.commands.index_daemon.create_engine", return_value=mock_engine),
+        patch("fitz_sage.cli.commands.enrichment_daemon.create_engine", return_value=mock_engine),
     ):
         result = runner.invoke(
             app,
-            ["index-daemon", "--collection", "docs"],
+            ["enrichment-daemon", "--collection", "docs"],
         )
 
     assert result.exit_code == 0
     mock_engine.load.assert_called_once_with("docs")
-    mock_engine.continue_indexing.assert_called_once()
+    mock_engine.continue_enrichment.assert_called_once()

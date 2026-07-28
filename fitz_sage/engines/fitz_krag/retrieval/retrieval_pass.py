@@ -25,8 +25,6 @@ from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace, read_re
 from fitz_sage.engines.fitz_krag.types import ReadResult
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.retrieval.reader import ContentReader
     from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressReranker
@@ -109,7 +107,6 @@ class RetrievalPass:
         profile: Any = None,
         *,
         rewrite_result: Any = None,
-        progress: "Callable[[str], None] | None" = None,
     ) -> list[ReadResult]:
         """Run one retrieval pass: retrieve -> rerank -> read.
 
@@ -118,8 +115,6 @@ class RetrievalPass:
             profile: the RetrievalProfile carrying gates + strategy weights.
             rewrite_result: the QueryRewriter result, forwarded to the router
                 so it can reuse decomposed query variations.
-            progress: optional status callback, forwarded to the router.
-
         Returns:
             Read results for the surviving addresses (``<= rerank_k`` when a
             reranker is configured).
@@ -128,9 +123,7 @@ class RetrievalPass:
         self.last_trace = {"query": query}
 
         t0 = time.perf_counter()
-        addresses = self._router.retrieve(
-            query, profile, rewrite_result=rewrite_result, progress=progress
-        )
+        addresses = self._router.retrieve(query, profile, rewrite_result=rewrite_result)
         self.last_timings["recall"] = time.perf_counter() - t0
         recall_addresses = list(addresses)
         router_trace = dict(getattr(self._router, "last_trace", {}) or {})
@@ -215,7 +208,6 @@ def _profile_trace(profile: Any) -> dict[str, Any]:
         "comparison_queries",
         "comparison_entities",
         "temporal_references",
-        "run_agentic",
         "inject_corpus_summaries",
         "entity_expansion_limit",
     )

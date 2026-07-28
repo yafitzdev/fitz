@@ -1,5 +1,5 @@
-# fitz_sage/cli/commands/index_daemon.py
-"""Hidden CLI command for detached background indexing."""
+# fitz_sage/cli/commands/enrichment_daemon.py
+"""Hidden CLI command for detached background enrichment."""
 
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ logger = logging.getLogger(__name__)
 
 def _pid_path(collection: str) -> Path:
     """Return the PID file for this collection in the current workspace."""
-    return Path.cwd() / ".fitz" / "collections" / collection / "index_daemon.pid"
+    return Path.cwd() / ".fitz" / "collections" / collection / "enrichment_daemon.pid"
 
 
 def command(collection: str, engine: Optional[str]) -> None:
-    """Continue indexing a persisted collection until deep enrichment is complete."""
+    """Continue enriching a persisted collection until background work settles."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
@@ -35,12 +35,12 @@ def command(collection: str, engine: Optional[str]) -> None:
 
     engine_instance = create_engine(engine_name)
     try:
-        logger.info("Index daemon started: collection=%s engine=%s", collection, engine_name)
-        logger.info("Index daemon loading collection: %s", collection)
+        logger.info("Enrichment daemon started: collection=%s engine=%s", collection, engine_name)
+        logger.info("Enrichment daemon loading collection: %s", collection)
         engine_instance.load(collection)
-        logger.info("Index daemon continuing enrichment: %s", collection)
-        engine_instance.continue_indexing()
-        logger.info("Index daemon completed: collection=%s engine=%s", collection, engine_name)
+        logger.info("Enrichment daemon continuing: %s", collection)
+        engine_instance.continue_enrichment()
+        logger.info("Enrichment daemon completed: collection=%s engine=%s", collection, engine_name)
     finally:
         try:
             _pid_path(collection).unlink(missing_ok=True)

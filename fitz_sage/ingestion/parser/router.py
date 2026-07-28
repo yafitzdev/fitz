@@ -85,67 +85,51 @@ class ParserRouter:
         for ext in PLAINTEXT_EXTENSIONS:
             self._parsers[ext] = plaintext
 
-        # glm_ocr owns every rich-document extension when selected.
-        if self.parser == "glm_ocr":
-            try:
-                from fitz_sage.ingestion.parser.plugins.glm_ocr import (
-                    GLM_OCR_EXTENSIONS,
-                    GlmOcrParser,
-                )
-
-                glm = GlmOcrParser()
-                for ext in GLM_OCR_EXTENSIONS:
-                    self._parsers[ext] = glm
-                logger.info("Using glm_ocr parser (hybrid pypdfium2 + GLM-OCR)")
-                return
-            except ImportError:
-                logger.warning("GLM-OCR parser import failed, falling back to defaults")
-
-        # Docling handles rich documents (DOCX/PPTX/HTML) — and PDFs too when
-        # it is the selected parser. Optional: pip install fitz-sage[docs].
-        docling: Parser
-        try:
-            if self.parser == "docling_vision":
-                from fitz_sage.ingestion.parser.plugins.docling_vision import (
-                    DOCLING_EXTENSIONS,
-                    DoclingVisionParser,
-                )
-
-                docling = DoclingVisionParser()
-                logger.info("Using docling_vision parser (VLM-powered figure description)")
-            else:
-                from fitz_sage.ingestion.parser.plugins.docling import (
-                    DOCLING_EXTENSIONS,
-                    DoclingParser,
-                )
-
-                docling = DoclingParser()
-
-            for ext in DOCLING_EXTENSIONS:
-                self._parsers[ext] = docling
-        except ImportError:
-            # Docling not installed — register lightweight parsers instead
-            logger.info("Docling not installed — using lightweight parsers for PDF/DOCX/PPTX")
+        if self.parser == "cpu":
+            from fitz_sage.ingestion.parser.plugins.cpu_pdf import CpuPdfParser
             from fitz_sage.ingestion.parser.plugins.lightweight import (
                 LightweightDOCXParser,
-                LightweightPDFParser,
                 LightweightPPTXParser,
             )
 
-            self._parsers[".pdf"] = LightweightPDFParser()
+            self._parsers[".pdf"] = CpuPdfParser()
             self._parsers[".docx"] = LightweightDOCXParser()
             self._parsers[".pptx"] = LightweightPPTXParser()
+            logger.info("Using deterministic lightweight CPU document parsers")
+            return
 
-        # CPU-first mode (the default): the zero-model pypdfium2 parser owns
-        # PDF — server-free, no torch, no OCR. docling stays registered for
-        # DOCX/PPTX/HTML, where it has no memory problem (and loads lazily, so
-        # a PDF-only corpus never touches it). An explicit `parser: docling*`
-        # keeps docling on PDF instead.
-        if self.parser not in ("docling", "docling_vision"):
-            from fitz_sage.ingestion.parser.plugins.cpu_pdf import CpuPdfParser
+        if self.parser == "glm_ocr":
+            from fitz_sage.ingestion.parser.plugins.glm_ocr import (
+                GLM_OCR_EXTENSIONS,
+                GlmOcrParser,
+            )
 
-            self._parsers[".pdf"] = CpuPdfParser()
-            logger.info("Using cpu_pdf parser for PDF (server-free, zero-model)")
+            glm = GlmOcrParser()
+            for ext in GLM_OCR_EXTENSIONS:
+                self._parsers[ext] = glm
+            logger.info("Using glm_ocr parser (hybrid pypdfium2 + GLM-OCR)")
+            return
+
+        if self.parser == "docling_vision":
+            from fitz_sage.ingestion.parser.plugins.docling_vision import (
+                DOCLING_EXTENSIONS,
+                DoclingVisionParser,
+            )
+
+            docling: Parser = DoclingVisionParser()
+            logger.info("Using docling_vision parser (VLM-powered figure description)")
+        elif self.parser == "docling":
+            from fitz_sage.ingestion.parser.plugins.docling import (
+                DOCLING_EXTENSIONS,
+                DoclingParser,
+            )
+
+            docling = DoclingParser()
+        else:
+            raise ValueError(f"Unknown parser mode: {self.parser}")
+
+        for ext in DOCLING_EXTENSIONS:
+            self._parsers[ext] = docling
 
     def register_parser(self, parser: Parser, extensions: Optional[List[str]] = None) -> None:
         """

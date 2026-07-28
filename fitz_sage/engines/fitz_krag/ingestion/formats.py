@@ -44,6 +44,7 @@ def enabled_extensions(
     *,
     code_languages: Iterable[str],
     table_extensions: Iterable[str],
+    parser: str = "cpu",
 ) -> frozenset[str]:
     """Return normalized extensions enabled by one KRAG configuration."""
     languages = {str(language).strip().lower() for language in code_languages}
@@ -51,7 +52,13 @@ def enabled_extensions(
         extension for extension, language in CODE_EXTENSION_MAP.items() if language in languages
     }
     tables = {_normalize_extension(extension) for extension in table_extensions}
-    return frozenset(code | set(DOCUMENT_EXTENSIONS) | tables)
+    documents = set(DOCUMENT_EXTENSIONS)
+    parser_mode = str(parser).strip().lower()
+    if parser_mode == "cpu":
+        documents.discard(".xlsx")
+    elif parser_mode == "glm_ocr":
+        documents -= {".docx", ".pptx", ".xlsx"}
+    return frozenset(code | documents | tables)
 
 
 def _normalize_extension(extension: str) -> str:

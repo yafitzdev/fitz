@@ -1,10 +1,5 @@
 # fitz_sage/engines/fitz_krag/progressive/manifest.py
-"""
-FileManifest — thread-safe manifest with JSON persistence.
-
-Tracks every file in a pointed source directory, its indexing state,
-extracted symbols/headings, and priority for background ingestion.
-"""
+"""Thread-safe source manifest with separate index and enrichment state."""
 
 from __future__ import annotations
 
@@ -12,7 +7,7 @@ import json
 import logging
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -21,60 +16,31 @@ logger = logging.getLogger(__name__)
 
 
 class FileState(str, Enum):
-    """Progressive indexing state for a file."""
+    """Source-index state for one file."""
 
-    REGISTERED = "registered"  # In manifest only, no DB data
-    PARSED = "parsed"  # Raw content + symbols/sections stored
-    KEYWORDED = "keyworded"  # Qwen keywords/aliases extracted
-    QUERY_READY = "query_ready"  # Minimum retrieval index is usable
-    ENTITY_LINKED = "entity_linked"  # Entity graph was populated
-    HIERARCHY_READY = "hierarchy_ready"  # L1 hierarchy summary exists
-    ENRICHED = "enriched"  # Required deep enrichment completed
-    SUMMARIZED = "summarized"  # Demand summaries exist for queried files
-    FAILED = "failed"  # A supported file failed at a recorded indexing stage
-    UNSUPPORTED = "unsupported"  # Discovered outside the enabled format contract
+    REGISTERED = "registered"
+    INDEXED = "indexed"
+    FAILED = "failed"
+    UNSUPPORTED = "unsupported"
 
 
-_QUERY_READY_STATES = frozenset(
-    {
-        FileState.QUERY_READY,
-        FileState.ENTITY_LINKED,
-        FileState.HIERARCHY_READY,
-        FileState.ENRICHED,
-        FileState.SUMMARIZED,
-    }
-)
-_FULLY_ENRICHED_STATES = frozenset({FileState.ENRICHED, FileState.SUMMARIZED})
+class EnrichmentState(str, Enum):
+    """Background enrichment state, independent from source indexing."""
+
+    PENDING = "pending"
+    ENTITY_LINKED = "entity_linked"
+    COMPLETE = "complete"
+    SUMMARIZED = "summarized"
+    FAILED = "failed"
+    NOT_APPLICABLE = "not_applicable"
 
 
-def is_query_ready_state(state: FileState) -> bool:
-    """Return whether a manifest state can answer retrieval queries."""
-    return state in _QUERY_READY_STATES
+class FinalizationState(str, Enum):
+    """Collection-level hierarchy finalization state."""
 
-
-def is_fully_enriched_state(state: FileState) -> bool:
-    """Return whether required deep enrichment has completed for a file."""
-    return state in _FULLY_ENRICHED_STATES
-
-
-@dataclass
-class ManifestSymbol:
-    """A code symbol extracted from AST (no LLM needed)."""
-
-    name: str
-    qualified_name: str
-    kind: str  # function, class, method, constant
-    signature: str | None
-    start_line: int
-    end_line: int
-
-
-@dataclass
-class ManifestHeading:
-    """A heading extracted from a document file."""
-
-    title: str
-    level: int
+    PENDING = "pending"
+    COMPLETE = "complete"
+    FAILED = "failed"
 
 
 @dataclass
@@ -88,12 +54,13 @@ class ManifestEntry:
     file_type: str  # .py, .md, etc.
     size_bytes: int
     state: FileState
-    symbols: list[ManifestSymbol] = field(default_factory=list)
-    headings: list[ManifestHeading] = field(default_factory=list)
+    enrichment_state: EnrichmentState = EnrichmentState.PENDING
     priority: int = 4  # 1=highest (queried), 4=default
     last_queried_at: float | None = None
     failure_stage: str | None = None
     failure_message: str | None = None
+    enrichment_failure_stage: str | None = None
+    enrichment_failure_message: str | None = None
 
 
 class FileManifest:
@@ -107,6 +74,8 @@ class FileManifest:
         self._path = manifest_path
         self._lock = threading.Lock()
         self._entries: dict[str, ManifestEntry] = {}
+        self._finalization_state = FinalizationState.PENDING
+        self._finalization_failure: str | None = None
         if self._path.exists():
             self.load()
 
@@ -143,12 +112,25 @@ class FileManifest:
                     file_type=entry.file_type,
                     size_bytes=entry.size_bytes,
                     state=state,
-                    symbols=entry.symbols,
-                    headings=entry.headings,
+                    enrichment_state=entry.enrichment_state,
                     priority=entry.priority,
                     last_queried_at=entry.last_queried_at,
                     failure_stage=None,
                     failure_message=None,
+                    enrichment_failure_stage=entry.enrichment_failure_stage,
+                    enrichment_failure_message=entry.enrichment_failure_message,
+                )
+
+    def update_enrichment_state(self, rel_path: str, state: EnrichmentState) -> None:
+        """Transition background enrichment without changing index availability."""
+        with self._lock:
+            entry = self._entries.get(rel_path)
+            if entry:
+                self._entries[rel_path] = _replace_entry(
+                    entry,
+                    enrichment_state=state,
+                    enrichment_failure_stage=None,
+                    enrichment_failure_message=None,
                 )
 
     def mark_failed(self, rel_path: str, *, stage: str, message: str) -> None:
@@ -164,13 +146,64 @@ class FileManifest:
                     file_type=entry.file_type,
                     size_bytes=entry.size_bytes,
                     state=FileState.FAILED,
-                    symbols=entry.symbols,
-                    headings=entry.headings,
+                    enrichment_state=EnrichmentState.NOT_APPLICABLE,
                     priority=entry.priority,
                     last_queried_at=entry.last_queried_at,
                     failure_stage=str(stage),
                     failure_message=str(message),
                 )
+
+    def mark_enrichment_failed(self, rel_path: str, *, stage: str, message: str) -> None:
+        """Record an enrichment failure while preserving the searchable source index."""
+        with self._lock:
+            entry = self._entries.get(rel_path)
+            if entry:
+                self._entries[rel_path] = _replace_entry(
+                    entry,
+                    enrichment_state=EnrichmentState.FAILED,
+                    enrichment_failure_stage=str(stage),
+                    enrichment_failure_message=str(message),
+                )
+
+    def prepare_enrichment_retry(self) -> None:
+        """Retry failed enrichment from the last durable per-file stage."""
+        with self._lock:
+            for rel_path, entry in self._entries.items():
+                if entry.enrichment_state != EnrichmentState.FAILED:
+                    continue
+                retry_state = (
+                    EnrichmentState.ENTITY_LINKED
+                    if entry.enrichment_failure_stage == "hierarchy"
+                    else EnrichmentState.PENDING
+                )
+                self._entries[rel_path] = _replace_entry(
+                    entry,
+                    enrichment_state=retry_state,
+                    enrichment_failure_stage=None,
+                    enrichment_failure_message=None,
+                )
+            if self._finalization_state == FinalizationState.FAILED:
+                self._finalization_state = FinalizationState.PENDING
+                self._finalization_failure = None
+
+    def reset_finalization(self) -> None:
+        with self._lock:
+            self._finalization_state = FinalizationState.PENDING
+            self._finalization_failure = None
+
+    def mark_finalized(self) -> None:
+        with self._lock:
+            self._finalization_state = FinalizationState.COMPLETE
+            self._finalization_failure = None
+
+    def mark_finalization_failed(self, message: str) -> None:
+        with self._lock:
+            self._finalization_state = FinalizationState.FAILED
+            self._finalization_failure = str(message)
+
+    def finalization_status(self) -> tuple[FinalizationState, str | None]:
+        with self._lock:
+            return self._finalization_state, self._finalization_failure
 
     def bump_priority(self, rel_paths: list[str]) -> None:
         """Set queried files to P1, record query time."""
@@ -187,12 +220,13 @@ class FileManifest:
                         file_type=entry.file_type,
                         size_bytes=entry.size_bytes,
                         state=entry.state,
-                        symbols=entry.symbols,
-                        headings=entry.headings,
+                        enrichment_state=entry.enrichment_state,
                         priority=1,
                         last_queried_at=now,
                         failure_stage=entry.failure_stage,
                         failure_message=entry.failure_message,
+                        enrichment_failure_stage=entry.enrichment_failure_stage,
+                        enrichment_failure_message=entry.enrichment_failure_message,
                     )
 
     def bump_priority_level(self, rel_paths: list[str], level: int) -> None:
@@ -209,12 +243,13 @@ class FileManifest:
                         file_type=entry.file_type,
                         size_bytes=entry.size_bytes,
                         state=entry.state,
-                        symbols=entry.symbols,
-                        headings=entry.headings,
+                        enrichment_state=entry.enrichment_state,
                         priority=level,
                         last_queried_at=entry.last_queried_at,
                         failure_stage=entry.failure_stage,
                         failure_message=entry.failure_message,
+                        enrichment_failure_stage=entry.enrichment_failure_stage,
+                        enrichment_failure_message=entry.enrichment_failure_message,
                     )
 
     def files_in_state(self, state: FileState) -> list[ManifestEntry]:
@@ -222,78 +257,54 @@ class FileManifest:
         with self._lock:
             return [e for e in self._entries.values() if e.state == state]
 
-    def files_not_in_state(self, state: FileState) -> list[ManifestEntry]:
-        """Return entries NOT at a specific state."""
-        with self._lock:
-            return [e for e in self._entries.values() if e.state != state]
-
-    def files_not_query_ready(self) -> list[ManifestEntry]:
-        """Return entries that still need the minimum retrieval index."""
+    def files_in_enrichment_state(self, state: EnrichmentState) -> list[ManifestEntry]:
+        """Return indexed files at a specific enrichment state."""
         with self._lock:
             return [
                 entry
                 for entry in self._entries.values()
-                if entry.state not in {FileState.FAILED, FileState.UNSUPPORTED}
-                and not is_query_ready_state(entry.state)
+                if entry.state == FileState.INDEXED and entry.enrichment_state == state
             ]
 
-    def to_manifest_text(self, entries: list[ManifestEntry] | None = None) -> str:
-        """Build compact manifest text for LLM consumption.
-
-        Format per file (~50-100 tokens):
-            path/to/file.py [4.2KB, python]
-              fn: main(args) L10-25
-              cls: MyClass L30-80
-            path/to/doc.md [1.1KB, markdown]
-              # Introduction
-              ## Getting Started
-        """
-        if entries is None:
-            with self._lock:
-                items = list(self._entries.values())
-        else:
-            items = entries
-        lines: list[str] = []
-        for entry in items:
-            size_str = _format_size(entry.size_bytes)
-            lang = _ext_to_lang(entry.file_type)
-            lines.append(f"{entry.rel_path} [{size_str}, {lang}]")
-            for sym in entry.symbols:
-                sig = f"({sym.signature})" if sym.signature else ""
-                lines.append(f"  {sym.kind[:3]}: {sym.name}{sig} L{sym.start_line}-{sym.end_line}")
-            for heading in entry.headings:
-                prefix = "#" * heading.level
-                lines.append(f"  {prefix} {heading.title}")
-        return "\n".join(lines)
-
     def save(self) -> None:
-        """Persist manifest to JSON."""
+        """Persist manifest atomically so readers never observe partial JSON."""
         with self._lock:
-            data = {rp: _entry_to_dict(entry) for rp, entry in self._entries.items()}
+            data = {
+                "version": 1,
+                "files": {rp: _entry_to_dict(entry) for rp, entry in self._entries.items()},
+                "finalization": {
+                    "state": self._finalization_state.value,
+                    "failure": self._finalization_failure,
+                },
+            }
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        temporary_path = self._path.with_name(f".{self._path.name}.tmp")
+        temporary_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        temporary_path.replace(self._path)
 
     def load(self) -> None:
         """Load manifest from JSON."""
         try:
             text = self._path.read_text(encoding="utf-8")
             raw = json.loads(text)
+            if raw["version"] != 1:
+                raise ValueError(f"unsupported manifest version: {raw['version']}")
+            files = raw["files"]
+            finalization = raw["finalization"]
             with self._lock:
-                self._entries = {rp: _dict_to_entry(d) for rp, d in raw.items()}
+                self._entries = {rp: _dict_to_entry(d) for rp, d in files.items()}
+                self._finalization_state = FinalizationState(finalization["state"])
+                self._finalization_failure = finalization["failure"]
         except Exception as e:
             logger.warning(f"Failed to load manifest from {self._path}: {e}")
             with self._lock:
                 self._entries = {}
+                self._finalization_state = FinalizationState.PENDING
+                self._finalization_failure = None
 
 
 def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
-    """Summarize a manifest's background-indexing progress.
-
-    Returns ``total`` / ``indexed`` / ``pending`` counts for the query-ready
-    index, plus deep-enrichment progress. ``query_ready`` means no supported
-    file remains pending. ``complete`` additionally requires that no supported
-    file failed.
-    """
+    """Report source-index health and independent background enrichment."""
     if manifest is None:
         return {
             "discovered": 0,
@@ -307,39 +318,68 @@ def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
             "healthy": True,
             "complete": True,
             "query_ready": True,
-            "deep_pending": 0,
-            "deep_pending_files": [],
-            "fully_enriched": True,
-            "by_state": {},
+            "by_index_state": {},
+            "enrichment": {
+                "total": 0,
+                "completed": 0,
+                "pending": 0,
+                "failed": 0,
+                "failed_files": [],
+                "pending_files": [],
+                "finalization": "complete",
+                "finalization_error": None,
+                "complete": True,
+            },
+            "by_enrichment_state": {},
         }
 
-    by_state: dict[str, int] = {}
+    by_index_state: dict[str, int] = {}
+    by_enrichment_state: dict[str, int] = {}
     entries = list(manifest.entries().values())
     for entry in entries:
-        by_state[entry.state.value] = by_state.get(entry.state.value, 0) + 1
+        by_index_state[entry.state.value] = by_index_state.get(entry.state.value, 0) + 1
+        if entry.state == FileState.INDEXED:
+            key = entry.enrichment_state.value
+            by_enrichment_state[key] = by_enrichment_state.get(key, 0) + 1
 
     unsupported_entries = [entry for entry in entries if entry.state == FileState.UNSUPPORTED]
     failed_entries = [entry for entry in entries if entry.state == FileState.FAILED]
-    active_entries = [
-        entry for entry in entries if entry.state not in {FileState.UNSUPPORTED, FileState.FAILED}
-    ]
+    indexed_entries = [entry for entry in entries if entry.state == FileState.INDEXED]
+    registered_entries = [entry for entry in entries if entry.state == FileState.REGISTERED]
     total = len(entries) - len(unsupported_entries)
-    indexed = sum(1 for entry in active_entries if is_query_ready_state(entry.state))
-    fully_enriched = sum(1 for entry in active_entries if is_fully_enriched_state(entry.state))
-    pending = len(active_entries) - indexed
-    deep_pending = len(active_entries) - fully_enriched
-    deep_pending_files = [
+    pending = len(registered_entries)
+
+    enrichment_complete_states = {EnrichmentState.COMPLETE, EnrichmentState.SUMMARIZED}
+    enrichment_pending_entries = [
+        entry
+        for entry in indexed_entries
+        if entry.enrichment_state in {EnrichmentState.PENDING, EnrichmentState.ENTITY_LINKED}
+    ]
+    enrichment_failed_entries = [
+        entry for entry in indexed_entries if entry.enrichment_state == EnrichmentState.FAILED
+    ]
+    enrichment_completed = sum(
+        1 for entry in indexed_entries if entry.enrichment_state in enrichment_complete_states
+    )
+    enrichment_pending_files = [
         {
             "path": entry.rel_path,
-            "state": entry.state.value,
+            "state": entry.enrichment_state.value,
             "priority": entry.priority,
         }
         for entry in sorted(
-            active_entries,
+            enrichment_pending_entries,
             key=lambda item: (item.priority, item.size_bytes, item.rel_path),
         )
-        if not is_fully_enriched_state(entry.state)
     ][:5]
+    enrichment_failed_files = [
+        {
+            "path": entry.rel_path,
+            "stage": entry.enrichment_failure_stage,
+            "error": entry.enrichment_failure_message,
+        }
+        for entry in sorted(enrichment_failed_entries, key=lambda item: item.rel_path)
+    ]
     failed_files = [
         {
             "path": entry.rel_path,
@@ -352,10 +392,19 @@ def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
         {"path": entry.rel_path, "extension": entry.file_type}
         for entry in sorted(unsupported_entries, key=lambda item: item.rel_path)
     ]
+    finalization_state, finalization_error = manifest.finalization_status()
+    if not indexed_entries:
+        finalization_state = FinalizationState.COMPLETE
+        finalization_error = None
+    enrichment_complete = (
+        not enrichment_pending_entries
+        and not enrichment_failed_entries
+        and finalization_state == FinalizationState.COMPLETE
+    )
     return {
         "discovered": len(entries),
         "total": total,
-        "indexed": indexed,
+        "indexed": len(indexed_entries),
         "pending": pending,
         "failed": len(failed_entries),
         "failed_files": failed_files,
@@ -364,10 +413,19 @@ def indexing_status(manifest: "FileManifest | None") -> dict[str, Any]:
         "healthy": not failed_entries,
         "complete": pending == 0 and not failed_entries,
         "query_ready": pending == 0,
-        "deep_pending": deep_pending,
-        "deep_pending_files": deep_pending_files,
-        "fully_enriched": deep_pending == 0 and not failed_entries,
-        "by_state": by_state,
+        "by_index_state": by_index_state,
+        "enrichment": {
+            "total": len(indexed_entries),
+            "completed": enrichment_completed,
+            "pending": len(enrichment_pending_entries),
+            "failed": len(enrichment_failed_entries),
+            "failed_files": enrichment_failed_files,
+            "pending_files": enrichment_pending_files,
+            "finalization": finalization_state.value,
+            "finalization_error": finalization_error,
+            "complete": enrichment_complete,
+        },
+        "by_enrichment_state": by_enrichment_state,
     }
 
 
@@ -388,39 +446,17 @@ def _dict_to_entry(d: dict[str, Any]) -> ManifestEntry:
         file_type=d["file_type"],
         size_bytes=d["size_bytes"],
         state=FileState(d["state"]),
-        symbols=[ManifestSymbol(**s) for s in d.get("symbols", [])],
-        headings=[ManifestHeading(**h) for h in d.get("headings", [])],
+        enrichment_state=EnrichmentState(d["enrichment_state"]),
         priority=d.get("priority", 4),
         last_queried_at=d.get("last_queried_at"),
         failure_stage=d.get("failure_stage"),
         failure_message=d.get("failure_message"),
+        enrichment_failure_stage=d.get("enrichment_failure_stage"),
+        enrichment_failure_message=d.get("enrichment_failure_message"),
     )
 
 
-def _format_size(size_bytes: int) -> str:
-    """Format byte count as human-readable string."""
-    if size_bytes < 1024:
-        return f"{size_bytes}B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f}KB"
-    else:
-        return f"{size_bytes / (1024 * 1024):.1f}MB"
-
-
-def _ext_to_lang(ext: str) -> str:
-    """Map file extension to language label."""
-    mapping = {
-        ".py": "python",
-        ".ts": "typescript",
-        ".tsx": "typescript",
-        ".js": "javascript",
-        ".jsx": "javascript",
-        ".java": "java",
-        ".go": "go",
-        ".md": "markdown",
-        ".rst": "rst",
-        ".txt": "text",
-        ".csv": "csv",
-        ".xlsx": "excel",
-    }
-    return mapping.get(ext, ext.lstrip("."))
+def _replace_entry(entry: ManifestEntry, **changes: Any) -> ManifestEntry:
+    values = asdict(entry)
+    values.update(changes)
+    return ManifestEntry(**values)

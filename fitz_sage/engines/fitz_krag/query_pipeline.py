@@ -10,6 +10,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.exceptions import QueryError
 from fitz_sage.engines.fitz_krag.evidence_closure import (
     EvidenceClosureRequest,
     annotate_closure_result,
@@ -33,6 +34,8 @@ from fitz_sage.engines.fitz_krag.retrieval_profile import (
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
+    from pyrrho import Pyrrho, QueryPlan as PyrrhoQueryPlan
+
     from fitz_sage.core import Query
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.evidence_compiler import EvidenceCompilation
@@ -69,7 +72,7 @@ class QueryPipeline:
         query_planner: Any,
         query_batcher: Any,
         semantic_keyword_batcher: Any,
-        pyrrho: Any,
+        pyrrho: "Pyrrho",
         retrieval_pass: Any,
         expander: Any,
         table_handler: Any,
@@ -103,7 +106,7 @@ class QueryPipeline:
         expand_context: bool = True,
     ) -> RetrievalOutcome:
         """Run the retrieval half of the KRAG pipeline."""
-        sanitized = _sanitize_query(query.text)
+        sanitized = _validated_query_text(query.text)
         timings: list[tuple[str, float]] = []
 
         _progress = progress or (lambda _: None)
@@ -148,7 +151,6 @@ class QueryPipeline:
                 plan.retrieval_query,
                 profile,
                 rewrite_result=plan.rewrite_result,
-                progress=progress,
             )
             retrieval_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
         addresses = [result.address for result in read_results]
@@ -245,7 +247,6 @@ class QueryPipeline:
                     request.query,
                     profile,
                     rewrite_result=None,
-                    progress=progress,
                 )
             retrieved_count = len(read_results)
             read_results = _filter_companion_source_repeats(
@@ -413,25 +414,20 @@ class QueryPipeline:
             keywords=_merge_query_keywords(plan.keywords, batch_result.keywords),
         )
 
-    def _plan_with_pyrrho(self, query: str) -> Any | None:
-        """Run Pyrrho's query-only planning pass when the backend exposes it."""
-        planner = getattr(self._pyrrho, "plan_query", None)
-        if not callable(planner):
-            return None
-        return planner(query)
+    def _plan_with_pyrrho(self, query: str) -> "PyrrhoQueryPlan":
+        """Run Pyrrho's required query-only planning pass."""
+        return self._pyrrho.plan_query(query)
 
 
-def _sanitize_query(text: str) -> str:
-    """Strip tags and cap pathologically long input."""
-    sanitized = re.sub(r"<[^>]+>", "", text).strip()
-    if not sanitized:
-        sanitized = text.strip()
-
-    if len(sanitized) > _MAX_QUERY_LENGTH:
-        original_length = len(sanitized)
-        sanitized = sanitized[:_MAX_QUERY_LENGTH]
-        logger.debug("Query truncated: %d -> %d characters", original_length, _MAX_QUERY_LENGTH)
-    return sanitized
+def _validated_query_text(text: str) -> str:
+    """Trim surrounding whitespace without changing query semantics."""
+    query = text.strip()
+    if len(query) > _MAX_QUERY_LENGTH:
+        raise QueryError(
+            f"Query text exceeds the {_MAX_QUERY_LENGTH}-character limit "
+            f"({len(query)} characters supplied)."
+        )
+    return query
 
 
 def _query_term_trace(
@@ -518,7 +514,6 @@ def _closure_profile(
         retrieval_modality=getattr(base, "retrieval_modality", None),
         retrieval_obligation=getattr(base, "retrieval_obligation", None),
         required_modalities=(request.modality,),
-        run_agentic=False,
         inject_corpus_summaries=False,
         entity_expansion_limit=min(int(getattr(base, "entity_expansion_limit", 3)), 3),
         specificity=getattr(base, "specificity", "moderate"),
@@ -535,19 +530,13 @@ def _merge_closure_results(
     """Merge closure results while allowing bridge-grounded table refreshes."""
     merged = list(current)
     positions = {
-        (str(result.address.source_id), str(result.address.location)): index
+        _result_unit_key(result): index
         for index, result in enumerate(merged)
-        if getattr(result, "address", None) is not None
     }
     added = 0
     replaced = 0
     for result in additional:
-        address = getattr(result, "address", None)
-        if address is None:
-            merged.append(result)
-            added += 1
-            continue
-        key = (str(address.source_id), str(address.location))
+        key = _result_unit_key(result)
         if key in positions:
             if allow_replace and _closure_result_should_replace(merged[positions[key]], result):
                 merged[positions[key]] = result
@@ -569,6 +558,12 @@ def _select_closure_results(
     """Keep the best grounded result for one bounded closure obligation."""
     if not results:
         return []
+    if request is not None:
+        results = [
+            result for result in results if result.address.kind.value == request.modality
+        ]
+        if not results:
+            return []
     if request is not None and request.role.startswith("bridge_document:"):
         document = _normalize_source_name(request.role.removeprefix("bridge_document:"))
         exact_locations = [
@@ -603,17 +598,26 @@ def _filter_companion_source_repeats(
     existing: list["ReadResult"],
     candidates: list["ReadResult"],
 ) -> list["ReadResult"]:
-    """Keep non-table companion retrieval on sources not already in evidence."""
+    """Remove exact non-table evidence repeats without excluding their source."""
     if request.modality == "table":
         return candidates
-    existing_sources = {
-        str(result.address.source_id)
-        for result in existing
-        if getattr(result, "address", None) is not None
+    existing_units = {_result_unit_key(result) for result in existing}
+    return [result for result in candidates if _result_unit_key(result) not in existing_units]
+
+
+def _result_unit_key(result: "ReadResult") -> tuple[str, str, str]:
+    """Return the stable identity of one retrievable unit."""
+    address = result.address
+    kind = address.kind.value
+    metadata_keys = {
+        "section": "section_id",
+        "symbol": "symbol_id",
+        "table": "table_id",
     }
-    return [
-        result for result in candidates if str(result.address.source_id) not in existing_sources
-    ]
+    metadata_key = metadata_keys.get(kind)
+    unit_id = address.metadata.get(metadata_key) if metadata_key else None
+    identity = f"{metadata_key}:{unit_id}" if unit_id not in (None, "") else address.location
+    return str(address.source_id), kind, str(identity)
 
 
 def _closure_result_should_replace(existing: "ReadResult", candidate: "ReadResult") -> bool:

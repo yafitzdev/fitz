@@ -13,6 +13,8 @@ from fitz_sage.engines.fitz_krag.evidence_contract import (
 )
 
 if TYPE_CHECKING:
+    from pyrrho import MultiLabelDecision, QueryPlan as PyrrhoQueryPlan
+
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
 
@@ -138,7 +140,6 @@ class RetrievalProfile:
     required_modalities: tuple[str, ...] = ()
 
     # Feature gates
-    run_agentic: bool = True
     inject_corpus_summaries: bool = False
 
     # Temporal metadata (for tagging query variations with references)
@@ -172,7 +173,7 @@ def build_retrieval_profile(
     *,
     extended_signals: dict[str, Any] | None = None,
     keywords: list[str] | None = None,
-    pyrrho_plan: Any | None = None,
+    pyrrho_plan: "PyrrhoQueryPlan | None" = None,
 ) -> RetrievalProfile:
     """Build a retrieval profile for the KRAG executor.
 
@@ -325,9 +326,6 @@ def build_retrieval_profile(
     elif answer_type in ("comparative", "exploratory"):
         top_read = int(top_read * 1.2)
 
-    # --- Executor gates: controlled by query profile, never by auxiliary analysis. ---
-    run_agentic = True
-
     inject_corpus_summaries = False
     if specificity == "broad" or answer_type == "exploratory":
         inject_corpus_summaries = True
@@ -364,7 +362,6 @@ def build_retrieval_profile(
         retrieval_intents=retrieval_intents,
         evidence_kinds=evidence_kinds,
         required_modalities=required_modalities,
-        run_agentic=run_agentic,
         inject_corpus_summaries=inject_corpus_summaries,
         boost_recency=boost_recency,
         has_aggregation_intent=has_aggregation_intent,
@@ -504,12 +501,12 @@ def _deterministic_profile_signals(
     }
 
 
-def _pyrrho_profile_signals(pyrrho_plan: Any | None) -> dict[str, Any]:
+def _pyrrho_profile_signals(pyrrho_plan: "PyrrhoQueryPlan | None") -> dict[str, Any]:
     """Translate Pyrrho PRE heads into retrieval-profile signals."""
     if pyrrho_plan is None:
         return {}
-    intents = _head_final_labels(getattr(pyrrho_plan, "retrieval_intents", None))
-    kinds = _head_final_labels(getattr(pyrrho_plan, "evidence_kinds", None))
+    intents = _head_final_labels(pyrrho_plan.retrieval_intents)
+    kinds = _head_final_labels(pyrrho_plan.evidence_kinds)
     if not intents and not kinds:
         return {}
 
@@ -575,18 +572,9 @@ def _merge_pyrrho_signals(
     return merged
 
 
-def _head_final_labels(head: Any | None) -> tuple[str, ...]:
-    """Read final labels from a Pyrrho multi-label head without assuming its class."""
-    if head is None:
-        return ()
-    raw = getattr(head, "final_labels", ())
-    labels: list[str] = []
-    if isinstance(raw, (list, tuple, set)):
-        labels.extend(str(label) for label in raw if isinstance(label, str) and label)
-    final_label = getattr(head, "final_label", None)
-    if isinstance(final_label, str) and final_label and final_label not in labels:
-        labels.append(final_label)
-    return tuple(dict.fromkeys(labels))
+def _head_final_labels(head: "MultiLabelDecision") -> tuple[str, ...]:
+    """Return Pyrrho's final labels without reinterpreting them."""
+    return tuple(dict.fromkeys(head.final_labels))
 
 
 def _modality_from_evidence_kinds(kinds: tuple[str, ...]) -> tuple[str | None, str | None]:
@@ -625,7 +613,7 @@ def _has_record_identifier(query: str) -> bool:
 
 def query_profile_metadata(
     profile: RetrievalProfile | None,
-    pyrrho_plan: Any | None = None,
+    pyrrho_plan: "PyrrhoQueryPlan | None" = None,
 ) -> dict[str, Any]:
     """Build serializable metadata for the pre-retrieval query profile."""
     if profile is None:
@@ -637,26 +625,23 @@ def query_profile_metadata(
     return metadata
 
 
-def _pyrrho_plan_metadata(pyrrho_plan: Any | None) -> dict[str, Any]:
+def _pyrrho_plan_metadata(pyrrho_plan: "PyrrhoQueryPlan | None") -> dict[str, Any]:
     """Serialize Pyrrho PRE heads for evidence-pack metadata."""
     if pyrrho_plan is None:
         return {}
     output: dict[str, Any] = {}
-    for name in ("retrieval_intents", "evidence_kinds"):
-        head = getattr(pyrrho_plan, name, None)
-        if head is None:
-            continue
+    for name, head in (
+        ("retrieval_intents", pyrrho_plan.retrieval_intents),
+        ("evidence_kinds", pyrrho_plan.evidence_kinds),
+    ):
         final_labels = _head_final_labels(head)
-        probabilities = getattr(head, "probabilities", None)
         output[name] = {
             "final_labels": list(final_labels),
-            "final_label": getattr(head, "final_label", None),
-            "confidence": float(getattr(head, "confidence", 0.0) or 0.0),
+            "final_label": head.final_label,
+            "confidence": float(head.confidence),
             "probabilities": {
                 str(label): float(value)
-                for label, value in (
-                    probabilities.items() if isinstance(probabilities, dict) else ()
-                )
+                for label, value in head.probabilities.items()
             },
         }
     return output
@@ -685,7 +670,6 @@ def _profile_metadata(profile: RetrievalProfile) -> dict[str, Any]:
         "strategy_weights": {
             key: float(value) for key, value in sorted(profile.strategy_weights.items())
         },
-        "run_agentic": profile.run_agentic,
         "inject_corpus_summaries": profile.inject_corpus_summaries,
         "boost_recency": profile.boost_recency,
         "has_aggregation_intent": profile.has_aggregation_intent,

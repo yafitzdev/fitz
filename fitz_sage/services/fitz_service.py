@@ -19,7 +19,7 @@ Usage:
 
     service = FitzService()
 
-    # Point at docs (progressive querying)
+    # Point at docs (searchable when this returns)
     manifest = service.point("/path/to/docs", collection="docs")
 
     # Optional answer synthesis
@@ -253,19 +253,16 @@ class FitzService:
         *,
         start_worker: bool = True,
     ) -> Any:
-        """Point at a source directory for progressive querying.
-
-        Builds manifest, returns immediately. Queries work instantly via
-        agentic search; progressively faster as background indexing completes.
+        """Build a searchable source index and start background enrichment.
 
         Args:
             source: Path to file or directory
             collection: Target collection name
-            start_worker: Whether to start background indexing thread.
+            start_worker: Whether to start the background enrichment thread.
                          False for short-lived CLI processes, True for SDK/API.
 
         Returns:
-            FileManifest with registered files
+            FileManifest with indexed files
 
         Raises:
             ValueError: If source doesn't exist
@@ -289,18 +286,13 @@ class FitzService:
             )
 
     def indexing_status(self, collection: str) -> dict:
-        """Report background-indexing progress for a collection.
+        """Report source-index health and enrichment progress for a collection.
 
         Loads the persisted manifest (via a fresh engine), so it reflects
         progress made by the background worker across processes.
         """
         with self._engine(collection) as engine_instance:
             return cast(dict[Any, Any], engine_instance.indexing_status())
-
-    def wait_for_query_surface(self, collection: str) -> None:
-        """Block until registered files have a searchable retrieval surface."""
-        with self._engine(collection) as engine_instance:
-            engine_instance.wait_for_query_surface()
 
     # =========================================================================
     # Collection Operations
@@ -380,7 +372,7 @@ class FitzService:
             for key in keys:
                 engine = self._engines.pop(key)
                 self._engine_locks.pop(key, None)
-                stop = getattr(engine, "stop_background_indexing", None)
+                stop = getattr(engine, "stop_background_enrichment", None)
                 if callable(stop):
                     stop()
 

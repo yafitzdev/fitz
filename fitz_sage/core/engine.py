@@ -30,9 +30,8 @@ class RetrievalEngine(KnowledgeEngine, Protocol):
 
         engine = create_engine("fitz_krag")
         engine.load("my_docs")              # bind to a collection
-        engine.point(Path("./docs"))        # register a source
-        engine.wait_for_query_surface()     # parsed units are searchable
-        engine.wait_for_indexing()          # optional: block through keywording
+        engine.point(Path("./docs"))        # returns with searchable source index
+        engine.wait_for_enrichment()        # optional: block on derived metadata
         evidence = engine.evidence(Query(text="...?")) # governed evidence
         sources = engine.retrieve(Query(text="...?"))  # raw sources, no synthesis
         answer = engine.answer(Query(text="...?"))     # optional synthesis
@@ -52,19 +51,15 @@ class RetrievalEngine(KnowledgeEngine, Protocol):
         *,
         start_worker: bool = True,
     ) -> Any:
-        """Register a source directory; indexing proceeds in the background."""
+        """Create a searchable source index and start background enrichment."""
         ...
 
-    def wait_for_indexing(self) -> None:
-        """Block until pointed sources reach query-ready keyword indexing."""
-        ...
-
-    def wait_for_query_surface(self) -> None:
-        """Block until parsed source units are searchable."""
+    def wait_for_enrichment(self) -> None:
+        """Optionally block until model-backed background enrichment settles."""
         ...
 
     def indexing_status(self) -> dict:
-        """Report background-indexing progress (file counts by state)."""
+        """Report source-index health and enrichment progress."""
         ...
 
     def retrieve(self, query: Query) -> list:

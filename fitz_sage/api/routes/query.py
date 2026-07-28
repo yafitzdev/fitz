@@ -49,7 +49,6 @@ async def answer(request: QueryRequest) -> QueryResponse:
     if request.source is not None:
         source = resolve_api_source(request.source)
         await run_in_threadpool(partial(service.point, source=source, collection=collection))
-        await run_in_threadpool(service.wait_for_query_surface, collection)
 
     context = _to_conversation_context(request.conversation_history)
 
@@ -94,7 +93,6 @@ async def evidence(request: QueryRequest) -> EvidenceResponse:
     if request.source is not None:
         source = resolve_api_source(request.source)
         await run_in_threadpool(partial(service.point, source=source, collection=collection))
-        await run_in_threadpool(service.wait_for_query_surface, collection)
 
     context = _to_conversation_context(request.conversation_history)
 

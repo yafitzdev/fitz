@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import time as _time
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import (
     query_has_code_obligation,
@@ -47,14 +47,11 @@ class RetrievalRouter:
         config: "FitzKragConfig",
         section_strategy: "SectionSearchStrategy | None" = None,
         table_strategy: "TableSearchStrategy | None" = None,
-        agentic_strategy: Any = None,
     ):
         self._code_strategy = code_strategy
         self._section_strategy = section_strategy
         self._table_strategy = table_strategy
         self._config = config
-        self._agentic_strategy = agentic_strategy
-        self._allow_llm_agentic = True
         self.last_trace: dict[str, Any] = {}
 
     def retrieve(
@@ -62,7 +59,6 @@ class RetrievalRouter:
         query: str,
         profile: Any = None,
         rewrite_result: "Any | None" = None,
-        progress: Callable[[str], None] | None = None,
     ) -> list[Address]:
         """
         Retrieve addresses using strategy weights from retrieval profile.
@@ -77,7 +73,6 @@ class RetrievalRouter:
         weights = profile.strategy_weights if profile else None
         all_addresses: list[Address] = []
         strategy_calls: list[dict[str, Any]] = []
-        agentic_trace: dict[str, Any] | None = None
 
         # Collect queries to run (original + profile expansions + multi-query)
         # Each entry is (query_text, tag) where tag is used for temporal metadata
@@ -109,18 +104,15 @@ class RetrievalRouter:
             for var in rewrite_variations[1:]:
                 tagged_queries.append((var, None))
 
-        run_agentic = profile.run_agentic if profile else True
         unique_queries = list(dict.fromkeys(q for q, _ in tagged_queries))
         logger.debug(
-            f"Retrieval gates: agentic={run_agentic}, "
-            f"type={profile.analysis_type if profile else 'none'}, "
+            f"Retrieval gates: type={profile.analysis_type if profile else 'none'}, "
             f"conf={profile.analysis_confidence if profile else 0:.2f}, "
             f"queries={len(unique_queries)}"
         )
 
         # Submit all strategy calls concurrently
         _t_strategies = _time.perf_counter()
-        _progress = progress or (lambda _: None)
         pool = ThreadPoolExecutor(max_workers=self._config.retrieval_workers)
         futures: list[tuple[Future, str | None, str, str]] = []
         try:
@@ -144,12 +136,6 @@ class RetrievalRouter:
                 ):
                     fut = pool.submit(self._run_strategy, self._table_strategy, q, limit, profile)
                     futures.append((fut, temporal_tag, type(self._table_strategy).__name__, q))
-
-            # Submit agentic search in the same pool
-            agentic_future: Future | None = None
-            if self._agentic_strategy and run_agentic and self._has_agentic_pending_files():
-                _progress("Supplemental scan: checking files still awaiting enriched index...")
-                agentic_future = pool.submit(self._run_agentic, query, limit, _progress)
 
             # Collect strategy results
             for fut, temporal_tag, strategy_name, strategy_query in futures:
@@ -180,21 +166,6 @@ class RetrievalRouter:
                     )
                     logger.warning(f"Strategy failed: {e}")
 
-            # Collect agentic results
-            if agentic_future:
-                try:
-                    agentic_addresses = agentic_future.result(timeout=600)
-                    all_addresses.extend(agentic_addresses)
-                    agentic_trace = {
-                        "enabled": True,
-                        "count": len(agentic_addresses),
-                        "addresses": addresses_trace(agentic_addresses),
-                    }
-                except Exception as e:
-                    agentic_trace = {"enabled": True, "count": 0, "error": str(e), "addresses": []}
-                    logger.warning(f"Agentic strategy failed: {e}")
-            else:
-                agentic_trace = {"enabled": False, "count": 0, "addresses": []}
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
 
@@ -247,7 +218,6 @@ class RetrievalRouter:
             ],
             "unique_query_count": len(unique_queries),
             "strategy_calls": strategy_calls,
-            "agentic": agentic_trace,
             "corpus_summary": corpus_summary_trace,
             "raw_candidate_count": len(raw_addresses),
             "raw_candidates": addresses_trace(raw_addresses),
@@ -275,44 +245,6 @@ class RetrievalRouter:
         except Exception as e:
             logger.warning(f"{type(strategy).__name__} failed for '{query[:50]}': {e}")
             return []
-
-    def _run_agentic(
-        self,
-        query: str,
-        limit: int,
-        progress: Callable[[str], None],
-    ) -> list[Address]:
-        """Run agentic search with progress reporting."""
-        try:
-            agentic_addresses = self._agentic_strategy.retrieve(
-                query, limit, allow_llm=self._allow_llm_agentic
-            )
-            if agentic_addresses:
-                paths = set()
-                for a in agentic_addresses:
-                    dp = a.metadata.get("disk_path")
-                    if dp:
-                        parts = dp.replace("\\", "/").split("/")
-                        paths.add(parts[-1] if parts else dp)
-                files_str = ", ".join(sorted(paths)[:5])
-                progress(
-                    f"Supplemental scan: added {len(agentic_addresses)} early candidate(s) "
-                    f"from {len(paths)} file(s) ({files_str})"
-                )
-            else:
-                progress("Supplemental scan: no early candidates found")
-            return [address for address in agentic_addresses if isinstance(address, Address)]
-        except Exception as e:
-            logger.warning(f"Agentic strategy failed: {e}")
-            return []
-
-    def _has_agentic_pending_files(self) -> bool:
-        """Check whether supplemental search has a not-query-ready file surface."""
-        try:
-            return bool(self._agentic_strategy.has_pending_files())
-        except Exception as e:
-            logger.debug(f"Agentic pending-file check failed: {e}")
-            return False
 
     def _tag_temporal(self, addresses: list[Address], ref_text: str) -> list[Address]:
         """Tag addresses with the temporal reference that produced them."""
