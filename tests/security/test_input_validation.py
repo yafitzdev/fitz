@@ -1,12 +1,4 @@
-# tests/security/test_input_validation.py
-"""
-Input validation and sanitization tests.
-
-Verify that malformed/adversarial inputs don't crash the pipeline.
-Uses 1-2 representative examples per category to stay under 2 min per test.
-
-Run with: pytest tests/security/test_input_validation.py -v -s -m security
-"""
+"""Malformed-query tests for the retrieval-first surface."""
 
 from __future__ import annotations
 
@@ -14,61 +6,50 @@ import pytest
 
 from fitz_sage.core import Query
 
-from .conftest import with_tiered_fallback
-
 pytestmark = pytest.mark.security
 
 
-class TestMalformedInputs:
-    """Tests for handling malformed query inputs."""
+@pytest.fixture
+def engine(krag_e2e_runner):
+    return krag_e2e_runner.engine
 
-    @pytest.fixture(autouse=True)
-    def setup_pipeline(self, krag_e2e_runner):
-        self.runner = krag_e2e_runner
 
-    def test_empty_query(self):
-        with pytest.raises(ValueError, match="cannot be empty"):
-            Query(text="")
+def test_empty_query_is_rejected() -> None:
+    with pytest.raises(ValueError, match="cannot be empty"):
+        Query(text="")
 
-    def test_whitespace_only_query(self):
-        for text in ["   ", "\t\n"]:
-            with pytest.raises(ValueError, match="cannot be empty"):
-                Query(text=text)
 
-    @with_tiered_fallback
-    def test_unicode_query(self):
-        """Unicode characters should not crash the pipeline."""
-        answer = self.runner.engine.answer(Query(text="What is TechCorp? 你好 🚗"))
-        assert answer is not None
+@pytest.mark.parametrize("text", ["   ", "\t\n"])
+def test_whitespace_only_query_is_rejected(text: str) -> None:
+    with pytest.raises(ValueError, match="cannot be empty"):
+        Query(text=text)
 
-    @with_tiered_fallback
-    def test_special_characters(self):
-        """SQL injection, XSS, excessive punctuation, whitespace should not crash."""
-        answer = self.runner.engine.answer(
-            Query(
-                text="TechCorp; DROP TABLE users;-- <script>alert('xss')</script>"
-                "???????? What\n\n  is    TechCorp?"
-            )
+
+def test_unicode_query_does_not_crash(engine) -> None:
+    pack = engine.evidence(Query(text="What is TechCorp? 你好 🚗"))
+
+    assert pack is not None
+
+
+def test_special_characters_are_data_not_commands(engine) -> None:
+    pack = engine.evidence(
+        Query(
+            text="TechCorp; DROP TABLE users;-- <script>alert('xss')</script>"
+            "???????? What\n\n  is    TechCorp?"
         )
-        assert answer is not None
-        assert "<script>" not in answer.text
+    )
+
+    assert pack is not None
+    assert all("<script>" not in (item.content or "") for item in pack.items)
 
 
-class TestInputLengthLimits:
-    """Tests for handling various input lengths."""
+def test_very_long_query_is_bounded(engine) -> None:
+    pack = engine.evidence(Query(text="What is TechCorp? " * 100))
 
-    @pytest.fixture(autouse=True)
-    def setup_pipeline(self, krag_e2e_runner):
-        self.runner = krag_e2e_runner
+    assert len(pack.items) <= engine.config.top_read
 
-    def test_very_long_query(self):
-        """Very long queries should be handled (truncated or rejected gracefully)."""
-        long_query = "What is TechCorp? " * 100
-        answer = self.runner.engine.answer(Query(text=long_query))
-        assert answer is not None
-        assert len(answer.text) < len(long_query)
 
-    def test_query_with_long_word(self):
-        long_word = "a" * 2000
-        answer = self.runner.engine.answer(Query(text=f"What is {long_word}?"))
-        assert answer is not None
+def test_single_very_long_token_does_not_crash(engine) -> None:
+    pack = engine.evidence(Query(text=f"What is {'a' * 2000}?"))
+
+    assert pack is not None

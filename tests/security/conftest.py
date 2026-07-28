@@ -1,27 +1,12 @@
 # tests/security/conftest.py
-"""
-Security test fixtures with tiered fallback support.
-
-Security tests run with local LLM first, then retry with cloud on failure.
-
-Imports e2e fixtures directly (not via root conftest to avoid parallel execution issues).
-"""
+"""Shared fixtures and markers for security tests."""
 
 from __future__ import annotations
 
-import functools
-from typing import Callable
-
 import pytest
 
-# Import e2e fixtures for security tests (these run serially, not in parallel)
+# Import e2e fixtures directly because these tests run serially.
 from tests.e2e_krag.conftest import *  # noqa: F401, F403
-
-
-# Mark all tests in this directory as tier4 and security
-def pytest_configure(config):
-    """Apply markers to all tests in this directory."""
-    pass
 
 
 def pytest_collection_modifyitems(items):
@@ -30,93 +15,3 @@ def pytest_collection_modifyitems(items):
         if "/security/" in str(item.fspath) or "\\security\\" in str(item.fspath):
             item.add_marker(pytest.mark.tier4)
             item.add_marker(pytest.mark.security)
-
-
-from tests.e2e_krag.config import get_tier_names, load_e2e_config
-
-
-def with_tiered_fallback(test_fn: Callable) -> Callable:
-    """
-    Decorator that retries a test with cloud tier if local tier fails.
-
-    Usage:
-        @with_tiered_fallback
-        def test_something(self):
-            answer = self.runner.engine.answer(Query(text="query"))
-            assert "expected" in answer.text
-    """
-
-    @functools.wraps(test_fn)
-    def wrapper(self, *args, **kwargs):
-        config = load_e2e_config()
-        tier_names = get_tier_names(config)
-
-        last_error = None
-        for tier_name in tier_names:
-            try:
-                # Switch to this tier
-                self.runner._rebuild_engine(tier_name)
-
-                # Run the test
-                test_fn(self, *args, **kwargs)
-
-                # Success - return
-                return
-            except (AssertionError, RuntimeError) as e:
-                last_error = e
-                # Continue to next tier
-
-        # All tiers failed
-        raise last_error
-
-    return wrapper
-
-
-@pytest.fixture
-def tiered_pipeline(krag_e2e_runner):
-    """
-    Fixture providing a pipeline that automatically retries with cloud tier.
-
-    Returns a callable that runs a query and assertion with tiered fallback.
-    """
-    from fitz_sage.core import Query
-
-    config = load_e2e_config()
-    tier_names = get_tier_names(config)
-
-    def run_with_fallback(query: str, assertion: Callable[[str], bool], error_msg: str = ""):
-        """
-        Run query through engine, retrying with cloud tier if assertion fails.
-
-        Args:
-            query: The query to run
-            assertion: Function taking answer string, returns True if passed
-            error_msg: Message to show on failure
-
-        Returns:
-            The answer text from the passing tier
-
-        Raises:
-            AssertionError: If all tiers fail the assertion
-        """
-        last_error = None
-        last_answer = ""
-
-        for tier_name in tier_names:
-            try:
-                krag_e2e_runner._rebuild_engine(tier_name)
-                answer = krag_e2e_runner.engine.answer(Query(text=query))
-                last_answer = answer.text
-
-                if assertion(answer.text):
-                    return answer.text
-                else:
-                    last_error = AssertionError(
-                        f"{error_msg or 'Assertion failed'} (tier={tier_name}): {last_answer[:200]}"
-                    )
-            except RuntimeError as e:
-                last_error = e
-
-        raise last_error or AssertionError(f"All tiers failed: {last_answer[:200]}")
-
-    return run_with_fallback

@@ -30,8 +30,8 @@ class TestHarnessOverhead:
     def test_retrieval_without_llm(self):
         """Pure retrieval (BM25 + keyword) should complete in < 5s.
 
-        Disables LLM-backed features (multi-query, agentic) on the router
-        to measure only the retrieval harness.
+        Disables LLM-backed multi-query expansion on the router to measure
+        only the retrieval harness.
         """
         from dataclasses import replace
 
@@ -40,11 +40,9 @@ class TestHarnessOverhead:
         engine = self.runner.engine
         router = engine._retrieval_router
         base_profile = build_retrieval_profile(None, None, engine._config)
-        profile = replace(base_profile, run_multi_query=False, run_agentic=False)
+        profile = replace(base_profile, run_multi_query=False)
 
-        saved_agentic = getattr(router, "_agentic_strategy", None)
         saved_chat = getattr(router, "_chat_factory", None)
-        router._agentic_strategy = None
         router._chat_factory = None
 
         try:
@@ -54,7 +52,6 @@ class TestHarnessOverhead:
                 router.retrieve("TechCorp electric vehicles", profile)
                 times.append((time.perf_counter() - start) * 1000)
         finally:
-            router._agentic_strategy = saved_agentic
             router._chat_factory = saved_chat
 
         p50 = sorted(times)[len(times) // 2]

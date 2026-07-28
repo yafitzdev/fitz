@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             start_worker=args.index_mode == "progressive",
         )
         if args.index_mode == "complete":
-            engine.continue_indexing()
+            engine.continue_enrichment()
         indexing_status = dict(engine.indexing_status())
         ingestion_duration = time.perf_counter() - ingestion_started
 
@@ -115,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         if args.reload_check:
-            engine.stop_background_indexing()
+            engine.stop_background_enrichment()
             engine = None
             gc.collect()
             reloaded = _create_engine(args.engine, governance=args.governance)
@@ -149,10 +149,10 @@ def main(argv: list[str] | None = None) -> int:
                         flush=True,
                     )
             finally:
-                reloaded.stop_background_indexing()
+                reloaded.stop_background_enrichment()
     finally:
         if engine is not None:
-            engine.stop_background_indexing()
+            engine.stop_background_enrichment()
 
     ingestion = _ingestion_report(manifest, indexing_status, ingestion_duration)
     summary = _summary(records)
@@ -234,9 +234,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None, help="Limit number of cases.")
     parser.add_argument(
         "--index-mode",
-        choices=("complete", "progressive"),
+        choices=("source", "complete", "progressive"),
         default="complete",
-        help="Complete indexing before queries, or query while the worker runs.",
+        help=(
+            "Query the source index only, wait for full enrichment, or query "
+            "while background enrichment runs."
+        ),
     )
     parser.add_argument(
         "--report-detail",
