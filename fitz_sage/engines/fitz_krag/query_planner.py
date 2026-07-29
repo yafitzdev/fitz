@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
@@ -18,7 +18,7 @@ from fitz_sage.retrieval.detection.modules import (
     TemporalModule,
 )
 from fitz_sage.retrieval.detection.registry import DetectionSummary
-from fitz_sage.retrieval.rewriter.types import RewriteResult
+from fitz_sage.retrieval.rewriter.types import RewriteResult, RewriteType
 
 _STOP_WORDS = {
     "what",
@@ -95,6 +95,19 @@ _MONTH_PATTERN = (
     r"\b(?:january|february|march|april|may|june|july|august|september|"
     r"october|november|december)(?:\s+\d{4})?\b"
 )
+_CLAUSE_HEAD = (
+    r"(?:what|which|who|where|when|why|how|"
+    r"is|are|was|were|do|does|did|can|could|should|would|"
+    r"list|show|find|identify|provide|give|return|tell|explain|describe)\b"
+)
+_EXPLICIT_CLAUSE_BOUNDARY = re.compile(
+    rf"(?:"
+    rf"[?;]\s*(?:(?:and|but|also|then)\s+)?|"
+    rf"(?:,\s*)?(?:and|but)\s+(?:also\s+)?|"
+    rf"\n+\s*(?:[-*]\s*)?"
+    rf")(?={_CLAUSE_HEAD})",
+    flags=re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -122,7 +135,7 @@ class DeterministicQueryPlanner:
             retrieval_query=query,
             analysis=deterministic_analysis(query, terms),
             detection=detection,
-            rewrite_result=None,
+            rewrite_result=_deterministic_decomposition(query),
             extended_signals={
                 "specificity": _specificity(query, detection),
                 "answer_type": answer_type,
@@ -142,7 +155,10 @@ def plan_from_batch_result(
 ) -> QueryPlan:
     """Normalize configured LLM query-prep output into a QueryPlan."""
     retrieval_query = query
-    rewrite_result = batch_result.rewrite_result
+    rewrite_result = _merge_rewrite_results(
+        batch_result.rewrite_result,
+        fallback_plan.rewrite_result if fallback_plan else None,
+    )
     if rewrite_result and rewrite_result.rewritten_query != query:
         retrieval_query = rewrite_result.rewritten_query
 
@@ -154,6 +170,42 @@ def plan_from_batch_result(
         extended_signals=batch_result.extended_signals
         or (fallback_plan.extended_signals if fallback_plan else None),
         keywords=batch_result.keywords or (fallback_plan.keywords if fallback_plan else []),
+    )
+
+
+def _merge_rewrite_results(
+    preferred: RewriteResult | None,
+    deterministic: RewriteResult | None,
+) -> RewriteResult | None:
+    """Keep explicit deterministic decomposition unless a model supplies one."""
+    if (
+        deterministic is None
+        or not deterministic.is_compound
+        or not deterministic.decomposed_queries
+    ):
+        return preferred
+    if preferred is None:
+        return deterministic
+    if preferred.is_compound and preferred.decomposed_queries:
+        return preferred
+
+    rewrite_type = (
+        RewriteType.DECOMPOSITION
+        if preferred.rewrite_type in {RewriteType.NONE, RewriteType.DECOMPOSITION}
+        else RewriteType.COMBINED
+    )
+    metadata = dict(preferred.metadata)
+    metadata["decomposition_source"] = deterministic.metadata.get(
+        "source",
+        "deterministic",
+    )
+    return replace(
+        preferred,
+        rewrite_type=rewrite_type,
+        confidence=max(preferred.confidence, deterministic.confidence),
+        is_compound=True,
+        decomposed_queries=list(deterministic.decomposed_queries),
+        metadata=metadata,
     )
 
 
@@ -214,6 +266,32 @@ def content_terms(query: str) -> list[str]:
             continue
         terms.append(token)
     return terms
+
+
+def _deterministic_decomposition(query: str) -> RewriteResult | None:
+    """Split only explicit multi-question syntax into focused retrieval legs."""
+    raw_parts = _EXPLICIT_CLAUSE_BOUNDARY.split(query.strip())
+    parts: list[str] = []
+    seen: set[str] = set()
+    for raw_part in raw_parts:
+        part = re.sub(r"^\s*[-*]\s*", "", raw_part).strip(" \t\r\n?;,")
+        key = part.casefold()
+        if len(part) < 3 or not content_terms(part) or key in seen:
+            continue
+        seen.add(key)
+        parts.append(part)
+
+    if len(parts) < 2:
+        return None
+    return RewriteResult(
+        original_query=query,
+        rewritten_query=query,
+        rewrite_type=RewriteType.DECOMPOSITION,
+        confidence=1.0,
+        is_compound=True,
+        decomposed_queries=parts[:5],
+        metadata={"source": "deterministic_explicit_clauses"},
+    )
 
 
 def _temporal_detection(query: str):

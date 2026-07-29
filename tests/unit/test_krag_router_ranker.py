@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
 from fitz_sage.engines.fitz_krag.retrieval.ranker import (
     ENTITY_MATCH_BONUS,
     CrossStrategyRanker,
@@ -343,6 +344,50 @@ class TestRetrievalRouter:
         result = RetrievalRouter._enforce_strategy_coverage(addresses, 5)
 
         assert result == addresses[:5]
+
+    def test_compound_query_preserves_one_candidate_per_successful_leg(self):
+        """Strong original-query hits must not erase explicit sub-question recall."""
+        query = "What is the refund window, and who approves exceptions?"
+        plan = DeterministicQueryPlanner().plan(query)
+        assert plan.rewrite_result is not None
+        refund_query, approver_query = plan.rewrite_result.decomposed_queries
+
+        code_strat = MagicMock()
+
+        def retrieve(strategy_query, _limit, detection=None):
+            del detection
+            if strategy_query == refund_query:
+                return [_addr(source_id="refund", location="refund", score=0.10)]
+            if strategy_query == approver_query:
+                return [_addr(source_id="approver", location="approver", score=0.09)]
+            return [
+                _addr(source_id="noise-a", location="noise-a", score=0.99),
+                _addr(source_id="noise-b", location="noise-b", score=0.98),
+            ]
+
+        code_strat.retrieve.side_effect = retrieve
+        router = RetrievalRouter(
+            code_strategy=code_strat,
+            config=_make_config(top_addresses=2),
+        )
+
+        result = router.retrieve(
+            query,
+            _code_profile(top_k=2),
+            rewrite_result=plan.rewrite_result,
+        )
+
+        assert len(result) == 2
+        assert {address.source_id for address in result} == {"refund", "approver"}
+        assert {call.args[0] for call in code_strat.retrieve.call_args_list} >= {
+            query,
+            refund_query,
+            approver_query,
+        }
+        assert {tuple(address.metadata["retrieval_queries"]) for address in result} == {
+            (refund_query,),
+            (approver_query,),
+        }
 
 
 # ---------------------------------------------------------------------------

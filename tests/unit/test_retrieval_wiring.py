@@ -107,6 +107,18 @@ class TestRouterRewriteVariations:
         # 3 total calls: original + 2 variations
         assert code_strategy.retrieve.call_count == 3
 
+    def test_router_runs_original_and_rewritten_queries_once_each(self):
+        """A rewritten primary query must not duplicate itself or hide the original."""
+        code_strategy = MagicMock()
+        code_strategy.retrieve = MagicMock(return_value=[])
+        router = _make_router(code_strategy=code_strategy)
+        rewrite_result = SimpleNamespace(all_query_variations=["original", "rewritten"])
+
+        router.retrieve("rewritten", rewrite_result=rewrite_result)
+
+        code_calls = [call.args[0] for call in code_strategy.retrieve.call_args_list]
+        assert code_calls == ["rewritten", "original"]
+
 
 class TestRouterUsesDetectionComparisonQueries:
     """Test 4: Router uses comparison_queries from RetrievalProfile."""

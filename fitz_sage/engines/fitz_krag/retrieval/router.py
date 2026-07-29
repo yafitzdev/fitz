@@ -17,6 +17,12 @@ from fitz_sage.engines.fitz_krag.evidence_compiler import (
     query_has_code_obligation,
     query_has_table_obligation,
 )
+from fitz_sage.engines.fitz_krag.retrieval.query_coverage import (
+    compound_queries,
+    ensure_query_coverage,
+    merge_retrieval_provenance,
+    tag_retrieval_query,
+)
 from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
@@ -98,12 +104,12 @@ class RetrievalRouter:
             if profile.keywords:
                 tagged_queries.append((" ".join(profile.keywords), None))
 
-        # Multi-query: the rewriter's decomposed sub-queries (skip [0] = original).
+        # Rewrites, decomposed clauses, and ambiguity branches are all recall legs.
         rewrite_variations = rewrite_result.all_query_variations if rewrite_result else []
-        if len(rewrite_variations) > 1:
-            for var in rewrite_variations[1:]:
-                tagged_queries.append((var, None))
+        for variation in rewrite_variations:
+            tagged_queries.append((variation, None))
 
+        tagged_queries = list(dict.fromkeys(tagged_queries))
         unique_queries = list(dict.fromkeys(q for q, _ in tagged_queries))
         logger.debug(
             f"Retrieval gates: type={profile.analysis_type if profile else 'none'}, "
@@ -141,6 +147,7 @@ class RetrievalRouter:
             for fut, temporal_tag, strategy_name, strategy_query in futures:
                 try:
                     batch = fut.result(timeout=600)
+                    batch = tag_retrieval_query(batch, strategy_query)
                     strategy_call = {
                         "strategy": strategy_name,
                         "query": strategy_query,
@@ -184,6 +191,7 @@ class RetrievalRouter:
                 corpus_addresses = self._section_strategy.retrieve(
                     query, limit=limit, detection=profile, inject_corpus_summaries=True
                 )
+                corpus_addresses = tag_retrieval_query(corpus_addresses, query)
                 all_addresses.extend(corpus_addresses)
                 corpus_summary_trace["count"] = len(corpus_addresses)
                 corpus_summary_trace["addresses"] = addresses_trace(corpus_addresses)
@@ -208,6 +216,13 @@ class RetrievalRouter:
         # File diversity: prevent one file from monopolizing all read slots
         ranked = self._enforce_file_diversity(ranked)
         final = self._enforce_strategy_coverage(ranked, limit)
+        required_queries = compound_queries(rewrite_result)
+        final = ensure_query_coverage(
+            ranked,
+            final,
+            required_queries,
+            limit=limit,
+        )
         self.last_trace = {
             "query": query,
             "limit": limit,
@@ -217,6 +232,7 @@ class RetrievalRouter:
                 for query_text, temporal_tag in tagged_queries
             ],
             "unique_query_count": len(unique_queries),
+            "compound_queries": required_queries,
             "strategy_calls": strategy_calls,
             "corpus_summary": corpus_summary_trace,
             "raw_candidate_count": len(raw_addresses),
@@ -267,7 +283,7 @@ class RetrievalRouter:
         return tagged
 
     def _deduplicate(self, addresses: list[Address]) -> list[Address]:
-        """Deduplicate addresses by source_id+location, merging temporal tags."""
+        """Deduplicate addresses while retaining query-leg provenance."""
         seen: dict[tuple[str, str], int] = {}
         result: list[Address] = []
 
@@ -277,27 +293,8 @@ class RetrievalRouter:
                 seen[key] = len(result)
                 result.append(addr)
             else:
-                # Merge temporal_refs from duplicate into existing address
-                new_refs = addr.metadata.get("temporal_refs", [])
-                if new_refs:
-                    idx = seen[key]
-                    existing = result[idx]
-                    existing_refs = existing.metadata.get("temporal_refs", [])
-                    merged_refs = list(existing_refs)
-                    for ref in new_refs:
-                        if ref not in merged_refs:
-                            merged_refs.append(ref)
-                    if merged_refs != existing_refs:
-                        meta = dict(existing.metadata)
-                        meta["temporal_refs"] = merged_refs
-                        result[idx] = Address(
-                            kind=existing.kind,
-                            source_id=existing.source_id,
-                            location=existing.location,
-                            summary=existing.summary,
-                            score=max(existing.score, addr.score),
-                            metadata=meta,
-                        )
+                idx = seen[key]
+                result[idx] = merge_retrieval_provenance(result[idx], addr)
 
         return result
 

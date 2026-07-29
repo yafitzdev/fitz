@@ -93,6 +93,41 @@ class TestRetrievalPass:
         assert rp.last_trace["reranker"]["candidate_count"] == 3
         assert rp.last_trace["reranker"]["recall_pool_count"] == 8
 
+    def test_rerank_preserves_each_successful_compound_query_leg(self):
+        """Reranking may reorder query legs but must not erase one entirely."""
+        refund_query = "What is the refund window"
+        approver_query = "who approves exceptions"
+        refund = _addr(
+            "refund",
+            source_id="refund",
+            metadata={"retrieval_queries": [refund_query]},
+        )
+        approver = _addr(
+            "approver",
+            source_id="approver",
+            metadata={"retrieval_queries": [approver_query]},
+        )
+        noise_a = _addr("noise-a", source_id="noise-a")
+        noise_b = _addr("noise-b", source_id="noise-b")
+        rp, _router, reranker, _reader = _build([refund, approver, noise_a, noise_b])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = [noise_a, noise_b]
+        rewrite_result = SimpleNamespace(
+            is_compound=True,
+            decomposed_queries=[refund_query, approver_query],
+        )
+
+        results = rp.run(
+            "What is the refund window, and who approves exceptions?",
+            rewrite_result=rewrite_result,
+        )
+
+        assert len(results) == 2
+        assert {result.address.source_id for result in results} == {
+            "refund",
+            "approver",
+        }
+
     def test_empty_retrieval_returns_empty(self):
         rp, router, reranker, reader = _build([])
 

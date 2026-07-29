@@ -1,99 +1,95 @@
-# Multi-Query RAG
+# Multi-Query Retrieval
 
 ## Problem
 
-Standard RAG takes a large query (e.g., a full test report + spec
-excerpt + requirements doc) and uses it as one BM25 query. The TF
-distribution gets flat, the relevant tokens drown in surrounding
-context, and FTS5 returns mostly noise.
+A compound question can contain several independent retrieval obligations. A
+single BM25 result list may be dominated by the easiest clause, leaving no
+evidence for the others.
 
-## Solution: optional query decomposition
+For example:
 
-When `query_intelligence:` is configured, the query-prep rewrite section can
-decompose a compound query into focused sub-queries, each run as its own
-targeted FTS5 search. Without query intelligence, the deterministic planner
-runs the original query plus cheaper keyword/intent fanout.
-
-## How it works
-
-```
-Query comes in
-    │
-    ▼
-Optional query-intelligence rewrite section
-    │
-    ├─ single-topic query  → one FTS5 + bm25() search
-    │
-    └─ compound / multi-topic query
-           │
-           ▼
-       is_compound = true  →  focused decomposed sub-queries
-           │
-           ▼
-       FTS5 + bm25() per sub-query  →  Dedupe  →  Rerank  →  Return
+```text
+What is the refund window, and who approves exceptions?
 ```
 
-## Key Design Decisions
+The policy duration and the approval owner may live in different documents.
 
-1. **Optional endpoint-backed enhancement** - Enable with `query_intelligence:` when compound-query decomposition is worth the endpoint call.
+## Default Behavior
 
-2. **Batched with other query intelligence** - Decomposition is one section of the query-prep call; it adds no extra round-trip beyond that optional call.
+The deterministic query planner recognizes explicit clause boundaries such as
+separate question marks, semicolons, and a new question or command after
+`and`/`but`. It keeps the original query and adds bounded clause-specific BM25
+searches:
 
-3. **Content-based** - Triggers when the query covers multiple distinct topics or points — not by length.
-
-4. **LLM handles extraction** - No regex or entity configuration. The configured query-intelligence model figures out what's important.
-
-5. **Explicit failure semantics** - If `query_intelligence:` is configured, the provider must return valid query-prep JSON. Without `query_intelligence:`, retrieval uses deterministic planning plus keyword/intent fanout.
-
-## Example
-
-**Input (long test report):**
-```
-Test TC_CAN_001 failed with error 0x4F on CAN Bus module.
-The test was checking timeout behavior and got "no response" after 500ms.
-Expected: ACK within 100ms. Actual: Timeout.
-...
+```text
+Original: What is the refund window, and who approves exceptions?
+Leg 1:    What is the refund window
+Leg 2:    who approves exceptions
 ```
 
-**LLM extracts:**
-```json
-["TC_CAN_001 known issues", "CAN Bus timeout", "error 0x4F", "no response timeout"]
+Ordinary conjunctions remain intact:
+
+```text
+What are the retention and deletion policies?
+Compare React and Vue performance.
+How do I install and configure the agent?
 ```
 
-**Result:** 4 targeted searches instead of 1 diluted search. Better retrieval precision.
+This is query-shape parsing, not semantic rewriting.
 
-## Configuration
+## Retrieval Flow
+
+```text
+original query
+    |
+    +-- deterministic explicit clauses
+    |
+    +-- optional query-intelligence decomposition
+             |
+             v
+        BM25 per query leg
+             |
+             v
+    merge duplicates and retain query-leg provenance
+             |
+             v
+       fuse and rerank within fixed budgets
+             |
+             v
+ preserve one hit from each successful explicit leg when the budget permits
+```
+
+The package does not create placeholder evidence for a leg that found nothing,
+and it does not increase the configured result budget to force coverage.
+
+## Optional Query Intelligence
+
+Configure `query_intelligence:` when implicit, conversational, or structurally
+messy compound questions need model-assisted decomposition. A valid
+model-provided decomposition takes precedence. If the model returns no
+decomposition, deterministic explicit clauses remain active alongside any
+model rewrite.
 
 ```yaml
 query_intelligence: endpoint/qwen2.5-7b-instruct
 chat_base_url: http://localhost:8080/v1
 ```
 
-Leave `query_intelligence: null` for the default no-endpoint path.
+Leave `query_intelligence: null` for the default local path.
 
-## Benefits
+## Boundaries
 
-| Standard RAG | Multi-Query RAG |
-|--------------|-----------------|
-| 1 diluted query | N targeted queries |
-| Random chunks | Relevant chunks |
-| LLM filters noise | LLM analyzes |
-| ~30-50% precision | ~60-80% precision |
+Fitz-Sage does not infer that differently written identifiers or domain terms
+mean the same thing. It also does not clean, compress, or reinterpret raw logs
+before retrieval. Applications must normalize source data and provide
+domain-specific vocabulary outside Fitz-Sage.
 
-## Use Cases
-
-- Test failure analysis (automotive, QA)
-- Log analysis with structured data
-- Support ticket routing with metadata
-- Any scenario with long, structured input + unstructured knowledge base
+The deterministic splitter intentionally handles only explicit syntax. It does
+not guess how an implicit multi-topic sentence should be decomposed.
 
 ## Related
 
-- [Semantic Query Keywords](query-expansion.md) — managed-Qwen recall terms
-  expansion; complements multi-query
-- [Sparse Search (FTS5 + bm25)](sparse-search.md) — what each
-  sub-query actually hits
-- [Hierarchical RAG](../ingestion/hierarchical-rag.md) — summaries
-  help when multi-query extracts high-level themes
-- [Reranking](reranking.md) — the ONNX cross-encoder step that follows
-  the merged sub-query results
+- [Semantic Query Keywords](query-expansion.md) - managed-Qwen recall-term
+  expansion
+- [Sparse Search](sparse-search.md) - FTS5 and `bm25()` used for each query leg
+- [Reranking](reranking.md) - the bounded ONNX cross-encoder precision stage

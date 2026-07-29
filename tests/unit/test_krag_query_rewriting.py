@@ -143,6 +143,11 @@ class TestQueryRewriting:
         # Router uses original query (rewrite returned same text)
         call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == query.text
+        assert call_args[1]["rewrite_result"].is_compound
+        assert call_args[1]["rewrite_result"].decomposed_queries == [
+            "What is the login function",
+            "how does it validate user credentials",
+        ]
 
         assert result is expected
 
@@ -163,8 +168,8 @@ class TestQueryRewriting:
         engine._query_batcher.batch_classify.assert_called_once()
         engine._retrieval_router.retrieve.assert_not_called()
 
-    def test_rewriting_skipped_when_rewriter_is_none(self):
-        """When _query_rewriter is None, the original query flows through directly."""
+    def test_default_planner_decomposes_explicit_compound_query(self):
+        """Explicit clauses are decomposed without rewriting the original query."""
         engine = _make_engine()
         query = _make_query(
             "Where is the UserService class defined and what methods does it expose?"
@@ -175,9 +180,16 @@ class TestQueryRewriting:
 
         result = engine.answer(query)
 
-        # Router uses original query with no rewrite_result
+        # The router keeps the original query and receives explicit retrieval legs.
         call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == query.text
-        assert call_args[1]["rewrite_result"] is None
+        rewrite_result = call_args[1]["rewrite_result"]
+        assert rewrite_result is not None
+        assert rewrite_result.is_compound
+        assert rewrite_result.rewritten_query == query.text
+        assert rewrite_result.decomposed_queries == [
+            "Where is the UserService class defined",
+            "what methods does it expose",
+        ]
 
         assert result is expected

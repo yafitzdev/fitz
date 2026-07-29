@@ -68,7 +68,7 @@ queries to the right strategy.
 
 ```
 Query
- ├─► Query prep (deterministic signals + managed Qwen semantic keywords)
+ ├─► Query prep (deterministic signals, explicit clauses, managed Qwen keywords)
  ├─► Optional query intelligence (rewrite / analyze / detect)
  ├─► Router (symbol search · section search · table metadata)
 │    └─► FTS5 + bm25() over per-collection .db

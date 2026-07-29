@@ -21,6 +21,10 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import order_addresses_for_contract
+from fitz_sage.engines.fitz_krag.retrieval.query_coverage import (
+    compound_queries,
+    ensure_query_coverage,
+)
 from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace, read_results_trace
 from fitz_sage.engines.fitz_krag.types import ReadResult
 
@@ -156,6 +160,12 @@ class RetrievalPass:
             reranker_trace["candidate_count"] = len(rerank_inputs)
             reranker_trace["recall_pool_count"] = len(candidates)
             addresses = _ensure_concrete_row_coverage(candidates, addresses, profile)
+            addresses = ensure_query_coverage(
+                candidates,
+                addresses,
+                compound_queries(rewrite_result),
+                limit=len(addresses),
+            )
             addresses = order_addresses_for_contract(
                 query,
                 candidates,

@@ -4,8 +4,13 @@
 from __future__ import annotations
 
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryType
-from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
+from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
+from fitz_sage.engines.fitz_krag.query_planner import (
+    DeterministicQueryPlanner,
+    plan_from_batch_result,
+)
 from fitz_sage.retrieval.detection.modules import AggregationType, TemporalIntent
+from fitz_sage.retrieval.rewriter.types import RewriteResult, RewriteType
 
 
 class TestDeterministicQueryPlanner:
@@ -193,3 +198,72 @@ class TestDeterministicQueryPlanner:
         assert "TC_1000" in plan.keywords
         assert "TC-1000" not in plan.keywords
         assert "TC 1000" not in plan.keywords
+
+    def test_decomposes_explicit_compound_questions(self):
+        """Independent clauses should become separate retrieval legs."""
+        planner = DeterministicQueryPlanner()
+
+        examples = {
+            "What is the refund window, and who approves exceptions?": [
+                "What is the refund window",
+                "who approves exceptions",
+            ],
+            "What is the SLA? Who owns escalation?": [
+                "What is the SLA",
+                "Who owns escalation",
+            ],
+            "List failed tests; then show their owners.": [
+                "List failed tests",
+                "show their owners.",
+            ],
+            "What failed?\n- Where is the runbook?": [
+                "What failed",
+                "Where is the runbook",
+            ],
+        }
+
+        for query, expected in examples.items():
+            plan = planner.plan(query)
+            assert plan.retrieval_query == query
+            assert plan.rewrite_result is not None
+            assert plan.rewrite_result.is_compound
+            assert plan.rewrite_result.decomposed_queries == expected
+
+    def test_does_not_split_ordinary_conjunctions_or_comparisons(self):
+        """Shared predicates and entity lists are one retrieval question."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "What are the retention and deletion policies?",
+            "Compare React and Vue performance.",
+            "How do I install and configure the agent?",
+            "Which alerts and incidents affected checkout?",
+        ):
+            assert planner.plan(query).rewrite_result is None
+
+    def test_model_rewrite_keeps_deterministic_explicit_decomposition(self):
+        """Optional query intelligence should enhance, not erase, query shape."""
+        query = "What is the refund window, and who approves exceptions?"
+        fallback = DeterministicQueryPlanner().plan(query)
+        model_rewrite = RewriteResult(
+            original_query=query,
+            rewritten_query="refund window and exception approval policy",
+            rewrite_type=RewriteType.RETRIEVAL,
+            confidence=0.8,
+        )
+
+        plan = plan_from_batch_result(
+            query,
+            BatchResult(rewrite_result=model_rewrite),
+            fallback_analysis=fallback.analysis,
+            detection=fallback.detection,
+            fallback_plan=fallback,
+        )
+
+        assert plan.retrieval_query == model_rewrite.rewritten_query
+        assert plan.rewrite_result is not None
+        assert plan.rewrite_result.rewrite_type is RewriteType.COMBINED
+        assert plan.rewrite_result.decomposed_queries == [
+            "What is the refund window",
+            "who approves exceptions",
+        ]

@@ -201,7 +201,7 @@ the configured synthesizer. This is separate from the retrieval package default.
 | Sparse BM25 / keyword vocabulary | Broad recall backbone. |
 | Managed Qwen semantic query keywords | Broad recall expansion in the default no-endpoint path. |
 | Query rewriting | Optional `query_intelligence` enhancement for conversational context or ambiguous phrasing. |
-| Multi-query decomposition | Optional `query_intelligence` enhancement for compound questions. |
+| Multi-query decomposition | Deterministic explicit-clause fanout; optional `query_intelligence` handles implicit or conversational compounds. |
 | Comparison / temporal / aggregation / freshness detection | Deterministic default signals, optionally improved by query intelligence. |
 | Entity graph | Context expansion after full enrichment. |
 | Hierarchical summaries | Fully indexed recall for broad analytical questions. |

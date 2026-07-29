@@ -96,7 +96,7 @@ contract-driven evidence closure may issue bounded follow-up retrieval before
 the fixed delivery set is submitted to Pyrrho.
 
 ```
-1  Query prep      deterministic plan + Qwen semantic keywords
+1  Query prep      deterministic plan, explicit clauses, Qwen semantic keywords
                    optional query_intelligence rewrite/analyze/detect
 2  Broad recall    symbol / section / table BM25 and intent fanout
 3  Fuse            merge across strategies and deduplicate
