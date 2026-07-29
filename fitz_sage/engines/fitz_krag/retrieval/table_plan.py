@@ -47,6 +47,7 @@ _STOPWORDS = {
 }
 _BOOLEAN_TRUE = {"1", "active", "enabled", "true", "yes", "on"}
 _BOOLEAN_FALSE = {"0", "disabled", "false", "inactive", "no", "off"}
+_BOOLEAN_NEGATORS = {"no", "not", "without"}
 _MIN_UNPREFIXED_ROOT_LENGTH = 4
 _NEGATIVE_QUERY_TERMS = {
     "disabled",
@@ -268,19 +269,49 @@ def _row_predicates(
 
 
 def _boolean_predicate_values(column: ColumnBinding, query_text: str) -> set[str]:
-    column_terms = set(column.tokens)
-    query_terms = set(query_text.split())
-    negated_column_reference = any(
-        _is_unprefixed_column_reference(query_term, column_terms)
-        for query_term in query_terms
+    polarity_terms = _NEGATIVE_QUERY_TERMS | _POSITIVE_QUERY_TERMS
+    column_terms = {
+        term for term in column.tokens if term not in _STOPWORDS or term in polarity_terms
+    }
+    query_terms = tuple(
+        term
+        for term in query_text.split()
+        if term not in _STOPWORDS or term in polarity_terms
     )
-    has_column_reference = bool(column_terms & query_terms) or negated_column_reference
-    if not has_column_reference:
+    reference_indices = [
+        index
+        for index, term in enumerate(query_terms)
+        if term in column_terms or _is_unprefixed_column_reference(term, column_terms)
+    ]
+    if not reference_indices:
         return set()
 
-    if negated_column_reference or query_terms & _NEGATIVE_QUERY_TERMS:
+    if any(
+        _is_unprefixed_column_reference(query_terms[index], column_terms)
+        for index in reference_indices
+    ):
         return _BOOLEAN_FALSE
-    if query_terms & _POSITIVE_QUERY_TERMS:
+    if any(
+        index > 0 and query_terms[index - 1] in _BOOLEAN_NEGATORS
+        for index in reference_indices
+    ):
+        return _BOOLEAN_FALSE
+
+    direct_state_terms = {
+        query_terms[index] for index in reference_indices if query_terms[index] in polarity_terms
+    }
+    if direct_state_terms:
+        return _BOOLEAN_TRUE
+
+    neighboring_terms = {
+        query_terms[neighbor]
+        for index in reference_indices
+        for neighbor in (index - 1, index + 1)
+        if 0 <= neighbor < len(query_terms)
+    }
+    if neighboring_terms & (_NEGATIVE_QUERY_TERMS - _BOOLEAN_NEGATORS):
+        return _BOOLEAN_FALSE
+    if neighboring_terms & _POSITIVE_QUERY_TERMS:
         return _BOOLEAN_TRUE
     return set()
 

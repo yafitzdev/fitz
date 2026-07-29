@@ -463,6 +463,49 @@ class TestTableQueryHandler:
             }
         ]
 
+    def test_deterministic_table_plan_binds_negation_to_its_boolean_column(self):
+        """One negated condition must not invert another boolean condition."""
+        sqlite_table_store = MagicMock(name="sqlite_table_store")
+        sqlite_table_store.get_table_name.return_value = "tbl_services"
+        sqlite_table_store.get_columns.return_value = (
+            ["service", "active", "managed"],
+            ["service", "active", "managed"],
+        )
+        sqlite_table_store.get_row_count.return_value = 3
+        sqlite_table_store.execute_query.return_value = (
+            ["service", "active", "managed"],
+            [
+                ["api", "yes", "no"],
+                ["worker", "no", "no"],
+                ["web", "yes", "yes"],
+            ],
+        )
+        config = MagicMock(name="config")
+        config.max_table_results = 100
+        handler = TableQueryHandler(None, sqlite_table_store, config)
+        table_result = _make_table_read_result(name="Services")
+
+        results = handler.process(
+            "Which active service is not managed?",
+            [table_result],
+        )
+
+        assert "| api | yes | no |" in results[0].content
+        assert "| worker |" not in results[0].content
+        assert "| web |" not in results[0].content
+        assert results[0].metadata["table_query_plan"]["predicates"] == [
+            {
+                "column": "active",
+                "accepted_values": ["1", "active", "enabled", "on", "true", "yes"],
+                "source": "boolean_column",
+            },
+            {
+                "column": "managed",
+                "accepted_values": ["0", "disabled", "false", "inactive", "no", "off"],
+                "source": "boolean_column",
+            },
+        ]
+
 
 class TestHelperMethods:
     def test_format_as_markdown_empty(self):
