@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
+from types import SimpleNamespace
 
 import pytest
 
+from fitz_sage.llm.providers import onnx_chat as onnx_chat_module
 from fitz_sage.llm.providers.onnx_chat import (
     DEFAULT_QWEN_MODEL_ID,
     DEFAULT_QWEN_ONNX_FILE,
@@ -16,6 +18,15 @@ from fitz_sage.llm.providers.onnx_chat import (
     OnnxChat,
     OnnxChatModelError,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_runtime_cache():
+    with onnx_chat_module._ONNX_CHAT_RUNTIME_CACHE_LOCK:
+        onnx_chat_module._ONNX_CHAT_RUNTIME_CACHE.clear()
+    yield
+    with onnx_chat_module._ONNX_CHAT_RUNTIME_CACHE_LOCK:
+        onnx_chat_module._ONNX_CHAT_RUNTIME_CACHE.clear()
 
 
 def _snapshot(tmp_path, *, with_model: bool = True):
@@ -147,3 +158,44 @@ def test_ensure_available_wraps_download_failures(monkeypatch):
     chat = OnnxChat()
     with pytest.raises(OnnxChatModelError, match="Could not download"):
         chat.ensure_available()
+
+
+def test_identical_model_specs_share_one_native_runtime(monkeypatch, tmp_path):
+    """Collection-local providers share one heavyweight GenAI model."""
+    model_calls: list[str] = []
+    model = object()
+    genai_tokenizer = object()
+    info = SimpleNamespace(snapshot_dir=str(tmp_path))
+
+    def fake_model(path):
+        model_calls.append(path)
+        return model
+
+    runtime = SimpleNamespace(
+        Model=fake_model,
+        Tokenizer=lambda loaded_model: genai_tokenizer,
+    )
+    monkeypatch.setattr(GenAiRuntimeBundle, "require_genai", staticmethod(lambda: runtime))
+    monkeypatch.setattr(
+        GenAiRuntimeBundle,
+        "prepare",
+        lambda self, model_info: tmp_path,
+    )
+    monkeypatch.setattr(
+        OnnxChat,
+        "ensure_available",
+        lambda self, include_checksum=False: info,
+    )
+    monkeypatch.setattr(
+        OnnxChat,
+        "_load_tokenizer",
+        lambda self, snapshot_dir: object(),
+    )
+
+    first = OnnxChat()
+    second = OnnxChat()
+    first._load()
+    second._load()
+
+    assert model_calls == [str(tmp_path)]
+    assert first._loaded_runtime is second._loaded_runtime

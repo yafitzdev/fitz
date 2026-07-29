@@ -318,6 +318,18 @@ class OnnxGenAiGenerator:
         return params
 
 
+@dataclass(frozen=True)
+class _LoadedOnnxChatRuntime:
+    """Process-shared native runtime for one managed model artifact."""
+
+    generator: OnnxGenAiGenerator
+    run_lock: threading.Lock
+
+
+_ONNX_CHAT_RUNTIME_CACHE: dict[tuple[str, str, str], _LoadedOnnxChatRuntime] = {}
+_ONNX_CHAT_RUNTIME_CACHE_LOCK = threading.Lock()
+
+
 def _strip_thinking(text: str) -> str:
     """Remove Qwen reasoning blocks from completed responses."""
     text = _THINK_RE.sub("", text)
@@ -396,11 +408,8 @@ class OnnxChat:
         self._runtime = GenAiRuntimeBundle(spec)
         self._max_new_tokens = max_new_tokens
         self._load_lock = threading.RLock()
-        self._run_lock = threading.Lock()
         self._model_info: OnnxChatModelInfo | None = None
-        self._tokenizer: Any = None
-        self._generator: OnnxGenAiGenerator | None = None
-        self._runtime_dir: Path | None = None
+        self._loaded_runtime: _LoadedOnnxChatRuntime | None = None
 
     def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> str:
         """Generate a chat completion with deterministic local ONNX GenAI inference."""
@@ -412,12 +421,13 @@ class OnnxChat:
         top_p = float(kwargs.pop("top_p", 1.0) or 1.0)
         stop = kwargs.pop("stop", None)
 
-        if self._generator is None:
+        runtime = self._loaded_runtime
+        if runtime is None:
             raise OnnxChatModelError("Managed Qwen runtime was not loaded.")
-        prompt = self._generator.format_messages(messages)
+        prompt = runtime.generator.format_messages(messages)
 
-        with self._run_lock:
-            text = self._generator.generate(
+        with runtime.run_lock:
+            text = runtime.generator.generate(
                 prompt=prompt,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
@@ -459,14 +469,16 @@ class OnnxChat:
 
     def _load(self) -> None:
         """Load tokenizer and ONNX GenAI model once per process."""
-        if self._tokenizer is not None and self._generator is not None:
+        if self._loaded_runtime is not None:
             return
-        with self._load_lock:
-            if self._tokenizer is not None and self._generator is not None:
+        spec = self._snapshot.spec
+        cache_key = (spec.repo_id, spec.onnx_subfolder, spec.onnx_file)
+        with _ONNX_CHAT_RUNTIME_CACHE_LOCK:
+            runtime = _ONNX_CHAT_RUNTIME_CACHE.get(cache_key)
+            if runtime is not None:
+                self._loaded_runtime = runtime
                 return
-
             og = GenAiRuntimeBundle.require_genai()
-            spec = self._snapshot.spec
 
             logger.info(
                 "Loading ONNX GenAI chat model %s (%s/%s)",
@@ -477,7 +489,7 @@ class OnnxChat:
             info = self.ensure_available()
             snapshot_dir = Path(info.snapshot_dir)
             try:
-                self._tokenizer = self._load_tokenizer(snapshot_dir)
+                tokenizer = self._load_tokenizer(snapshot_dir)
             except Exception as e:
                 raise OnnxChatModelError(
                     "Could not load the tokenizer for Fitz's managed Qwen3 0.6B "
@@ -488,8 +500,8 @@ class OnnxChat:
             try:
                 genai_model = og.Model(str(runtime_dir))
                 genai_tokenizer = og.Tokenizer(genai_model)
-                self._generator = OnnxGenAiGenerator(
-                    tokenizer=self._tokenizer,
+                generator = OnnxGenAiGenerator(
+                    tokenizer=tokenizer,
                     genai_model=genai_model,
                     genai_tokenizer=genai_tokenizer,
                 )
@@ -498,7 +510,12 @@ class OnnxChat:
                     "Could not initialize ONNX Runtime GenAI for Fitz's managed "
                     f"Qwen3 0.6B model at {runtime_dir}."
                 ) from e
-            self._runtime_dir = runtime_dir
+            runtime = _LoadedOnnxChatRuntime(
+                generator=generator,
+                run_lock=threading.Lock(),
+            )
+            _ONNX_CHAT_RUNTIME_CACHE[cache_key] = runtime
+            self._loaded_runtime = runtime
 
     @staticmethod
     def _require_genai() -> Any:
