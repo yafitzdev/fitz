@@ -68,29 +68,11 @@ Qwen may still suggest one of those related terms and surface useful evidence.
 Users who require consistent domain equivalence must provide it through data or
 query preprocessing; a public mapping hook is deferred.
 
-## Literal Anchor Recognition
+## Exact Literal Anchors
 
-Fitz-Sage mechanically uses exact identifiers and some capitalized phrases to
-keep a narrow query tied to concrete evidence. The current phrase detector can
-overreach when a user submits a title-cased natural-language question.
-
-For example:
-
-`Do Cholesterol Statin Drugs Cause Breast Cancer?`
-
-currently produces the hard phrase:
-
-`Cholesterol Statin Drugs Cause Breast Cancer`
-
-In the external NFCorpus run, recall found 50 candidates and the reranker kept
-10, including judged-relevant documents. The compiler required that complete
-phrase, found it in none of the evidence bodies, set `filtered_all: true`, and
-delivered no evidence.
-
-Across NFCorpus, FiQA, and SciFact, 103 of 108 compiler-stage complete misses
-involved a generated hard anchor. Eighty-six were capitalization-derived
-phrase misses. This is a package-owned query-shape limitation. Users should not
-be required to rewrite ordinary title-cased questions to work around it.
+Fitz-Sage uses recognized exact identifiers to keep a narrow query tied to
+concrete evidence. Capitalization alone does not create a hard anchor, so an
+ordinary title-cased question cannot filter out otherwise relevant evidence.
 
 Exact identifier anchoring remains intentional. If a query says `ATX-123`,
 Fitz-Sage does not silently accept `ATX_123`. Scientific notation such as
@@ -113,6 +95,7 @@ Known hard cases:
 
 Temporal routing can order current/final evidence ahead of historical evidence,
 but fitz-sage does not delete the historical source from the evidence pack.
+The time at which a file was indexed is not treated as document recency.
 Pyrrho receives the raw retrieved sources and decides whether they are
 sufficient or disputed.
 
@@ -282,9 +265,10 @@ End-to-end delivered nDCG@10 was mixed:
 - SciFact: 0.5982 versus 0.6634
 
 This means the central recall loop generalizes beyond the internal fixtures,
-but evidence narrowing is not consistently better than a simple lexical
-baseline. The benchmark intentionally remains non-green while literal-anchor
-and compiler behavior are assessed structurally.
+but evidence narrowing was not consistently better than a simple lexical
+baseline. These delivered scores predate removal of capitalization-derived
+hard anchors and compiler lexical reranking, so they must be rerun before being
+treated as current end-to-end results.
 
 All 1,271 judged queries completed. All NFCorpus and SciFact documents indexed.
 FiQA contained 38 upstream records with empty title and text fields, including

@@ -171,11 +171,10 @@ class FileManifest:
             for rel_path, entry in self._entries.items():
                 if entry.enrichment_state != EnrichmentState.FAILED:
                     continue
-                retry_state = (
-                    EnrichmentState.ENTITY_LINKED
-                    if entry.enrichment_failure_stage == "hierarchy"
-                    else EnrichmentState.PENDING
-                )
+                retry_state = {
+                    "hierarchy": EnrichmentState.ENTITY_LINKED,
+                    "summary": EnrichmentState.COMPLETE,
+                }.get(entry.enrichment_failure_stage, EnrichmentState.PENDING)
                 self._entries[rel_path] = _replace_entry(
                     entry,
                     enrichment_state=retry_state,

@@ -94,6 +94,26 @@ def test_retry_resumes_hierarchy_without_repeating_entity_stage(tmp_path: Path) 
     assert failure is None
 
 
+def test_retry_resumes_failed_summary_after_completed_hierarchy(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    manifest.add(
+        _entry(
+            "guide.md",
+            state=FileState.INDEXED,
+            enrichment=EnrichmentState.COMPLETE,
+        )
+    )
+    manifest.mark_enrichment_failed("guide.md", stage="summary", message="timeout")
+
+    manifest.prepare_enrichment_retry()
+
+    entry = manifest.get("guide.md")
+    assert entry is not None
+    assert entry.enrichment_state == EnrichmentState.COMPLETE
+    assert entry.enrichment_failure_stage is None
+    assert entry.enrichment_failure_message is None
+
+
 def test_manifest_round_trip_persists_both_lifecycles(tmp_path: Path) -> None:
     path = tmp_path / "manifest.json"
     manifest = FileManifest(path)

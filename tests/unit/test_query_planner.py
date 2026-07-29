@@ -151,6 +151,14 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.has_temporal_intent
         assert "march 2024" in plan.detection.temporal.metadata["references"]
 
+    def test_freshness_word_is_query_shape_not_storage_recency(self):
+        """Current/latest wording should create intent without implying file age."""
+        plan = DeterministicQueryPlanner().plan("What is the latest refund policy?")
+
+        assert plan.detection is not None
+        assert plan.detection.has_freshness_intent
+        assert plan.detection.has_temporal_intent
+
     def test_temporal_detection_recognizes_lifecycle_language(self):
         """Version-state and relative-time language should retain temporal intent."""
         planner = DeterministicQueryPlanner()

@@ -316,12 +316,12 @@ def _comparison_detection(query: str):
 
 
 def _freshness_detection(query: str):
-    boost_recency = bool(
+    detected = bool(
         re.search(r"\b(latest|recent|newest|current|today|fresh|updated)\b", query.lower())
     )
-    if not boost_recency:
+    if not detected:
         return FreshnessModule().not_detected()
-    return FreshnessModule().parse_result({"boost_recency": True})
+    return FreshnessModule().parse_result({"detected": True})
 
 
 def _temporal_references(lower_query: str) -> list[str]:

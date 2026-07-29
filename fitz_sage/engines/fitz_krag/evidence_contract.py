@@ -54,29 +54,6 @@ _STOPWORDS = {
     "who",
     "with",
 }
-_QUESTION_TITLE_WORDS = {
-    "Are",
-    "Can",
-    "Compare",
-    "Could",
-    "Did",
-    "Do",
-    "Does",
-    "For",
-    "How",
-    "Is",
-    "Should",
-    "Using",
-    "Was",
-    "What",
-    "When",
-    "Where",
-    "Which",
-    "Who",
-    "Will",
-    "Would",
-}
-
 _MODALITY_TO_ADDRESS_KINDS = {
     "code": ("symbol",),
     "configuration": ("symbol", "section"),
@@ -141,15 +118,9 @@ class QueryContract:
     retrieval_modality: str | None = None
     retrieval_obligation: str | None = None
     identifiers: tuple[str, ...] = ()
-    phrase_anchors: tuple[str, ...] = ()
     keyword_anchors: tuple[str, ...] = ()
     required_modalities: tuple[str, ...] = ()
     temporal_policy: str | None = None
-
-    @property
-    def has_hard_anchors(self) -> bool:
-        """Return whether literal anchors must be represented in evidence."""
-        return bool(self.identifiers or self.phrase_anchors)
 
 
 def build_query_contract(query: str, profile: Any = None) -> QueryContract:
@@ -175,7 +146,6 @@ def build_query_contract(query: str, profile: Any = None) -> QueryContract:
         retrieval_modality=retrieval_modality,
         retrieval_obligation=retrieval_obligation,
         identifiers=tuple(exact_identifiers(query)),
-        phrase_anchors=tuple(_capitalized_phrases(query)),
         keyword_anchors=tuple(_keyword_anchors(query)),
         required_modalities=required_modalities,
         temporal_policy="temporal" if query_contract == "temporal_grounding" else None,
@@ -234,23 +204,6 @@ def _profile_sequence_value(profile: Any, name: str) -> tuple[str, ...]:
     if isinstance(value, Iterable):
         return tuple(str(item) for item in value if item)
     return ()
-
-
-def _capitalized_phrases(query: str) -> list[str]:
-    """Extract literal title-cased anchors such as Project Nebula."""
-    phrases: list[str] = []
-    for match in re.finditer(r"\b[A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)+\b", query):
-        words = match.group(0).strip().split()
-        while words and (words[0] in _QUESTION_TITLE_WORDS or words[0].lower() in _STOPWORDS):
-            words = words[1:]
-        phrase = " ".join(words)
-        if len(words) < 2:
-            continue
-        if phrase.lower() in {"return material authorization"}:
-            continue
-        if phrase and phrase.lower() not in {item.lower() for item in phrases}:
-            phrases.append(phrase)
-    return phrases
 
 
 def _keyword_anchors(query: str) -> list[str]:

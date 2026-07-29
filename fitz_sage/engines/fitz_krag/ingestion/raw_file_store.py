@@ -45,8 +45,7 @@ class RawFileStore:
                 content_hash = excluded.content_hash,
                 file_type = excluded.file_type,
                 size_bytes = excluded.size_bytes,
-                metadata = excluded.metadata,
-                updated_at = CURRENT_TIMESTAMP
+                metadata = excluded.metadata
         """
         with self._cm.connection(self._collection) as conn:
             conn.execute(
@@ -76,15 +75,6 @@ class RawFileStore:
         sql = f"SELECT path, content_hash FROM {TABLE}"
         with self._cm.connection(self._collection) as conn:
             rows = conn.execute(sql).fetchall()
-        return {row[0]: row[1] for row in rows}
-
-    def get_updated_timestamps(self, file_ids: list[str]) -> dict[str, Any]:
-        if not file_ids:
-            return {}
-        placeholders = ",".join(["?"] * len(file_ids))
-        sql = f"SELECT id, updated_at FROM {TABLE} WHERE id IN ({placeholders})"
-        with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, tuple(file_ids)).fetchall()
         return {row[0]: row[1] for row in rows}
 
     def list_ids_by_path(self) -> dict[str, str]:

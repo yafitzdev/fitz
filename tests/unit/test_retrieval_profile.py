@@ -66,7 +66,7 @@ def test_mixed_evidence_query_keeps_all_required_modalities_alive():
     assert profile.strategy_weights["code"] >= 0.60
 
 
-def test_temporal_detection_boosts_recency():
+def test_temporal_detection_builds_temporal_contract():
     """Temporal retrieval is KRAG-owned and does not depend on Pyrrho query planning."""
     config = _config()
     analysis = QueryAnalysis(
@@ -84,7 +84,6 @@ def test_temporal_detection_boosts_recency():
 
     assert profile.query_contract == "temporal_grounding"
     assert profile.has_temporal_intent is True
-    assert profile.boost_recency is True
     assert "needs_temporal_resolution" in profile.retrieval_intents
 
 

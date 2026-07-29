@@ -222,15 +222,25 @@ class BackgroundEnrichmentWorker:
             self._wait_if_query_active()
             if self._stop_event.is_set():
                 return
-            try:
-                self._core.summarize_file(entry.file_id, entry.file_type)
-            except Exception as exc:
-                logger.warning("Demand summary failed for %s: %s", entry.rel_path, exc)
+            self._summarize_entry(entry)
+
+    def _summarize_entry(self, entry: "ManifestEntry") -> None:
+        """Persist demand-summary success or a retryable failure."""
+        try:
+            self._core.summarize_file(entry.file_id, entry.file_type)
+        except Exception as exc:
+            self._manifest.mark_enrichment_failed(
+                entry.rel_path,
+                stage="summary",
+                message=str(exc),
+            )
+            logger.warning("Demand summary failed for %s: %s", entry.rel_path, exc)
+        else:
             self._manifest.update_enrichment_state(
                 entry.rel_path,
                 EnrichmentState.SUMMARIZED,
             )
-            self._manifest.save()
+        self._manifest.save()
 
     def _next_warm_target(self) -> "ManifestEntry | None":
         candidates = [

@@ -3,20 +3,16 @@
 Section search strategy — BM25 retrieval for technical documents.
 
 fitz-sage uses no dense embeddings. Section retrieval is SQLite FTS5
-``bm25()`` with freshness boosts; precision
-comes from the ONNX cross-encoder reranker (``OnnxReranker``)
-downstream.
+``bm25()``; precision comes from the ONNX cross-encoder reranker
+(``OnnxReranker``) downstream.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import (
-    apply_recency_boost,
-    rrf_score,
-)
 from fitz_sage.engines.fitz_krag.retrieval.snippets import query_relevant_excerpt
+from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import rrf_score
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
 if TYPE_CHECKING:
@@ -27,7 +23,7 @@ _RERANK_TEXT_CHARS = 1200
 
 
 class SectionSearchStrategy:
-    """BM25 retrieval with keyword + freshness boosts for technical documents."""
+    """BM25 retrieval for technical documents."""
 
     def __init__(
         self,
@@ -51,8 +47,7 @@ class SectionSearchStrategy:
         Retrieve section addresses matching the query.
 
         1. BM25 full-text search (SQLite FTS5 bm25())
-        2. Optional freshness boost
-        3. Parent-title breadcrumb enrichment
+        2. Parent-title breadcrumb enrichment
         """
         if inject_corpus_summaries:
             return [
@@ -66,15 +61,11 @@ class SectionSearchStrategy:
         # 2. Score BM25 hits via Reciprocal Rank Fusion for stable scaling.
         merged = rrf_score(bm25_results)
 
-        # 3. Freshness boost (when detection signals boost_recency)
-        if detection and getattr(detection, "boost_recency", False) and self._raw_store:
-            merged = apply_recency_boost(merged, self._raw_store)
-
-        # 4. Enrich with parent titles for breadcrumb location
+        # 3. Enrich with parent titles for breadcrumb location
         top_results = merged[:limit]
         self._enrich_with_parent_titles(top_results)
 
-        # 5. Convert to Address objects
+        # 4. Convert to Address objects
         return [self._to_address(r, query=query) for r in top_results]
 
     def _enrich_with_parent_titles(self, results: list[dict[str, Any]]) -> None:

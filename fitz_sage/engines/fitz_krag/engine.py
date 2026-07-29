@@ -410,7 +410,6 @@ class FitzKragEngine:
         )
 
         # LLM structural code search (default when chat available)
-        active_code_strategy: Any = code_strategy
         if self._config.code_search_mode != "hybrid" and self._chat_factory:
             from fitz_sage.engines.fitz_krag.retrieval.strategies.llm_code_search import (
                 LlmCodeSearchStrategy,
@@ -424,11 +423,6 @@ class FitzKragEngine:
                 fallback_strategy=code_strategy,
             )
             self._retrieval_router._code_strategy = llm_strategy
-            active_code_strategy = llm_strategy
-
-        # Wire raw_store for freshness boosting
-        active_code_strategy._raw_store = self._raw_store
-        section_strategy._raw_store = self._raw_store
 
         # Entity graph store
         self._entity_graph_store: Any = None

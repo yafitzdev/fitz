@@ -263,7 +263,6 @@ def annotate_closure_result(
         "query": request.query,
         "bridges": list(request.bridges),
         "contract_identifiers": list(contract.identifiers),
-        "contract_phrase_anchors": list(contract.phrase_anchors),
     }
     return ReadResult(
         address=result.address,
@@ -326,8 +325,6 @@ def _bridge_terms(
         terms.append(text)
 
     for value in contract.identifiers:
-        add(value)
-    for value in contract.phrase_anchors:
         add(value)
     for value in _specific_query_terms(contract):
         add(value)
@@ -462,7 +459,6 @@ def _result_has_bridge_seed_role(result: ReadResult) -> bool:
         (
             "anchor_identifier:",
             "anchor_keyword:",
-            "anchor_phrase:",
         ),
     )
 

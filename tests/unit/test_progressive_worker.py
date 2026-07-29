@@ -111,3 +111,20 @@ def test_warm_target_requires_completed_enrichment_and_query(tmp_path: Path) -> 
     manifest.bump_priority(["guide.md"])
 
     assert worker._next_warm_target().rel_path == "guide.md"
+
+
+def test_demand_summary_failure_is_recorded_for_retry(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    entry = _entry("guide.md", enrichment=EnrichmentState.COMPLETE)
+    manifest.add(entry)
+    core = MagicMock()
+    core.summarize_file.side_effect = RuntimeError("model unavailable")
+    worker = BackgroundEnrichmentWorker(manifest, core)
+
+    worker._summarize_entry(entry)
+
+    failed = manifest.get("guide.md")
+    assert failed is not None
+    assert failed.enrichment_state == EnrichmentState.FAILED
+    assert failed.enrichment_failure_stage == "summary"
+    assert failed.enrichment_failure_message == "model unavailable"

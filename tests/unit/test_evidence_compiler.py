@@ -37,8 +37,30 @@ def test_comparison_contract_orders_companion_evidence() -> None:
     ]
 
 
-def test_compiler_filters_unaligned_hard_anchor_results() -> None:
-    """A missing named entity should not let unrelated conflicts reach Pyrrho."""
+def test_compiler_preserves_semantic_reranker_order_without_explicit_obligation() -> None:
+    """Lexical overlap must not become a second ranker after semantic reranking."""
+    semantic_match = _result(
+        "Refund requests are accepted within thirty days.",
+        "unstructured/refund_policy.md",
+    )
+    lexical_match = _result(
+        "Customer reimbursements are mentioned in this archived index.",
+        "unstructured/archive_index.md",
+    )
+
+    compiled = compile_evidence(
+        "How should customer reimbursements be handled?",
+        [semantic_match, lexical_match],
+    )
+
+    assert [result.file_path for result in compiled.results] == [
+        "unstructured/refund_policy.md",
+        "unstructured/archive_index.md",
+    ]
+
+
+def test_compiler_does_not_infer_hard_anchors_from_capitalization() -> None:
+    """Ordinary title-cased names must not erase reranked evidence."""
     finance = _result(
         "The finance team reported Q1 revenue of 1.2 billion dollars.",
         "unstructured/finance_q1_report.md",
@@ -50,33 +72,35 @@ def test_compiler_filters_unaligned_hard_anchor_results() -> None:
 
     compiled = compile_evidence("What is the Project Nebula budget?", [audit, finance])
 
-    assert compiled.results == []
-    assert compiled.metadata["filtered_all"] is True
-    assert compiled.metadata["contract"]["phrase_anchors"] == ["Project Nebula"]
+    assert [result.file_path for result in compiled.results] == [
+        "unstructured/audit_q1_note.md",
+        "unstructured/finance_q1_report.md",
+    ]
+    assert compiled.metadata["filtered_all"] is False
 
 
-def test_compiler_requires_anchor_in_evidence_not_closure_metadata() -> None:
-    """Closure bridge metadata should not make unrelated text satisfy a hard anchor."""
+def test_compiler_requires_exact_identifier_in_evidence_not_closure_metadata() -> None:
+    """Closure metadata must not make unrelated text satisfy an exact identifier."""
     closure_result = _result(
         "The finance report says Q1 revenue was 1.2 billion dollars.",
         "unstructured/finance_q1_report.md",
         metadata={
             "evidence_closure": {
                 "role": "bridge_document:finance report",
-                "contract_phrase_anchors": ["Project Nebula"],
+                "contract_identifiers": ["AX-156"],
                 "bridges": ["Q1"],
             }
         },
     )
 
-    compiled = compile_evidence("What is the Project Nebula budget?", [closure_result])
+    compiled = compile_evidence("What is the AX-156 budget?", [closure_result])
 
     assert compiled.results == []
     assert compiled.metadata["filtered_all"] is True
 
 
 def test_compiler_rejects_wrong_modality_closure_result_without_anchor() -> None:
-    """A table obligation must not admit an unrelated section around a named entity."""
+    """A table obligation must not admit evidence missing an exact identifier."""
     closure_result = _result(
         "Project Atlas FY27 pipeline is expected to reach 7.8 million ARR.",
         "unstructured/finance_forecast.md",
@@ -88,14 +112,14 @@ def test_compiler_rejects_wrong_modality_closure_result_without_anchor() -> None
         },
     )
 
-    compiled = compile_evidence("What is the Project Helios budget?", [closure_result])
+    compiled = compile_evidence("What is the HEL-123 budget?", [closure_result])
 
     assert compiled.results == []
     assert compiled.metadata["filtered_all"] is True
 
 
 def test_compiler_rejects_generic_bridge_overlap_without_named_entity() -> None:
-    """A required table cannot replace a missing title-cased query anchor."""
+    """A required table cannot replace a missing exact identifier."""
     closure_result = _result(
         "project | pipeline\nProject Atlas | 7.8 million ARR",
         "structured/projects.csv",
@@ -103,12 +127,12 @@ def test_compiler_rejects_generic_bridge_overlap_without_named_entity() -> None:
         metadata={
             "evidence_closure": {
                 "role": "required_table",
-                "bridges": ["Project", "Helios", "budget"],
+                "bridges": ["Project", "HEL-123", "budget"],
             }
         },
     )
 
-    compiled = compile_evidence("What is the Project Helios budget?", [closure_result])
+    compiled = compile_evidence("What is the HEL-123 budget?", [closure_result])
 
     assert compiled.results == []
     assert compiled.metadata["filtered_all"] is True
@@ -555,7 +579,7 @@ def test_query_contract_does_not_make_question_prefix_an_entity() -> None:
         "Which Python symbol implements expired session refresh inside the grace window?"
     )
 
-    assert contract.phrase_anchors == ()
+    assert contract.identifiers == ()
 
 
 def test_compiler_does_not_treat_question_auxiliary_as_entity_anchor() -> None:
@@ -574,7 +598,6 @@ def test_compiler_does_not_treat_question_auxiliary_as_entity_anchor() -> None:
         [legacy, current],
     )
 
-    assert compiled.metadata["contract"]["phrase_anchors"] == []
     assert compiled.metadata.get("filtered_all") is not True
     assert [result.file_path for result in compiled.results] == [
         "unstructured/legacy_refund_note.md",
@@ -582,8 +605,8 @@ def test_compiler_does_not_treat_question_auxiliary_as_entity_anchor() -> None:
     ]
 
 
-def test_compiler_splits_code_identifiers_for_keyword_alignment() -> None:
-    """Code constants should align with natural-language terms inside identifiers."""
+def test_compiler_does_not_rerank_code_symbols_by_keyword_overlap() -> None:
+    """Symbol-name overlap must not replace the cross-encoder's ordering."""
     constant = _result(
         'REQUIRED_ENV_VARS = ("FITZ_API_TOKEN", "FITZ_WORKSPACE")',
         "code/config_loader.py",
@@ -603,8 +626,10 @@ def test_compiler_splits_code_identifiers_for_keyword_alignment() -> None:
         [function, constant],
     )
 
-    assert compiled.results[0].address.location == "code.config_loader.REQUIRED_ENV_VARS"
-    assert "FITZ_API_TOKEN" in compiled.results[0].content
+    assert [result.address.location for result in compiled.results] == [
+        "code.config_loader.load_required_env",
+        "code.config_loader.REQUIRED_ENV_VARS",
+    ]
 
 
 def test_compiler_treats_short_letter_digit_codes_as_identifiers() -> None:
@@ -653,15 +678,15 @@ def test_compiler_does_not_invent_source_authority_roles() -> None:
         [postmortem, table, playbook],
     )
 
-    assert compiled.results[0].file_path == "mixed/incident_playbook.md"
+    assert compiled.results[0].file_path == "unstructured/outage_postmortem.md"
     assert (
         "source_anchor:incident playbook"
         not in compiled.results[0].metadata["evidence_compiler"]["roles"]
     )
 
 
-def test_compiler_chooses_required_table_by_fact_anchors() -> None:
-    """Required table selection should prefer concrete row facts over generic overlap."""
+def test_compiler_preserves_top_ranked_table_when_modality_is_already_satisfied() -> None:
+    """A satisfied modality must not trigger lexical reranking among tables."""
     rollout = _result(
         "feature | region | status | release | owner\n"
         "warehouse_audit | west | enabled | 2026.05 | Inventory",
@@ -685,16 +710,16 @@ def test_compiler_chooses_required_table_by_fact_anchors() -> None:
     compiled = compile_evidence(
         "Which release mentioned the west-region warehouse audit and how many "
         "flux capacitor units did it confirm?",
-        [rollout, release, warehouses],
+        [release, rollout, warehouses],
         profile=_profile(modality="structured_table"),
     )
 
-    assert compiled.results[0].file_path == "structured/warehouses.csv"
+    assert compiled.results[0].file_path == "structured/rollout_matrix.csv"
     assert compiled.results[0].metadata["evidence_compiler"]["roles"] == ["required_table"]
 
 
-def test_compiler_prioritizes_literal_identifier_before_generic_required_modality() -> None:
-    """Exact row evidence should not sit behind a generic Pyrrho-required section."""
+def test_compiler_preserves_reranker_order_among_exact_identifier_matches() -> None:
+    """Exact identifiers filter candidates but do not create a second ranking signal."""
     note = _result(
         "Incident INC-103 appears in the operations status note.",
         "unstructured/status.md",
@@ -714,9 +739,10 @@ def test_compiler_prioritizes_literal_identifier_before_generic_required_modalit
         profile=_profile(obligation="error_signature"),
     )
 
-    assert compiled.results[0].file_path == "structured/incidents.csv"
+    assert compiled.results[0].file_path == "unstructured/status.md"
     assert compiled.results[0].metadata["evidence_compiler"]["roles"] == [
-        "anchor_identifier:INC-103"
+        "anchor_identifier:INC-103",
+        "required_section",
     ]
 
 
@@ -768,7 +794,6 @@ def test_compiler_keeps_validated_document_companion_without_original_identifier
                 "role": "bridge_document:procurement policy",
                 "bridges": ["model_eval", "Procurement Policy"],
                 "contract_identifiers": ["model_eval"],
-                "contract_phrase_anchors": [],
             }
         },
     )
@@ -925,8 +950,8 @@ def test_query_contract_does_not_force_table_for_incident_postmortem_fact() -> N
     assert contract.required_modalities == ()
 
 
-def test_compiler_keeps_temporal_candidates_for_pyrrho_review() -> None:
-    """The compiler no longer drops older dated candidates before Pyrrho sees them."""
+def test_compiler_needs_explicit_temporal_contract_to_reorder_candidates() -> None:
+    """Temporal wording alone does not bypass the trusted query profile."""
     deprecation = _result(
         "The legacy_sync deprecation date is 2026-09-30.",
         "unstructured/project_atlas_status.md",
@@ -943,12 +968,12 @@ def test_compiler_keeps_temporal_candidates_for_pyrrho_review() -> None:
         [deprecation, apac],
     )
 
-    assert compiled.results[0].content.startswith("On 2026-07-18")
+    assert compiled.results[0].content.startswith("The legacy_sync")
     assert any("legacy_sync" in result.content for result in compiled.results)
 
 
-def test_compiler_prefers_requested_symbol_granularity() -> None:
-    """Method/function queries should select the method over the enclosing class."""
+def test_compiler_preserves_reranker_order_across_symbol_granularities() -> None:
+    """Compiler keyword heuristics must not choose between class and method results."""
     class_symbol = _result(
         "class FeatureGate:\n    def is_eligible(self, account): ...",
         "code/flags.py",
@@ -977,7 +1002,7 @@ def test_compiler_prefers_requested_symbol_granularity() -> None:
         [class_symbol, method_symbol],
     )
 
-    assert compiled.results[0].address.location == "flags.FeatureGate.is_eligible"
+    assert compiled.results[0].address.location == "flags.FeatureGate"
 
 
 def test_behavioral_code_query_preserves_code_and_documentation() -> None:

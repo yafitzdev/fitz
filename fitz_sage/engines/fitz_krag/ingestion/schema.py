@@ -40,8 +40,7 @@ def _raw_files_ddl() -> str:
         file_type TEXT NOT NULL,
         size_bytes INTEGER NOT NULL,
         metadata TEXT NOT NULL DEFAULT '{{}}',
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_{TABLE_PREFIX}raw_files_path
         ON {TABLE_PREFIX}raw_files(path);

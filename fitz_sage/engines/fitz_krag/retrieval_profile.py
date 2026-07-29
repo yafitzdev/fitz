@@ -146,8 +146,7 @@ class RetrievalProfile:
     # Temporal metadata (for tagging query variations with references)
     temporal_references: list[str] = field(default_factory=list)
 
-    # Boost signals
-    boost_recency: bool = False
+    # Query-shape signals
     has_aggregation_intent: bool = False
     has_comparison_intent: bool = False
     has_temporal_intent: bool = False
@@ -305,7 +304,6 @@ def build_retrieval_profile(
     has_aggregation_intent = deterministic_aggregation
     has_comparison_intent = deterministic_comparison
     has_temporal_intent = deterministic_temporal
-    boost_recency = has_temporal_intent
 
     # --- top_k: base * fetch_multiplier * specificity adjustment ---
     top_k = config.top_addresses
@@ -375,7 +373,6 @@ def build_retrieval_profile(
         evidence_kinds=evidence_kinds,
         required_modalities=required_modalities,
         inject_corpus_summaries=inject_corpus_summaries,
-        boost_recency=boost_recency,
         has_aggregation_intent=has_aggregation_intent,
         has_comparison_intent=has_comparison_intent,
         has_temporal_intent=has_temporal_intent,
@@ -684,7 +681,6 @@ def _profile_metadata(profile: RetrievalProfile) -> dict[str, Any]:
             key: float(value) for key, value in sorted(profile.strategy_weights.items())
         },
         "inject_corpus_summaries": profile.inject_corpus_summaries,
-        "boost_recency": profile.boost_recency,
         "has_aggregation_intent": profile.has_aggregation_intent,
         "has_comparison_intent": profile.has_comparison_intent,
         "has_temporal_intent": profile.has_temporal_intent,

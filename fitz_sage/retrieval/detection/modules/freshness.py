@@ -11,7 +11,7 @@ from .base import DEFAULT_CONFIDENCE, DetectionModule
 
 
 class FreshnessModule(DetectionModule):
-    """Detects freshness signals — recency boosting."""
+    """Detect queries asking for current or recent evidence."""
 
     @property
     def category(self) -> DetectionCategory:
@@ -23,15 +23,13 @@ class FreshnessModule(DetectionModule):
 
     def prompt_fragment(self) -> str:
         return """"freshness": {
-    "boost_recency": true/false
+    "detected": true/false
   }
-  // boost_recency: "latest", "recent", "new", "current", "updated", "newest"
+  // freshness: "latest", "recent", "new", "current", "updated", "newest"
 """
 
     def parse_result(self, data: dict[str, Any]) -> DetectionResult[None]:
-        boost_recency = data.get("boost_recency", False)
-
-        if not boost_recency:
+        if not data.get("detected", False):
             return self.not_detected()
 
         return DetectionResult(
@@ -40,8 +38,6 @@ class FreshnessModule(DetectionModule):
             confidence=DEFAULT_CONFIDENCE,
             intent=None,
             matches=[],
-            metadata={
-                "boost_recency": boost_recency,
-            },
+            metadata={},
             transformations=[],
         )

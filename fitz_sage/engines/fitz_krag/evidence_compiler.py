@@ -59,7 +59,7 @@ def compile_evidence(
 
     units = [_read_result_unit(index, result, contract) for index, result in enumerate(results)]
     aligned = _aligned_units(contract, units)
-    if contract.has_hard_anchors and not aligned:
+    if contract.identifiers and not aligned:
         return EvidenceCompilation([], _metadata(contract, units, [], filtered_all=True))
 
     working = aligned if aligned else units
@@ -217,15 +217,12 @@ def _compile_order(
             for unit in units
             if _contains_identifier(_unit_text(unit.content_text, unit.location), identifier)
         ]
-        match = _best_unit(contract, identifier_units)
-        if match is not None:
+        if identifier_units:
+            match = min(
+                identifier_units,
+                key=lambda item: (-_temporal_preference_score(contract, item), item.index),
+            )
             add(match, f"anchor_identifier:{identifier}")
-
-    for phrase in contract.phrase_anchors:
-        phrase_units = [unit for unit in units if _contains_phrase(unit.text, phrase)]
-        match = _best_unit(contract, phrase_units)
-        if match is not None:
-            add(match, f"anchor_phrase:{phrase}")
 
     for unit in units:
         for role in unit.roles:
@@ -233,46 +230,46 @@ def _compile_order(
                 add(unit, role)
 
     for modality in contract.required_modalities:
-        match = _best_modality_unit(
-            contract,
-            [unit for unit in units if unit.kind == modality],
-        )
+        matches = [unit for unit in units if unit.kind == modality]
+        match = matches[0] if matches else None
         if match is not None:
             add(match, f"required_{modality}")
-
-    literal_match = _literal_recall_match(contract, units)
-    if literal_match is not None:
-        term, unit = literal_match
-        key = (unit.kind, unit.file_path, unit.location)
-        if key not in selected_positions:
-            add(unit, f"anchor_keyword:{term}")
 
     for unit, term in _bridge_companion_units(contract, search_units, selected):
         add(unit, f"bridge:{term}")
 
+    literal_match = _literal_recall_match(contract, units)
+    literal_term = literal_match[0] if literal_match is not None else None
+    literal_unit = literal_match[1] if literal_match is not None else None
     for unit in sorted(
         units,
-        key=lambda item: _unit_order_key(contract, item),
+        key=lambda item: (-_temporal_preference_score(contract, item), item.index),
     ):
+        if (
+            unit is literal_unit
+            and literal_term is not None
+            and not any(_role_is_contract_obligation(role) for role in unit.roles)
+        ):
+            add(unit, f"anchor_keyword:{literal_term}")
+        for identifier in contract.identifiers:
+            if _contains_identifier(
+                _unit_text(unit.content_text, unit.location),
+                identifier,
+            ):
+                add(unit, f"anchor_identifier:{identifier}")
         add(unit, "aligned" if unit.alignment_score > 0 else "residual")
 
     return selected
 
 
 def _aligned_units(contract: _QueryContract, units: list[EvidenceUnit]) -> list[EvidenceUnit]:
-    """Return units that satisfy literal anchors when anchors exist."""
-    if contract.identifiers or contract.phrase_anchors:
+    """Enforce exact identifiers without rejecting semantic reranker matches."""
+    if contract.identifiers:
         return [
             unit
             for unit in units
-            if _identity_hard_anchor_score(contract, unit) > 0
+            if _identity_identifier_score(contract, unit) > 0
             or _closure_bridge_content_score(unit) > 0
-        ]
-    if contract.keyword_anchors:
-        return [
-            unit
-            for unit in units
-            if unit.alignment_score > 0 or _closure_bridge_content_score(unit) > 0
         ]
     return units
 
@@ -426,7 +423,6 @@ def _contract_snapshot(contract: _QueryContract) -> dict[str, Any]:
         "retrieval_modality": contract.retrieval_modality,
         "retrieval_obligation": contract.retrieval_obligation,
         "identifiers": list(contract.identifiers),
-        "phrase_anchors": list(contract.phrase_anchors),
         "keyword_anchors": list(contract.keyword_anchors),
         "required_modalities": list(contract.required_modalities),
         "temporal_policy": contract.temporal_policy,
@@ -444,19 +440,16 @@ def _alignment_score(contract: _QueryContract, text: str) -> int:
 
 
 def _hard_anchor_score(contract: _QueryContract, text: str) -> int:
-    """Score identifiers and phrase anchors."""
+    """Score exact identifiers."""
     score = 0
     for identifier in contract.identifiers:
         if _contains_identifier(text, identifier):
             score += 4
-    for phrase in contract.phrase_anchors:
-        if _contains_phrase(text, phrase):
-            score += 3
     return score
 
 
-def _identity_hard_anchor_score(contract: _QueryContract, unit: EvidenceUnit) -> int:
-    """Score hard anchors only against evidence body and source identity."""
+def _identity_identifier_score(contract: _QueryContract, unit: EvidenceUnit) -> int:
+    """Score exact identifiers against evidence body and source identity."""
     return _hard_anchor_score(
         contract, _unit_text(unit.content_text, unit.location, unit.file_path)
     )
@@ -470,11 +463,7 @@ def _closure_bridge_content_score(unit: EvidenceUnit) -> int:
     if not isinstance(closure, dict):
         return 0
     if any(role.startswith("bridge_document:") for role in unit.roles):
-        hard_anchors = [
-            str(value)
-            for key in ("contract_identifiers", "contract_phrase_anchors")
-            for value in closure.get(key, [])
-        ]
+        hard_anchors = [str(value) for value in closure.get("contract_identifiers", [])]
         observed_bridges = {_normalize_text(str(value)) for value in closure.get("bridges", [])}
         if any(_normalize_text(anchor) in observed_bridges for anchor in hard_anchors):
             return 4
@@ -661,7 +650,6 @@ def _role_is_contract_obligation(role: str) -> bool:
         role.startswith("required_")
         or role.startswith("anchor_identifier:")
         or role.startswith("anchor_keyword:")
-        or role.startswith("anchor_phrase:")
         or role.startswith("bridge:")
         or role.startswith("bridge_definition:")
         or role.startswith("bridge_document:")

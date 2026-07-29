@@ -45,9 +45,9 @@ class DetectionSummary:
         return self.comparison.detected
 
     @property
-    def boost_recency(self) -> bool:
-        """True if recency boosting should be applied."""
-        return self.freshness.detected and self.freshness.metadata.get("boost_recency", False)
+    def has_freshness_intent(self) -> bool:
+        """True if the query asks for current or recent evidence."""
+        return self.freshness.detected
 
     @property
     def query_variations(self) -> list[str]:

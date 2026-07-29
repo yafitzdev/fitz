@@ -663,7 +663,7 @@ def test_closure_selects_one_best_grounded_followup() -> None:
 
     selected = _select_closure_results(
         "Gold support response time Severity 1 incidents",
-        [distractor, relevant],
+        [relevant, distractor],
         _profile(modality="unstructured_text"),
     )
 

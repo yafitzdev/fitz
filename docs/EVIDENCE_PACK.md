@@ -205,8 +205,8 @@ reranker order, and evidence-closure behavior alongside the selected evidence.
 ### Evidence Compiler
 
 `metadata.evidence_compiler` records mechanical evidence constraints before
-fixed delivery: literal anchors, how many evidence items entered and left
-compilation, and selected evidence roles.
+fixed delivery: exact identifiers, soft keyword anchors, how many evidence
+items entered and left compilation, and selected evidence roles.
 
 ```json
 {
@@ -214,7 +214,6 @@ compilation, and selected evidence roles.
     "evidence_compiler": {
       "contract": {
         "identifiers": ["INC-101"],
-        "phrase_anchors": ["Project Orion"],
         "keyword_anchors": ["latest", "status"],
         "required_modalities": ["table"],
         "temporal_policy": "temporal"
