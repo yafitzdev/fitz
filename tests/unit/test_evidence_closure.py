@@ -50,6 +50,35 @@ def test_closure_plans_table_followup_from_bridge_identifier() -> None:
     assert "alerts" in table_requests[0].query
 
 
+def test_bridge_identifier_followups_do_not_include_sibling_identifiers() -> None:
+    """Each table bridge should retain query intent without competing bridge IDs."""
+    query = "Which rollout and service owner apply to Project Vega EMEA?"
+    brief = _result(
+        AddressKind.SECTION,
+        "mixed/release_brief.md",
+        "Release Brief",
+        "Project Vega EMEA is tied to rollout ROL-401 and service SVC-202.",
+    )
+    profile = _profile(modality="mixed")
+    compilation = compile_evidence(query, [brief], profile=profile)
+
+    plan = plan_evidence_closure(query, [brief], compilation, profile=profile)
+
+    bridge_requests = {
+        request.role: request
+        for request in plan.requests
+        if request.reason == "bridge_identifier"
+    }
+    rollout_request = bridge_requests["bridge:ROL-401"]
+    service_request = bridge_requests["bridge:SVC-202"]
+    assert "ROL-401" in rollout_request.query
+    assert "SVC-202" not in rollout_request.query
+    assert "SVC-202" in service_request.query
+    assert "ROL-401" not in service_request.query
+    assert "service" in service_request.query
+    assert "owner" in service_request.query
+
+
 def test_closure_does_not_infer_code_documentation_companion() -> None:
     """Documentation companion searches require a Pyrrho obligation, not query regex."""
     query = "Are archived users eligible for beta feature flags?"
@@ -256,6 +285,32 @@ def test_closure_does_not_expand_incidental_identifiers_from_table_rows() -> Non
     plan = plan_evidence_closure(query, [table], compilation, profile=profile)
 
     assert plan.requests == []
+
+
+def test_closure_does_not_follow_an_unrelated_sibling_identifier() -> None:
+    """An identifier in another sentence is not a proven multi-hop bridge."""
+    query = "What biometric deletion rule applies to AST-58?"
+    brief = _result(
+        AddressKind.SECTION,
+        "mixed/compliance_brief.md",
+        "Compliance Brief",
+        (
+            "Asset AST-22 is the analytics cache exception. "
+            "Asset AST-58 handles biometric claims."
+        ),
+    )
+    table = _result(
+        AddressKind.TABLE,
+        "structured/cloud_assets.csv",
+        "Cloud Assets",
+        "AST-58 | claims-vault | Compliance | 24",
+    )
+    profile = _profile(modality="mixed")
+    compilation = compile_evidence(query, [brief, table], profile=profile)
+
+    plan = plan_evidence_closure(query, [brief, table], compilation, profile=profile)
+
+    assert not any(request.role == "bridge:AST-22" for request in plan.requests)
 
 
 def test_closure_ignores_bridge_terms_from_unselected_candidates() -> None:
@@ -703,6 +758,46 @@ def test_closure_selects_the_requested_modality() -> None:
     assert selected[0].file_path == "structured/rollouts.csv"
 
 
+def test_table_bridge_prefers_schema_covering_requested_fields() -> None:
+    """A bridge lookup should follow the requested field, not an earlier table."""
+    rollout = _result(
+        AddressKind.TABLE,
+        "structured/rollouts.csv",
+        "Rollouts",
+        "ROL-401 | vega_private_beta | SVC-202 | emea | 35",
+        address_metadata={
+            "name": "Rollouts",
+            "columns": ["rollout_id", "service_id", "region", "rollout_percent"],
+        },
+    )
+    service = _result(
+        AddressKind.TABLE,
+        "structured/services.csv",
+        "Services",
+        "SVC-202 | Search | Search",
+        address_metadata={
+            "name": "Services",
+            "columns": ["service_id", "service", "region", "owner"],
+        },
+    )
+    request = EvidenceClosureRequest(
+        query="SVC-202 service owner",
+        modality="table",
+        role="bridge:SVC-202",
+        reason="bridge_identifier",
+        bridges=("SVC-202",),
+    )
+
+    selected = _select_closure_results(
+        request.query,
+        [rollout, service],
+        _profile(modality="structured_table"),
+        request=request,
+    )
+
+    assert [result.file_path for result in selected] == ["structured/services.csv"]
+
+
 def test_document_companion_prefers_exact_source_derived_location() -> None:
     """A document section must outrank its synthetic introduction wrapper."""
     introduction = _result(
@@ -942,6 +1037,8 @@ def _result(
     file_path: str,
     location: str,
     content: str,
+    *,
+    address_metadata: dict | None = None,
 ) -> ReadResult:
     return ReadResult(
         address=Address(
@@ -950,7 +1047,7 @@ def _result(
             location=location,
             summary=location,
             score=0.9,
-            metadata={},
+            metadata=address_metadata or {},
         ),
         content=content,
         file_path=file_path,

@@ -8,7 +8,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import EvidenceCompilation
-from fitz_sage.engines.fitz_krag.evidence_contract import QueryContract, build_query_contract
+from fitz_sage.engines.fitz_krag.evidence_contract import (
+    QueryContract,
+    build_query_contract,
+    contains_exact_identifier,
+)
 from fitz_sage.engines.fitz_krag.types import ReadResult
 
 _BRIDGE_IDENTIFIER_PATTERN = re.compile(
@@ -223,7 +227,11 @@ def plan_evidence_closure(
                 modality="table",
                 role=role,
                 reason="bridge_identifier",
-                primary_terms=[identifier],
+                primary_terms=_bridge_identifier_primary_terms(
+                    identifier,
+                    query,
+                    compilation.results,
+                ),
             )
 
     metadata = {
@@ -339,7 +347,13 @@ def _bridge_terms(
             continue
         text = _result_text(result)
         for match in _BRIDGE_IDENTIFIER_PATTERN.finditer(text):
-            add(match.group(0))
+            identifier = match.group(0)
+            if _bridge_identifier_is_query_grounded(
+                text,
+                identifier,
+                contract.identifiers,
+            ):
+                add(identifier)
         for match in _ACRONYM_PATTERN.finditer(text):
             add(match.group(0))
         for match in _BACKTICK_PATTERN.finditer(text):
@@ -362,6 +376,27 @@ def _bridge_terms(
             add(match.group(0))
 
     return terms[:32]
+
+
+def _bridge_identifier_is_query_grounded(
+    text: str,
+    identifier: str,
+    query_identifiers: tuple[str, ...],
+) -> bool:
+    """Keep new identifiers only when a source states their link to the query ID."""
+    if not query_identifiers:
+        return True
+    if any(identifier.casefold() == value.casefold() for value in query_identifiers):
+        return True
+    spans = re.split(r"(?<=[.!?])\s+|\n+", text)
+    return any(
+        contains_exact_identifier(span, identifier)
+        and any(
+            contains_exact_identifier(span, query_identifier)
+            for query_identifier in query_identifiers
+        )
+        for span in spans
+    )
 
 
 def _bridge_seed_results(
@@ -507,15 +542,17 @@ def _table_request_query(
     add = _term_adder(terms)
     for value in primary_terms:
         add(value)
-    for value in contract.identifiers:
-        add(value)
-    for value in _identifier_terms(bridge_terms):
-        add(value)
-    for value in _hint_terms(bridge_terms, _TABLE_HINTS):
-        add(value)
-    for value in _source_file_terms(bridge_terms):
-        if any(hint.replace(" ", "_") in _normalize(value) for hint in _TABLE_HINTS):
+    primary_identifiers = _identifier_terms(primary_terms)
+    if not primary_identifiers:
+        for value in contract.identifiers:
             add(value)
+        for value in _identifier_terms(bridge_terms):
+            add(value)
+        for value in _hint_terms(bridge_terms, _TABLE_HINTS):
+            add(value)
+        for value in _source_file_terms(bridge_terms):
+            if any(hint.replace(" ", "_") in _normalize(value) for hint in _TABLE_HINTS):
+                add(value)
     return " ".join(terms[:12])[:500]
 
 
@@ -636,6 +673,54 @@ def _structured_bridge_identifiers(terms: list[str]) -> list[str]:
             continue
         values.append(term)
     return list(dict.fromkeys(values))
+
+
+def _bridge_identifier_primary_terms(
+    identifier: str,
+    query: str,
+    compiled_results: list[ReadResult],
+) -> list[str]:
+    """Pair a discovered identifier with its local corpus and query descriptors."""
+    terms = [identifier]
+    seen = {_normalize(identifier)}
+    escaped = re.escape(identifier)
+    descriptor_pattern = re.compile(
+        rf"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_-]{{2,}})\s+"
+        rf"{escaped}(?![A-Za-z0-9_])",
+        re.IGNORECASE,
+    )
+    for result in compiled_results:
+        if _result_kind(result) == "table":
+            continue
+        for match in descriptor_pattern.finditer(_result_text(result)):
+            descriptor = match.group(1)
+            normalized = _normalize(descriptor)
+            if normalized in seen or normalized in _QUERY_TERM_STOPWORDS:
+                continue
+            seen.add(normalized)
+            terms.append(descriptor)
+            companion = _query_descriptor_companion(query, descriptor)
+            companion_key = _normalize(companion)
+            if companion and companion_key not in seen:
+                seen.add(companion_key)
+                terms.append(companion)
+            if len(terms) >= 4:
+                return terms
+    return terms
+
+
+def _query_descriptor_companion(query: str, descriptor: str) -> str:
+    """Return the adjacent query term that qualifies a bridge descriptor."""
+    tokens = re.findall(r"[A-Za-z][A-Za-z0-9_-]*", query)
+    expected = _normalize(descriptor)
+    for index, token in enumerate(tokens[:-1]):
+        if _normalize(token) != expected:
+            continue
+        companion = tokens[index + 1]
+        normalized = _normalize(companion)
+        if normalized not in _QUERY_TERM_STOPWORDS:
+            return companion
+    return ""
 
 
 def _document_bridge_terms(terms: list[str]) -> list[str]:

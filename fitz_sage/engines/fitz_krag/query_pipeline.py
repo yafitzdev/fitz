@@ -582,6 +582,7 @@ def _select_closure_results(
         ]
         if not results:
             return []
+        results = _prioritize_bridge_table_schema(request, results)
     if request is not None and request.role.startswith("bridge_document:"):
         document = _normalize_source_name(request.role.removeprefix("bridge_document:"))
         exact_locations = [
@@ -604,6 +605,60 @@ def _select_closure_results(
     if compilation.results:
         return compilation.results[:1]
     return results[:1]
+
+
+def _prioritize_bridge_table_schema(
+    request: EvidenceClosureRequest,
+    results: list["ReadResult"],
+) -> list["ReadResult"]:
+    """Prefer bridge tables whose schema covers the requested fields."""
+    if request.modality != "table" or request.reason != "bridge_identifier":
+        return results
+
+    contract = build_query_contract(request.query)
+    identifier_terms = {
+        term
+        for identifier in contract.identifiers
+        for term in _normalize_source_name(identifier).split()
+    }
+    query_terms = [
+        term
+        for term in contract.keyword_anchors
+        if term not in identifier_terms and term != "table"
+    ]
+    if not query_terms:
+        return results
+
+    ranked = sorted(
+        enumerate(results),
+        key=lambda item: (
+            -_table_schema_query_score(item[1], query_terms),
+            item[0],
+        ),
+    )
+    return [result for _, result in ranked]
+
+
+def _table_schema_query_score(result: "ReadResult", query_terms: list[str]) -> int:
+    """Count requested field terms represented by a table's declared schema."""
+    metadata = dict(result.address.metadata)
+    metadata.update(result.metadata)
+    columns = metadata.get("columns")
+    column_values = columns if isinstance(columns, (list, tuple)) else []
+    schema = _normalize_source_name(
+        " ".join(
+            [
+                str(metadata.get("name") or ""),
+                result.address.location,
+                *(str(value) for value in column_values),
+            ]
+        )
+    )
+    return sum(
+        1
+        for term in query_terms
+        if re.search(rf"\b{re.escape(term)}s?\b", schema)
+    )
 
 
 def _normalize_source_name(value: str) -> str:
