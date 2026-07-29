@@ -1005,6 +1005,46 @@ def test_compiler_preserves_reranker_order_across_symbol_granularities() -> None
     assert compiled.results[0].address.location == "flags.FeatureGate"
 
 
+def test_compiler_matches_exact_identifier_component_in_qualified_symbol() -> None:
+    """A module identifier may select a child symbol without fuzzy normalization."""
+    constant = _result(
+        'REQUIRED_DEPLOY_ENV = ("FITZ_DEPLOY_APPROVER", "FITZ_CHANGE_TICKET")',
+        "code/rollout_guard.py",
+        kind=AddressKind.SYMBOL,
+        location="code.rollout_guard.REQUIRED_DEPLOY_ENV",
+        address_metadata={
+            "kind": "constant",
+            "name": "REQUIRED_DEPLOY_ENV",
+            "qualified_name": "code.rollout_guard.REQUIRED_DEPLOY_ENV",
+        },
+    )
+    similar_module = _result(
+        'REQUIRED_DEPLOY_ENV = ("WRONG_VALUE",)',
+        "code/pre_rollout_guard.py",
+        kind=AddressKind.SYMBOL,
+        location="code.pre_rollout_guard.REQUIRED_DEPLOY_ENV",
+        address_metadata={
+            "kind": "constant",
+            "name": "REQUIRED_DEPLOY_ENV",
+            "qualified_name": "code.pre_rollout_guard.REQUIRED_DEPLOY_ENV",
+        },
+    )
+
+    compiled = compile_evidence(
+        "Which required deployment environment variables are enforced by rollout_guard?",
+        [constant, similar_module],
+        profile=_profile(modality="code"),
+    )
+
+    assert [result.file_path for result in compiled.results] == [
+        "code/rollout_guard.py"
+    ]
+    assert compiled.results[0].content == constant.content
+    roles = compiled.results[0].metadata["evidence_compiler"]["roles"]
+    assert "anchor_identifier:rollout_guard" in roles
+    assert "required_symbol" in roles
+
+
 def test_behavioral_code_query_preserves_code_and_documentation() -> None:
     """Fitz keeps both source types available for Pyrrho's judgment."""
     symbol = _result(

@@ -215,7 +215,7 @@ def _compile_order(
         identifier_units = [
             unit
             for unit in units
-            if _contains_identifier(_unit_text(unit.content_text, unit.location), identifier)
+            if _unit_contains_identifier(unit, identifier)
         ]
         if identifier_units:
             match = min(
@@ -252,10 +252,7 @@ def _compile_order(
         ):
             add(unit, f"anchor_keyword:{literal_term}")
         for identifier in contract.identifiers:
-            if _contains_identifier(
-                _unit_text(unit.content_text, unit.location),
-                identifier,
-            ):
+            if _unit_contains_identifier(unit, identifier):
                 add(unit, f"anchor_identifier:{identifier}")
         add(unit, "aligned" if unit.alignment_score > 0 else "residual")
 
@@ -450,8 +447,10 @@ def _hard_anchor_score(contract: _QueryContract, text: str) -> int:
 
 def _identity_identifier_score(contract: _QueryContract, unit: EvidenceUnit) -> int:
     """Score exact identifiers against evidence body and source identity."""
-    return _hard_anchor_score(
-        contract, _unit_text(unit.content_text, unit.location, unit.file_path)
+    return sum(
+        4
+        for identifier in contract.identifiers
+        if _unit_contains_identifier(unit, identifier)
     )
 
 
@@ -591,7 +590,9 @@ def _symbol_identity_score(contract: _QueryContract, unit: EvidenceUnit) -> int:
     identity = _unit_text(name, qualified_name, unit.location)
     score = 0
     for identifier in contract.identifiers:
-        if _contains_identifier(identity, identifier):
+        if _contains_identifier(identity, identifier) or _symbol_identity_has_component(
+            unit, identifier
+        ):
             score += 8
     for term in _specific_anchor_terms(contract):
         if _contains_term_variant(identity, term):
@@ -853,6 +854,43 @@ def _evidence_body_text(text: str) -> str:
 def _contains_identifier(text: str, identifier: str) -> bool:
     """Return whether raw text contains the literal identifier."""
     return _contains_exact_identifier(text, identifier)
+
+
+def _unit_contains_identifier(unit: EvidenceUnit, identifier: str) -> bool:
+    """Match a literal identifier in evidence or an exact code-identity component."""
+    if _contains_identifier(
+        _unit_text(unit.content_text, unit.location, unit.file_path),
+        identifier,
+    ):
+        return True
+    return _symbol_identity_has_component(unit, identifier)
+
+
+def _symbol_identity_has_component(unit: EvidenceUnit, identifier: str) -> bool:
+    """Match an unchanged identifier as one component of a typed symbol identity."""
+    if unit.kind != "symbol" or not identifier:
+        return False
+
+    metadata: dict[str, Any] = {}
+    if unit.result is not None:
+        metadata.update(unit.result.metadata)
+        metadata.update(unit.result.address.metadata)
+    elif unit.address is not None:
+        metadata.update(unit.address.metadata)
+
+    values = (
+        str(metadata.get("name", "")),
+        str(metadata.get("qualified_name", "")),
+        unit.location,
+        unit.file_path,
+    )
+    expected = identifier.casefold()
+    return any(
+        component.casefold() == expected
+        for value in values
+        for component in re.split(r"[./\\]+", value)
+        if component
+    )
 
 
 def _contains_phrase(text: str, phrase: str) -> bool:
