@@ -583,6 +583,7 @@ def _select_closure_results(
         if not results:
             return []
         results = _prioritize_bridge_table_schema(request, results)
+        results = _prioritize_closure_symbol_identity(request, results)
     if request is not None and request.role.startswith("bridge_document:"):
         document = _normalize_source_name(request.role.removeprefix("bridge_document:"))
         exact_locations = [
@@ -658,6 +659,59 @@ def _table_schema_query_score(result: "ReadResult", query_terms: list[str]) -> i
         1
         for term in query_terms
         if re.search(rf"\b{re.escape(term)}s?\b", schema)
+    )
+
+
+def _prioritize_closure_symbol_identity(
+    request: EvidenceClosureRequest,
+    results: list["ReadResult"],
+) -> list["ReadResult"]:
+    """Prefer a concrete symbol whose identity covers the follow-up terms."""
+    if request.modality != "symbol":
+        return results
+
+    contract = build_query_contract(request.query)
+    identifier_terms = {
+        term
+        for identifier in contract.identifiers
+        for term in _normalize_source_name(identifier).split()
+    }
+    query_terms = [
+        term
+        for term in contract.keyword_anchors
+        if term not in identifier_terms and term not in {"code", "symbol"}
+    ]
+    if not query_terms:
+        return results
+
+    ranked = sorted(
+        enumerate(results),
+        key=lambda item: (
+            -_symbol_identity_query_score(item[1], query_terms),
+            item[0],
+        ),
+    )
+    return [result for _, result in ranked]
+
+
+def _symbol_identity_query_score(result: "ReadResult", query_terms: list[str]) -> int:
+    """Count follow-up terms represented by a symbol identity or signature."""
+    metadata = dict(result.address.metadata)
+    metadata.update(result.metadata)
+    identity = _normalize_source_name(
+        " ".join(
+            [
+                str(metadata.get("name") or ""),
+                str(metadata.get("qualified_name") or ""),
+                str(metadata.get("signature") or ""),
+                result.address.location,
+            ]
+        )
+    )
+    return sum(
+        1
+        for term in query_terms
+        if re.search(rf"\b{re.escape(term)}s?\b", identity)
     )
 
 

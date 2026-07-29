@@ -798,6 +798,51 @@ def test_table_bridge_prefers_schema_covering_requested_fields() -> None:
     assert [result.file_path for result in selected] == ["structured/services.csv"]
 
 
+def test_symbol_closure_prefers_identity_covering_behavior_terms() -> None:
+    """A referenced module should yield its matching function, not its wrapper."""
+    module = _result(
+        AddressKind.SYMBOL,
+        "code/export_scheduler.py",
+        "code.export_scheduler",
+        '"""Export scheduling helpers."""',
+        address_metadata={
+            "kind": "module",
+            "name": "export_scheduler",
+            "qualified_name": "code.export_scheduler",
+        },
+    )
+    function = _result(
+        AddressKind.SYMBOL,
+        "code/export_scheduler.py",
+        "code.export_scheduler.should_skip_export",
+        "def should_skip_export(row_count: int, encrypted: bool) -> bool: ...",
+        address_metadata={
+            "kind": "function",
+            "name": "should_skip_export",
+            "qualified_name": "code.export_scheduler.should_skip_export",
+            "signature": "def should_skip_export(row_count: int, encrypted: bool) -> bool",
+        },
+    )
+    request = EvidenceClosureRequest(
+        query="symbol export_scheduler.py should EXP-502 be skipped",
+        modality="symbol",
+        role="required_symbol",
+        reason="missing_required_modality",
+        bridges=("EXP-502", "export_scheduler.py"),
+    )
+
+    selected = _select_closure_results(
+        request.query,
+        [module, function],
+        _profile(modality="code"),
+        request=request,
+    )
+
+    assert [result.address.location for result in selected] == [
+        "code.export_scheduler.should_skip_export"
+    ]
+
+
 def test_document_companion_prefers_exact_source_derived_location() -> None:
     """A document section must outrank its synthetic introduction wrapper."""
     introduction = _result(

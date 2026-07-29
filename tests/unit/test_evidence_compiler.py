@@ -1161,6 +1161,70 @@ def test_compiler_preserves_each_grounded_compound_query_clause() -> None:
     assert "required_section" in roles
 
 
+def test_compiler_keeps_explicit_code_file_companion_without_query_identifier() -> None:
+    """An explicit source-file bridge grounds a helper that omits the row ID."""
+    brief = _result(
+        "Export EXP-502 uses `export_scheduler.py` for skip logic.",
+        "mixed/export_brief.md",
+        location="Export Brief",
+    )
+    function = _result(
+        "def should_skip_export(row_count: int, encrypted: bool) -> bool:\n"
+        "    return row_count > 100000 and not encrypted",
+        "code/export_scheduler.py",
+        kind=AddressKind.SYMBOL,
+        location="code.export_scheduler.should_skip_export",
+        address_metadata={
+            "kind": "function",
+            "name": "should_skip_export",
+            "qualified_name": "code.export_scheduler.should_skip_export",
+        },
+        metadata={
+            "evidence_closure": {
+                "role": "required_symbol",
+                "bridges": ["EXP-502", "export_scheduler.py"],
+                "contract_identifiers": ["EXP-502"],
+            }
+        },
+    )
+
+    compiled = compile_evidence(
+        "Should EXP-502 be skipped?",
+        [brief, function],
+        profile=_profile(obligation="prose_plus_code"),
+    )
+
+    assert [result.file_path for result in compiled.results] == [
+        "mixed/export_brief.md",
+        "code/export_scheduler.py",
+    ]
+    assert compiled.results[1].metadata["evidence_compiler"]["roles"] == [
+        "required_symbol"
+    ]
+
+
+def test_compiler_rejects_code_companion_from_a_different_file() -> None:
+    """Closure cannot use one referenced filename to certify another module."""
+    unrelated = _result(
+        "def should_skip_export(row_count: int) -> bool:\n    return False",
+        "code/other_scheduler.py",
+        kind=AddressKind.SYMBOL,
+        location="code.other_scheduler.should_skip_export",
+        metadata={
+            "evidence_closure": {
+                "role": "required_symbol",
+                "bridges": ["EXP-502", "export_scheduler.py"],
+                "contract_identifiers": ["EXP-502"],
+            }
+        },
+    )
+
+    compiled = compile_evidence("Should EXP-502 be skipped?", [unrelated])
+
+    assert compiled.results == []
+    assert compiled.metadata["filtered_all"] is True
+
+
 def test_compound_clause_does_not_bypass_its_own_exact_identifier() -> None:
     """Clause coverage cannot certify a result missing that clause's identifier."""
     query = "What is AX-156 status, and who owns privacy_banner?"

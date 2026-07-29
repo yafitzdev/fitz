@@ -584,6 +584,8 @@ def _closure_bridge_content_score(unit: EvidenceUnit) -> int:
     if role.startswith("required_"):
         if role not in unit.roles:
             return 0
+        if role == "required_symbol" and _matches_explicit_code_file_bridge(unit, closure):
+            return 4
         return sum(
             4
             for bridge in closure.get("bridges", [])
@@ -604,6 +606,23 @@ def _closure_bridge_content_score(unit: EvidenceUnit) -> int:
         if _contains_term_variant(unit.content_text, bridge_text):
             score += 1
     return score
+
+
+def _matches_explicit_code_file_bridge(
+    unit: EvidenceUnit,
+    closure: dict[str, Any],
+) -> bool:
+    """Return whether closure followed an explicit source file to this symbol."""
+    if unit.kind != "symbol":
+        return False
+    result_file = unit.file_path.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    if not result_file:
+        return False
+    for value in closure.get("bridges", []):
+        bridge_file = str(value).replace("\\", "/").rsplit("/", 1)[-1].casefold()
+        if "." in bridge_file and bridge_file == result_file:
+            return True
+    return False
 
 
 def _best_unit(contract: _QueryContract, units: list[EvidenceUnit]) -> EvidenceUnit | None:
