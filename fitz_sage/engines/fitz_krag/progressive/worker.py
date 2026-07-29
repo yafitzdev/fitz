@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
     from fitz_sage.engines.fitz_krag.ingestion.pipeline import KragIngestPipeline
     from fitz_sage.engines.fitz_krag.progressive.manifest import FileManifest, ManifestEntry
+    from fitz_sage.engines.fitz_krag.progressive.write_lock import CollectionWriteLock
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,11 @@ class BackgroundEnrichmentWorker:
         self,
         manifest: "FileManifest",
         core: "KragIngestPipeline",
+        write_lock: "CollectionWriteLock",
     ) -> None:
         self._manifest = manifest
         self._core = core
+        self._write_lock = write_lock
         self._stop_event = threading.Event()
         self._query_active = threading.Event()
         self._done = threading.Event()
@@ -40,6 +43,7 @@ class BackgroundEnrichmentWorker:
 
     def start(self) -> None:
         """Start enrichment on a daemon thread."""
+        self._require_write_lock()
         self._thread = threading.Thread(
             target=self._run,
             daemon=True,
@@ -50,7 +54,11 @@ class BackgroundEnrichmentWorker:
 
     def run_until_complete(self) -> None:
         """Run pending file and collection enrichment synchronously."""
-        self._run_enrichment()
+        self._require_write_lock()
+        try:
+            self._run_enrichment()
+        finally:
+            self._write_lock.release()
 
     def stop(self) -> None:
         """Signal the worker and wait briefly for its current operation."""
@@ -105,9 +113,16 @@ class BackgroundEnrichmentWorker:
             self._manifest.bump_priority_level(siblings, level=2)
 
     def _run(self) -> None:
-        self._run_enrichment()
-        if self._failure is None:
-            self._warm_loop()
+        try:
+            self._run_enrichment()
+            if self._failure is None:
+                self._warm_loop()
+        finally:
+            self._write_lock.release()
+
+    def _require_write_lock(self) -> None:
+        if not self._write_lock.acquired:
+            raise RuntimeError("Background enrichment requires the collection write lock.")
 
     def _run_enrichment(self) -> None:
         try:

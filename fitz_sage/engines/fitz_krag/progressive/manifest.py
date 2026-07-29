@@ -67,7 +67,9 @@ class FileManifest:
     """Thread-safe manifest with JSON persistence.
 
     Persisted at .fitz/collections/{collection}/manifest.json in the workspace.
-    All mutations are guarded by a threading.Lock.
+    All in-process mutations are guarded by a threading.Lock. Complete writer
+    operations are serialized across manifest instances and processes by the
+    collection write lock owned by the engine.
     """
 
     def __init__(self, manifest_path: Path) -> None:
@@ -78,6 +80,11 @@ class FileManifest:
         self._finalization_failure: str | None = None
         if self._path.exists():
             self.load()
+
+    @property
+    def path(self) -> Path:
+        """Return the persistence path used by this manifest."""
+        return self._path
 
     def entries(self) -> dict[str, ManifestEntry]:
         """Return a snapshot of all entries keyed by rel_path."""
@@ -171,10 +178,14 @@ class FileManifest:
             for rel_path, entry in self._entries.items():
                 if entry.enrichment_state != EnrichmentState.FAILED:
                     continue
-                retry_state = {
-                    "hierarchy": EnrichmentState.ENTITY_LINKED,
-                    "summary": EnrichmentState.COMPLETE,
-                }.get(entry.enrichment_failure_stage, EnrichmentState.PENDING)
+                retry_state = (
+                    {
+                        "hierarchy": EnrichmentState.ENTITY_LINKED,
+                        "summary": EnrichmentState.COMPLETE,
+                    }.get(entry.enrichment_failure_stage, EnrichmentState.PENDING)
+                    if entry.enrichment_failure_stage is not None
+                    else EnrichmentState.PENDING
+                )
                 self._entries[rel_path] = _replace_entry(
                     entry,
                     enrichment_state=retry_state,

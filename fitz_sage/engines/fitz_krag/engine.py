@@ -1204,6 +1204,7 @@ class FitzKragEngine:
         """
         from fitz_sage.core.paths import FitzPaths
         from fitz_sage.engines.fitz_krag.progressive.builder import ManifestBuilder
+        from fitz_sage.engines.fitz_krag.progressive.write_lock import CollectionWriteLock
 
         col = validate_collection_name(collection or self._config.collection)
         source = Path(source).resolve()
@@ -1220,38 +1221,54 @@ class FitzKragEngine:
 
         col_dir = FitzPaths.workspace() / "collections" / col
         manifest_path = col_dir / "manifest.json"
-        builder = ManifestBuilder(self._config)
-        manifest = builder.build(source, manifest_path, progress=progress)
-        manifest_entries = manifest.entries()
-        self._manifest = manifest
-        self._source_dir = source_dir
+        write_lock = CollectionWriteLock(
+            col_dir,
+            collection=col,
+            operation="source indexing",
+        )
+        write_lock.acquire()
+        worker_owns_lock = False
+        try:
+            builder = ManifestBuilder(self._config)
+            manifest = builder.build(source, manifest_path, progress=progress)
+            manifest_entries = manifest.entries()
+            self._manifest = manifest
+            self._source_dir = source_dir
 
-        col_dir.mkdir(parents=True, exist_ok=True)
-        (col_dir / "source_dir.txt").write_text(str(source_dir), encoding="utf-8")
+            col_dir.mkdir(parents=True, exist_ok=True)
+            (col_dir / "source_dir.txt").write_text(str(source_dir), encoding="utf-8")
 
-        core = self._build_ingest_core()
-        core.delete_files_not_in_paths(set(manifest_entries))
-        for entry in manifest_entries.values():
-            if entry.state.value in {"failed", "unsupported"}:
-                core.discard_file(entry.file_id)
+            core = self._build_ingest_core()
+            core.delete_files_not_in_paths(set(manifest_entries))
+            for entry in manifest_entries.values():
+                if entry.state.value in {"failed", "unsupported"}:
+                    core.discard_file(entry.file_id)
 
-        self._index_registered_files(manifest, source_dir, core, progress)
-        core.resolve_imports()
-        manifest.save()
+            self._index_registered_files(manifest, source_dir, core, progress)
+            core.resolve_imports()
+            manifest.save()
 
-        if start_worker and self._enrichment_is_pending(manifest):
-            from fitz_sage.engines.fitz_krag.progressive.worker import (
-                BackgroundEnrichmentWorker,
-            )
+            if start_worker and self._enrichment_is_pending(manifest):
+                from fitz_sage.engines.fitz_krag.progressive.worker import (
+                    BackgroundEnrichmentWorker,
+                )
 
-            manifest.prepare_enrichment_retry()
-            self._enrichment_worker = BackgroundEnrichmentWorker(
-                manifest=manifest,
-                core=core,
-            )
-            self._enrichment_worker.start()
+                manifest.prepare_enrichment_retry()
+                manifest.save()
+                write_lock.update_operation("background enrichment")
+                worker = BackgroundEnrichmentWorker(
+                    manifest=manifest,
+                    core=core,
+                    write_lock=write_lock,
+                )
+                worker.start()
+                self._enrichment_worker = worker
+                worker_owns_lock = True
 
-        return manifest
+            return manifest
+        finally:
+            if not worker_owns_lock:
+                write_lock.release()
 
     def continue_enrichment(self) -> None:
         """Complete persisted model-backed enrichment, then exit."""
@@ -1261,14 +1278,26 @@ class FitzKragEngine:
         from fitz_sage.engines.fitz_krag.progressive.worker import (
             BackgroundEnrichmentWorker,
         )
+        from fitz_sage.engines.fitz_krag.progressive.write_lock import CollectionWriteLock
 
-        self._manifest.prepare_enrichment_retry()
-        core = self._build_ingest_core()
-        worker = BackgroundEnrichmentWorker(
-            manifest=self._manifest,
-            core=core,
+        write_lock = CollectionWriteLock(
+            self._manifest.path.parent,
+            collection=self._config.collection,
+            operation="background enrichment",
         )
-        worker.run_until_complete()
+        write_lock.acquire()
+        try:
+            self._manifest.load()
+            self._manifest.prepare_enrichment_retry()
+            core = self._build_ingest_core()
+            worker = BackgroundEnrichmentWorker(
+                manifest=self._manifest,
+                core=core,
+                write_lock=write_lock,
+            )
+            worker.run_until_complete()
+        finally:
+            write_lock.release()
 
     def stop_background_enrichment(self) -> None:
         """Stop the in-process enrichment worker if one is running."""

@@ -25,6 +25,10 @@ from fitz_sage.core import (
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine, _build_provider_config
+from fitz_sage.engines.fitz_krag.progressive.write_lock import (
+    CollectionBusyError,
+    CollectionWriteLock,
+)
 from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from tests.unit.mock_engine import build_mock_engine
@@ -961,6 +965,32 @@ class TestEvidence:
 class TestPoint:
     """Tests for synchronous source indexing and collection routing."""
 
+    def test_point_rejects_a_concurrent_collection_writer(self, tmp_path):
+        """Discovery cannot begin while another writer owns the collection."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config(collection="default")
+        engine._enrichment_worker = None
+        source = tmp_path / "docs"
+        source.mkdir()
+        workspace = tmp_path / ".fitz"
+        lock = CollectionWriteLock(
+            workspace / "collections" / "default",
+            collection="default",
+            operation="background enrichment",
+        )
+
+        with (
+            lock,
+            patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
+            patch(
+                "fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder"
+            ) as builder_cls,
+            pytest.raises(CollectionBusyError, match="Collection 'default' is busy"),
+        ):
+            engine.point(source, start_worker=False)
+
+        builder_cls.assert_not_called()
+
     def test_point_collection_override_rebinds_collection_components(self, tmp_path):
         """point(..., collection=...) binds ingestion to that collection."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
@@ -1100,7 +1130,9 @@ class TestPoint:
         """Persisted enrichment resumes without rebuilding the source index."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._manifest = MagicMock()
+        engine._manifest.path = tmp_path / "manifest.json"
         engine._source_dir = tmp_path / "docs"
+        engine._config = _make_config(collection="default")
         engine._build_ingest_core = MagicMock(return_value=MagicMock())
 
         with patch(
@@ -1112,6 +1144,8 @@ class TestPoint:
 
         worker_cls.assert_called_once()
         assert worker_cls.call_args.kwargs["manifest"] is engine._manifest
+        assert worker_cls.call_args.kwargs["write_lock"].path == tmp_path / "writer.lock"
+        engine._manifest.load.assert_called_once()
         engine._manifest.prepare_enrichment_retry.assert_called_once()
         worker.run_until_complete.assert_called_once()
 

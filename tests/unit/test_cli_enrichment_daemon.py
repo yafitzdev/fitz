@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
+from fitz_sage.cli.commands.enrichment_daemon import _remove_owned_pid_file
 from fitz_sage.cli.cli import app
 
 runner = CliRunner()
@@ -36,3 +37,16 @@ def test_enrichment_daemon_loads_collection_and_continues_enrichment() -> None:
     assert result.exit_code == 0
     mock_engine.load.assert_called_once_with("docs")
     mock_engine.continue_enrichment.assert_called_once()
+
+
+def test_daemon_only_removes_its_own_pid_file(monkeypatch, tmp_path) -> None:
+    pid_path = tmp_path / "enrichment_daemon.pid"
+    monkeypatch.setattr("fitz_sage.cli.commands.enrichment_daemon.os.getpid", lambda: 123)
+
+    pid_path.write_text("456", encoding="utf-8")
+    _remove_owned_pid_file(pid_path)
+    assert pid_path.exists()
+
+    pid_path.write_text("123", encoding="utf-8")
+    _remove_owned_pid_file(pid_path)
+    assert not pid_path.exists()

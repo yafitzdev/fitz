@@ -28,11 +28,15 @@ def _entry(
     )
 
 
+def _worker(manifest: FileManifest, core: MagicMock) -> BackgroundEnrichmentWorker:
+    return BackgroundEnrichmentWorker(manifest, core, MagicMock())
+
+
 def test_worker_runs_only_background_enrichment(tmp_path: Path) -> None:
     manifest = FileManifest(tmp_path / "manifest.json")
     manifest.add(_entry("guide.md"))
     core = MagicMock()
-    worker = BackgroundEnrichmentWorker(manifest, core)
+    worker = _worker(manifest, core)
 
     worker.run_until_complete()
 
@@ -47,13 +51,37 @@ def test_worker_runs_only_background_enrichment(tmp_path: Path) -> None:
     assert manifest.finalization_status()[0] == FinalizationState.COMPLETE
 
 
+def test_synchronous_worker_releases_collection_lock(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    write_lock = MagicMock()
+    worker = BackgroundEnrichmentWorker(manifest, MagicMock(), write_lock)
+
+    worker.run_until_complete()
+
+    write_lock.release.assert_called_once_with()
+
+
+def test_background_worker_holds_lock_until_stopped(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    write_lock = MagicMock()
+    worker = BackgroundEnrichmentWorker(manifest, MagicMock(), write_lock)
+
+    worker.start()
+    worker.wait()
+    write_lock.release.assert_not_called()
+
+    worker.stop()
+
+    write_lock.release.assert_called_once_with()
+
+
 def test_entity_failure_does_not_remove_source_index(tmp_path: Path) -> None:
     manifest = FileManifest(tmp_path / "manifest.json")
     manifest.add(_entry("guide.md"))
     core = MagicMock()
     core.link_entities_file.side_effect = RuntimeError("model unavailable")
 
-    BackgroundEnrichmentWorker(manifest, core).run_until_complete()
+    _worker(manifest, core).run_until_complete()
 
     entry = manifest.get("guide.md")
     assert entry is not None
@@ -67,7 +95,7 @@ def test_hierarchy_retry_starts_after_entity_linking(tmp_path: Path) -> None:
     manifest.add(_entry("guide.md", enrichment=EnrichmentState.ENTITY_LINKED))
     core = MagicMock()
 
-    BackgroundEnrichmentWorker(manifest, core).run_until_complete()
+    _worker(manifest, core).run_until_complete()
 
     core.link_entities_file.assert_not_called()
     core.build_hierarchy_file.assert_called_once()
@@ -80,7 +108,7 @@ def test_collection_failure_is_reported_separately(tmp_path: Path) -> None:
     core = MagicMock()
     core.build_corpus_hierarchy.side_effect = RuntimeError("summary failed")
 
-    BackgroundEnrichmentWorker(manifest, core).run_until_complete()
+    _worker(manifest, core).run_until_complete()
 
     state, failure = manifest.finalization_status()
     assert state == FinalizationState.FAILED
@@ -93,7 +121,7 @@ def test_query_boost_prioritizes_file_and_sibling(tmp_path: Path) -> None:
     manifest.add(_entry("docs/hot.md"))
     manifest.add(_entry("docs/sibling.md"))
     manifest.add(_entry("other/cold.md"))
-    worker = BackgroundEnrichmentWorker(manifest, MagicMock())
+    worker = _worker(manifest, MagicMock())
 
     worker.boost_files(["docs/hot.md"])
 
@@ -105,7 +133,7 @@ def test_query_boost_prioritizes_file_and_sibling(tmp_path: Path) -> None:
 def test_warm_target_requires_completed_enrichment_and_query(tmp_path: Path) -> None:
     manifest = FileManifest(tmp_path / "manifest.json")
     manifest.add(_entry("guide.md", enrichment=EnrichmentState.COMPLETE))
-    worker = BackgroundEnrichmentWorker(manifest, MagicMock())
+    worker = _worker(manifest, MagicMock())
     assert worker._next_warm_target() is None
 
     manifest.bump_priority(["guide.md"])
@@ -119,7 +147,7 @@ def test_demand_summary_failure_is_recorded_for_retry(tmp_path: Path) -> None:
     manifest.add(entry)
     core = MagicMock()
     core.summarize_file.side_effect = RuntimeError("model unavailable")
-    worker = BackgroundEnrichmentWorker(manifest, core)
+    worker = _worker(manifest, core)
 
     worker._summarize_entry(entry)
 

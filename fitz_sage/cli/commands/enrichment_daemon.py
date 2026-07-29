@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +19,20 @@ logger = logging.getLogger(__name__)
 def _pid_path(collection: str) -> Path:
     """Return the PID file for this collection in the current workspace."""
     return Path.cwd() / ".fitz" / "collections" / collection / "enrichment_daemon.pid"
+
+
+def _remove_owned_pid_file(path: Path) -> None:
+    """Remove the daemon marker only when it still names this process."""
+    try:
+        owner = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return
+    if owner != os.getpid():
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def command(collection: str, engine: Optional[str]) -> None:
@@ -42,7 +57,4 @@ def command(collection: str, engine: Optional[str]) -> None:
         engine_instance.continue_enrichment()
         logger.info("Enrichment daemon completed: collection=%s engine=%s", collection, engine_name)
     finally:
-        try:
-            _pid_path(collection).unlink(missing_ok=True)
-        except OSError:
-            pass
+        _remove_owned_pid_file(_pid_path(collection))
