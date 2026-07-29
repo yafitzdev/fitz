@@ -47,6 +47,7 @@ _STOPWORDS = {
 }
 _BOOLEAN_TRUE = {"1", "active", "enabled", "true", "yes", "on"}
 _BOOLEAN_FALSE = {"0", "disabled", "false", "inactive", "no", "off"}
+_MIN_UNPREFIXED_ROOT_LENGTH = 4
 _NEGATIVE_QUERY_TERMS = {
     "disabled",
     "false",
@@ -54,7 +55,6 @@ _NEGATIVE_QUERY_TERMS = {
     "no",
     "not",
     "off",
-    "unencrypted",
     "without",
 }
 _POSITIVE_QUERY_TERMS = {
@@ -269,19 +269,27 @@ def _row_predicates(
 
 def _boolean_predicate_values(column: ColumnBinding, query_text: str) -> set[str]:
     column_terms = set(column.tokens)
-    has_column_reference = bool(column_terms & set(query_text.split()))
-    if "encrypt" in query_text and any(token.startswith("encrypt") for token in column_terms):
-        has_column_reference = True
+    query_terms = set(query_text.split())
+    negated_column_reference = any(
+        _is_unprefixed_column_reference(query_term, column_terms)
+        for query_term in query_terms
+    )
+    has_column_reference = bool(column_terms & query_terms) or negated_column_reference
     if not has_column_reference:
         return set()
 
-    if "unencrypted" in query_text or "not encrypted" in query_text:
+    if negated_column_reference or query_terms & _NEGATIVE_QUERY_TERMS:
         return _BOOLEAN_FALSE
-    if any(term in query_text.split() for term in _NEGATIVE_QUERY_TERMS):
-        return _BOOLEAN_FALSE
-    if any(term in query_text.split() for term in _POSITIVE_QUERY_TERMS):
+    if query_terms & _POSITIVE_QUERY_TERMS:
         return _BOOLEAN_TRUE
     return set()
+
+
+def _is_unprefixed_column_reference(query_term: str, column_terms: set[str]) -> bool:
+    if not query_term.startswith("un"):
+        return False
+    root = query_term.removeprefix("un")
+    return len(root) >= _MIN_UNPREFIXED_ROOT_LENGTH and root in column_terms
 
 
 def _sort_clause(

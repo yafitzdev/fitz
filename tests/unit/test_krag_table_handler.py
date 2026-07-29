@@ -183,34 +183,50 @@ class TestTableQueryHandler:
         # Original result returned on failure
         assert results[0].address.kind == AddressKind.TABLE
 
-    def test_process_without_chat_returns_query_grounded_rows(self):
-        """No-chat table handling should still return relevant row evidence."""
+    def test_process_without_chat_handles_prefixed_boolean_negation(self):
+        """An un-prefixed column term should select false boolean rows."""
         sqlite_table_store = MagicMock(name="sqlite_table_store")
-        sqlite_table_store.get_table_name.return_value = "tbl_assets"
+        sqlite_table_store.get_table_name.return_value = "tbl_builds"
         sqlite_table_store.get_columns.return_value = (
-            ["asset_id", "environment", "encrypted_at_rest"],
-            ["asset_id", "environment", "encrypted_at_rest"],
+            ["build_id", "environment", "approved_for_release"],
+            ["build_id", "environment", "approved_for_release"],
         )
         sqlite_table_store.get_row_count.return_value = 3
         sqlite_table_store.execute_query.return_value = (
-            ["asset_id", "environment", "encrypted_at_rest"],
+            ["build_id", "environment", "approved_for_release"],
             [
-                ["AST-22", "Prod", "no"],
-                ["AST-23", "Prod", "yes"],
-                ["AST-24", "Stage", "no"],
+                ["BLD-22", "Prod", "no"],
+                ["BLD-23", "Prod", "yes"],
+                ["BLD-24", "Stage", "no"],
             ],
         )
         config = MagicMock(name="config")
         config.max_table_results = 100
         handler = TableQueryHandler(None, sqlite_table_store, config)
-        table_result = _make_table_read_result(name="Assets")
+        table_result = _make_table_read_result(name="Builds")
 
-        results = handler.process("Which Prod assets are unencrypted?", [table_result])
+        results = handler.process(
+            "Which Prod builds are unapproved for release?",
+            [table_result],
+        )
 
         assert "Deterministic Table Matches" in results[0].content
-        assert "AST-22" in results[0].content
-        assert "AST-23" not in results[0].content
+        assert "BLD-22" in results[0].content
+        assert "BLD-23" not in results[0].content
+        assert "BLD-24" not in results[0].content
         assert results[0].metadata["deterministic_table_filter"] is True
+        assert results[0].metadata["table_query_plan"]["predicates"] == [
+            {
+                "column": "environment",
+                "accepted_values": ["prod"],
+                "source": "categorical_value",
+            },
+            {
+                "column": "approved_for_release",
+                "accepted_values": ["0", "disabled", "false", "inactive", "no", "off"],
+                "source": "boolean_column",
+            },
+        ]
 
     def test_deterministic_table_filter_scopes_superlative_to_row_values(self):
         """Superlative row selection should filter to entity-matching rows before sorting."""
