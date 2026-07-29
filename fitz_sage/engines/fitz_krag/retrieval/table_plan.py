@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date
 from enum import Enum
 from typing import Any
 
@@ -13,6 +12,10 @@ from fitz_sage.core.identifiers import EXACT_IDENTIFIER_PATTERN as _IDENTIFIER_P
 from fitz_sage.core.identifiers import (
     contains_exact_identifier,
     exact_identifiers,
+)
+from fitz_sage.tabular.query import (
+    normalize_table_value as _normalize,
+    sortable_table_value as _sortable_value,
 )
 
 _MAX_SUPERLATIVES = {"highest", "largest", "latest", "longest", "max", "maximum", "most", "newest"}
@@ -428,25 +431,6 @@ def _superlative_direction(query: str) -> str | None:
     return None
 
 
-def _sortable_value(value: Any) -> float | None:
-    text = str(value).strip()
-    if not text:
-        return None
-    try:
-        return float(date.fromisoformat(text).toordinal())
-    except ValueError:
-        pass
-    if _IDENTIFIER_PATTERN.fullmatch(text):
-        return None
-    match = re.fullmatch(r"-?\d+(?:\.\d+)?", text.replace(",", ""))
-    if not match:
-        return None
-    try:
-        return float(match.group(0))
-    except ValueError:
-        return None
-
-
 def _contains_identifier(text: str, identifier: str) -> bool:
     return contains_exact_identifier(text, identifier)
 
@@ -465,11 +449,6 @@ def _contains_term(text: str, term: str) -> bool:
 
 def _tokenize(value: str) -> list[str]:
     return _normalize(value).split()
-
-
-def _normalize(value: str) -> str:
-    value = value.replace("_", " ")
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
 
 
 __all__ = [

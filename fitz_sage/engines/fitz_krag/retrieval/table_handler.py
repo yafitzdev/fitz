@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeGuard
 
 from fitz_sage.core.identifiers import exact_identifiers
 from fitz_sage.engines.fitz_krag.retrieval.table_plan import (
+    TableQueryPlan,
     build_table_query_plan,
     execute_table_query_plan,
 )
@@ -190,7 +191,18 @@ class TableQueryHandler:
 
         plan = build_table_query_plan(query, row_columns, rows)
         selected_rows = execute_table_query_plan(plan, rows)
-        if indexed_row_lookup and not selected_rows:
+        full_table_plan_execution = False
+        if (
+            not exact_identifier_lookup
+            and isinstance(row_count, int)
+            and row_count > len(rows)
+            and (plan.predicates or plan.sort is not None)
+        ):
+            full_table_result = self._execute_full_table_plan(table_id, plan)
+            if _is_row_data(full_table_result):
+                row_columns, selected_rows = full_table_result
+                full_table_plan_execution = True
+        if indexed_row_lookup and not full_table_plan_execution and not selected_rows:
             selected_rows = rows
         if not selected_rows:
             return result
@@ -199,14 +211,18 @@ class TableQueryHandler:
         columns = result.address.metadata.get("columns", original_cols)
         result_columns = original_cols if len(original_cols) == len(row_columns) else row_columns
         lookup_note = (
-            f"Rows selected by exact identifier lookup across all {row_count} row(s)."
-            if exact_identifier_lookup
+            f"Rows selected by deterministic query across all {row_count} row(s)."
+            if full_table_plan_execution
             else (
-                f"Rows selected by BM25 row lookup across all {row_count} row(s)."
-                if indexed_row_lookup
+                f"Rows selected by exact identifier lookup across all {row_count} row(s)."
+                if exact_identifier_lookup
                 else (
-                    f"Rows selected from a bounded scan of {len(rows)} row(s)"
-                    f" out of {row_count} total row(s)."
+                    f"Rows selected by BM25 row lookup across all {row_count} row(s)."
+                    if indexed_row_lookup
+                    else (
+                        f"Rows selected from a bounded scan of {len(rows)} row(s)"
+                        f" out of {row_count} total row(s)."
+                    )
                 )
             )
         )
@@ -230,9 +246,32 @@ class TableQueryHandler:
                 "deterministic_table_filter": True,
                 "exact_identifier_table_lookup": exact_identifier_lookup,
                 "indexed_table_row_lookup": indexed_row_lookup,
+                "full_table_plan_execution": full_table_plan_execution,
                 "result_count": len(selected_rows),
                 "table_query_plan": plan.metadata,
             },
+        )
+
+    def _execute_full_table_plan(
+        self,
+        table_id: str,
+        plan: TableQueryPlan,
+    ) -> tuple[list[str], list[list[Any]]] | None:
+        predicates = tuple(
+            (predicate.column.index, tuple(sorted(predicate.accepted_values)))
+            for predicate in plan.predicates
+        )
+        sort = (
+            (plan.sort.column.index, plan.sort.direction)
+            if plan.sort is not None
+            else None
+        )
+        limit = 1 if sort is not None else self._config.max_table_results
+        return self._sqlite_table_store.select_rows(
+            table_id,
+            predicates=predicates,
+            sort=sort,
+            limit=limit,
         )
 
     def _get_sample_data(
@@ -413,13 +452,15 @@ class TableQueryHandler:
         return text
 
 
-def _is_row_data(value: Any) -> bool:
+def _is_row_data(value: Any) -> TypeGuard[tuple[list[str], list[list[Any]]]]:
     """Return whether a store result has the expected columns-and-rows shape."""
     return (
         isinstance(value, tuple)
         and len(value) == 2
         and isinstance(value[0], list)
         and isinstance(value[1], list)
+        and all(isinstance(column, str) for column in value[0])
+        and all(isinstance(row, list) for row in value[1])
     )
 
 

@@ -463,6 +463,52 @@ class TestTableQueryHandler:
             }
         ]
 
+    def test_deterministic_table_plan_executes_over_rows_beyond_scan_limit(self):
+        """A typed superlative plan should execute over the complete stored table."""
+        sqlite_table_store = MagicMock(name="sqlite_table_store")
+        sqlite_table_store.get_table_name.return_value = "tbl_jobs"
+        sqlite_table_store.get_columns.return_value = (
+            ["job_id", "duration_minutes", "manual_review_enabled"],
+            ["job_id", "duration_minutes", "manual_review_enabled"],
+        )
+        sqlite_table_store.get_row_count.return_value = 900
+        sqlite_table_store.execute_query.return_value = (
+            ["job_id", "duration_minutes", "manual_review_enabled"],
+            [
+                ["JOB-001", "42", "yes"],
+                ["JOB-002", "88", "no"],
+            ],
+        )
+        sqlite_table_store.select_rows.return_value = (
+            ["job_id", "duration_minutes", "manual_review_enabled"],
+            [["JOB-850", "999", "yes"]],
+        )
+        config = MagicMock(name="config")
+        config.max_table_results = 100
+        handler = TableQueryHandler(None, sqlite_table_store, config)
+        table_result = _make_table_read_result(name="Jobs", row_count=900)
+
+        results = handler.process(
+            "Which manual-review-enabled job has the longest duration?",
+            [table_result],
+        )
+
+        assert "JOB-850" in results[0].content
+        assert "JOB-001" not in results[0].content
+        assert "across all 900 row(s)" in results[0].content
+        assert results[0].metadata["full_table_plan_execution"] is True
+        sqlite_table_store.select_rows.assert_called_once_with(
+            "tbl_abc",
+            predicates=(
+                (
+                    2,
+                    ("1", "active", "enabled", "on", "true", "yes"),
+                ),
+            ),
+            sort=(1, "max"),
+            limit=1,
+        )
+
     def test_deterministic_table_plan_binds_negation_to_its_boolean_column(self):
         """One negated condition must not invert another boolean condition."""
         sqlite_table_store = MagicMock(name="sqlite_table_store")

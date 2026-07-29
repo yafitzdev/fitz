@@ -165,6 +165,31 @@ def test_get_rows_by_numbers_returns_distant_rows_in_requested_order() -> None:
     )
 
 
+def test_select_rows_filters_and_sorts_across_the_full_table() -> None:
+    store = _in_memory_table_store()
+    rows = [[f"JOB-{index:04d}", str(index), "yes"] for index in range(700)]
+    rows[20][1] = "not-a-number"
+    rows[699][2] = "no"
+    store.store(
+        "jobs",
+        ["Job ID", "Duration Minutes", "Manual Review Enabled"],
+        rows,
+        "jobs.csv",
+    )
+
+    result = store.select_rows(
+        "jobs",
+        predicates=((2, ("1", "true", "yes")),),
+        sort=(1, "max"),
+        limit=1,
+    )
+
+    assert result == (
+        ["Job ID", "Duration Minutes", "Manual Review Enabled"],
+        [["JOB-0698", "698", "yes"]],
+    )
+
+
 def test_row_bm25_search_quotes_fts_operator_words() -> None:
     store = _in_memory_table_store()
     store.store(

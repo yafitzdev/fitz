@@ -19,6 +19,7 @@ from fitz_sage.engines.fitz_krag.ingestion.store_utils import build_fts_query
 from fitz_sage.logging.logger import get_logger
 from fitz_sage.logging.tags import STORAGE
 from fitz_sage.storage import get_connection_manager
+from fitz_sage.tabular.query import normalize_table_value, sortable_table_value
 from fitz_sage.tabular.store.base import StoredTable, compute_hash
 
 logger = get_logger(__name__)
@@ -362,6 +363,101 @@ class SqliteTableStore:
                 f'SELECT {cols_str} FROM "{table_name}" ORDER BY _row_num LIMIT ?',
                 (bounded_limit,),
             ).fetchall()
+        return list(original_cols), [list(row) for row in rows]
+
+    def select_rows(
+        self,
+        table_id: str,
+        *,
+        predicates: tuple[tuple[int, tuple[str, ...]], ...] = (),
+        sort: tuple[int, str] | None = None,
+        limit: int = 100,
+    ) -> tuple[list[str], list[list[Any]]] | None:
+        """Execute validated deterministic predicates and ordering over a stored table."""
+        if sort is not None and sort[1] not in {"min", "max"}:
+            raise ValueError("sort direction must be 'min' or 'max'")
+
+        self._ensure_schema()
+        with self._manager.connection(self.collection) as conn:
+            result = conn.execute(
+                """
+                SELECT table_name, columns, column_names_original
+                FROM _table_metadata
+                WHERE table_id = ?
+                """,
+                (table_id,),
+            ).fetchone()
+            if not result:
+                return None
+
+            table_name, sanitized_json, original_json = result
+            sanitized_cols = (
+                [str(column) for column in json.loads(sanitized_json)]
+                if sanitized_json
+                else []
+            )
+            original_cols = (
+                [str(column) for column in json.loads(original_json)]
+                if original_json
+                else []
+            )
+            if not sanitized_cols:
+                return list(original_cols), []
+
+            def resolve_column(index: int) -> str:
+                if index < 0 or index >= len(sanitized_cols):
+                    raise ValueError(f"Unknown table column index: {index}")
+                return sanitized_cols[index]
+
+            conn.create_function(
+                "fitz_normalize_table_value",
+                1,
+                normalize_table_value,
+                deterministic=True,
+            )
+            conn.create_function(
+                "fitz_sortable_table_value",
+                1,
+                sortable_table_value,
+                deterministic=True,
+            )
+
+            where_parts: list[str] = []
+            params: list[Any] = []
+            for column_index, accepted in predicates:
+                resolved = resolve_column(column_index)
+                normalized = tuple(
+                    dict.fromkeys(
+                        value
+                        for value in (normalize_table_value(item) for item in accepted)
+                        if value
+                    )
+                )
+                if not normalized:
+                    return list(original_cols), []
+                placeholders = ", ".join("?" for _ in normalized)
+                where_parts.append(
+                    f'fitz_normalize_table_value("{resolved}") IN ({placeholders})'
+                )
+                params.extend(normalized)
+
+            order_sql = "ORDER BY _row_num"
+            if sort is not None:
+                sort_column = resolve_column(sort[0])
+                sort_expression = f'fitz_sortable_table_value("{sort_column}")'
+                where_parts.append(f"{sort_expression} IS NOT NULL")
+                direction = "DESC" if sort[1] == "max" else "ASC"
+                order_sql = f"ORDER BY {sort_expression} {direction}, _row_num ASC"
+
+            selected_columns = ", ".join(f'"{column}"' for column in sanitized_cols)
+            where_sql = f" WHERE {' AND '.join(where_parts)}" if where_parts else ""
+            params.append(max(1, int(limit)))
+            rows = conn.execute(
+                f'SELECT {selected_columns} FROM "{table_name}"'
+                f"{where_sql} {order_sql} LIMIT ?",
+                tuple(params),
+            ).fetchall()
+
         return list(original_cols), [list(row) for row in rows]
 
     def get_rows_by_numbers(
