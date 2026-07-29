@@ -51,6 +51,8 @@ def compile_evidence(
     query: str,
     results: list[ReadResult],
     profile: Any = None,
+    *,
+    query_legs: list[str] | None = None,
 ) -> EvidenceCompilation:
     """Compile ranked read results into an evidence-contract order."""
     contract = _build_query_contract(query, profile)
@@ -58,12 +60,18 @@ def compile_evidence(
         return EvidenceCompilation([], _metadata(contract, [], []))
 
     units = [_read_result_unit(index, result, contract) for index, result in enumerate(results)]
-    aligned = _aligned_units(contract, units)
+    clause_units = _compound_query_clause_units(query_legs or [], units)
+    aligned = _aligned_units(contract, units, clause_units=clause_units)
     if contract.identifiers and not aligned:
         return EvidenceCompilation([], _metadata(contract, units, [], filtered_all=True))
 
     working = aligned if aligned else units
-    ordered = _compile_order(contract, working, all_units=units)
+    ordered = _compile_order(
+        contract,
+        working,
+        all_units=units,
+        clause_units=clause_units,
+    )
     # Preserve retrieved evidence verbatim. Query-shape logic may reorder evidence,
     # but authority resolution and conflict judgment belong to Pyrrho and the caller.
     compiled: list[ReadResult] = []
@@ -194,6 +202,7 @@ def _compile_order(
     units: list[EvidenceUnit],
     *,
     all_units: list[EvidenceUnit] | None = None,
+    clause_units: list[tuple[int, EvidenceUnit]] | None = None,
 ) -> list[EvidenceUnit]:
     """Build evidence order from Pyrrho obligations and literal alignment."""
     search_units = all_units or units
@@ -223,6 +232,9 @@ def _compile_order(
                 key=lambda item: (-_temporal_preference_score(contract, item), item.index),
             )
             add(match, f"anchor_identifier:{identifier}")
+
+    for clause_index, unit in clause_units or []:
+        add(unit, f"query_clause:{clause_index}")
 
     for unit in units:
         for role in unit.roles:
@@ -259,16 +271,109 @@ def _compile_order(
     return selected
 
 
-def _aligned_units(contract: _QueryContract, units: list[EvidenceUnit]) -> list[EvidenceUnit]:
+def _aligned_units(
+    contract: _QueryContract,
+    units: list[EvidenceUnit],
+    *,
+    clause_units: list[tuple[int, EvidenceUnit]] | None = None,
+) -> list[EvidenceUnit]:
     """Enforce exact identifiers without rejecting semantic reranker matches."""
     if contract.identifiers:
+        clause_keys = {
+            _unit_identity(unit)
+            for _, unit in clause_units or []
+        }
         return [
             unit
             for unit in units
             if _identity_identifier_score(contract, unit) > 0
             or _closure_bridge_content_score(unit) > 0
+            or _unit_identity(unit) in clause_keys
         ]
     return units
+
+
+def _compound_query_clause_units(
+    query_legs: list[str],
+    units: list[EvidenceUnit],
+) -> list[tuple[int, EvidenceUnit]]:
+    """Return one grounded reranked result for every explicit query clause."""
+    legs: list[str] = []
+    seen: set[str] = set()
+    for value in query_legs:
+        leg = str(value).strip()
+        key = leg.casefold()
+        if leg and key not in seen:
+            seen.add(key)
+            legs.append(leg)
+    if len(legs) < 2:
+        return []
+
+    selected: list[tuple[int, EvidenceUnit]] = []
+    for clause_index, leg in enumerate(legs, start=1):
+        contract = _build_query_contract(leg)
+        candidates = [
+            unit
+            for unit in units
+            if _unit_has_retrieval_query(unit, leg)
+        ]
+        scored = [
+            (_compound_clause_score(contract, unit), unit)
+            for unit in candidates
+        ]
+        grounded = [(score, unit) for score, unit in scored if score > 0]
+        if not grounded:
+            continue
+        _, match = min(grounded, key=lambda item: (-item[0], item[1].index))
+        selected.append((clause_index, match))
+    return selected
+
+
+def _compound_clause_score(contract: _QueryContract, unit: EvidenceUnit) -> int:
+    """Score literal clause coverage without weakening exact identifiers."""
+    identifier_matches = sum(
+        1
+        for identifier in contract.identifiers
+        if _unit_contains_identifier(unit, identifier)
+    )
+    if contract.identifiers and identifier_matches != len(contract.identifiers):
+        return 0
+
+    terms = _specific_anchor_terms(contract)
+    body_matches = {
+        term
+        for term in terms
+        if _contains_term_variant(unit.content_text, term)
+    }
+    identity = _unit_text(unit.location, unit.file_path)
+    identity_matches = {
+        term
+        for term in terms
+        if term not in body_matches and _contains_term_variant(identity, term)
+    }
+    lexical_matches = len(body_matches) + len(identity_matches)
+    if not contract.identifiers:
+        minimum_matches = min(2, len(terms))
+        if minimum_matches == 0 or lexical_matches < minimum_matches:
+            return 0
+
+    return identifier_matches * 20 + len(body_matches) * 3 + len(identity_matches)
+
+
+def _unit_has_retrieval_query(unit: EvidenceUnit, query: str) -> bool:
+    """Return whether the retrieval router recorded this exact query leg."""
+    if unit.result is None:
+        return False
+    values = unit.result.address.metadata.get("retrieval_queries")
+    if not isinstance(values, (list, tuple)):
+        return False
+    expected = query.strip().casefold()
+    return any(str(value).strip().casefold() == expected for value in values)
+
+
+def _unit_identity(unit: EvidenceUnit) -> tuple[str, str, str]:
+    """Return the stable identity used for compiler-local selections."""
+    return unit.kind, unit.file_path, unit.location
 
 
 def _read_result_unit(index: int, result: ReadResult, contract: _QueryContract) -> EvidenceUnit:

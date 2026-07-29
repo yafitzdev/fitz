@@ -31,6 +31,7 @@ from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.core.collections import validate_collection_name
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.evidence_compiler import compile_evidence
+from fitz_sage.engines.fitz_krag.retrieval.query_coverage import compound_queries
 from fitz_sage.integrations.pyrrho import (
     answer_mode_from_pyrrho,
     decide,
@@ -851,10 +852,12 @@ class FitzKragEngine:
             allow_table_sql_generation=True,
             expand_context=True,
         )
+        query_legs = compound_queries(outcome.rewrite_result)
         compilation = compile_evidence(
             outcome.sanitized,
             outcome.expanded,
             profile=outcome.profile,
+            query_legs=query_legs,
         )
         query_pipeline = self._build_query_pipeline()
         outcome = query_pipeline.close_evidence(
@@ -871,6 +874,7 @@ class FitzKragEngine:
                 outcome.sanitized,
                 outcome.expanded,
                 profile=outcome.profile,
+                query_legs=query_legs,
             )
 
         requested_top_k = top_k if top_k is not None else query.metadata.get("top_k")

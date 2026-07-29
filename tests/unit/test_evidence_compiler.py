@@ -1109,6 +1109,86 @@ def test_code_notes_export_claims_are_both_preserved() -> None:
     }
 
 
+def test_compiler_preserves_each_grounded_compound_query_clause() -> None:
+    """An identifier in one clause must not erase evidence for another clause."""
+    query = (
+        "Which deployment covers privacy_banner in EU and "
+        "what retention policy applies to EU customer export logs?"
+    )
+    query_legs = [
+        "Which deployment covers privacy_banner in EU",
+        "what retention policy applies to EU customer export logs",
+    ]
+    provenance = {"retrieval_queries": [query, *query_legs]}
+    deployment = _result(
+        "DEP-903 | privacy_banner | eu | stable",
+        "structured/deployments.csv",
+        kind=AddressKind.TABLE,
+        location="Deployments",
+        address_metadata=provenance,
+    )
+    feature_flag = _result(
+        "privacy_banner | eu | enabled | Privacy",
+        "structured/feature_flags.csv",
+        kind=AddressKind.TABLE,
+        location="Feature Flags",
+        address_metadata=provenance,
+    )
+    retention = _result(
+        "EU customer export logs are retained for 180 days.",
+        "unstructured/data_retention_policy.md",
+        location="Data Retention Policy",
+        address_metadata=provenance,
+    )
+
+    compiled = compile_evidence(
+        query,
+        [deployment, feature_flag, retention],
+        profile=_profile(
+            query_contract="comparison_coverage",
+            modality="mixed",
+            obligation="prose_plus_table",
+        ),
+        query_legs=query_legs,
+    )
+
+    assert [result.file_path for result in compiled.results[:2]] == [
+        "structured/deployments.csv",
+        "unstructured/data_retention_policy.md",
+    ]
+    roles = compiled.results[1].metadata["evidence_compiler"]["roles"]
+    assert "query_clause:2" in roles
+    assert "required_section" in roles
+
+
+def test_compound_clause_does_not_bypass_its_own_exact_identifier() -> None:
+    """Clause coverage cannot certify a result missing that clause's identifier."""
+    query = "What is AX-156 status, and who owns privacy_banner?"
+    query_legs = ["What is AX-156 status", "who owns privacy_banner"]
+    provenance = {"retrieval_queries": query_legs}
+    unrelated = _result(
+        "AX-155 is stable and owned by Search.",
+        "unstructured/status.md",
+        address_metadata=provenance,
+    )
+    privacy = _result(
+        "privacy_banner is owned by Privacy.",
+        "structured/feature_flags.csv",
+        kind=AddressKind.TABLE,
+        address_metadata=provenance,
+    )
+
+    compiled = compile_evidence(
+        query,
+        [unrelated, privacy],
+        query_legs=query_legs,
+    )
+
+    assert [result.file_path for result in compiled.results] == [
+        "structured/feature_flags.csv"
+    ]
+
+
 def _profile(
     *,
     query_contract: str | None = None,
