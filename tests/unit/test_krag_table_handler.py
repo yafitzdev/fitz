@@ -409,39 +409,39 @@ class TestTableQueryHandler:
             "direction": "max",
         }
 
-    def test_deterministic_table_plan_applies_boolean_predicate_before_superlative(self):
-        """Boolean column predicates should scope the candidate set before ordering."""
+    def test_deterministic_table_plan_uses_compound_boolean_column_before_superlative(self):
+        """Compound boolean columns should scope the candidate set before ordering."""
         sqlite_table_store = MagicMock(name="sqlite_table_store")
-        sqlite_table_store.get_table_name.return_value = "tbl_incidents"
+        sqlite_table_store.get_table_name.return_value = "tbl_jobs"
         sqlite_table_store.get_columns.return_value = (
-            ["incident_id", "duration_minutes", "customer_visible"],
-            ["incident_id", "duration_minutes", "customer_visible"],
+            ["job_id", "duration_minutes", "manual_review_enabled"],
+            ["job_id", "duration_minutes", "manual_review_enabled"],
         )
         sqlite_table_store.get_row_count.return_value = 3
         sqlite_table_store.execute_query.return_value = (
-            ["incident_id", "duration_minutes", "customer_visible"],
+            ["job_id", "duration_minutes", "manual_review_enabled"],
             [
-                ["INC-611", "42", "yes"],
-                ["INC-724", "26", "no"],
-                ["INC-744", "88", "no"],
+                ["JOB-611", "42", "yes"],
+                ["JOB-724", "26", "no"],
+                ["JOB-744", "88", "no"],
             ],
         )
         config = MagicMock(name="config")
         config.max_table_results = 100
         handler = TableQueryHandler(None, sqlite_table_store, config)
-        table_result = _make_table_read_result(name="Incidents")
+        table_result = _make_table_read_result(name="Jobs")
 
         results = handler.process(
-            "Which customer-visible incident has the longest duration?",
+            "Which manual-review-enabled job has the longest duration?",
             [table_result],
         )
 
-        assert "INC-611" in results[0].content
-        assert "INC-744" not in results[0].content
+        assert "JOB-611" in results[0].content
+        assert "JOB-744" not in results[0].content
         predicates = results[0].metadata["table_query_plan"]["predicates"]
         assert predicates == [
             {
-                "column": "customer_visible",
+                "column": "manual_review_enabled",
                 "accepted_values": ["1", "active", "enabled", "on", "true", "yes"],
                 "source": "boolean_column",
             }

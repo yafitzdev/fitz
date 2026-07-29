@@ -272,11 +272,6 @@ def _boolean_predicate_values(column: ColumnBinding, query_text: str) -> set[str
     has_column_reference = bool(column_terms & set(query_text.split()))
     if "encrypt" in query_text and any(token.startswith("encrypt") for token in column_terms):
         has_column_reference = True
-    if {"customer", "visible"} <= set(query_text.split()) and {
-        "customer",
-        "visible",
-    } <= column_terms:
-        has_column_reference = True
     if not has_column_reference:
         return set()
 
