@@ -180,6 +180,7 @@ For enterprise (M2M / mTLS) deployments see
 ```yaml
 top_addresses: 50      # candidates fetched during broad recall
 top_read: 50           # candidates read after rerank
+rerank_candidates: 32  # moderate-query cross-encoder budget (24/32/48)
 retrieval_workers: 4   # max retrieval strategies run concurrently
 governance: pyrrho
 rerank: onnx

@@ -11,7 +11,7 @@ The architecture has three load-bearing decisions:
    use OpenAI-compatible HTTP endpoints or cloud/enterprise presets.
 2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
    typed-unit routing (symbols, sections, tables) + an ONNX cross-encoder
-   reranker that scores candidates in a single local forward pass — no
+   reranker that scores a bounded candidate prefix locally — no
    chat call. No vector DB, no embedding model, no `vector` column anywhere.
 3. **No server.** Storage is SQLite — one `.db` file per collection
    under `<workspace>/sqlite/`. Open it, query it, close it. WAL mode
@@ -151,8 +151,8 @@ base URL.
 The **`OnnxReranker`** is a separate INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base` by default) — same
 architecture family as pyrrho, and both run on raw `onnxruntime`
-via the shared `OnnxEncoderBackend`. It scores `(query, candidate)`
-pairs locally in ~30–100 ms on CPU with no external LLM call.
+via the shared `OnnxEncoderBackend`. It scores a profile-aware 24, 32,
+or 48 `(query, candidate)` pairs locally with no external LLM call.
 See [features/retrieval/reranking.md](features/retrieval/reranking.md).
 
 ---

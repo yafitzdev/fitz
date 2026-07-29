@@ -72,7 +72,7 @@ Query
  ├─► Optional query intelligence (rewrite / analyze / detect)
  ├─► Router (symbol search · section search · table metadata)
 │    └─► FTS5 + bm25() over per-collection .db
- ├─► OnnxReranker (ONNX cross-encoder, ~30 ms CPU)
+ ├─► OnnxReranker (bounded INT8 ONNX cross-encoder)
  ├─► One Pyrrho decision (SUFFICIENT / DISPUTED / INSUFFICIENT)
  ├─► EvidencePack
  └─► Optional synthesizer → Answer (+ provenance + mode)
@@ -131,7 +131,7 @@ query intelligence, or vision parsing. Managed Qwen enrichment is internal.
 | Entity linking          | Cross-source linking via shared named entities                |
 | Hierarchical summaries  | L1 file summaries and L2 corpus overview built during enrichment |
 | Evidence closure        | Bounded bridge retrieval for unresolved query obligations      |
-| ONNX reranker           | INT8 cross-encoder, single forward pass on CPU                |
+| ONNX reranker           | Bounded INT8 cross-encoder, two batch-one CPU workers          |
 | Epistemic governance    | Pyrrho v2 sufficient / disputed / insufficient evidence verdicts |
 | Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
 | Source indexing         | Parse and persist before `point()` returns; enrich afterward |

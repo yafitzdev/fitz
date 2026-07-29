@@ -132,6 +132,28 @@ class TestRetrieve:
         assert target in result.metadata["rerank_text"]
         assert len(result.metadata["rerank_text"]) <= 1200
 
+    def test_cold_long_section_marks_heading_for_lean_reranking(
+        self,
+        strategy,
+        mock_section_store,
+        mock_raw_store,
+    ):
+        mock_raw_store.get.return_value = None
+        mock_section_store.search_bm25.return_value = [
+            _make_section_result(
+                summary=None,
+                title="Retained seal",
+                content=("Routine observations continue. " * 120)
+                + "RUN_77 retained seal is KAPPA-END.",
+                bm25_score=0.9,
+            )
+        ]
+
+        result = strategy.retrieve("What is the retained seal for RUN_77?", limit=5)[0]
+
+        assert result.metadata["rerank_heading"] == "Retained seal"
+        assert "KAPPA-END" in result.metadata["rerank_text"]
+
     def test_short_sections_keep_the_established_summary_only_rerank_surface(
         self,
         strategy,

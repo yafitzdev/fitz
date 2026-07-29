@@ -153,8 +153,8 @@ This is deterministic graph traversal — zero LLM calls.
 
 The final ranking step is a dedicated INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base` by default). It scores
-`(query, candidate)` pairs in a single batched forward pass — ~30 ms
-on CPU. No external LLM call, no embedding model. It uses the same
+24, 32, or 48 `(query, candidate)` pairs with two batch-one CPU workers.
+No external LLM call, no embedding model. It uses the same
 ModernBERT family as the Pyrrho v2 governance classifier; both run from
 pre-built ONNX graphs on CPU.
 

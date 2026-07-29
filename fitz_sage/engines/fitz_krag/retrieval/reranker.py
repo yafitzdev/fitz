@@ -57,7 +57,6 @@ class AddressReranker:
                 "reason": "below_min_addresses",
                 "query": query,
                 "input_count": len(addresses),
-                "input": addresses_trace(addresses),
                 "output_count": len(selected),
                 "output": addresses_trace(selected),
             }
@@ -94,8 +93,9 @@ class AddressReranker:
                 "used": True,
                 "query": query,
                 "input_count": len(addresses),
-                "input": addresses_trace(addresses),
-                "documents": documents,
+                "document_count": len(documents),
+                "document_characters": [len(document) for document in documents],
+                "provider": dict(getattr(self._reranker, "last_trace", {}) or {}),
                 "output_count": len(reranked),
                 "output": addresses_trace(reranked),
                 "ranked": ranked_trace,
@@ -111,7 +111,6 @@ class AddressReranker:
                 "error": str(e),
                 "query": query,
                 "input_count": len(addresses),
-                "input": addresses_trace(addresses),
                 "output_count": len(selected),
                 "output": addresses_trace(selected),
             }
@@ -120,7 +119,13 @@ class AddressReranker:
 
 def _rerank_document(query: str, addr: Address) -> str:
     """Build the text shown to the cross-encoder for one address."""
-    parts = [addr.summary or addr.location]
+    rerank_heading = addr.metadata.get("rerank_heading")
+    lead = (
+        rerank_heading
+        if isinstance(rerank_heading, str) and rerank_heading.strip()
+        else addr.summary or addr.location
+    )
+    parts = [lead]
     text = addr.metadata.get("rerank_text")
     if not isinstance(text, str) or not text.strip():
         text = addr.metadata.get("text")

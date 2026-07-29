@@ -295,6 +295,47 @@ passes. Twenty queries requested closure; they averaged 26.99 seconds versus
 cross-encoder reranking and closure fan-out as the latency bottleneck; corpus
 size and BM25 are not the primary cause.
 
+### Reranker Hardening Validation
+
+The 2026-07-29 reranker hardening run repeated the same seeded 12-query
+SciFact timing sample after introducing profile-aware candidate budgets,
+two INT8 batch-one workers, exact deduplication, and a bounded score cache.
+The 512-token model input limit was unchanged.
+
+| SciFact warm metric | Before | After | Change |
+|---|---:|---:|---:|
+| Mean query latency | 22.72s | 7.82s | -65.6% |
+| p50 query latency | 21.00s | 6.56s | -68.8% |
+| p95 query latency | 40.23s | 18.66s | -53.6% |
+| Mean rerank time | 16.11s | 2.95s | -81.7% |
+
+A separate 60-query SciFact run matched every query ID against the
+pre-change full report. It used 18 broad, 38 moderate, and 4 narrow profiles,
+for a mean configured cross-encoder cap of 36.27 candidates while preserving
+a mean full recall pool of 56.50.
+
+| Matched 60-query metric | Before | After |
+|---|---:|---:|
+| Mean query latency | 20.84s | 7.43s |
+| p50 query latency | 16.34s | 6.77s |
+| p95 query latency | 38.65s | 12.56s |
+| Reranked nDCG@10 | 0.7499 | 0.7577 |
+| Reranked Recall@10 | 0.8600 | 0.8517 |
+| Delivered nDCG@10 | 0.6709 | 0.6617 |
+| Delivered Recall@10 | 0.7750 | 0.7750 |
+| Queries with delivered relevant evidence | 47/60 | 47/60 |
+
+This is a latency optimization with a measured quality tradeoff, not a quality
+claim. Reranked ordering improved slightly on aggregate, reranked recall
+declined by 0.83 percentage points, and delivered ordering declined by 0.92
+points while delivered hit coverage remained unchanged.
+
+The required 11-case `hardened_boundaries` suite was then rerun against the
+limits corpus. Retrieval and delivered-evidence assertions both passed 11/11,
+all 20 files indexed and enriched, and the production gate passed. Full
+governed contracts passed 5/11; those accepted Pyrrho outcomes remain separate
+from the retrieval gate.
+
 These results are a measured boundary, not an SLA and not an official BEIR
 leaderboard submission. The benchmark-local analyzer and one-file adapter are
 fully described above, and no retrieval behavior was changed in response to

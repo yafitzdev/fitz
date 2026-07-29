@@ -119,14 +119,15 @@ synthesizer: openai/gpt-4o
 ```yaml
 # Default — INT8 ONNX cross-encoder (gte-reranker-modernbert-base, 149M)
 rerank: onnx
+rerank_candidates: 32
 # Or pick a different cross-encoder:
 # rerank: onnx/BAAI/bge-reranker-base
 # rerank: onnx/jinaai/jina-reranker-v3
 collection: my_docs
 ```
 
-The reranker runs locally on CPU (~30–100 ms for 10–20 candidates) and
-does not consume the chat endpoint.
+The reranker runs locally on CPU over a bounded candidate prefix and does not
+consume the chat endpoint.
 
 ---
 

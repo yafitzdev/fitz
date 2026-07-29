@@ -35,6 +35,10 @@ def _read_result(addr: Address) -> ReadResult:
     return ReadResult(address=addr, content="body", file_path="module.py", line_range=(1, 2))
 
 
+def _profile(**values):
+    return SimpleNamespace(**{"rerank_candidates": 32, **values})
+
+
 def _build(router_addresses: list[Address], *, with_reranker: bool = True):
     """Construct a RetrievalPass over mocked router / reranker / reader."""
     router = MagicMock(name="router")
@@ -48,7 +52,7 @@ def _build(router_addresses: list[Address], *, with_reranker: bool = True):
     reader = MagicMock(name="reader")
     reader.read.side_effect = lambda addrs, limit: [_read_result(a) for a in addrs]
 
-    config = SimpleNamespace(top_read=50)
+    config = SimpleNamespace(top_read=50, rerank_candidates=32)
     return RetrievalPass(router, reranker, reader, config), router, reranker, reader
 
 
@@ -65,6 +69,29 @@ class TestRetrievalPass:
         reranker.rerank.assert_called_once()
         reader.read.assert_called_once()
         assert [r.address.location for r in results] == ["a", "b"]
+
+    def test_rerank_cap_preserves_full_recall_pool_for_evidence_rescue(self):
+        """The model window is bounded without hiding candidates from contract logic."""
+        leading = [_addr(f"candidate-{index}") for index in range(7)]
+        concrete_row = _addr(
+            "record-947",
+            kind=AddressKind.TABLE,
+            metadata={"row_match": {"matched_rows": 1}},
+        )
+        candidates = [*leading, concrete_row]
+        rp, _router, reranker, _reader = _build(candidates)
+
+        results = rp.run(
+            "Show record 947",
+            profile=_profile(rerank_candidates=3),
+        )
+
+        assert reranker.rerank.call_args.args[1] == candidates[:3]
+        assert len(results) == 3
+        assert results[-1].address.location == "record-947"
+        assert rp.last_trace["reranker"]["candidate_limit"] == 3
+        assert rp.last_trace["reranker"]["candidate_count"] == 3
+        assert rp.last_trace["reranker"]["recall_pool_count"] == 8
 
     def test_empty_retrieval_returns_empty(self):
         rp, router, reranker, reader = _build([])
@@ -105,7 +132,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([*symbols, *sections, table])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [*symbols[:6], *sections[:4]]
-        profile = SimpleNamespace(required_modalities=("symbol", "section"))
+        profile = _profile(required_modalities=("symbol", "section"))
 
         results = rp.run("Which release enabled token rotation?", profile=profile)
 
@@ -152,7 +179,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([*symbols, *sections, table])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [*symbols[:6], *sections[:4]]
-        profile = SimpleNamespace(required_modalities=("symbol", "section"))
+        profile = _profile(required_modalities=("symbol", "section"))
 
         results = rp.run(
             "Which release enabled token rotation in the EU region?",
@@ -230,7 +257,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([glossary, table, *distractors])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [*distractors[:9], table]
-        profile = SimpleNamespace(required_modalities=("table",))
+        profile = _profile(required_modalities=("table",))
 
         results = rp.run("Who owns CBT?", profile=profile)
 
@@ -247,7 +274,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([a1, a2, b1])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [a1, a2, b1]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
         results = rp.run("What are the key facts?", profile=profile)
 
@@ -276,7 +303,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([test_cases, roadmap, quarterly])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [test_cases, roadmap, quarterly]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
         results = rp.run("What are the key facts in this corpus?", profile=profile)
 
@@ -305,7 +332,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([queries, q2, roadmap])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [queries, q2]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
         results = rp.run("What are the key facts in this corpus?", profile=profile)
 
@@ -334,7 +361,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([feedback, q1, roadmap])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [feedback, q1, roadmap]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
         results = rp.run("What are the key facts in this corpus?", profile=profile)
 
@@ -361,7 +388,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([incident, feedback])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [incident, feedback]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
         results = rp.run("What are the key facts in this corpus?", profile=profile)
 
@@ -415,7 +442,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([q2, q1, roadmap, feedback, pdf, glossary])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [q2, q1, roadmap, feedback, pdf, glossary]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
         results = rp.run("What are the key facts in this corpus?", profile=profile)
 
@@ -470,7 +497,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([q2, q1, queries, test_cases, formal_eval, pdf])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [q2, q1, formal_eval, queries, test_cases]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
         results = rp.run("What are the key facts in this corpus?", profile=profile)
 
@@ -498,7 +525,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([control, roadmap])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [control, roadmap]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
         results = rp.run("What are the key facts in this corpus?", profile=profile)
 
@@ -525,7 +552,7 @@ class TestRetrievalPass:
         rp, _router, reranker, _reader = _build([test_cases, roadmap])
         reranker.rerank.side_effect = None
         reranker.rerank.return_value = [test_cases, roadmap]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
         results = rp.run("Summarize all test cases", profile=profile)
 

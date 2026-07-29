@@ -114,7 +114,8 @@ KRAG retrieval strategies.
 Internal parameters:
 
 - `top_addresses` — how many BM25 candidates to fetch (default 50)
-- `top_read` — how many to keep after expansion + rerank (default 50)
+- `rerank_candidates` — moderate-query cross-encoder budget (default 32)
+- `top_read` — maximum number of selected addresses to read (default 50)
 
 ## Files
 
@@ -150,8 +151,8 @@ Internal parameters:
 3. Doc B — `battery` only; no `X100`
 
 Then the **ONNX cross-encoder reranker** re-orders this small
-candidate set in a single forward pass, using `(query, doc)` joint
-context that BM25 doesn't see.
+candidate set with bounded batch-one inference, using `(query, doc)`
+joint context that BM25 doesn't see.
 
 ## Related
 

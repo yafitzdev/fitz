@@ -96,14 +96,15 @@ vision_model: gpt-4o
 
 The reranker is part of the standard retrieval pipeline. It is an INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base` by default) run on raw
-`onnxruntime`. One forward pass over `(query, candidate)` pairs;
-~30–100 ms on CPU for 10–20 candidates. No external API call.
+`onnxruntime`. It uses two concurrent batch-one passes over a bounded
+candidate prefix. No external API call.
 
 ### How it works
 
 1. `rerank: onnx` is the default.
 2. The retrieval pipeline includes the reranker step before Pyrrho governance.
 3. The engine config does not expose a normal "rerank off" mode.
+4. `rerank_candidates` controls neural work without shrinking BM25 recall.
 
 ### Config example
 

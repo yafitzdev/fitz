@@ -54,7 +54,7 @@ class RetrievalOutcome:
     expanded: list["ReadResult"]
     addresses: list["Address"]
     timings: list[tuple[str, float]]
-    profile: Any | None = None
+    profile: RetrievalProfile | None = None
     retrieval_query: str = ""
     rewrite_result: Any = None
     query_profile_metadata: dict[str, Any] = field(default_factory=dict)
@@ -482,7 +482,7 @@ def _prefixed_retrieval_pass_timings(retrieval_pass: Any, prefix: str) -> list[t
 
 
 def _closure_profile(
-    profile: Any,
+    profile: RetrievalProfile | None,
     config: "FitzKragConfig",
     request: EvidenceClosureRequest,
 ) -> RetrievalProfile:
@@ -490,9 +490,23 @@ def _closure_profile(
     base = profile or RetrievalProfile(
         top_k=config.top_addresses,
         top_read=config.top_read,
+        rerank_candidates=config.rerank_candidates,
     )
-    top_k = max(12, min(int(getattr(base, "top_k", config.top_addresses)), 32))
-    top_read = max(6, min(int(getattr(base, "top_read", config.top_read)), 12))
+    top_k = max(
+        config.rerank_k,
+        config.rerank_min_addresses,
+        12,
+        min(base.top_k, 32),
+    )
+    top_read = max(6, min(base.top_read, 12))
+    rerank_candidates = min(
+        top_k,
+        max(
+            config.rerank_k,
+            config.rerank_min_addresses,
+            min(base.rerank_candidates, 16),
+        ),
+    )
     weights = {
         "code": 0.01,
         "section": 0.01,
@@ -510,14 +524,15 @@ def _closure_profile(
         strategy_weights=weights,
         top_k=top_k,
         top_read=top_read,
-        query_contract=getattr(base, "query_contract", None),
-        retrieval_modality=getattr(base, "retrieval_modality", None),
-        retrieval_obligation=getattr(base, "retrieval_obligation", None),
+        rerank_candidates=rerank_candidates,
+        query_contract=base.query_contract,
+        retrieval_modality=base.retrieval_modality,
+        retrieval_obligation=base.retrieval_obligation,
         required_modalities=(request.modality,),
         inject_corpus_summaries=False,
-        entity_expansion_limit=min(int(getattr(base, "entity_expansion_limit", 3)), 3),
-        specificity=getattr(base, "specificity", "moderate"),
-        answer_type=getattr(base, "answer_type", "factual"),
+        entity_expansion_limit=min(base.entity_expansion_limit, 3),
+        specificity=base.specificity,
+        answer_type=base.answer_type,
     )
 
 

@@ -232,6 +232,7 @@ managed Qwen query keywords, and optional query intelligence.
 | `keywords` | Managed Qwen suggestions and literal deterministic query terms. | Improves broad recall without embeddings. |
 | `strategy_weights` | Relative weight for code, section, table, and chunk retrieval. | Makes the first pass search the right evidence surfaces. |
 | `top_k` / `top_read` | How much candidate evidence Fitz should collect and read. | Keeps narrow lookups fast while giving broad or comparative questions enough coverage. |
+| `rerank_candidates` | How many recalled candidates the cross-encoder scores. | Bounds neural CPU cost without shrinking the BM25 recall pool used by evidence rescue. |
 
 #### Post-retrieval 🛡️
 

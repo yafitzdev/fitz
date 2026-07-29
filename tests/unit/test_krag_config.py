@@ -27,6 +27,7 @@ class TestFitzKragConfig:
         assert config.summary_batch_size == 15
         assert config.top_addresses == 50
         assert config.top_read == 50
+        assert config.rerank_candidates == 32
         assert config.keyword_weight == 0.4
         assert config.strict_grounding is True
         assert config.max_context_tokens == 48000
@@ -77,6 +78,17 @@ class TestFitzKragConfig:
         with pytest.raises(Exception):
             FitzKragConfig(collection="test", top_addresses=0)
 
+    def test_validation_rerank_window(self):
+        with pytest.raises(Exception, match="rerank_candidates"):
+            FitzKragConfig(collection="test", rerank_candidates=5, rerank_k=10)
+
+        with pytest.raises(Exception, match="rerank_candidates"):
+            FitzKragConfig(
+                collection="test",
+                rerank_candidates=1,
+                rerank_min_addresses=2,
+            )
+
     def test_validation_weights(self):
         with pytest.raises(Exception):
             FitzKragConfig(collection="test", keyword_weight=1.5)
@@ -123,6 +135,7 @@ class TestDefaultYaml:
         assert raw["fitz_krag"]["cert_path"] is None
         assert raw["fitz_krag"]["short_answer_tokens"] == 192
         assert raw["fitz_krag"]["collection"] == "default"
+        assert raw["fitz_krag"]["rerank_candidates"] == 32
         # Embedding fields are gone — fitz-sage no longer uses dense vectors.
         assert "embedding" not in raw["fitz_krag"]
         assert "embedding_base_url" not in raw["fitz_krag"]

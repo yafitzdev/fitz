@@ -272,6 +272,37 @@ class TestAddressReranker:
         assert late_evidence in document
         assert len(document) <= len(address.summary) + 1 + 1200
 
+    def test_cold_long_section_does_not_repeat_its_fallback_prefix(self):
+        """Cold sections use their heading plus excerpt as the scoring surface."""
+        reranker_provider = MagicMock(name="reranker")
+        reranker_provider.rerank.return_value = [
+            _make_rerank_result(index=0, score=0.9),
+        ]
+        address = Address(
+            kind=AddressKind.SECTION,
+            source_id="report",
+            location="Results > Retained seal",
+            summary="Retained seal: " + ("routine setup " * 25),
+            score=0.5,
+            metadata={
+                "rerank_heading": "Results > Retained seal",
+                "rerank_text": "RUN_77 retained seal is KAPPA-END.",
+            },
+        )
+        reranker = AddressReranker(
+            reranker=reranker_provider,
+            k=1,
+            min_addresses=1,
+        )
+
+        reranker.rerank("What is the retained seal for RUN_77?", [address])
+
+        expected_document = "Results > Retained seal\nRUN_77 retained seal is KAPPA-END."
+        assert reranker_provider.rerank.call_args.args[1] == [expected_document]
+        assert "documents" not in reranker.last_trace
+        assert "input" not in reranker.last_trace
+        assert reranker.last_trace["document_characters"] == [len(expected_document)]
+
     def test_reranked_addresses_preserve_kind_and_metadata(self):
         """Reranked addresses retain kind, source_id, location, summary, metadata."""
         reranker_provider = MagicMock(name="reranker")

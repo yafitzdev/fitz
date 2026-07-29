@@ -121,6 +121,7 @@ class RetrievalProfile:
     # Fetch parameters
     top_k: int = 50
     top_read: int = 50
+    rerank_candidates: int = 32
 
     # Query expansion (from detection)
     query_variations: list[str] = field(default_factory=list)
@@ -312,7 +313,7 @@ def build_retrieval_profile(
         top_k = int(top_k * 1.5)
     elif specificity == "narrow":
         top_k = int(top_k * 0.7)
-    top_k = max(10, top_k)
+    top_k = max(10, config.rerank_k, config.rerank_min_addresses, top_k)
 
     top_read = config.top_read
     if specificity == "broad":
@@ -337,6 +338,16 @@ def build_retrieval_profile(
         top_k = max(top_k, config.top_addresses)
         top_read = max(top_read, config.top_read)
 
+    rerank_candidates = config.rerank_candidates
+    if specificity == "broad":
+        rerank_candidates = int(rerank_candidates * 1.5)
+    elif specificity == "narrow":
+        rerank_candidates = int(rerank_candidates * 0.75)
+    rerank_candidates = min(
+        top_k,
+        max(config.rerank_k, config.rerank_min_addresses, rerank_candidates),
+    )
+
     apply_retrieval_modality_weights(strategy_weights, modality_label)
     apply_required_modality_weights(strategy_weights, required_modalities)
 
@@ -350,6 +361,7 @@ def build_retrieval_profile(
         entities=entities,
         top_k=top_k,
         top_read=top_read,
+        rerank_candidates=rerank_candidates,
         query_variations=query_variations,
         comparison_queries=comparison_queries,
         comparison_entities=comparison_entities,
@@ -667,6 +679,7 @@ def _profile_metadata(profile: RetrievalProfile) -> dict[str, Any]:
         "answer_type": profile.answer_type,
         "top_k": profile.top_k,
         "top_read": profile.top_read,
+        "rerank_candidates": profile.rerank_candidates,
         "strategy_weights": {
             key: float(value) for key, value in sorted(profile.strategy_weights.items())
         },

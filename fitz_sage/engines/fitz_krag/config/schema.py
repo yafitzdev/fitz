@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from fitz_sage.config.defaults import DEFAULT_LOCAL_LLM_BASE_URL
 from fitz_sage.core.collections import validate_collection_name
@@ -332,11 +332,31 @@ class FitzKragConfig(BasePluginConfig):
         description="Number of addresses to keep after reranking",
     )
 
+    rerank_candidates: int = Field(
+        default=32,
+        ge=1,
+        description=(
+            "Base number of BM25 candidates scored by the cross-encoder. "
+            "Narrow queries use 75%, broad queries use 150%, and the full "
+            "BM25 pool remains available to evidence-contract rescue logic."
+        ),
+    )
+
     rerank_min_addresses: int = Field(
         default=2,
         ge=1,
         description="Minimum addresses before reranking is applied.",
     )
+
+    @model_validator(mode="after")
+    def _valid_rerank_window(self) -> "FitzKragConfig":
+        if self.rerank_candidates < self.rerank_k:
+            raise ValueError("rerank_candidates must be greater than or equal to rerank_k")
+        if self.rerank_candidates < self.rerank_min_addresses:
+            raise ValueError(
+                "rerank_candidates must be greater than or equal to rerank_min_addresses"
+            )
+        return self
 
     # ==========================================================================
     # BM25 Code Search

@@ -29,7 +29,7 @@ fitz_krag:
   vision_api_key_env: null
 
   # Reranker. 'onnx' = INT8 ONNX cross-encoder (Alibaba-NLP/gte-reranker-
-  # modernbert-base by default; ~30-100ms CPU for 10-20 candidates).
+  # modernbert-base by default).
   # 'onnx/<hf-model-id>' to swap in a different cross-encoder.
   rerank: onnx
 
@@ -59,6 +59,7 @@ fitz_krag:
   # Retrieval weights — used by the keyword+BM25 merge in CodeSearch.
   top_addresses: 50
   top_read: 50
+  rerank_candidates: 32
   keyword_weight: 0.4
 
   # Context assembly

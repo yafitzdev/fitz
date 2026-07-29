@@ -51,6 +51,7 @@ managed Qwen query keywords, and optional query intelligence.
 | `temporal_references` | Dates, versions, quarters, or recency markers found in the query. | Boosts matching periods and freshness-sensitive evidence. |
 | `strategy_weights` | Code, section, table, and chunk retrieval weights. | Points recall at the likely evidence surface. |
 | `top_k` / `top_read` | Candidate and read limits. | Keeps narrow lookups fast and broad questions covered. |
+| `rerank_candidates` | Cross-encoder scoring budget. | Bounds neural work independently from the full BM25 recall pool. |
 | `required_modalities` | Evidence surfaces that should be present when known. | Ensures table, symbol, or section evidence remains eligible. |
 
 The profile is stored in `EvidencePack.metadata.query_profile.profile`.
@@ -70,6 +71,7 @@ Example:
       "answer_type": "comparative",
       "top_k": 50,
       "top_read": 50,
+      "rerank_candidates": 32,
       "keywords": ["rollback", "incident", "eu"],
       "comparison_entities": ["legacy guide", "implementation"],
       "has_comparison_intent": true,

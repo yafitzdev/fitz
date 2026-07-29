@@ -111,7 +111,9 @@ Primary stores:
 
 The ONNX cross-encoder reranker scores `(query, candidate)` pairs after broad
 recall. It is the precision stage. The default backend is
-`Alibaba-NLP/gte-reranker-modernbert-base` through `onnxruntime`.
+`Alibaba-NLP/gte-reranker-modernbert-base` through `onnxruntime`. The
+profile-aware scoring budget is separate from the full BM25 pool, which
+remains available to evidence-contract rescue logic.
 
 ### Stage 3: Fixed Delivery And Pyrrho
 

@@ -144,10 +144,17 @@ class RetrievalPass:
             return []
         if self._reranker is not None:
             candidates = addresses
+            rerank_candidate_limit = (
+                profile.rerank_candidates if profile is not None else self._config.rerank_candidates
+            )
+            rerank_inputs = addresses[:rerank_candidate_limit]
             t0 = time.perf_counter()
-            addresses = self._reranker.rerank(query, addresses)
+            addresses = self._reranker.rerank(query, rerank_inputs)
             self.last_timings["rerank"] = time.perf_counter() - t0
             reranker_trace = dict(getattr(self._reranker, "last_trace", {}) or {})
+            reranker_trace["candidate_limit"] = rerank_candidate_limit
+            reranker_trace["candidate_count"] = len(rerank_inputs)
+            reranker_trace["recall_pool_count"] = len(candidates)
             addresses = _ensure_concrete_row_coverage(candidates, addresses, profile)
             addresses = order_addresses_for_contract(
                 query,
@@ -198,6 +205,7 @@ def _profile_trace(profile: Any) -> dict[str, Any]:
         "domain",
         "top_k",
         "top_read",
+        "rerank_candidates",
         "strategy_weights",
         "retrieval_modality",
         "retrieval_obligation",

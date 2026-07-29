@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from fitz_sage.core.exceptions import QueryError
 from fitz_sage.engines.fitz_krag.evidence_closure import EvidenceClosureRequest
 from fitz_sage.engines.fitz_krag.query_pipeline import (
+    _closure_profile,
     _filter_companion_source_repeats,
     _validated_query_text,
 )
+from fitz_sage.engines.fitz_krag.retrieval_profile import RetrievalProfile
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
 
@@ -68,3 +72,24 @@ def test_closure_filters_an_exact_section_repeat() -> None:
         [glossary],
         [repeated],
     ) == []
+
+
+def test_evidence_closure_uses_a_tighter_rerank_budget() -> None:
+    config = SimpleNamespace(
+        top_addresses=50,
+        top_read=50,
+        rerank_candidates=32,
+        rerank_k=10,
+        rerank_min_addresses=2,
+    )
+    base = RetrievalProfile(
+        top_k=75,
+        top_read=65,
+        rerank_candidates=48,
+    )
+
+    closure = _closure_profile(base, config, _section_request())
+
+    assert closure.top_k == 32
+    assert closure.top_read == 12
+    assert closure.rerank_candidates == 16

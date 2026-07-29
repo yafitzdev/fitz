@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bounded cross-encoder work independently from BM25 recall. Narrow,
+  moderate, and broad profiles now score 24, 32, and 48 candidates by
+  default, while evidence closure scores 16 and contract rescue logic keeps
+  access to the full recall pool.
+- The shipped INT8 reranker now uses two concurrent batch-one forward passes,
+  exact input deduplication, and a bounded hash-keyed score cache without
+  reducing its 512-token input limit.
+- Cold long-document reranking now uses the section heading plus one
+  query-relevant excerpt instead of repeating the generated fallback prefix,
+  and reranker traces record scoring sizes instead of adding duplicate copies
+  of the recalled source text.
 - Removed built-in synonym/acronym dictionaries, identifier separator
   normalization, and hard-coded code-search synonym mappings. Managed Qwen
   semantic keywords remain the default broad-recall enhancement.

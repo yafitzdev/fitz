@@ -110,7 +110,8 @@ class SectionSearchStrategy:
         # has real text to score against. Once the warm loop summarizes the
         # file, the real summary replaces this.
         summary = section.get("summary")
-        if not summary:
+        has_summary = bool(summary)
+        if not has_summary:
             content = (section.get("content") or "").strip()
             summary = f"{title}: {content[:300]}" if content else title
 
@@ -122,6 +123,8 @@ class SectionSearchStrategy:
                 content,
                 max_chars=_RERANK_TEXT_CHARS,
             )
+            if not has_summary:
+                metadata["rerank_heading"] = location
         raw_file = self._raw_store.get(section["raw_file_id"]) if self._raw_store else None
         if raw_file and raw_file.get("path"):
             metadata["source_path"] = raw_file["path"]
