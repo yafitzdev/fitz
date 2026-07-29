@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import order_addresses_for_contract
@@ -88,6 +88,15 @@ _BROAD_GROUP_TARGET = 3
 _BROAD_GROUP_LOOKAHEAD = 16
 
 
+@dataclass(frozen=True)
+class RetrievalPassResponse:
+    """Read results, timings, and diagnostics from one retrieval pass."""
+
+    results: list[ReadResult]
+    timings: dict[str, float] = field(default_factory=dict)
+    trace: dict[str, Any] = field(default_factory=dict)
+
+
 class RetrievalPass:
     """Tiers 1-4 of the retrieval stack as one composable unit."""
 
@@ -102,8 +111,6 @@ class RetrievalPass:
         self._reranker = reranker
         self._reader = reader
         self._config = config
-        self.last_timings: dict[str, float] = {}
-        self.last_trace: dict[str, Any] = {}
 
     def run(
         self,
@@ -111,7 +118,7 @@ class RetrievalPass:
         profile: Any = None,
         *,
         rewrite_result: Any = None,
-    ) -> list[ReadResult]:
+    ) -> RetrievalPassResponse:
         """Run one retrieval pass: retrieve -> rerank -> read.
 
         Args:
@@ -120,21 +127,25 @@ class RetrievalPass:
             rewrite_result: the QueryRewriter result, forwarded to the router
                 so it can reuse decomposed query variations.
         Returns:
-            Read results for the surviving addresses (``<= rerank_k`` when a
-            reranker is configured).
+            Read results, timings, and diagnostics for this call. The result
+            count is ``<= rerank_k`` when a reranker is configured.
         """
-        self.last_timings = {}
-        self.last_trace = {"query": query}
+        timings: dict[str, float] = {}
 
         t0 = time.perf_counter()
-        addresses = self._router.retrieve(query, profile, rewrite_result=rewrite_result)
-        self.last_timings["recall"] = time.perf_counter() - t0
+        router_response = self._router.retrieve(
+            query,
+            profile,
+            rewrite_result=rewrite_result,
+        )
+        addresses = router_response.addresses
+        timings["recall"] = time.perf_counter() - t0
         recall_addresses = list(addresses)
-        router_trace = dict(getattr(self._router, "last_trace", {}) or {})
+        router_trace = dict(router_response.trace)
         if not addresses:
-            self.last_timings["rerank"] = 0.0
-            self.last_timings["read"] = 0.0
-            self.last_trace = {
+            timings["rerank"] = 0.0
+            timings["read"] = 0.0
+            trace = {
                 "query": query,
                 "profile": _profile_trace(profile),
                 "router": router_trace,
@@ -143,9 +154,9 @@ class RetrievalPass:
                 "reranker": {"used": False, "reason": "no_addresses"},
                 "final_addresses": [],
                 "read_results": [],
-                "timings": dict(self.last_timings),
+                "timings": dict(timings),
             }
-            return []
+            return RetrievalPassResponse([], timings, trace)
         if self._reranker is not None:
             candidates = addresses
             rerank_candidate_limit = (
@@ -153,9 +164,10 @@ class RetrievalPass:
             )
             rerank_inputs = addresses[:rerank_candidate_limit]
             t0 = time.perf_counter()
-            addresses = self._reranker.rerank(query, rerank_inputs)
-            self.last_timings["rerank"] = time.perf_counter() - t0
-            reranker_trace = dict(getattr(self._reranker, "last_trace", {}) or {})
+            rerank_response = self._reranker.rerank(query, rerank_inputs)
+            addresses = rerank_response.addresses
+            timings["rerank"] = time.perf_counter() - t0
+            reranker_trace = dict(rerank_response.trace)
             reranker_trace["candidate_limit"] = rerank_candidate_limit
             reranker_trace["candidate_count"] = len(rerank_inputs)
             reranker_trace["recall_pool_count"] = len(candidates)
@@ -175,7 +187,7 @@ class RetrievalPass:
             )
             addresses = _ensure_broad_corpus_coverage(query, candidates, addresses, profile)
         else:
-            self.last_timings["rerank"] = 0.0
+            timings["rerank"] = 0.0
             reranker_trace = {"used": False, "reason": "no_reranker"}
         addresses = _apply_broad_corpus_prior(query, addresses, profile)
         addresses = _enforce_broad_file_diversity(addresses, profile)
@@ -185,8 +197,8 @@ class RetrievalPass:
         t0 = time.perf_counter()
         read_limit = getattr(profile, "top_read", self._config.top_read)
         results = self._reader.read(addresses, read_limit)
-        self.last_timings["read"] = time.perf_counter() - t0
-        self.last_trace = {
+        timings["read"] = time.perf_counter() - t0
+        trace = {
             "query": query,
             "profile": _profile_trace(profile),
             "router": router_trace,
@@ -198,9 +210,9 @@ class RetrievalPass:
             "read_limit": read_limit,
             "read_result_count": len(results),
             "read_results": read_results_trace(results),
-            "timings": dict(self.last_timings),
+            "timings": dict(timings),
         }
-        return results
+        return RetrievalPassResponse(results, timings, trace)
 
 
 def _profile_trace(profile: Any) -> dict[str, Any]:
@@ -545,4 +557,4 @@ def _primary_address_path(address: Any) -> str:
     )
 
 
-__all__ = ["RetrievalPass"]
+__all__ = ["RetrievalPass", "RetrievalPassResponse"]

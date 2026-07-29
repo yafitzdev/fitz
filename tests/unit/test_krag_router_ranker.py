@@ -105,7 +105,7 @@ class TestRetrievalRouter:
             section_strategy=None,
         )
 
-        result = router.retrieve("find func")
+        result = router.retrieve("find func").addresses
 
         code_strat.retrieve.assert_called_once_with("find func", 10, detection=None)
         assert len(result) == 2
@@ -126,7 +126,7 @@ class TestRetrievalRouter:
             section_strategy=None,
         )
 
-        result = router.retrieve("find func", _code_profile(top_k=8))
+        result = router.retrieve("find func", _code_profile(top_k=8)).addresses
 
         assert len(result) == 8
 
@@ -150,7 +150,7 @@ class TestRetrievalRouter:
             section_strategy=section_strat,
         )
 
-        result = router.retrieve("how to setup")
+        result = router.retrieve("how to setup").addresses
 
         code_strat.retrieve.assert_called_once()
         section_strat.retrieve.assert_called_once()
@@ -179,7 +179,7 @@ class TestRetrievalRouter:
         # Custom weights: section weight is 0.04 (below 0.05 threshold)
         profile = _custom_weight_profile(code=0.9, section=0.04, table=0.06)
 
-        result = router.retrieve("find func", profile)
+        result = router.retrieve("find func", profile).addresses
 
         code_strat.retrieve.assert_called_once()
         section_strat.retrieve.assert_not_called()
@@ -215,7 +215,7 @@ class TestRetrievalRouter:
             section_strategy=section_strat,
         )
 
-        result = router.retrieve("query")
+        result = router.retrieve("query").addresses
 
         # Duplicate by (source_id, location) -- first one wins
         assert len(result) == 1
@@ -237,7 +237,7 @@ class TestRetrievalRouter:
         )
 
         profile = _code_profile(entities=("hi_sym",))
-        result = router.retrieve("find hi_sym", profile)
+        result = router.retrieve("find hi_sym", profile).addresses
 
         # Ranker should apply entity bonus to hi_sym, boosting it
         assert len(result) == 2
@@ -261,7 +261,7 @@ class TestRetrievalRouter:
             config=config,
         )
 
-        result = router.retrieve("query")
+        result = router.retrieve("query").addresses
 
         assert [a.location for a in result] == ["high", "mid", "low"]
 
@@ -280,7 +280,7 @@ class TestRetrievalRouter:
             config=config,
         )
 
-        result = router.retrieve("query")
+        result = router.retrieve("query").addresses
 
         assert len(result) == 5
         # Should be top-5 by score
@@ -323,7 +323,7 @@ class TestRetrievalRouter:
             top_k=6,
         )
 
-        result = router.retrieve("rollout status", profile)
+        result = router.retrieve("rollout status", profile).addresses
 
         assert len(result) == 6
         assert sum(address.kind == AddressKind.TABLE for address in result) == 2
@@ -375,7 +375,7 @@ class TestRetrievalRouter:
             query,
             _code_profile(top_k=2),
             rewrite_result=plan.rewrite_result,
-        )
+        ).addresses
 
         assert len(result) == 2
         assert {address.source_id for address in result} == {"refund", "approver"}

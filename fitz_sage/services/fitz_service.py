@@ -34,7 +34,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import RLock
+from threading import Condition, RLock
 from typing import TYPE_CHECKING, Any, Iterator, cast
 
 from fitz_sage.core import Answer, EvidencePack, RetrievalRun
@@ -111,6 +111,61 @@ class QueryError(FitzServiceError):
     pass
 
 
+@dataclass
+class _EngineSlot:
+    """Coordinate concurrent reads and exclusive mutations for one engine."""
+
+    engine: Any
+    _condition: Condition = field(default_factory=Condition, init=False, repr=False)
+    _readers: int = field(default=0, init=False, repr=False)
+    _writer: bool = field(default=False, init=False, repr=False)
+    _waiting_writers: int = field(default=0, init=False, repr=False)
+    _closing: bool = field(default=False, init=False, repr=False)
+
+    def acquire(self, *, exclusive: bool) -> None:
+        """Acquire a shared query lease or an exclusive mutation lease."""
+        with self._condition:
+            if exclusive:
+                self._waiting_writers += 1
+                try:
+                    self._condition.wait_for(
+                        lambda: self._closing or (not self._writer and self._readers == 0)
+                    )
+                finally:
+                    self._waiting_writers -= 1
+            else:
+                self._condition.wait_for(
+                    lambda: self._closing or (not self._writer and self._waiting_writers == 0)
+                )
+
+            if self._closing:
+                raise FitzServiceError("Collection engine is closing")
+            if exclusive:
+                self._writer = True
+            else:
+                self._readers += 1
+
+    def release(self, *, exclusive: bool) -> None:
+        """Release a previously acquired lease."""
+        with self._condition:
+            if exclusive:
+                if not self._writer:
+                    raise RuntimeError("Engine mutation lease is not active")
+                self._writer = False
+            else:
+                if self._readers == 0:
+                    raise RuntimeError("Engine query lease is not active")
+                self._readers -= 1
+            self._condition.notify_all()
+
+    def close(self) -> None:
+        """Reject new work and wait for active calls to finish."""
+        with self._condition:
+            self._closing = True
+            self._condition.notify_all()
+            self._condition.wait_for(lambda: not self._writer and self._readers == 0)
+
+
 # =============================================================================
 # FitzService
 # =============================================================================
@@ -123,13 +178,13 @@ class FitzService:
     This class is the single source of truth for business logic.
     CLI, SDK, and API should all call these methods.
 
-    Engine instances are cached per engine and collection. Calls using the same
-    engine are serialized because retrieval components retain per-query traces.
+    Engine instances are cached per engine and collection. Queries share an
+    engine concurrently; collection mutations remain exclusive.
     """
 
     def __init__(self) -> None:
-        self._engines: dict[tuple[str, str], Any] = {}
-        self._engine_locks: dict[tuple[str, str], RLock] = {}
+        self._engines: dict[tuple[str, str], _EngineSlot] = {}
+        self._deleting_collections: set[str] = set()
         self._cache_lock = RLock()
 
     # =========================================================================
@@ -278,7 +333,7 @@ class FitzService:
             raise ValueError(f"Source path does not exist: {source_path}")
 
         collection = validate_collection_name(collection)
-        with self._engine(collection) as engine_instance:
+        with self._engine(collection, exclusive=True) as engine_instance:
             return engine_instance.point(
                 source_path,
                 collection,
@@ -324,12 +379,28 @@ class FitzService:
     def delete_collection(self, name: str) -> bool:
         """Delete the collection's SQLite database file. Returns True on success."""
         name = validate_collection_name(name)
-        self._evict_collection(name)
-        cm = self._connection_manager()
-        deleted = cm.delete_collection(name)
-        if deleted:
-            logger.info(f"Deleted collection: {name}")
-        return bool(deleted)
+        with self._cache_lock:
+            if name in self._deleting_collections:
+                raise FitzServiceError(f"Collection is already being deleted: {name}")
+            self._deleting_collections.add(name)
+            keys = [key for key in self._engines if key[1] == name]
+            slots = [self._engines.pop(key) for key in keys]
+
+        try:
+            for slot in slots:
+                slot.close()
+                stop = getattr(slot.engine, "stop_background_enrichment", None)
+                if callable(stop):
+                    stop()
+
+            cm = self._connection_manager()
+            deleted = cm.delete_collection(name)
+            if deleted:
+                logger.info(f"Deleted collection: {name}")
+            return bool(deleted)
+        finally:
+            with self._cache_lock:
+                self._deleting_collections.remove(name)
 
     @staticmethod
     def _connection_manager() -> Any:
@@ -346,8 +417,14 @@ class FitzService:
         return {"conversation_context": conversation_context}
 
     @contextmanager
-    def _engine(self, collection: str, engine: str | None = None) -> Iterator["RetrievalEngine"]:
-        """Yield one cached, collection-bound engine under its execution lock."""
+    def _engine(
+        self,
+        collection: str,
+        engine: str | None = None,
+        *,
+        exclusive: bool = False,
+    ) -> Iterator["RetrievalEngine"]:
+        """Yield a cached engine under a shared or exclusive lifecycle lease."""
         from fitz_sage.runtime import create_engine
         from fitz_sage.runtime.registry import get_default_engine
 
@@ -355,26 +432,20 @@ class FitzService:
         engine_name = engine or get_default_engine()
         key = (engine_name, collection)
         with self._cache_lock:
-            engine_instance = self._engines.get(key)
-            if engine_instance is None:
+            if collection in self._deleting_collections:
+                raise FitzServiceError(f"Collection is being deleted: {collection}")
+            slot = self._engines.get(key)
+            if slot is None:
                 engine_instance = cast("RetrievalEngine", create_engine(engine_name))
                 engine_instance.load(collection)
-                self._engines[key] = engine_instance
-                self._engine_locks[key] = RLock()
-            lock = self._engine_locks[key]
-        with lock:
-            yield engine_instance
+                slot = _EngineSlot(engine_instance)
+                self._engines[key] = slot
 
-    def _evict_collection(self, collection: str) -> None:
-        """Stop and forget cached engines bound to a deleted collection."""
-        with self._cache_lock:
-            keys = [key for key in self._engines if key[1] == collection]
-            for key in keys:
-                engine = self._engines.pop(key)
-                self._engine_locks.pop(key, None)
-                stop = getattr(engine, "stop_background_enrichment", None)
-                if callable(stop):
-                    stop()
+        slot.acquire(exclusive=exclusive)
+        try:
+            yield cast("RetrievalEngine", slot.engine)
+        finally:
+            slot.release(exclusive=exclusive)
 
     # =========================================================================
     # Configuration Operations

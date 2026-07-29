@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import time as _time
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import (
@@ -44,6 +45,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class RetrievalRouterResponse:
+    """Fused addresses and diagnostics from one router call."""
+
+    addresses: list[Address]
+    trace: dict[str, Any] = field(default_factory=dict)
+
+
 class RetrievalRouter:
     """Routes queries to available strategies, merges results."""
 
@@ -58,20 +67,20 @@ class RetrievalRouter:
         self._section_strategy = section_strategy
         self._table_strategy = table_strategy
         self._config = config
-        self.last_trace: dict[str, Any] = {}
 
     def retrieve(
         self,
         query: str,
         profile: Any = None,
         rewrite_result: "Any | None" = None,
-    ) -> list[Address]:
+    ) -> RetrievalRouterResponse:
         """
         Retrieve addresses using strategy weights from retrieval profile.
 
         When profile is provided, strategies with near-zero weight are skipped
         and results are ranked using CrossStrategyRanker. Without a profile,
-        all configured strategies run with equal weight.
+        all configured strategies run with equal weight. Returns the fused
+        addresses and request-local diagnostics.
         """
         from fitz_sage.engines.fitz_krag.retrieval.ranker import CrossStrategyRanker
 
@@ -223,7 +232,7 @@ class RetrievalRouter:
             required_queries,
             limit=limit,
         )
-        self.last_trace = {
+        trace = {
             "query": query,
             "limit": limit,
             "strategy_weights": dict(weights or {}),
@@ -245,7 +254,7 @@ class RetrievalRouter:
             "final": addresses_trace(final),
             "timings_ms": {"strategies": _strategies_ms},
         }
-        return final
+        return RetrievalRouterResponse(final, trace)
 
     def _run_strategy(
         self,
@@ -374,3 +383,6 @@ class RetrievalRouter:
                 selected_counts[removed_strategy] -= 1
                 selected_counts[missing_strategy] = selected_counts.get(missing_strategy, 0) + 1
         return selected
+
+
+__all__ = ["RetrievalRouter", "RetrievalRouterResponse"]

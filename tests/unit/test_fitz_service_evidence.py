@@ -1,4 +1,6 @@
 # tests/unit/test_fitz_service_evidence.py
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, patch
 
 from fitz_sage.api.models.schemas import EvidenceResponse
@@ -94,3 +96,126 @@ def test_service_trace_returns_the_engine_execution_record() -> None:
     engine.trace.assert_called_once()
     assert engine.trace.call_args.args[0].text == "What is indexed?"
     assert result is run
+
+
+def test_service_runs_cached_engine_queries_concurrently() -> None:
+    pack = EvidencePack(query="question", mode=AnswerMode.SUFFICIENT)
+    engine = Mock()
+    active = 0
+    maximum_active = 0
+    state_lock = threading.Lock()
+    both_active = threading.Event()
+
+    def evidence(_query):
+        nonlocal active, maximum_active
+        with state_lock:
+            active += 1
+            maximum_active = max(maximum_active, active)
+            if active == 2:
+                both_active.set()
+        try:
+            assert both_active.wait(timeout=2.0)
+            return pack
+        finally:
+            with state_lock:
+                active -= 1
+
+    engine.evidence.side_effect = evidence
+    service = FitzService()
+
+    with (
+        patch("fitz_sage.runtime.create_engine", return_value=engine) as create,
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        futures = [
+            executor.submit(service.evidence, question, collection="docs")
+            for question in ("first", "second")
+        ]
+        assert [future.result(timeout=3.0) for future in futures] == [pack, pack]
+
+    assert maximum_active == 2
+    create.assert_called_once_with("fitz_krag")
+    engine.load.assert_called_once_with("docs")
+
+
+def test_collection_deletion_waits_for_active_queries() -> None:
+    pack = EvidencePack(query="question", mode=AnswerMode.SUFFICIENT)
+    engine = Mock()
+    query_started = threading.Event()
+    release_query = threading.Event()
+
+    def evidence(_query):
+        query_started.set()
+        assert release_query.wait(timeout=2.0)
+        return pack
+
+    engine.evidence.side_effect = evidence
+    connection_manager = Mock()
+    connection_manager.delete_collection.return_value = True
+    service = FitzService()
+
+    with (
+        patch("fitz_sage.runtime.create_engine", return_value=engine),
+        patch.object(service, "_connection_manager", return_value=connection_manager),
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        query = executor.submit(service.evidence, "question", collection="docs")
+        assert query_started.wait(timeout=1.0)
+        slot = next(iter(service._engines.values()))
+        deletion = executor.submit(service.delete_collection, "docs")
+
+        with slot._condition:
+            assert slot._condition.wait_for(lambda: slot._closing, timeout=1.0)
+
+        assert not deletion.done()
+        connection_manager.delete_collection.assert_not_called()
+
+        release_query.set()
+        assert query.result(timeout=2.0) is pack
+        assert deletion.result(timeout=2.0) is True
+
+    engine.stop_background_enrichment.assert_called_once_with()
+    connection_manager.delete_collection.assert_called_once_with("docs")
+
+
+def test_point_waits_for_active_queries(tmp_path) -> None:
+    pack = EvidencePack(query="question", mode=AnswerMode.SUFFICIENT)
+    manifest = Mock()
+    engine = Mock()
+    query_started = threading.Event()
+    release_query = threading.Event()
+    point_started = threading.Event()
+
+    def evidence(_query):
+        query_started.set()
+        assert release_query.wait(timeout=2.0)
+        return pack
+
+    def point(*_args, **_kwargs):
+        point_started.set()
+        return manifest
+
+    engine.evidence.side_effect = evidence
+    engine.point.side_effect = point
+    source = tmp_path / "docs"
+    source.mkdir()
+    service = FitzService()
+
+    with (
+        patch("fitz_sage.runtime.create_engine", return_value=engine),
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        query = executor.submit(service.evidence, "question", collection="docs")
+        assert query_started.wait(timeout=1.0)
+        slot = next(iter(service._engines.values()))
+        indexing = executor.submit(service.point, source, collection="docs")
+
+        with slot._condition:
+            assert slot._condition.wait_for(lambda: slot._waiting_writers == 1, timeout=1.0)
+
+        assert not point_started.is_set()
+        release_query.set()
+        assert query.result(timeout=2.0) is pack
+        assert indexing.result(timeout=2.0) is manifest
+
+    engine.point.assert_called_once_with(source.resolve(), "docs", start_worker=True)

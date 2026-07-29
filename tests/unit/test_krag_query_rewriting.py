@@ -13,6 +13,7 @@ import pytest
 from fitz_sage.core import Answer, Provenance, Query
 from fitz_sage.core.exceptions import QueryIntelligenceError
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
+from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouterResponse
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from tests.unit.mock_engine import build_mock_engine
 
@@ -39,7 +40,7 @@ def _wire_happy_path(engine: FitzKragEngine, query_text: str) -> Answer:
         summary="Authentication implementation",
         score=0.9,
     )
-    engine._retrieval_router.retrieve.return_value = [address]
+    engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
 
     read_result = ReadResult(
         address=address,

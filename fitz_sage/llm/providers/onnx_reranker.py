@@ -23,7 +23,7 @@ Public surface — implements `RerankProvider`:
     reranker = OnnxReranker(model_id="BAAI/bge-reranker-base",
                             onnx_subfolder="onnx",
                             onnx_file="model_quantized.onnx")
-    results = reranker.rerank(query, documents, top_n=5)
+    response = reranker.rerank(query, documents, top_n=5)
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from fitz_sage.encoders.onnx import OnnxEncoderBackend
-from fitz_sage.llm.providers.base import RerankResult
+from fitz_sage.llm.providers.base import RerankResponse, RerankResult
 
 DEFAULT_MODEL_ID = "Alibaba-NLP/gte-reranker-modernbert-base"
 # gte-reranker-modernbert-base ships pre-built ONNX variants under onnx/;
@@ -96,30 +96,30 @@ class OnnxReranker(OnnxEncoderBackend):
         self._cache_namespace = "\0".join(
             (model_id, onnx_subfolder, onnx_file, str(max_length))
         ).encode("utf-8")
-        self.last_trace: dict[str, Any] = {}
 
     def rerank(
         self,
         query: str,
         documents: list[str],
         top_n: int | None = None,
-    ) -> list[RerankResult]:
+    ) -> RerankResponse:
         """Score `(query, doc)` pairs and sort by score with stable ties."""
         if not documents:
-            self.last_trace = self._shortcut_trace("no_documents", 0)
-            return []
+            return RerankResponse([], self._shortcut_trace("no_documents", 0))
         if len(documents) == 1:
-            self.last_trace = self._shortcut_trace("single_document", 1)
-            return [RerankResult(index=0, score=1.0)]
+            return RerankResponse(
+                [RerankResult(index=0, score=1.0)],
+                self._shortcut_trace("single_document", 1),
+            )
 
-        scores = self._score_pairs(query, documents)
+        scores, trace = self._score_pairs(query, documents)
 
         results = [RerankResult(index=i, score=float(s)) for i, s in enumerate(scores)]
         results.sort(key=lambda r: (-r.score, r.index))
 
         if top_n is not None:
             results = results[:top_n]
-        return results
+        return RerankResponse(results, trace)
 
     def _shortcut_trace(self, shortcut: str, document_count: int) -> dict[str, Any]:
         return {
@@ -135,7 +135,11 @@ class OnnxReranker(OnnxEncoderBackend):
             "shortcut": shortcut,
         }
 
-    def _score_pairs(self, query: str, documents: list[str]) -> list[float]:
+    def _score_pairs(
+        self,
+        query: str,
+        documents: list[str],
+    ) -> tuple[list[float], dict[str, Any]]:
         """Score exact unique pairs, reusing bounded process-local results."""
         unique_documents = list(dict.fromkeys(documents))
         score_by_document: dict[str, float] = {}
@@ -158,7 +162,7 @@ class OnnxReranker(OnnxEncoderBackend):
             score_by_document[document] = score
             self._cache_put(cache_keys[document], score)
 
-        self.last_trace = {
+        trace = {
             "requested_document_count": len(documents),
             "unique_document_count": len(unique_documents),
             "duplicate_document_count": len(documents) - len(unique_documents),
@@ -169,7 +173,7 @@ class OnnxReranker(OnnxEncoderBackend):
             "workers": self._workers,
             "cache_size": self._cache_size,
         }
-        return [score_by_document[document] for document in documents]
+        return [score_by_document[document] for document in documents], trace
 
     def _score_uncached_pairs(self, query: str, documents: list[str]) -> list[float]:
         """Run bounded batches while keeping at most ``workers`` jobs pending."""

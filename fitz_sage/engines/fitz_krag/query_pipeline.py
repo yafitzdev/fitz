@@ -6,7 +6,6 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable
-from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
@@ -76,7 +75,6 @@ class QueryPipeline:
         retrieval_pass: Any,
         expander: Any,
         table_handler: Any,
-        retrieval_strategy_scope: Callable[[bool], AbstractContextManager[Any]],
         fast_analyze: Callable[[str], Any],
         needs_detection: Callable[[str], bool],
         build_detection_summary: Callable[[dict[str, Any]], Any],
@@ -89,7 +87,6 @@ class QueryPipeline:
         self._retrieval_pass = retrieval_pass
         self._expander = expander
         self._table_handler = table_handler
-        self._retrieval_strategy_scope = retrieval_strategy_scope
         self._fast_analyze = fast_analyze
         self._needs_detection = needs_detection
         self._build_detection_summary = build_detection_summary
@@ -100,7 +97,6 @@ class QueryPipeline:
         *,
         progress: Callable[[str], None] | None = None,
         use_query_intelligence: bool | None = None,
-        allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
         allow_table_sql_generation: bool = True,
         expand_context: bool = True,
@@ -146,16 +142,16 @@ class QueryPipeline:
 
         _progress("Retrieving relevant sources...")
         t0 = time.perf_counter()
-        with self._retrieval_strategy_scope(allow_llm_strategies):
-            read_results = self._retrieval_pass.run(
-                plan.retrieval_query,
-                profile,
-                rewrite_result=plan.rewrite_result,
-            )
-            retrieval_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
+        pass_response = self._retrieval_pass.run(
+            plan.retrieval_query,
+            profile,
+            rewrite_result=plan.rewrite_result,
+        )
+        read_results = pass_response.results
+        retrieval_trace = dict(pass_response.trace)
         addresses = [result.address for result in read_results]
         retrieval_duration = time.perf_counter() - t0
-        timings.extend(_retrieval_pass_timings(self._retrieval_pass))
+        timings.extend(_retrieval_pass_timings(pass_response.timings))
         timings.append(("Retrieval", retrieval_duration))
 
         if not read_results:
@@ -210,7 +206,6 @@ class QueryPipeline:
         compilation: "EvidenceCompilation",
         *,
         progress: Callable[[str], None] | None = None,
-        allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
         allow_table_sql_generation: bool = True,
         expand_context: bool = True,
@@ -242,12 +237,12 @@ class QueryPipeline:
             profile = _closure_profile(outcome.profile, self._config, request)
 
             t0 = time.perf_counter()
-            with self._retrieval_strategy_scope(allow_llm_strategies):
-                read_results = self._retrieval_pass.run(
-                    request.query,
-                    profile,
-                    rewrite_result=None,
-                )
+            pass_response = self._retrieval_pass.run(
+                request.query,
+                profile,
+                rewrite_result=None,
+            )
+            read_results = pass_response.results
             retrieved_count = len(read_results)
             read_results = _filter_companion_source_repeats(
                 request,
@@ -257,13 +252,13 @@ class QueryPipeline:
             closure_duration = time.perf_counter() - t0
             timings.extend(
                 _prefixed_retrieval_pass_timings(
-                    self._retrieval_pass,
+                    pass_response.timings,
                     f"Evidence closure {run_index} ",
                 )
             )
             timings.append((f"Evidence closure {run_index}", closure_duration))
 
-            retrieval_pass_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
+            retrieval_pass_trace = dict(pass_response.trace)
             if expand_context and read_results:
                 t0 = time.perf_counter()
                 read_results = self._expander.expand(
@@ -460,9 +455,8 @@ def _query_term_trace(
     return traced
 
 
-def _retrieval_pass_timings(retrieval_pass: Any) -> list[tuple[str, float]]:
-    """Read the latest one-pass timing breakdown."""
-    pass_timings = getattr(retrieval_pass, "last_timings", {})
+def _retrieval_pass_timings(pass_timings: dict[str, float]) -> list[tuple[str, float]]:
+    """Normalize one-pass timing keys into pipeline labels."""
     return [
         (label, pass_timings[key])
         for key, label in (
@@ -474,10 +468,13 @@ def _retrieval_pass_timings(retrieval_pass: Any) -> list[tuple[str, float]]:
     ]
 
 
-def _prefixed_retrieval_pass_timings(retrieval_pass: Any, prefix: str) -> list[tuple[str, float]]:
+def _prefixed_retrieval_pass_timings(
+    pass_timings: dict[str, float],
+    prefix: str,
+) -> list[tuple[str, float]]:
     """Read one-pass timings with a label prefix."""
     return [
-        (f"{prefix}{name}", duration) for name, duration in _retrieval_pass_timings(retrieval_pass)
+        (f"{prefix}{name}", duration) for name, duration in _retrieval_pass_timings(pass_timings)
     ]
 
 

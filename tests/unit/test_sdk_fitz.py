@@ -5,6 +5,8 @@ Tests for the Fitz SDK.
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock
 
 import pytest
@@ -51,6 +53,45 @@ class TestFitzInit:
         f = fitz()
         # auto_init is an internal attribute
         assert f._auto_init is True
+
+    def test_concurrent_first_use_creates_one_engine(self, tmp_path, monkeypatch):
+        """Concurrent SDK calls share one fully loaded engine."""
+        from fitz_sage.sdk import fitz
+
+        config_path = tmp_path / "config.yaml"
+        _write_test_config(config_path)
+        engine = MagicMock()
+        create_calls = 0
+        creation_started = threading.Event()
+        second_call_started = threading.Event()
+        release_creation = threading.Event()
+
+        def create_engine(**_kwargs):
+            nonlocal create_calls
+            create_calls += 1
+            creation_started.set()
+            assert release_creation.wait(timeout=2.0)
+            return engine
+
+        def get_engine(index):
+            if index == 1:
+                second_call_started.set()
+            return client._get_engine()
+
+        monkeypatch.setattr("fitz_sage.runtime.create_engine", create_engine)
+        client = fitz(config_path=config_path)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(get_engine, 0)
+            assert creation_started.wait(timeout=1.0)
+            second = executor.submit(get_engine, 1)
+            assert second_call_started.wait(timeout=1.0)
+            release_creation.set()
+            engines = [first.result(timeout=2.0), second.result(timeout=2.0)]
+
+        assert engines == [engine, engine]
+        assert create_calls == 1
+        engine.load.assert_called_once_with("default")
 
 
 class TestFitzConfigCreation:

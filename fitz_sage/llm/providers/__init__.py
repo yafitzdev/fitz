@@ -17,6 +17,7 @@ from fitz_sage.llm.providers.base import (
     ChatProvider,
     ModelTier,
     RerankProvider,
+    RerankResponse,
     RerankResult,
     VisionProvider,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "VisionProvider",
     # Types
     "ModelTier",
+    "RerankResponse",
     "RerankResult",
 ]
 

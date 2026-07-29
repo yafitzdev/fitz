@@ -130,6 +130,23 @@ def test_query_boost_prioritizes_file_and_sibling(tmp_path: Path) -> None:
     assert manifest.get("other/cold.md").priority == 4
 
 
+def test_worker_stays_paused_until_all_concurrent_queries_finish(tmp_path: Path) -> None:
+    manifest = FileManifest(tmp_path / "manifest.json")
+    worker = _worker(manifest, MagicMock())
+
+    worker.signal_query_start()
+    worker.signal_query_start()
+    worker.signal_query_end()
+
+    assert worker._query_active.is_set()
+    assert worker._active_queries == 1
+
+    worker.signal_query_end()
+
+    assert not worker._query_active.is_set()
+    assert worker._active_queries == 0
+
+
 def test_warm_target_requires_completed_enrichment_and_query(tmp_path: Path) -> None:
     manifest = FileManifest(tmp_path / "manifest.json")
     manifest.add(_entry("guide.md", enrichment=EnrichmentState.COMPLETE))

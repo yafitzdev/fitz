@@ -58,10 +58,11 @@ def test_onnx_reranker_loads_and_ranks():
     from fitz_sage.llm.providers.onnx_reranker import OnnxReranker
 
     reranker = OnnxReranker()
-    results = reranker.rerank(
+    response = reranker.rerank(
         "battery warranty period",
         ["The battery warranty is 8 years.", "Charging the battery takes 45 minutes."],
     )
+    results = response.results
 
     assert len(results) == 2
     assert results[0].score >= results[1].score  # sorted by relevance

@@ -21,6 +21,7 @@ from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
 from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
 from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
 from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
+from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouterResponse
 
 
 def build_mock_engine(**config_overrides) -> FitzKragEngine:
@@ -43,6 +44,7 @@ def build_mock_engine(**config_overrides) -> FitzKragEngine:
     engine._import_store = MagicMock(name="import_store")
     engine._section_store = MagicMock(name="section_store")
     engine._retrieval_router = MagicMock(name="retrieval_router")
+    engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([])
     engine._reader = MagicMock(name="reader")
     engine._expander = MagicMock(name="expander")
     engine._expander.expand.side_effect = lambda results, **kwargs: results

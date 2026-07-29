@@ -9,7 +9,8 @@ their full content, improving precision of the top-k results.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.retrieval.snippets import query_relevant_excerpt
 from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace
@@ -21,6 +22,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MAX_RERANK_TEXT_CHARS = 1200
+
+
+@dataclass(frozen=True)
+class AddressRerankResponse:
+    """Reranked addresses and diagnostics from one call."""
+
+    addresses: list[Address]
+    trace: dict[str, Any] = field(default_factory=dict)
 
 
 class AddressReranker:
@@ -35,9 +44,8 @@ class AddressReranker:
         self._reranker = reranker
         self._k = k
         self._min_addresses = min_addresses
-        self.last_trace: dict[str, object] = {}
 
-    def rerank(self, query: str, addresses: list[Address]) -> list[Address]:
+    def rerank(self, query: str, addresses: list[Address]) -> AddressRerankResponse:
         """
         Rerank addresses using cross-encoder on summaries.
 
@@ -48,11 +56,11 @@ class AddressReranker:
             addresses: Retrieved addresses to rerank
 
         Returns:
-            Reranked (and possibly truncated) list of addresses
+            Reranked addresses and diagnostics for this call.
         """
         if len(addresses) < self._min_addresses:
             selected = addresses[: self._k]
-            self.last_trace = {
+            trace = {
                 "used": False,
                 "reason": "below_min_addresses",
                 "query": query,
@@ -60,16 +68,16 @@ class AddressReranker:
                 "output_count": len(selected),
                 "output": addresses_trace(selected),
             }
-            return addresses[: self._k]
+            return AddressRerankResponse(selected, trace)
 
         documents = [_rerank_document(query, addr) for addr in addresses]
 
         try:
-            ranked = self._reranker.rerank(query, documents, top_n=self._k)
+            provider_response = self._reranker.rerank(query, documents, top_n=self._k)
 
             reranked: list[Address] = []
             ranked_trace = []
-            for result in ranked:
+            for result in provider_response.results:
                 original = addresses[result.index]
                 reranked_address = Address(
                     kind=original.kind,
@@ -89,23 +97,23 @@ class AddressReranker:
                 )
 
             logger.debug(f"Reranked {len(addresses)} addresses to top {len(reranked)}")
-            self.last_trace = {
+            trace = {
                 "used": True,
                 "query": query,
                 "input_count": len(addresses),
                 "document_count": len(documents),
                 "document_characters": [len(document) for document in documents],
-                "provider": dict(getattr(self._reranker, "last_trace", {}) or {}),
+                "provider": dict(provider_response.trace),
                 "output_count": len(reranked),
                 "output": addresses_trace(reranked),
                 "ranked": ranked_trace,
             }
-            return reranked
+            return AddressRerankResponse(reranked, trace)
 
         except Exception as e:
             logger.warning(f"Reranking failed, using original order: {e}")
             selected = addresses[: self._k]
-            self.last_trace = {
+            trace = {
                 "used": False,
                 "reason": "rerank_error",
                 "error": str(e),
@@ -114,7 +122,7 @@ class AddressReranker:
                 "output_count": len(selected),
                 "output": addresses_trace(selected),
             }
-            return selected
+            return AddressRerankResponse(selected, trace)
 
 
 def _rerank_document(query: str, addr: Address) -> str:
@@ -138,3 +146,6 @@ def _rerank_document(query: str, addr: Address) -> str:
             )
         )
     return "\n".join(part for part in parts if part).strip() or addr.location
+
+
+__all__ = ["AddressRerankResponse", "AddressReranker"]

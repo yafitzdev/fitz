@@ -30,6 +30,7 @@ from fitz_sage.engines.fitz_krag.progressive.write_lock import (
     CollectionWriteLock,
 )
 from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
+from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouterResponse
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from tests.unit.mock_engine import build_mock_engine
 
@@ -336,7 +337,7 @@ class TestAnswer:
             "What does the login function do when the user provides invalid credentials?"
         )
         addresses, results = _evidence_results(2)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         context = "governed context"
         engine._assembler.assemble.return_value = context
@@ -392,7 +393,7 @@ class TestAnswer:
         addresses, results = _evidence_results(2)
         results[0].content = "Q1 2024 API failures totaled 8."
         results[1].content = "Q2 2024 API failures totaled 5."
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         expected = Answer(text="Answer.", provenance=[], metadata={})
@@ -431,7 +432,7 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = []
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([])
 
         result = engine.answer(query)
 
@@ -450,7 +451,7 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([MagicMock()])
         engine._reader.read.return_value = []
 
         result = engine.answer(query)
@@ -499,7 +500,7 @@ class TestAnswer:
         query = _make_query()
 
         addresses, results = _evidence_results(1)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError(
@@ -517,7 +518,7 @@ class TestAnswer:
         query = _make_query()
 
         addresses, results = _evidence_results(1)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError("llm api rate limit exceeded")
@@ -533,7 +534,7 @@ class TestAnswer:
         query = _make_query()
 
         addresses, results = _evidence_results(1)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError("unexpected null pointer")
@@ -557,7 +558,7 @@ class TestAnswer:
             content="| employee | salary |\n| A | 50000 |",
             file_path="salaries.csv",
         )
-        engine._retrieval_router.retrieve.return_value = [address]
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
         engine._reader.read.return_value = [read_result]
         augmented = [read_result]
         engine._table_handler.process.side_effect = None
@@ -620,7 +621,7 @@ class TestEvidence:
             file_path="docs/sprint.md",
             line_range=(10, 12),
         )
-        engine._retrieval_router.retrieve.return_value = [address]
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
         engine._reader.read.return_value = [result]
         engine._expander.expand.return_value = [result]
 
@@ -664,7 +665,7 @@ class TestEvidence:
             file_path="docs/sprint.md",
             line_range=(10, 12),
         )
-        engine._retrieval_router.retrieve.return_value = [address]
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
         engine._reader.read.return_value = [result]
         engine._pyrrho = MagicMock()
         engine._pyrrho.decide.return_value = _decision(
@@ -684,7 +685,7 @@ class TestEvidence:
         """Pre-retrieval profile steering is Pyrrho-owned when query heads exist."""
         engine = _make_engine()
         addresses, results = _evidence_results(2)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._pyrrho = MagicMock()
         engine._pyrrho.decide.return_value = _decision(
@@ -723,7 +724,7 @@ class TestEvidence:
         """Evidence delivery is fixed before Pyrrho and does not depend on its verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(3)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
 
         engine._pyrrho = MagicMock()
@@ -768,7 +769,7 @@ class TestEvidence:
         """Broad query shape cannot delay or override Pyrrho's verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._pyrrho = MagicMock()
         engine._pyrrho.decide.return_value = _decision(
@@ -786,7 +787,7 @@ class TestEvidence:
         """Comparison query shape does not alter Pyrrho's disputed verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._pyrrho = MagicMock()
         engine._pyrrho.decide.return_value = _decision(
@@ -822,7 +823,7 @@ class TestEvidence:
             score=results[1].address.score,
             metadata=results[1].address.metadata,
         )
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._pyrrho = MagicMock()
         engine._pyrrho.decide.return_value = _decision(
@@ -843,7 +844,7 @@ class TestEvidence:
         """Narrow queries return Pyrrho's disputed verdict unchanged."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._pyrrho = MagicMock()
         engine._pyrrho.decide.return_value = _decision(
@@ -867,7 +868,7 @@ class TestEvidence:
         """Broad queries also return Pyrrho's disputed verdict unchanged."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._pyrrho = MagicMock()
         engine._pyrrho.decide.return_value = _decision(
@@ -887,7 +888,7 @@ class TestEvidence:
 
         engine = _make_engine()
         addresses, results = _evidence_results(3)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._semantic_keyword_batcher.batch_classify.return_value = BatchResult(
             keywords=["incident"]
@@ -918,7 +919,7 @@ class TestEvidence:
 
         engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
         addresses, results = _evidence_results(1)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         monkeypatch.setattr(
             FitzPaths,
@@ -939,7 +940,7 @@ class TestEvidence:
 
         engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
         addresses, results = _evidence_results(1)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
         engine._query_batcher.batch_classify.side_effect = None
         engine._query_batcher.batch_classify.return_value = BatchResult(keywords=["diagnostic"])

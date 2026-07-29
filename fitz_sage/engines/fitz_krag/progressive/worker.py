@@ -37,6 +37,8 @@ class BackgroundEnrichmentWorker:
         self._write_lock = write_lock
         self._stop_event = threading.Event()
         self._query_active = threading.Event()
+        self._query_lock = threading.Lock()
+        self._active_queries = 0
         self._done = threading.Event()
         self._thread: threading.Thread | None = None
         self._failure: Exception | None = None
@@ -86,11 +88,18 @@ class BackgroundEnrichmentWorker:
 
     def signal_query_start(self) -> None:
         """Pause before the next model call while a query is active."""
-        self._query_active.set()
+        with self._query_lock:
+            self._active_queries += 1
+            self._query_active.set()
 
     def signal_query_end(self) -> None:
-        """Allow background model work to continue."""
-        self._query_active.clear()
+        """Allow background model work to continue after every query finishes."""
+        with self._query_lock:
+            if self._active_queries == 0:
+                raise RuntimeError("Unbalanced query completion signal")
+            self._active_queries -= 1
+            if self._active_queries == 0:
+                self._query_active.clear()
 
     def boost_files(self, rel_paths: list[str]) -> None:
         """Prioritize files surfaced by a query and their directory siblings."""

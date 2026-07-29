@@ -847,7 +847,6 @@ class FitzKragEngine:
             query,
             progress=progress,
             use_query_intelligence=None,
-            allow_llm_strategies=True,
             execute_table_queries=True,
             allow_table_sql_generation=True,
             expand_context=True,
@@ -862,7 +861,6 @@ class FitzKragEngine:
             outcome,
             compilation,
             progress=progress,
-            allow_llm_strategies=True,
             execute_table_queries=True,
             allow_table_sql_generation=True,
             expand_context=True,
@@ -1019,26 +1017,6 @@ class FitzKragEngine:
                 worker.signal_query_end()
             clear_query_context()
 
-    @contextmanager
-    def _retrieval_strategy_scope(self, allow_llm_strategies: bool) -> Any:
-        """Temporarily force deterministic retrieval strategies for evidence mode."""
-        if allow_llm_strategies:
-            yield
-            return
-
-        router = self._retrieval_router
-        original_code_strategy = getattr(router, "_code_strategy", None)
-
-        fallback = getattr(original_code_strategy, "_fallback", None)
-        if fallback is not None:
-            router._code_strategy = fallback
-
-        try:
-            yield
-        finally:
-            if original_code_strategy is not None:
-                router._code_strategy = original_code_strategy
-
     def _build_query_pipeline(self) -> Any:
         """Build the query-side retrieval pipeline from current engine components."""
         from fitz_sage.engines.fitz_krag.query_pipeline import QueryPipeline
@@ -1052,7 +1030,6 @@ class FitzKragEngine:
             retrieval_pass=self._retrieval_pass,
             expander=self._expander,
             table_handler=self._table_handler,
-            retrieval_strategy_scope=self._retrieval_strategy_scope,
             fast_analyze=self._fast_analyze,
             needs_detection=self._needs_detection,
             build_detection_summary=self._build_detection_summary,
@@ -1064,7 +1041,6 @@ class FitzKragEngine:
         *,
         progress: Callable[[str], None] | None = None,
         use_query_intelligence: bool | None = None,
-        allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
         allow_table_sql_generation: bool = True,
         expand_context: bool = True,
@@ -1082,7 +1058,6 @@ class FitzKragEngine:
                 query,
                 progress=progress,
                 use_query_intelligence=use_query_intelligence,
-                allow_llm_strategies=allow_llm_strategies,
                 execute_table_queries=execute_table_queries,
                 allow_table_sql_generation=allow_table_sql_generation,
                 expand_context=expand_context,

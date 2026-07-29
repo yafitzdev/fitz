@@ -10,6 +10,7 @@ answer, and wait — so consumers never need to drop down to create_engine.
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Lock
 from typing import TYPE_CHECKING, Optional, Union
 
 from fitz_sage.core import (
@@ -75,6 +76,7 @@ class fitz:
         self._config_path = Path(config_path) if config_path else None
         self._auto_init = auto_init
         self._engine: Optional["RetrievalEngine"] = None
+        self._engine_init_lock = Lock()
 
     @property
     def collection(self) -> str:
@@ -214,14 +216,16 @@ class fitz:
     def _get_engine(self) -> "RetrievalEngine":
         """Lazily create the collection-bound engine, reused across calls."""
         if self._engine is None:
-            self._ensure_config()
-            from fitz_sage.runtime import create_engine
+            with self._engine_init_lock:
+                if self._engine is None:
+                    self._ensure_config()
+                    from fitz_sage.runtime import create_engine
 
-            engine = create_engine(
-                config_path=str(self._config_path) if self._config_path else None
-            )
-            engine.load(self._collection)
-            self._engine = engine
+                    engine = create_engine(
+                        config_path=str(self._config_path) if self._config_path else None
+                    )
+                    engine.load(self._collection)
+                    self._engine = engine
         return self._engine
 
     def _ensure_config(self) -> None:

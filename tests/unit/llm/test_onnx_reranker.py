@@ -56,15 +56,15 @@ def test_exact_duplicates_and_cached_pairs_are_not_rescored() -> None:
     first = reranker.rerank("query", documents, top_n=3)
     second = reranker.rerank("query", documents, top_n=3)
 
-    assert [result.index for result in first] == [2, 0, 1]
-    assert [(result.index, result.score) for result in second] == [
+    assert [result.index for result in first.results] == [2, 0, 1]
+    assert [(result.index, result.score) for result in second.results] == [
         (2, 11.0),
         (0, 5.0),
         (1, 5.0),
     ]
     assert len(encoded) == 2
     assert len(executed) == 2
-    assert reranker.last_trace == {
+    assert second.trace == {
         "requested_document_count": 3,
         "unique_document_count": 2,
         "duplicate_document_count": 1,
@@ -94,14 +94,14 @@ def test_default_execution_runs_two_batch_one_forwards_concurrently() -> None:
     reranker = OnnxReranker(cache_size=0)
     encoded, executed, concurrency = _install_fake_runtime(reranker, delay=0.03)
 
-    reranker.rerank("query", ["one", "two", "three", "four"])
+    response = reranker.rerank("query", ["one", "two", "three", "four"])
 
     assert all(len(batch) == 1 for batch in encoded)
     assert all(len(batch) == 1 for batch in executed)
     assert concurrency["maximum"] == 2
-    assert reranker.last_trace["forward_pass_count"] == 4
-    assert reranker.last_trace["batch_size"] == 1
-    assert reranker.last_trace["workers"] == 2
+    assert response.trace["forward_pass_count"] == 4
+    assert response.trace["batch_size"] == 1
+    assert response.trace["workers"] == 2
 
 
 def test_two_class_heads_use_positive_minus_negative_logit() -> None:
@@ -111,9 +111,9 @@ def test_two_class_heads_use_positive_minus_negative_logit() -> None:
         [[1.0, 4.0], [5.0, 2.0]]
     )
 
-    results = reranker.rerank("query", ["positive", "negative"])
+    response = reranker.rerank("query", ["positive", "negative"])
 
-    assert [(result.index, result.score) for result in results] == [
+    assert [(result.index, result.score) for result in response.results] == [
         (0, 3.0),
         (1, -3.0),
     ]
