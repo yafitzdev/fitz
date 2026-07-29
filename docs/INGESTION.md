@@ -177,8 +177,24 @@ python -m benchmarks.fitz_bench.ingestion_benchmark \
 ```
 
 It calls `point(..., start_worker=False)`, reports cold files per second,
-indexing failures, and no-change re-point time, and exits nonzero when the
-target is missed.
+indexing failures, and no-change re-point time, proves the re-point leaves the
+manifest and retrieval-unit counts unchanged, and exits nonzero when the target
+is missed.
+
+For real-file capacity and recovery testing, the external benchmark downloads
+verified, unchanged selections from the public NapierOne corpus:
+
+```bash
+python -m benchmarks.fitz_bench.external_ingestion_benchmark \
+  --profile tiny \
+  --type PDF \
+  --type DOCX \
+  --type PPTX
+```
+
+It records per-format outcomes, file-size distribution, SQLite storage,
+process peak RSS, and exact convergence after a hard process exit. Corpus files
+and generated reports remain local and are not part of the package.
 
 ## Key Files
 

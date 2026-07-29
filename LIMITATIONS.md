@@ -68,6 +68,35 @@ Qwen may still suggest one of those related terms and surface useful evidence.
 Users who require consistent domain equivalence must provide it through data or
 query preprocessing; a public mapping hook is deferred.
 
+## Literal Anchor Recognition
+
+Fitz-Sage mechanically uses exact identifiers and some capitalized phrases to
+keep a narrow query tied to concrete evidence. The current phrase detector can
+overreach when a user submits a title-cased natural-language question.
+
+For example:
+
+`Do Cholesterol Statin Drugs Cause Breast Cancer?`
+
+currently produces the hard phrase:
+
+`Cholesterol Statin Drugs Cause Breast Cancer`
+
+In the external NFCorpus run, recall found 50 candidates and the reranker kept
+10, including judged-relevant documents. The compiler required that complete
+phrase, found it in none of the evidence bodies, set `filtered_all: true`, and
+delivered no evidence.
+
+Across NFCorpus, FiQA, and SciFact, 103 of 108 compiler-stage complete misses
+involved a generated hard anchor. Eighty-six were capitalization-derived
+phrase misses. This is a package-owned query-shape limitation. Users should not
+be required to rewrite ordinary title-cased questions to work around it.
+
+Exact identifier anchoring remains intentional. If a query says `ATX-123`,
+Fitz-Sage does not silently accept `ATX_123`. Scientific notation such as
+`B12` versus `B-12` can therefore expose the same literal-input contract; the
+user owns normalization when those forms are equivalent in their corpus.
+
 ## Temporal And Version Scope
 
 fitz-sage should not infer chronological authority from version-looking strings
@@ -205,6 +234,62 @@ throughput guarantee. Rich parsers, very large documents, slow storage, and
 background Qwen enrichment need separate capacity tests. Required-suite queries
 previously averaged 4.1 seconds with a 3.6-second median; the slowest limitation
 query took 27.9 seconds.
+
+The external NapierOne benchmark adds real-file ingestion evidence without
+checking corpus files into Fitz-Sage. The measured tiny selections contained
+909 files and 545.7 MB of source data across CSV, TXT, JSON, JavaScript, HTML,
+XML, PDF, DOCX, and PPTX.
+
+- The text/code slice indexed 606/606 files at 10.9 files/second.
+- The rich-document slice indexed 293/303 files at 3.4 files/second.
+- Eight image-only PDFs and two image-only PPTX files had no text available to
+  the default CPU parser and were reported as failures.
+- Both slices resumed from a hard process exit and converged exactly to their
+  clean-run manifest and SQLite counts.
+
+The separate NapierOne `small` scale run measured 5,005 files and 523.6 MB
+across CSV, JSON, JavaScript, HTML, and XML. It indexed 4,994 files at 7.27
+files/second, left its index unchanged on re-point, and converged exactly after
+a hard exit at file 100.
+
+All 4,000 JSON, JavaScript, HTML, and XML files indexed. Eleven CSV files did
+not: ten spreadsheet exports placed blank/title rows before the real table
+header, and one had 16,383 fields in its first row, beyond SQLite's 2,000-column
+limit. Fitz-Sage does not guess which later row should become the schema or
+silently split an ultra-wide table. Cleaning or reshaping those files belongs
+to the user. The resulting SQLite database was 1.43 GB for 515.6 MB of indexed
+source, a measured 2.78x storage ratio.
+
+This does not prove that every NapierOne file, every supported format, or an
+arbitrary company folder will work. The full upstream corpus contains more than
+500,000 files; only selected 100- and 1,000-file-per-type archives were
+measured. The benchmark does not assess whether retrieved evidence answers
+domain questions, and it does not include optional Qwen enrichment time.
+Image-only documents require a user-selected OCR-capable parser.
+
+The external BEIR retrieval run adds independent relevance judgments across
+66,454 biomedical, financial, and scientific documents. On all three datasets,
+Fitz-Sage's recall stage exceeded the benchmark-local plain BM25 Recall@50:
+
+- NFCorpus: 0.2228 versus 0.2101
+- FiQA: 0.4736 versus 0.4459
+- SciFact: 0.8869 versus 0.8704
+
+End-to-end delivered nDCG@10 was mixed:
+
+- NFCorpus: 0.2486 versus the plain-BM25 baseline's 0.3062
+- FiQA: 0.2609 versus 0.2377
+- SciFact: 0.5982 versus 0.6634
+
+This means the central recall loop generalizes beyond the internal fixtures,
+but evidence narrowing is not consistently better than a simple lexical
+baseline. The benchmark intentionally remains non-green while literal-anchor
+and compiler behavior are assessed structurally.
+
+All 1,271 judged queries completed. All NFCorpus and SciFact documents indexed.
+FiQA contained 38 upstream records with empty title and text fields, including
+one judged-relevant record; those were reported as unsearchable input instead
+of being hidden or treated as successful indexing.
 
 Use this file as the public contract. Use the benchmark to decide which
 limitations are worth removing later.

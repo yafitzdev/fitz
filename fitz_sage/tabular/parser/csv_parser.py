@@ -59,15 +59,18 @@ def parse_csv(file_path: Path) -> ParsedTableFile:
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             reader = csv.reader(f, delimiter=delimiter)
             rows = list(reader)
-    except Exception as e:
-        raise ValueError(f"Failed to parse {file_path}: {e}")
+    except OSError as exc:
+        reason = exc.strerror or type(exc).__name__
+        raise ValueError(f"Failed to read table file: {reason}") from exc
+    except csv.Error as exc:
+        raise ValueError(f"Failed to parse table data: {exc}") from exc
 
     if not rows:
-        raise ValueError(f"Empty table file: {file_path}")
+        raise ValueError("Empty table file")
 
     columns = rows[0]
     if not columns or not any(columns):
-        raise ValueError(f"No headers found in {file_path}")
+        raise ValueError("No headers found in first table row")
 
     data_rows = rows[1:]
 

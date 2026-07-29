@@ -64,8 +64,241 @@ failures, and no-change re-point time. It always calls `point(...,
 start_worker=False)`, so model download, entity extraction, and hierarchy
 summaries cannot distort the source-index throughput metric.
 
+## External Corpus Ingestion
+
+The production ingestion benchmark uses
+[NapierOne](https://registry.opendata.aws/napierone/), not a generated fixture
+corpus. NapierOne contains more than 500,000 real files across 44 file types
+and is available from a public AWS bucket without an AWS account.
+
+Fitz-Sage does not redistribute or rewrite these files. The benchmark helper:
+
+- downloads only the requested official archives;
+- verifies every archive against NapierOne's published SHA-256 report;
+- rejects unsafe ZIP paths, symlinks, and configured download/extraction
+  budget overruns;
+- extracts archives byte-for-byte into `.benchmark-data/napierone`;
+- creates hard-linked selection views where supported, with a byte-copy
+  fallback, so a run sees exactly its requested types without modifying source
+  bytes;
+- keeps all corpus data, workspaces, and generated reports out of Git.
+
+Run the default tiny slice of supported document types:
+
+```bash
+python -m benchmarks.fitz_bench.external_ingestion_benchmark \
+  --profile tiny \
+  --workspace .bench_workspace/napierone
+```
+
+Download and verify without indexing:
+
+```bash
+python -m benchmarks.fitz_bench.external_ingestion_benchmark \
+  --profile small \
+  --type PDF \
+  --type DOCX \
+  --download-only
+```
+
+Re-run an already cached selection without network access:
+
+```bash
+python -m benchmarks.fitz_bench.external_ingestion_benchmark \
+  --profile tiny \
+  --type PDF \
+  --type DOCX \
+  --type PPTX \
+  --offline
+```
+
+NapierOne publishes `tiny`, `small`, and `total` archives containing 100,
+1,000, and 5,000 examples per selected type. Start with explicit `--type`
+arguments and byte budgets before using a larger profile. The full upstream
+dataset approaches 2 TB.
+
+Each run records throughput, source-size distribution, per-extension outcomes,
+SQLite retrieval-unit counts, storage amplification, peak process RSS,
+unchanged re-point idempotence, and parser failure details. Unless
+`--skip-recovery` is set, a child process is terminated with `os._exit()` after
+a configurable number of durable file writes. The parent resumes the same
+collection and requires its manifest and SQLite counts to match a clean run
+exactly.
+
+The files are external and should be treated as untrusted input. The benchmark
+parses supported documents; it does not execute source files. NapierOne is
+provided under the Edinburgh Napier University License Agreement and requires
+source attribution. See the upstream
+[license and attribution terms](https://github.com/simonrdavies/NapierOne#license-and-attribution).
+NapierOne Mixed File Dataset was accessed on 2026-07-28 from
+https://registry.opendata.aws/napierone/.
+
 Generated reports under `benchmarks/results/` and benchmark workspaces under
 `.bench_workspace/` are ignored by git.
+
+## External Labeled Retrieval
+
+The BEIR benchmark measures document retrieval against upstream relevance
+judgments instead of Fitz-Sage-authored expectations. The selected datasets
+cover three materially different domains:
+
+- NFCorpus: biomedical nutrition questions, 3,633 documents and 323 test
+  queries
+- FiQA: financial question answering, 57,638 documents and 648 test queries
+- SciFact: scientific claim retrieval, 5,183 documents and 300 test queries
+
+The helper downloads the official BEIR archives, verifies their published MD5
+values, safely extracts them, and validates the expected corpus and judged
+query counts. It does not redistribute the datasets.
+
+BEIR stores each document as `title`, `text`, and metadata. The adapter creates
+one UTF-8 `.txt` source per document containing the exact title, a blank line,
+and the exact text. It does not summarize, normalize, expand, or include BEIR
+metadata. Unsafe document IDs never become paths: a SHA-256 filename and an
+external reversible mapping preserve identity without adding benchmark labels
+to the indexed corpus.
+
+Run all three datasets through a transparent Okapi BM25 baseline and
+Fitz-Sage's canonical traced retrieval:
+
+```bash
+python -m benchmarks.fitz_bench.beir_benchmark
+```
+
+Download, verify, and project the corpora without indexing:
+
+```bash
+python -m benchmarks.fitz_bench.beir_benchmark --download-only
+```
+
+Run a quick SciFact smoke from the verified local cache:
+
+```bash
+python -m benchmarks.fitz_bench.beir_benchmark \
+  --dataset scifact \
+  --offline \
+  --query-limit 3
+```
+
+The default is source-only indexing. Use `--index-mode complete` to measure the
+same queries after optional entity and hierarchy enrichment.
+`--reuse-workspace` keeps dataset indexes across interrupted runs. Add
+`--resume-queries` to reuse matching per-query checkpoints; checkpoint
+signatures include the archive, query set, cutoffs, mode, governance selection,
+and retrieval source digest, so stale results are rejected.
+`--query-limit` is a smoke-test control and must not be used for release
+claims.
+
+Each query reports rankings and TREC-style precision, recall, MRR, MAP, and
+graded nDCG at 1, 3, 5, 10, 20, and 50 for:
+
+- benchmark-local plain BM25
+- Fitz-Sage recall
+- raw reranker output
+- final candidate selection
+- compiled ranked evidence
+- delivered evidence
+
+Repeated chunks from one source count as one document. A delivered miss is
+attributed to the earliest irreversible boundary: recall, final selection,
+evidence compilation, or delivery. The exact generated query terms and Pyrrho
+decision are retained per query. Pyrrho does not alter relevance scores and is
+not a retrieval gate.
+
+The default gate is operational only: archive, indexing, identity-mapping, and
+query-execution failures fail the run, while low scores remain measured
+limitations. A score gate can be introduced explicitly with
+`--max-recall-regression`, but it should be based on an accepted measured
+baseline rather than selected before the first run.
+
+BEIR is a benchmark wrapper, not one license. Users remain responsible for the
+license of each underlying dataset. See the
+[BEIR repository](https://github.com/beir-cellar/beir) and
+[BEIR paper](https://arxiv.org/abs/2104.08663).
+
+### Measured BEIR Baseline
+
+The 2026-07-28 source-only run evaluated all 1,271 judged test queries. Managed
+Qwen query terms, the ONNX cross-encoder, evidence compilation, and exact
+Pyrrho integration were active. Optional per-document enrichment was not.
+
+Mean nDCG@10 by observable stage:
+
+| Dataset | Plain BM25 | Fitz recall | Final candidates | Delivered evidence |
+|---|---:|---:|---:|---:|
+| NFCorpus | 0.3062 | 0.3217 | 0.3293 | 0.2486 |
+| FiQA | 0.2377 | 0.2337 | 0.3210 | 0.2609 |
+| SciFact | 0.6634 | 0.6174 | 0.6628 | 0.5982 |
+
+Recall@50 before the fixed top-10 reranking/evidence window:
+
+| Dataset | Plain BM25 | Fitz recall |
+|---|---:|---:|
+| NFCorpus | 0.2101 | 0.2228 |
+| FiQA | 0.4459 | 0.4736 |
+| SciFact | 0.8704 | 0.8869 |
+
+The central recall mechanism exceeded the plain baseline's Recall@50 on all
+three datasets. Reranking improved nDCG@10 over plain BM25 on NFCorpus and FiQA
+and was effectively tied on SciFact. Evidence compilation then reduced
+nDCG@10 on every dataset; delivered evidence was identical to compiled
+evidence, so the delivery budget and Pyrrho did not remove additional
+documents.
+
+The most concrete package limitation was capitalization-derived hard phrase
+anchors. Across the three datasets, 103 of 108 compiler-stage complete misses
+had a generated hard anchor. Eighty-six were phrase-anchor misses, including a
+live trace where `Do Cholesterol Statin Drugs Cause Breast Cancer?` became the
+literal required phrase `Cholesterol Statin Drugs Cause Breast Cancer`.
+Recall returned 50 candidates and reranking returned 10, but the compiler set
+`filtered_all: true` and delivered zero evidence. This is package query-shape
+debt, not user cleanup responsibility.
+
+All 3,633 NFCorpus and 5,183 SciFact documents indexed. FiQA indexed
+57,600/57,638 documents; the 38 failures had empty upstream `title` and `text`
+fields, and one of those empty records was nevertheless judged relevant. Empty
+documents remained visible failures and were not removed by the adapter.
+
+Canonical Fitz-Sage query latency averaged 15.4 seconds on NFCorpus, 14.1
+seconds on FiQA, and 20.9 seconds on SciFact on the benchmark machine. This
+includes managed semantic terms, reranking, compilation, and Pyrrho. The local
+plain-BM25 comparison intentionally excludes those components and is not a
+latency-equivalent product path.
+
+Profile the existing reusable indexes without repeating ingestion or the full
+relevance run:
+
+```bash
+python -m benchmarks.fitz_bench.beir_timing --offline
+```
+
+The timing profiler runs one explicit cold query per process and then a
+deterministic warm sample. It preserves raw `EvidencePack` timings and also
+groups non-overlapping query preparation, semantic expansion, recall,
+reranking, reading, context expansion, and Pyrrho costs. Aggregate retrieval
+timers are excluded from the grouped totals to avoid double-counting.
+
+The 2026-07-29 diagnostic run used seed `20260729` and 12 warm queries per
+dataset on the same six-core benchmark machine:
+
+| Dataset | Mean | p50 | p95 | Rerank | Qwen terms | Pyrrho | Recall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| NFCorpus | 25.51s | 17.22s | 61.27s | 79.4% | 10.4% | 6.8% | 2.1% |
+| FiQA | 16.97s | 16.06s | 23.86s | 65.0% | 15.6% | 13.3% | 3.3% |
+| SciFact | 22.72s | 21.00s | 40.23s | 70.9% | 14.8% | 10.0% | 2.0% |
+
+Across the 36 warm queries, reranking consumed 72.7% of total time: 43.4%
+for the initial 50-candidate pass and 29.3% for repeated evidence-closure
+passes. Twenty queries requested closure; they averaged 26.99 seconds versus
+15.15 seconds without closure. Qwen query expansion averaged 2.89 seconds
+(13.3%), while lexical recall averaged 0.52 seconds (2.4%). This identifies
+cross-encoder reranking and closure fan-out as the latency bottleneck; corpus
+size and BM25 are not the primary cause.
+
+These results are a measured boundary, not an SLA and not an official BEIR
+leaderboard submission. The benchmark-local analyzer and one-file adapter are
+fully described above, and no retrieval behavior was changed in response to
+the scores during the run.
 
 ## Case Shape
 

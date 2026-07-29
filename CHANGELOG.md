@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   traces, and environment fingerprints.
 - Added Pyrrho-only replay over integrity-checked frozen evidence through
   the SDK and the new `fitz explain` / `fitz replay` CLI commands.
+- Added a selective, SHA-256-verified NapierOne ingestion benchmark with
+  per-format throughput and storage metrics, idempotent re-point checks, and
+  exact hard-crash recovery verification over unchanged external files.
+- Added a checksum-verified BEIR retrieval benchmark over NFCorpus, FiQA, and
+  SciFact with a transparent plain-BM25 baseline, graded ranking metrics,
+  per-stage failure attribution, and exact query/Pyrrho trace retention.
 
 ### Changed
 
@@ -77,6 +83,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the 60-case limitations benchmark, focused `--case-id` benchmark runs,
   per-case progress, an 11-case required hardening gate, and a versioned
   `LIMITATIONS.md` product contract.
+- Code files with no finer extractable symbols now retain a filename-addressable
+  module retrieval unit instead of being reported as unsearchable.
+- Table-ingestion failures now retain their concrete parse, read, or SQLite
+  storage cause while reporting collection-relative paths instead of leaking
+  absolute source paths.
 
 ## [0.15.0] - 2026-07-08
 

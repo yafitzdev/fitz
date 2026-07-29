@@ -163,18 +163,111 @@ contracts with 100% required recall and no forbidden evidence. It passed 14/20
 complete contracts; all six failures were attributed to accepted Pyrrho
 outputs, not missing source retrieval.
 
+The 2026-07-28 external ingestion run used unchanged, SHA-256-verified files
+from the public NapierOne dataset:
+
+| Slice | Source size | Indexed | Failures | Throughput | Peak RSS |
+|---|---:|---:|---:|---:|---:|
+| CSV/TXT/JSON/JavaScript/HTML/XML | 54.9 MB | 606/606 | 0 | 10.9 files/s | 253 MB |
+| PDF/DOCX/PPTX | 490.8 MB | 293/303 | 10 | 3.4 files/s | 615 MB |
+| CSV/JSON/JavaScript/HTML/XML scale | 523.6 MB | 4,994/5,005 | 11 | 7.27 files/s | 262 MB |
+
+All 100 DOCX files indexed. Eight PDFs had no embedded text and two PPTX files
+had no text shapes, so the default CPU parsers explicitly rejected them instead
+of recording empty searchable documents. That is a 3.3% supported-file failure
+rate for the rich slice and demonstrates the documented OCR/image-content
+boundary.
+
+The 5,005-file scale slice rejected ten CSV exports whose first rows did not
+provide usable headers and one CSV whose 16,383-field first row exceeded
+SQLite's column limit. The other 4,000 JSON, JavaScript, HTML, and XML files all
+indexed. Its 515.6 MB of indexed source produced a 1.43 GB SQLite database, a
+2.78x storage ratio that should be included in capacity planning.
+
+All three slices exceeded the one-file-per-second target and left their SQLite
+counts unchanged after an immediate re-point. An abrupt process exit followed
+by a resume produced the same manifest inventory and SQLite retrieval-unit
+counts as the clean run, with no orphan raw-file records. The tiny slices
+crashed after ten durable files; the 5,005-file scale slice crashed after 100.
+
 Required-suite queries averaged 4.1 seconds with a 3.6-second median, including
 cold starts; the slowest limitation query took 27.9 seconds.
 
 These figures are observations, not an SLA. They show that enrichment of many
 small files and broad retrieval over pathological documents need production
-capacity testing on the user's hardware and corpus.
+capacity testing on the user's hardware and corpus. The 909-file tiny slices
+and 5,005-file scale slice are parser and recovery samples, not a
+retrieval-quality evaluation and not a guarantee over NapierOne's full
+500,000-file dataset.
+
+Real-file ingestion and labeled retrieval are separate claims. NapierOne
+measures parsing, storage, throughput, and recovery over unchanged files. The
+external BEIR run measures whether judged relevant documents survive recall,
+reranking, final selection, compilation, and delivery across biomedical,
+financial, and scientific corpora.
+
+## External Retrieval Evidence
+
+The 2026-07-28 source-only BEIR run used 66,454 external documents and all
+1,271 judged test queries from NFCorpus, FiQA, and SciFact. It made no
+per-dataset retrieval changes.
+
+| Dataset | Plain BM25 nDCG@10 | Fitz recall nDCG@10 | Final nDCG@10 | Delivered nDCG@10 |
+|---|---:|---:|---:|---:|
+| NFCorpus | 0.3062 | 0.3217 | 0.3293 | 0.2486 |
+| FiQA | 0.2377 | 0.2337 | 0.3210 | 0.2609 |
+| SciFact | 0.6634 | 0.6174 | 0.6628 | 0.5982 |
+
+Fitz recall exceeded the local plain-BM25 Recall@50 on all three datasets:
+0.2228 versus 0.2101 on NFCorpus, 0.4736 versus 0.4459 on FiQA, and 0.8869
+versus 0.8704 on SciFact. This supports the BM25 plus managed semantic-term
+recall design.
+
+The evidence path is not yet consistently stronger end to end. Compilation
+reduced ranking quality on all three datasets and caused 108 queries to lose
+their last judged-relevant candidate. Of those misses, 103 involved a generated
+hard anchor and 86 involved capitalization-derived phrases. The strongest next
+package hardening target is therefore literal-anchor recognition and compiler
+filtering, not Pyrrho and not corpus cleanup.
+
+Delivered rankings exactly matched compiled rankings in all three datasets.
+Pyrrho verdicts were recorded unchanged but were not scored as relevance labels
+and did not gate retrieval.
+
+FiQA contained 38 records with no title or text, including one judged-relevant
+record. Fitz-Sage reported all 38 as unsearchable; the adapter did not hide
+them. All non-empty FiQA records and every NFCorpus and SciFact record indexed.
+
+Mean canonical query latency was 15.4 seconds for NFCorpus, 14.1 seconds for
+FiQA, and 20.9 seconds for SciFact on the benchmark machine. The full run took
+about six hours. These are production concerns even though Fitz-Sage's own
+retrieval logic is small: the managed query model, cross-encoder, and Pyrrho
+runtime dominate the path.
 
 ## Reproduce
 
 ```bash
 python -m benchmarks.fitz_bench.production_runner \
   --output production-report.json
+```
+
+Run the external real-file ingestion and hard-crash benchmark separately:
+
+```bash
+python -m benchmarks.fitz_bench.external_ingestion_benchmark \
+  --profile tiny \
+  --workspace .bench_workspace/napierone \
+  --output napierone-ingestion.json
+```
+
+Run the independent labeled retrieval evaluation:
+
+```bash
+python -m benchmarks.fitz_bench.beir_benchmark \
+  --offline \
+  --reuse-workspace \
+  --resume-queries \
+  --output benchmarks/results/beir_full.json
 ```
 
 Generated JSON and Markdown reports are ignored by Git because they contain

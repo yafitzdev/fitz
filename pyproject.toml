@@ -108,6 +108,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.10",
     "types-PyYAML>=6.0",
+    "certifi>=2024.0",
     "fastapi>=0.100.0",
     "psutil>=5.9",
     "hypothesis>=6.100.0",

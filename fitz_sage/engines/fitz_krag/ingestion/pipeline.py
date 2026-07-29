@@ -37,7 +37,8 @@ from fitz_sage.engines.fitz_krag.ingestion.section_store import (
     CORPUS_SUMMARY_SCHEMA_VERSION,
     SectionStore,
 )
-from fitz_sage.engines.fitz_krag.ingestion.strategies.base import IngestResult
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import path_to_module
+from fitz_sage.engines.fitz_krag.ingestion.strategies.base import IngestResult, SymbolEntry
 from fitz_sage.engines.fitz_krag.ingestion.strategies.python_code import (
     PythonCodeIngestStrategy,
 )
@@ -360,6 +361,8 @@ class KragIngestPipeline:
         )
 
         result: IngestResult = self._strategies[lang].extract(content, rel_path)
+        if not result.symbols and content.strip():
+            result.symbols.append(_file_module_symbol(rel_path, content))
 
         # Replace any prior symbols/imports for this file
         self._symbol_store.delete_by_file(file_id)
@@ -450,15 +453,13 @@ class KragIngestPipeline:
             from fitz_sage.tabular.parser.csv_parser import get_sample_rows, parse_csv
 
             parsed = parse_csv(abs_path)
-        except Exception as e:
-            logger.warning(f"CSV parsing failed for {abs_path}: {e}")
-            return 0
+        except Exception as exc:
+            raise ValueError(f"Could not parse table '{rel_path}': {exc}") from exc
 
         try:
             content = abs_path.read_text(encoding="utf-8", errors="replace")
-        except Exception as e:
-            logger.warning(f"Cannot read {abs_path}: {e}")
-            return 0
+        except Exception as exc:
+            raise ValueError(f"Could not read table '{rel_path}': {exc}") from exc
 
         preview = "\n".join(content.splitlines()[:50])
         ext = abs_path.suffix.lower()
@@ -482,9 +483,8 @@ class KragIngestPipeline:
                     source_file=rel_path,
                     file_hash=content_hash,
                 )
-            except Exception as e:
-                logger.warning(f"SqliteTableStore.store failed for {rel_path}: {e}")
-                return 0
+            except Exception as exc:
+                raise ValueError(f"Could not store table '{rel_path}': {exc}") from exc
 
         # Replace any prior table metadata for this file
         self._table_store.delete_by_file(file_id)
@@ -959,3 +959,15 @@ def _resolve_section_parents(section_dicts: list[dict[str, Any]], file_ids: list
 def _hash_file(path: Path) -> str:
     """Compute SHA-256 hash of file content."""
     return compute_content_hash(path)
+
+
+def _file_module_symbol(file_path: str, content: str) -> SymbolEntry:
+    """Create a filename-addressable unit when code has no finer symbols."""
+    module_name = path_to_module(file_path, CODE_EXTENSION_MAP)
+    return SymbolEntry(
+        name=Path(file_path).stem,
+        qualified_name=module_name,
+        kind="module",
+        start_line=1,
+        end_line=max(1, len(content.splitlines())),
+    )
