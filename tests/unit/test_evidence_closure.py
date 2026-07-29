@@ -823,6 +823,92 @@ def test_closure_merge_replaces_duplicate_when_provenance_is_new() -> None:
     assert merged == [candidate]
 
 
+def test_closure_merge_preserves_different_equally_precise_table_result() -> None:
+    """A bridge lookup must not overwrite the original query's table winner."""
+    existing = _result(
+        AddressKind.TABLE,
+        "structured/alerts.csv",
+        "Alerts",
+        "ALT-504 | atlas | 19",
+    )
+    existing.metadata.update(
+        {
+            "deterministic_table_filter": True,
+            "result_count": 1,
+            "table_query_plan": {
+                "sort": {"column": "mttr_minutes", "direction": "min"}
+            },
+        }
+    )
+    candidate = _result(
+        AddressKind.TABLE,
+        "structured/alerts.csv",
+        "Alerts",
+        "ALT-501 | payments | 37",
+    )
+    candidate.metadata.update(
+        {
+            "deterministic_table_filter": True,
+            "result_count": 1,
+            "evidence_closure": {"role": "bridge:ALT-501"},
+        }
+    )
+
+    merged, added, replaced = _merge_closure_results(
+        [existing],
+        [candidate],
+        allow_replace=True,
+        query_contract="comparison_coverage",
+    )
+
+    assert added == 0
+    assert replaced == 0
+    assert merged == [existing]
+
+
+def test_closure_merge_replaces_sorted_table_for_noncomparison_contract() -> None:
+    """Temporal bridge evidence may replace an incidental table sort."""
+    existing = _result(
+        AddressKind.TABLE,
+        "structured/rollouts.csv",
+        "Rollouts",
+        "ROL-405 | payment_replay_guard | 2027-01-15",
+    )
+    existing.metadata.update(
+        {
+            "deterministic_table_filter": True,
+            "result_count": 1,
+            "table_query_plan": {
+                "sort": {"column": "rollout_percent", "direction": "max"}
+            },
+        }
+    )
+    candidate = _result(
+        AddressKind.TABLE,
+        "structured/rollouts.csv",
+        "Rollouts",
+        "ROL-401 | vega_private_beta | 2026-09-30",
+    )
+    candidate.metadata.update(
+        {
+            "deterministic_table_filter": True,
+            "result_count": 1,
+            "evidence_closure": {"role": "bridge:ROL-401"},
+        }
+    )
+
+    merged, added, replaced = _merge_closure_results(
+        [existing],
+        [candidate],
+        allow_replace=True,
+        query_contract="temporal_grounding",
+    )
+
+    assert added == 0
+    assert replaced == 1
+    assert merged == [candidate]
+
+
 def test_compiler_rejects_unproven_closure_bridge_role() -> None:
     """Closure metadata alone cannot claim an identifier absent from evidence."""
     unrelated = _result(

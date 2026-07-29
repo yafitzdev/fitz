@@ -298,6 +298,7 @@ class QueryPipeline:
                 expanded,
                 annotated,
                 allow_replace=True,
+                query_contract=contract.query_contract,
             )
             total_added += added
             total_replaced += replaced
@@ -538,6 +539,7 @@ def _merge_closure_results(
     additional: list["ReadResult"],
     *,
     allow_replace: bool,
+    query_contract: str | None = None,
 ) -> tuple[list["ReadResult"], int, int]:
     """Merge closure results while allowing bridge-grounded table refreshes."""
     merged = list(current)
@@ -550,7 +552,11 @@ def _merge_closure_results(
     for result in additional:
         key = _result_unit_key(result)
         if key in positions:
-            if allow_replace and _closure_result_should_replace(merged[positions[key]], result):
+            if allow_replace and _closure_result_should_replace(
+                merged[positions[key]],
+                result,
+                query_contract=query_contract,
+            ):
                 merged[positions[key]] = result
                 replaced += 1
             continue
@@ -632,7 +638,12 @@ def _result_unit_key(result: "ReadResult") -> tuple[str, str, str]:
     return str(address.source_id), kind, str(identity)
 
 
-def _closure_result_should_replace(existing: "ReadResult", candidate: "ReadResult") -> bool:
+def _closure_result_should_replace(
+    existing: "ReadResult",
+    candidate: "ReadResult",
+    *,
+    query_contract: str | None = None,
+) -> bool:
     """Return whether closure produced a more specific version of an existing result."""
     candidate_closure = candidate.metadata.get("evidence_closure")
     existing_closure = existing.metadata.get("evidence_closure")
@@ -653,8 +664,23 @@ def _closure_result_should_replace(existing: "ReadResult", candidate: "ReadResul
         return False
 
     if isinstance(candidate_closure, dict) and not isinstance(existing_closure, dict):
-        return True
+        # Closure provenance can enrich an unchanged result, but it does not
+        # supersede the original computation for a comparison query.
+        if candidate.content == existing.content:
+            return True
+        return not (
+            query_contract == "comparison_coverage"
+            and _has_sorted_table_plan(existing)
+        )
     return False
+
+
+def _has_sorted_table_plan(result: "ReadResult") -> bool:
+    """Return whether a table result came from an explicit deterministic sort."""
+    if result.address.kind.value != "table":
+        return False
+    plan = result.metadata.get("table_query_plan")
+    return isinstance(plan, dict) and isinstance(plan.get("sort"), dict)
 
 
 def _metadata_int(value: Any) -> int:
