@@ -28,6 +28,7 @@ DEFAULT_QWEN_MODEL_ID = "onnx-community/Qwen3-0.6B-DQ-ONNX"
 DEFAULT_QWEN_ONNX_SUBFOLDER = "onnx"
 DEFAULT_QWEN_ONNX_FILE = "model_q4f16.onnx"
 DEFAULT_MAX_NEW_TOKENS = 512
+DEFAULT_MAX_CONTEXT_TOKENS = 8192
 
 _MODEL_ALIASES: dict[str, tuple[str, str, str]] = {
     DEFAULT_QWEN_MODEL_ALIAS: (
@@ -231,7 +232,10 @@ class GenAiRuntimeBundle:
         search = config.setdefault("search", {})
         search["do_sample"] = False
         search["temperature"] = 0
-        search["max_length"] = min(int(search.get("max_length", 8192) or 8192), 8192)
+        search["max_length"] = min(
+            int(search.get("max_length", DEFAULT_MAX_CONTEXT_TOKENS) or DEFAULT_MAX_CONTEXT_TOKENS),
+            DEFAULT_MAX_CONTEXT_TOKENS,
+        )
         (runtime_dir / "genai_config.json").write_text(
             json.dumps(config, indent=2),
             encoding="utf-8",
@@ -282,20 +286,27 @@ class OnnxGenAiGenerator:
         """Run ONNX GenAI generation and return generated text."""
         input_tokens = self._genai_tokenizer.encode(prompt)
         params = self._make_generator_params(
-            max_length=len(input_tokens) + max(1, max_new_tokens),
+            max_length=_bounded_generation_length(
+                len(input_tokens),
+                max_new_tokens,
+            ),
             temperature=temperature,
             top_p=top_p,
         )
         og = GenAiRuntimeBundle.require_genai()
         token_stream = self._genai_tokenizer.create_stream()
         generated = og.Generator(self._genai_model, params)
-        generated.append_tokens(input_tokens)
+        try:
+            generated.append_tokens(input_tokens)
 
-        chunks: list[str] = []
-        while not generated.is_done():
-            generated.generate_next_token()
-            chunks.append(token_stream.decode(generated.get_next_tokens()[0]))
-        return "".join(chunks)
+            chunks: list[str] = []
+            while not generated.is_done():
+                generated.generate_next_token()
+                chunks.append(token_stream.decode(generated.get_next_tokens()[0]))
+            return "".join(chunks)
+        finally:
+            # The native generator owns per-request KV-cache allocations.
+            del generated
 
     def _make_generator_params(
         self,
@@ -340,6 +351,23 @@ def _strip_thinking(text: str) -> str:
             else text.split("<think>")[0].rstrip()
         )
     return text
+
+
+def _bounded_generation_length(input_tokens: int, requested_new_tokens: int) -> int:
+    """Fit one generation inside the managed runtime's context window."""
+    if input_tokens >= DEFAULT_MAX_CONTEXT_TOKENS:
+        raise OnnxChatModelError(
+            "Managed Qwen prompt exceeds its "
+            f"{DEFAULT_MAX_CONTEXT_TOKENS}-token context limit "
+            f"({input_tokens} input tokens supplied)."
+        )
+    available = DEFAULT_MAX_CONTEXT_TOKENS - input_tokens
+    return input_tokens + min(max(1, requested_new_tokens), available)
+
+
+def _is_native_allocation_error(error: RuntimeError) -> bool:
+    """Identify the transient allocation failure emitted by ORT GenAI."""
+    return "bad allocation" in str(error).casefold()
 
 
 def _token_text(value: Any) -> str | None:
@@ -427,12 +455,26 @@ class OnnxChat:
         prompt = runtime.generator.format_messages(messages)
 
         with runtime.run_lock:
-            text = runtime.generator.generate(
-                prompt=prompt,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-            )
+            try:
+                text = runtime.generator.generate(
+                    prompt=prompt,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                )
+            except RuntimeError as error:
+                if not _is_native_allocation_error(error):
+                    raise
+                logger.warning(
+                    "Managed Qwen hit a transient native allocation failure; "
+                    "retrying once after releasing the request generator."
+                )
+                text = runtime.generator.generate(
+                    prompt=prompt,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                )
 
         text = _strip_thinking(text).strip()
         return self._apply_stop(text, stop)

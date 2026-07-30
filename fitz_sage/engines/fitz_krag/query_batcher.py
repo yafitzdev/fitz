@@ -120,6 +120,7 @@ _KEYWORD_PLACEHOLDERS = {
     "term",
     "terms",
 }
+SEMANTIC_KEYWORD_MAX_TOKENS = 128
 
 _ANALYSIS_SPEC = _QuerySectionSpec("analysis", _ANALYSIS_JSON, _ANALYSIS_INSTRUCTIONS)
 _REWRITING_SPEC = _QuerySectionSpec("rewriting", _REWRITING_JSON, _REWRITING_INSTRUCTIONS)
@@ -195,6 +196,7 @@ class QueryBatcher:
 
     chat_factory: "ChatFactory"
     detection_modules: list["DetectionModule"] = field(default_factory=list)
+    max_tokens: int | None = None
 
     def batch_classify(
         self,
@@ -238,7 +240,8 @@ class QueryBatcher:
 
         try:
             chat = self.chat_factory("fast")
-            response = chat.chat([{"role": "user", "content": prompt}])
+            options = {"max_tokens": self.max_tokens} if self.max_tokens is not None else {}
+            response = chat.chat([{"role": "user", "content": prompt}], **options)
         except QueryIntelligenceError:
             raise
         except Exception as e:

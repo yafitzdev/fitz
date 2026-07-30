@@ -362,7 +362,10 @@ class FitzKragEngine:
         # Query prep defaults to the deterministic planner. If
         # query_intelligence is configured, the batcher uses that provider and
         # treats provider/model failures as query failures.
-        from fitz_sage.engines.fitz_krag.query_batcher import QueryBatcher
+        from fitz_sage.engines.fitz_krag.query_batcher import (
+            SEMANTIC_KEYWORD_MAX_TOKENS,
+            QueryBatcher,
+        )
         from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
         from fitz_sage.retrieval.detection.modules import DEFAULT_MODULES
 
@@ -391,6 +394,7 @@ class FitzKragEngine:
         self._semantic_keyword_batcher = QueryBatcher(
             chat_factory=lambda _tier: self._enricher_chat,
             detection_modules=[],
+            max_tokens=SEMANTIC_KEYWORD_MAX_TOKENS,
         )
 
         # Reranker — mandatory INT8 ONNX cross-encoder via get_reranker().

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from hashlib import sha256
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ from fitz_sage.llm.providers.onnx_chat import (
     GenAiRuntimeBundle,
     OnnxChat,
     OnnxChatModelError,
+    _bounded_generation_length,
 )
 
 
@@ -199,3 +201,62 @@ def test_identical_model_specs_share_one_native_runtime(monkeypatch, tmp_path):
 
     assert model_calls == [str(tmp_path)]
     assert first._loaded_runtime is second._loaded_runtime
+
+
+def test_generation_length_is_bounded_by_runtime_context() -> None:
+    assert _bounded_generation_length(100, 128) == 228
+    assert _bounded_generation_length(8100, 512) == 8192
+
+    with pytest.raises(OnnxChatModelError, match="8192-token context limit"):
+        _bounded_generation_length(8192, 1)
+
+
+def test_chat_retries_one_native_allocation_failure(monkeypatch) -> None:
+    class _Generator:
+        calls = 0
+
+        @staticmethod
+        def format_messages(messages):
+            return "prompt"
+
+        @classmethod
+        def generate(cls, **kwargs):
+            cls.calls += 1
+            if cls.calls == 1:
+                raise RuntimeError("MatMulNBits: bad allocation")
+            return "completed"
+
+    chat = OnnxChat()
+    monkeypatch.setattr(chat, "_load", lambda: None)
+    chat._loaded_runtime = SimpleNamespace(
+        generator=_Generator(),
+        run_lock=threading.Lock(),
+    )
+
+    assert chat.chat([{"role": "user", "content": "query"}]) == "completed"
+    assert _Generator.calls == 2
+
+
+def test_chat_does_not_retry_unrelated_runtime_failure(monkeypatch) -> None:
+    class _Generator:
+        calls = 0
+
+        @staticmethod
+        def format_messages(messages):
+            return "prompt"
+
+        @classmethod
+        def generate(cls, **kwargs):
+            cls.calls += 1
+            raise RuntimeError("invalid model input")
+
+    chat = OnnxChat()
+    monkeypatch.setattr(chat, "_load", lambda: None)
+    chat._loaded_runtime = SimpleNamespace(
+        generator=_Generator(),
+        run_lock=threading.Lock(),
+    )
+
+    with pytest.raises(RuntimeError, match="invalid model input"):
+        chat.chat([{"role": "user", "content": "query"}])
+    assert _Generator.calls == 1
