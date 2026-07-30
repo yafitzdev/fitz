@@ -1,0 +1,1321 @@
+{
+  "schema_version": 1,
+  "name": "beir-semantic-vocabulary-holdout-v1",
+  "purpose": "Measure managed semantic query expansion across frozen lexical-overlap strata without using retrieval scores for selection.",
+  "selection": {
+    "algorithm": "positive-max-token-jaccard-tertiles-sha256-v1",
+    "seed": 20260730,
+    "sample_size_per_dataset": 120,
+    "queries_per_group": 40,
+    "groups": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "tokenizer": "benchmark Unicode word tokens, casefolded",
+    "positive_overlap": "maximum token-set Jaccard over judged-relevant documents",
+    "self_document_policy": "exclude corpus document whose ID equals the query ID",
+    "missing_positive_policy": "record missing positive query/document pairs and exclude only queries with no available judged-relevant document"
+  },
+  "datasets": {
+    "arguana": {
+      "archive_md5": "8ad3e3c2a5867cdced806d6503f29b99",
+      "corpus_sha256": "0627982cec4ee896df6dc98604ef6b499c83fd87a19eaaeb3f23b88bbef6cbce",
+      "queries_sha256": "f8b7c903f95d9a2d291de3915a8fac25085e9db679f19f59fea4145bfd1df618",
+      "qrels_sha256": "0c47b481fa8b47fb9ca5e74bc8a017bdea14518c0e4a5d21345291180b3aca76",
+      "corpus_documents": 8674,
+      "available_judged_queries": 1406,
+      "eligible_queries": 1401,
+      "missing_positive_qrels": [
+        {
+          "query_id": "test-education-ufsdfkhbwu-con03a",
+          "document_id": "test-education-ufsdfkhbwu-con03b"
+        },
+        {
+          "query_id": "test-free-speech-debate-yfsdfkhbwu-con03a",
+          "document_id": "test-free-speech-debate-yfsdfkhbwu-con03b"
+        },
+        {
+          "query_id": "test-politics-dhwem-pro06a",
+          "document_id": "test-politics-dhwem-pro06b"
+        },
+        {
+          "query_id": "test-science-sghwbdgmo-con03a",
+          "document_id": "test-science-sghwbdgmo-con03b"
+        },
+        {
+          "query_id": "test-society-asfhwapg-con04a",
+          "document_id": "test-society-asfhwapg-con04b"
+        }
+      ],
+      "queries_without_available_positives": [
+        "test-education-ufsdfkhbwu-con03a",
+        "test-free-speech-debate-yfsdfkhbwu-con03a",
+        "test-politics-dhwem-pro06a",
+        "test-science-sghwbdgmo-con03a",
+        "test-society-asfhwapg-con04a"
+      ],
+      "ignore_identical_ids": true,
+      "group_counts": {
+        "low": 40,
+        "medium": 40,
+        "high": 40
+      },
+      "group_ranges": {
+        "low": {
+          "candidate_min": 0.07207207207207207,
+          "candidate_max": 0.15021459227467812,
+          "selected_mean": 0.12810545320401825
+        },
+        "medium": {
+          "candidate_min": 0.15028901734104047,
+          "candidate_max": 0.18055555555555555,
+          "selected_mean": 0.16591957449859593
+        },
+        "high": {
+          "candidate_min": 0.18061674008810572,
+          "candidate_max": 0.9758064516129032,
+          "selected_mean": 0.22443379943300398
+        }
+      },
+      "queries": [
+        {
+          "query_id": "test-economy-fiahwpamu-pro03a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.13836478
+        },
+        {
+          "query_id": "test-international-segiahbarr-con02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.11656442
+        },
+        {
+          "query_id": "test-economy-bhahwbsps-con01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.13664596
+        },
+        {
+          "query_id": "test-philosophy-pphbclsbs-con04a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.12849162
+        },
+        {
+          "query_id": "test-international-segiahbarr-pro03a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14492754
+        },
+        {
+          "query_id": "test-society-ghbgqeaaems-pro03a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.13106796
+        },
+        {
+          "query_id": "test-environment-aiahwagit-pro02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.13207547
+        },
+        {
+          "query_id": "test-law-tahglcphsld-pro06a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.13888889
+        },
+        {
+          "query_id": "test-politics-eppghwgpi-pro01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.11157025
+        },
+        {
+          "query_id": "test-education-ughbuesbf-pro04a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14130435
+        },
+        {
+          "query_id": "test-education-ufsdfkhbwu-con02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.12380952
+        },
+        {
+          "query_id": "test-international-atiahblit-pro02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14358974
+        },
+        {
+          "query_id": "test-philosophy-pppthbtcb-con02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14367816
+        },
+        {
+          "query_id": "test-environment-opecewiahw-con04a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.12230216
+        },
+        {
+          "query_id": "test-environment-chbwtlgcc-con01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14615385
+        },
+        {
+          "query_id": "test-philosophy-apessghwba-con03a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.12149533
+        },
+        {
+          "query_id": "test-digital-freedoms-piidfaihbg-pro03a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.11111111
+        },
+        {
+          "query_id": "test-international-appghblsba-con01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14473684
+        },
+        {
+          "query_id": "test-digital-freedoms-piidfaihbg-pro02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14788732
+        },
+        {
+          "query_id": "test-law-tlcplghwfne-pro01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14957265
+        },
+        {
+          "query_id": "test-politics-ypppgvhwmv-con03a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14285714
+        },
+        {
+          "query_id": "test-science-ascidfakhba-con04a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14285714
+        },
+        {
+          "query_id": "test-politics-oepghbrnsl-pro02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.12686567
+        },
+        {
+          "query_id": "test-international-aahwstdrtfm-con02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.13178295
+        },
+        {
+          "query_id": "test-sport-otshwbe2uuyt-pro01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.11979167
+        },
+        {
+          "query_id": "test-environment-assgbatj-con01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.12745098
+        },
+        {
+          "query_id": "test-international-gmehwasr-con01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14942529
+        },
+        {
+          "query_id": "test-education-ufsdfkhbwu-pro01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.10204082
+        },
+        {
+          "query_id": "test-religion-yercfrggms-pro01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.12234043
+        },
+        {
+          "query_id": "test-politics-dhbanhrnw-pro03a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.13425926
+        },
+        {
+          "query_id": "test-digital-freedoms-eifdfaihs-con02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.09547739
+        },
+        {
+          "query_id": "test-international-sepiahbaaw-pro01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.12970711
+        },
+        {
+          "query_id": "test-international-gmehbisrip1b-con03a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.13461538
+        },
+        {
+          "query_id": "test-law-tahglcphsld-pro01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.08474576
+        },
+        {
+          "query_id": "test-international-iiahwagit-pro05a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.11627907
+        },
+        {
+          "query_id": "test-politics-dhwem-pro01a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.11678832
+        },
+        {
+          "query_id": "test-law-tahglcphsld-pro04a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.09333333
+        },
+        {
+          "query_id": "test-economy-epehwmrbals-con03a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.10471204
+        },
+        {
+          "query_id": "test-international-bldimehbn-con02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.14893617
+        },
+        {
+          "query_id": "test-international-siacphbnt-pro02a",
+          "group": "low",
+          "positive_max_token_jaccard": 0.12571429
+        },
+        {
+          "query_id": "test-education-ughbuesbf-con01a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16783217
+        },
+        {
+          "query_id": "test-law-sdiflhrdffe-pro02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.15584416
+        },
+        {
+          "query_id": "test-health-dhghhbampt-con02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17989418
+        },
+        {
+          "query_id": "test-society-asfhwapg-con03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.1635514
+        },
+        {
+          "query_id": "test-economy-beghwbh-pro01a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.1503268
+        },
+        {
+          "query_id": "test-philosophy-pppthbtcb-pro05a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17222222
+        },
+        {
+          "query_id": "test-international-bmaggiahbl-pro01a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16015625
+        },
+        {
+          "query_id": "test-economy-bepighbdb-pro02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16447368
+        },
+        {
+          "query_id": "test-law-thgglcplgphw-pro03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17699115
+        },
+        {
+          "query_id": "test-law-cplgpshwdp-con04a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16763006
+        },
+        {
+          "query_id": "test-politics-oepdlhfcefp-pro04a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16753927
+        },
+        {
+          "query_id": "test-law-hrpepthwuto-con02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17857143
+        },
+        {
+          "query_id": "test-international-aghbfcpspr-con02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.1793722
+        },
+        {
+          "query_id": "test-health-dhgsshbesbc-con01a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16748768
+        },
+        {
+          "query_id": "test-international-ssiarcmhb-pro01a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16981132
+        },
+        {
+          "query_id": "test-law-ilppppghb-pro01a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17209302
+        },
+        {
+          "query_id": "test-culture-ascidfakhba-pro03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.15609756
+        },
+        {
+          "query_id": "test-health-hdond-con03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.15942029
+        },
+        {
+          "query_id": "test-culture-tlhrilsfhwr-pro02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17622951
+        },
+        {
+          "query_id": "test-health-ahiahbgbsp-pro01a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16062176
+        },
+        {
+          "query_id": "test-politics-oeplhbuwhmi-con02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.15882353
+        },
+        {
+          "query_id": "test-free-speech-debate-radhbsshr-con01a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16339869
+        },
+        {
+          "query_id": "test-international-gpsmhbsosb-con02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.15753425
+        },
+        {
+          "query_id": "test-digital-freedoms-aihwbasmn-con03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17098446
+        },
+        {
+          "query_id": "test-international-eghrhbeusli-con03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.156
+        },
+        {
+          "query_id": "test-international-appghblsba-con03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16170213
+        },
+        {
+          "query_id": "test-sport-otshwbe2uuyt-con02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16184971
+        },
+        {
+          "query_id": "test-science-sghwbdgmo-con01a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.15508021
+        },
+        {
+          "query_id": "test-international-siacphbnt-con04a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16058394
+        },
+        {
+          "query_id": "test-politics-cdfsaphgiap-pro03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.15286624
+        },
+        {
+          "query_id": "test-religion-yercfrggms-con02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17171717
+        },
+        {
+          "query_id": "test-law-cpilhbishioe-con03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16875
+        },
+        {
+          "query_id": "test-society-asfhwapg-con02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17484663
+        },
+        {
+          "query_id": "test-culture-tlhrilsfhwr-con03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.1761194
+        },
+        {
+          "query_id": "test-international-ghbunhf-con04a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17117117
+        },
+        {
+          "query_id": "test-digital-freedoms-aihwbasmn-con02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16326531
+        },
+        {
+          "query_id": "test-culture-mmctghwbsa-pro03a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16528926
+        },
+        {
+          "query_id": "test-philosophy-npegiepp-pro02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.16988417
+        },
+        {
+          "query_id": "test-culture-ahrtsdlgra-pro02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.17142857
+        },
+        {
+          "query_id": "test-society-ghbgqeaaems-pro02a",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.15932203
+        },
+        {
+          "query_id": "test-culture-ahrtsdlgra-pro01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18867925
+        },
+        {
+          "query_id": "test-environment-assgbatj-con02a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.22093023
+        },
+        {
+          "query_id": "test-economy-thsptr-pro01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18181818
+        },
+        {
+          "query_id": "test-health-hdond-con01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18493151
+        },
+        {
+          "query_id": "test-society-epiasghbf-con03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.1875
+        },
+        {
+          "query_id": "test-culture-mmciahbans-pro01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.85897436
+        },
+        {
+          "query_id": "test-politics-oapdhwinkp-con03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18539326
+        },
+        {
+          "query_id": "test-philosophy-elkosmj-pro02a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.21666667
+        },
+        {
+          "query_id": "test-politics-cdmaggpdgdf-pro04a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.20472441
+        },
+        {
+          "query_id": "test-science-eassgbatj-pro02a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.2
+        },
+        {
+          "query_id": "test-economy-beghwbh-con03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.19553073
+        },
+        {
+          "query_id": "test-politics-nlpdwhbusbuc-pro03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.20382166
+        },
+        {
+          "query_id": "test-free-speech-debate-radhbsshr-pro03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.19169329
+        },
+        {
+          "query_id": "test-international-emephsate-con01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.23626374
+        },
+        {
+          "query_id": "test-religion-msgfhwbamec-pro03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18666667
+        },
+        {
+          "query_id": "test-politics-oepdlhfcefp-pro03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.23529412
+        },
+        {
+          "query_id": "test-law-lgplhbssbco-con03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18292683
+        },
+        {
+          "query_id": "test-philosophy-apessghwba-pro03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18518519
+        },
+        {
+          "query_id": "test-law-umtlilhotac-con01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.23170732
+        },
+        {
+          "query_id": "test-science-nsihwbtiss-con04a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.20175439
+        },
+        {
+          "query_id": "test-international-emephsate-pro02a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18918919
+        },
+        {
+          "query_id": "test-health-dhpelhbass-con04a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.2804878
+        },
+        {
+          "query_id": "test-science-sghwbdgmo-pro01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18149466
+        },
+        {
+          "query_id": "test-international-ipecfiepg-pro01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18466899
+        },
+        {
+          "query_id": "test-religion-grcrgshwbr-con03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.28776978
+        },
+        {
+          "query_id": "test-international-ssiarcmhb-pro02a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.1984127
+        },
+        {
+          "query_id": "test-politics-eppghwlrba-pro04a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.20454545
+        },
+        {
+          "query_id": "test-politics-grcrgshwbr-con01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.28965517
+        },
+        {
+          "query_id": "test-digital-freedoms-efsappgdfp-pro04a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.19736842
+        },
+        {
+          "query_id": "test-international-amehbuaisji-pro02a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.22439024
+        },
+        {
+          "query_id": "test-law-hrilpgwhwr-con04a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.19259259
+        },
+        {
+          "query_id": "test-education-xeegshwfeu-pro01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.19090909
+        },
+        {
+          "query_id": "test-politics-epvhbfsmsaop-pro01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18649518
+        },
+        {
+          "query_id": "test-education-usuprmhbu-con02a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.23943662
+        },
+        {
+          "query_id": "test-education-xeegshwfeu-con03a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.1875
+        },
+        {
+          "query_id": "test-politics-ypppdghwid-pro04a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.2384106
+        },
+        {
+          "query_id": "test-international-gsciidffe-con04a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.22424242
+        },
+        {
+          "query_id": "test-science-nsihwbtiss-pro04a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.20886076
+        },
+        {
+          "query_id": "test-international-amehbuaisji-con01a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.20625
+        },
+        {
+          "query_id": "test-free-speech-debate-fsaphgiap-pro02a",
+          "group": "high",
+          "positive_max_token_jaccard": 0.18421053
+        }
+      ]
+    },
+    "quora": {
+      "archive_md5": "18fb154900ba42a600f84b839c173167",
+      "corpus_sha256": "e2586c8e2f09c994a03d8e77842072b0f67f6f48403768be745157579d74aae4",
+      "queries_sha256": "760e53709ef5ae73e82a3a651111c49dfb837b3a2f803559b79246b57187a14b",
+      "qrels_sha256": "3c5b3e6bd9a26ecf67271bf0f856aa87cc4e71fa3665b32cc0ec906d7711fddb",
+      "corpus_documents": 522931,
+      "available_judged_queries": 10000,
+      "eligible_queries": 10000,
+      "missing_positive_qrels": [],
+      "queries_without_available_positives": [],
+      "ignore_identical_ids": true,
+      "group_counts": {
+        "low": 40,
+        "medium": 40,
+        "high": 40
+      },
+      "group_ranges": {
+        "low": {
+          "candidate_min": 0.07692307692307693,
+          "candidate_max": 0.4444444444444444,
+          "selected_mean": 0.33837383409074595
+        },
+        "medium": {
+          "candidate_min": 0.4444444444444444,
+          "candidate_max": 0.6666666666666666,
+          "selected_mean": 0.5474564671439673
+        },
+        "high": {
+          "candidate_min": 0.6666666666666666,
+          "candidate_max": 1.0,
+          "selected_mean": 0.8121345949801831
+        }
+      },
+      "queries": [
+        {
+          "query_id": "132133",
+          "group": "low",
+          "positive_max_token_jaccard": 0.42307692
+        },
+        {
+          "query_id": "16057",
+          "group": "low",
+          "positive_max_token_jaccard": 0.375
+        },
+        {
+          "query_id": "94878",
+          "group": "low",
+          "positive_max_token_jaccard": 0.375
+        },
+        {
+          "query_id": "373819",
+          "group": "low",
+          "positive_max_token_jaccard": 0.35
+        },
+        {
+          "query_id": "72235",
+          "group": "low",
+          "positive_max_token_jaccard": 0.41666667
+        },
+        {
+          "query_id": "145400",
+          "group": "low",
+          "positive_max_token_jaccard": 0.25
+        },
+        {
+          "query_id": "404608",
+          "group": "low",
+          "positive_max_token_jaccard": 0.25
+        },
+        {
+          "query_id": "99490",
+          "group": "low",
+          "positive_max_token_jaccard": 0.29411765
+        },
+        {
+          "query_id": "114622",
+          "group": "low",
+          "positive_max_token_jaccard": 0.33333333
+        },
+        {
+          "query_id": "183762",
+          "group": "low",
+          "positive_max_token_jaccard": 0.38888889
+        },
+        {
+          "query_id": "398753",
+          "group": "low",
+          "positive_max_token_jaccard": 0.375
+        },
+        {
+          "query_id": "5308",
+          "group": "low",
+          "positive_max_token_jaccard": 0.375
+        },
+        {
+          "query_id": "380332",
+          "group": "low",
+          "positive_max_token_jaccard": 0.375
+        },
+        {
+          "query_id": "195895",
+          "group": "low",
+          "positive_max_token_jaccard": 0.33333333
+        },
+        {
+          "query_id": "362126",
+          "group": "low",
+          "positive_max_token_jaccard": 0.38461538
+        },
+        {
+          "query_id": "229209",
+          "group": "low",
+          "positive_max_token_jaccard": 0.15384615
+        },
+        {
+          "query_id": "38750",
+          "group": "low",
+          "positive_max_token_jaccard": 0.36363636
+        },
+        {
+          "query_id": "329699",
+          "group": "low",
+          "positive_max_token_jaccard": 0.23529412
+        },
+        {
+          "query_id": "28208",
+          "group": "low",
+          "positive_max_token_jaccard": 0.33333333
+        },
+        {
+          "query_id": "532766",
+          "group": "low",
+          "positive_max_token_jaccard": 0.38461538
+        },
+        {
+          "query_id": "85554",
+          "group": "low",
+          "positive_max_token_jaccard": 0.42857143
+        },
+        {
+          "query_id": "464828",
+          "group": "low",
+          "positive_max_token_jaccard": 0.42857143
+        },
+        {
+          "query_id": "438003",
+          "group": "low",
+          "positive_max_token_jaccard": 0.15384615
+        },
+        {
+          "query_id": "282326",
+          "group": "low",
+          "positive_max_token_jaccard": 0.35294118
+        },
+        {
+          "query_id": "152107",
+          "group": "low",
+          "positive_max_token_jaccard": 0.375
+        },
+        {
+          "query_id": "401746",
+          "group": "low",
+          "positive_max_token_jaccard": 0.4
+        },
+        {
+          "query_id": "148719",
+          "group": "low",
+          "positive_max_token_jaccard": 0.25
+        },
+        {
+          "query_id": "23612",
+          "group": "low",
+          "positive_max_token_jaccard": 0.4375
+        },
+        {
+          "query_id": "22260",
+          "group": "low",
+          "positive_max_token_jaccard": 0.4
+        },
+        {
+          "query_id": "147632",
+          "group": "low",
+          "positive_max_token_jaccard": 0.30769231
+        },
+        {
+          "query_id": "6085",
+          "group": "low",
+          "positive_max_token_jaccard": 0.375
+        },
+        {
+          "query_id": "235394",
+          "group": "low",
+          "positive_max_token_jaccard": 0.28571429
+        },
+        {
+          "query_id": "401567",
+          "group": "low",
+          "positive_max_token_jaccard": 0.23529412
+        },
+        {
+          "query_id": "489600",
+          "group": "low",
+          "positive_max_token_jaccard": 0.42857143
+        },
+        {
+          "query_id": "96934",
+          "group": "low",
+          "positive_max_token_jaccard": 0.2
+        },
+        {
+          "query_id": "56074",
+          "group": "low",
+          "positive_max_token_jaccard": 0.35714286
+        },
+        {
+          "query_id": "331133",
+          "group": "low",
+          "positive_max_token_jaccard": 0.3
+        },
+        {
+          "query_id": "336085",
+          "group": "low",
+          "positive_max_token_jaccard": 0.36363636
+        },
+        {
+          "query_id": "168846",
+          "group": "low",
+          "positive_max_token_jaccard": 0.28571429
+        },
+        {
+          "query_id": "534533",
+          "group": "low",
+          "positive_max_token_jaccard": 0.4
+        },
+        {
+          "query_id": "335560",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.45454545
+        },
+        {
+          "query_id": "97335",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.625
+        },
+        {
+          "query_id": "52697",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.55555556
+        },
+        {
+          "query_id": "118364",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.54545455
+        },
+        {
+          "query_id": "80396",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5
+        },
+        {
+          "query_id": "197636",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.54545455
+        },
+        {
+          "query_id": "297610",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.53846154
+        },
+        {
+          "query_id": "215681",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.55555556
+        },
+        {
+          "query_id": "495779",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.63636364
+        },
+        {
+          "query_id": "318875",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.45454545
+        },
+        {
+          "query_id": "203134",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.6
+        },
+        {
+          "query_id": "304854",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5
+        },
+        {
+          "query_id": "169809",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5
+        },
+        {
+          "query_id": "374306",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.47619048
+        },
+        {
+          "query_id": "414201",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.53846154
+        },
+        {
+          "query_id": "409201",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.53846154
+        },
+        {
+          "query_id": "376407",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.46666667
+        },
+        {
+          "query_id": "117953",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.53846154
+        },
+        {
+          "query_id": "276381",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5
+        },
+        {
+          "query_id": "172357",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.58333333
+        },
+        {
+          "query_id": "445287",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.57142857
+        },
+        {
+          "query_id": "261756",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.57142857
+        },
+        {
+          "query_id": "465757",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.57142857
+        },
+        {
+          "query_id": "526819",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5
+        },
+        {
+          "query_id": "137659",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.625
+        },
+        {
+          "query_id": "245612",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.66666667
+        },
+        {
+          "query_id": "160489",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.625
+        },
+        {
+          "query_id": "450019",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5
+        },
+        {
+          "query_id": "289215",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5625
+        },
+        {
+          "query_id": "270158",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.55555556
+        },
+        {
+          "query_id": "8580",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.54545455
+        },
+        {
+          "query_id": "314896",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.53846154
+        },
+        {
+          "query_id": "75551",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.55555556
+        },
+        {
+          "query_id": "64882",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.61538462
+        },
+        {
+          "query_id": "293725",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5
+        },
+        {
+          "query_id": "326909",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.625
+        },
+        {
+          "query_id": "12613",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.57142857
+        },
+        {
+          "query_id": "333631",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5
+        },
+        {
+          "query_id": "167832",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.5
+        },
+        {
+          "query_id": "19349",
+          "group": "medium",
+          "positive_max_token_jaccard": 0.54545455
+        },
+        {
+          "query_id": "472932",
+          "group": "high",
+          "positive_max_token_jaccard": 0.77777778
+        },
+        {
+          "query_id": "494208",
+          "group": "high",
+          "positive_max_token_jaccard": 0.91666667
+        },
+        {
+          "query_id": "338125",
+          "group": "high",
+          "positive_max_token_jaccard": 0.88235294
+        },
+        {
+          "query_id": "9109",
+          "group": "high",
+          "positive_max_token_jaccard": 0.75
+        },
+        {
+          "query_id": "206122",
+          "group": "high",
+          "positive_max_token_jaccard": 0.92
+        },
+        {
+          "query_id": "380019",
+          "group": "high",
+          "positive_max_token_jaccard": 0.75
+        },
+        {
+          "query_id": "161765",
+          "group": "high",
+          "positive_max_token_jaccard": 0.77777778
+        },
+        {
+          "query_id": "377881",
+          "group": "high",
+          "positive_max_token_jaccard": 0.77777778
+        },
+        {
+          "query_id": "136408",
+          "group": "high",
+          "positive_max_token_jaccard": 0.8
+        },
+        {
+          "query_id": "384872",
+          "group": "high",
+          "positive_max_token_jaccard": 0.88461538
+        },
+        {
+          "query_id": "142569",
+          "group": "high",
+          "positive_max_token_jaccard": 0.77777778
+        },
+        {
+          "query_id": "202337",
+          "group": "high",
+          "positive_max_token_jaccard": 0.75
+        },
+        {
+          "query_id": "52645",
+          "group": "high",
+          "positive_max_token_jaccard": 0.77777778
+        },
+        {
+          "query_id": "115291",
+          "group": "high",
+          "positive_max_token_jaccard": 0.7
+        },
+        {
+          "query_id": "50882",
+          "group": "high",
+          "positive_max_token_jaccard": 0.81818182
+        },
+        {
+          "query_id": "152796",
+          "group": "high",
+          "positive_max_token_jaccard": 0.73333333
+        },
+        {
+          "query_id": "365908",
+          "group": "high",
+          "positive_max_token_jaccard": 0.76923077
+        },
+        {
+          "query_id": "152991",
+          "group": "high",
+          "positive_max_token_jaccard": 0.8
+        },
+        {
+          "query_id": "188903",
+          "group": "high",
+          "positive_max_token_jaccard": 0.9
+        },
+        {
+          "query_id": "303527",
+          "group": "high",
+          "positive_max_token_jaccard": 0.66666667
+        },
+        {
+          "query_id": "252360",
+          "group": "high",
+          "positive_max_token_jaccard": 0.75
+        },
+        {
+          "query_id": "219565",
+          "group": "high",
+          "positive_max_token_jaccard": 0.875
+        },
+        {
+          "query_id": "126565",
+          "group": "high",
+          "positive_max_token_jaccard": 0.75
+        },
+        {
+          "query_id": "73035",
+          "group": "high",
+          "positive_max_token_jaccard": 0.8
+        },
+        {
+          "query_id": "271421",
+          "group": "high",
+          "positive_max_token_jaccard": 0.77777778
+        },
+        {
+          "query_id": "227602",
+          "group": "high",
+          "positive_max_token_jaccard": 0.71428571
+        },
+        {
+          "query_id": "344222",
+          "group": "high",
+          "positive_max_token_jaccard": 1.0
+        },
+        {
+          "query_id": "140841",
+          "group": "high",
+          "positive_max_token_jaccard": 0.83333333
+        },
+        {
+          "query_id": "165406",
+          "group": "high",
+          "positive_max_token_jaccard": 0.72727273
+        },
+        {
+          "query_id": "498537",
+          "group": "high",
+          "positive_max_token_jaccard": 1.0
+        },
+        {
+          "query_id": "95665",
+          "group": "high",
+          "positive_max_token_jaccard": 0.83333333
+        },
+        {
+          "query_id": "206995",
+          "group": "high",
+          "positive_max_token_jaccard": 0.75
+        },
+        {
+          "query_id": "298434",
+          "group": "high",
+          "positive_max_token_jaccard": 0.88888889
+        },
+        {
+          "query_id": "242578",
+          "group": "high",
+          "positive_max_token_jaccard": 1.0
+        },
+        {
+          "query_id": "89347",
+          "group": "high",
+          "positive_max_token_jaccard": 0.75
+        },
+        {
+          "query_id": "489162",
+          "group": "high",
+          "positive_max_token_jaccard": 0.875
+        },
+        {
+          "query_id": "96620",
+          "group": "high",
+          "positive_max_token_jaccard": 0.875
+        },
+        {
+          "query_id": "427839",
+          "group": "high",
+          "positive_max_token_jaccard": 0.8
+        },
+        {
+          "query_id": "412439",
+          "group": "high",
+          "positive_max_token_jaccard": 0.77777778
+        },
+        {
+          "query_id": "371022",
+          "group": "high",
+          "positive_max_token_jaccard": 0.77777778
+        }
+      ]
+    }
+  }
+}

@@ -94,3 +94,7 @@ def test_load_qrels_preserves_graded_relevance(tmp_path) -> None:
 def test_supported_specs_use_published_archive_contract() -> None:
     assert beir.DATASETS["scifact"].url.endswith("/scifact.zip")
     assert beir.DATASETS["scifact"].md5 == "5f7d1de60b170fc8027bb7898e2efca1"
+    assert beir.DATASETS["arguana"].corpus_documents == 8674
+    assert beir.DATASETS["arguana"].ignore_identical_ids is True
+    assert beir.DATASETS["quora"].corpus_documents == 522931
+    assert beir.DATASETS["quora"].ignore_identical_ids is True

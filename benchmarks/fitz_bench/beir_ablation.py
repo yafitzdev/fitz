@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.fitz_bench.beir import DATASETS
+from benchmarks.fitz_bench.beir_holdout import (
+    load_query_manifest,
+    query_manifest_digest,
+)
 from benchmarks.fitz_bench.retrieval_ablation import (
     ablation_names,
     get_ablation,
@@ -46,6 +50,9 @@ class MetricDimension:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    query_manifest = (
+        load_query_manifest(args.query_manifest) if args.query_manifest is not None else None
+    )
     started = time.perf_counter()
     root = Path(__file__).resolve().parents[2]
     run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
@@ -84,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
             requested_variants=variants,
             bootstrap_samples=args.bootstrap_samples,
             seed=args.seed,
+            query_manifest=query_manifest,
         )
         _write_json(args.output, partial)
 
@@ -95,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         requested_variants=variants,
         bootstrap_samples=args.bootstrap_samples,
         seed=args.seed,
+        query_manifest=query_manifest,
     )
     _write_json(args.output, report)
     _write_markdown(args.markdown, report)
@@ -120,9 +129,14 @@ def build_ablation_report(
     requested_variants: list[str],
     bootstrap_samples: int,
     seed: int,
+    query_manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Aggregate independent variant reports and paired per-query effects."""
-    failures = _measurement_failures(reports, requested_variants)
+    failures = _measurement_failures(
+        reports,
+        requested_variants,
+        query_manifest=query_manifest,
+    )
     dataset_names = _shared_dataset_names(reports)
     datasets = [
         _dataset_summary(
@@ -146,6 +160,14 @@ def build_ablation_report(
             "bootstrap_samples": bootstrap_samples,
             "bootstrap_seed": seed,
             "duration_seconds": time.perf_counter() - started,
+            "query_manifest": (
+                {
+                    "name": query_manifest["name"],
+                    "sha256": query_manifest_digest(query_manifest),
+                }
+                if query_manifest is not None
+                else None
+            ),
         },
         "method": {
             "paired_by": "dataset query_id",
@@ -219,11 +241,19 @@ def _dataset_summary(
             bootstrap_samples=bootstrap_samples,
             seed=seed,
         )
+    subgroups = _subgroup_summaries(
+        dataset,
+        results,
+        dimensions=dimensions,
+        bootstrap_samples=bootstrap_samples,
+        seed=seed,
+    )
     return {
         "name": dataset,
         "cutoffs": first["selection"]["cutoffs"],
         "variants": variants,
         "effects": effects,
+        "subgroups": subgroups,
     }
 
 
@@ -309,6 +339,63 @@ def paired_delta(
     }
 
 
+def _subgroup_summaries(
+    dataset: str,
+    results: dict[str, dict[str, Any]],
+    *,
+    dimensions: list[MetricDimension],
+    bootstrap_samples: int,
+    seed: int,
+) -> dict[str, Any]:
+    group_sets = [
+        {
+            str(record["holdout"]["group"])
+            for record in result["records"]
+            if isinstance(record.get("holdout"), dict) and record["holdout"].get("group")
+        }
+        for result in results.values()
+    ]
+    shared_groups = set.intersection(*group_sets) if group_sets else set()
+    groups = sorted(
+        shared_groups,
+        key=lambda group: (
+            ("low", "medium", "high").index(group) if group in {"low", "medium", "high"} else 3,
+            group,
+        ),
+    )
+    output: dict[str, Any] = {}
+    for group in groups:
+        records = {
+            variant: [
+                record
+                for record in result["records"]
+                if record.get("holdout", {}).get("group") == group
+            ]
+            for variant, result in results.items()
+        }
+        first_records = next(iter(records.values()))
+        effects: dict[str, Any] = {}
+        for effect_name, before_name, after_name in _EFFECTS:
+            if before_name not in records or after_name not in records:
+                continue
+            effects[effect_name] = _paired_effect(
+                f"{dataset}/{group}",
+                effect_name,
+                before_name,
+                after_name,
+                records[before_name],
+                records[after_name],
+                dimensions=dimensions,
+                bootstrap_samples=bootstrap_samples,
+                seed=seed,
+            )
+        output[group] = {
+            "queries": len(first_records),
+            "effects": effects,
+        }
+    return output
+
+
 def _metric_dimensions(result: dict[str, Any]) -> list[MetricDimension]:
     cutoffs = [int(value) for value in result["selection"]["cutoffs"]]
     ranking_cutoff = max(
@@ -327,12 +414,23 @@ def _metric_dimensions(result: dict[str, Any]) -> list[MetricDimension]:
 def _measurement_failures(
     reports: dict[str, dict[str, Any]],
     requested_variants: list[str],
+    *,
+    query_manifest: dict[str, Any] | None = None,
 ) -> list[str]:
     failures: list[str] = []
+    expected_manifest_sha256 = (
+        query_manifest_digest(query_manifest) if query_manifest is not None else None
+    )
     for variant, report in reports.items():
         expected = get_ablation(variant).as_dict()
         if report.get("run", {}).get("ablation") != expected:
             failures.append(f"{variant}: report ablation metadata mismatch")
+        child_manifest = report.get("run", {}).get("query_manifest")
+        child_manifest_sha256 = (
+            child_manifest.get("sha256") if isinstance(child_manifest, dict) else None
+        )
+        if child_manifest_sha256 != expected_manifest_sha256:
+            failures.append(f"{variant}: query manifest metadata mismatch")
         if not report.get("complete"):
             failures.append(f"{variant}: incomplete source report")
     if not reports:
@@ -365,6 +463,7 @@ def _measurement_failures(
         reference_ids: list[str] | None = None
         reference_baseline: dict[str, float] | None = None
         reference_identity: tuple[Any, ...] | None = None
+        reference_holdout: dict[str, Any] | None = None
         reference_variant = ""
         for variant, report in reports.items():
             try:
@@ -379,11 +478,16 @@ def _measurement_failures(
                 result.get("index_mode"),
                 tuple(result["selection"].get("cutoffs", [])),
                 result["selection"].get("query_limit"),
+                json.dumps(result["selection"].get("query_manifest"), sort_keys=True),
             )
+            holdout = {
+                str(record["query_id"]): record.get("holdout") for record in result["records"]
+            }
             if reference_ids is None:
                 reference_ids = query_ids
                 reference_baseline = baseline
                 reference_identity = identity
+                reference_holdout = holdout
                 reference_variant = variant
                 continue
             if query_ids != reference_ids:
@@ -395,6 +499,10 @@ def _measurement_failures(
             if identity != reference_identity:
                 failures.append(
                     f"{dataset}/{variant}: dataset/index selection differs from {reference_variant}"
+                )
+            if holdout != reference_holdout:
+                failures.append(
+                    f"{dataset}/{variant}: holdout metadata differs from {reference_variant}"
                 )
 
     missing = [variant for variant in requested_variants if variant not in reports]
@@ -410,10 +518,7 @@ def _shared_dataset_names(reports: dict[str, dict[str, Any]]) -> list[str]:
         for result in next(iter(reports.values())).get("datasets", [])
     ]
     available = [
-        {
-            str(result["dataset"]["name"])
-            for result in report.get("datasets", [])
-        }
+        {str(result["dataset"]["name"]) for result in report.get("datasets", [])}
         for report in reports.values()
     ]
     return [dataset for dataset in ordered if all(dataset in names for names in available)]
@@ -429,6 +534,8 @@ def _shared_git_state(reports: dict[str, dict[str, Any]]) -> dict[str, Any] | No
 
 def _dataset_result(report: dict[str, Any], dataset: str) -> dict[str, Any]:
     for result in report.get("datasets", []):
+        if not isinstance(result, dict):
+            raise TypeError("Ablation report dataset entries must be objects.")
         if result.get("dataset", {}).get("name") == dataset:
             return result
     raise KeyError(f"Dataset {dataset!r} is missing from a variant report.")
@@ -545,6 +652,8 @@ def _variant_command(
         command.append("--offline")
     if args.query_limit is not None:
         command.extend(["--query-limit", str(args.query_limit)])
+    if args.query_manifest is not None:
+        command.extend(["--query-manifest", str(args.query_manifest)])
     if args.governance is not None:
         command.extend(["--governance", args.governance])
     for dataset in args.datasets or []:
@@ -655,6 +764,39 @@ def _dataset_markdown(dataset: dict[str, Any]) -> list[str]:
             )
         )
     lines.append("")
+    if dataset.get("subgroups"):
+        lines.extend(
+            [
+                "### Frozen Lexical-Overlap Strata",
+                "",
+                (
+                    f"| Stratum | Queries | Qwen recall nDCG@{ranking_cutoff}, "
+                    "no reranker | Qwen final nDCG, no reranker | "
+                    "Qwen final nDCG, reranker on | Added latency, reranker on |"
+                ),
+                "| --- | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for group, subgroup in dataset["subgroups"].items():
+            without = subgroup["effects"].get("expansion_without_reranker")
+            with_reranker = subgroup["effects"].get("expansion_with_reranker")
+            if without is None or with_reranker is None:
+                continue
+            lines.append(
+                "| {group} | {queries} | {recall} | {final_without} | "
+                "{final_with} | {latency} |".format(
+                    group=group,
+                    queries=subgroup["queries"],
+                    recall=_format_effect(without["quality"]["recall_ndcg"]),
+                    final_without=_format_effect(without["quality"]["final_ndcg"]),
+                    final_with=_format_effect(with_reranker["quality"]["final_ndcg"]),
+                    latency=_format_effect(
+                        with_reranker["latency_seconds"],
+                        suffix="s",
+                    ),
+                )
+            )
+        lines.append("")
     return lines
 
 
@@ -718,7 +860,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         dest="datasets",
         action="append",
         choices=sorted(DATASETS),
-        help="Dataset to evaluate. Repeat; defaults to all supported datasets.",
+        help="Dataset to evaluate. Repeat; defaults to the standard three-dataset suite.",
     )
     parser.add_argument("--cache-dir", type=Path, default=Path(".benchmark-data/beir"))
     parser.add_argument("--workspace-root", type=Path, default=Path(".bench_workspace/beir"))
@@ -739,6 +881,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--query-limit", type=int)
+    parser.add_argument(
+        "--query-manifest",
+        type=Path,
+        help="Frozen query selection manifest; cannot be combined with --query-limit.",
+    )
     parser.add_argument("--index-mode", choices=("source", "complete"), default="source")
     parser.add_argument("--governance")
     parser.add_argument(
@@ -762,6 +909,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parsed.cutoffs = sorted(set(parsed.cutoffs or [1, 3, 5, 10, 20, 50]))
     if parsed.query_limit is not None and parsed.query_limit < 1:
         parser.error("--query-limit must be positive")
+    if parsed.query_manifest is not None and parsed.query_limit is not None:
+        parser.error("--query-manifest cannot be combined with --query-limit")
     if any(value < 1 for value in parsed.cutoffs):
         parser.error("--cutoff must be positive")
     if parsed.bootstrap_samples < 100:

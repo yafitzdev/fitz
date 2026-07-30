@@ -244,6 +244,56 @@ license of each underlying dataset. See the
 [BEIR repository](https://github.com/beir-cellar/beir) and
 [BEIR paper](https://arxiv.org/abs/2104.08663).
 
+### Frozen Semantic Vocabulary Holdout
+
+The broad three-dataset suite does not isolate the intended job of managed
+query expansion. The committed
+`benchmarks/fixtures/beir_semantic_holdout_v1.json` adds two established BEIR
+tasks:
+
+- ArguAna: retrieve the best counterargument from 8,674 arguments
+- Quora: retrieve duplicate questions from 522,931 questions
+
+The fixture contains 120 test queries from each dataset. It was frozen before
+running Fitz-Sage retrieval. Selection uses no Fitz-Sage, BM25, Qwen, reranker,
+or Pyrrho output:
+
+1. For every judged query, compute the maximum case-folded token-set Jaccard
+   overlap against its available judged-relevant documents.
+2. Sort all eligible queries by overlap and split them into low, medium, and
+   high lexical-overlap tertiles.
+3. Select 40 queries per tertile with a deterministic SHA-256 ordering using
+   seed `20260730`.
+
+The manifest records the official archive checksum, extracted source hashes,
+selection ranges, and exact query IDs. Quora and ArguAna evaluation excludes a
+corpus result whose ID equals the query ID, matching their BEIR evaluation
+contract.
+
+The official ArguAna archive has five positive qrel targets that are absent
+from its corpus. The manifest records all five query/document pairs and makes
+those queries ineligible. It does not infer replacement IDs. Quora has no
+missing positive targets.
+
+Regenerate and compare the fixture without retrieval:
+
+```bash
+python -m benchmarks.fitz_bench.beir_holdout \
+  --offline
+```
+
+Run the paired four-variant measurement:
+
+```bash
+python -m benchmarks.fitz_bench.beir_ablation \
+  --offline \
+  --query-manifest benchmarks/fixtures/beir_semantic_holdout_v1.json
+```
+
+The aggregate report gives the same paired component effects as the broad
+suite and additionally reports Qwen effects separately for the frozen low,
+medium, and high lexical-overlap strata.
+
 ### Measured BEIR Baseline
 
 The 2026-07-30 source-only run evaluated all 1,271 judged test queries from a

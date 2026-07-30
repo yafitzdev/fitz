@@ -9,6 +9,7 @@ import pytest
 
 from benchmarks.fitz_bench.beir_benchmark import (
     _append_checkpoint,
+    _filter_ranking,
     _initialize_checkpoint,
     _load_checkpoint,
     _markdown,
@@ -63,6 +64,16 @@ def test_run_rankings_deduplicates_chunks_and_counts_unmapped_candidates() -> No
     assert rankings["delivered"] == ["doc-1"]
     assert rankings["reranked"] == []
     assert unmapped["recall"] == 1
+
+
+def test_filter_ranking_removes_query_self_and_preserves_requested_depth() -> None:
+    ranking = ["query-id", "doc-1", "doc-2", "doc-3"]
+
+    assert _filter_ranking(
+        ranking,
+        excluded_document_id="query-id",
+        limit=3,
+    ) == ["doc-1", "doc-2", "doc-3"]
 
 
 def test_query_checkpoint_round_trips_completed_records(tmp_path) -> None:

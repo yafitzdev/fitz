@@ -14,6 +14,7 @@ from typing import Any
 
 from benchmarks.fitz_bench.beir import (
     DATASETS,
+    DEFAULT_DATASETS,
     PreparedDataset,
     load_qrels,
     load_queries,
@@ -30,7 +31,7 @@ from fitz_sage.storage.sqlite import SqliteConnectionManager
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     started = time.perf_counter()
-    datasets = args.datasets or list(DATASETS)
+    datasets = args.datasets or list(DEFAULT_DATASETS)
     prepared = [
         prepare_dataset(
             args.cache_dir,
@@ -303,7 +304,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         dest="datasets",
         action="append",
         choices=sorted(DATASETS),
-        help="Dataset to profile. Repeat; defaults to all supported datasets.",
+        help="Dataset to profile. Repeat; defaults to the standard three-dataset suite.",
     )
     parser.add_argument("--cache-dir", type=Path, default=Path(".benchmark-data/beir"))
     parser.add_argument("--workspace-root", type=Path, default=Path(".bench_workspace/beir"))

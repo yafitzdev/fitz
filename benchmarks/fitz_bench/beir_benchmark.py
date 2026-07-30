@@ -15,6 +15,7 @@ from typing import Any
 
 from benchmarks.fitz_bench.beir import (
     DATASETS,
+    DEFAULT_DATASETS,
     PreparedDataset,
     iter_corpus,
     load_mapping,
@@ -22,6 +23,12 @@ from benchmarks.fitz_bench.beir import (
     load_queries,
     prepare_dataset,
     projected_content,
+)
+from benchmarks.fitz_bench.beir_holdout import (
+    load_query_manifest,
+    manifest_dataset_names,
+    manifest_query_selection,
+    query_manifest_digest,
 )
 from benchmarks.fitz_bench.retrieval_ablation import (
     RetrievalAblation,
@@ -54,7 +61,21 @@ def main(argv: list[str] | None = None) -> int:
     started = time.perf_counter()
     run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     ablation = get_ablation(args.ablation) if args.ablation else None
-    datasets = args.datasets or list(DATASETS)
+    query_manifest = (
+        load_query_manifest(args.query_manifest) if args.query_manifest is not None else None
+    )
+    datasets = args.datasets or (
+        manifest_dataset_names(query_manifest)
+        if query_manifest is not None
+        else list(DEFAULT_DATASETS)
+    )
+    if query_manifest is not None:
+        missing = sorted(set(datasets) - set(manifest_dataset_names(query_manifest)))
+        if missing:
+            raise ValueError(f"Query manifest does not contain datasets: {missing}")
+        args.query_manifest_name = query_manifest["name"]
+        args.query_manifest_sha256 = query_manifest_digest(query_manifest)
+    args.resolved_datasets = datasets
     prepared = [
         prepare_dataset(
             args.cache_dir,
@@ -68,12 +89,12 @@ def main(argv: list[str] | None = None) -> int:
     ]
 
     if args.download_only:
-        report = {
+        download_report: dict[str, Any] = {
             "run": _run_metadata(args, run_id, started),
             "datasets": [{"dataset": item.as_dict()} for item in prepared],
             "gate": {"type": "operational_only", "passed": True},
         }
-        return _write_report(report, args.output, args.markdown)
+        return _write_report(download_report, args.output, args.markdown)
 
     results: list[dict[str, Any]] = []
     for index, dataset in enumerate(prepared, start=1):
@@ -90,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
             reuse_workspace=args.reuse_workspace,
             resume_queries=args.resume_queries,
             ablation=ablation,
+            query_manifest=query_manifest,
         )
         results.append(result)
         _write_partial_report(
@@ -103,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     gate = _gate(results, max_recall_regression=args.max_recall_regression)
-    report = {
+    report: dict[str, Any] = {
         "run": _run_metadata(args, run_id, started),
         "metric_formulas": metric_formulas(),
         "datasets": results,
@@ -127,13 +149,23 @@ def evaluate_dataset(
     reuse_workspace: bool,
     resume_queries: bool,
     ablation: RetrievalAblation | None = None,
+    query_manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate one prepared dataset with plain BM25 and Fitz-Sage."""
     queries = load_queries(Path(dataset.source_queries))
     all_qrels = load_qrels(Path(dataset.source_qrels))
-    query_ids = list(all_qrels)
-    if query_limit is not None:
-        query_ids = query_ids[:query_limit]
+    query_metadata: dict[str, dict[str, Any]] = {}
+    manifest_summary: dict[str, Any] | None = None
+    if query_manifest is not None:
+        query_ids, query_metadata, manifest_summary = manifest_query_selection(
+            query_manifest,
+            dataset,
+            available_query_ids=set(all_qrels),
+        )
+    else:
+        query_ids = list(all_qrels)
+        if query_limit is not None:
+            query_ids = query_ids[:query_limit]
     qrels = {query_id: all_qrels[query_id] for query_id in query_ids}
     max_k = max(cutoffs)
 
@@ -147,7 +179,11 @@ def evaluate_dataset(
     baseline_durations: list[float] = []
     for index, query_id in enumerate(query_ids, start=1):
         query_started = time.perf_counter()
-        ranking = baseline.search(queries[query_id], top_k=max_k)
+        ranking = _filter_ranking(
+            baseline.search(queries[query_id], top_k=max_k),
+            excluded_document_id=query_id if dataset.ignore_identical_ids else None,
+            limit=max_k,
+        )
         duration = time.perf_counter() - query_started
         baseline_durations.append(duration)
         records[query_id] = {
@@ -160,6 +196,8 @@ def evaluate_dataset(
             },
             "latency_seconds": {"baseline": duration},
         }
+        if query_id in query_metadata:
+            records[query_id]["holdout"] = query_metadata[query_id]
         if index % 100 == 0 or index == len(query_ids):
             print(
                 f"  BM25 {dataset.name}: {index}/{len(query_ids)} queries",
@@ -175,6 +213,8 @@ def evaluate_dataset(
             "queries": len(query_ids),
             "query_limit": query_limit,
             "cutoffs": cutoffs,
+            "query_manifest": manifest_summary,
+            "ignore_identical_ids": dataset.ignore_identical_ids,
         },
         "baseline": {
             "implementation": "benchmark-local Okapi BM25",
@@ -212,7 +252,7 @@ def evaluate_dataset(
             manifest,
             Path(dataset.mapping_path),
         )
-        checkpoint_path = _checkpoint_path(workspace, ablation)
+        checkpoint_path = _checkpoint_path(workspace, ablation, query_manifest)
         checkpoint_signature = _checkpoint_signature(
             dataset,
             query_ids=query_ids,
@@ -220,6 +260,7 @@ def evaluate_dataset(
             index_mode=index_mode,
             governance=governance,
             ablation=ablation,
+            query_manifest=query_manifest,
         )
         checkpoint_records = (
             _load_checkpoint(checkpoint_path, checkpoint_signature) if resume_queries else {}
@@ -242,7 +283,12 @@ def evaluate_dataset(
             run = engine.trace(Query(text=queries[query_id]), top_k=max_k)
             duration = time.perf_counter() - query_started
             fitz_durations.append(duration)
-            rankings, unmapped = _run_rankings(run, source_ids)
+            rankings, unmapped = _run_rankings(
+                run,
+                source_ids,
+                excluded_document_id=query_id if dataset.ignore_identical_ids else None,
+                limit=max_k,
+            )
             record = records[query_id]
             record["rankings"].update(rankings)
             record["metrics"].update(
@@ -314,6 +360,9 @@ def evaluate_dataset(
 def _run_rankings(
     run: Any,
     source_ids: dict[str, str],
+    *,
+    excluded_document_id: str | None = None,
+    limit: int | None = None,
 ) -> tuple[dict[str, list[str]], dict[str, int]]:
     rankings: dict[str, list[str]] = {}
     unmapped: dict[str, int] = {}
@@ -324,7 +373,11 @@ def _run_rankings(
             (candidate.source_id for candidate in stage.candidates),
             source_ids,
         )
-        rankings[stage.name] = values
+        rankings[stage.name] = _filter_ranking(
+            values,
+            excluded_document_id=excluded_document_id,
+            limit=limit,
+        )
         unmapped[stage.name] = missing
     for name, evidence in (
         ("compiled", run.ranked_evidence),
@@ -334,12 +387,30 @@ def _run_rankings(
             (item.source_id for item in evidence),
             source_ids,
         )
-        rankings[name] = values
+        rankings[name] = _filter_ranking(
+            values,
+            excluded_document_id=excluded_document_id,
+            limit=limit,
+        )
         unmapped[name] = missing
     for name in ("recall", "reranked", "final", "compiled", "delivered"):
         rankings.setdefault(name, [])
         unmapped.setdefault(name, 0)
     return rankings, unmapped
+
+
+def _filter_ranking(
+    ranking: list[str],
+    *,
+    excluded_document_id: str | None,
+    limit: int | None,
+) -> list[str]:
+    filtered = [
+        document_id
+        for document_id in ranking
+        if excluded_document_id is None or document_id != excluded_document_id
+    ]
+    return filtered[:limit] if limit is not None else filtered
 
 
 def _map_source_ids(
@@ -459,8 +530,11 @@ def _manifest_failures(manifest: Any) -> list[dict[str, str]]:
 def _checkpoint_path(
     workspace: Path,
     ablation: RetrievalAblation | None,
+    query_manifest: dict[str, Any] | None,
 ) -> Path:
     suffix = f"-{ablation.name}" if ablation is not None else ""
+    if query_manifest is not None:
+        suffix += f"-{query_manifest_digest(query_manifest)[:12]}"
     return workspace / f"beir-query-checkpoint{suffix}.jsonl"
 
 
@@ -472,6 +546,7 @@ def _checkpoint_signature(
     index_mode: str,
     governance: str | None,
     ablation: RetrievalAblation | None,
+    query_manifest: dict[str, Any] | None,
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -484,6 +559,9 @@ def _checkpoint_signature(
         "index_mode": index_mode,
         "governance": governance,
         "ablation": ablation.as_dict() if ablation else None,
+        "query_manifest_sha256": (
+            query_manifest_digest(query_manifest) if query_manifest is not None else None
+        ),
         "evaluation_source_sha256": _evaluation_source_digest(),
     }
 
@@ -496,6 +574,7 @@ def _evaluation_source_digest() -> str:
         root / "benchmarks" / "fitz_bench" / name
         for name in (
             "beir.py",
+            "beir_holdout.py",
             "beir_benchmark.py",
             "retrieval_ablation.py",
             "retrieval_eval.py",
@@ -632,13 +711,22 @@ def _run_metadata(
     return {
         "run_id": run_id,
         "git": _git_state(),
-        "datasets": args.datasets or list(DATASETS),
+        "datasets": getattr(args, "resolved_datasets", args.datasets or list(DEFAULT_DATASETS)),
         "index_mode": args.index_mode,
         "baseline_only": args.baseline_only,
         "query_limit": args.query_limit,
         "cutoffs": args.cutoffs,
         "governance_override": args.governance,
         "ablation": get_ablation(args.ablation).as_dict() if args.ablation else None,
+        "query_manifest": (
+            {
+                "path": str(args.query_manifest.resolve()),
+                "name": getattr(args, "query_manifest_name", None),
+                "sha256": getattr(args, "query_manifest_sha256", None),
+            }
+            if args.query_manifest is not None
+            else None
+        ),
         "reuse_workspace": args.reuse_workspace,
         "resume_queries": args.resume_queries,
         "duration_seconds": time.perf_counter() - started,
@@ -744,7 +832,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         dest="datasets",
         action="append",
         choices=sorted(DATASETS),
-        help="Dataset to evaluate. Repeat; defaults to all supported datasets.",
+        help="Dataset to evaluate. Repeat; defaults to the standard three-dataset suite.",
     )
     parser.add_argument(
         "--cache-dir",
@@ -770,6 +858,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--download-only", action="store_true")
     parser.add_argument("--baseline-only", action="store_true")
     parser.add_argument("--query-limit", type=int)
+    parser.add_argument(
+        "--query-manifest",
+        type=Path,
+        help="Frozen query selection manifest; cannot be combined with --query-limit.",
+    )
     parser.add_argument(
         "--cutoff",
         dest="cutoffs",
@@ -801,6 +894,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parsed.cutoffs = sorted(set(parsed.cutoffs or [1, 3, 5, 10, 20, 50]))
     if parsed.query_limit is not None and parsed.query_limit < 1:
         parser.error("--query-limit must be positive")
+    if parsed.query_manifest is not None and parsed.query_limit is not None:
+        parser.error("--query-manifest cannot be combined with --query-limit")
     if any(value < 1 for value in parsed.cutoffs):
         parser.error("--cutoff must be positive")
     if parsed.max_download_gib <= 0 or parsed.max_extracted_gib <= 0:

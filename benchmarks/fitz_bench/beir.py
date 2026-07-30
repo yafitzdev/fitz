@@ -19,15 +19,14 @@ from benchmarks.fitz_bench.external_data import (
 
 DATASET_PAGE = "https://github.com/beir-cellar/beir"
 PAPER_URL = "https://arxiv.org/abs/2104.08663"
-DOWNLOAD_BASE_URL = (
-    "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets"
-)
+DOWNLOAD_BASE_URL = "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets"
 LICENSE_NOTICE = (
     "BEIR does not grant one umbrella license. Users remain responsible for "
     "the license of each underlying dataset."
 )
 ADAPTER_SCHEMA_VERSION = 1
 _USER_AGENT = "fitz-sage-beir-benchmark/1"
+DEFAULT_DATASETS = ("nfcorpus", "fiqa", "scifact")
 
 
 @dataclass(frozen=True)
@@ -38,6 +37,7 @@ class DatasetSpec:
     md5: str
     corpus_documents: int
     test_queries: int
+    ignore_identical_ids: bool = False
 
     @property
     def url(self) -> str:
@@ -45,6 +45,13 @@ class DatasetSpec:
 
 
 DATASETS: dict[str, DatasetSpec] = {
+    "arguana": DatasetSpec(
+        name="arguana",
+        md5="8ad3e3c2a5867cdced806d6503f29b99",
+        corpus_documents=8674,
+        test_queries=1406,
+        ignore_identical_ids=True,
+    ),
     "nfcorpus": DatasetSpec(
         name="nfcorpus",
         md5="a89dba18a62ef92f7d323ec890a0d38d",
@@ -56,6 +63,13 @@ DATASETS: dict[str, DatasetSpec] = {
         md5="17918ed23cd04fb15047f73e6c3bd9d9",
         corpus_documents=57638,
         test_queries=648,
+    ),
+    "quora": DatasetSpec(
+        name="quora",
+        md5="18fb154900ba42a600f84b839c173167",
+        corpus_documents=522931,
+        test_queries=10000,
+        ignore_identical_ids=True,
     ),
     "scifact": DatasetSpec(
         name="scifact",
@@ -89,6 +103,7 @@ class PreparedDataset:
     empty_judged_relevant_documents: int
     test_queries: int
     qrels: int
+    ignore_identical_ids: bool
     adapter_schema_version: int
     adapter_projection: str
     license_notice: str
@@ -254,6 +269,7 @@ def prepare_dataset(
         ),
         test_queries=len(qrels),
         qrels=sum(len(values) for values in qrels.values()),
+        ignore_identical_ids=spec.ignore_identical_ids,
         adapter_schema_version=ADAPTER_SCHEMA_VERSION,
         adapter_projection="UTF-8 title + blank line + text; no rewriting or metadata",
         license_notice=LICENSE_NOTICE,
@@ -416,7 +432,7 @@ def _iter_jsonl(path: Path, *, required: tuple[str, ...]) -> Iterator[dict[str, 
             except json.JSONDecodeError as exc:
                 raise ValueError(f"Invalid JSONL at {path}:{line_number}") from exc
             if not isinstance(record, dict):
-                raise ValueError(f"Expected JSON object at {path}:{line_number}")
+                raise TypeError(f"Expected JSON object at {path}:{line_number}")
             missing = [key for key in required if key not in record]
             if missing:
                 raise ValueError(f"Missing {missing} at {path}:{line_number}")
@@ -431,7 +447,9 @@ def _required_string(
 ) -> str:
     value = record.get(key)
     if not isinstance(value, str) or (not allow_empty and not value.strip()):
-        raise ValueError(f"BEIR field '{key}' must be a{' non-empty' if not allow_empty else ''} string")
+        raise ValueError(
+            f"BEIR field '{key}' must be a{' non-empty' if not allow_empty else ''} string"
+        )
     return value
 
 
