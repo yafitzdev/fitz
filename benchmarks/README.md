@@ -165,6 +165,32 @@ Fitz-Sage's canonical traced retrieval:
 python -m benchmarks.fitz_bench.beir_benchmark
 ```
 
+Measure the contribution and cost of query expansion and reranking without
+changing production configuration:
+
+```bash
+python -m benchmarks.fitz_bench.beir_ablation \
+  --offline
+```
+
+The ablation runs four query-side configurations against the same reusable
+indexes:
+
+- `literal`: deterministic query planning and typed lexical recall, with
+  managed Qwen keywords disabled and cross-encoder scoring replaced by stable
+  top-k selection
+- `expansion`: `literal` plus managed Qwen semantic query keywords
+- `reranker`: `literal` plus the canonical INT8 cross-encoder
+- `full`: the canonical pipeline with both components
+
+The stable selector preserves the reranker's top-k output budget, so read,
+evidence-closure, compilation, and Pyrrho inputs remain structurally
+comparable. Each variant runs in a fresh process. The aggregate report aligns
+records by query ID and gives paired 95% bootstrap intervals for recall,
+final-candidate quality, delivered-evidence quality, and latency. Variant
+checkpoints are separate and resumable. Use `--no-resume-queries` to replace
+them after intentionally changing retrieval behavior.
+
 Download, verify, and project the corpora without indexing:
 
 ```bash

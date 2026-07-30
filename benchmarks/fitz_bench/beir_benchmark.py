@@ -23,6 +23,12 @@ from benchmarks.fitz_bench.beir import (
     prepare_dataset,
     projected_content,
 )
+from benchmarks.fitz_bench.retrieval_ablation import (
+    RetrievalAblation,
+    ablation_names,
+    apply_ablation,
+    get_ablation,
+)
 from benchmarks.fitz_bench.retrieval_eval import (
     PlainBm25,
     aggregate_metrics,
@@ -33,6 +39,7 @@ from benchmarks.fitz_bench.retrieval_eval import (
     stage_recoveries,
     summarize_latency,
 )
+from benchmarks.fitz_bench.timing import group_timings, summarize_timing_records
 from fitz_sage.config.loader import load_engine_config
 from fitz_sage.core import Query
 from fitz_sage.core.paths import FitzPaths
@@ -46,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     started = time.perf_counter()
     run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
+    ablation = get_ablation(args.ablation) if args.ablation else None
     datasets = args.datasets or list(DATASETS)
     prepared = [
         prepare_dataset(
@@ -81,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             baseline_only=args.baseline_only,
             reuse_workspace=args.reuse_workspace,
             resume_queries=args.resume_queries,
+            ablation=ablation,
         )
         results.append(result)
         _write_partial_report(
@@ -117,6 +126,7 @@ def evaluate_dataset(
     baseline_only: bool,
     reuse_workspace: bool,
     resume_queries: bool,
+    ablation: RetrievalAblation | None = None,
 ) -> dict[str, Any]:
     """Evaluate one prepared dataset with plain BM25 and Fitz-Sage."""
     queries = load_queries(Path(dataset.source_queries))
@@ -129,10 +139,8 @@ def evaluate_dataset(
 
     baseline_started = time.perf_counter()
     baseline = PlainBm25.build(
-        (
-            (str(record["_id"]), projected_content(record))
-            for record in iter_corpus(Path(dataset.source_corpus))
-        )
+        (str(record["_id"]), projected_content(record))
+        for record in iter_corpus(Path(dataset.source_corpus))
     )
     baseline_build_seconds = time.perf_counter() - baseline_started
     records: dict[str, dict[str, Any]] = {}
@@ -186,7 +194,7 @@ def evaluate_dataset(
     workspace = (Path(workspace_root).resolve() / workspace_key).resolve()
     collection = f"beir_{dataset.name}_v{dataset.adapter_schema_version}_{index_mode}"
     _activate_workspace(workspace)
-    engine = _create_engine(collection, governance=governance)
+    engine = _create_engine(collection, governance=governance, ablation=ablation)
     engine.load(collection)
     manifest = None
     indexing_started = time.perf_counter()
@@ -204,18 +212,17 @@ def evaluate_dataset(
             manifest,
             Path(dataset.mapping_path),
         )
-        checkpoint_path = workspace / "beir-query-checkpoint.jsonl"
+        checkpoint_path = _checkpoint_path(workspace, ablation)
         checkpoint_signature = _checkpoint_signature(
             dataset,
             query_ids=query_ids,
             cutoffs=cutoffs,
             index_mode=index_mode,
             governance=governance,
+            ablation=ablation,
         )
         checkpoint_records = (
-            _load_checkpoint(checkpoint_path, checkpoint_signature)
-            if resume_queries
-            else {}
+            _load_checkpoint(checkpoint_path, checkpoint_signature) if resume_queries else {}
         )
         if not checkpoint_records:
             _initialize_checkpoint(checkpoint_path, checkpoint_signature)
@@ -224,13 +231,10 @@ def evaluate_dataset(
         for index, query_id in enumerate(query_ids, start=1):
             if query_id in checkpoint_records:
                 records[query_id] = checkpoint_records[query_id]
-                fitz_durations.append(
-                    float(records[query_id]["latency_seconds"]["fitz_sage"])
-                )
+                fitz_durations.append(float(records[query_id]["latency_seconds"]["fitz_sage"]))
                 if index % 25 == 0 or index == len(query_ids):
                     print(
-                        f"  Fitz-Sage {dataset.name}: {index}/{len(query_ids)} queries "
-                        "(resumed)",
+                        f"  Fitz-Sage {dataset.name}: {index}/{len(query_ids)} queries (resumed)",
                         flush=True,
                     )
                 continue
@@ -248,6 +252,20 @@ def evaluate_dataset(
                 }
             )
             record["latency_seconds"]["fitz_sage"] = duration
+            stage_seconds = {
+                str(name): float(stage_duration)
+                for name, stage_duration in run.evidence.timings.items()
+            }
+            grouped_seconds, timing_overlap = group_timings(
+                stage_seconds,
+                total_seconds=duration,
+            )
+            record["timing"] = {
+                "total_seconds": duration,
+                "stage_seconds": stage_seconds,
+                "grouped_seconds": grouped_seconds,
+                "timing_overlap_seconds": timing_overlap,
+            }
             record["failure_attribution"] = stage_failure(rankings, qrels[query_id])
             record["recoveries"] = stage_recoveries(rankings, qrels[query_id])
             record["query_execution"] = run.query.to_dict()
@@ -282,6 +300,7 @@ def evaluate_dataset(
             "fitz_sage": {
                 "latency": summarize_latency(fitz_durations),
                 "governance_override": governance,
+                "ablation": ablation.as_dict() if ablation else None,
                 "query_checkpoint": str(checkpoint_path),
                 "resumed_queries": len(checkpoint_records),
             },
@@ -373,40 +392,24 @@ def _source_id_mapping(
 def _summarize_records(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
     values = list(records.values())
     stages = sorted(
-        {
-            stage
-            for record in values
-            for stage in record.get("metrics", {})
-        },
+        {stage for record in values for stage in record.get("metrics", {})},
         key=lambda stage: _STAGES.index(stage),
     )
     metrics = {
         stage: aggregate_metrics(
-            record["metrics"][stage]
-            for record in values
-            if stage in record.get("metrics", {})
+            record["metrics"][stage] for record in values if stage in record.get("metrics", {})
         )
         for stage in stages
     }
     failure_attribution = Counter(
-        str(record["failure_attribution"])
-        for record in values
-        if "failure_attribution" in record
+        str(record["failure_attribution"]) for record in values if "failure_attribution" in record
     )
-    recoveries = Counter(
-        recovery
-        for record in values
-        for recovery in record.get("recoveries", [])
+    recoveries = Counter(recovery for record in values for recovery in record.get("recoveries", []))
+    pyrrho = Counter(str(record["pyrrho"]["verdict"]) for record in values if "pyrrho" in record)
+    stage_retrieval = {stage: _stage_retrieval_summary(values, stage) for stage in stages}
+    timing = summarize_timing_records(
+        [record["timing"] for record in values if isinstance(record.get("timing"), dict)]
     )
-    pyrrho = Counter(
-        str(record["pyrrho"]["verdict"])
-        for record in values
-        if "pyrrho" in record
-    )
-    stage_retrieval = {
-        stage: _stage_retrieval_summary(values, stage)
-        for stage in stages
-    }
     return {
         "queries": len(values),
         "metrics": metrics,
@@ -414,6 +417,7 @@ def _summarize_records(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "failure_attribution": dict(sorted(failure_attribution.items())),
         "recoveries": dict(sorted(recoveries.items())),
         "pyrrho_verdicts": dict(sorted(pyrrho.items())),
+        "timing": timing,
     }
 
 
@@ -422,9 +426,7 @@ def _stage_retrieval_summary(
     stage: str,
 ) -> dict[str, float]:
     rankings = [
-        record["rankings"][stage]
-        for record in records
-        if stage in record.get("rankings", {})
+        record["rankings"][stage] for record in records if stage in record.get("rankings", {})
     ]
     if not rankings:
         return {"mean_unique_documents": 0.0, "relevant_hit_rate": 0.0}
@@ -433,11 +435,7 @@ def _stage_retrieval_summary(
         ranking = record.get("rankings", {}).get(stage)
         if ranking is None:
             continue
-        relevant = {
-            document_id
-            for document_id, score in record["judgments"].items()
-            if score > 0
-        }
+        relevant = {document_id for document_id, score in record["judgments"].items() if score > 0}
         hits += bool(relevant.intersection(ranking))
     return {
         "mean_unique_documents": sum(len(ranking) for ranking in rankings) / len(rankings),
@@ -458,6 +456,14 @@ def _manifest_failures(manifest: Any) -> list[dict[str, str]]:
     ]
 
 
+def _checkpoint_path(
+    workspace: Path,
+    ablation: RetrievalAblation | None,
+) -> Path:
+    suffix = f"-{ablation.name}" if ablation is not None else ""
+    return workspace / f"beir-query-checkpoint{suffix}.jsonl"
+
+
 def _checkpoint_signature(
     dataset: PreparedDataset,
     *,
@@ -465,19 +471,19 @@ def _checkpoint_signature(
     cutoffs: list[int],
     index_mode: str,
     governance: str | None,
+    ablation: RetrievalAblation | None,
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "dataset": dataset.name,
         "dataset_md5": dataset.md5,
         "adapter_schema_version": dataset.adapter_schema_version,
-        "query_ids_sha256": hashlib.sha256(
-            "\n".join(query_ids).encode("utf-8")
-        ).hexdigest(),
+        "query_ids_sha256": hashlib.sha256("\n".join(query_ids).encode("utf-8")).hexdigest(),
         "queries": len(query_ids),
         "cutoffs": cutoffs,
         "index_mode": index_mode,
         "governance": governance,
+        "ablation": ablation.as_dict() if ablation else None,
         "evaluation_source_sha256": _evaluation_source_digest(),
     }
 
@@ -488,7 +494,13 @@ def _evaluation_source_digest() -> str:
     paths.extend((root / "fitz_sage").rglob("*.yaml"))
     paths.extend(
         root / "benchmarks" / "fitz_bench" / name
-        for name in ("beir.py", "beir_benchmark.py", "retrieval_eval.py")
+        for name in (
+            "beir.py",
+            "beir_benchmark.py",
+            "retrieval_ablation.py",
+            "retrieval_eval.py",
+            "timing.py",
+        )
     )
     digest = hashlib.sha256()
     for path in sorted(set(paths)):
@@ -547,7 +559,7 @@ def _load_checkpoint(
             raise ValueError(f"Invalid BEIR checkpoint record at {path}:{index}")
         record = item.get("record")
         if not isinstance(record, dict) or not isinstance(record.get("query_id"), str):
-            raise ValueError(f"Invalid BEIR checkpoint query at {path}:{index}")
+            raise TypeError(f"Invalid BEIR checkpoint query at {path}:{index}")
         records[record["query_id"]] = record
     return records
 
@@ -558,13 +570,21 @@ def _activate_workspace(workspace: Path) -> None:
     FitzPaths.set_workspace(workspace)
 
 
-def _create_engine(collection: str, *, governance: str | None) -> Any:
+def _create_engine(
+    collection: str,
+    *,
+    governance: str | None,
+    ablation: RetrievalAblation | None = None,
+) -> Any:
     config = load_engine_config("fitz_krag")
     values = config.model_dump()
     values["collection"] = collection
     if governance is not None:
         values["governance"] = governance
-    return create_engine("fitz_krag", config=type(config)(**values))
+    engine = create_engine("fitz_krag", config=type(config)(**values))
+    if ablation is not None:
+        apply_ablation(engine, ablation)
+    return engine
 
 
 def _gate(
@@ -618,6 +638,7 @@ def _run_metadata(
         "query_limit": args.query_limit,
         "cutoffs": args.cutoffs,
         "governance_override": args.governance,
+        "ablation": get_ablation(args.ablation).as_dict() if args.ablation else None,
         "reuse_workspace": args.reuse_workspace,
         "resume_queries": args.resume_queries,
         "duration_seconds": time.perf_counter() - started,
@@ -666,12 +687,15 @@ def _write_partial_report(path: Path, report: dict[str, Any]) -> None:
 
 
 def _markdown(report: dict[str, Any]) -> str:
+    ablation = report["run"].get("ablation")
+    ablation_name = ablation.get("name") if isinstance(ablation, dict) else "canonical"
     lines = [
         "# BEIR Retrieval Benchmark",
         "",
         f"- Run: `{report['run']['run_id']}`",
         f"- Gate: `{'PASS' if report['gate']['passed'] else 'FAIL'}`",
         f"- Index mode: `{report['run']['index_mode']}`",
+        f"- Ablation: `{ablation_name}`",
         "",
     ]
     for result in report["datasets"]:
@@ -754,6 +778,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="Metric cutoff. Repeat; defaults to 1, 3, 5, 10, 20, and 50.",
     )
     parser.add_argument("--index-mode", choices=("source", "complete"), default="source")
+    parser.add_argument(
+        "--ablation",
+        choices=ablation_names(),
+        help="Benchmark-only query component configuration.",
+    )
     parser.add_argument("--governance")
     parser.add_argument("--reuse-workspace", action="store_true")
     parser.add_argument(

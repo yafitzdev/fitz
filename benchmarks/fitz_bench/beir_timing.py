@@ -6,7 +6,6 @@ import argparse
 import json
 import platform
 import random
-import re
 import subprocess
 import sys
 import time
@@ -20,28 +19,12 @@ from benchmarks.fitz_bench.beir import (
     load_queries,
     prepare_dataset,
 )
-from benchmarks.fitz_bench.retrieval_eval import summarize_latency
+from benchmarks.fitz_bench.timing import group_timings, summarize_timing_records
 from fitz_sage.config.loader import load_engine_config
 from fitz_sage.core import Query
 from fitz_sage.core.paths import FitzPaths
 from fitz_sage.runtime import create_engine
 from fitz_sage.storage.sqlite import SqliteConnectionManager
-
-_AGGREGATE_TIMING = re.compile(r"^Evidence closure \d+$")
-_STANDARD_GROUPS = (
-    "query_prep",
-    "semantic_expansion",
-    "pyrrho_planning",
-    "recall",
-    "rerank",
-    "read",
-    "context_expansion",
-    "table_queries",
-    "evidence_compiler",
-    "pyrrho_decision",
-    "other",
-    "unattributed",
-)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -172,7 +155,7 @@ def profile_dataset(
             "warm_runs": len(warm_records),
         },
         "cold_probe": cold_record,
-        "warm_summary": _summarize_records(warm_records),
+        "warm_summary": summarize_timing_records(warm_records),
         "warm_records": warm_records,
     }
 
@@ -190,7 +173,7 @@ def _run_query(
     pack = engine.evidence(Query(text=query), top_k=top_k)
     total = time.perf_counter() - started
     raw_timings = {str(name): float(duration) for name, duration in pack.timings.items()}
-    grouped, overlap = _group_timings(raw_timings, total_seconds=total)
+    grouped, overlap = group_timings(raw_timings, total_seconds=total)
     return {
         "query_id": query_id,
         "query": query,
@@ -216,98 +199,6 @@ def _select_query_ids(
     generator = random.Random(seed)
     selected = set(generator.sample(range(len(query_ids)), sample_size))
     return [query_id for index, query_id in enumerate(query_ids) if index in selected]
-
-
-def _group_timings(
-    timings: dict[str, float],
-    *,
-    total_seconds: float,
-) -> tuple[dict[str, float], float]:
-    """Collapse non-overlapping engine timings into comparable stage groups."""
-    grouped: dict[str, float] = {}
-    for name, duration in timings.items():
-        group = _timing_group(name)
-        if group is None:
-            continue
-        grouped[group] = grouped.get(group, 0.0) + float(duration)
-
-    accounted = sum(grouped.values())
-    grouped["unattributed"] = max(0.0, total_seconds - accounted)
-    overlap = max(0.0, accounted - total_seconds)
-    return grouped, overlap
-
-
-def _timing_group(name: str) -> str | None:
-    """Map one raw timing label to an exclusive group, ignoring totals."""
-    if name == "Retrieval" or _AGGREGATE_TIMING.fullmatch(name):
-        return None
-    if name == "Query prep":
-        return "query_prep"
-    if name == "Qwen query keywords":
-        return "semantic_expansion"
-    if name == "Pyrrho pre":
-        return "pyrrho_planning"
-    if name == "Pyrrho":
-        return "pyrrho_decision"
-    if name == "Recall" or name.endswith(" Recall"):
-        return "recall"
-    if name == "Rerank" or name.endswith(" Rerank"):
-        return "rerank"
-    if name == "Read" or name.endswith(" Read"):
-        return "read"
-    if name == "Expand context" or name.endswith(" expand"):
-        return "context_expansion"
-    if name == "Table queries" or name.endswith(" table queries"):
-        return "table_queries"
-    if "compile" in name.casefold():
-        return "evidence_compiler"
-    return "other"
-
-
-def _summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
-    if not records:
-        return {}
-    totals = [float(record["total_seconds"]) for record in records]
-    total_sum = sum(totals)
-    group_names = list(_STANDARD_GROUPS)
-    extras = sorted(
-        {
-            group
-            for record in records
-            for group in record["grouped_seconds"]
-            if group not in group_names
-        }
-    )
-    group_names.extend(extras)
-
-    stage_groups: dict[str, dict[str, float]] = {}
-    for group in group_names:
-        values = [float(record["grouped_seconds"].get(group, 0.0)) for record in records]
-        if not any(values):
-            continue
-        group_summary = summarize_latency(values)
-        group_summary["share_of_total"] = sum(values) / total_sum if total_sum else 0.0
-        stage_groups[group] = group_summary
-
-    raw_names = sorted({name for record in records for name in record["stage_seconds"]})
-    raw_stages: dict[str, dict[str, float | int]] = {}
-    for name in raw_names:
-        values = [
-            float(record["stage_seconds"][name])
-            for record in records
-            if name in record["stage_seconds"]
-        ]
-        raw_summary: dict[str, float | int] = summarize_latency(values)
-        raw_summary["observations"] = len(values)
-        raw_summary["occurrence_rate"] = len(values) / len(records)
-        raw_stages[name] = raw_summary
-
-    return {
-        "runs": len(records),
-        "total_latency": summarize_latency(totals),
-        "stage_groups": stage_groups,
-        "raw_stages": raw_stages,
-    }
 
 
 def _activate_workspace(workspace: Path) -> None:
@@ -393,8 +284,7 @@ def _markdown(report: dict[str, Any]) -> str:
         cold = result.get("cold_probe") or {}
         groups = cold.get("grouped_seconds", {})
         lines.append(
-            "| {dataset} | {total:.2f}s | {qwen:.2f}s | {rerank:.2f}s | "
-            "{pyrrho:.2f}s |".format(
+            "| {dataset} | {total:.2f}s | {qwen:.2f}s | {rerank:.2f}s | {pyrrho:.2f}s |".format(
                 dataset=result["dataset"]["name"],
                 total=float(cold.get("total_seconds", 0.0)),
                 qwen=float(groups.get("semantic_expansion", 0.0)),

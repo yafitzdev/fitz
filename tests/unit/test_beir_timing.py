@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from benchmarks.fitz_bench.beir_timing import (
-    _group_timings,
-    _select_query_ids,
-    _summarize_records,
-)
+from benchmarks.fitz_bench.beir_timing import _select_query_ids
+from benchmarks.fitz_bench.timing import group_timings, summarize_timing_records
 
 
 def test_group_timings_ignores_overlapping_retrieval_totals() -> None:
-    grouped, overlap = _group_timings(
+    grouped, overlap = group_timings(
         {
             "Qwen query keywords": 2.0,
             "Recall": 0.5,
@@ -38,7 +35,7 @@ def test_group_timings_ignores_overlapping_retrieval_totals() -> None:
 
 
 def test_group_timings_reports_overlap_instead_of_negative_residual() -> None:
-    grouped, overlap = _group_timings(
+    grouped, overlap = group_timings(
         {"Qwen query keywords": 2.0, "Pyrrho": 1.0},
         total_seconds=2.5,
     )
@@ -85,7 +82,7 @@ def test_summarize_records_reports_exclusive_stage_share() -> None:
         },
     ]
 
-    summary = _summarize_records(records)
+    summary = summarize_timing_records(records)
 
     assert summary["total_latency"]["mean_seconds"] == 15.0
     assert summary["stage_groups"]["semantic_expansion"]["mean_seconds"] == 3.0

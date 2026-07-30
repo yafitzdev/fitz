@@ -13,8 +13,8 @@ from benchmarks.fitz_bench.beir_benchmark import (
     _load_checkpoint,
     _markdown,
     _run_rankings,
-    _stage_retrieval_summary,
     _source_id_mapping,
+    _stage_retrieval_summary,
 )
 
 
