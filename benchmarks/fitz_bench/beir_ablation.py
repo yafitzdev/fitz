@@ -151,7 +151,10 @@ def build_ablation_report(
             "paired_by": "dataset query_id",
             "confidence_interval": "deterministic paired percentile bootstrap, 95%",
             "index_reuse": "all variants query the same reusable Fitz-Sage collection",
-            "process_isolation": "one fresh Python process per variant",
+            "process_isolation": (
+                "each variant execution launches a fresh Python process; "
+                "checkpoints may combine records across resumed executions"
+            ),
             "constant_components": [
                 "document projection and source index",
                 "deterministic query planning",

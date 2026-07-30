@@ -30,7 +30,9 @@ but they are not the product contract.
 
 ## Gaps To Fill
 
-1. A maintained retrieval benchmark over the current KRAG fixture corpora.
+1. A targeted vocabulary-mismatch benchmark that isolates ordinary synonyms
+   and paraphrases from identifier normalization, so managed Qwen expansion can
+   be judged against its intended job.
 2. Cross-modality integration cases that preserve the exact accepted Pyrrho
    output without treating it as Fitz retrieval quality. Pyrrho owns
    false-sufficient, class-recall, and calibration evaluation.
@@ -44,3 +46,4 @@ but they are not the product contract.
 - [Evidence Pack](../EVIDENCE_PACK.md)
 - [Three-Stage Retrieval Strategy](../features/retrieval/three-stage-strategy.md)
 - [Governance Modality Boundaries](../features/governance/modality-boundaries.md)
+- [BEIR Component Ablation](beir-component-ablation-2026-07-30.md)

@@ -250,25 +250,41 @@ measured. The benchmark does not assess whether retrieved evidence answers
 domain questions, and it does not include optional Qwen enrichment time.
 Image-only documents require a user-selected OCR-capable parser.
 
-The external BEIR retrieval run adds independent relevance judgments across
-66,454 biomedical, financial, and scientific documents. On all three datasets,
-Fitz-Sage's recall stage exceeded the benchmark-local plain BM25 Recall@50:
+The 2026-07-30 external BEIR retrieval run adds independent relevance judgments
+across 66,454 biomedical, financial, and scientific documents. The literal
+Fitz-Sage path, with managed Qwen expansion and cross-encoder scoring disabled,
+exceeded the benchmark-local whole-document BM25 Recall@50 on all three
+datasets:
 
-- NFCorpus: 0.2228 versus 0.2101
-- FiQA: 0.4736 versus 0.4459
-- SciFact: 0.8869 versus 0.8704
+- NFCorpus: 0.2164 versus 0.2101
+- FiQA: 0.4746 versus 0.4459
+- SciFact: 0.8952 versus 0.8704
 
-End-to-end delivered nDCG@10 was mixed:
+With the full canonical pipeline, delivered nDCG@10 was:
 
-- NFCorpus: 0.2486 versus the plain-BM25 baseline's 0.3062
-- FiQA: 0.2609 versus 0.2377
-- SciFact: 0.5982 versus 0.6634
+- NFCorpus: 0.3367 versus the plain-BM25 baseline's 0.3062
+- FiQA: 0.3179 versus 0.2377
+- SciFact: 0.6170 versus 0.6634
 
-This means the central recall loop generalizes beyond the internal fixtures,
-but evidence narrowing was not consistently better than a simple lexical
-baseline. These delivered scores predate removal of capitalization-derived
-hard anchors and compiler lexical reranking, so they must be rerun before being
-treated as current end-to-end results.
+This means the central typed BM25 recall loop generalizes beyond the internal
+fixtures without relying on Qwen. The INT8 reranker produced clear paired
+quality gains on NFCorpus and FiQA, while its SciFact gain was inconclusive.
+
+Managed Qwen expansion cost about 1.98 seconds per query with reranking active.
+It produced a conclusive recall-ordering gain only on NFCorpus and changed the
+three-dataset macro final nDCG@10 by -0.0008. This does not prove that semantic
+expansion is useless: BEIR does not directly target ordinary synonym and
+paraphrase mismatch. It does mean its default cost is not yet supported by this
+broad external benchmark. A dedicated vocabulary-mismatch evaluation remains
+necessary.
+
+Thirteen SciFact queries had a judged-relevant final candidate but lost all
+judged-relevant evidence during compilation. Every query contained a literal
+structured identifier, including examples such as `anti-interleukin-2`,
+`SHP-2`, `CK-666`, and `FOXO3`. Fitz-Sage does not silently treat spelling,
+separator, abbreviation, or naming variants as equivalent. Users must provide
+consistent source/query text or apply their own preprocessing mapping. A
+public vocabulary hook is deferred and is not part of the current API.
 
 All 1,271 judged queries completed. All NFCorpus and SciFact documents indexed.
 FiQA contained 38 upstream records with empty title and text fields, including

@@ -6,6 +6,7 @@ governance. Current product behavior is documented in the main guides.
 | File | Contents |
 |---|---|
 | `current.md` | Current retrieval-first measurement plan |
+| `beir-component-ablation-2026-07-30.md` | Current paired BEIR component measurement |
 | `beir-results.md` | Historical BEIR retrieval notes |
 | `fitz-gov-5.0-results.md` | Historical governance evaluation notes |
 

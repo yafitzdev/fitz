@@ -185,11 +185,13 @@ indexes:
 
 The stable selector preserves the reranker's top-k output budget, so read,
 evidence-closure, compilation, and Pyrrho inputs remain structurally
-comparable. Each variant runs in a fresh process. The aggregate report aligns
-records by query ID and gives paired 95% bootstrap intervals for recall,
-final-candidate quality, delivered-evidence quality, and latency. Variant
-checkpoints are separate and resumable. Use `--no-resume-queries` to replace
-them after intentionally changing retrieval behavior.
+comparable. Each variant execution runs in a fresh process; resumed checkpoints
+can combine completed query records from more than one process lifetime. The
+aggregate report aligns records by query ID and gives paired 95% bootstrap
+intervals for recall, final-candidate quality, delivered-evidence quality, and
+latency. Variant checkpoints are separate and resumable. Use
+`--no-resume-queries` to replace them after intentionally changing retrieval
+behavior.
 
 Download, verify, and project the corpora without indexing:
 
@@ -244,52 +246,71 @@ license of each underlying dataset. See the
 
 ### Measured BEIR Baseline
 
-The 2026-07-28 source-only run evaluated all 1,271 judged test queries. Managed
-Qwen query terms, the ONNX cross-encoder, evidence compilation, and exact
-Pyrrho integration were active. Optional per-document enrichment was not.
+The 2026-07-30 source-only run evaluated all 1,271 judged test queries from a
+clean `2893be4f` worktree. Optional per-document enrichment was disabled. The
+canonical `full` variant used managed Qwen query terms, the INT8 ONNX
+cross-encoder, evidence compilation, and exact Pyrrho integration.
 
 Mean nDCG@10 by observable stage:
 
 | Dataset | Plain BM25 | Fitz recall | Final candidates | Delivered evidence |
 |---|---:|---:|---:|---:|
-| NFCorpus | 0.3062 | 0.3217 | 0.3293 | 0.2486 |
-| FiQA | 0.2377 | 0.2337 | 0.3210 | 0.2609 |
-| SciFact | 0.6634 | 0.6174 | 0.6628 | 0.5982 |
+| NFCorpus | 0.3062 | 0.3264 | 0.3377 | 0.3367 |
+| FiQA | 0.2377 | 0.2445 | 0.3188 | 0.3179 |
+| SciFact | 0.6634 | 0.6403 | 0.6529 | 0.6170 |
 
 Recall@50 before the fixed top-10 reranking/evidence window:
 
-| Dataset | Plain BM25 | Fitz recall |
-|---|---:|---:|
-| NFCorpus | 0.2101 | 0.2228 |
-| FiQA | 0.4459 | 0.4736 |
-| SciFact | 0.8704 | 0.8869 |
+| Dataset | Plain BM25 | Fitz literal recall | Qwen-enabled recall |
+|---|---:|---:|---:|
+| NFCorpus | 0.2101 | 0.2164 | 0.2231 |
+| FiQA | 0.4459 | 0.4746 | 0.4766 |
+| SciFact | 0.8704 | 0.8952 | 0.8909 |
 
-The central recall mechanism exceeded the plain baseline's Recall@50 on all
-three datasets. Reranking improved nDCG@10 over plain BM25 on NFCorpus and FiQA
-and was effectively tied on SciFact. Evidence compilation then reduced
-nDCG@10 on every dataset; delivered evidence was identical to compiled
-evidence, so the delivery budget and Pyrrho did not remove additional
-documents.
+The literal Fitz-Sage path exceeded whole-document BM25 Recall@50 on all three
+datasets without Qwen terms. This isolates the benefit of typed indexing,
+deterministic query planning, and retrieval fusion from managed semantic
+expansion.
 
-The most concrete package limitation was capitalization-derived hard phrase
-anchors. Across the three datasets, 103 of 108 compiler-stage complete misses
-had a generated hard anchor. Eighty-six were phrase-anchor misses, including a
-live trace where `Do Cholesterol Statin Drugs Cause Breast Cancer?` became the
-literal required phrase `Cholesterol Statin Drugs Cause Breast Cancer`.
-Recall returned 50 candidates and reranking returned 10, but the compiler set
-`filtered_all: true` and delivered zero evidence. This is package query-shape
-debt, not user cleanup responsibility.
+The paired four-variant ablation measured:
+
+| Variant | Macro final nDCG@10 | Macro delivered nDCG@10 | Mean latency |
+|---|---:|---:|---:|
+| `literal` | 0.4042 | 0.3902 | 2.07s |
+| `expansion` | 0.4054 | 0.3916 | 4.03s |
+| `reranker` | 0.4372 | 0.4244 | 4.18s |
+| `full` | 0.4365 | 0.4239 | 6.15s |
+
+With Qwen disabled, reranking improved macro final nDCG@10 by 0.0330 for a
+2.10-second mean cost. Its paired gain was conclusive on NFCorpus and FiQA and
+inconclusive on SciFact. Qwen improved NFCorpus recall nDCG@10 by 0.0087, with
+a paired 95% interval of [+0.0031, +0.0152], but had no conclusive recall gain
+on FiQA or SciFact. With reranking active, it changed macro final nDCG@10 by
+-0.0008 while adding 1.98 seconds.
+
+BEIR alone is not enough to remove semantic expansion because it is not a
+targeted vocabulary-mismatch evaluation. It does show that the Qwen cost is
+not justified by broad BEIR quality alone. That decision requires a separate
+synonym and paraphrase benchmark.
 
 All 3,633 NFCorpus and 5,183 SciFact documents indexed. FiQA indexed
 57,600/57,638 documents; the 38 failures had empty upstream `title` and `text`
-fields, and one of those empty records was nevertheless judged relevant. Empty
-documents remained visible failures and were not removed by the adapter.
+fields, and one empty record was nevertheless judged relevant. Empty documents
+remained visible failures and were not removed by the adapter.
 
-Canonical Fitz-Sage query latency averaged 15.4 seconds on NFCorpus, 14.1
-seconds on FiQA, and 20.9 seconds on SciFact on the benchmark machine. This
-includes managed semantic terms, reranking, compilation, and Pyrrho. The local
-plain-BM25 comparison intentionally excludes those components and is not a
-latency-equivalent product path.
+Thirteen SciFact queries had a judged-relevant final candidate but no judged
+relevant compiled evidence. Every query contained a literal structured
+identifier such as `anti-interleukin-2`, `SHP-2`, `CK-666`, or `FOXO3`.
+Fitz-Sage intentionally does not equate separator, abbreviation, or naming
+variants. That equivalence belongs to user cleanup or preprocessing. A public
+vocabulary hook is deferred and is not part of the current API.
+
+Canonical query latency averaged 5.98 seconds on NFCorpus, 5.58 seconds on
+FiQA, and 6.90 seconds on SciFact. The local plain-BM25 comparison excludes
+managed models, compilation, and Pyrrho and is not a latency-equivalent product
+path. Full methodology, per-dataset confidence intervals, and timing details
+are recorded in
+[`docs/evaluation/beir-component-ablation-2026-07-30.md`](../docs/evaluation/beir-component-ablation-2026-07-30.md).
 
 Profile the existing reusable indexes without repeating ingestion or the full
 relevance run:

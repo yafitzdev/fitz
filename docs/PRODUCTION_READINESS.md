@@ -208,41 +208,65 @@ financial, and scientific corpora.
 
 ## External Retrieval Evidence
 
-The 2026-07-28 source-only BEIR run used 66,454 external documents and all
-1,271 judged test queries from NFCorpus, FiQA, and SciFact. It made no
-per-dataset retrieval changes.
+The 2026-07-30 source-only BEIR run used 66,454 external documents and all
+1,271 judged test queries from NFCorpus, FiQA, and SciFact. It ran from clean
+commit `2893be4f` and made no per-dataset retrieval changes.
 
-| Dataset | Plain BM25 nDCG@10 | Fitz recall nDCG@10 | Final nDCG@10 | Delivered nDCG@10 |
+| Dataset | Plain BM25 nDCG@10 | Full recall nDCG@10 | Final nDCG@10 | Delivered nDCG@10 |
 |---|---:|---:|---:|---:|
-| NFCorpus | 0.3062 | 0.3217 | 0.3293 | 0.2486 |
-| FiQA | 0.2377 | 0.2337 | 0.3210 | 0.2609 |
-| SciFact | 0.6634 | 0.6174 | 0.6628 | 0.5982 |
+| NFCorpus | 0.3062 | 0.3264 | 0.3377 | 0.3367 |
+| FiQA | 0.2377 | 0.2445 | 0.3188 | 0.3179 |
+| SciFact | 0.6634 | 0.6403 | 0.6529 | 0.6170 |
 
-Fitz recall exceeded the local plain-BM25 Recall@50 on all three datasets:
-0.2228 versus 0.2101 on NFCorpus, 0.4736 versus 0.4459 on FiQA, and 0.8869
-versus 0.8704 on SciFact. This supports the BM25 plus managed semantic-term
-recall design.
+The literal Fitz-Sage path, with Qwen and cross-encoder scoring disabled,
+exceeded the local whole-document BM25 Recall@50 on all three datasets: 0.2164
+versus 0.2101 on NFCorpus, 0.4746 versus 0.4459 on FiQA, and 0.8952 versus
+0.8704 on SciFact. Typed indexing, deterministic query planning, and retrieval
+fusion therefore provide measurable recall value without managed semantic
+terms.
 
-The evidence path is not yet consistently stronger end to end. Compilation
-reduced ranking quality on all three datasets and caused 108 queries to lose
-their last judged-relevant candidate. Of those misses, 103 involved a generated
-hard anchor and 86 involved capitalization-derived phrases. The strongest next
-package hardening target is therefore literal-anchor recognition and compiler
-filtering, not Pyrrho and not corpus cleanup.
+A paired four-variant ablation isolated the managed components:
+
+| Variant | Macro final nDCG@10 | Macro delivered nDCG@10 | Mean latency |
+|---|---:|---:|---:|
+| Literal path | 0.4042 | 0.3902 | 2.07s |
+| Literal plus Qwen | 0.4054 | 0.3916 | 4.03s |
+| Literal plus reranker | 0.4372 | 0.4244 | 4.18s |
+| Full pipeline | 0.4365 | 0.4239 | 6.15s |
+
+The reranker produced clear paired quality gains on NFCorpus and FiQA for
+about 2.10 seconds per query. Qwen produced a clear recall-ordering gain only
+on NFCorpus. With reranking active, it added 1.98 seconds and changed macro
+final nDCG@10 by -0.0008. BEIR does not directly test the synonym and
+paraphrase mismatches Qwen is intended to bridge, so removing it based on this
+run would be premature. A targeted vocabulary-mismatch benchmark is the next
+required measurement.
+
+The post-fix compiler no longer has the capitalization-derived phrase-anchor
+failure measured in the earlier run. Thirteen SciFact queries still lost their
+last judged-relevant candidate during compilation, and all 13 contained a
+literal structured identifier. Fitz-Sage intentionally does not guess
+equivalence between identifier variants. Corpus cleanup or a user-owned
+preprocessing mapping owns that relationship. A public vocabulary hook remains
+deferred.
 
 Delivered rankings exactly matched compiled rankings in all three datasets.
-Pyrrho verdicts were recorded unchanged but were not scored as relevance labels
-and did not gate retrieval.
+Pyrrho verdicts were recorded unchanged but were not scored as relevance
+labels and did not gate retrieval.
 
 FiQA contained 38 records with no title or text, including one judged-relevant
 record. Fitz-Sage reported all 38 as unsearchable; the adapter did not hide
 them. All non-empty FiQA records and every NFCorpus and SciFact record indexed.
 
-Mean canonical query latency was 15.4 seconds for NFCorpus, 14.1 seconds for
-FiQA, and 20.9 seconds for SciFact on the benchmark machine. The full run took
-about six hours. These are production concerns even though Fitz-Sage's own
-retrieval logic is small: the managed query model, cross-encoder, and Pyrrho
-runtime dominate the path.
+Mean canonical query latency was 5.98 seconds for NFCorpus, 5.58 seconds for
+FiQA, and 6.90 seconds for SciFact on the benchmark machine. The complete
+four-variant run took about 6.3 hours. Managed Qwen expansion, cross-encoder
+scoring, and the exact Pyrrho evidence decision dominate query time; lexical
+recall itself averaged roughly 0.16 to 0.38 seconds.
+
+See the
+[full component-ablation record](evaluation/beir-component-ablation-2026-07-30.md)
+for paired confidence intervals, timing details, and reproduction instructions.
 
 ## Reproduce
 
