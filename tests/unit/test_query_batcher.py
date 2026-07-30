@@ -124,6 +124,22 @@ def test_batch_classify_filters_schema_placeholder_keywords() -> None:
     assert "return policy" in result.keywords
 
 
+def test_batch_classify_bounds_semantic_keyword_count() -> None:
+    chat = _Chat(json.dumps({"keywords": [f"concept {index}" for index in range(15)]}))
+    batcher = QueryBatcher(chat_factory=lambda _tier: chat)
+
+    result = batcher.batch_classify(
+        "refund policy",
+        include_analysis=False,
+        include_detection=False,
+        include_rewriting=False,
+        include_extended=False,
+        include_keywords=True,
+    )
+
+    assert result.keywords == [f"concept {index}" for index in range(10)]
+
+
 def test_batch_classify_applies_task_generation_budget() -> None:
     chat = _Chat(json.dumps({"keywords": ["return policy"]}))
     batcher = QueryBatcher(
@@ -141,3 +157,20 @@ def test_batch_classify_applies_task_generation_budget() -> None:
     )
 
     assert chat.options == {"max_tokens": 128}
+
+
+def test_keyword_prompt_requires_separate_json_array_items() -> None:
+    batcher = QueryBatcher(chat_factory=lambda _tier: _Chat("{}"))
+
+    prompt = batcher._build_prompt(
+        "refund policy",
+        include_analysis=False,
+        include_detection=False,
+        active_modules=[],
+        include_rewriting=False,
+        include_extended=False,
+        include_keywords=True,
+    )
+
+    assert "every keyword as a separate quoted JSON array item" in prompt
+    assert "never combine" in prompt

@@ -106,6 +106,8 @@ _KEYWORDS_JSON = """\
 _KEYWORDS_INSTRUCTIONS = """\
 ## keywords
 - Produce 5-10 concrete retrieval keywords or short search phrases.
+- Return every keyword as a separate quoted JSON array item; never combine
+  multiple keywords into one comma-separated string.
 - Use real synonyms, acronym expansions, sibling concepts, and domain vocabulary.
 - Do not copy schema placeholders such as "term", "keyword", or "actual phrase".
 - Avoid repeating the exact query unless it is itself a useful search phrase."""
@@ -120,6 +122,7 @@ _KEYWORD_PLACEHOLDERS = {
     "term",
     "terms",
 }
+SEMANTIC_KEYWORD_MAX_ITEMS = 10
 SEMANTIC_KEYWORD_MAX_TOKENS = 128
 
 _ANALYSIS_SPEC = _QuerySectionSpec("analysis", _ANALYSIS_JSON, _ANALYSIS_INSTRUCTIONS)
@@ -367,6 +370,6 @@ class QueryBatcher:
                 value
                 for value in (str(k).strip() for k in kw_data if isinstance(k, str))
                 if value and value.lower() not in _KEYWORD_PLACEHOLDERS
-            ]
+            ][:SEMANTIC_KEYWORD_MAX_ITEMS]
 
         return result
