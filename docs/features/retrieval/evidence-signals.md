@@ -46,7 +46,7 @@ managed Qwen query keywords, and optional query intelligence.
 | Signal | Meaning | Retrieval effect |
 |---|---|---|
 | `analysis_type` | Primary surface such as general, code, documentation, data, or cross-surface. | Seeds strategy weights and entity targeting. |
-| `keywords` | Managed Qwen and deterministic semantic query terms. | Improves lexical recall without embeddings. |
+| `keywords` | Managed Qwen and deterministic semantic query terms. | Adds best-effort lexical candidates without embeddings. |
 | `comparison_entities` | Entities or sides that must both appear for comparison questions. | Helps avoid one-sided evidence packs. |
 | `temporal_references` | Dates, versions, quarters, or recency markers found in the query. | Boosts matching periods and freshness-sensitive evidence. |
 | `strategy_weights` | Code, section, table, and chunk retrieval weights. | Points recall at the likely evidence surface. |

@@ -28,17 +28,30 @@ but they are not the product contract.
   the final governance verdict.
 - Optional answer synthesis is measured separately from evidence retrieval.
 
+## Completed External Measurements
+
+- The broad NFCorpus, FiQA, and SciFact ablation measures literal retrieval,
+  managed Qwen expansion, and INT8 reranking over all 1,271 judged queries.
+- The frozen ArguAna/Quora semantic holdout measures 240 queries across low,
+  medium, and high lexical-overlap strata. It found no consistent low-overlap
+  recall gain from the current Qwen path and a conclusive Quora regression.
+- External NapierOne runs measure cold indexing, unsupported inputs,
+  interruption recovery, and storage growth over real files.
+
 ## Gaps To Fill
 
-1. A targeted vocabulary-mismatch benchmark that isolates ordinary synonyms
-   and paraphrases from identifier normalization, so managed Qwen expansion can
-   be judged against its intended job.
+1. A separate semantic-expansion development set for model, filtering, and
+   fusion experiments. The frozen ArguAna/Quora holdout must remain
+   evaluation-only and should be rerun after the planned managed-model
+   replacement.
 2. Cross-modality integration cases that preserve the exact accepted Pyrrho
    output without treating it as Fitz retrieval quality. Pyrrho owns
    false-sufficient, class-recall, and calibration evaluation.
 3. Keep the query-ready ingestion benchmark representative across small files,
    long documents, code, tables, and explicitly selected rich parsers.
-4. A public regression report format that can be updated without turning the
+4. Measure and improve unchanged `point()` behavior for collections containing
+   hundreds of thousands of tiny files.
+5. A public regression report format that can be updated without turning the
    docs into release notes.
 
 ## Related
@@ -47,3 +60,4 @@ but they are not the product contract.
 - [Three-Stage Retrieval Strategy](../features/retrieval/three-stage-strategy.md)
 - [Governance Modality Boundaries](../features/governance/modality-boundaries.md)
 - [BEIR Component Ablation](beir-component-ablation-2026-07-30.md)
+- [BEIR Semantic Holdout](beir-semantic-holdout-2026-07-30.md)

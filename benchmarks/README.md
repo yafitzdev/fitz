@@ -287,12 +287,44 @@ Run the paired four-variant measurement:
 ```bash
 python -m benchmarks.fitz_bench.beir_ablation \
   --offline \
-  --query-manifest benchmarks/fixtures/beir_semantic_holdout_v1.json
+  --query-manifest benchmarks/fixtures/beir_semantic_holdout_v1.json \
+  --no-resume-queries
 ```
+
+Each ablation child reuses a persisted index only after validating its source
+path, expected searchable-document count, ingestion failures, source-ID
+mapping, and every persisted content hash against the deterministic adapter
+mapping. This avoids repeating a full no-change `point()` traversal for every
+variant without accepting mismatched or partial persisted state.
 
 The aggregate report gives the same paired component effects as the broad
 suite and additionally reports Qwen effects separately for the frozen low,
 medium, and high lexical-overlap strata.
+
+The completed run evaluated all 240 queries under all four variants. All child
+operational gates and the paired-integrity gate passed, with no resumed
+queries.
+
+| Dataset | `literal` final nDCG@10 | `expansion` | `reranker` | `full` |
+|---|---:|---:|---:|---:|
+| ArguAna | 0.4413 | 0.4439 | 0.4562 | 0.4579 |
+| Quora | 0.8049 | 0.7878 | 0.8566 | 0.8593 |
+
+Without reranking, Qwen reduced macro recall nDCG@10 by 0.0106 and final
+nDCG@10 by 0.0072 while adding 2.44 seconds. Its Quora recall and final
+regressions were conclusive, and no consistent benefit appeared in the frozen
+low-overlap strata. With reranking active, Qwen changed macro final nDCG@10 by
+only +0.0022 while adding 2.06 seconds.
+
+Without Qwen, the reranker improved Quora final nDCG@10 by 0.0518 for 0.45
+seconds. Its ArguAna gain was inconclusive and cost 4.95 seconds, showing why
+reranker quality and latency must be reported by query shape.
+
+The current managed expansion path is not justified as an always-on component
+by this measurement. The holdout remains frozen and must not be used to tune
+term filters or fusion. Full methodology, paired intervals, per-query
+diagnostics, and operational findings are recorded in
+[`docs/evaluation/beir-semantic-holdout-2026-07-30.md`](../docs/evaluation/beir-semantic-holdout-2026-07-30.md).
 
 ### Measured BEIR Baseline
 
@@ -338,10 +370,10 @@ a paired 95% interval of [+0.0031, +0.0152], but had no conclusive recall gain
 on FiQA or SciFact. With reranking active, it changed macro final nDCG@10 by
 -0.0008 while adding 1.98 seconds.
 
-BEIR alone is not enough to remove semantic expansion because it is not a
-targeted vocabulary-mismatch evaluation. It does show that the Qwen cost is
-not justified by broad BEIR quality alone. That decision requires a separate
-synonym and paraphrase benchmark.
+This broad suite alone was not enough to judge semantic expansion because it
+did not target vocabulary mismatch. The separate frozen ArguAna/Quora holdout
+described above now supplies that follow-up evidence and does not support the
+current Qwen path as an always-on component.
 
 All 3,633 NFCorpus and 5,183 SciFact documents indexed. FiQA indexed
 57,600/57,638 documents; the 38 failures had empty upstream `title` and `text`

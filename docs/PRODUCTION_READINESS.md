@@ -190,6 +190,14 @@ by a resume produced the same manifest inventory and SQLite retrieval-unit
 counts as the clean run, with no orphan raw-file records. The tiny slices
 crashed after ten durable files; the 5,005-file scale slice crashed after 100.
 
+The later Quora retrieval holdout exposed a different scale boundary:
+ordinary no-change `point()` did not complete within 20 minutes over 522,931
+tiny projected files because it still walks and hashes source files. A strict
+benchmark-only path validated the persisted index and every persisted content
+hash against the deterministic adapter mapping in about 5.5 seconds. Public
+persisted-collection reuse remains future work; the benchmark shortcut is not
+product behavior.
+
 Required-suite queries averaged 4.1 seconds with a 3.6-second median, including
 cold starts; the slowest limitation query took 27.9 seconds.
 
@@ -237,10 +245,16 @@ A paired four-variant ablation isolated the managed components:
 The reranker produced clear paired quality gains on NFCorpus and FiQA for
 about 2.10 seconds per query. Qwen produced a clear recall-ordering gain only
 on NFCorpus. With reranking active, it added 1.98 seconds and changed macro
-final nDCG@10 by -0.0008. BEIR does not directly test the synonym and
-paraphrase mismatches Qwen is intended to bridge, so removing it based on this
-run would be premature. A targeted vocabulary-mismatch benchmark is the next
-required measurement.
+final nDCG@10 by -0.0008.
+
+The follow-up frozen ArguAna/Quora holdout is now complete. Without reranking,
+Qwen reduced two-dataset macro recall nDCG@10 by 0.0106 and final nDCG@10 by
+0.0072 while adding 2.44 seconds. Its Quora regressions were conclusive, and
+no consistent low-overlap gain appeared. With reranking active, Qwen changed
+macro final nDCG@10 by only +0.0022 while adding 2.06 seconds. The current
+managed expansion path is therefore a measured limitation, not a guaranteed
+recall improvement. See the
+[semantic holdout report](evaluation/beir-semantic-holdout-2026-07-30.md).
 
 The post-fix compiler no longer has the capitalization-derived phrase-anchor
 failure measured in the earlier run. Thirteen SciFact queries still lost their
@@ -266,6 +280,8 @@ recall itself averaged roughly 0.16 to 0.38 seconds.
 
 See the
 [full component-ablation record](evaluation/beir-component-ablation-2026-07-30.md)
+and
+[semantic holdout](evaluation/beir-semantic-holdout-2026-07-30.md)
 for paired confidence intervals, timing details, and reproduction instructions.
 
 ## Reproduce

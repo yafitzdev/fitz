@@ -68,6 +68,11 @@ Qwen may still suggest one of those related terms and surface useful evidence.
 Users who require consistent domain equivalence must provide it through data or
 query preprocessing; a public mapping hook is deferred.
 
+The original query remains a recall leg, but all recall legs share a bounded
+candidate pool. A poor semantic suggestion can therefore change ordering or
+displace a useful literal candidate. Semantic expansion is not guaranteed to
+be neutral when it fails to help.
+
 ## Exact Literal Anchors
 
 Fitz-Sage uses recognized exact identifiers to keep a narrow query tied to
@@ -144,6 +149,25 @@ heuristics.
 Raw logs are not a target input format. Users should compress, summarize, or
 otherwise structure logs before ingestion. fitz-sage should not own that cleanup
 step.
+
+## Very Large File Counts
+
+Source indexing and no-change detection currently operate on individual files.
+Calling `point()` again walks and hashes those files even when the index is
+already query-ready.
+
+In a 2026-07-30 diagnostic over 522,931 tiny projected Quora documents, an
+ordinary no-change `point()` did not complete within 20 minutes. A
+benchmark-only strict reuse path validated the persisted index, source-ID
+mapping, and every persisted content hash against the deterministic adapter
+mapping in about 5.5 seconds, but that path does not change the public product
+behavior.
+
+This is an extreme-file-count startup limitation, not a query-latency
+limitation. Avoid repeatedly pointing unchanged collections at folders
+containing hundreds of thousands of tiny files. A future product change should
+address persisted collection reuse explicitly rather than weakening source
+identity checks.
 
 ## Current Limitation Benchmark
 
@@ -272,11 +296,25 @@ quality gains on NFCorpus and FiQA, while its SciFact gain was inconclusive.
 
 Managed Qwen expansion cost about 1.98 seconds per query with reranking active.
 It produced a conclusive recall-ordering gain only on NFCorpus and changed the
-three-dataset macro final nDCG@10 by -0.0008. This does not prove that semantic
-expansion is useless: BEIR does not directly target ordinary synonym and
-paraphrase mismatch. It does mean its default cost is not yet supported by this
-broad external benchmark. A dedicated vocabulary-mismatch evaluation remains
-necessary.
+three-dataset macro final nDCG@10 by -0.0008. The broad suite did not directly
+target ordinary synonym and paraphrase mismatch, so a separate frozen holdout
+was created before making a product decision.
+
+That 240-query ArguAna/Quora holdout did not validate the current managed
+Qwen path. Without reranking, expansion reduced macro recall nDCG@10 by 0.0106,
+reduced final nDCG@10 by 0.0072, and added 2.44 seconds per query. The Quora
+recall and final regressions were conclusive. With reranking active, expansion
+changed macro final nDCG@10 by only +0.0022 while adding 2.06 seconds, and the
+per-dataset effects were inconclusive. Low-overlap queries did not show a
+consistent expansion gain.
+
+The current managed model is therefore not a reliable semantic bridge, and the
+measured evidence does not justify its always-on cost. This is a limitation of
+the current model, prompt, and fixed-budget fusion behavior, not proof that all
+semantic query expansion is useless. The holdout remains frozen and will not
+be used to tune those components. See the
+[semantic holdout report](docs/evaluation/beir-semantic-holdout-2026-07-30.md)
+for the complete method, paired intervals, and operational findings.
 
 Thirteen SciFact queries had a judged-relevant final candidate but lost all
 judged-relevant evidence during compilation. Every query contained a literal

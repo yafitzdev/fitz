@@ -95,11 +95,15 @@ gain on FiQA or SciFact. Its Recall@50 changes were inconclusive on all three
 datasets. With reranking already enabled, Qwen changed macro final nDCG@10 by
 -0.0008 and delivered nDCG@10 by -0.0005 while adding 1.98 seconds.
 
-This does not justify deleting semantic expansion. BEIR is not a targeted test
-of ordinary synonym and paraphrase mismatch, which is the component's intended
-job. It does show that broad BEIR quality cannot currently justify paying the
-Qwen cost on every query. A separate vocabulary-mismatch evaluation is needed
-before changing the default.
+This broad run alone did not justify deleting semantic expansion because it
+was not a targeted test of ordinary synonym and paraphrase mismatch. It did
+show that broad BEIR quality could not justify paying the Qwen cost on every
+query.
+
+The required follow-up is now recorded in the
+[BEIR Semantic Holdout](beir-semantic-holdout-2026-07-30.md). That frozen
+ArguAna/Quora run also failed to justify the current managed Qwen path as an
+always-on component.
 
 ## Latency
 
