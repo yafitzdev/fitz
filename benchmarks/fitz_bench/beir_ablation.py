@@ -641,6 +641,7 @@ def _variant_command(
         "--index-mode",
         args.index_mode,
         "--reuse-workspace",
+        "--reuse-index",
         "--max-download-gib",
         str(args.max_download_gib),
         "--max-extracted-gib",

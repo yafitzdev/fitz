@@ -54,13 +54,17 @@ def test_prepare_dataset_projects_exact_title_and_text_fields(
 
     prepared = prepare_dataset(tmp_path, "toy", offline=True)
 
-    by_path, by_document = load_mapping(Path(prepared.mapping_path))
+    by_path, by_document, hashes_by_path = load_mapping(Path(prepared.mapping_path))
     projected_path = Path(prepared.corpus_dir) / by_document["unsafe/id:1"]
     assert projected_path.read_text(encoding="utf-8") == (
         "  Exact title  \n\nExact body\nsecond line"
     )
     assert "secret marker" not in projected_path.read_text(encoding="utf-8")
     assert by_path[by_document["unsafe/id:1"]] == "unsafe/id:1"
+    assert (
+        hashes_by_path[by_document["unsafe/id:1"]]
+        == hashlib.sha256(projected_path.read_bytes()).hexdigest()
+    )
     assert prepared.corpus_documents == 1
     assert prepared.empty_documents == 0
     assert prepared.empty_judged_relevant_documents == 0

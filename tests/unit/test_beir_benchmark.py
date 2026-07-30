@@ -13,6 +13,7 @@ from benchmarks.fitz_bench.beir_benchmark import (
     _initialize_checkpoint,
     _load_checkpoint,
     _markdown,
+    _require_reusable_index,
     _run_rankings,
     _source_id_mapping,
     _stage_retrieval_summary,
@@ -32,13 +33,75 @@ def test_source_id_mapping_joins_manifest_to_external_document_ids(tmp_path) -> 
         + "\n",
         encoding="utf-8",
     )
-    entry = SimpleNamespace(file_id="source-1")
+    entry = SimpleNamespace(file_id="source-1", content_hash="0" * 64)
     manifest = SimpleNamespace(entries=lambda: {"ab/hash.txt": entry})
 
     source_ids, summary = _source_id_mapping(manifest, mapping)
 
     assert source_ids == {"source-1": "doc-1"}
     assert summary["complete"] is True
+    assert summary["verified_content_hashes"] == 1
+
+
+def test_source_id_mapping_rejects_changed_projected_content(tmp_path) -> None:
+    mapping = tmp_path / "mapping.jsonl"
+    mapping.write_text(
+        json.dumps(
+            {
+                "document_id": "doc-1",
+                "relative_path": "ab/hash.txt",
+                "content_sha256": "0" * 64,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    entry = SimpleNamespace(file_id="source-1", content_hash="1" * 64)
+    manifest = SimpleNamespace(entries=lambda: {"ab/hash.txt": entry})
+
+    with pytest.raises(ValueError, match="content_hashes"):
+        _source_id_mapping(manifest, mapping)
+
+
+def test_reusable_index_requires_matching_source_and_complete_index(tmp_path) -> None:
+    source = tmp_path / "corpus"
+    source.mkdir()
+    manifest = SimpleNamespace()
+    engine = SimpleNamespace(
+        _manifest=manifest,
+        _source_dir=source,
+        indexing_status=lambda: {
+            "query_ready": True,
+            "indexed": 2,
+            "failed": 0,
+            "unsupported": 0,
+            "enrichment": {"complete": False},
+        },
+    )
+
+    assert (
+        _require_reusable_index(
+            engine,
+            expected_source=source,
+            expected_documents=2,
+            index_mode="source",
+        )
+        is manifest
+    )
+    with pytest.raises(ValueError, match="different source directory"):
+        _require_reusable_index(
+            engine,
+            expected_source=tmp_path / "other",
+            expected_documents=2,
+            index_mode="source",
+        )
+    with pytest.raises(ValueError, match="incomplete enrichment"):
+        _require_reusable_index(
+            engine,
+            expected_source=source,
+            expected_documents=2,
+            index_mode="complete",
+        )
 
 
 def test_run_rankings_deduplicates_chunks_and_counts_unmapped_candidates() -> None:

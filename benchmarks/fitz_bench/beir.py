@@ -325,18 +325,23 @@ def load_qrels(path: Path) -> dict[str, dict[str, int]]:
     return qrels
 
 
-def load_mapping(path: Path) -> tuple[dict[str, str], dict[str, str]]:
-    """Return relative-path and document-ID lookup tables."""
+def load_mapping(
+    path: Path,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """Return path, document-ID, and projected-content hash lookup tables."""
     by_path: dict[str, str] = {}
     by_document: dict[str, str] = {}
+    hashes_by_path: dict[str, str] = {}
     for raw in _iter_jsonl(path, required=("document_id", "relative_path", "content_sha256")):
         document_id = _required_string(raw, "document_id")
-        relative_path = _required_string(raw, "relative_path")
+        relative_path = _required_string(raw, "relative_path").replace("\\", "/")
+        content_sha256 = _required_string(raw, "content_sha256")
         if relative_path in by_path or document_id in by_document:
             raise ValueError(f"Duplicate BEIR adapter mapping: {document_id}/{relative_path}")
-        by_path[relative_path.replace("\\", "/")] = document_id
+        by_path[relative_path] = document_id
         by_document[document_id] = relative_path
-    return by_path, by_document
+        hashes_by_path[relative_path] = content_sha256
+    return by_path, by_document, hashes_by_path
 
 
 def projected_content(record: dict[str, Any]) -> str:

@@ -61,6 +61,7 @@ def test_variant_command_omits_checkpoint_resume_when_disabled() -> None:
     )
 
     assert "--resume-queries" not in command
+    assert "--reuse-index" in command
 
 
 def test_shared_dataset_names_returns_only_the_ordered_intersection() -> None:

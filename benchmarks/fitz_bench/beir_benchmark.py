@@ -109,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
             governance=args.governance,
             baseline_only=args.baseline_only,
             reuse_workspace=args.reuse_workspace,
+            reuse_index=args.reuse_index,
             resume_queries=args.resume_queries,
             ablation=ablation,
             query_manifest=query_manifest,
@@ -147,6 +148,7 @@ def evaluate_dataset(
     governance: str | None,
     baseline_only: bool,
     reuse_workspace: bool,
+    reuse_index: bool,
     resume_queries: bool,
     ablation: RetrievalAblation | None = None,
     query_manifest: dict[str, Any] | None = None,
@@ -237,21 +239,31 @@ def evaluate_dataset(
     engine = _create_engine(collection, governance=governance, ablation=ablation)
     engine.load(collection)
     manifest = None
+    index_action = "indexed"
     indexing_started = time.perf_counter()
     try:
-        manifest = engine.point(
-            Path(dataset.corpus_dir),
-            collection=collection,
-            start_worker=False,
-        )
-        if index_mode == "complete":
-            engine.continue_enrichment()
-        indexing_seconds = time.perf_counter() - indexing_started
+        if reuse_index and _persisted_index_exists(workspace, collection):
+            manifest = _require_reusable_index(
+                engine,
+                expected_source=Path(dataset.corpus_dir),
+                expected_documents=dataset.corpus_documents,
+                index_mode=index_mode,
+            )
+            index_action = "reused_verified"
+        else:
+            manifest = engine.point(
+                Path(dataset.corpus_dir),
+                collection=collection,
+                start_worker=False,
+            )
+            if index_mode == "complete":
+                engine.continue_enrichment()
         indexing_status = dict(engine.indexing_status())
         source_ids, mapping_summary = _source_id_mapping(
             manifest,
             Path(dataset.mapping_path),
         )
+        indexing_seconds = time.perf_counter() - indexing_started
         checkpoint_path = _checkpoint_path(workspace, ablation, query_manifest)
         checkpoint_signature = _checkpoint_signature(
             dataset,
@@ -339,6 +351,7 @@ def evaluate_dataset(
             "index_mode": index_mode,
             "ingestion": {
                 "duration_seconds": indexing_seconds,
+                "action": index_action,
                 "status": indexing_status,
                 "mapping": mapping_summary,
                 "failures": _manifest_failures(manifest),
@@ -435,29 +448,77 @@ def _source_id_mapping(
     manifest: Any,
     mapping_path: Path,
 ) -> tuple[dict[str, str], dict[str, Any]]:
-    by_path, by_document = load_mapping(mapping_path)
+    by_path, by_document, hashes_by_path = load_mapping(mapping_path)
     entries = manifest.entries()
     source_ids: dict[str, str] = {}
     missing_paths: list[str] = []
+    hash_mismatches: list[str] = []
     for relative_path, entry in entries.items():
         normalized = str(relative_path).replace("\\", "/")
         document_id = by_path.get(normalized)
         if document_id is None:
             missing_paths.append(normalized)
             continue
+        if str(entry.content_hash) != hashes_by_path[normalized]:
+            hash_mismatches.append(normalized)
+            continue
         source_ids[str(entry.file_id)] = document_id
     unmapped_documents = sorted(set(by_document) - set(source_ids.values()))
-    if missing_paths or unmapped_documents:
+    if missing_paths or hash_mismatches or unmapped_documents:
         raise ValueError(
             "BEIR adapter/manifest identity mismatch: "
-            f"manifest_paths={missing_paths[:3]} documents={unmapped_documents[:3]}"
+            f"manifest_paths={missing_paths[:3]} "
+            f"content_hashes={hash_mismatches[:3]} "
+            f"documents={unmapped_documents[:3]}"
         )
     return source_ids, {
         "manifest_entries": len(entries),
         "adapter_documents": len(by_document),
         "mapped_source_ids": len(source_ids),
+        "verified_content_hashes": len(source_ids),
         "complete": len(source_ids) == len(by_document),
     }
+
+
+def _persisted_index_exists(workspace: Path, collection: str) -> bool:
+    return (workspace / "collections" / collection / "manifest.json").is_file()
+
+
+def _require_reusable_index(
+    engine: Any,
+    *,
+    expected_source: Path,
+    expected_documents: int,
+    index_mode: str,
+) -> Any:
+    """Require an exact, query-ready persisted index without rescanning source files."""
+    manifest = getattr(engine, "_manifest", None)
+    source_dir = getattr(engine, "_source_dir", None)
+    if manifest is None or source_dir is None:
+        raise FileNotFoundError("Reusable BEIR collection has no persisted source manifest.")
+    if Path(source_dir).resolve() != expected_source.resolve():
+        raise ValueError(
+            "Reusable BEIR collection points at a different source directory: "
+            f"{Path(source_dir).resolve()} != {expected_source.resolve()}"
+        )
+
+    status = dict(engine.indexing_status())
+    if (
+        not status.get("query_ready")
+        or int(status.get("indexed", 0)) != expected_documents
+        or int(status.get("failed", 0))
+        or int(status.get("unsupported", 0))
+    ):
+        raise ValueError(
+            "Reusable BEIR collection is not a complete source index: "
+            f"expected={expected_documents} status={status}"
+        )
+    enrichment = status.get("enrichment", {})
+    if index_mode == "complete" and not (
+        isinstance(enrichment, dict) and enrichment.get("complete")
+    ):
+        raise ValueError("Reusable BEIR collection has incomplete enrichment.")
+    return manifest
 
 
 def _summarize_records(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -728,6 +789,7 @@ def _run_metadata(
             else None
         ),
         "reuse_workspace": args.reuse_workspace,
+        "reuse_index": args.reuse_index,
         "resume_queries": args.resume_queries,
         "duration_seconds": time.perf_counter() - started,
     }
@@ -879,6 +941,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--governance")
     parser.add_argument("--reuse-workspace", action="store_true")
     parser.add_argument(
+        "--reuse-index",
+        action="store_true",
+        help=(
+            "Reuse a persisted index after manifest, source, and document-count "
+            "validation; build it when absent."
+        ),
+    )
+    parser.add_argument(
         "--resume-queries",
         action="store_true",
         help="Resume matching per-query checkpoints in reusable workspaces.",
@@ -906,6 +976,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         parser.error("--max-recall-regression must be between 0 and 1")
     if parsed.resume_queries and not parsed.reuse_workspace:
         parser.error("--resume-queries requires --reuse-workspace")
+    if parsed.reuse_index and not parsed.reuse_workspace:
+        parser.error("--reuse-index requires --reuse-workspace")
     return parsed
 
 
