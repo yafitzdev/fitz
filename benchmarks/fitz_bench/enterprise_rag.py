@@ -331,11 +331,16 @@ def queries_and_qrels(
 
 def iter_archive_documents(
     prepared: PreparedEnterpriseRag,
+    *,
+    excluded_relative_paths: tuple[str, ...] = (),
 ) -> Iterator[tuple[str, str, str]]:
     """Yield physical path, official ID, and unchanged UTF-8 text from the archive."""
+    excluded = set(excluded_relative_paths)
     with zipfile.ZipFile(prepared.archive) as archive:
         for member in archive.infolist():
             if member.is_dir() or member.filename == "questions.jsonl":
+                continue
+            if member.filename in excluded:
                 continue
             document_id = _document_id(member.filename)
             try:

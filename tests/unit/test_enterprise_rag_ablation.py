@@ -27,6 +27,7 @@ def test_enterprise_variant_command_reuses_the_frozen_corpus_and_split() -> None
         resume_queries=True,
         offline=True,
         governance=None,
+        exclude_relative_paths=["source/quarantined.txt"],
         cutoffs=[10, 50],
     )
 
@@ -42,6 +43,7 @@ def test_enterprise_variant_command_reuses_the_frozen_corpus_and_split() -> None
     assert "--reuse-index" in command
     assert "--resume-queries" in command
     assert "--offline" in command
+    assert command[command.index("--exclude-relative-path") + 1] == ("source/quarantined.txt")
 
 
 def test_enterprise_ablation_report_pairs_queries_and_has_no_quality_gate(tmp_path) -> None:

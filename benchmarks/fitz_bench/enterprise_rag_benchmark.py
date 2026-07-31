@@ -81,9 +81,12 @@ def main(argv: list[str] | None = None) -> int:
         f"{manifest_sha256}:{args.selection}:{selection_identity}".encode("utf-8")
     ).hexdigest()
     baseline_path = Path(args.baseline_db).resolve()
+    excluded_relative_paths = tuple(args.exclude_relative_paths or ())
+    evaluated_documents = prepared.spec.corpus_documents - len(excluded_relative_paths)
     baseline_fingerprint = {
         **prepared.fingerprint(),
         "baseline_schema": "sqlite-fts5-unicode61-v1",
+        "excluded_relative_paths": list(excluded_relative_paths),
     }
     dataset = ExternalRetrievalDataset(
         name=prepared.name,
@@ -96,19 +99,30 @@ def main(argv: list[str] | None = None) -> int:
                 len(question.expected_document_ids) for question in questions.values()
             ),
             "unique_relevance_links": sum(len(values) for values in qrels.values()),
+            "evaluated_corpus_documents": evaluated_documents,
+            "environment_exclusions": [
+                {
+                    "relative_path": path,
+                    "policy": "explicit benchmark-user exclusion; no source rewriting",
+                }
+                for path in excluded_relative_paths
+            ],
         },
         fingerprint=prepared.fingerprint(),
         corpus_dir=prepared.corpus_dir,
         mapping_path=prepared.mapping_path,
-        corpus_documents=prepared.spec.corpus_documents,
+        corpus_documents=evaluated_documents,
         adapter_schema_version=prepared.adapter_schema_version,
         queries=queries,
         qrels=qrels,
         baseline_factory=lambda: SqliteBm25.open_or_build(
             baseline_path,
             fingerprint=baseline_fingerprint,
-            expected_documents=prepared.spec.corpus_documents,
-            documents=lambda: iter_archive_documents(prepared),
+            expected_documents=evaluated_documents,
+            documents=lambda: iter_archive_documents(
+                prepared,
+                excluded_relative_paths=excluded_relative_paths,
+            ),
             progress=print,
         ),
         baseline_report={
@@ -120,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
             "corpus_source": "verified official ZIP bytes",
         },
         allow_duplicate_document_ids=True,
+        excluded_relative_paths=excluded_relative_paths,
     )
     selection = ExternalQuerySelection(
         name=args.selection,
@@ -271,7 +286,12 @@ def _operational_failures(result: dict[str, Any]) -> list[str]:
     ingestion = result.get("ingestion")
     failures: list[str] = []
     if isinstance(ingestion, dict) and ingestion.get("failures"):
-        failures.append("corpus ingestion contains failed or unsupported documents")
+        expected = set(ingestion.get("expected_exclusions", []))
+        actual = {
+            str(item.get("path", "")) for item in ingestion["failures"] if isinstance(item, dict)
+        }
+        if actual - expected:
+            failures.append("corpus ingestion contains unexpected failed documents")
     mapping = ingestion.get("mapping", {}) if isinstance(ingestion, dict) else {}
     if mapping and not mapping.get("complete"):
         failures.append("source-to-official-ID mapping is incomplete")
@@ -313,6 +333,7 @@ def _run_metadata(
         "reuse_workspace": args.reuse_workspace,
         "reuse_index": args.reuse_index,
         "resume_queries": args.resume_queries,
+        "excluded_relative_paths": list(args.exclude_relative_paths or ()),
         "duration_seconds": time.perf_counter() - started,
     }
 
@@ -457,6 +478,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--ablation", choices=ablation_names())
     parser.add_argument("--governance")
     parser.add_argument(
+        "--exclude-relative-path",
+        dest="exclude_relative_paths",
+        action="append",
+        help=(
+            "Explicit benchmark-user corpus exclusion. Repeat as needed; excluded "
+            "official IDs must not be judged relevant."
+        ),
+    )
+    parser.add_argument(
         "--reuse-workspace",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -479,6 +509,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         parser.error("--cutoff must be positive")
     if parsed.max_download_gib <= 0 or parsed.max_extracted_gib <= 0:
         parser.error("download and extraction budgets must be positive")
+    if parsed.exclude_relative_paths and len(set(parsed.exclude_relative_paths)) != len(
+        parsed.exclude_relative_paths
+    ):
+        parser.error("--exclude-relative-path values must be unique")
     if parsed.resume_queries and not parsed.reuse_workspace:
         parser.error("--resume-queries requires --reuse-workspace")
     if parsed.reuse_index and not parsed.reuse_workspace:

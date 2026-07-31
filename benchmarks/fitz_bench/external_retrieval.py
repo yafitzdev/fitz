@@ -48,6 +48,7 @@ class ExternalRetrievalDataset:
     baseline_report: dict[str, Any]
     ignore_identical_ids: bool = False
     allow_duplicate_document_ids: bool = False
+    excluded_relative_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -171,6 +172,7 @@ def evaluate_external_dataset(
                 expected_source=dataset.corpus_dir,
                 expected_documents=dataset.corpus_documents,
                 index_mode=index_mode,
+                expected_failure_paths=dataset.excluded_relative_paths,
             )
             index_action = "reused_verified"
         else:
@@ -186,6 +188,7 @@ def evaluate_external_dataset(
             manifest,
             dataset.mapping_path,
             allow_duplicate_document_ids=dataset.allow_duplicate_document_ids,
+            excluded_relative_paths=dataset.excluded_relative_paths,
         )
         indexing_seconds = time.perf_counter() - indexing_started
         checkpoint_path = checkpoint_path_for(
@@ -287,6 +290,7 @@ def evaluate_external_dataset(
                 "status": indexing_status,
                 "mapping": mapping_summary,
                 "failures": manifest_failures(manifest),
+                "expected_exclusions": list(dataset.excluded_relative_paths),
             },
             "fitz_sage": {
                 "latency": summarize_latency(fitz_durations),
@@ -402,6 +406,7 @@ def source_id_mapping(
     mapping_path: Path,
     *,
     allow_duplicate_document_ids: bool = False,
+    excluded_relative_paths: Sequence[str] = (),
 ) -> tuple[dict[str, str], dict[str, Any]]:
     """Join Fitz manifest source IDs to verified external document IDs."""
     mapping = load_mapping(
@@ -409,12 +414,18 @@ def source_id_mapping(
         allow_duplicate_document_ids=allow_duplicate_document_ids,
     )
     entries = manifest.entries()
+    excluded = {str(path).replace("\\", "/") for path in excluded_relative_paths}
+    unknown_exclusions = sorted(excluded - set(mapping.by_path))
+    if unknown_exclusions:
+        raise ValueError(f"External mapping exclusions do not exist: {unknown_exclusions[:3]}")
     source_ids: dict[str, str] = {}
     missing_paths: list[str] = []
     hash_mismatches: list[str] = []
     mapped_paths: set[str] = set()
     for relative_path, entry in entries.items():
         normalized = str(relative_path).replace("\\", "/")
+        if normalized in excluded:
+            continue
         document_id = mapping.by_path.get(normalized)
         if document_id is None:
             missing_paths.append(normalized)
@@ -424,7 +435,8 @@ def source_id_mapping(
             continue
         mapped_paths.add(normalized)
         source_ids[str(entry.file_id)] = document_id
-    unmapped_paths = sorted(set(mapping.by_path) - mapped_paths)
+    evaluated_paths = set(mapping.by_path) - excluded
+    unmapped_paths = sorted(evaluated_paths - mapped_paths)
     if missing_paths or hash_mismatches or unmapped_paths:
         raise ValueError(
             "External adapter/manifest identity mismatch: "
@@ -435,13 +447,15 @@ def source_id_mapping(
     return source_ids, {
         "manifest_entries": len(entries),
         "adapter_files": len(mapping.by_path),
+        "evaluated_adapter_files": len(evaluated_paths),
+        "excluded_paths": sorted(excluded),
         "unique_document_ids": len(mapping.paths_by_document),
         "duplicate_document_ids": sum(
             len(paths) > 1 for paths in mapping.paths_by_document.values()
         ),
         "mapped_source_ids": len(source_ids),
         "verified_content_hashes": len(mapped_paths),
-        "complete": len(mapped_paths) == len(mapping.by_path),
+        "complete": len(mapped_paths) == len(evaluated_paths),
     }
 
 
@@ -456,6 +470,7 @@ def require_reusable_index(
     expected_source: Path,
     expected_documents: int,
     index_mode: str,
+    expected_failure_paths: Sequence[str] = (),
 ) -> Any:
     """Require an exact query-ready persisted index without rescanning files."""
     manifest = getattr(engine, "_manifest", None)
@@ -468,10 +483,17 @@ def require_reusable_index(
             f"{Path(source_dir).resolve()} != {Path(expected_source).resolve()}"
         )
     status = dict(engine.indexing_status())
+    expected_failures = {str(path).replace("\\", "/") for path in expected_failure_paths}
+    actual_failures = {
+        str(item.get("path", "")).replace("\\", "/")
+        for item in status.get("failed_files", [])
+        if isinstance(item, dict)
+    }
+    unexpected_failures = actual_failures - expected_failures
     if (
         not status.get("query_ready")
         or int(status.get("indexed", 0)) != expected_documents
-        or int(status.get("failed", 0))
+        or unexpected_failures
         or int(status.get("unsupported", 0))
     ):
         raise ValueError(
@@ -694,6 +716,35 @@ def _validate_selection(
         raise ValueError(
             "Scored external retrieval queries require positive documents: "
             f"{without_positive[:3]}"
+        )
+    _validate_exclusions(dataset)
+
+
+def _validate_exclusions(dataset: ExternalRetrievalDataset) -> None:
+    excluded = {str(path).replace("\\", "/") for path in dataset.excluded_relative_paths}
+    if len(excluded) != len(dataset.excluded_relative_paths):
+        raise ValueError("External retrieval exclusions must be unique.")
+    if not excluded:
+        return
+    mapping = load_mapping(
+        dataset.mapping_path,
+        allow_duplicate_document_ids=dataset.allow_duplicate_document_ids,
+    )
+    missing = sorted(excluded - set(mapping.by_path))
+    if missing:
+        raise ValueError(f"External retrieval exclusions do not exist: {missing[:3]}")
+    excluded_document_ids = {mapping.by_path[path] for path in excluded}
+    relevant_document_ids = {
+        document_id
+        for judgments in dataset.qrels.values()
+        for document_id, score in judgments.items()
+        if score > 0
+    }
+    excluded_relevant = sorted(excluded_document_ids & relevant_document_ids)
+    if excluded_relevant:
+        raise ValueError(
+            "External retrieval exclusions contain judged-relevant document IDs: "
+            f"{excluded_relevant[:3]}"
         )
 
 

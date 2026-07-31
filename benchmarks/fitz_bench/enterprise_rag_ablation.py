@@ -386,6 +386,8 @@ def _variant_command(
         command.append("--offline")
     if args.governance is not None:
         command.extend(["--governance", args.governance])
+    for path in getattr(args, "exclude_relative_paths", None) or []:
+        command.extend(["--exclude-relative-path", path])
     for cutoff in args.cutoffs:
         command.extend(["--cutoff", str(cutoff)])
     return command
@@ -507,6 +509,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--index-mode", choices=("source", "complete"), default="source")
     parser.add_argument("--governance")
     parser.add_argument(
+        "--exclude-relative-path",
+        dest="exclude_relative_paths",
+        action="append",
+    )
+    parser.add_argument(
         "--resume-queries",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -531,6 +538,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         parser.error("--bootstrap-samples must be at least 100")
     if parsed.max_download_gib <= 0 or parsed.max_extracted_gib <= 0:
         parser.error("download and extraction budgets must be positive")
+    if parsed.exclude_relative_paths and len(set(parsed.exclude_relative_paths)) != len(
+        parsed.exclude_relative_paths
+    ):
+        parser.error("--exclude-relative-path values must be unique")
     return parsed
 
 

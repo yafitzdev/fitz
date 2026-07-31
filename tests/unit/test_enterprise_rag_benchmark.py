@@ -22,6 +22,10 @@ from benchmarks.fitz_bench.enterprise_rag_split import (
     write_frozen_manifest,
 )
 from benchmarks.fitz_bench.external_retrieval import load_mapping
+from benchmarks.fitz_bench.external_retrieval import (
+    require_reusable_index,
+    source_id_mapping,
+)
 from benchmarks.fitz_bench.sqlite_bm25 import SqliteBm25
 
 
@@ -47,6 +51,13 @@ def test_enterprise_adapter_preserves_files_and_reports_duplicate_ids(tmp_path) 
     )
     documents = list(iter_archive_documents(prepared))
     assert [item[1] for item in documents] == [document_id, document_id]
+    filtered = list(
+        iter_archive_documents(
+            prepared,
+            excluded_relative_paths=(prepared.duplicate_document_ids[document_id][1],),
+        )
+    )
+    assert [item[0] for item in filtered] == [prepared.duplicate_document_ids[document_id][0]]
 
 
 def test_enterprise_qrels_collapse_only_the_upstream_repeated_official_id(tmp_path) -> None:
@@ -166,6 +177,72 @@ def test_grouped_results_keeps_category_and_multidocument_views() -> None:
     assert grouped["category"]["basic"]["queries"] == 1
     assert grouped["document_cardinality"]["single"]["queries"] == 1
     assert grouped["document_cardinality"]["multiple"]["queries"] == 1
+
+
+def test_mapping_and_reuse_accept_only_an_explicit_expected_failure(tmp_path) -> None:
+    mapping = tmp_path / "mapping.jsonl"
+    mapping.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "document_id": document_id,
+                    "relative_path": path,
+                    "content_sha256": digest,
+                }
+            )
+            for document_id, path, digest in (
+                ("doc-a", "source/a.txt", "a" * 64),
+                ("doc-b", "source/b.txt", "b" * 64),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    indexed_entry = type("Entry", (), {"file_id": "source-a", "content_hash": "a" * 64})()
+    manifest = type(
+        "Manifest",
+        (),
+        {"entries": lambda _self: {"source/a.txt": indexed_entry}},
+    )()
+
+    source_ids, summary = source_id_mapping(
+        manifest,
+        mapping,
+        excluded_relative_paths=("source/b.txt",),
+    )
+
+    assert source_ids == {"source-a": "doc-a"}
+    assert summary["complete"] is True
+    assert summary["excluded_paths"] == ["source/b.txt"]
+
+    source = tmp_path / "corpus"
+    source.mkdir()
+    engine = type(
+        "Engine",
+        (),
+        {
+            "_manifest": manifest,
+            "_source_dir": source,
+            "indexing_status": lambda _self: {
+                "query_ready": True,
+                "indexed": 1,
+                "failed": 1,
+                "failed_files": [{"path": "source/b.txt"}],
+                "unsupported": 0,
+                "enrichment": {"complete": False},
+            },
+        },
+    )()
+    assert (
+        require_reusable_index(
+            engine,
+            expected_source=source,
+            expected_documents=1,
+            index_mode="source",
+            expected_failure_paths=("source/b.txt",),
+        )
+        is manifest
+    )
 
 
 def _tiny_release(tmp_path: Path) -> tuple[Path, EnterpriseRagSpec, str]:
