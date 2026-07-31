@@ -7,6 +7,7 @@ import shutil
 import ssl
 import stat
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -38,9 +39,7 @@ def download_url(
             while chunk := response.read(_CHUNK_BYTES):
                 downloaded += len(chunk)
                 if downloaded > max_bytes:
-                    raise ValueError(
-                        f"Download exceeds limit: {downloaded} bytes > {max_bytes}"
-                    )
+                    raise ValueError(f"Download exceeds limit: {downloaded} bytes > {max_bytes}")
                 target.write(chunk)
         temporary.replace(destination)
     except Exception:
@@ -102,7 +101,7 @@ def safe_extract_zip(
                     shutil.copyfileobj(source, target, length=_CHUNK_BYTES)
             if output_dir.exists():
                 shutil.rmtree(output_dir)
-            temporary_dir.replace(output_dir)
+            _replace_directory_with_retry(temporary_dir, output_dir)
         except Exception:
             shutil.rmtree(temporary_dir, ignore_errors=True)
             raise
@@ -122,3 +121,23 @@ def _validate_zip_member(member: zipfile.ZipInfo) -> None:
     unix_mode = (member.external_attr >> 16) & 0xFFFF
     if stat.S_ISLNK(unix_mode):
         raise ValueError(f"ZIP symlinks are not accepted: {member.filename}")
+
+
+def _replace_directory_with_retry(
+    source: Path,
+    destination: Path,
+    *,
+    attempts: int = 60,
+    delay_seconds: float = 1.0,
+) -> None:
+    """Retry a same-volume directory rename when Windows holds transient handles."""
+    if attempts < 1:
+        raise ValueError("Directory replacement attempts must be positive.")
+    for attempt in range(1, attempts + 1):
+        try:
+            source.replace(destination)
+            return
+        except PermissionError:
+            if attempt == attempts:
+                raise
+            time.sleep(delay_seconds)
