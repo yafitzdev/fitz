@@ -102,8 +102,10 @@ query.
 
 The required follow-up is now recorded in the
 [BEIR Semantic Holdout](beir-semantic-holdout-2026-07-30.md). That frozen
-ArguAna/Quora run also failed to justify the current managed Qwen path as an
-always-on component.
+ArguAna/Quora run found that the current Qwen path did not earn its cost on
+those tasks. It does not decide whether query expansion belongs in the default
+company-document retrieval path, where BM25 still has no semantic matching of
+its own.
 
 ## Latency
 

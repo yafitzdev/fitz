@@ -63,9 +63,14 @@ under paired 95% bootstrap intervals.
 
 With reranking active, Qwen changed macro final nDCG@10 by only `+0.0022`
 while adding `2.06s`; the per-dataset effects were inconclusive. This does not
-rule out better expansion models or fusion policies. It means the current
-managed model is best-effort and its always-on cost is not supported by the
-frozen measurement.
+rule out better expansion models or fusion policies. It establishes only that
+the current model did not earn its cost on these two BEIR tasks.
+
+This result does not remove the architectural need for semantic expansion.
+BM25 cannot match meaning that shares no useful lexical tokens, and the
+holdout is a lexical-overlap proxy rather than an application-shaped
+company-document evaluation. The default Qwen path remains the package's
+best-effort general-language bridge while that broader evidence is gathered.
 
 See
 [BEIR Semantic Holdout](../../evaluation/beir-semantic-holdout-2026-07-30.md)

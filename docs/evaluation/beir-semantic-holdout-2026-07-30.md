@@ -5,9 +5,11 @@ semantic query expansion. Low lexical overlap is used as a proxy for ordinary
 paraphrase and vocabulary mismatch; this is not a synonym-only dataset and
 does not test identifier normalization.
 
-The result does not support paying for the current expansion model on every
-query. The INT8 reranker remains useful overall, but its value and cost depend
-strongly on query and document shape.
+The current expansion path did not earn its cost on these two BEIR tasks. That
+is not a product-wide decision about Qwen: BM25 remains lexical, so query-side
+expansion still has a valid architectural role as a general-language
+semantic-to-lexical bridge. The INT8 reranker remains useful overall, but its
+value and cost depend strongly on query and document shape.
 
 ## Run Identity
 
@@ -135,10 +137,11 @@ can therefore change ranking or displace a useful literal tail candidate. The
 trace analysis supports this as a plausible mechanism; it is not a separate
 causal experiment.
 
-The current managed Qwen path is not a reliable semantic bridge and its
-always-on cost is not justified by this holdout. This conclusion applies to
-the current model, prompt, and fusion behavior. It does not show that all
-semantic query expansion is useless.
+The current managed Qwen path was not a reliable semantic bridge on this
+holdout, and its cost did not pay for itself on these datasets. This conclusion
+applies only to the measured BEIR tasks under the current model, prompt, and
+fusion behavior. It neither shows that semantic query expansion is generally
+useless nor answers whether Qwen helps ordinary company-document queries.
 
 ### INT8 reranker
 
@@ -213,7 +216,10 @@ does not change product behavior.
 
 - Keep this holdout frozen and evaluation-only.
 - Do not tune term filters or fusion weights against these 240 scored queries.
-- Build a separate development set before changing expansion or fusion.
+- Do not disable Qwen based on these two BEIR tasks alone.
+- Build a separate, application-shaped non-BEIR development set that directly
+  requires ordinary semantic-to-lexical bridges before changing expansion or
+  fusion.
 - Re-run this holdout once after the planned managed-model replacement.
 - Keep identifier aliases, private abbreviations, and source cleanup outside
   Fitz-Sage.

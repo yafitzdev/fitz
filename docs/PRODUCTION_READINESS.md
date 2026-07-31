@@ -252,8 +252,13 @@ Qwen reduced two-dataset macro recall nDCG@10 by 0.0106 and final nDCG@10 by
 0.0072 while adding 2.44 seconds. Its Quora regressions were conclusive, and
 no consistent low-overlap gain appeared. With reranking active, Qwen changed
 macro final nDCG@10 by only +0.0022 while adding 2.06 seconds. The current
-managed expansion path is therefore a measured limitation, not a guaranteed
-recall improvement. See the
+managed expansion path is therefore a measured limitation on those BEIR tasks,
+not a guaranteed recall improvement.
+
+This does not justify removing Qwen from the package. BM25 remains lexical,
+and the holdout is not an application-shaped company-document benchmark.
+Qwen retains a valid role as the best-effort general-language bridge between a
+user's wording and source vocabulary. See the
 [semantic holdout report](evaluation/beir-semantic-holdout-2026-07-30.md).
 
 The post-fix compiler no longer has the capitalization-derived phrase-anchor

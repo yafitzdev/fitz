@@ -320,10 +320,12 @@ Without Qwen, the reranker improved Quora final nDCG@10 by 0.0518 for 0.45
 seconds. Its ArguAna gain was inconclusive and cost 4.95 seconds, showing why
 reranker quality and latency must be reported by query shape.
 
-The current managed expansion path is not justified as an always-on component
-by this measurement. The holdout remains frozen and must not be used to tune
-term filters or fusion. Full methodology, paired intervals, per-query
-diagnostics, and operational findings are recorded in
+The current managed expansion path did not earn its cost on these two BEIR
+tasks. This is not a product-wide reason to disable Qwen: BM25 remains lexical,
+and the holdout is a proxy rather than an application-shaped company-document
+test. The holdout remains frozen and must not be used to tune term filters or
+fusion. Full methodology, paired intervals, per-query diagnostics, and
+operational findings are recorded in
 [`docs/evaluation/beir-semantic-holdout-2026-07-30.md`](../docs/evaluation/beir-semantic-holdout-2026-07-30.md).
 
 ### Measured BEIR Baseline
@@ -372,8 +374,9 @@ on FiQA or SciFact. With reranking active, it changed macro final nDCG@10 by
 
 This broad suite alone was not enough to judge semantic expansion because it
 did not target vocabulary mismatch. The separate frozen ArguAna/Quora holdout
-described above now supplies that follow-up evidence and does not support the
-current Qwen path as an always-on component.
+described above now supplies a stronger BEIR-specific follow-up. Qwen did not
+earn its cost on those tasks, but the result does not settle its value for
+ordinary company-document retrieval.
 
 All 3,633 NFCorpus and 5,183 SciFact documents indexed. FiQA indexed
 57,600/57,638 documents; the 38 failures had empty upstream `title` and `text`

@@ -56,6 +56,11 @@ Managed Qwen proposes semantic keywords for the BM25 recall stage. These are
 best-effort search suggestions, not deterministic mappings or proof that two
 terms are equivalent.
 
+BM25 matches lexical tokens rather than meaning. Qwen's package-level role is
+to turn ordinary general-language relationships into additional words that may
+occur in the source. Without query expansion, embeddings, or a user mapping,
+different vocabulary can remain invisible to lexical recall.
+
 fitz-sage does not include a fixed synonym/acronym dictionary. The following
 relationships are therefore not package guarantees:
 
@@ -308,11 +313,13 @@ changed macro final nDCG@10 by only +0.0022 while adding 2.06 seconds, and the
 per-dataset effects were inconclusive. Low-overlap queries did not show a
 consistent expansion gain.
 
-The current managed model is therefore not a reliable semantic bridge, and the
-measured evidence does not justify its always-on cost. This is a limitation of
-the current model, prompt, and fixed-budget fusion behavior, not proof that all
-semantic query expansion is useless. The holdout remains frozen and will not
-be used to tune those components. See the
+The current managed model was therefore not a reliable semantic bridge on
+these two BEIR tasks, and its cost did not pay for itself there. This is a
+measured task-specific limitation of the current model, prompt, and
+fixed-budget fusion behavior. It does not establish that Qwen is unnecessary
+for company-document retrieval, where literal BM25 still needs a
+general-language semantic bridge. The holdout remains frozen and will not be
+used to tune those components. See the
 [semantic holdout report](docs/evaluation/beir-semantic-holdout-2026-07-30.md)
 for the complete method, paired intervals, and operational findings.
 
