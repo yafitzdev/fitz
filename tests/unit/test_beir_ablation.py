@@ -13,9 +13,9 @@ from benchmarks.fitz_bench.beir_ablation import (
     _shared_dataset_names,
     _subgroup_summaries,
     _variant_command,
-    paired_delta,
 )
 from benchmarks.fitz_bench.beir_holdout import query_manifest_digest
+from benchmarks.fitz_bench.paired_stats import paired_delta
 from benchmarks.fitz_bench.retrieval_ablation import get_ablation
 
 

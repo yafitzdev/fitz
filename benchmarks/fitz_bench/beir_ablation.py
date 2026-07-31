@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import platform
-import random
 import subprocess
 import sys
 import time
@@ -20,6 +18,8 @@ from benchmarks.fitz_bench.beir_holdout import (
     load_query_manifest,
     query_manifest_digest,
 )
+from benchmarks.fitz_bench.paired_stats import derived_seed as _derived_seed
+from benchmarks.fitz_bench.paired_stats import paired_delta
 from benchmarks.fitz_bench.retrieval_ablation import (
     ablation_names,
     get_ablation,
@@ -304,41 +304,6 @@ def _paired_effect(
     }
 
 
-def paired_delta(
-    before: list[float],
-    after: list[float],
-    *,
-    bootstrap_samples: int,
-    seed: int,
-) -> dict[str, Any]:
-    """Return a deterministic paired mean difference and percentile interval."""
-    if len(before) != len(after) or not before:
-        raise ValueError("Paired samples must have the same positive length.")
-    deltas = [right - left for left, right in zip(before, after, strict=True)]
-    observed = sum(deltas) / len(deltas)
-    generator = random.Random(seed)
-    bootstrap = sorted(
-        sum(deltas[generator.randrange(len(deltas))] for _ in deltas) / len(deltas)
-        for _ in range(bootstrap_samples)
-    )
-    low = _percentile(bootstrap, 0.025)
-    high = _percentile(bootstrap, 0.975)
-    direction = "inconclusive"
-    if low > 0.0:
-        direction = "positive"
-    elif high < 0.0:
-        direction = "negative"
-    return {
-        "observations": len(deltas),
-        "before_mean": sum(before) / len(before),
-        "after_mean": sum(after) / len(after),
-        "mean_delta": observed,
-        "ci95_low": low,
-        "ci95_high": high,
-        "direction": direction,
-    }
-
-
 def _subgroup_summaries(
     dataset: str,
     results: dict[str, dict[str, Any]],
@@ -603,18 +568,6 @@ def _mean_metric(
 
 def _mean_effect(entries: list[dict[str, Any]], dimension: str) -> float:
     return sum(float(entry["quality"][dimension]["mean_delta"]) for entry in entries) / len(entries)
-
-
-def _derived_seed(base: int, *parts: str) -> int:
-    payload = ":".join([str(base), *parts]).encode("utf-8")
-    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big")
-
-
-def _percentile(values: list[float], fraction: float) -> float:
-    if not values:
-        raise ValueError("Cannot compute a percentile of an empty sequence.")
-    index = round((len(values) - 1) * fraction)
-    return values[index]
 
 
 def _variant_command(
