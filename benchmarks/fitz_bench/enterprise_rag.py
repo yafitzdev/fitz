@@ -60,7 +60,7 @@ SPEC = EnterpriseRagSpec(
     questions_sha256="f9524b9157cd43aae36b99333a124738804306ea6d07f332d49faa6d3d147905",
     questions_bytes=764_927,
     archive_files=511_963,
-    extracted_bytes=2_473_634_648,
+    extracted_bytes=2_474_399_575,
     corpus_documents=511_962,
     source_counts={
         "confluence": 5_189,
