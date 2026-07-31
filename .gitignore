@@ -21,6 +21,7 @@
 # Root metadata.
 !.gitattributes
 !.gitignore
+!benchmark.md
 !CHANGELOG.md
 !CONTRIBUTING.md
 !LICENSE
