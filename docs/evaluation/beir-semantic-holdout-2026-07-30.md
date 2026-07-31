@@ -132,16 +132,18 @@ A post-run output diagnostic helps explain the weak result:
   `search query`, and `search keywords`.
 
 The original query is still searched, but semantic terms run as an additional
-BM25 leg and all legs compete within a fixed candidate budget. Weak expansion
-can therefore change ranking or displace a useful literal tail candidate. The
-trace analysis supports this as a plausible mechanism; it is not a separate
-causal experiment.
+BM25 leg and all legs compete within a fixed candidate budget. This is
+intentional broad-recall behavior: semantic candidates need room to replace
+some literal-tail candidates, or expansion cannot broaden the pool. The Quora
+decrease says the substitutions did not help its judged targets; it does not
+identify candidate competition as an architecture defect.
 
 The current managed Qwen path was not a reliable semantic bridge on this
 holdout, and its cost did not pay for itself on these datasets. This conclusion
 applies only to the measured BEIR tasks under the current model, prompt, and
-fusion behavior. It neither shows that semantic query expansion is generally
-useless nor answers whether Qwen helps ordinary company-document queries.
+retrieval configuration. It neither shows that semantic query expansion is
+generally useless nor answers whether Qwen helps ordinary company-document
+queries.
 
 ### INT8 reranker
 
@@ -215,11 +217,12 @@ does not change product behavior.
 ## Decision And Next Measurement
 
 - Keep this holdout frozen and evaluation-only.
-- Do not tune term filters or fusion weights against these 240 scored queries.
+- Do not narrow the intentional broad-recall competition to improve these 240
+  scored queries.
 - Do not disable Qwen based on these two BEIR tasks alone.
 - Build a separate, application-shaped non-BEIR development set that directly
-  requires ordinary semantic-to-lexical bridges before changing expansion or
-  fusion.
+  requires ordinary semantic-to-lexical bridges before changing the model,
+  prompt, or expansion policy.
 - Re-run this holdout once after the planned managed-model replacement.
 - Keep identifier aliases, private abbreviations, and source cleanup outside
   Fitz-Sage.

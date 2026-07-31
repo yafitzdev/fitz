@@ -74,9 +74,11 @@ Users who require consistent domain equivalence must provide it through data or
 query preprocessing; a public mapping hook is deferred.
 
 The original query remains a recall leg, but all recall legs share a bounded
-candidate pool. A poor semantic suggestion can therefore change ordering or
-displace a useful literal candidate. Semantic expansion is not guaranteed to
-be neutral when it fails to help.
+candidate pool. Competition between literal and expanded candidates is
+intentional: broad recall must give alternate vocabulary room to enter instead
+of preserving the entire literal tail. Consequently, expansion can improve or
+reduce a fixed-cutoff score on an individual query. That tradeoff is not an
+equivalence claim or a fusion defect.
 
 ## Exact Literal Anchors
 
@@ -316,10 +318,11 @@ consistent expansion gain.
 The current managed model was therefore not a reliable semantic bridge on
 these two BEIR tasks, and its cost did not pay for itself there. This is a
 measured task-specific limitation of the current model, prompt, and
-fixed-budget fusion behavior. It does not establish that Qwen is unnecessary
-for company-document retrieval, where literal BM25 still needs a
-general-language semantic bridge. The holdout remains frozen and will not be
-used to tune those components. See the
+retrieval configuration. It does not establish that Qwen is unnecessary for
+company-document retrieval, where literal BM25 still needs a general-language
+semantic bridge. The intentional broad-recall competition is not classified
+as a package error. The holdout remains frozen and will not be used to tune
+those components. See the
 [semantic holdout report](docs/evaluation/beir-semantic-holdout-2026-07-30.md)
 for the complete method, paired intervals, and operational findings.
 

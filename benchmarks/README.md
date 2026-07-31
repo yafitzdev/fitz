@@ -323,9 +323,9 @@ reranker quality and latency must be reported by query shape.
 The current managed expansion path did not earn its cost on these two BEIR
 tasks. This is not a product-wide reason to disable Qwen: BM25 remains lexical,
 and the holdout is a proxy rather than an application-shaped company-document
-test. The holdout remains frozen and must not be used to tune term filters or
-fusion. Full methodology, paired intervals, per-query diagnostics, and
-operational findings are recorded in
+test. Candidate competition remains intentional broad-recall behavior; it
+must not be narrowed to optimize this frozen holdout. Full methodology, paired
+intervals, per-query diagnostics, and operational findings are recorded in
 [`docs/evaluation/beir-semantic-holdout-2026-07-30.md`](../docs/evaluation/beir-semantic-holdout-2026-07-30.md).
 
 ### Measured BEIR Baseline

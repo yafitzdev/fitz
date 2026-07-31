@@ -45,9 +45,10 @@ In particular:
   them or the user preprocesses the data.
 - A Qwen suggestion can surface a candidate, but the suggestion does not prove
   that two terms mean the same thing in the user's domain.
-- Literal retrieval still runs when a semantic suggestion is poor, but recall
-  legs share a fixed output budget. Extra candidates can change ordering or
-  displace a useful literal candidate.
+- Literal retrieval still runs, but recall legs share a fixed output budget.
+  Candidate competition is intentional: preserving the complete literal tail
+  would prevent alternate vocabulary from broadening recall. A fixed-cutoff
+  score can therefore move in either direction on one query.
 
 Users who require guaranteed domain mappings should normalize their data and
 queries outside fitz-sage. A public mapping-table hook is not currently part of
@@ -63,8 +64,8 @@ under paired 95% bootstrap intervals.
 
 With reranking active, Qwen changed macro final nDCG@10 by only `+0.0022`
 while adding `2.06s`; the per-dataset effects were inconclusive. This does not
-rule out better expansion models or fusion policies. It establishes only that
-the current model did not earn its cost on these two BEIR tasks.
+rule out better expansion models or prompts. It establishes only that the
+current model did not earn its cost on these two BEIR tasks.
 
 This result does not remove the architectural need for semantic expansion.
 BM25 cannot match meaning that shares no useful lexical tokens, and the

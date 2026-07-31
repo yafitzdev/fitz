@@ -41,10 +41,10 @@ but they are not the product contract.
 ## Gaps To Fill
 
 1. A separate, application-shaped non-BEIR semantic-expansion development set
-   for model, filtering, and fusion experiments. It must directly exercise
-   ordinary semantic-to-lexical bridges without relying on private aliases or
-   identifier normalization. The frozen ArguAna/Quora holdout must remain
-   evaluation-only and should be rerun after the planned managed-model
+   for model, prompt, and expansion-policy experiments. It must directly
+   exercise ordinary semantic-to-lexical bridges without relying on private
+   aliases or identifier normalization. The frozen ArguAna/Quora holdout must
+   remain evaluation-only and should be rerun after the planned managed-model
    replacement.
 2. Cross-modality integration cases that preserve the exact accepted Pyrrho
    output without treating it as Fitz retrieval quality. Pyrrho owns
