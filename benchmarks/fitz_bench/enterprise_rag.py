@@ -232,6 +232,7 @@ def prepare_dataset(
             archive,
             payload_dir,
             max_extracted_bytes=max_extracted_bytes,
+            atomic=False,
         )
         _isolate_corpus(payload_dir, source_types=tuple(spec.source_counts))
         embedded_questions = payload_dir / "questions.jsonl"

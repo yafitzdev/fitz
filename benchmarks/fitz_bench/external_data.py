@@ -7,7 +7,6 @@ import shutil
 import ssl
 import stat
 import tempfile
-import time
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -68,8 +67,9 @@ def safe_extract_zip(
     output_dir: Path,
     *,
     max_extracted_bytes: int,
+    atomic: bool = True,
 ) -> tuple[int, int]:
-    """Extract a ZIP atomically after validating paths, symlinks, and size."""
+    """Extract a ZIP after validating paths, symlinks, and declared size."""
     archive_path = Path(archive_path).resolve()
     output_dir = Path(output_dir).resolve()
     output_parent = output_dir.parent.resolve()
@@ -87,23 +87,30 @@ def safe_extract_zip(
             _validate_zip_member(member)
 
         output_parent.mkdir(parents=True, exist_ok=True)
-        temporary_dir = Path(
-            tempfile.mkdtemp(prefix=f".{output_dir.name}-", dir=str(output_parent))
-        ).resolve()
+        if atomic:
+            extraction_dir = Path(
+                tempfile.mkdtemp(prefix=f".{output_dir.name}-", dir=str(output_parent))
+            ).resolve()
+        else:
+            if output_dir.exists():
+                shutil.rmtree(output_dir)
+            output_dir.mkdir()
+            extraction_dir = output_dir
         try:
             for member in members:
                 relative = PurePosixPath(member.filename)
-                destination = temporary_dir.joinpath(*relative.parts).resolve()
-                if temporary_dir not in destination.parents:
+                destination = extraction_dir.joinpath(*relative.parts).resolve()
+                if extraction_dir not in destination.parents:
                     raise ValueError(f"Unsafe ZIP member path: {member.filename}")
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 with archive.open(member) as source, destination.open("wb") as target:
                     shutil.copyfileobj(source, target, length=_CHUNK_BYTES)
-            if output_dir.exists():
-                shutil.rmtree(output_dir)
-            _replace_directory_with_retry(temporary_dir, output_dir)
+            if atomic:
+                if output_dir.exists():
+                    shutil.rmtree(output_dir)
+                extraction_dir.replace(output_dir)
         except Exception:
-            shutil.rmtree(temporary_dir, ignore_errors=True)
+            shutil.rmtree(extraction_dir, ignore_errors=True)
             raise
     return len(members), total_bytes
 
@@ -121,23 +128,3 @@ def _validate_zip_member(member: zipfile.ZipInfo) -> None:
     unix_mode = (member.external_attr >> 16) & 0xFFFF
     if stat.S_ISLNK(unix_mode):
         raise ValueError(f"ZIP symlinks are not accepted: {member.filename}")
-
-
-def _replace_directory_with_retry(
-    source: Path,
-    destination: Path,
-    *,
-    attempts: int = 60,
-    delay_seconds: float = 1.0,
-) -> None:
-    """Retry a same-volume directory rename when Windows holds transient handles."""
-    if attempts < 1:
-        raise ValueError("Directory replacement attempts must be positive.")
-    for attempt in range(1, attempts + 1):
-        try:
-            source.replace(destination)
-            return
-        except PermissionError:
-            if attempt == attempts:
-                raise
-            time.sleep(delay_seconds)

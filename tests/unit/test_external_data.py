@@ -2,33 +2,27 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import zipfile
 
-from benchmarks.fitz_bench.external_data import _replace_directory_with_retry
+from benchmarks.fitz_bench.external_data import safe_extract_zip
 
 
-def test_directory_replace_retries_transient_windows_handle(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    source = tmp_path / "source"
-    destination = tmp_path / "destination"
-    source.mkdir()
-    (source / "document.txt").write_text("content", encoding="utf-8")
-    original = Path.replace
-    calls = 0
+def test_non_atomic_extraction_replaces_output_without_directory_rename(tmp_path) -> None:
+    archive = tmp_path / "corpus.zip"
+    output = tmp_path / "corpus"
+    output.mkdir()
+    (output / "stale.txt").write_text("stale", encoding="utf-8")
+    with zipfile.ZipFile(archive, "w") as target:
+        target.writestr("source/document.txt", "content")
 
-    def flaky_replace(path: Path, target: Path) -> Path:
-        nonlocal calls
-        calls += 1
-        if calls < 3:
-            raise PermissionError("transient scanner handle")
-        return original(path, target)
+    files, extracted_bytes = safe_extract_zip(
+        archive,
+        output,
+        max_extracted_bytes=100,
+        atomic=False,
+    )
 
-    monkeypatch.setattr(Path, "replace", flaky_replace)
-    monkeypatch.setattr("benchmarks.fitz_bench.external_data.time.sleep", lambda _delay: None)
-
-    _replace_directory_with_retry(source, destination, attempts=3)
-
-    assert calls == 3
-    assert (destination / "document.txt").read_text(encoding="utf-8") == "content"
+    assert files == 1
+    assert extracted_bytes == len("content")
+    assert not (output / "stale.txt").exists()
+    assert (output / "source/document.txt").read_text(encoding="utf-8") == "content"
