@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
-from fitz_sage.core.exceptions import QueryError
+from fitz_sage.core.exceptions import QueryError, QueryIntelligenceError
 from fitz_sage.engines.fitz_krag.evidence_closure import (
     EvidenceClosureRequest,
     annotate_closure_result,
@@ -117,7 +117,40 @@ class QueryPipeline:
         timings.append(("Query prep", time.perf_counter() - t0))
 
         t0 = time.perf_counter()
-        plan = self._add_semantic_query_keywords(sanitized, prepared_plan)
+        try:
+            plan = self._add_semantic_query_keywords(sanitized, prepared_plan)
+        except QueryIntelligenceError as exc:
+            logger.warning(
+                "Semantic query expansion failed; using prepared query plan: %s",
+                exc,
+            )
+            plan = prepared_plan
+            semantic_expansion_trace = {
+                "enabled": True,
+                "used": False,
+                "status": "failed",
+                "added_keywords": 0,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+        else:
+            prepared_keywords = {keyword.casefold() for keyword in prepared_plan.keywords}
+            added_keywords = [
+                keyword for keyword in plan.keywords if keyword.casefold() not in prepared_keywords
+            ]
+            enabled = self._semantic_keyword_batcher is not None
+            if not enabled:
+                status = "disabled"
+            elif added_keywords:
+                status = "expanded"
+            else:
+                status = "no_keywords"
+            semantic_expansion_trace = {
+                "enabled": enabled,
+                "used": bool(added_keywords),
+                "status": status,
+                "added_keywords": len(added_keywords),
+            }
         timings.append(("Qwen query keywords", time.perf_counter() - t0))
         query_terms = _query_term_trace(
             sanitized,
@@ -149,6 +182,7 @@ class QueryPipeline:
         )
         read_results = pass_response.results
         retrieval_trace = dict(pass_response.trace)
+        retrieval_trace["semantic_query_expansion"] = semantic_expansion_trace
         addresses = [result.address for result in read_results]
         retrieval_duration = time.perf_counter() - t0
         timings.extend(_retrieval_pass_timings(pass_response.timings))

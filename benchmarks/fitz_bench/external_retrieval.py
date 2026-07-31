@@ -267,6 +267,11 @@ def evaluate_external_dataset(
             query_record["query_execution"] = run.query.to_dict()
             query_record["pyrrho"] = run.pyrrho.to_dict()
             query_record["unmapped_candidates"] = unmapped
+            retrieval_trace = run.evidence.metadata.get("retrieval_trace", {})
+            if isinstance(retrieval_trace, dict):
+                semantic_expansion = retrieval_trace.get("semantic_query_expansion")
+                if isinstance(semantic_expansion, dict):
+                    query_record["semantic_query_expansion"] = dict(semantic_expansion)
             append_checkpoint(checkpoint_path, query_record)
             if index % 25 == 0 or index == len(query_ids):
                 print(f"  Fitz-Sage {dataset.name}: {index}/{len(query_ids)} queries", flush=True)
@@ -526,6 +531,12 @@ def summarize_records(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
     )
     recoveries = Counter(recovery for record in values for recovery in record.get("recoveries", []))
     pyrrho = Counter(str(record["pyrrho"]["verdict"]) for record in values if "pyrrho" in record)
+    semantic_expansion = Counter(
+        str(record["semantic_query_expansion"]["status"])
+        for record in values
+        if isinstance(record.get("semantic_query_expansion"), dict)
+        and record["semantic_query_expansion"].get("status")
+    )
     stage_retrieval = {stage: stage_retrieval_summary(values, stage) for stage in stages}
     timing = summarize_timing_records(
         [record["timing"] for record in values if isinstance(record.get("timing"), dict)]
@@ -537,6 +548,7 @@ def summarize_records(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "failure_attribution": dict(sorted(failure_attribution.items())),
         "recoveries": dict(sorted(recoveries.items())),
         "pyrrho_verdicts": dict(sorted(pyrrho.items())),
+        "semantic_query_expansion": dict(sorted(semantic_expansion.items())),
         "timing": timing,
     }
 

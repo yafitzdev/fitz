@@ -21,10 +21,11 @@ from benchmarks.fitz_bench.enterprise_rag_split import (
     selection_from_manifest,
     write_frozen_manifest,
 )
-from benchmarks.fitz_bench.external_retrieval import load_mapping
 from benchmarks.fitz_bench.external_retrieval import (
+    load_mapping,
     require_reusable_index,
     source_id_mapping,
+    summarize_records,
 )
 from benchmarks.fitz_bench.sqlite_bm25 import SqliteBm25
 
@@ -243,6 +244,25 @@ def test_mapping_and_reuse_accept_only_an_explicit_expected_failure(tmp_path) ->
         )
         is manifest
     )
+
+
+def test_summary_reports_semantic_expansion_outcomes() -> None:
+    records = {
+        "q1": {
+            "metrics": {},
+            "recoveries": [],
+            "semantic_query_expansion": {"status": "expanded"},
+        },
+        "q2": {
+            "metrics": {},
+            "recoveries": [],
+            "semantic_query_expansion": {"status": "failed"},
+        },
+    }
+
+    summary = summarize_records(records)
+
+    assert summary["semantic_query_expansion"] == {"expanded": 1, "failed": 1}
 
 
 def _tiny_release(tmp_path: Path) -> tuple[Path, EnterpriseRagSpec, str]:

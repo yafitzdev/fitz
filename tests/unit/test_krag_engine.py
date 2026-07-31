@@ -21,6 +21,7 @@ from fitz_sage.core import (
     Provenance,
     Query,
     QueryError,
+    QueryIntelligenceError,
 )
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
@@ -673,13 +674,56 @@ class TestEvidence:
             "Enough evidence.",
         )
 
-        engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
+        pack = engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
 
         engine._query_batcher.batch_classify.assert_not_called()
         engine._semantic_keyword_batcher.batch_classify.assert_called_once()
         profile = engine._retrieval_router.retrieve.call_args_list[0].args[1]
         assert "payment retry" in profile.keywords
         assert "timeout failure" in profile.keywords
+        assert pack.metadata["retrieval_trace"]["semantic_query_expansion"] == {
+            "enabled": True,
+            "used": True,
+            "status": "expanded",
+            "added_keywords": 2,
+        }
+
+    def test_evidence_falls_back_when_semantic_keyword_expansion_is_malformed(self):
+        """Optional semantic expansion cannot make literal retrieval unavailable."""
+        engine = _make_engine()
+        engine._semantic_keyword_batcher.batch_classify.side_effect = QueryIntelligenceError(
+            "batched query intelligence missing `keywords` array"
+        )
+        address = Address(
+            kind=AddressKind.SECTION,
+            source_id="doc-1",
+            location="Sprint 47",
+            summary="Sprint 47 test results",
+            score=0.91,
+        )
+        result = ReadResult(
+            address=address,
+            content="Sprint 47 failed because the payment retry test timed out.",
+            file_path="docs/sprint.md",
+            line_range=(10, 12),
+        )
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
+        engine._reader.read.return_value = [result]
+
+        pack = engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
+
+        assert [item.file_path for item in pack.items] == ["docs/sprint.md"]
+        engine._retrieval_router.retrieve.assert_called_once()
+        profile = engine._retrieval_router.retrieve.call_args.args[1]
+        assert "payment retry" not in profile.keywords
+        assert pack.metadata["retrieval_trace"]["semantic_query_expansion"] == {
+            "enabled": True,
+            "used": False,
+            "status": "failed",
+            "added_keywords": 0,
+            "error_type": "QueryIntelligenceError",
+            "error": "batched query intelligence missing `keywords` array",
+        }
 
     def test_evidence_uses_pyrrho_pre_profile_for_comparisons(self):
         """Pre-retrieval profile steering is Pyrrho-owned when query heads exist."""
