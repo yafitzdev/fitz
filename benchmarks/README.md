@@ -473,6 +473,76 @@ leaderboard submission. The benchmark-local analyzer and one-file adapter are
 fully described above, and no retrieval behavior was changed in response to
 the scores during the run.
 
+## EnterpriseRAG-Bench
+
+The EnterpriseRAG-Bench adapter evaluates the same retrieval stages on the
+official `v1.0.0` synthetic enterprise corpus: 511,962 UTF-8 documents across
+nine common company source types and 470 scored questions. It preserves source
+bytes and hierarchy without rewriting, normalization, generated metadata, or
+benchmark labels.
+
+The committed split fixture freezes 142 development questions and 328 holdout
+questions by category-stratified SHA-256 ordering. Selection does not use
+Fitz-Sage, BM25, Qwen, reranker, Pyrrho, or relevance scores.
+
+Download, verify, project, and validate the split without indexing:
+
+```bash
+python -m benchmarks.fitz_bench.enterprise_rag_benchmark --prepare-only
+```
+
+Run the four paired variants on development:
+
+```bash
+python -m benchmarks.fitz_bench.enterprise_rag_ablation \
+  --selection development \
+  --no-resume-queries
+```
+
+Run the frozen holdout only after the system revision is fixed:
+
+```bash
+python -m benchmarks.fitz_bench.enterprise_rag_ablation \
+  --selection holdout \
+  --runs-dir benchmarks/results/enterprise_rag_holdout_runs \
+  --output benchmarks/results/enterprise_rag_holdout_v1.json \
+  --markdown benchmarks/results/enterprise_rag_holdout_v1.md \
+  --no-resume-queries
+```
+
+The benchmark-local baseline uses SQLite FTS5 BM25 over whole official source
+documents. Fitz-Sage variants use the same verified source-only index, query
+order, budgets, compiler, and exact Pyrrho runtime. The aggregate report gives
+paired 95% bootstrap intervals and grouped results by category, source type,
+and expected-document cardinality.
+
+The gate is operational and integrity-only. It does not fail on a quality
+score, rewrite difficult sources, score answer generation, or treat Pyrrho
+verdicts as Fitz-Sage retrieval quality. An excluded path must be supplied
+explicitly and must not be relevant to any scored question.
+
+The completed holdout produced:
+
+| Variant | Broad Recall@50 | Final nDCG@10 | Delivered nDCG@10 | Mean latency |
+|---|---:|---:|---:|---:|
+| `literal` | 0.7824 | 0.5276 | 0.5279 | 29.14s |
+| `expansion` | 0.7801 | 0.5311 | 0.5324 | 32.82s |
+| `reranker` | 0.7824 | 0.5768 | 0.5876 | 39.49s |
+| `full` | 0.7801 | 0.5629 | 0.5780 | 44.20s |
+
+The reranker-only final nDCG gain over literal was `+0.0492`, with paired 95%
+interval `[+0.0125, +0.0875]`. Full versus literal delivered nDCG gained
+`+0.0501`, with interval `[+0.0147, +0.0851]`. Managed Qwen's isolated quality
+effect was inconclusive; its broad semantic-recall role remains intentional.
+Multi-document project ranking and repeated evidence-closure recall are the
+main architecture boundaries exposed by this run.
+
+The Windows measurement explicitly excluded one Defender-quarantined synthetic
+safety document that was irrelevant to all questions. The exclusion was
+applied symmetrically to Fitz-Sage and BM25 and is recorded in every report.
+Full methodology and results are in
+[`docs/evaluation/enterprise-rag-bench-2026-08-01.md`](../docs/evaluation/enterprise-rag-bench-2026-08-01.md).
+
 ## Case Shape
 
 ```yaml

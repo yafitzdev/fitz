@@ -1,7 +1,7 @@
 # Fitz-Sage Benchmark Snapshot
 
 > Temporary working record for the README update planned after the benchmark
-> program is complete. Last consolidated: 2026-07-31.
+> program is complete. Last consolidated: 2026-08-01.
 
 This file collects the latest accepted measurements and the decision-driving
 diagnostics produced during the post-v0.15.0 hardening work. It intentionally
@@ -40,6 +40,7 @@ single release-candidate scorecard.
 | NapierOne source indexing | up to 5,005 real files | 7.27 files/s at scale; recovery gate passed |
 | Broad BEIR ablation | 66,454 docs, 1,271 queries | full macro final nDCG@10 0.4365 |
 | Semantic BEIR holdout | 531,605 docs, 240 queries | full macro final nDCG@10 0.6586 |
+| Enterprise retrieval holdout | 511,961 docs, 328 queries | full delivered nDCG@10 0.5780; reranker-only 0.5876 |
 | Reranker hardening | matched 60-query SciFact sample | mean query latency 20.84s to 7.43s |
 
 ## Internal Production Matrix
@@ -342,6 +343,80 @@ question-like Quora (0.8049 versus 0.7244) and trailed it on long
 passage-as-query ArguAna (0.4413 versus 0.4652). Long argument matching is a
 measured retrieval boundary.
 
+## Frozen EnterpriseRAG-Bench Holdout
+
+Run completion: 2026-08-01. Aggregate holdout run ID:
+`1785549941-8fea6366`. Git commit:
+`d6ac9799ef4a0b55058913a40d899e15ce2e5d3e` from clean child-run
+worktrees.
+
+- Official EnterpriseRAG-Bench `v1.0.0` corpus.
+- 511,962 source files across Confluence, Fireflies, GitHub, Gmail, Google
+  Drive, HubSpot, Jira, Linear, and Slack.
+- 511,961 files evaluated after explicitly excluding one Defender-quarantined
+  synthetic safety file that was irrelevant to every question.
+- 470 scored questions split before retrieval into 142 development and 328
+  untouched holdout questions.
+- Frozen split digest:
+  `74c2d04b613430f89052fa8a8f5fb9853e6f310289d2c9faa9381d89aaeabba5`.
+- Original UTF-8 document bytes and source hierarchy; no source rewriting,
+  normalization, summaries, generated metadata, or benchmark labels.
+- Source-only index, so optional document enrichment remained pending.
+- 1,312 holdout Fitz-Sage executions across the same four paired variants.
+- All source, operational, and paired-integrity gates passed.
+- Holdout wall time was 51,256.8 seconds, about 14 hours 14 minutes.
+
+Holdout quality:
+
+| Variant | Broad Recall@50 | Final Recall | Final nDCG@10 | Delivered Recall | Delivered nDCG@10 | Mean latency |
+|---|---:|---:|---:|---:|---:|---:|
+| Plain whole-document BM25 | 0.8092 | n/a | n/a | n/a | n/a | 2.49s |
+| `literal` | 0.7824 | 0.6569 | 0.5276 | 0.6450 | 0.5279 | 29.14s |
+| `expansion` | 0.7801 | 0.6611 | 0.5311 | 0.6491 | 0.5324 | 32.82s |
+| `reranker` | 0.7824 | 0.7006 | 0.5768 | 0.6883 | 0.5876 | 39.49s |
+| `full` | 0.7801 | 0.6936 | 0.5629 | 0.6816 | 0.5780 | 44.20s |
+
+The plain-BM25 latency excludes query planning, models, evidence processing,
+and Pyrrho. Its broad Recall@50 exceeded literal Fitz-Sage by 0.0269, which is
+a measured source-only recall boundary on this corpus.
+
+Paired holdout effects:
+
+| Change | Final Recall delta | Final nDCG@10 delta | Delivered nDCG@10 delta | Added latency |
+|---|---:|---:|---:|---:|
+| Qwen, no reranker | +0.0041 `[-0.0165, +0.0244]` | +0.0034 `[-0.0047, +0.0120]` | +0.0045 `[-0.0042, +0.0136]` | 3.68s |
+| Reranker, no Qwen | +0.0437 `[+0.0057, +0.0825]` | +0.0492 `[+0.0125, +0.0875]` | +0.0597 `[+0.0238, +0.0988]` | 10.35s |
+| Full versus literal | +0.0366 `[-0.0017, +0.0785]` | +0.0352 `[-0.0029, +0.0721]` | +0.0501 `[+0.0147, +0.0851]` | 15.06s |
+
+The INT8 reranker gain generalized. Full versus literal had a positive
+delivered-ranking gain, while its final recall and nDCG intervals crossed
+zero. Qwen's isolated aggregate quality effect was inconclusive. Qwen remains
+the intentional broad semantic-to-lexical recall leg; this score does not
+justify narrowing candidate competition or removing expansion.
+
+The clearest architecture weakness was multi-document ranking. Reranker-only
+final nDCG@10 improved from 0.5192 to 0.5892 on 265 single-document questions,
+but declined from 0.5633 to 0.5247 on 63 multi-document questions.
+Project-related questions showed a conclusive `-0.0796` full-versus-literal
+final nDCG@10 delta. This points to future set-aware coverage after pointwise
+reranking, not source cleanup, alias heuristics, or governance logic.
+
+Latency was also a clear boundary. In the full variant, managed Qwen averaged
+1.95 seconds and reranking 7.62 seconds, while initial and repeated
+evidence-closure recall averaged 29.27 seconds. Recall orchestration is the next
+latency target. One reranker-only query had a retained 344.61-second transient
+outlier, of which 330.45 seconds was repeated recall rather than cross-encoder
+work.
+
+Qwen produced malformed optional expansion output for 11/328 holdout queries.
+Every query completed through the literal plan, with the failure logged and
+traced. The availability fallback was implemented on development before the
+holdout ran and does not alter Pyrrho or invent replacement terms.
+
+Full methodology, category/source breakdowns, development results, confidence
+intervals, and boundaries are in
+[`docs/evaluation/enterprise-rag-bench-2026-08-01.md`](docs/evaluation/enterprise-rag-bench-2026-08-01.md).
+
 ## Query Timing And Reranker Hardening
 
 ### Initial Bottleneck Diagnostic
@@ -430,6 +505,7 @@ rather than hidden.
 - [Benchmark runner and reranker validation](benchmarks/README.md)
 - [BEIR component ablation](docs/evaluation/beir-component-ablation-2026-07-30.md)
 - [Frozen BEIR semantic holdout](docs/evaluation/beir-semantic-holdout-2026-07-30.md)
+- [Frozen EnterpriseRAG-Bench holdout](docs/evaluation/enterprise-rag-bench-2026-08-01.md)
 
 Detailed machine-specific JSON, Markdown, stdout, and stderr artifacts are
 under the ignored `benchmarks/results/` tree. The committed reports above are
