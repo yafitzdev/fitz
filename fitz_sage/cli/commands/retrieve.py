@@ -47,7 +47,7 @@ def _daemon_log_path(collection: str, cwd: Path) -> Path:
 
 def _pid_is_running(pid: int) -> bool:
     """Return whether a process id appears to still be alive."""
-    if os.name == "nt":
+    if sys.platform == "win32":
         return _windows_pid_is_running(pid)
     try:
         os.kill(pid, 0)
@@ -56,25 +56,27 @@ def _pid_is_running(pid: int) -> bool:
         return False
 
 
-def _windows_pid_is_running(pid: int) -> bool:
-    """Return whether a Windows process id is active."""
-    import ctypes
-    from ctypes import wintypes
+if sys.platform == "win32":
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    process_query_limited_information = 0x1000
-    still_active = 259
+    def _windows_pid_is_running(pid: int) -> bool:
+        """Return whether a Windows process id is active."""
+        import ctypes
+        from ctypes import wintypes
 
-    handle = kernel32.OpenProcess(process_query_limited_information, False, int(pid))
-    if not handle:
-        return False
-    try:
-        exit_code = wintypes.DWORD()
-        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        process_query_limited_information = 0x1000
+        still_active = 259
+
+        handle = kernel32.OpenProcess(process_query_limited_information, False, int(pid))
+        if not handle:
             return False
-        return exit_code.value == still_active
-    finally:
-        kernel32.CloseHandle(handle)
+        try:
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
 
 
 def _read_running_daemon_pid(pid_path: Path) -> int | None:
@@ -119,7 +121,7 @@ def _spawn_enrichment_daemon(collection: str, engine_name: str, cwd: Path) -> st
         "stderr": log_handle,
         "close_fds": True,
     }
-    if os.name == "nt":
+    if sys.platform == "win32":
         kwargs["creationflags"] = (
             getattr(subprocess, "DETACHED_PROCESS", 0)
             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import errno
-import importlib
 import json
 import os
 import socket
+import sys
 import time
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import BinaryIO
 
 from fitz_sage.core.exceptions import KnowledgeError
 
@@ -131,25 +131,25 @@ class CollectionWriteLock:
 
 
 def _acquire_native_lock(handle: BinaryIO) -> None:
-    if os.name == "nt":
+    if sys.platform == "win32":
         import msvcrt
 
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
         return
 
-    fcntl: Any = importlib.import_module("fcntl")
+    import fcntl
 
     fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def _release_native_lock(handle: BinaryIO) -> None:
-    if os.name == "nt":
+    if sys.platform == "win32":
         import msvcrt
 
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         return
 
-    fcntl: Any = importlib.import_module("fcntl")
+    import fcntl
 
     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
