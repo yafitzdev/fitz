@@ -26,21 +26,21 @@ pytestmark = pytest.mark.slow
 
 
 def _pyrrho_smoke_spec() -> str:
-    """Use the local canonical v2 package when this checkout has it."""
-    env_path = os.environ.get("PYRRHO_V2_PACKAGE")
+    """Use the local canonical v2 model when this checkout has it."""
+    env_path = os.environ.get("PYRRHO_MODEL_PATH")
     if env_path and Path(env_path).is_dir():
         return f"pyrrho/{env_path}"
 
     repo_root = Path(__file__).resolve().parents[2]
-    sibling_package = repo_root.parent / "pyrrho" / "models" / "pyrrho-v2-nano-g1"
-    if sibling_package.is_dir():
-        return f"pyrrho/{sibling_package}"
+    sibling_model = repo_root.parent / "pyrrho" / "models" / "pyrrho-v2-nano-g1"
+    if sibling_model.is_dir():
+        return f"pyrrho/{sibling_model}"
 
     return "pyrrho"
 
 
 def test_pyrrho_loads_and_decides():
-    """Canonical Pyrrho v2 package -> a real local decide() call."""
+    """Canonical Pyrrho v2 model -> a real local decide() call."""
     from fitz_sage.integrations.pyrrho import create_pyrrho
 
     pyrrho = create_pyrrho(_pyrrho_smoke_spec())

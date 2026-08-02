@@ -1036,9 +1036,7 @@ def test_compiler_matches_exact_identifier_component_in_qualified_symbol() -> No
         profile=_profile(modality="code"),
     )
 
-    assert [result.file_path for result in compiled.results] == [
-        "code/rollout_guard.py"
-    ]
+    assert [result.file_path for result in compiled.results] == ["code/rollout_guard.py"]
     assert compiled.results[0].content == constant.content
     roles = compiled.results[0].metadata["evidence_compiler"]["roles"]
     assert "anchor_identifier:rollout_guard" in roles
@@ -1198,9 +1196,7 @@ def test_compiler_keeps_explicit_code_file_companion_without_query_identifier() 
         "mixed/export_brief.md",
         "code/export_scheduler.py",
     ]
-    assert compiled.results[1].metadata["evidence_compiler"]["roles"] == [
-        "required_symbol"
-    ]
+    assert compiled.results[1].metadata["evidence_compiler"]["roles"] == ["required_symbol"]
 
 
 def test_compiler_rejects_code_companion_from_a_different_file() -> None:
@@ -1248,9 +1244,7 @@ def test_compound_clause_does_not_bypass_its_own_exact_identifier() -> None:
         query_legs=query_legs,
     )
 
-    assert [result.file_path for result in compiled.results] == [
-        "structured/feature_flags.csv"
-    ]
+    assert [result.file_path for result in compiled.results] == ["structured/feature_flags.csv"]
 
 
 def _profile(

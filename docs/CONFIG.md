@@ -56,11 +56,12 @@ Role-specific provider fields bind LLM-backed stages:
 | `query_intelligence` | Optional query-prep enhancement                  |
 | `synthesizer`        | Optional answer generation                       |
 
-Required keyword/entity enrichment, hierarchy summaries, and default semantic
-query keywords always use Fitz's managed local Qwen runtime. There is no config
-key for that internal model. Optional LLM-backed roles take a provider/model
-spec. For `endpoint`, the model name is the part after the slash and
-`chat_base_url` supplies the OpenAI-compatible URL:
+Default semantic query keywords use Fitz's managed local Qwen runtime.
+Optional background entity, hierarchy, and demand-summary work uses the same
+runtime after the source index is searchable. There is no config key for that
+internal model. Optional endpoint-backed roles take a provider/model spec. For
+`endpoint`, the model name is the part after the slash and `chat_base_url`
+supplies the OpenAI-compatible URL:
 
 ```yaml
 synthesizer: endpoint/qwen2.5-32b
@@ -69,22 +70,23 @@ chat_base_url: http://localhost:8080/v1
 
 If `chat_base_url` is shared across roles (the common case), set it once at
 the top level. `chat_fast`, `chat_balanced`, and `chat_smart` are optional
-low-level tier slots for advanced integrations that request a tiered chat
-factory directly.
+low-level tier slots. Configuring any tier also enables optional model-backed
+table SQL and structural code-search enhancements; deterministic table and code
+retrieval remains available without them.
 
 ---
 
 ## Chat provider model
 
-Required enrichment uses Fitz's managed local Qwen runtime. See
-[Managed Models](MANAGED_MODELS.md) for the exact model package and runtime.
-Optional synthesis, query intelligence, and vision can use **`endpoint`** or
-the cloud/enterprise presets:
+Managed Qwen query expansion and optional background work use Fitz's local
+runtime. See [Managed Models](MANAGED_MODELS.md) for the exact package and
+runtime. Optional synthesis, query intelligence, and vision can use
+**`endpoint`** or the cloud/enterprise presets:
 
 | Spec form                       | Resolves to                                              |
 | ------------------------------- | -------------------------------------------------------- |
 | `onnx/qwen3-0.6b`             | managed local Qwen3 0.6B ONNX GenAI runtime                  |
-| `endpoint` + `chat_base_url`    | the canonical form                                       |
+| `endpoint/<model>` + `chat_base_url` | canonical custom endpoint form                       |
 | `openai/<model>`                | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`     | endpoint with Azure deployment URL                       |
 | `enterprise/<provider>/<model>` | endpoint + M2M / mTLS / custom-CA auth                   |
@@ -97,16 +99,17 @@ For local servers such as Ollama, use `endpoint` with the server's
 
 ## Feature control
 
-The retrieval backbone is not optional: managed Qwen enrichment, the ONNX
-reranker, and Pyrrho governance always run in the standard product path.
+The retrieval backbone includes managed Qwen semantic query terms, the ONNX
+reranker, and Pyrrho governance. Source indexing is independent of Qwen.
 Optional endpoint-backed features are switched on by **provider presence**,
 not boolean flags:
 
 | Feature            | Standard / enabled when                  | Disabled when                       |
 | ------------------ | ---------------------------------------- | ----------------------------------- |
-| Managed enrichment | always uses local `onnx/qwen3-0.6b`    | not disabled                        |
+| Semantic query terms | managed local Qwen on each standard query | no public off switch in product config |
+| Background enrichment | starts after source indexing | may remain pending or fail without blocking retrieval |
 | ONNX reranker      | `rerank: onnx` (default)                 | not disabled                        |
-| Governance         | accepted local `pyrrho/<path>` required  | not disabled                        |
+| Governance         | `governance: pyrrho` uses the accepted pinned model; custom model optional | not disabled |
 | Query intelligence | `query_intelligence: <provider/model>`   | `query_intelligence: null`          |
 | Answer synthesis   | `synthesizer: <provider/model>`          | `synthesizer: null`                 |
 | VLM in parser      | `parser: docling_vision` + `vision:` set | `parser: cpu`, `parser: docling`, or `parser: glm_ocr` |
@@ -134,15 +137,15 @@ for the schema and pragmas.
 parser: cpu                # CPU pypdfium2 text-layer parser (default)
 # parser: docling          # Docling structure extraction
 # parser: docling_vision   # Docling + VLM for figure descriptions
-# parser: glm_ocr          # hybrid pypdfium2 + GLM-OCR, handles scanned pages
+# parser: glm_ocr          # hybrid pdfplumber + GLM-OCR, handles scanned pages
 ```
 
-| Parser           | Speed (100pg PDF) | Scanned pages | Install                            |
-| ---------------- | ----------------- | ------------- | ---------------------------------- |
-| `cpu`            | seconds to minutes | no            | base install                       |
-| `docling`        | ~21 min           | no            | `pip install fitz-sage[docs]`      |
-| `docling_vision` | ~21 min + VLM     | VLM figures   | `[docs]` + `vision:` set           |
-| `glm_ocr`        | ~28 s             | yes (GLM-OCR) | base install                       |
+| Parser | Primary contract | Install |
+|---|---|---|
+| `cpu` | embedded text from supported rich documents | base install |
+| `docling` | explicit Docling structure extraction | `pip install fitz-sage[docs]` |
+| `docling_vision` | Docling plus a configured vision provider | `[docs]` + `vision:` |
+| `glm_ocr` | pdfplumber text path plus GLM-OCR fallback for scans | base install plus local Ollama `glm-ocr` model |
 
 Only `cpu`, `docling`, `docling_vision`, and `glm_ocr` are selectable
 `parser:` values. `lightweight` is an automatic ImportError fallback (not
@@ -167,7 +170,7 @@ chat_api_key_env: OPENAI_API_KEY
 | Together         | `TOGETHER_API_KEY`   |
 | Groq             | `GROQ_API_KEY`       |
 | Mistral La Plateforme | `MISTRAL_API_KEY` |
-| Managed ONNX enrichment | (no key) |
+| Managed local Qwen | (no key) |
 | Local endpoint server / LM Studio / Ollama | (no key) |
 
 For enterprise (M2M / mTLS) deployments see

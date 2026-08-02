@@ -224,9 +224,7 @@ class BackgroundEnrichmentWorker:
 
     def _status_line(self) -> str:
         entries = [
-            entry
-            for entry in self._manifest.entries().values()
-            if entry.state == FileState.INDEXED
+            entry for entry in self._manifest.entries().values() if entry.state == FileState.INDEXED
         ]
         if not entries:
             return ""

@@ -24,8 +24,9 @@ User query
 
 ## Ownership
 
-- The independent `pyrrho` package owns model resolution, package validation,
-  tokenization, thresholds, head consistency, and the final verdict.
+- The Pyrrho ONNX model supplies the learned governance judgment. Fitz-Sage's
+  managed adapter owns model resolution, artifact validation, tokenization,
+  and mechanical head decoding.
 - Fitz-Sage owns query-shape recognition, retrieval, evidence closure,
   compilation, and delivery.
 - `fitz_sage/integrations/pyrrho.py` sends source IDs plus unchanged source
@@ -36,7 +37,7 @@ User query
 
 ## Default Model
 
-Bare `pyrrho` resolves the CPU-local ONNX package
+Bare `pyrrho` resolves the CPU-local ONNX model
 [`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
 at immutable revision:
 
@@ -44,8 +45,8 @@ at immutable revision:
 948f0500b74871cfaec7689a01d4eab0dd516e1b
 ```
 
-The Pyrrho runtime downloads it lazily and reuses its own local cache. A local
-package directory or another remote package pinned to a full 40-character
+Fitz-Sage downloads it lazily into the Hugging Face cache. A local model
+directory or another remote model pinned to a full 40-character
 commit can be configured explicitly.
 
 ```yaml
@@ -54,13 +55,7 @@ governance: pyrrho
 # governance: pyrrho/owner/repository@0123456789abcdef0123456789abcdef01234567
 ```
 
-The accepted default's training data included benchmark-derived deterministic
-rows. Its decisions are usable in the current product, but scores on related
-development or fixed-evidence cases are not independent evidence of
-generalization. Future Pyrrho quality work requires retraining and an
-independent evaluation corpus.
-
-## Runtime Contract
+## Model Contract
 
 Pyrrho exposes four native heads:
 
@@ -71,9 +66,10 @@ Pyrrho exposes four native heads:
 | `retrieval_intents` | Multi-label query/evidence intent metadata |
 | `evidence_kinds` | Multi-label evidence-surface metadata |
 
-The runtime validates package manifests, label order, ONNX output width, token
-limits, graph parity metadata, and verdict/failure compatibility. These are
-runtime-contract checks, not Fitz-Sage governance policy.
+The managed adapter validates model manifests, label order, ONNX output width,
+token limits, graph parity metadata, and verdict/failure compatibility. These
+checks implement the model's declared interface; retrieval does not add a
+second governance policy.
 
 The accepted model currently has a 2,048-token input contract. Pyrrho records
 the original token count, budget, and truncation status. Evidence beyond that
@@ -119,5 +115,5 @@ repair that mode.
    hard-coded.
 5. The 2,048-token contract can hide evidence late in a large delivered set.
 
-See [Limitations](../LIMITATIONS.md) for the measured Fitz-Sage retrieval
-boundary and the exact separation between package and Pyrrho outcomes.
+See [Limitations](LIMITATIONS.md) for the measured Fitz-Sage retrieval
+boundary and the exact separation between retrieval and Pyrrho outcomes.

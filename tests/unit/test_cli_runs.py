@@ -43,7 +43,7 @@ def _write_trace(path):
         ranked_evidence=(),
         pyrrho_evidence=(),
         environment=RunEnvironment(
-            fitz_sage_version="0.15.0",
+            fitz_sage_version="0.16.0",
             engine="fitz_krag",
             collection="docs",
             config_sha256="sha",

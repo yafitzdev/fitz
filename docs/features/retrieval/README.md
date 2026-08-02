@@ -19,7 +19,7 @@ and [Retrieval Pipeline](../../RETRIEVAL_PIPELINE.md) for the end-to-end flow.
 | `comparison-queries.md`    | Side-by-side comparison query handling                           |
 | `aggregation-queries.md`   | Detection and handling of aggregation queries                    |
 | `temporal-queries.md`      | Date-aware retrieval and freshness handling                      |
-| `freshness-authority.md`   | Source freshness and authority scoring                           |
+| `freshness-authority.md`   | Content-grounded current/recent query scope; no file-age scoring |
 
 For the implementation, see `fitz_sage/retrieval/` and
 `fitz_sage/engines/fitz_krag/retrieval/`.

@@ -12,8 +12,8 @@ The public configuration surface selects built-in implementations:
 | Concern | Configuration | Implementations |
 | --- | --- | --- |
 | Document parser | `parser` | `cpu`, `docling`, `docling_vision`, `glm_ocr` |
-| Reranker | `rerank` | `onnx` or `onnx/<model-id>` |
-| Governance | `governance` | `pyrrho/<local-path>` or `pyrrho/<owner/repo@commit>` |
+| Reranker | `rerank` | `onnx` or a compatible `onnx/<model-id>` repository |
+| Governance | `governance` | `pyrrho`, `pyrrho/<local-path>`, or `pyrrho/<owner/repo@commit>` |
 | Optional chat roles | role-specific provider spec | `endpoint`, `openai`, `azure_openai`, `enterprise` |
 | Optional vision | `vision` | the same OpenAI-compatible endpoint protocol |
 
@@ -21,10 +21,15 @@ Parser modes are selected explicitly. Files are routed to built-in parsers by
 extension; adding a Python file to a directory does not auto-register a new
 parser.
 
+An alternate reranker repository must contain a compatible tokenizer and
+`onnx/model_int8.onnx`. Other artifact layouts are available only through
+direct low-level `OnnxReranker` construction, not engine YAML.
+
 ## Chat And Vision Providers
 
-All optional network generation uses the OpenAI-compatible protocol. Most
-custom deployments should use `endpoint/<model>` with their own URL:
+Optional chat and vision roles use the OpenAI-compatible protocol. The
+`glm_ocr` parser is a separate native Ollama integration. Most custom chat
+deployments should use `endpoint/<model>` with their own URL:
 
 ```yaml
 synthesizer: endpoint/qwen2.5-14b-instruct
@@ -42,14 +47,19 @@ dispatch tests.
 Domain-specific retrieval belongs in a `KnowledgeEngine` implementation. A
 custom engine can define its own ingestion, retrieval, and configuration while
 returning the shared `Answer` and `EvidencePack` contracts. Register engine
-factories through the runtime registry; see [API Reference](API_REFERENCE.md).
+factories through the in-process runtime registry; see
+[Custom Engines](CUSTOM_ENGINES.md).
+
+The installed package does not discover third-party Python entry points.
+Automatic discovery only scans engine modules bundled under
+`fitz_sage/engines/`. An application-owned engine must import its registration
+module before calling `run()` or `create_engine()`.
 
 ## Deliberate Non-Extensions
 
 fitz-sage does not silently normalize identifiers, expand organization-specific
 abbreviations, rewrite raw logs, or clean source data. Applications may perform
-that work before calling fitz-sage. Future vocabulary mapping will be an
-explicit retrieval input, not hidden text mutation.
+that work before calling fitz-sage. There is no public vocabulary-mapping API.
 
 The KRAG engine also does not expose its typed-unit extraction as a chunker
 plugin. Code symbols, document sections, and table specifications are internal

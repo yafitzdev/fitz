@@ -188,16 +188,10 @@ def create_smoke_env(temp_root: Path) -> SmokePaths:
     return SmokePaths(root=temp_root, venv_dir=venv_dir, python=python, fitz=fitz)
 
 
-def install_wheel(
-    paths: SmokePaths,
-    wheel: Path,
-    *,
-    pyrrho_wheel: Path | None = None,
-) -> None:
+def install_wheel(paths: SmokePaths, wheel: Path) -> None:
     """Install the wheel and verify its dependency graph."""
     run([str(paths.python), "-m", "pip", "install", "--upgrade", "pip"], cwd=paths.root)
-    targets = [str(path) for path in (pyrrho_wheel, wheel) if path is not None]
-    run([str(paths.python), "-m", "pip", "install", *targets], cwd=paths.root)
+    run([str(paths.python), "-m", "pip", "install", str(wheel)], cwd=paths.root)
     run([str(paths.python), "-m", "pip", "check"], cwd=paths.root)
 
 
@@ -210,7 +204,7 @@ def smoke_import(paths: SmokePaths) -> None:
     code = (
         "from importlib.resources import files; "
         "assert files('fitz_sage').joinpath('py.typed').is_file(); "
-        "from pyrrho import DEFAULT_MODEL_REVISION; "
+        "from fitz_sage.llm.providers.onnx_pyrrho import DEFAULT_MODEL_REVISION; "
         "assert len(DEFAULT_MODEL_REVISION) == 40; "
         "import fitz_sage; "
         "assert hasattr(fitz_sage, 'answer') and not hasattr(fitz_sage, 'query'); "
@@ -415,7 +409,6 @@ def isolated_env(temp_root: Path) -> dict[str, str]:
     env["TOKENIZERS_PARALLELISM"] = "false"
     env["HF_HOME"] = str(temp_root / "hf_home")
     env["HF_HUB_CACHE"] = str(temp_root / "hf_cache")
-    env["PYRRHO_HOME"] = str(temp_root / "pyrrho_home")
     return env
 
 
@@ -423,10 +416,6 @@ def parse_args() -> argparse.Namespace:
     """Parse CLI arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wheel", help="Existing wheel file to test.")
-    parser.add_argument(
-        "--pyrrho-wheel",
-        help="Optional local Pyrrho wheel to install alongside the Fitz-Sage wheel.",
-    )
     parser.add_argument("--dist-dir", help="Directory to build into or read from.")
     parser.add_argument(
         "--skip-build",
@@ -457,11 +446,8 @@ def main() -> int:
         wheel = resolve_wheel(args, temp_root)
         print(f"Wheel under test: {wheel}", flush=True)
         validate_wheel_contents(wheel)
-        pyrrho_wheel = Path(args.pyrrho_wheel).resolve() if args.pyrrho_wheel else None
-        if pyrrho_wheel is not None and not pyrrho_wheel.exists():
-            raise FileNotFoundError(f"Pyrrho wheel not found: {pyrrho_wheel}")
         paths = create_smoke_env(temp_root)
-        install_wheel(paths, wheel, pyrrho_wheel=pyrrho_wheel)
+        install_wheel(paths, wheel)
         smoke_import(paths)
         if args.smoke == "retrieve":
             smoke_retrieve(paths)

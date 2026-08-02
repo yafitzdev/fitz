@@ -1,5 +1,5 @@
 # fitz_sage/api/app.py
-"""FastAPI application for Fitz RAG API."""
+"""FastAPI application for the fitz-sage REST API."""
 
 from __future__ import annotations
 

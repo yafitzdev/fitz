@@ -13,10 +13,12 @@ from fitz_sage.engines.fitz_krag.evidence_contract import (
 )
 
 if TYPE_CHECKING:
-    from pyrrho import MultiLabelDecision, QueryPlan as PyrrhoQueryPlan
-
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
+    from fitz_sage.llm.providers.pyrrho_types import (
+        MultiLabelDecision,
+        PyrrhoQueryPlan,
+    )
 
 _TEXT_EVIDENCE_TERMS = {
     "addendum",
@@ -649,8 +651,7 @@ def _pyrrho_plan_metadata(pyrrho_plan: "PyrrhoQueryPlan | None") -> dict[str, An
             "final_label": head.final_label,
             "confidence": float(head.confidence),
             "probabilities": {
-                str(label): float(value)
-                for label, value in head.probabilities.items()
+                str(label): float(value) for label, value in head.probabilities.items()
             },
         }
     return output

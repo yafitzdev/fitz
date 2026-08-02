@@ -3,8 +3,8 @@
 Engine Registry - Central registry for all knowledge engines.
 
 This module provides a registry pattern for discovering and instantiating
-knowledge engines. It enables the platform to support multiple engines
-(Fitz RAG, custom engines) without hardcoding engine names.
+knowledge engines. It enables the platform to support Fitz KRAG and custom
+engines without hardcoding engine names.
 
 Philosophy:
     - Engines register themselves on import

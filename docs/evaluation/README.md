@@ -3,6 +3,9 @@
 Benchmark planning and historical benchmark results for fitz-sage retrieval and
 governance. Current product behavior is documented in the main guides.
 
+See [Fitz-Sage Benchmarks](../BENCHMARK.md) for the consolidated current
+scorecard and interpretation.
+
 | File | Contents |
 |---|---|
 | `current.md` | Current retrieval-first measurement plan |

@@ -55,7 +55,7 @@ Discovery does not parse files and does not invoke a model.
 |---|---|---|
 | Python, TypeScript, Java, Go | symbols | `SymbolStore` |
 | Markdown, text, configuration, rich documents | sections | `SectionStore` |
-| CSV, TSV, detected tables | table metadata and rows | `TableStore` / `SqliteTableStore` |
+| Configured delimited files (`.csv`, `.tsv` by default) | table metadata and rows | `TableStore` / `SqliteTableStore` |
 
 Documents are searchable using their source text immediately. Missing
 model-generated summaries fall back to bounded source excerpts for reranking.
@@ -81,9 +81,9 @@ The CLI can hand pending work to the hidden `enrichment-daemon` after returning
 evidence.
 
 Fitz-Sage does not generate per-file semantic keyword aliases during ingestion.
-Literal source terms are indexed directly. Query-time semantic keywords remain
-available, and user-owned mapping keywords can be added through the query
-vocabulary interface when that public extension point is introduced.
+Literal source terms are indexed directly and query-time semantic keywords
+remain available. Applications that need domain mappings must preprocess their
+data or queries; there is no public mapping hook.
 
 ## Status Contract
 

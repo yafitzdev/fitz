@@ -110,7 +110,7 @@ def replay(
     pyrrho: Optional[str] = typer.Option(
         None,
         "--pyrrho",
-        help="Pyrrho provider/model spec. Defaults to the recorded package.",
+        help="Pyrrho provider/model spec. Defaults to the recorded model.",
     ),
     output: Optional[Path] = typer.Option(
         None,

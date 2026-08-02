@@ -48,7 +48,7 @@ The two datasets exercise different shapes:
   duplicate questions among 522,931 documents.
 
 The same verified source-only indexes, query order, candidate budgets,
-compiler, and exact Pyrrho runtime were used for every variant:
+compiler, and exact pinned Pyrrho model were used for every variant:
 
 | Variant | Managed Qwen keywords | INT8 cross-encoder |
 |---|---:|---:|
@@ -184,7 +184,7 @@ evidence.
 Current Pyrrho behavior is accepted for this Fitz-Sage release. No local
 governance guard was added. Absolute ArguAna delivered scores include that
 accepted behavior, while the paired Qwen and reranker comparisons remain
-aligned because every variant used the same Pyrrho runtime.
+aligned because every variant used the same pinned Pyrrho model.
 
 ## Operational Findings
 

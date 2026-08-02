@@ -31,6 +31,7 @@ Usage:
 
 from __future__ import annotations
 
+import shutil
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -377,7 +378,7 @@ class FitzService:
         return CollectionInfo(name=name, item_count=_collection_item_count(cm, name))
 
     def delete_collection(self, name: str) -> bool:
-        """Delete the collection's SQLite database file. Returns True on success."""
+        """Delete a collection's database and persisted manifest state."""
         name = validate_collection_name(name)
         with self._cache_lock:
             if name in self._deleting_collections:
@@ -393,11 +394,38 @@ class FitzService:
                 if callable(stop):
                     stop()
 
+            from fitz_sage.core.paths import FitzPaths
+            from fitz_sage.engines.fitz_krag.progressive.write_lock import (
+                CollectionWriteLock,
+            )
+
+            collections_root = (FitzPaths.workspace() / "collections").resolve()
+            collection_dir = (collections_root / name).resolve()
+            if collection_dir.parent != collections_root:
+                raise FitzServiceError(f"Invalid collection state path: {collection_dir}")
+
+            # Refuse to race a detached indexing/enrichment writer. Releasing
+            # before removal is necessary on Windows because the lock file is
+            # inside the directory being deleted.
+            if collection_dir.exists():
+                write_lock = CollectionWriteLock(
+                    collection_dir,
+                    collection=name,
+                    operation="collection deletion",
+                )
+                write_lock.acquire()
+                write_lock.release()
+
             cm = self._connection_manager()
-            deleted = cm.delete_collection(name)
+            database_deleted = bool(cm.delete_collection(name))
+            state_deleted = collection_dir.exists()
+            if state_deleted:
+                shutil.rmtree(collection_dir)
+
+            deleted = database_deleted or state_deleted
             if deleted:
                 logger.info(f"Deleted collection: {name}")
-            return bool(deleted)
+            return deleted
         finally:
             with self._cache_lock:
                 self._deleting_collections.remove(name)

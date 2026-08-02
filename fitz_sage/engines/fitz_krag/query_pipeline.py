@@ -33,12 +33,12 @@ from fitz_sage.engines.fitz_krag.retrieval_profile import (
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
-    from pyrrho import Pyrrho, QueryPlan as PyrrhoQueryPlan
-
     from fitz_sage.core import Query
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.evidence_compiler import EvidenceCompilation
     from fitz_sage.engines.fitz_krag.types import Address, ReadResult
+    from fitz_sage.llm.providers.onnx_pyrrho import OnnxPyrrho
+    from fitz_sage.llm.providers.pyrrho_types import PyrrhoQueryPlan
 
 logger = get_logger(__name__)
 
@@ -71,10 +71,11 @@ class QueryPipeline:
         query_planner: Any,
         query_batcher: Any,
         semantic_keyword_batcher: Any,
-        pyrrho: "Pyrrho",
+        pyrrho: "OnnxPyrrho",
         retrieval_pass: Any,
         expander: Any,
         table_handler: Any,
+        available_modalities: Callable[[], set[str]],
         fast_analyze: Callable[[str], Any],
         needs_detection: Callable[[str], bool],
         build_detection_summary: Callable[[dict[str, Any]], Any],
@@ -87,6 +88,7 @@ class QueryPipeline:
         self._retrieval_pass = retrieval_pass
         self._expander = expander
         self._table_handler = table_handler
+        self._available_modalities = available_modalities
         self._fast_analyze = fast_analyze
         self._needs_detection = needs_detection
         self._build_detection_summary = build_detection_summary
@@ -258,6 +260,20 @@ class QueryPipeline:
             retrieval_trace["evidence_closure"] = closure_trace
             return replace(outcome, retrieval_trace=retrieval_trace)
 
+        available_modalities = self._available_modalities()
+        executable_requests, skipped_requests = _partition_closure_requests(
+            plan.requests,
+            available_modalities,
+        )
+        closure_trace["available_modalities"] = sorted(available_modalities)
+        closure_trace["executed_request_count"] = len(executable_requests)
+        closure_trace["skipped_requests"] = skipped_requests
+        if not executable_requests:
+            closure_trace["added"] = 0
+            closure_trace["replaced"] = 0
+            retrieval_trace["evidence_closure"] = closure_trace
+            return replace(outcome, retrieval_trace=retrieval_trace)
+
         contract = build_query_contract(outcome.sanitized, outcome.profile)
         expanded = list(outcome.expanded)
         closure_evidence = list(compilation.results)
@@ -266,7 +282,7 @@ class QueryPipeline:
         total_replaced = 0
         _progress = progress or (lambda _: None)
 
-        for run_index, request in enumerate(plan.requests, start=1):
+        for run_index, request in enumerate(executable_requests, start=1):
             _progress("Closing evidence obligations...")
             profile = _closure_profile(outcome.profile, self._config, request)
 
@@ -545,18 +561,24 @@ def _closure_profile(
         "table": 0.01,
     }
     if request.modality == "table":
-        weights.update({"table": 1.0, "section": 0.12})
+        weights["table"] = 1.0
     elif request.modality == "symbol":
-        weights.update({"code": 1.0, "section": 0.12})
+        weights["code"] = 1.0
     else:
-        weights.update({"section": 1.0, "code": 0.04, "table": 0.04})
+        weights["section"] = 1.0
 
     return replace(
         base,
         strategy_weights=weights,
+        entities=tuple(content_terms(request.query)[:8]),
         top_k=top_k,
         top_read=top_read,
         rerank_candidates=rerank_candidates,
+        query_variations=[],
+        comparison_queries=[],
+        comparison_entities=[],
+        temporal_references=[],
+        keywords=[],
         query_contract=base.query_contract,
         retrieval_modality=base.retrieval_modality,
         retrieval_obligation=base.retrieval_obligation,
@@ -568,6 +590,26 @@ def _closure_profile(
     )
 
 
+def _partition_closure_requests(
+    requests: list[EvidenceClosureRequest],
+    available_modalities: set[str],
+) -> tuple[list[EvidenceClosureRequest], list[dict[str, Any]]]:
+    """Separate executable requests from obligations absent from the physical index."""
+    executable: list[EvidenceClosureRequest] = []
+    skipped: list[dict[str, Any]] = []
+    for request in requests:
+        if request.modality in available_modalities:
+            executable.append(request)
+            continue
+        skipped.append(
+            {
+                "request": request_metadata(request),
+                "reason": "modality_unavailable",
+            }
+        )
+    return executable, skipped
+
+
 def _merge_closure_results(
     current: list["ReadResult"],
     additional: list["ReadResult"],
@@ -577,10 +619,7 @@ def _merge_closure_results(
 ) -> tuple[list["ReadResult"], int, int]:
     """Merge closure results while allowing bridge-grounded table refreshes."""
     merged = list(current)
-    positions = {
-        _result_unit_key(result): index
-        for index, result in enumerate(merged)
-    }
+    positions = {_result_unit_key(result): index for index, result in enumerate(merged)}
     added = 0
     replaced = 0
     for result in additional:
@@ -611,9 +650,7 @@ def _select_closure_results(
     if not results:
         return []
     if request is not None:
-        results = [
-            result for result in results if result.address.kind.value == request.modality
-        ]
+        results = [result for result in results if result.address.kind.value == request.modality]
         if not results:
             return []
         results = _prioritize_bridge_table_schema(request, results)
@@ -689,11 +726,7 @@ def _table_schema_query_score(result: "ReadResult", query_terms: list[str]) -> i
             ]
         )
     )
-    return sum(
-        1
-        for term in query_terms
-        if re.search(rf"\b{re.escape(term)}s?\b", schema)
-    )
+    return sum(1 for term in query_terms if re.search(rf"\b{re.escape(term)}s?\b", schema))
 
 
 def _prioritize_closure_symbol_identity(
@@ -742,11 +775,7 @@ def _symbol_identity_query_score(result: "ReadResult", query_terms: list[str]) -
             ]
         )
     )
-    return sum(
-        1
-        for term in query_terms
-        if re.search(rf"\b{re.escape(term)}s?\b", identity)
-    )
+    return sum(1 for term in query_terms if re.search(rf"\b{re.escape(term)}s?\b", identity))
 
 
 def _normalize_source_name(value: str) -> str:
@@ -811,10 +840,7 @@ def _closure_result_should_replace(
         # supersede the original computation for a comparison query.
         if candidate.content == existing.content:
             return True
-        return not (
-            query_contract == "comparison_coverage"
-            and _has_sorted_table_plan(existing)
-        )
+        return not (query_contract == "comparison_coverage" and _has_sorted_table_plan(existing))
     return False
 
 

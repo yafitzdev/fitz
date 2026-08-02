@@ -13,7 +13,6 @@ from fitz_sage.engines.fitz_krag.progressive.write_lock import (
     CollectionWriteLock,
 )
 
-
 _CHILD_ATTEMPT = """
 import sys
 from pathlib import Path

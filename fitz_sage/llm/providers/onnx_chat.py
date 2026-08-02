@@ -1,11 +1,11 @@
 # fitz_sage/llm/providers/onnx_chat.py
 """
-In-process ONNX GenAI chat provider for the required local Qwen enrichment model.
+In-process ONNX GenAI provider for managed local Qwen work.
 
 This is deliberately narrow: Fitz owns one tiny local generation backend for
-the enrichment/summarization spine, using a pre-built Qwen3 0.6B ONNX GenAI
-bundle from Hugging Face on CPU. No external server, no GGUF, no llama.cpp,
-no torch.
+semantic query terms and optional background enrichment, using a pre-built
+Qwen3 0.6B ONNX GenAI bundle from Hugging Face on CPU. No external server, no
+GGUF, no llama.cpp, no torch.
 """
 
 from __future__ import annotations

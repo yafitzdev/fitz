@@ -28,7 +28,7 @@ cost.
 - Index mode: source-only; optional document enrichment was disabled
 - Expansion model: `onnx-community/Qwen3-0.6B-DQ-ONNX`
 - Reranker: INT8 `Alibaba-NLP/gte-reranker-modernbert-base`, batch size 1
-- Governance: the package's exact configured Pyrrho runtime, with no override
+- Governance: Fitz-Sage's exact configured Pyrrho model, with no override
 - Holdout executions: 1,312 Fitz-Sage queries across four paired variants
 - Bootstrap: 2,000 deterministic paired percentile samples, seed `20260731`
 - Holdout wall time: 51,256.8 seconds, about 14 hours 14 minutes
@@ -111,7 +111,7 @@ completed.
 ## Method
 
 All variants query the same verified source index, use the same query order,
-candidate budgets, evidence compiler, and exact Pyrrho runtime.
+candidate budgets, evidence compiler, and exact pinned Pyrrho model.
 
 | Variant | Managed Qwen query terms | INT8 cross-encoder |
 |---|---:|---:|

@@ -19,8 +19,8 @@ from fitz_sage.engines.fitz_krag.ingestion.store_utils import build_fts_query
 from fitz_sage.logging.logger import get_logger
 from fitz_sage.logging.tags import STORAGE
 from fitz_sage.storage import get_connection_manager
-from fitz_sage.tabular.query import normalize_table_value, sortable_table_value
 from fitz_sage.tabular.store.base import StoredTable, compute_hash
+from fitz_sage.tabular.value_semantics import normalize_table_value, sortable_table_value
 
 logger = get_logger(__name__)
 
@@ -392,14 +392,10 @@ class SqliteTableStore:
 
             table_name, sanitized_json, original_json = result
             sanitized_cols = (
-                [str(column) for column in json.loads(sanitized_json)]
-                if sanitized_json
-                else []
+                [str(column) for column in json.loads(sanitized_json)] if sanitized_json else []
             )
             original_cols = (
-                [str(column) for column in json.loads(original_json)]
-                if original_json
-                else []
+                [str(column) for column in json.loads(original_json)] if original_json else []
             )
             if not sanitized_cols:
                 return list(original_cols), []
@@ -436,9 +432,7 @@ class SqliteTableStore:
                 if not normalized:
                     return list(original_cols), []
                 placeholders = ", ".join("?" for _ in normalized)
-                where_parts.append(
-                    f'fitz_normalize_table_value("{resolved}") IN ({placeholders})'
-                )
+                where_parts.append(f'fitz_normalize_table_value("{resolved}") IN ({placeholders})')
                 params.extend(normalized)
 
             order_sql = "ORDER BY _row_num"
@@ -453,8 +447,7 @@ class SqliteTableStore:
             where_sql = f" WHERE {' AND '.join(where_parts)}" if where_parts else ""
             params.append(max(1, int(limit)))
             rows = conn.execute(
-                f'SELECT {selected_columns} FROM "{table_name}"'
-                f"{where_sql} {order_sql} LIMIT ?",
+                f'SELECT {selected_columns} FROM "{table_name}"' f"{where_sql} {order_sql} LIMIT ?",
                 tuple(params),
             ).fetchall()
 

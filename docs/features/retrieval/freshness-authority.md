@@ -13,9 +13,10 @@ content became effective or which source is authoritative.
 - `latest`
 - `recent`
 - `current`
-- `new`
 - `updated`
 - `newest`
+- `today`
+- `fresh`
 
 That signal contributes to the temporal retrieval contract. Fitz-Sage can then
 prefer evidence whose content expresses the requested scope, such as explicit
@@ -47,8 +48,9 @@ Content-grounded temporal evidence is ordered for Pyrrho
 - Deterministic planning: `fitz_sage/engines/fitz_krag/query_planner.py`
 - Temporal evidence ordering: `fitz_sage/engines/fitz_krag/evidence_compiler.py`
 
-The detector contributes a `detected` field to the batched query-intelligence
-response. It does not produce a retrieval-score multiplier.
+The standard planner detects these terms deterministically. The optional
+query-intelligence module can parse the same signal from a batched provider
+response. Neither path produces a filesystem-recency score multiplier.
 
 ## Related Features
 

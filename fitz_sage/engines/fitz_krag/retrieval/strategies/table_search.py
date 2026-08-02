@@ -15,12 +15,12 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core.identifiers import exact_identifiers
+from fitz_sage.engines.fitz_krag.query_planner import content_terms
 from fitz_sage.engines.fitz_krag.retrieval.strategies.boosts import rrf_score
 from fitz_sage.engines.fitz_krag.retrieval.table_plan import (
     build_table_query_plan,
     execute_table_query_plan,
 )
-from fitz_sage.engines.fitz_krag.query_planner import content_terms
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
 if TYPE_CHECKING:

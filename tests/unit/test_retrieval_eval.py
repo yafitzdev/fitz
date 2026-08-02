@@ -50,9 +50,7 @@ def test_ranking_metrics_deduplicate_document_ids() -> None:
 
 
 def test_aggregate_metrics_uses_query_macro_average() -> None:
-    assert aggregate_metrics([{"Recall@5": 1.0}, {"Recall@5": 0.0}]) == {
-        "Recall@5": 0.5
-    }
+    assert aggregate_metrics([{"Recall@5": 1.0}, {"Recall@5": 0.0}]) == {"Recall@5": 0.5}
 
 
 @pytest.mark.parametrize(
@@ -84,6 +82,4 @@ def test_stage_recoveries_reports_final_selection_rescue() -> None:
         "final": ["relevant"],
     }
 
-    assert stage_recoveries(stages, {"relevant": 1}) == [
-        "final_rescued_reranker_miss"
-    ]
+    assert stage_recoveries(stages, {"relevant": 1}) == ["final_rescued_reranker_miss"]

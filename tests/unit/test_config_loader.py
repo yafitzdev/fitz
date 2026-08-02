@@ -84,26 +84,25 @@ def test_config_none_for_optional_vision():
 
 
 def test_create_pyrrho_dispatch(tmp_path):
-    """`create_pyrrho` maps a config spec to the independent runtime."""
-    from pyrrho import DEFAULT_MODEL_ID, Pyrrho
-
+    """`create_pyrrho` maps a config spec to the managed model adapter."""
     from fitz_sage.integrations.pyrrho import create_pyrrho
+    from fitz_sage.llm.providers.onnx_pyrrho import DEFAULT_MODEL_ID, OnnxPyrrho
 
     default = create_pyrrho("pyrrho")
-    assert isinstance(default, Pyrrho)
+    assert isinstance(default, OnnxPyrrho)
     assert default.model_spec == DEFAULT_MODEL_ID
     assert DEFAULT_MODEL_ID == "yafitzdev/pyrrho-v2-nano-g1"
 
     custom_spec = f"acme/custom-fine-tune@{'a' * 40}"
     custom = create_pyrrho(f"pyrrho/{custom_spec}")
-    assert isinstance(custom, Pyrrho)
+    assert isinstance(custom, OnnxPyrrho)
     assert custom.model_spec == custom_spec
 
-    local_package = tmp_path / "pyrrho-v2-nano-g1"
-    local_package.mkdir()
-    local = create_pyrrho(f"pyrrho/{local_package}")
-    assert isinstance(local, Pyrrho)
-    assert local.model_spec == str(local_package)
+    local_model = tmp_path / "pyrrho-v2-nano-g1"
+    local_model.mkdir()
+    local = create_pyrrho(f"pyrrho/{local_model}")
+    assert isinstance(local, OnnxPyrrho)
+    assert local.model_spec == str(local_model)
 
 
 def test_create_pyrrho_unknown_provider():

@@ -243,8 +243,7 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
 
     enrichment = indexing_status.get("enrichment", {}) if indexing_status else {}
     if indexing_status and (
-        not indexing_status.get("complete", True)
-        or not enrichment.get("complete", True)
+        not indexing_status.get("complete", True) or not enrichment.get("complete", True)
     ):
         status_line = _format_indexing_status(indexing_status)
         if RICH:

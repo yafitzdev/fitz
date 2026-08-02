@@ -152,9 +152,7 @@ def _append_strategy_executions(
                 succeeded=not bool(call.get("error")),
             )
         )
-    for name, strategy_trace in (
-        ("corpus_summary", router.get("corpus_summary")),
-    ):
+    for name, strategy_trace in (("corpus_summary", router.get("corpus_summary")),):
         if not isinstance(strategy_trace, dict) or not strategy_trace.get("enabled"):
             continue
         output.append(

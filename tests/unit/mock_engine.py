@@ -13,8 +13,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from pyrrho import empty_evidence_decision
-
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis, QueryType
@@ -22,6 +20,7 @@ from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
 from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
 from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
 from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouterResponse
+from fitz_sage.llm.providers.onnx_pyrrho import empty_evidence_decision
 
 
 def build_mock_engine(**config_overrides) -> FitzKragEngine:

@@ -15,7 +15,7 @@ Fitz-Sage does not silently declare separator variants equivalent:
 
 If those values mean the same thing in a user's domain, the user must normalize
 the source/query or provide explicit alias evidence. See
-[Limitations](../../../LIMITATIONS.md).
+[Limitations](../../LIMITATIONS.md).
 
 ## Retrieval Path
 
@@ -42,10 +42,10 @@ The recall query may contain:
 
 - literal terms from the original query;
 - semantic keywords proposed by the managed local Qwen runtime;
-- explicit mapping terms supplied by a future user-owned vocabulary hook.
+- no implicit alias or mapping terms.
 
-Semantic terms are search suggestions. They do not rewrite stored data and do
-not prove equivalence.
+There is no public mapping-term API. Semantic terms are search suggestions.
+They do not rewrite stored data and do not prove equivalence.
 
 ## Why No Automatic Cleanup
 

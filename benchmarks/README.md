@@ -27,7 +27,7 @@ Full reports include the content-bearing `RetrievalRun` and can be large.
 python -m benchmarks.fitz_bench.runner
 ```
 
-To run against an unpacked local Pyrrho package:
+To run against an unpacked local Pyrrho model:
 
 ```bash
 python -m benchmarks.fitz_bench.runner --governance "pyrrho/path/to/model"
@@ -387,8 +387,8 @@ Thirteen SciFact queries had a judged-relevant final candidate but no judged
 relevant compiled evidence. Every query contained a literal structured
 identifier such as `anti-interleukin-2`, `SHP-2`, `CK-666`, or `FOXO3`.
 Fitz-Sage intentionally does not equate separator, abbreviation, or naming
-variants. That equivalence belongs to user cleanup or preprocessing. A public
-vocabulary hook is deferred and is not part of the current API.
+variants. That equivalence belongs to user cleanup or preprocessing. There is
+no public vocabulary hook.
 
 Canonical query latency averaged 5.98 seconds on NFCorpus, 5.58 seconds on
 FiQA, and 6.90 seconds on SciFact. The local plain-BM25 comparison excludes
@@ -512,7 +512,7 @@ python -m benchmarks.fitz_bench.enterprise_rag_ablation \
 
 The benchmark-local baseline uses SQLite FTS5 BM25 over whole official source
 documents. Fitz-Sage variants use the same verified source-only index, query
-order, budgets, compiler, and exact Pyrrho runtime. The aggregate report gives
+order, budgets, compiler, and exact pinned Pyrrho model. The aggregate report gives
 paired 95% bootstrap intervals and grouped results by category, source type,
 and expected-document cardinality.
 

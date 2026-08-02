@@ -66,9 +66,7 @@ class ManifestBuilder:
         file_paths, unsupported_paths = self._scan_files(source)
         discovered_supported: set[str] = set()
         existing_supported = {
-            path
-            for path, entry in existing.items()
-            if entry.state != FileState.UNSUPPORTED
+            path for path, entry in existing.items() if entry.state != FileState.UNSUPPORTED
         }
         corpus_changed = False
 

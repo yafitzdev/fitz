@@ -14,7 +14,7 @@
 [![Version](https://img.shields.io/badge/version-0.16.0-green.svg)](CHANGELOG.md)
 [![Coverage](https://img.shields.io/badge/coverage-99%25-brightgreen)](https://github.com/yafitzdev/fitz-sage)
 
-[EvidencePack](#evidencepack) • [Why `fitz-sage`?](#why-fitz-sage) • [Retrieval Intelligence](#retrieval-intelligence) • [Governance](#governance--know-what-you-dont-know) • [Limitations](LIMITATIONS.md) • [Documentation](#links) • [GitHub](https://github.com/yafitzdev/fitz-sage)
+[Benchmarks](#benchmarks) • [EvidencePack](#evidencepack) • [Why `fitz-sage`?](#why-fitz-sage) • [Retrieval Intelligence](#retrieval-intelligence) • [Governance](#governance--pyrrho) • [Limitations](#limitations) • [Documentation](#links) • [GitHub](https://github.com/yafitzdev/fitz-sage)
 
 </div>
 
@@ -63,9 +63,10 @@ A: "I don't have enough information
 ### Where to start 🚀
 
 > [!IMPORTANT]
-> `fitz retrieve` runs locally by default. SQLite stores the index; ONNX models handle enrichment,
-> reranking, and Pyrrho governance. An OpenAI-compatible endpoint is only needed when you choose
-> generated prose with `fitz answer`.
+> `fitz retrieve` runs locally by default. SQLite stores the index; local models
+> handle semantic query terms, reranking, Pyrrho governance, and optional
+> background enrichment. An OpenAI-compatible endpoint is only needed for an
+> explicitly configured endpoint-backed role such as generated prose.
 
 ```bash
 pip install fitz-sage
@@ -102,7 +103,7 @@ Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](
 
 **EvidencePack as the contract 🧾**
 > Every query returns ranked source evidence, provenance, governance reasons, and retrieval metadata. Use it directly in
-> APIs, CLIs, dashboards, agents, or pass it to an LLM for answer generation with calibrated governance.
+> APIs, CLIs, dashboards, agents, or pass it to an LLM for answer generation with explicit governance metadata.
 
 **Asymmetric indexing 🗂️** → [KRAG (Knowledge Routing Augmented Generation)](docs/features/platform/krag.md)
 > Source files become typed retrieval units: code symbols, document sections, and tables. Each unit type
@@ -113,7 +114,7 @@ Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](
 > background worker adds optional entity and hierarchy metadata.
 
 **Pyrrho-governed retrieval 🧭** → [Pyrrho docs](docs/CONSTRAINTS.md)
-> Fitz profiles the query before retrieval, then Pyrrho judges the selected evidence after reranking. The retrieval profile,
+> Fitz combines deterministic query shape with Pyrrho PRE obligations before retrieval, then Pyrrho judges the selected evidence after reranking. The retrieval profile,
 > reasons, and missing-evidence signals travel with the `EvidencePack`, so callers know whether to answer, show conflict,
 > retrieve more, or ask for more source material.
 
@@ -122,11 +123,12 @@ Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](
 > queries all flow through retrieval intelligence built into the engine.
 
 **Tabular data that is actually searchable 📈** → [Unified Storage](docs/features/platform/unified-storage.md)
-> CSVs and extracted tables live in SQLite with schema detection and SQL execution. Table queries use table structure,
-> not arbitrary text fragments.
+> Native CSV/TSV rows live in SQLite with schema detection, row-value BM25, and
+> deterministic row grounding. Optional configured chat tiers can generate SQL
+> for one retrieved table. Embedded document tables remain section text.
 
 **Fully local execution possible 🏠**
-> SQLite storage, ONNX reranking, managed Qwen enrichment, and ONNX Pyrrho governance all run locally. Optional synthesis can use
+> SQLite storage, ONNX reranking, managed Qwen query/background work, and ONNX Pyrrho governance all run locally. Optional synthesis can use
 > any local or cloud OpenAI-compatible endpoint.
 
 ####
@@ -149,10 +151,9 @@ and retrieval.
 
 | Retrieval Unit | Extracted From | How It Works |
 |----------------|----------------|--------------|
-| [**Symbols 🖌️**](docs/features/ingestion/code-symbol-extraction.md) | Code files | Tree-sitter parses functions, classes, and methods into addressable units with qualified names, references, and import graphs. |
-| **Sections 📑** | Documents (PDF, markdown, text) | Headings and paragraphs become hierarchical sections with parent/child context and summaries. |
-| [**Tables 📅**](docs/features/ingestion/tabular-data-routing.md) | CSV files or tables within documents | Native SQLite storage with schema detection and SQL execution from natural language. |
-| **Images 🖼️** | Figures and diagrams within documents | VLM-powered figure extraction and visual understanding. *(Coming soon)* |
+| [**Symbols 🖌️**](docs/features/ingestion/code-symbol-extraction.md) | Python, TypeScript/JavaScript, Go, Java | AST/tree-sitter strategies extract addressable names, ranges, references, and file import edges. |
+| **Sections 📑** | PDF, DOCX, PPTX, Markdown, text, config, markup | Parsed source text becomes sections with headings, ranges, and parent/child context; summaries are optional background metadata. |
+| [**Tables 📅**](docs/features/ingestion/tabular-data-routing.md) | Configured delimited files (`.csv`, `.tsv` by default) | Native SQLite rows with schema lookup, row-value BM25, deterministic grounding, and optional generated SQL. |
 
 <br>
 
@@ -178,8 +179,9 @@ and retrieval.
 
 <br>
 
-The quick path is keyword-first: exact query terms, Qwen semantic keywords, and BM25. Fully indexed collections add hierarchy,
-entity graph links, corpus summaries, and richer context expansion.
+The query-ready path is keyword-first: exact query terms, Qwen semantic
+keywords, and BM25. Enriched collections can additionally use hierarchy
+summaries, entity links, and broader context expansion.
 
 [Built-in intelligence](docs/features/retrieval) handles the edge cases that break simple search:
 
@@ -190,15 +192,15 @@ entity graph links, corpus summaries, and richer context expansion.
 | ✅ [**epistemic-honesty**](docs/features/governance/epistemic-honesty.md) | "What was our Q4 revenue?" | Pyrrho verdict and insufficient-evidence reasons |
 | ✅ [**keyword-vocabulary**](docs/features/retrieval/keyword-vocabulary.md) | "Find TC_1000" | Literal identifier search |
 | ✅ [**sparse-search**](docs/features/retrieval/sparse-search.md) | "error code E_AUTH_401" | SQLite FTS5 + native `bm25()` |
-| ✅ [**hierarchical-rag**](docs/features/ingestion/hierarchical-rag.md) | "What are the design principles?" | Hierarchical summaries |
+| ✅ [**hierarchical-rag**](docs/features/ingestion/hierarchical-rag.md) | "What are the design principles?" | Hierarchical summaries when enrichment has produced them |
 | ✅ [**multi-query**](docs/features/retrieval/multi-query-rag.md) | *[User pastes 500-char test report]* "What failed and why?" | Multi-query decomposition |
 | ✅ [**comparison-queries**](docs/features/retrieval/comparison-queries.md) | "Compare React vs Vue performance" | Multi-entity retrieval coverage |
-| ✅ [**entity-graph**](docs/features/retrieval/entity-graph.md) | "What else mentions AuthService?" | Entity-based linking across sources |
+| ✅ [**entity-graph**](docs/features/retrieval/entity-graph.md) | "What else mentions AuthService?" | Entity links for enriched source files |
 | ✅ [**temporal-queries**](docs/features/retrieval/temporal-queries.md) | "What changed between Q1 and Q2?" | Temporal scope detection |
 | ✅ [**aggregation-queries**](docs/features/retrieval/aggregation-queries.md) | "List all the test cases that failed" | Exhaustive/list query handling |
-| ✅ [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What's the latest status on feature X?" | Recency and authority scoring |
+| ✅ [**freshness-authority**](docs/features/retrieval/freshness-authority.md) | "What's the latest status on feature X?" | Content-grounded temporal scope; no filesystem-age scoring |
 | ✅ [**semantic-keywords**](docs/features/retrieval/query-expansion.md) | "How do I fetch the db config?" | Managed-Qwen recall terms merged with literal query terms |
-| ✅ [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | Conversational context resolution |
+| ✅ [**query-rewriting**](docs/features/retrieval/query-rewriting.md) | "Tell me more about it" *(after discussing TechCorp)* | Configured query-intelligence provider plus caller-supplied history |
 | ✅ [**reranking**](docs/features/retrieval/reranking.md) | "What's the battery warranty?" | ONNX cross-encoder reranker |
 
 <br>
@@ -209,7 +211,47 @@ entity graph links, corpus summaries, and richer context expansion.
 
 ---
 
-### EvidencePack
+<a id="benchmarks"></a>
+
+<details>
+
+<summary><strong>📦 Benchmarks</strong></summary>
+
+<br>
+
+[Full Benchmark Report](docs/BENCHMARK.md) • [Reproduce the Benchmarks](benchmarks/README.md) • [Production Readiness](docs/PRODUCTION_READINESS.md) • [Measured Limitations](docs/LIMITATIONS.md)
+
+Benchmarks start with source files and report retrieval, delivery, ingestion,
+and latency separately.
+
+| Area | Scale | Current measurement |
+|------|------:|---------------------|
+| Production retrieval | 192 required contracts | 186/192 (96.9%) retrieved and delivered |
+| Query-shape recognition | 60 cases | 60/60 |
+| Intentional limitations | 52 evidence-asserted cases | 52/52 retrieved and delivered; zero forbidden hits |
+| Broad BEIR | 66,454 documents, 1,271 queries | 0.4239 delivered nDCG@10 |
+| Frozen semantic BEIR | 531,605 documents, 240 queries | 0.6519 delivered nDCG@10 |
+| EnterpriseRAG-Bench | 511,961 documents, 328 holdout queries | 0.5780 delivered nDCG@10 |
+| Local source indexing | 18 core / 93 mixed files | 60.8 / 51.6 files/s |
+| NapierOne scale ingestion | 5,005 real files | 4,994 indexed at 7.27 files/s; recovery passed |
+| SciFact query latency | 60 matched queries | 7.43s mean; 6.77s p50; 12.56s p95 |
+| Enterprise warm query probes | 511,961-file index | 13.092s and 19.889s |
+
+> nDCG@10 measures ranking quality in the first ten results; it is not an
+> accuracy percentage. Full methodology, component results, timings, and
+> interpretation are in the [benchmark report](docs/BENCHMARK.md).
+
+</details>
+
+---
+
+<a id="evidencepack"></a>
+
+<details>
+
+<summary><strong>📦 EvidencePack</strong> → <a href="docs/EVIDENCE_PACK.md">Full Contract</a></summary>
+
+<br>
 
 [Evidence Pack Contract](docs/EVIDENCE_PACK.md) • [Evidence Signals](docs/features/retrieval/evidence-signals.md)
 
@@ -230,7 +272,7 @@ managed Qwen query keywords, and optional query intelligence.
 |--------|---------------|----------------|
 | `query_type` / `analysis_type` | Narrow lookup, comparison, temporal, aggregation, broad overview, or general query shape. | Sets recall breadth and evidence coverage. |
 | `keywords` | Managed Qwen suggestions and literal deterministic query terms. | Adds best-effort lexical candidates without embeddings. |
-| `strategy_weights` | Relative weight for code, section, table, and chunk retrieval. | Makes the first pass search the right evidence surfaces. |
+| `strategy_weights` | Relative weight for code, section, and table retrieval. | Makes the first pass search the right evidence surfaces. |
 | `top_k` / `top_read` | How much candidate evidence Fitz should collect and read. | Keeps narrow lookups fast while giving broad or comparative questions enough coverage. |
 | `rerank_candidates` | How many recalled candidates the cross-encoder scores. | Bounds neural CPU cost without shrinking the BM25 recall pool used by evidence rescue. |
 
@@ -267,41 +309,25 @@ Trace exports redact source bodies by default. Content-bearing traces are an
 explicit opt-in and enable Pyrrho-only replay over frozen evidence. See
 [Retrieval Execution Records](docs/RETRIEVAL_RUNS.md).
 
-#### Measured production boundary
-
-The 2026-07-27 folder-to-evidence matrix passed 186/192 required retrieval and
-delivery contracts, 60/60 query-shape contracts, all tested format gates, and
-20/20 core cases after adding 80 near-neighbor documents and reloading the
-index. A separate 60-case limitations run passed 52/52 evaluated retrieval and
-delivery contracts with zero forbidden hits. Retrieval, delivery, query
-interpretation, and Pyrrho decisions are reported separately.
-
-This is not a claim that arbitrary files work without preparation. Fitz does
-not compress raw logs, perform domain cleanup, silently equate identifier
-variants, or guarantee private abbreviation expansion. Long unsegmented
-documents, unrelated multi-intent requests, and some semantic table filters
-remain measured boundaries. See
-[Production Readiness](docs/PRODUCTION_READINESS.md) and
-[Limitations](LIMITATIONS.md).
+</details>
 
 ---
 
-### Governance — `Pyrrho`
+<a id="governance--pyrrho"></a>
 
-> **Current model status:** bare `pyrrho` resolves
-> `yafitzdev/pyrrho-v2-nano-g1` at immutable revision
-> `948f0500b74871cfaec7689a01d4eab0dd516e1b`. That model is accepted for the
-> current release, but its training data included benchmark-derived
-> deterministic rows. Scores on related fixed-evidence cases are therefore not
-> independent evidence of generalization.
+<details>
+
+<summary><strong>📦 Governance — Pyrrho</strong> → <a href="docs/CONSTRAINTS.md">Feature Docs</a></summary>
+
+<br>
 
 [Feature docs](docs/CONSTRAINTS.md) • [Pyrrho on Hugging Face](https://huggingface.co/yafitzdev) • [fitz-gov on Hugging Face](https://huggingface.co/datasets/yafitzdev/fitz-gov-v2)
 
 Pyrrho is the local governance model behind `fitz-sage`. Its default CPU-local
-ONNX ModernBERT package
+ONNX ModernBERT model
 [`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
-is resolved and cached by the independent Pyrrho runtime at the exact revision
-above.
+is pinned to an immutable Hub revision and cached by Fitz-Sage through the
+standard Hugging Face cache.
 
 <br>
 
@@ -330,19 +356,11 @@ above.
 | `retrieval_intents` | Evidence intent metadata, such as lookup, temporal resolution, comparison, or broad coverage. |
 | `evidence_kinds` | Evidence-surface metadata, such as text, table, code, config, logs, or document layout. |
 
-Pyrrho owns logit decoding, thresholds, head consistency, and the final verdict.
-Fitz-Sage passes evidence to Pyrrho unchanged, maps the verdict name into
-`AnswerMode`, and returns the exact serialized decision with the `EvidencePack`.
+Fitz-Sage passes evidence to Pyrrho unchanged. Its managed ONNX adapter applies
+the model's fixed input and head-decoding contract, maps the resulting verdict
+into `AnswerMode`, and returns the exact serialized decision with the `EvidencePack`.
 Applications can
 answer, retry, show conflict, or request more source material.
-
-<br>
-
-Pyrrho's exact decisions remain visible in Fitz reports. Because its training
-tranche included benchmark-derived wording, related development and
-fixed-evidence scores must not be presented as independent release evidence.
-Future Pyrrho retraining and independent evaluation remain separate from
-Fitz-Sage retrieval work.
 
 <br>
 
@@ -350,8 +368,8 @@ Fitz-Sage retrieval work.
 > Governance is a source-evidence judgment. Pyrrho is trained to decide whether retrieved evidence is sufficient,
 > disputed, or insufficient, and Fitz records that judgment in the returned metadata.
 
-<strong>The runtime fails closed on known contract violations 🛡️</strong>
-> The independent Pyrrho runtime checks model packages, label order, ONNX
+<strong>The model adapter fails closed on known contract violations 🛡️</strong>
+> Fitz-Sage's managed Pyrrho adapter checks the model artifact, label order, ONNX
 > width, token limits, graph parity, and verdict/failure compatibility before
 > or during inference. These
 > checks reduce unsafe failure modes; they are not a substitute for clean-data
@@ -359,6 +377,33 @@ Fitz-Sage retrieval work.
 
 <strong>No LLM on the governance path ⏱️</strong>
 > Pyrrho is a local encoder forward pass. Governance does not require an external chat model.
+
+</details>
+
+---
+
+<a id="limitations"></a>
+
+<details>
+
+<summary><strong>📦 Limitations</strong> → <a href="docs/LIMITATIONS.md">Full Measured Contract</a></summary>
+
+<br>
+
+Fitz-Sage targets reasonably clean, supported documents. The complete contract
+and case-level evidence are in [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
+
+| Boundary | Current behavior | Responsibility |
+|----------|------------------|----------------|
+| Identifier variants | `ATX-123`, `ATX_123`, and `ATX 123` remain distinct | User data preparation |
+| Private vocabulary | Managed semantic terms are best effort; private mappings are not inferred | User data preparation |
+| Raw logs and scans | Logs need compression; scans need an OCR/vision parser | User input pipeline |
+| Long or unrelated requests | Retrieval and evidence budgets are finite | Shared boundary |
+| Multi-document ranking | Weaker than single-document ranking on the enterprise holdout | Fitz-Sage |
+| Extreme file counts | Public re-pointing still walks and hashes every source file | Fitz-Sage |
+| Governance context | Pyrrho currently accepts up to 2,048 tokens | Pyrrho |
+
+</details>
 
 ---
 
@@ -382,7 +427,8 @@ Fitz-Sage retrieval work.
 >
 >`fitz-sage` creates a local retrieval config on first run:
 >1. **SQLite storage** for collections.
->2. **Managed ONNX models** for reranking and enrichment.
+>2. **Managed local models** for semantic query terms, reranking, governance,
+>   and optional background enrichment.
 >3. **Pyrrho query planning** plus one authoritative evidence decision.
 >
 >For generated prose from the governed evidence:
@@ -434,7 +480,10 @@ Fitz-Sage retrieval work.
 >fitz retrieve "Your question here" --source ./docs
 >```
 >
->Reranking, governance, query-time expansion, and optional background enrichment run locally. No data leaves your machine for `fitz retrieve`.
+>With the default retrieval-only config, reranking, governance, query-time
+>expansion, and optional background enrichment run locally, so `fitz retrieve`
+>does not send data to an endpoint. Explicitly configured query intelligence,
+>chat tiers, or vision parsing can send query or source content to that endpoint.
 >
 >Optional synthesis can use [vLLM](https://github.com/vllm-project/vllm), [LM Studio](https://lmstudio.ai),
 >[Ollama](https://ollama.ai) in `/v1/` mode, [TabbyAPI](https://github.com/theroyallab/tabbyAPI), OpenAI, Together,
@@ -519,7 +568,7 @@ build on source evidence.
 │                         fitz-sage                               │
 ├─────────────────────────────────────────────────────────────────┤
 │  User Interfaces                                                │
-│  CLI: retrieve | answer | collections | serve                   │
+│  CLI: retrieve | explain | replay | answer | collections | serve│
 │  SDK: fitz_sage.evidence(source=...)                            │
 │  API: /answer | /evidence | /chat | /collections | /health      │
 ├─────────────────────────────────────────────────────────────────┤
@@ -533,7 +582,7 @@ build on source evidence.
 │  evidence verdict | failure mode | evidence metadata            │
 ├─────────────────────────────────────────────────────────────────┤
 │  Local CPU Models                                               │
-│  ONNX reranker | managed Qwen enrichment | Pyrrho governance    │
+│  ONNX reranker | managed Qwen query/background | Pyrrho         │
 ├─────────────────────────────────────────────────────────────────┤
 │  Storage                                                        │
 │  SQLite + FTS5, one .db per collection                          │
@@ -625,6 +674,9 @@ for item in pack.items:
 ```bash
 pip install fitz-sage[api]
 
+# Initialize the workspace and collection once
+fitz retrieve "What is indexed?" --source ./docs
+
 fitz serve                    # localhost:8000
 fitz serve -p 3000            # custom port
 $env:FITZ_API_KEY = "replace-with-a-random-secret"
@@ -644,12 +696,16 @@ fitz serve --host 0.0.0.0     # remote access requires the API key
 | POST | `/chat` | Return generated prose from retrieved evidence |
 | GET | `/collections` | List all collections |
 | GET | `/collections/{name}` | Get collection stats |
+| POST | `/collections/{name}/documents` | Build/update the searchable source index |
+| GET | `/collections/{name}/status` | Inspect source-index and enrichment status |
 | DELETE | `/collections/{name}` | Delete a collection |
 | GET | `/health` | Health check |
 
 <br>
 
 **Example request:**
+
+`/answer` and `/chat` require a configured synthesizer. `/evidence` does not.
 
 ```bash
 curl -X POST http://localhost:8000/answer \
@@ -670,9 +726,11 @@ curl -X POST http://localhost:8000/answer \
 **`fitz` command not found after install**
 > Your Python Scripts directory is not on PATH. Use `python -m fitz_sage.cli.cli`, or add the Scripts directory to PATH.
 
-**PDF/DOCX files are being skipped**
-> Document parsing requires the optional document parser dependencies. Install them with:
-> `pip install fitz-sage[docs]`
+**PDF/DOCX/PPTX files are being skipped**
+> The base install reads embedded text from these formats. Image-only files
+> need an OCR-capable parser. `parser: glm_ocr` expects a local Ollama
+> `glm-ocr` model; install `fitz-sage[docs]` only when you explicitly select a
+> Docling parser.
 
 **"Connection refused at localhost:8080" error**
 > This applies to optional endpoint-backed synthesis or query intelligence. `fitz retrieve "..."` returns evidence without an
@@ -730,6 +788,11 @@ MIT
 - [GitHub](https://github.com/yafitzdev/fitz-sage)
 - [PyPI](https://pypi.org/project/fitz-sage/)
 - [Changelog](CHANGELOG.md)
+- [Benchmark Report](docs/BENCHMARK.md)
+- [Benchmark Methodology](benchmarks/README.md)
+- [Production Readiness](docs/PRODUCTION_READINESS.md)
+- [Evaluation Reports](docs/evaluation/README.md)
+- [Measured Limitations](docs/LIMITATIONS.md)
 
 **Documentation:**
 - [Docs Index](docs/README.md)
@@ -748,7 +811,7 @@ MIT
 - [Ingestion Pipeline](docs/INGESTION.md)
 - [Enrichment (Hierarchies, Entities)](docs/ENRICHMENT.md)
 - [Epistemic Governance (Pyrrho)](docs/CONSTRAINTS.md)
-- [Plugin Development](docs/PLUGINS.md)
+- [Extension Points](docs/PLUGINS.md)
 - [Feature Control](docs/FEATURE_CONTROL.md)
 - [KRAG — Knowledge Routing Augmented Generation](docs/features/platform/krag.md)
 - [Code Symbol Extraction](docs/features/ingestion/code-symbol-extraction.md)

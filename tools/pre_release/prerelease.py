@@ -12,22 +12,22 @@ Runs ALL checks before tagging a release:
 
 Usage:
     # Run all checks (fix mode for lint, unit tests only):
-    python -m tools.pre_release.prerelease
+    python tools/pre_release/prerelease.py
 
     # Check-only mode (CI-style, no auto-fix):
-    python -m tools.pre_release.prerelease --check
+    python tools/pre_release/prerelease.py --check
 
     # Include slow tests:
-    python -m tools.pre_release.prerelease --slow
+    python tools/pre_release/prerelease.py --slow
 
     # Include E2E tests:
-    python -m tools.pre_release.prerelease --e2e
+    python tools/pre_release/prerelease.py --e2e
 
     # Full release validation (all tests):
-    python -m tools.pre_release.prerelease --full
+    python tools/pre_release/prerelease.py --full
 
     # Skip tests (lint only):
-    python -m tools.pre_release.prerelease --lint-only
+    python tools/pre_release/prerelease.py --lint-only
 
 Requirements:
     pip install ruff isort pytest
@@ -365,10 +365,10 @@ def parse_args() -> PreReleaseConfig:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m tools.pre_release.prerelease           # Quick check with auto-fix
-  python -m tools.pre_release.prerelease --check   # CI mode (no auto-fix)
-  python -m tools.pre_release.prerelease --full    # Full validation
-  python -m tools.pre_release.prerelease --lint-only  # Skip tests
+  python tools/pre_release/prerelease.py           # Quick check with auto-fix
+  python tools/pre_release/prerelease.py --check   # CI mode (no auto-fix)
+  python tools/pre_release/prerelease.py --full    # Full validation
+  python tools/pre_release/prerelease.py --lint-only  # Skip tests
         """,
     )
 

@@ -27,7 +27,10 @@ class QueryRequest(BaseModel):
     collection: str = Field("default", description="Collection to query")
     conversation_history: List["ChatMessage"] = Field(
         default_factory=list,
-        description="Optional conversation history for query rewriting (resolves pronouns like 'their' → 'TechCorp')",
+        description=(
+            "Optional history made available to configured query intelligence; "
+            "the deterministic default uses the current question."
+        ),
     )
 
 
@@ -159,14 +162,14 @@ class CollectionInfo(BaseModel):
     """Basic information about a collection."""
 
     name: str = Field(..., description="Collection name")
-    item_count: int = Field(..., description="Number of items in the collection")
+    item_count: int = Field(..., description="Number of persisted document-section rows")
 
 
 class CollectionStats(BaseModel):
     """Detailed statistics for a collection."""
 
     name: str = Field(..., description="Collection name")
-    item_count: int = Field(..., description="Number of items")
+    item_count: int = Field(..., description="Number of persisted document-section rows")
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional collection metadata"
     )

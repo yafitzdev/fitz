@@ -68,7 +68,8 @@ Disambiguated queries:
   - "How do I handle API request errors?"
 ```
 
-All interpretations are searched and results are merged.
+Up to three interpretations returned by query intelligence become recall legs,
+and their results are merged.
 
 ## Key Design Decisions
 
@@ -76,7 +77,8 @@ All interpretations are searched and results are merged.
 
 2. **Batched** - Rewriting is one section of the single query-prep LLM call (alongside analysis, detection, keywords) — no call of its own.
 
-3. **Context-aware** - Maintains conversation history for pronoun resolution.
+3. **Context-aware** - Consumes caller-supplied conversation history for
+   pronoun resolution; fitz-sage does not maintain chat state.
 
 4. **Confidence scoring** - Each rewrite includes confidence (0.0-1.0).
 

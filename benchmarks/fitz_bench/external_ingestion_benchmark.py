@@ -52,9 +52,7 @@ def main(argv: list[str] | None = None) -> int:
                 expected=expected,
             )
 
-        passed = bool(baseline["gate"]["passed"]) and (
-            recovery is None or bool(recovery["passed"])
-        )
+        passed = bool(baseline["gate"]["passed"]) and (recovery is None or bool(recovery["passed"]))
         report = {
             "corpus": metadata.as_dict(),
             "baseline": baseline,

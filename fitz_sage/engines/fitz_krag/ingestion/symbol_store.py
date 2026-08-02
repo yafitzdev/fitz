@@ -80,6 +80,10 @@ class SymbolStore:
         self._cm = connection_manager
         self._collection = collection
 
+    def has_records(self) -> bool:
+        """Return whether symbol retrieval has any indexed records."""
+        return store_utils.has_rows(self._cm, self._collection, TABLE)
+
     def upsert_batch(self, symbols: list[dict[str, Any]]) -> None:
         if not symbols:
             return

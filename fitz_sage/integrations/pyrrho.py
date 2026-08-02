@@ -1,13 +1,13 @@
-"""Thin integration with Pyrrho's authoritative governance runtime."""
+"""Thin integration between retrieval results and the managed Pyrrho model."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from pyrrho import GovernanceDecision, Pyrrho
-
 from fitz_sage.core.answer_mode import AnswerMode
+from fitz_sage.llm.providers.onnx_pyrrho import OnnxPyrrho
+from fitz_sage.llm.providers.pyrrho_types import GovernanceDecision
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.types import ReadResult
@@ -19,18 +19,18 @@ _VERDICT_TO_MODE = {
 }
 
 
-def create_pyrrho(spec: str) -> Pyrrho:
-    """Build Pyrrho from Fitz-Sage's provider/model configuration syntax."""
+def create_pyrrho(spec: str) -> OnnxPyrrho:
+    """Build the managed Pyrrho model from Fitz-Sage's model syntax."""
     if not isinstance(spec, str) or not spec.strip():
-        raise ValueError("Governance must be 'pyrrho' or 'pyrrho/<package>'.")
+        raise ValueError("Governance must be 'pyrrho' or 'pyrrho/<model>'.")
     provider, separator, model_spec = spec.strip().partition("/")
     if provider != "pyrrho":
         raise ValueError(
-            f"Unknown governance provider: {provider!r}. Supported: 'pyrrho' or 'pyrrho/<package>'."
+            f"Unknown governance provider: {provider!r}. Supported: 'pyrrho' or 'pyrrho/<model>'."
         )
     if separator and not model_spec.strip():
-        raise ValueError("Pyrrho package specification cannot be empty.")
-    return Pyrrho(model_spec.strip()) if separator else Pyrrho()
+        raise ValueError("Pyrrho model specification cannot be empty.")
+    return OnnxPyrrho(model_spec.strip()) if separator else OnnxPyrrho()
 
 
 def pyrrho_evidence(results: Sequence["ReadResult"]) -> list[dict[str, str]]:
@@ -48,7 +48,7 @@ def pyrrho_evidence(results: Sequence["ReadResult"]) -> list[dict[str, str]]:
 
 
 def decide(
-    runtime: Pyrrho,
+    runtime: OnnxPyrrho,
     query: str,
     results: Sequence["ReadResult"],
 ) -> GovernanceDecision:
@@ -77,7 +77,7 @@ def decision_payload(decision: GovernanceDecision) -> dict[str, Any]:
 
 __all__ = [
     "GovernanceDecision",
-    "Pyrrho",
+    "OnnxPyrrho",
     "answer_mode_from_pyrrho",
     "create_pyrrho",
     "decide",

@@ -10,8 +10,9 @@ Working configs for the managed-ONNX / SQLite world. The schema rules:
   means deterministic query prep plus managed Qwen semantic keywords).
 - **Governance is mandatory** — bare `pyrrho` uses the accepted immutable
   default; advanced users can select a local or commit-pinned package.
-- **Sensible defaults** — `collection` is the only thing every config
-  must set; the rest can be overridden per-invocation via CLI flags.
+- **Sensible defaults** — `collection` is the only required field. Selected
+  synthesis provider fields can be overridden by `fitz answer`; other settings
+  use schema defaults or the YAML file.
 
 ---
 
@@ -28,8 +29,8 @@ synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-No hosted API key or external inference server is needed for `fitz retrieve`,
-`fitz retrieve`, or `fitz_sage.evidence(...)`. See
+No hosted API key or external inference server is needed for `fitz retrieve`
+or `fitz_sage.evidence(...)`. See
 [Managed Models](MANAGED_MODELS.md) for exact local model IDs, runtimes, cache
 locations, and the smoke command.
 
@@ -99,10 +100,10 @@ chat_api_key_env: MISTRAL_API_KEY
 
 ---
 
-## Mixed local + cloud (cost-optimized)
+## Mixed local + cloud
 
-Required internal Qwen enrichment, optional local query intelligence, and a
-smart cloud model for optional synthesis:
+Managed local Qwen query expansion, optional endpoint query intelligence, and
+a cloud model for optional synthesis:
 
 ```yaml
 collection: my_docs
@@ -120,9 +121,9 @@ synthesizer: openai/gpt-4o
 # Default — INT8 ONNX cross-encoder (gte-reranker-modernbert-base, 149M)
 rerank: onnx
 rerank_candidates: 32
-# Or pick a different cross-encoder:
-# rerank: onnx/BAAI/bge-reranker-base
-# rerank: onnx/jinaai/jina-reranker-v3
+# A custom repository must provide a compatible tokenizer and
+# onnx/model_int8.onnx artifact:
+# rerank: onnx/owner/compatible-reranker
 collection: my_docs
 ```
 
@@ -142,22 +143,25 @@ parser: docling_vision            # the parser that consults `vision:`
 collection: my_docs
 ```
 
-Use `parser: cpu` (the default), `parser: docling`, or `parser: glm_ocr`
-to skip the VLM and avoid the cost.
+Use `parser: cpu` (the default) or `parser: docling` to skip the VLM.
+`parser: glm_ocr` also skips `vision:`, but scanned pages require a running
+local Ollama `glm-ocr` model.
 
 ---
 
-## Standard Qwen 0.6B enrichment
+## Managed Qwen work
 
 ```yaml
 collection: my_docs
 summary_batch_size: 15
 ```
 
-The managed local Qwen runtime is the standard enrichment model. Fitz downloads
-it on first use if missing. Runtime failures are surfaced instead of silently
-weakening the retrieval index. Exact model/runtime details live in
-[Managed Models](MANAGED_MODELS.md).
+The managed local Qwen runtime supplies standard semantic query terms and
+optional background entity, hierarchy, and demand-summary work. Fitz downloads
+it on first model-backed operation, not during `point()`. A query-expansion
+failure is traced and falls back to the literal plan; a background failure is
+reported in enrichment status without invalidating the source index. Exact
+model/runtime details live in [Managed Models](MANAGED_MODELS.md).
 
 ---
 
@@ -167,10 +171,10 @@ weakening the retrieval index. Exact model/runtime details live in
 collection: production_docs
 synthesizer: enterprise/openai/gpt-4o
 query_intelligence: enterprise/openai/gpt-4o-mini
+chat_base_url: https://llm.corp.internal/v1
 
 auth:
   type: enterprise
-  base_url: https://llm.corp.internal/v1
   token_url: https://auth.corp.internal/oauth/token
   client_id: ${CORP_CLIENT_ID}
   client_secret: ${CORP_CLIENT_SECRET}
@@ -182,7 +186,7 @@ auth:
   client_key_path: /etc/ssl/client.key
 
 # Storage stays local SQLite — one .db per collection
-# under ~/.fitz/sqlite/. No DB knobs to configure.
+# under <current-workspace>/.fitz/sqlite/. No DB knobs to configure.
 ```
 
 Set env vars: `CORP_CLIENT_ID`, `CORP_CLIENT_SECRET`,
@@ -209,8 +213,11 @@ for that invocation.
 ## Programmatic, zero-config
 
 ```python
-from fitz_sage.engines.fitz_krag import FitzKragEngine, FitzKragConfig
+from pathlib import Path
+
 from fitz_sage.core import Query
+from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 
 cfg = FitzKragConfig(
     collection="my_docs",
@@ -218,9 +225,11 @@ cfg = FitzKragConfig(
     query_intelligence=None,
 )
 engine = FitzKragEngine(cfg)
+engine.point(Path("./docs"), start_worker=False)
 pack = engine.evidence(Query(text="What is quantum computing?"))
 print(pack.mode, [item.file_path for item in pack.items])
 ```
 
-Only `collection` is strictly required by the schema. Enrichment and
-summarization use the managed local Qwen runtime automatically.
+Only `collection` is strictly required by the schema. `point()` completes the
+searchable source index; the managed local Qwen runtime is loaded later by a
+query or optional background enrichment.

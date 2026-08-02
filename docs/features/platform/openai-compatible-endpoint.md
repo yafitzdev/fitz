@@ -1,9 +1,10 @@
 <!-- docs/features/platform/openai-compatible-endpoint.md -->
 # OpenAI-Compatible Endpoint Architecture
 
-**Status:** the optional endpoint/cloud chat path. Required enrichment uses
-managed Qwen3 0.6B ONNX GenAI; endpoint chat is for optional synthesis, query
-intelligence, and vision.
+**Status:** the optional endpoint/cloud chat path. Managed local Qwen supplies
+standard semantic query terms and optional background work; endpoint chat is
+for optional synthesis, query intelligence, vision, and explicitly configured
+chat-tier enhancements.
 
 ## TL;DR
 
@@ -22,16 +23,16 @@ Provider names are configuration presets on top of that implementation:
 
 ## Why a single protocol?
 
-The endpoint architecture speaks the OpenAI HTTP protocol, which virtually
-every modern serving stack already exposes:
+The endpoint architecture speaks the OpenAI HTTP protocol, which many modern
+serving stacks expose:
 
 - vLLM, LM Studio, TabbyAPI, Aphrodite, text-generation-webui
 - Ollama (`/v1/` mode at `:11434/v1`)
 - OpenAI, Together, Fireworks, Groq, DeepInfra, OpenRouter, Mistral La Plateforme
 
-The chat protocol is the only network protocol fitz-sage speaks. Retrieval
-runs through SQLite FTS5, KRAG routing, and the local ONNX cross-encoder
-reranker.
+Optional chat and vision roles use this protocol. The separate `glm_ocr` parser
+talks to Ollama's native API. Retrieval itself runs through SQLite FTS5, KRAG
+routing, and the local ONNX cross-encoder reranker.
 
 ## Authentication
 
@@ -54,18 +55,17 @@ chat_api_key_env: TOGETHER_API_KEY
 ## Engine config (FitzKrag)
 
 ```yaml
-fitz_krag:
-  synthesizer: endpoint/qwen2.5-7b-instruct
-  chat_base_url: http://localhost:8080/v1
-  chat_api_key_env: null         # unauthenticated local server
+synthesizer: endpoint/qwen2.5-7b-instruct
+chat_base_url: http://localhost:8080/v1
+chat_api_key_env: null         # unauthenticated local server
 
-  rerank: onnx                   # INT8 ONNX cross-encoder, local on CPU
-  collection: default
+rerank: onnx                   # INT8 ONNX cross-encoder, local on CPU
+collection: default
 ```
 
 Use role-specific provider fields (`query_intelligence`, `vision`, and
-`synthesizer`) to mix local and cloud models. Required enrichment is internal
-and does not need an endpoint.
+`synthesizer`) to mix local and cloud models. Managed Qwen work is internal and
+does not need an endpoint.
 
 ## Cloud quick reference
 
@@ -91,9 +91,8 @@ chat_api_key_env: OPENROUTER_API_KEY
 from fitz_sage.llm.client import get_chat
 
 chat = get_chat(
-    "endpoint",
-    config={"base_url": "http://localhost:8080/v1",
-            "model": "qwen2.5-7b-instruct"},
+    "endpoint/qwen2.5-7b-instruct",
+    config={"base_url": "http://localhost:8080/v1"},
 )
 response = chat.chat([{"role": "user", "content": "Hello"}])
 ```
@@ -106,11 +105,9 @@ response = chat.chat([{"role": "user", "content": "Hello"}])
 - It's not a tool-use / function-calling abstraction. Tool routing in
   KRAG happens above the chat layer.
 
-## Why this matters
+## Boundary
 
-The honest-RAG thesis is that *lower recall plus correct insufficiency decisions*
-beats *higher recall plus occasional hallucination*. BM25 + ONNX
-cross-encoder rerank favors source evidence that is lexically and jointly
-relevant to the query. Cases that fall off the recall curve are exactly the
-queries where `INSUFFICIENT` is the right evidence verdict, which is what the
-Pyrrho classifier is built to enforce.
+Endpoint providers never replace the default SQLite/BM25 retrieval path. Query
+intelligence participates only when explicitly configured, and synthesis runs
+only after governed evidence exists. Pyrrho remains the sole owner of the final
+evidence verdict.

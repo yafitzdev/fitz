@@ -50,9 +50,7 @@ class PlainBm25:
             document_lengths.append(len(terms))
             for term, frequency in Counter(terms).items():
                 postings.setdefault(term, []).append((index, frequency))
-        average = (
-            sum(document_lengths) / len(document_lengths) if document_lengths else 0.0
-        )
+        average = sum(document_lengths) / len(document_lengths) if document_lengths else 0.0
         return cls(
             document_ids=document_ids,
             document_lengths=document_lengths,
@@ -76,22 +74,15 @@ class PlainBm25:
                 continue
             document_frequency = len(term_postings)
             inverse_document_frequency = math.log(
-                1.0
-                + (document_count - document_frequency + 0.5)
-                / (document_frequency + 0.5)
+                1.0 + (document_count - document_frequency + 0.5) / (document_frequency + 0.5)
             )
             for document_index, term_frequency in term_postings:
                 normalized_length = (
                     self.document_lengths[document_index] / self.average_document_length
                 )
-                denominator = term_frequency + self.k1 * (
-                    1.0 - self.b + self.b * normalized_length
-                )
+                denominator = term_frequency + self.k1 * (1.0 - self.b + self.b * normalized_length)
                 term_score = (
-                    inverse_document_frequency
-                    * term_frequency
-                    * (self.k1 + 1.0)
-                    / denominator
+                    inverse_document_frequency * term_frequency * (self.k1 + 1.0) / denominator
                 )
                 scores[document_index] = (
                     scores.get(document_index, 0.0) + query_frequency * term_score
@@ -159,9 +150,8 @@ def stage_recoveries(
     """Describe relevant-document recoveries between non-monotonic stages."""
     relevant = {document_id for document_id, score in judgments.items() if score > 0}
     recoveries: list[str] = []
-    if (
-        not relevant.intersection(stages.get("reranked", ()))
-        and relevant.intersection(stages.get("final", ()))
+    if not relevant.intersection(stages.get("reranked", ())) and relevant.intersection(
+        stages.get("final", ())
     ):
         recoveries.append("final_rescued_reranker_miss")
     return recoveries
@@ -234,10 +224,7 @@ def _ndcg(
         (max(0, int(value)) for value in judgments.values()),
         reverse=True,
     )[:cutoff]
-    ideal = sum(
-        score / math.log2(rank + 1)
-        for rank, score in enumerate(ideal_scores, start=1)
-    )
+    ideal = sum(score / math.log2(rank + 1) for rank, score in enumerate(ideal_scores, start=1))
     return actual / ideal if ideal else 0.0
 
 

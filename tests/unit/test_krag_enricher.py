@@ -49,9 +49,7 @@ def test_model_entities_are_merged_with_exact_identifiers() -> None:
 
 
 def test_identifier_extraction_does_not_normalize_separators() -> None:
-    sections = [
-        {"title": "ATX-123", "content": "ATX_123 and ATX 123", "entities": []}
-    ]
+    sections = [{"title": "ATX-123", "content": "ATX_123 and ATX 123", "entities": []}]
 
     KragEnricher(MagicMock()).derive_section_entities(sections)
 

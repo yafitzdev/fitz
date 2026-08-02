@@ -48,8 +48,8 @@ managed Qwen query keywords, and optional query intelligence.
 | `analysis_type` | Primary surface such as general, code, documentation, data, or cross-surface. | Seeds strategy weights and entity targeting. |
 | `keywords` | Managed Qwen and deterministic semantic query terms. | Adds best-effort lexical candidates without embeddings. |
 | `comparison_entities` | Entities or sides that must both appear for comparison questions. | Helps avoid one-sided evidence packs. |
-| `temporal_references` | Dates, versions, quarters, or recency markers found in the query. | Boosts matching periods and freshness-sensitive evidence. |
-| `strategy_weights` | Code, section, table, and chunk retrieval weights. | Points recall at the likely evidence surface. |
+| `temporal_references` | Dates, versions, quarters, or recency markers found in the query. | Adds period-focused legs and content-grounded temporal ordering. |
+| `strategy_weights` | Code, section, and table retrieval weights. | Points recall at the likely evidence surface. |
 | `top_k` / `top_read` | Candidate and read limits. | Keeps narrow lookups fast and broad questions covered. |
 | `rerank_candidates` | Cross-encoder scoring budget. | Bounds neural work independently from the full BM25 recall pool. |
 | `required_modalities` | Evidence surfaces that should be present when known. | Ensures table, symbol, or section evidence remains eligible. |
@@ -79,8 +79,7 @@ Example:
       "strategy_weights": {
         "code": 0.6,
         "section": 0.25,
-        "table": 0.15,
-        "chunk": 0.35
+        "table": 0.15
       }
     }
   }
@@ -178,7 +177,7 @@ Query:
 Expected retrieval behavior:
 
 - evidence should match the requested timeframe
-- wrong-month evidence should be marked insufficient
+- wrong-month evidence should remain visible as a scope problem for Pyrrho
 - versioned or dated sources should be preferred
 
 Likely governance metadata when evidence is incomplete:
@@ -205,7 +204,7 @@ Useful governance metadata:
 | `evidence_verdict = INSUFFICIENT` | Native v2 verdict agrees the evidence cannot answer. |
 | `mode = INSUFFICIENT` | Runtime API mode for insufficient evidence. |
 | `failure_mode = missing_or_incomplete_evidence` | The corpus lacks the required Q4 evidence. |
-| `retrieval_intents = needs_temporal_resolution` | Another pass should focus on the missing period. |
+| `retrieval_intents = needs_temporal_resolution` | The caller can see that temporal evidence was required. |
 
 ### Conflict
 

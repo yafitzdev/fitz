@@ -2,7 +2,7 @@
 """
 Fitz REST API.
 
-Provides HTTP endpoints for the Fitz RAG framework.
+Provides HTTP endpoints for fitz-sage retrieval and collection management.
 """
 
 from __future__ import annotations

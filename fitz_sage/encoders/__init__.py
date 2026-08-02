@@ -5,8 +5,8 @@
 graph from the Hugging Face Hub and the forward pass. Fitz-Sage's ONNX
 cross-encoder reranker subclasses it.
 
-Pyrrho is an independent package with its own runtime and does not subclass
-Fitz-Sage internals.
+Pyrrho has a model-specific managed adapter because its multi-head output and
+artifact validation differ from the shared retrieval-encoder mechanics.
 """
 
 from fitz_sage.encoders.onnx import OnnxEncoderBackend

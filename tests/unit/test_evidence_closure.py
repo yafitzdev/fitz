@@ -65,9 +65,7 @@ def test_bridge_identifier_followups_do_not_include_sibling_identifiers() -> Non
     plan = plan_evidence_closure(query, [brief], compilation, profile=profile)
 
     bridge_requests = {
-        request.role: request
-        for request in plan.requests
-        if request.reason == "bridge_identifier"
+        request.role: request for request in plan.requests if request.reason == "bridge_identifier"
     }
     rollout_request = bridge_requests["bridge:ROL-401"]
     service_request = bridge_requests["bridge:SVC-202"]
@@ -368,9 +366,7 @@ def test_required_modality_rescue_does_not_seed_an_unrelated_identifier() -> Non
         profile=profile,
     )
 
-    assert compilation.results[0].metadata["evidence_compiler"]["roles"] == [
-        "required_section"
-    ]
+    assert compilation.results[0].metadata["evidence_compiler"]["roles"] == ["required_section"]
 
     plan = plan_evidence_closure(
         query,
@@ -975,9 +971,7 @@ def test_closure_merge_preserves_different_equally_precise_table_result() -> Non
         {
             "deterministic_table_filter": True,
             "result_count": 1,
-            "table_query_plan": {
-                "sort": {"column": "mttr_minutes", "direction": "min"}
-            },
+            "table_query_plan": {"sort": {"column": "mttr_minutes", "direction": "min"}},
         }
     )
     candidate = _result(
@@ -1018,9 +1012,7 @@ def test_closure_merge_replaces_sorted_table_for_noncomparison_contract() -> Non
         {
             "deterministic_table_filter": True,
             "result_count": 1,
-            "table_query_plan": {
-                "sort": {"column": "rollout_percent", "direction": "max"}
-            },
+            "table_query_plan": {"sort": {"column": "rollout_percent", "direction": "max"}},
         }
     )
     candidate = _result(

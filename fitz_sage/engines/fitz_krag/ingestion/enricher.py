@@ -177,10 +177,7 @@ def _deterministic_entities(item: dict[str, str]) -> list[dict[str, str]]:
 
     for pattern in _IDENTIFIER_PATTERNS:
         for match in pattern.finditer(text):
-            if any(
-                match.start() < end and match.end() > start
-                for start, end in identifier_spans
-            ):
+            if any(match.start() < end and match.end() > start for start, end in identifier_spans):
                 continue
             value = match.group(0).strip(".,;:()[]{}")
             added = _add_entity(entities, seen, value, "identifier")

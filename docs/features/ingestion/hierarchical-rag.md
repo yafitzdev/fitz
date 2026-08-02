@@ -1,182 +1,88 @@
-<!-- docs/features/ingestion/hierarchical-rag.md -->
-# Hierarchical RAG
+# Hierarchy Summaries
 
-## Problem
+Hierarchy summaries are optional background context for broad questions. They
+do not participate in the `point()` query-readiness boundary.
 
-Standard RAG fails on analytical queries because answers are spread across documents:
+## Levels
 
-- **Q:** "What are the design principles?"
-- **Standard RAG:** Returns random chunks mentioning "design" or "principles" → fragmented, incomplete
-- **Expected:** Aggregated insights spanning all documents
+| Level | Stored form | Availability |
+|---|---|---|
+| L0 | Original document sections | Immediately after source indexing |
+| L1 | One file overview copied into section metadata | After background file enrichment |
+| L2 | Synthetic `Corpus Overview` section | After background corpus finalization |
 
-Analytical queries like "What are the trends?", "What are the key themes?", or "Summarize the main points" need **document-level and corpus-level understanding**, not chunk-level retrieval.
+Code symbols and native CSV/TSV tables do not receive the document hierarchy.
+Their structure is represented by symbol/import metadata and table schemas.
 
-## Solution: Multi-Level Summaries
+## Lifecycle
 
-Fitz generates hierarchical summaries during ingestion and retrieves at the appropriate level:
-
-```
-Level 2: Corpus summary (all documents)
-         ↓
-Level 1: Group summaries (per source file)
-         ↓
-Level 0: Original sections (granular content)
-```
-
-Query routing is automatic — summaries match analytical queries via the BM25 + ONNX cross-encoder reranker pipeline because the summary text matches the broader phrasing those queries use.
-
-## How It Works
-
-The `KragIngestPipeline` builds the hierarchy itself — there is no
-separate hierarchy enricher. L1 summaries are produced during the
-per-file `enrich` step; the L2 summary during the corpus `finalize`
-step. Both use the managed Qwen3 0.6B ONNX GenAI runtime.
-
-### At Ingestion
-
-1. **Level 0: Original sections** - Documents are parsed into sections
-   normally, with 1-2 sentence per-section LLM summaries.
-
-2. **Level 1: Group summaries** - During `enrich_file`, each document
-   file gets one group summary:
-   - The pipeline summarizes the file's sections into a 2-3 sentence
-     overview of what the document covers.
-   - **NOT stored as a separate section** - written to each section's
-     `metadata["hierarchy_summary"]`.
-   - Code symbols carry their own machine-readable structure (imports,
-     AST), so they get no hierarchy summary.
-
-3. **Level 2: Corpus summary** - During `finalize`, the entire
-   collection gets a summary:
-   - The pipeline rolls all L1 summaries up into a 3-5 sentence corpus
-     summary describing the overall system.
-   - **Stored as a synthetic retrievable section** titled "Corpus
-     Overview" under a fixed synthetic raw file, so re-ingest upserts
-     it in place.
-
-### At Query Time
-
-Only L0 sections and the L2 corpus section are indexed in FTS5 (L1
-lives as metadata on each L0 row). BM25 returns:
-
-```
-Q: "What are the overall trends?"
-→ L2 corpus summary scores high on the abstract phrasing
-→ Returns corpus summary for high-level view
-→ Result: High-level answer spanning all documents
-
-Q: "What did users say about the async tutorial?"
-→ L0 sections from async_tutorial.md score high on the specific tokens
-→ Result: Specific, granular content from the matching file
+```text
+parse and store original sections
+    |
+    +--> point() returns: L0 is searchable
+    |
+    +--> background build_hierarchy_file(): L1 file overview
+    |
+    +--> background build_corpus_hierarchy(): L2 corpus overview
 ```
 
-## Key Design Decisions
+The managed local Qwen runtime writes L1 and L2 summaries. A model failure is
+recorded in enrichment status and leaves the original L0 index intact.
 
-1. **Required managed runtime** — summaries are generated during ingestion
-   through Fitz's standard Qwen ONNX runtime.
+Demand summaries are separate: after retrieval surfaces a document or table,
+the warm loop may summarize that source for later reranking. Unqueried sources
+are not eagerly summarized merely to make the collection searchable.
 
-2. **Automatic routing** — abstract queries lexically match the L2
-   summary; specific queries match L0 token-for-token. The ONNX
-   reranker resolves edge cases.
+## Query Behavior
 
-3. **Wholesale rebuild** - `finalize` re-runs the L2 summary on every
-   re-ingest. Incremental hierarchy is a v2 concern.
+L1 overviews remain metadata on their original sections. The L2 corpus overview
+is persisted as a synthetic section, but it is excluded from ordinary section
+BM25. The retrieval profile injects it only for broad or exploratory queries
+when a compatible summary exists.
 
-4. **Two storage shapes** - L1 lives as `hierarchy_summary` metadata on
-   each L0 section; L2 is a single synthetic retrievable section.
+This avoids allowing a generic corpus summary to compete with precise source
+sections on every lookup. It also means hierarchy is best-effort context, not a
+guarantee that an aggregation or trend question is complete.
 
-5. **LLM-generated** - Uses the same managed local LLM as enrichment (no separate model).
+## Regeneration
+
+Corpus finalization replaces the schema-versioned synthetic overview rather
+than accumulating old summaries. Changed files return to pending enrichment;
+unchanged searchable source remains available throughout the process.
 
 ## Configuration
 
-The feature is built into the KRAG ingestion pipeline and is not
-user-configurable. If the managed Qwen ONNX runtime cannot load, ingestion
-keeps retrieval queryable with deterministic grounded metadata; hierarchy
-summaries remain best-effort local enrichment.
+There is no public hierarchy provider or enable flag. Source indexing always
+works without hierarchy. The in-process worker or CLI enrichment daemon runs
+the managed background stages when work is pending.
 
-## Files
+Use `indexing_status()` to distinguish the two contracts:
 
-- **Ingestion pipeline:** `fitz_sage/engines/fitz_krag/ingestion/pipeline.py`
-  — `KragIngestPipeline` builds L1 (`_generate_l1_summary`) during
-  `enrich_file` and L2 (`_build_corpus_summary`) during `finalize`
-- **Summary storage:** L2 stored as a synthetic "Corpus Overview"
-  section indexed in SQLite FTS5; L1 as `hierarchy_summary` metadata on
-  each L0 section
-- **Runtime:** `fitz_sage/llm/providers/onnx_chat.py`
-
-## Benefits
-
-| Standard RAG | Hierarchical RAG |
-|--------------|------------------|
-| Fragments on analytical queries | Coherent high-level answers |
-| No corpus-level view | Automatic corpus summarization |
-| Misses themes/trends | Captures themes/trends naturally |
-| Only finds direct matches | Finds conceptual matches via summaries |
-
-## Example
-
-**Corpus:** 50 documents about software architecture
-
-### Query: "What are the overall trends?"
-
-**Standard RAG (no hierarchy):**
-- Returns: 5 random chunks mentioning "trend"
-- Result: Fragmented, incomplete
-
-**Hierarchical RAG:**
-- Returns: L2 corpus summary
-- Result:
-
-```
-The corpus shows three major architectural trends:
-
-1. Microservices adoption: 60% of documents discuss service decomposition,
-   API gateways, and inter-service communication patterns.
-
-2. Event-driven design: 40% cover event sourcing, message queues, and
-   asynchronous processing.
-
-3. Observability focus: 75% emphasize logging, metrics, and distributed tracing
-   as first-class architectural concerns.
-
-Sources: Corpus Overview (L2 corpus summary)
+```python
+status = engine.indexing_status()
+print(status["query_ready"])
+print(status["enrichment"]["complete"])
 ```
 
-### Query: "How do I implement authentication in microservices?"
+## Implementation
 
-**Standard RAG (no hierarchy):**
-- Returns: 5 sections directly mentioning authentication
-- Result: Granular, specific
+- `fitz_sage/engines/fitz_krag/ingestion/pipeline.py`
+  - `build_hierarchy_file()`
+  - `build_corpus_hierarchy()`
+  - `summarize_file()`
+- `fitz_sage/engines/fitz_krag/progressive/worker.py`
+- `fitz_sage/engines/fitz_krag/ingestion/section_store.py`
 
-**Hierarchical RAG:**
-- Returns: L0 sections (no hierarchy needed for specific queries)
-- Result: Same as standard RAG
+## Boundaries
 
-Hierarchy only activates when BM25 + the ONNX cross-encoder reranker promote a summary row over the granular ones.
+- Summaries can omit details or flatten disagreements.
+- L2 is representative context, not proof of exhaustive corpus coverage.
+- Background completion time depends on corpus size and local Qwen runtime.
+- Original source evidence remains authoritative; Pyrrho receives selected raw
+  source units, not a hierarchy-only answer.
 
-## When Hierarchy Activates
+## Related
 
-| Query Type | Retrieved Level | Reason |
-|------------|----------------|--------|
-| "What are the trends?" | L2 | Analytical, corpus-level |
-| "Summarize the main points" | L2 | Analytical, corpus-level |
-| "What topics are covered?" | L2 | Meta-question about corpus |
-| "How do I authenticate?" | L0 | Specific, granular |
-| "What does file X say?" | L0 (X) | File-specific |
-
-## Dependencies
-
-- Managed Qwen3 0.6B ONNX GenAI runtime
-- Summaries stored in the same SQLite collection as sections
-
-## Performance Considerations
-
-- **Ingestion time:** +30-60s per 50 documents (for summary generation)
-- **Storage:** +2-5% (summaries are small compared to source sections)
-- **Query time:** No additional latency (summaries are retrieved as sections)
-
-## Related Features
-
-- **Aggregation Queries** - Expands retrieval count; hierarchy provides aggregated content
-- **Multi-Query** - Long queries decomposed; hierarchy provides high-level context
-- **Epistemic Honesty** - Corpus summary helps detect when information is missing
+- [Ingestion Pipeline](../../INGESTION.md)
+- [Background Enrichment](../../ENRICHMENT.md)
+- [Aggregation Queries](../retrieval/aggregation-queries.md)

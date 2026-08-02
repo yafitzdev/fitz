@@ -238,8 +238,7 @@ def _chunk_unheaded_elements(
         for fragment in _split_unheaded_text(element.content):
             separator_length = 2 if parts else 0
             if parts and (
-                content_length + separator_length + len(fragment)
-                > _UNHEADED_SECTION_MAX_CHARS
+                content_length + separator_length + len(fragment) > _UNHEADED_SECTION_MAX_CHARS
             ):
                 flush()
                 separator_length = 0

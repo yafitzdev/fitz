@@ -62,7 +62,6 @@ jobs:
           pip install -q pydantic pyyaml httpx typing-extensions typer jinja2
           pip install -q pytest pytest-cov pytest-xdist psutil hypothesis
           pip install -q cryptography
-          pip install -q "pyrrho>=0.1.0,<0.2" --no-deps
           pip install -q "mutmut>=2.4,<3"
           pip install -q -e . --no-deps
 

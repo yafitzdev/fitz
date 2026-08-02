@@ -53,6 +53,12 @@ def delete_by_file(
         conn.commit()
 
 
+def has_rows(cm: SqliteConnectionManager, collection: str, table: str) -> bool:
+    """Return whether an index table contains at least one row."""
+    with cm.connection(collection) as conn:
+        return conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None
+
+
 def update_entities_by_file(
     cm: "SqliteConnectionManager",
     collection: str,

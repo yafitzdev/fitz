@@ -87,8 +87,7 @@ query. Exact Pyrrho PRE evidence obligations remain separate in
         "strategy_weights": {
           "code": 0.25,
           "section": 0.25,
-          "table": 0.55,
-          "chunk": 0.35
+          "table": 0.55
         },
         "keywords": ["incident", "eu", "release"],
         "comparison_entities": ["EU token rotation", "policy interval"],
@@ -162,7 +161,7 @@ Field meanings:
 | `pyrrho.verdict` | Authoritative native verdict. |
 | `pyrrho.probabilities` | Native verdict probabilities. |
 | `pyrrho.heads` | Native v2 verdict, failure, retrieval-intent, and evidence-kind heads. |
-| `pyrrho.input` | Token count, truncation status, and package token limit. |
+| `pyrrho.input` | Token count, truncation status, and model token limit. |
 
 Pyrrho owns thresholds and contradictory-head consistency. Fitz-Sage neither
 adds confidence thresholds nor overrides the verdict for any query shape.
@@ -276,7 +275,7 @@ Evidence items are typed retrieval units. `address_kind` identifies the unit:
 |---|---|
 | `section` | Markdown, PDF, DOCX, PPTX, HTML, text, or parsed prose section. |
 | `symbol` | Code function, class, method, constant, or module-level symbol. |
-| `table` | CSV/table metadata or extracted document table. |
+| `table` | Native configured delimited table, `.csv`/`.tsv` by default. |
 | `file` | Code file selected or added through structural expansion. |
 
 `excerpt` is display text. `content` is the fuller text passed into Pyrrho and

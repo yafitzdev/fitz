@@ -35,19 +35,20 @@ Architecture:
 Philosophy:
     Knowledge → Engine → EvidencePack → optional Answer
 
-    Engines are black boxes that transform queries into governed evidence.
-    The platform only cares about the interface, not the implementation.
+    Retrieval engines transform queries into governed evidence; the minimal
+    KnowledgeEngine protocol returns an Answer. The runtime depends on those
+    public contracts rather than engine internals.
 
 Examples:
     Simple query:
     >>> from fitz_sage import evidence
     >>> pack = evidence("What is quantum computing?")
 
-    Specific engine:
-    >>> answer = run("What is X?", engine="fitz_krag")
+    Specific engine with answer synthesis configured:
+    >>> answer = run("What is X?", engine="fitz_krag")  # requires synthesizer
 
     Reusable engine:
-    >>> from fitz import create_engine, Query
+    >>> from fitz_sage import Query, create_engine
     >>> engine = create_engine("fitz_krag")
     >>> query = Query(text="What is Y?")
     >>> pack = engine.evidence(query)
@@ -144,8 +145,8 @@ def answer(question: str, source=None, collection: str | None = None):
 
     Examples:
         >>> import fitz_sage
-        >>> pack = fitz_sage.evidence("What is the refund policy?", source="./docs")
-        >>> print(pack.mode)
+        >>> answer = fitz_sage.answer("What is the refund policy?", source="./docs")
+        >>> print(answer.text)
     """
     global _default_fitz
     if collection is not None:

@@ -404,7 +404,7 @@ class TestAnswer:
 
         assert result is expected
         engine._query_batcher.batch_classify.assert_not_called()
-        call_args = engine._retrieval_router.retrieve.call_args
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         profile = call_args[0][1]
         assert "q1 2024" in profile.temporal_references
         assert "q2 2024" in profile.temporal_references
@@ -1027,9 +1027,7 @@ class TestPoint:
         with (
             lock,
             patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
-            patch(
-                "fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder"
-            ) as builder_cls,
+            patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
             pytest.raises(CollectionBusyError, match="Collection 'default' is busy"),
         ):
             engine.point(source, start_worker=False)

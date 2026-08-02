@@ -69,11 +69,14 @@ flowchart TD
     P --> R["Broad recall"]
     R --> X["Cross-strategy fusion"]
     X --> K["ONNX reranker"]
-    K --> F["Compile fixed evidence set"]
+    K --> D["Read source content"]
+    D --> B["Bounded evidence closure"]
+    B --> F["Compile fixed evidence set"]
     F --> G["One Pyrrho decision"]
     G --> E["EvidencePack"]
 
-    C --> C1["deterministic query profile"]
+    C --> C1["deterministic query shape"]
+    C --> C2["Pyrrho PRE evidence obligations"]
 
     P --> P1["Deterministic terms, query type, intent detection"]
     P --> P2["Managed Qwen semantic keywords"]
@@ -95,9 +98,9 @@ Broad recall is intentionally permissive. It uses literal query terms,
 managed Qwen semantic keywords, and intent fanout for
 comparison, temporal, aggregation, and freshness queries. False positives are
 acceptable because the reranker and fixed evidence delivery handle precision.
-The configured accepted Pyrrho v2 package is evidence-conditioned. Query profiling comes
-from deterministic signals, managed Qwen semantic keywords, and optional
-query-intelligence providers.
+Query profiling combines deterministic query shape, Pyrrho's query-only PRE
+obligations, managed Qwen semantic keywords, and optional query-intelligence
+providers.
 
 Primary stores:
 
@@ -117,9 +120,9 @@ remains available to evidence-contract rescue logic.
 
 ### Stage 3: Fixed Delivery And Pyrrho
 
-Pyrrho does not answer the query or control retrieval. Fitz-Sage compiles one
-fixed evidence set, sends the exact query and source text once, and maps the
-returned verdict mechanically.
+Pyrrho does not answer the query. Its PRE heads can describe evidence
+obligations before retrieval; after Fitz-Sage compiles one fixed evidence set,
+Pyrrho receives the exact query and source text once and owns the final verdict.
 
 ```mermaid
 flowchart TD
@@ -198,13 +201,13 @@ the configured synthesizer. This is separate from the retrieval package default.
 
 | Strategy | Role |
 |----------|------|
-| Sparse BM25 / keyword vocabulary | Broad recall backbone. |
+| Sparse BM25 / literal source terms | Broad recall backbone. |
 | Managed Qwen semantic query keywords | Broad recall expansion in the default no-endpoint path. |
 | Query rewriting | Optional `query_intelligence` enhancement for conversational context or ambiguous phrasing. |
 | Multi-query decomposition | Deterministic explicit-clause fanout; optional `query_intelligence` handles implicit or conversational compounds. |
 | Comparison / temporal / aggregation / freshness detection | Deterministic default signals, optionally improved by query intelligence. |
-| Entity graph | Context expansion after full enrichment. |
-| Hierarchical summaries | Fully indexed recall for broad analytical questions. |
+| Entity graph | Context expansion when the relevant files have entity metadata. |
+| Hierarchical summaries | Optional injected context for broad analytical questions. |
 | ONNX reranker | Precision stage before governance. |
 | Pyrrho | Mandatory single sufficiency, dispute, or insufficiency decision over the fixed delivered evidence set. |
 | Evidence closure | Deterministic bounded follow-up retrieval for unresolved query-contract obligations before compilation. |
@@ -219,9 +222,9 @@ the query contract/profile calls for a representative corpus overview.
 
 | Model/runtime | Required? | Used for |
 |---------------|-----------|----------|
-| Managed Qwen3 0.6B ONNX GenAI | for semantic expansion/enrichment | query semantic keywords, entities, and hierarchy |
+| Managed Qwen3 0.6B ONNX GenAI | standard for query expansion; optional for background work | query semantic keywords, entities, and hierarchy |
 | ONNX reranker | default | candidate precision after broad recall |
-| Reviewed local Pyrrho v2 package | required product governance | native evidence verdict, failure mode, retrieval intents, and evidence-kind metadata |
+| Reviewed local Pyrrho v2 model | required product governance | native evidence verdict, failure mode, retrieval intents, and evidence-kind metadata |
 | OpenAI-compatible endpoint | optional | answer synthesis, optional query intelligence, optional vision parser |
 
 No dense embedding model and no vector database are used.

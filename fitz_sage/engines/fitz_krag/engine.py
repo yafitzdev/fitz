@@ -40,11 +40,10 @@ from fitz_sage.integrations.pyrrho import (
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
-    from pyrrho import GovernanceDecision
-
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
     from fitz_sage.engines.fitz_krag.query_pipeline import RetrievalOutcome
     from fitz_sage.engines.fitz_krag.types import ReadResult
+    from fitz_sage.llm.providers.pyrrho_types import GovernanceDecision
 
 logger = get_logger(__name__)
 
@@ -344,7 +343,7 @@ class FitzKragEngine:
         self._enricher_chat = standard_chat
         self._summarizer_chat = standard_chat
 
-        # Pyrrho lazily loads its authoritative governance runtime on first use.
+        # The managed Pyrrho model loads lazily on first use.
         from fitz_sage.integrations.pyrrho import create_pyrrho
 
         self._pyrrho = create_pyrrho(self._config.governance)
@@ -1038,10 +1037,20 @@ class FitzKragEngine:
             retrieval_pass=self._retrieval_pass,
             expander=self._expander,
             table_handler=self._table_handler,
+            available_modalities=self._available_retrieval_modalities,
             fast_analyze=self._fast_analyze,
             needs_detection=self._needs_detection,
             build_detection_summary=self._build_detection_summary,
         )
+
+    def _available_retrieval_modalities(self) -> set[str]:
+        """Return address kinds backed by at least one physical index record."""
+        stores = (
+            ("section", self._section_store),
+            ("symbol", self._symbol_store),
+            ("table", self._table_store),
+        )
+        return {modality for modality, store in stores if store.has_records()}
 
     def _retrieve_core(
         self,
@@ -1318,9 +1327,7 @@ class FitzKragEngine:
 
         entries = manifest.entries()
         pending_entries = [
-            entry
-            for entry in entries.values()
-            if entry.state == FileState.REGISTERED
+            entry for entry in entries.values() if entry.state == FileState.REGISTERED
         ]
         if not pending_entries:
             return
@@ -1339,9 +1346,7 @@ class FitzKragEngine:
                 core.parse_file(entry.rel_path, path, entry.file_id)
                 manifest.update_state(entry.rel_path, FileState.INDEXED)
                 indexed += 1
-                _progress(
-                    f"Indexed {position}/{len(pending_entries)}: {entry.rel_path}"
-                )
+                _progress(f"Indexed {position}/{len(pending_entries)}: {entry.rel_path}")
 
             except Exception as e:
                 core.discard_file(entry.file_id)
@@ -1353,14 +1358,14 @@ class FitzKragEngine:
                 logger.warning("Indexing failed for %s: %s", entry.rel_path, e)
 
         manifest.save()
-        _progress(f"Searchable source index ready ({indexed}/{len(pending_entries)} changed files).")
+        _progress(
+            f"Searchable source index ready ({indexed}/{len(pending_entries)} changed files)."
+        )
 
     @staticmethod
     def _enrichment_is_pending(manifest: Any) -> bool:
         indexed_entries = [
-            entry
-            for entry in manifest.entries().values()
-            if entry.state.value == "indexed"
+            entry for entry in manifest.entries().values() if entry.state.value == "indexed"
         ]
         if not indexed_entries:
             return False

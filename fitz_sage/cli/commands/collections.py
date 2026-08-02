@@ -134,8 +134,6 @@ def command() -> None:
                     service.delete_collection(selected_collection)
                     ui.success(f"Deleted '{selected_collection}'")
 
-                    # Also delete associated table registry
-
                     return  # Exit after deletion
                 except Exception as e:
                     ui.error(f"Failed to delete: {e}")

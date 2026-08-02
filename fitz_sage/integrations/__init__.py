@@ -1,4 +1,4 @@
-"""Integrations with independently owned runtime packages."""
+"""Adapters between Fitz-Sage retrieval and managed model outputs."""
 
 from fitz_sage.integrations.pyrrho import (
     answer_mode_from_pyrrho,

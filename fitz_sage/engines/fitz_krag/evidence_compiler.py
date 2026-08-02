@@ -221,11 +221,7 @@ def _compile_order(
         selected.append(_with_role(unit, role))
 
     for identifier in contract.identifiers:
-        identifier_units = [
-            unit
-            for unit in units
-            if _unit_contains_identifier(unit, identifier)
-        ]
+        identifier_units = [unit for unit in units if _unit_contains_identifier(unit, identifier)]
         if identifier_units:
             match = min(
                 identifier_units,
@@ -243,9 +239,9 @@ def _compile_order(
 
     for modality in contract.required_modalities:
         matches = [unit for unit in units if unit.kind == modality]
-        match = matches[0] if matches else None
-        if match is not None:
-            add(match, f"required_{modality}")
+        modality_match = matches[0] if matches else None
+        if modality_match is not None:
+            add(modality_match, f"required_{modality}")
 
     for unit, term in _bridge_companion_units(contract, search_units, selected):
         add(unit, f"bridge:{term}")
@@ -279,10 +275,7 @@ def _aligned_units(
 ) -> list[EvidenceUnit]:
     """Enforce exact identifiers without rejecting semantic reranker matches."""
     if contract.identifiers:
-        clause_keys = {
-            _unit_identity(unit)
-            for _, unit in clause_units or []
-        }
+        clause_keys = {_unit_identity(unit) for _, unit in clause_units or []}
         return [
             unit
             for unit in units
@@ -312,15 +305,8 @@ def _compound_query_clause_units(
     selected: list[tuple[int, EvidenceUnit]] = []
     for clause_index, leg in enumerate(legs, start=1):
         contract = _build_query_contract(leg)
-        candidates = [
-            unit
-            for unit in units
-            if _unit_has_retrieval_query(unit, leg)
-        ]
-        scored = [
-            (_compound_clause_score(contract, unit), unit)
-            for unit in candidates
-        ]
+        candidates = [unit for unit in units if _unit_has_retrieval_query(unit, leg)]
+        scored = [(_compound_clause_score(contract, unit), unit) for unit in candidates]
         grounded = [(score, unit) for score, unit in scored if score > 0]
         if not grounded:
             continue
@@ -332,19 +318,13 @@ def _compound_query_clause_units(
 def _compound_clause_score(contract: _QueryContract, unit: EvidenceUnit) -> int:
     """Score literal clause coverage without weakening exact identifiers."""
     identifier_matches = sum(
-        1
-        for identifier in contract.identifiers
-        if _unit_contains_identifier(unit, identifier)
+        1 for identifier in contract.identifiers if _unit_contains_identifier(unit, identifier)
     )
     if contract.identifiers and identifier_matches != len(contract.identifiers):
         return 0
 
     terms = _specific_anchor_terms(contract)
-    body_matches = {
-        term
-        for term in terms
-        if _contains_term_variant(unit.content_text, term)
-    }
+    body_matches = {term for term in terms if _contains_term_variant(unit.content_text, term)}
     identity = _unit_text(unit.location, unit.file_path)
     identity_matches = {
         term
@@ -553,9 +533,7 @@ def _hard_anchor_score(contract: _QueryContract, text: str) -> int:
 def _identity_identifier_score(contract: _QueryContract, unit: EvidenceUnit) -> int:
     """Score exact identifiers against evidence body and source identity."""
     return sum(
-        4
-        for identifier in contract.identifiers
-        if _unit_contains_identifier(unit, identifier)
+        4 for identifier in contract.identifiers if _unit_contains_identifier(unit, identifier)
     )
 
 

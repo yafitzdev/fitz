@@ -13,10 +13,8 @@ from fitz_sage.core.identifiers import (
     contains_exact_identifier,
     exact_identifiers,
 )
-from fitz_sage.tabular.query import (
-    normalize_table_value as _normalize,
-    sortable_table_value as _sortable_value,
-)
+from fitz_sage.tabular.value_semantics import normalize_table_value as _normalize
+from fitz_sage.tabular.value_semantics import sortable_table_value as _sortable_value
 
 _MAX_SUPERLATIVES = {"highest", "largest", "latest", "longest", "max", "maximum", "most", "newest"}
 _MIN_SUPERLATIVES = {"earliest", "fastest", "least", "lowest", "min", "minimum", "shortest"}
@@ -277,9 +275,7 @@ def _boolean_predicate_values(column: ColumnBinding, query_text: str) -> set[str
         term for term in column.tokens if term not in _STOPWORDS or term in polarity_terms
     }
     query_terms = tuple(
-        term
-        for term in query_text.split()
-        if term not in _STOPWORDS or term in polarity_terms
+        term for term in query_text.split() if term not in _STOPWORDS or term in polarity_terms
     )
     reference_indices = [
         index
@@ -295,8 +291,7 @@ def _boolean_predicate_values(column: ColumnBinding, query_text: str) -> set[str
     ):
         return _BOOLEAN_FALSE
     if any(
-        index > 0 and query_terms[index - 1] in _BOOLEAN_NEGATORS
-        for index in reference_indices
+        index > 0 and query_terms[index - 1] in _BOOLEAN_NEGATORS for index in reference_indices
     ):
         return _BOOLEAN_FALSE
 

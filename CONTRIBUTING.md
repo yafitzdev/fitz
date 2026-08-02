@@ -1,407 +1,160 @@
-# CONTRIBUTING.md
-# Contributing to Fitz
+# Contributing To Fitz-Sage
 
-Thank you for your interest in contributing to Fitz! This document provides guidelines and information for contributors.
-
-## Table of Contents
-
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [Architecture Guidelines](#architecture-guidelines)
-- [How to Contribute](#how-to-contribute)
-- [Pull Request Process](#pull-request-process)
-- [Engine Development](#engine-development)
-- [Extension Development](#extension-development)
-- [Testing](#testing)
-- [Style Guide](#style-guide)
-
----
-
-## Code of Conduct
-
-Be respectful, inclusive, and constructive. We're all here to build something useful together.
-
----
-
-## Getting Started
-
-1. Fork the repository
-2. Clone your fork locally
-3. Set up the development environment
-4. Create a branch for your work
-5. Make your changes
-6. Submit a pull request
-
----
+Keep contributions focused, testable, and aligned with the public retrieval
+contract. Be respectful and constructive in issues and reviews.
 
 ## Development Setup
 
 ```bash
-# Clone your fork
 git clone https://github.com/yafitzdev/fitz-sage.git
 cd fitz-sage
 
-# Create virtual environment
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install in development mode with all extras
+source .venv/bin/activate  # PowerShell: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 
-# Verify setup
-pytest
-python -m tools.contract_map --layout-depth 2
-```
-
----
-
-## Architecture Guidelines
-
-Fitz follows strict architectural principles. Please respect these when contributing.
-
-### Project Structure
-
-```
-fitz_sage/
-├── core/              # Paradigm-agnostic contracts (Query, Answer, Provenance)
-├── engines/           # Engine implementations
-│   └── fitz_krag/     # KRAG with retrieval intelligence
-├── retrieval/         # SHARED retrieval intelligence (detection, entities, vocabulary, etc.)
-├── llm/               # LLM service layer — single OpenAI-compatible HTTP protocol (chat) + ONNX cross-encoder reranker
-├── storage/           # SQLite connection manager (one .db per collection, FTS5 + bm25)
-├── ingestion/         # Document parsers, source discovery, and hashing
-├── tabular/           # Native table parsers and SqliteTableStore
-├── runtime/           # Multi-engine orchestration
-├── cli/               # Command-line interface
-├── api/               # REST API (FastAPI)
-└── sdk/               # Stateful Python interface
-```
-
-### Layer Dependencies
-
-```
-core/        ← NO imports from engines/, ingestion/
-retrieval/   ← May import from core/
-llm/         ← May import from core/
-storage/     ← May import from core/
-ingestion/   ← May import from core/
-engines/     ← May import from core/, llm/, storage/, retrieval/
-runtime/     ← May import from all (orchestration layer)
-cli/         ← May import from all (user-facing layer)
-tools/       ← May import from all (development tools)
-```
-
-**Violation of layer dependencies will block your PR.**
-
-Run the contract map to check for violations:
-
-```bash
+pytest tests/unit/
 python -m tools.contract_map --fail-on-errors
 ```
 
-### Core Principle: Knowledge → Engine → Answer
+## Architecture Rules
 
-All engines implement the same protocol:
-
-```python
-from fitz_sage.core import KnowledgeEngine, Query, Answer
-
-class MyEngine(KnowledgeEngine):
-    def answer(self, query: Query) -> Answer:
-        # Your implementation
-        ...
+```text
+fitz_sage/
+├── core/              # stable types and protocols
+├── engines/fitz_krag/ # shipping retrieval engine
+├── retrieval/         # shared query/graph helpers
+├── ingestion/         # built-in parser/source implementations
+├── llm/               # local models and optional endpoint providers
+├── storage/           # SQLite connection management
+├── tabular/           # native CSV/TSV storage
+├── integrations/      # Pyrrho boundary
+├── runtime/           # engine registry and runner
+├── cli/               # command line
+├── api/               # REST API
+└── sdk/               # stateful Python API
 ```
 
-### Config-Driven Design
+The enforced dependency direction is defined in
+`tools/contract_map/architecture.py`. In brief, foundation layers have narrow
+allowlists, engines compose the shared layers, and API/CLI/runtime/SDK/service
+modules are orchestration surfaces. Do not duplicate a different dependency
+table in code or documentation.
 
-- Engines are built from config
-- Provider selection lives only in config files
-- No provider-specific code outside plugins
+Run `python -m tools.contract_map --fail-on-errors` for every architecture
+change.
 
----
+## Product Boundaries
 
-## How to Contribute
+Changes must preserve these decisions unless a proposal explicitly changes the
+product contract:
 
-### Reporting Bugs
+- `point()` completes the searchable source index before returning and does not
+  load Qwen.
+- background entity and hierarchy work is optional and independently reported.
+- BM25 over typed source units is the central recall mechanism; no dense index
+  exists.
+- broad competition between literal and Qwen candidates is intentional.
+- domain cleanup, private mappings, and identifier normalization are user-owned.
+- temporal/comparison/aggregation recognition is package-owned query shape.
+- Pyrrho owns governance; Fitz-Sage transports its PRE obligations and final
+  decision without local verdict heuristics.
 
-Open an issue with:
-- Clear description of the bug
-- Steps to reproduce
-- Expected vs actual behavior
-- Python version and OS
-- Relevant config/code snippets
+Read [Architecture](docs/ARCHITECTURE.md),
+[Retrieval Pipeline](docs/RETRIEVAL_PIPELINE.md), and
+[Limitations](docs/LIMITATIONS.md) before changing shared behavior.
 
-### Suggesting Features
+## Making A Change
 
-Open an issue with:
-- Clear description of the feature
-- Use case / motivation
-- Proposed API or interface (if applicable)
-- Willingness to implement
+1. Reproduce the issue with the smallest relevant test or benchmark case.
+2. Identify the earliest failing stage: source index, recall, rerank/read,
+   closure/compiler, delivery, or Pyrrho.
+3. Implement a general fix at the owning boundary.
+4. Add focused tests proportional to the blast radius.
+5. Update current documentation when a public contract changes.
+6. Run formatting, tests, and the contract map.
 
-### Contributing Code
+Do not add case-specific cleanup, hidden alias rules, compatibility shims, or
+Fitz-side governance safeguards to make a benchmark green.
 
-1. **Small PRs are better**: Focused changes are easier to review
-2. **One concern per PR**: Don't mix refactoring with features
-3. **Tests required**: All new code needs tests
-4. **Documentation**: Update relevant docs
+## Engines And Extensions
 
----
+The minimum engine protocol is structural:
 
-## Pull Request Process
+```python
+from fitz_sage.core import Answer, Query
 
-1. **Create a branch**
-   ```bash
-   git checkout -b feature/my-feature
-   # or
-   git checkout -b fix/bug-description
-   ```
 
-2. **Make your changes**
-   - Follow the style guide
-   - Add/update tests
-   - Update documentation
+class MyEngine:
+    def answer(self, query: Query) -> Answer:
+        return Answer(text="application-owned answer")
+```
 
-3. **Run checks locally**
-   ```bash
-   # Format code
-   black .
-   isort .
-   
-   # Type check
-   mypy fitz_sage
+The in-process registry accepts custom factories. The installed package does
+not discover third-party entry points; automatic discovery covers only bundled
+directories under `fitz_sage/engines/`. See
+[Custom Engines](docs/CUSTOM_ENGINES.md).
 
-   # Run tests
-   pytest
+Other extension boundaries are package contributions:
 
-   # Check architecture
-   python -m tools.contract_map --fail-on-errors
-   ```
+- chat/vision/rerank providers implement the relevant protocol under
+  `fitz_sage/llm/providers/` and are dispatched in `fitz_sage/llm/config.py`;
+- parser modes are wired explicitly through
+  `fitz_sage/ingestion/parser/router.py`;
+- KRAG typed-unit extraction is internal, not a generic chunker API.
 
-4. **Commit with clear messages**
-   ```bash
-   git commit -m "feat(engines): add hybrid retrieval to fitz_krag"
-   git commit -m "fix(core): handle empty retrieval response"
-   git commit -m "docs: update engine development guide"
-   ```
-
-5. **Push and create PR**
-   ```bash
-   git push origin feature/my-feature
-   ```
-
-6. **PR Description should include:**
-   - What changes were made
-   - Why (motivation/context)
-   - How to test
-   - Breaking changes (if any)
-
----
-
-## Engine Development
-
-Engines are the core abstraction in Fitz. Each engine is a complete implementation of a knowledge retrieval paradigm.
-
-### Creating a New Engine
-
-1. **Create the engine directory**
-   ```
-   fitz_sage/engines/my_engine/
-   ├── __init__.py      # Public API exports
-   ├── engine.py        # KnowledgeEngine implementation
-   ├── runtime.py       # Convenience functions (run_my_engine, create_my_engine)
-   └── config/
-       ├── __init__.py
-       ├── schema.py    # Pydantic config models
-       └── loader.py    # Config loading logic
-   ```
-
-2. **Implement the KnowledgeEngine protocol**
-   ```python
-   # fitz_sage/engines/my_engine/engine.py
-   from fitz_sage.core import KnowledgeEngine, Query, Answer, Provenance
-   
-   class MyEngine:
-       """My custom knowledge engine."""
-       
-       def __init__(self, config: MyEngineConfig):
-           self._config = config
-           # Initialize your engine
-       
-       def answer(self, query: Query) -> Answer:
-           # Your implementation
-           return Answer(
-               text="The answer",
-               provenance=[Provenance(source_id="doc1", excerpt="...")],
-           )
-   ```
-
-3. **Register with the engine registry**
-   ```python
-   # fitz_sage/engines/my_engine/__init__.py
-   from fitz_sage.runtime import EngineRegistry
-   
-   def _register():
-       registry = EngineRegistry.get_global()
-       registry.register(
-           name="my_engine",
-           factory=lambda config: MyEngine(config or MyEngineConfig()),
-           description="My custom knowledge engine",
-       )
-   
-   _register()
-   ```
-
-4. **Add convenience functions**
-   ```python
-   # fitz_sage/engines/my_engine/runtime.py
-   from fitz_sage.core import Answer
-   
-   def run_my_engine(query: str, **kwargs) -> Answer:
-       """Execute a query with MyEngine."""
-       engine = create_my_engine(**kwargs)
-       return engine.answer(Query(text=query))
-   ```
-
-5. **Add tests**
-   ```python
-   # tests/engines/test_my_engine.py
-   def test_my_engine_answers_query():
-       engine = MyEngine(MyEngineConfig())
-       answer = engine.answer(Query(text="What is X?"))
-       assert answer.text
-       assert isinstance(answer.provenance, list)
-   ```
-
----
-
-## Extension Development
-
-The supported extension boundaries are custom knowledge engines and package
-contributions for provider or parser implementations. There is no runtime
-auto-discovery mechanism and no generic chunker, source, or data-cleanup plugin
-surface. See [Extension Points](docs/PLUGINS.md) before adding one.
-
-New providers must implement the relevant protocol under
-`fitz_sage/llm/providers/`, be registered in `fitz_sage/llm/config.py`, and have
-dispatch tests. New parser modes must be wired explicitly through
-`fitz_sage/ingestion/parser/router.py`.
-
----
+See [Extension Points](docs/PLUGINS.md).
 
 ## Testing
 
-### Running Tests
+Use the smallest command that proves the change, then broaden when the change
+touches shared behavior:
 
 ```bash
-# All tests
+pytest tests/unit/test_query_pipeline.py
+pytest tests/unit/
+pytest tests/integration/
+pytest -m "not slow"
 pytest
-
-# With coverage
-pytest --cov=fitz_sage
-
-# Specific module
-pytest tests/engines/test_fitz_krag.py
-
-# Verbose output
-pytest -v
-
-# Stop on first failure
-pytest -x
 ```
 
-### Writing Tests
+Relevant markers include `tier1` through `tier4`, `slow`, `integration`, `e2e`,
+`e2e_parser`, `e2e_krag`, `sqlite`, `llm`, `performance`, `scalability`,
+`security`, `chaos`, and `property`.
 
-- Place tests in `tests/` directory
-- Name files `test_<module>_<feature>.py`
-- Use descriptive test function names
-- Test both success and failure cases
-- Mock external services (APIs, databases)
+Benchmarks are not substitutes for unit tests. Preserve frozen holdouts and do
+not tune implementation details against evaluation-only query labels. Benchmark
+methodology lives in [benchmarks/README.md](benchmarks/README.md).
 
-```python
-# Good test example
-def test_fitz_krag_preserves_metadata():
-    """Fitz KRAG should preserve document metadata in provenance."""
-    engine = create_fitz_krag_engine(config)
-    answer = engine.answer(Query(text="test query"))
-    
-    assert answer.provenance
-    assert all(p.metadata for p in answer.provenance)
+## Style
+
+- Black, isort, and ruff use line length 100.
+- Public APIs need type hints and useful docstrings.
+- Prefer protocols and existing package boundaries over parallel abstractions.
+- Keep source files ASCII unless the existing file and content require Unicode.
+- Do not include unrelated refactors or generated artifacts in a change.
+
+```bash
+black fitz_sage tests
+isort fitz_sage tests
+ruff check fitz_sage tests
 ```
 
----
+## Pull Requests
 
-## Style Guide
+Describe:
 
-### Python Style
+- the behavior changed and its owner;
+- why the previous behavior was wrong or insufficient;
+- tests and benchmarks run;
+- public contract or limitation changes;
+- any remaining risk.
 
-- **Formatter**: Black (line length 100)
-- **Import sorting**: isort (black profile)
-- **Type hints**: Required for public APIs
-- **Docstrings**: Google style for public classes/functions
+Before requesting review:
 
-### Naming Conventions
-
-| Item | Convention | Example |
-|------|------------|---------|
-| Modules | `snake_case` | `fitz_krag.py` |
-| Classes | `PascalCase` | `FitzKragEngine` |
-| Functions | `snake_case` | `run_fitz_krag()` |
-| Constants | `UPPER_SNAKE` | `DEFAULT_TOP_K` |
-| Plugin names | `snake_case` | `plugin_name = "my_provider"` |
-| Engine names | `snake_case` | `engine="fitz_krag"` |
-
-### Code Organization
-
-```python
-# File structure
-"""Module docstring."""
-
-from __future__ import annotations
-
-# Standard library
-import os
-from typing import Any
-
-# Third party
-from pydantic import BaseModel
-
-# Local imports (absolute)
-from fitz_sage.core import Answer, Query
-from fitz_sage.logging.logger import get_logger
-
-logger = get_logger(__name__)
-
-# Constants
-DEFAULT_VALUE = 10
-
-
-# Classes/Functions
-class MyClass:
-    ...
-```
-
----
-
-## Architecture Compliance Checklist
-
-Before submitting a PR, verify:
-
-- [ ] No imports from `engines/` in `core/`
-- [ ] No imports from `ingestion/` in `core/`
-- [ ] New engines implement `KnowledgeEngine` protocol
-- [ ] New extensions use an existing engine, provider, or parser boundary
-- [ ] Config-driven design (no hardcoded provider selection)
-- [ ] Tests added for new functionality
-- [ ] `python -m tools.contract_map --fail-on-errors` passes
-
----
-
-## Questions?
-
-- Open a GitHub issue for questions
-- Tag with `question` label
-- Check existing issues first
-
-Thank you for contributing! 🎉
+- [ ] focused tests pass;
+- [ ] architecture contract passes;
+- [ ] no compatibility shim or dead alternate path was added;
+- [ ] source cleanup and governance remain at their documented owners;
+- [ ] current docs and examples match executable APIs;
+- [ ] frozen evaluation data was not used as a tuning target.

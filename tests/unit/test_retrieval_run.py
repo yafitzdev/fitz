@@ -142,7 +142,7 @@ def _sample_run() -> RetrievalRun:
             ),
         ),
         environment=RunEnvironment(
-            fitz_sage_version="0.15.0",
+            fitz_sage_version="0.16.0",
             engine="fitz_krag",
             collection="reports",
             config_sha256="config-sha",
@@ -246,7 +246,7 @@ def test_pyrrho_replay_uses_exact_delivered_evidence_without_retrieval():
     replay = replay_pyrrho(_sample_run(), _SufficientPyrrho())
 
     assert replay.source_run_id == "run-1"
-    assert replay.source_fitz_sage_version == "0.15.0"
+    assert replay.source_fitz_sage_version == "0.16.0"
     assert replay.replay_fitz_sage_version
     assert replay.original.verdict == "INSUFFICIENT"
     assert replay.replayed.verdict == "SUFFICIENT"

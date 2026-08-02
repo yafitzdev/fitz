@@ -103,10 +103,9 @@ def run_benchmark(
             repoint_status = dict(engine.indexing_status())
             repoint_inventory = manifest_inventory(repoint_manifest)
             repoint_counts = sqlite_counts(workspace, collection)
-            repoint_unchanged = (
-                _index_signature(status, inventory, record_counts)
-                == _index_signature(repoint_status, repoint_inventory, repoint_counts)
-            )
+            repoint_unchanged = _index_signature(
+                status, inventory, record_counts
+            ) == _index_signature(repoint_status, repoint_inventory, repoint_counts)
 
             indexed = int(status.get("indexed", 0))
             runs.append(
@@ -125,9 +124,7 @@ def run_benchmark(
                     "query_ready": bool(status.get("query_ready")),
                     "files_per_second": indexed / point_seconds if point_seconds > 0 else None,
                     "mib_per_second": (
-                        indexed_bytes / (1024 * 1024) / point_seconds
-                        if point_seconds > 0
-                        else None
+                        indexed_bytes / (1024 * 1024) / point_seconds if point_seconds > 0 else None
                     ),
                     "database_bytes": database_bytes,
                     "database_to_source_ratio": (
@@ -144,21 +141,14 @@ def run_benchmark(
             engine.stop_background_enrichment()
 
         rates = [
-            float(run["files_per_second"])
-            for run in runs
-            if run["files_per_second"] is not None
+            float(run["files_per_second"]) for run in runs if run["files_per_second"] is not None
         ]
         byte_rates = [
-            float(run["mib_per_second"])
-            for run in runs
-            if run["mib_per_second"] is not None
+            float(run["mib_per_second"]) for run in runs if run["mib_per_second"] is not None
         ]
         durations = [float(run["query_ready_seconds"]) for run in runs]
         failures = sum(int(run["failed_files"]) for run in runs)
-        attempted = sum(
-            int(run["indexed_files"]) + int(run["failed_files"])
-            for run in runs
-        )
+        attempted = sum(int(run["indexed_files"]) + int(run["failed_files"]) for run in runs)
         failure_rate = failures / attempted if attempted else 0.0
         all_query_ready = all(bool(run["query_ready"]) for run in runs)
         all_repoints_unchanged = all(bool(run["repoint_unchanged"]) for run in runs)
@@ -173,9 +163,7 @@ def run_benchmark(
                 "median_files_per_second": median_rate,
                 "min_files_per_second": min(rates) if rates else 0.0,
                 "max_files_per_second": max(rates) if rates else 0.0,
-                "median_mib_per_second": (
-                    statistics.median(byte_rates) if byte_rates else 0.0
-                ),
+                "median_mib_per_second": (statistics.median(byte_rates) if byte_rates else 0.0),
                 "max_process_peak_rss_bytes": max(
                     (int(run["process_peak_rss_bytes"]) for run in runs),
                     default=0,
@@ -343,9 +331,7 @@ def _windows_peak_rss_bytes() -> int:
 def _database_bytes(workspace: Path, collection: str) -> int:
     database = Path(workspace) / "sqlite" / f"fitz_{collection}.db"
     return sum(
-        path.stat().st_size
-        for path in database.parent.glob(f"{database.name}*")
-        if path.is_file()
+        path.stat().st_size for path in database.parent.glob(f"{database.name}*") if path.is_file()
     )
 
 

@@ -89,18 +89,19 @@ Simple query:
 query = Query(text="What is quantum computing?")
 ```
 
-Query with engine hints:
+Query with KRAG hints:
 ```python
 query = Query(
     text="Summarize the paper",
-    metadata={"temperature": 0.3, "model": "claude-3-opus"}
+    metadata={"top_k": 8}
 )
 ```
 
 **Metadata Usage:**
 
 The `metadata` field allows passing engine-specific parameters without breaking the paradigm-agnostic interface:
-- **Fitz KRAG** reads: `{"conversation_context": ...}` (for query rewriting / pronoun resolution)
+- **Fitz KRAG** reads `top_k` and `conversation_context` (the latter is used
+  by configured query intelligence for conversational resolution).
 - Custom engines can define their own metadata keys
 
 Engines should ignore unknown metadata keys gracefully.
@@ -215,6 +216,7 @@ class KnowledgeEngine(Protocol):
 ```python
 engine = FitzKragEngine(config)
 query = Query(text="What is quantum computing?")
+# FitzKragEngine.answer() requires a configured synthesizer.
 answer = engine.answer(query)
 print(answer.text)
 ```
@@ -222,7 +224,7 @@ print(answer.text)
 **Implementation Notes:**
 
 How the engine generates the answer is entirely up to the implementation:
-- **Fitz KRAG**: Uses retrieval + generation
+- **Fitz KRAG**: Uses retrieval plus optional configured generation
 - Custom engines might use completely different approaches
 
 **Error Handling:**
@@ -248,7 +250,13 @@ retrieval-first evidence.
 ```python
 class RetrievalEngine(KnowledgeEngine, Protocol):
     def load(self, collection: str) -> None: ...
-    def point(self, source: Path, collection: str | None = None) -> Any: ...
+    def point(
+        self,
+        source: Path,
+        collection: str | None = None,
+        *,
+        start_worker: bool = True,
+    ) -> Any: ...
     def wait_for_enrichment(self) -> None: ...
     def indexing_status(self) -> dict: ...
     def retrieve(self, query: Query) -> list: ...

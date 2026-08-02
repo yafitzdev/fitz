@@ -30,11 +30,7 @@ def query_relevant_excerpt(query: str, text: str, *, max_chars: int) -> str:
 
     anchor_frequency = min(frequencies.values())
     anchor_terms = sorted(
-        (
-            term
-            for term, frequency in frequencies.items()
-            if frequency == anchor_frequency
-        ),
+        (term for term, frequency in frequencies.items() if frequency == anchor_frequency),
         key=lambda term: (-len(term), terms.index(term)),
     )[:_MAX_ANCHOR_TERMS]
     candidate_starts = _bounded_candidate_starts(
@@ -102,13 +98,7 @@ def _term_occurrences(
         term: frequency for term, frequency in frequencies.items() if frequency > 0
     }
     occurrences = {
-        term: sorted(
-            {
-                position
-                for first_last in buckets[term].values()
-                for position in first_last
-            }
-        )
+        term: sorted({position for first_last in buckets[term].values() for position in first_last})
         for term in observed_frequencies
     }
     return observed_frequencies, occurrences

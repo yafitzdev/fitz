@@ -47,7 +47,7 @@ class Provenance:
 
     This should be stable and allow the source to be retrieved later.
     Format is engine-specific:
-    - Fitz RAG: might be "chunk_id" or "doc_id:chunk_idx"
+    - Fitz KRAG: a stable typed source address
     - Custom engines: whatever makes sense
     """
 

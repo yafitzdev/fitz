@@ -11,6 +11,9 @@ Complete reference for the Fitz REST API.
 # Install with API support
 pip install fitz-sage[api]
 
+# Initialize the workspace and a collection once
+fitz retrieve "What is indexed?" --source ./docs
+
 # Start the server
 fitz serve
 
@@ -81,8 +84,8 @@ normalize explicit names, so `project-a` and `project_a` remain distinct.
 | POST | `/chat` | Multi-turn chat |
 | GET | `/collections` | List collections |
 | GET | `/collections/{name}` | Get collection stats |
-| POST | `/collections/{name}/documents` | Ingest documents (background indexing) |
-| GET | `/collections/{name}/status` | Indexing progress |
+| POST | `/collections/{name}/documents` | Build/update the searchable source index |
+| GET | `/collections/{name}/status` | Source-index and enrichment status |
 | DELETE | `/collections/{name}` | Delete collection |
 | GET | `/health` | Health check |
 
@@ -91,7 +94,8 @@ normalize explicit names, so `project-a` and `project_a` remain distinct.
 ## POST /answer
 
 Query the knowledge base with a single question and return answer text plus
-source attribution.
+source attribution. The selected collection config must include a
+`synthesizer`; use `/evidence` for retrieval without generation.
 
 ### Request
 
@@ -99,7 +103,8 @@ source attribution.
 {
   "question": "What is the refund policy?",
   "source": "./docs",
-  "collection": "default"
+  "collection": "default",
+  "conversation_history": []
 }
 ```
 
@@ -108,6 +113,7 @@ source attribution.
 | `question` | string | Yes | - | The question to ask |
 | `source` | string | No | null | Allowed server-local file or directory. If provided, registers it and waits until the query surface is ready. |
 | `collection` | string | No | `"default"` | Collection to query |
+| `conversation_history` | array | No | `[]` | History made available to configured query intelligence; otherwise retrieval uses the current question. |
 
 ### Response
 
@@ -120,8 +126,10 @@ source attribution.
       "source_id": "policies/refund.md",
       "excerpt": "Returns are accepted within 30 days of purchase...",
       "metadata": {
-        "chunk_index": 2,
-        "page": 1
+        "kind": "section",
+        "location": "Refund Policy",
+        "file_path": "policies/refund.md",
+        "line_range": [4, 18]
       }
     }
   ],
@@ -167,7 +175,7 @@ equivalent of `fitz retrieve` and `fitz_sage.evidence()`.
 | `question` | string | Yes | - | The question to retrieve evidence for |
 | `source` | string | No | null | Allowed server-local file or directory. If provided, registers it and waits until the query surface is ready. |
 | `collection` | string | No | `"default"` | Collection to query |
-| `conversation_history` | array | No | `[]` | Optional chat history for query rewriting |
+| `conversation_history` | array | No | `[]` | History made available to configured query intelligence; otherwise retrieval uses the current question. |
 
 ### Response
 
@@ -213,7 +221,12 @@ curl -X POST http://localhost:8000/evidence \
 
 Multi-turn conversation with the knowledge base.
 
-The server is **stateless** - the client must manage and send conversation history.
+Like `/answer`, this endpoint requires a configured `synthesizer`.
+
+The server is **stateless** - the client must manage and send conversation
+history. A configured `query_intelligence` provider can use that history to
+rewrite conversational references; the deterministic default does not claim
+automatic pronoun resolution.
 
 ### Request
 
@@ -272,6 +285,9 @@ curl -X POST http://localhost:8000/chat \
 
 List all available collections.
 
+`item_count` is the number of persisted document-section rows. It is not a
+combined count of sections, code symbols, and native table rows.
+
 ### Response
 
 ```json
@@ -292,6 +308,8 @@ curl http://localhost:8000/collections
 ## GET /collections/{name}
 
 Get statistics for a specific collection.
+
+`item_count` has the same document-section-row meaning as the list endpoint.
 
 ### Response
 
@@ -331,10 +349,17 @@ continue afterward.
 
 ```json
 {
+  "discovered": 45,
   "total": 42,
   "indexed": 42,
   "pending": 0,
   "failed": 0,
+  "failed_files": [],
+  "unsupported": 3,
+  "unsupported_files": [
+    {"path": "archive.bin", "extension": ".bin"}
+  ],
+  "healthy": true,
   "complete": true,
   "query_ready": true,
   "by_index_state": {"indexed": 42},
@@ -343,9 +368,15 @@ continue afterward.
     "completed": 0,
     "pending": 42,
     "failed": 0,
+    "failed_files": [],
+    "pending_files": [
+      {"path": "guide.pdf", "state": "pending", "priority": 4}
+    ],
     "finalization": "pending",
+    "finalization_error": null,
     "complete": false
-  }
+  },
+  "by_enrichment_state": {"pending": 42}
 }
 ```
 
@@ -367,10 +398,17 @@ Source-index health and optional enrichment progress for a collection.
 
 ```json
 {
+  "discovered": 45,
   "total": 42,
   "indexed": 42,
   "pending": 0,
   "failed": 0,
+  "failed_files": [],
+  "unsupported": 3,
+  "unsupported_files": [
+    {"path": "archive.bin", "extension": ".bin"}
+  ],
+  "healthy": true,
   "complete": true,
   "query_ready": true,
   "by_index_state": {"indexed": 42},
@@ -379,22 +417,34 @@ Source-index health and optional enrichment progress for a collection.
     "completed": 30,
     "pending": 12,
     "failed": 0,
+    "failed_files": [],
+    "pending_files": [
+      {"path": "guide.pdf", "state": "pending", "priority": 4}
+    ],
     "finalization": "pending",
+    "finalization_error": null,
     "complete": false
-  }
+  },
+  "by_enrichment_state": {"complete": 30, "pending": 12}
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `discovered` | integer | All files found under the registered source |
 | `total` | integer | Supported files, including indexing failures |
 | `indexed` | integer | Files stored in the searchable source index |
 | `pending` | integer | Files not yet settled by source indexing |
 | `failed` | integer | Supported files that failed source indexing |
+| `failed_files` | array | Source-index failures with path, stage, and error |
+| `unsupported` | integer | Files outside the enabled format contract |
+| `unsupported_files` | array | Unsupported paths and extensions |
+| `healthy` | boolean | True when no supported file failed indexing |
 | `complete` | boolean | True when every supported file indexed successfully |
 | `query_ready` | boolean | True when no supported file remains pending |
 | `by_index_state` | object | File counts per source-index state |
 | `enrichment` | object | Independent entity/hierarchy progress and failures |
+| `by_enrichment_state` | object | Indexed-file counts per enrichment state |
 
 ### Example
 
@@ -457,6 +507,7 @@ All endpoints return standard HTTP error codes:
 | 401 | Invalid or missing API key for remote access |
 | 403 | Remote access is not configured |
 | 404 | Resource not found |
+| 422 | Request body failed schema validation |
 | 500 | Internal server error |
 
 **Error response format:**

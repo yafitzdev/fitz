@@ -25,7 +25,7 @@ class _BenchmarkConfig:
 
 
 def test_create_engine_applies_governance_override(monkeypatch):
-    """Benchmark runner should support local Pyrrho package paths."""
+    """Benchmark runner should support local Pyrrho model paths."""
     from benchmarks.fitz_bench import runner
 
     captured: dict[str, Any] = {}

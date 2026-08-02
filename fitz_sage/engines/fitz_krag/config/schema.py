@@ -36,7 +36,7 @@ class FitzKragConfig(BasePluginConfig):
     ```
 
     Note: fitz-sage uses no embedding model. Retrieval is BM25 + KRAG
-    typed-unit routing (code symbols, sections, tables) + optional ONNX
+    typed-unit routing (code symbols, sections, tables) + mandatory ONNX
     rerank. The ``retrieval intelligence stack`` does the semantic work that
     dense retrieval traditionally provides without requiring a chat model.
     """
@@ -47,17 +47,17 @@ class FitzKragConfig(BasePluginConfig):
 
     chat_fast: str | None = Field(
         default=None,
-        description="Optional fast-tier chat model for synthesis and query intelligence",
+        description="Optional fast-tier chat model for low-level code/table enhancements",
     )
 
     chat_balanced: str | None = Field(
         default=None,
-        description="Optional balanced-tier chat model for synthesis and query intelligence",
+        description="Optional balanced-tier chat model for low-level code/table enhancements",
     )
 
     chat_smart: str | None = Field(
         default=None,
-        description="Optional smart-tier chat model for synthesis and query intelligence",
+        description="Optional smart-tier chat model for low-level code/table enhancements",
     )
 
     # Per-role base URLs — used by the ``endpoint`` and ``enterprise``
@@ -271,9 +271,9 @@ class FitzKragConfig(BasePluginConfig):
             "Epistemic governance classifier. Pyrrho evaluates delivered "
             "evidence and Fitz-Sage mechanically maps "
             "SUFFICIENT / DISPUTED / INSUFFICIENT to the runtime modes; "
-            "use 'pyrrho/<local-package-path>' or "
+            "use 'pyrrho/<local-model-path>' or "
             "'pyrrho/<owner/repo@40-character-commit>'. The bare 'pyrrho' "
-            "default uses Pyrrho's immutable approved model revision."
+            "default uses Pyrrho's accepted immutable model revision."
         ),
     )
 

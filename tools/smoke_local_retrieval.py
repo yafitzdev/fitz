@@ -3,7 +3,7 @@
 This is an integration smoke, not a quality benchmark. It verifies that the
 standard local path can initialize and execute:
 
-- managed Qwen ONNX GenAI enrichment and query keywords
+- managed Qwen ONNX GenAI query keywords and optional background enrichment
 - ONNX reranking
 - ONNX Pyrrho governance
 
@@ -42,7 +42,7 @@ def main() -> int:
     parser.add_argument(
         "--governance",
         default="pyrrho",
-        help="Governance spec. Defaults to the managed Pyrrho package.",
+        help="Governance spec. Defaults to the managed Pyrrho model.",
     )
     parser.add_argument(
         "--keep-temp",
@@ -68,17 +68,15 @@ def main() -> int:
 
     try:
         qwen_info = OnnxChat().model_info()
-        print(
-            "managed_qwen=" f"{qwen_info.repo_id} {qwen_info.onnx_file} {qwen_info.revision[:12]}"
-        )
+        print(f"managed_qwen={qwen_info.repo_id} {qwen_info.onnx_file} {qwen_info.revision[:12]}")
 
         progress: list[str] = []
         engine = FitzKragEngine(config)
         engine.point(docs, progress=progress.append, start_worker=False)
 
         t0 = time.perf_counter()
-        engine.continue_indexing()
-        print(f"index_seconds={time.perf_counter() - t0:.2f}")
+        engine.continue_enrichment()
+        print(f"enrichment_seconds={time.perf_counter() - t0:.2f}")
 
         for message in progress:
             if "Qwen" in message or "Managed Qwen" in message:

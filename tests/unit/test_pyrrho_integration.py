@@ -3,11 +3,14 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from pyrrho import decision_from_logits, empty_evidence_decision
 
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from fitz_sage.integrations import pyrrho as integration
+from fitz_sage.llm.providers.onnx_pyrrho import (
+    decision_from_logits,
+    empty_evidence_decision,
+)
 
 
 def _result(content: str, source_id: str = "doc-1") -> ReadResult:
@@ -110,7 +113,7 @@ def test_create_pyrrho_only_accepts_pyrrho_provider(monkeypatch: pytest.MonkeyPa
         def __init__(self, model_spec=None):
             created.append(model_spec)
 
-    monkeypatch.setattr(integration, "Pyrrho", FakePyrrho)
+    monkeypatch.setattr(integration, "OnnxPyrrho", FakePyrrho)
 
     integration.create_pyrrho("pyrrho/C:/models/release")
     integration.create_pyrrho("pyrrho")

@@ -24,8 +24,8 @@ def test_assert_output_accepts_expected_evidence_and_rejects_leaks() -> None:
         )
 
 
-def test_isolated_env_uses_a_clean_pyrrho_cache(tmp_path: Path) -> None:
+def test_isolated_env_uses_a_clean_hugging_face_cache(tmp_path: Path) -> None:
     env = isolated_env(tmp_path)
 
-    assert env["PYRRHO_HOME"] == str(tmp_path / "pyrrho_home")
     assert env["HF_HOME"] == str(tmp_path / "hf_home")
+    assert env["HF_HUB_CACHE"] == str(tmp_path / "hf_cache")

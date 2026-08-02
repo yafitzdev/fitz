@@ -76,41 +76,52 @@ class SectionStore:
     def search_bm25(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
         """Full-text search using FTS5 + bm25 ranking.
 
-        This does a direct section match; downstream ``_score_results``
-        applies RRF on the returned order, and parent-title breadcrumbs
-        are pulled in by ``SectionSearchStrategy._enrich_with_parent_titles``.
+        FTS5 first ranks lightweight row IDs. Full section content is then
+        materialized only for the winning rows, preserving BM25 order while
+        avoiding a base-table join across the complete match set.
         """
         fts_query = store_utils.build_fts_query(query)
-        if fts_query is None:
+        if fts_query is None or limit <= 0:
             return []
 
-        sql = f"""
-            SELECT s.id, s.raw_file_id, s.title, s.level,
-                   s.page_start, s.page_end, s.content, s.summary,
-                   s.parent_section_id, s.position, s.entities, s.metadata,
-                   bm25({FTS}) AS rank
+        rank_sql = f"""
+            SELECT rowid, bm25({FTS}) AS rank
             FROM {FTS}
-            JOIN {TABLE} s ON s.rowid = {FTS}.rowid
             WHERE {FTS} MATCH ?
-              AND (
-                  json_extract(s.metadata, '$.is_corpus_summary') IS NULL
-                  OR (
-                      json_extract(s.metadata, '$.is_corpus_summary') != 'true'
-                      AND json_extract(s.metadata, '$.is_corpus_summary') != 1
-                  )
-              )
             ORDER BY rank
-            LIMIT ?
+            LIMIT ? OFFSET ?
         """
+        results: list[dict[str, Any]] = []
+        offset = 0
+        page_size = limit + 1
         with self._cm.connection(self._collection) as conn:
-            rows = conn.execute(sql, (fts_query, limit)).fetchall()
-        results = []
-        for row in rows:
-            d = _row_to_dict(row[:12])
-            # bm25() returns negative numbers (lower=better); flip sign so
-            # downstream code that treats higher-better is consistent.
-            d["bm25_score"] = -float(row[12]) if row[12] is not None else 0.0
-            results.append(d)
+            while len(results) < limit:
+                ranked = conn.execute(
+                    rank_sql,
+                    (fts_query, page_size, offset),
+                ).fetchall()
+                if not ranked:
+                    break
+
+                sections = _fetch_sections_by_rowid(
+                    conn,
+                    [rowid for rowid, _rank in ranked],
+                )
+                for rowid, rank in ranked:
+                    section = sections.get(rowid)
+                    if section is None or _is_corpus_summary(section):
+                        continue
+                    # bm25() returns negative numbers (lower=better); flip sign so
+                    # downstream code that treats higher-better is consistent.
+                    section["bm25_score"] = -float(rank) if rank is not None else 0.0
+                    results.append(section)
+                    if len(results) == limit:
+                        break
+
+                offset += len(ranked)
+                if len(ranked) < page_size:
+                    break
+                page_size = limit - len(results) + 1
         return results
 
     def get(self, section_id: str) -> dict[str, Any] | None:
@@ -124,6 +135,10 @@ class SectionStore:
         if not row:
             return None
         return _row_to_dict(row)
+
+    def has_records(self) -> bool:
+        """Return whether section retrieval has any indexed records."""
+        return store_utils.has_rows(self._cm, self._collection, TABLE)
 
     def get_by_file(self, raw_file_id: str) -> list[dict[str, Any]]:
         sql = f"""
@@ -221,3 +236,24 @@ def _row_to_dict(row: tuple) -> dict[str, Any]:
         "entities": entities if isinstance(entities, list) else [],
         "metadata": meta,
     }
+
+
+def _fetch_sections_by_rowid(conn: Any, rowids: list[int]) -> dict[int, dict[str, Any]]:
+    """Batch-materialize section rows keyed by their FTS row ID."""
+    if not rowids:
+        return {}
+    placeholders = ", ".join("?" for _ in rowids)
+    sql = f"""
+        SELECT rowid, id, raw_file_id, title, level, page_start, page_end,
+               content, summary, parent_section_id, position, entities, metadata
+        FROM {TABLE}
+        WHERE rowid IN ({placeholders})
+    """
+    rows = conn.execute(sql, tuple(rowids)).fetchall()
+    return {int(row[0]): _row_to_dict(row[1:]) for row in rows}
+
+
+def _is_corpus_summary(section: dict[str, Any]) -> bool:
+    """Return whether a section is synthetic corpus-level evidence."""
+    value = section.get("metadata", {}).get("is_corpus_summary")
+    return value is True or value == 1 or str(value).casefold() == "true"

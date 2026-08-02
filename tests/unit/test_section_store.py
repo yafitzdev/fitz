@@ -126,9 +126,12 @@ class TestSearchBm25:
     def test_returns_results_with_bm25_score(self, store, mock_cm):
         # FTS5 bm25() returns negative numbers (lower=better); production code
         # flips the sign so downstream consumers treat higher as better.
-        row = _make_row() + (-0.85,)
+        rank_cursor = MagicMock()
+        rank_cursor.fetchall.return_value = [(17, -0.85)]
+        section_cursor = MagicMock()
+        section_cursor.fetchall.return_value = [(17, *_make_row())]
         conn = MagicMock()
-        conn.execute.return_value.fetchall.return_value = [row]
+        conn.execute.side_effect = [rank_cursor, section_cursor]
         mock_cm.connection.return_value.__enter__ = MagicMock(return_value=conn)
         mock_cm.connection.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -136,6 +139,23 @@ class TestSearchBm25:
         assert len(results) == 1
         assert results[0]["title"] == "Introduction"
         assert results[0]["bm25_score"] == 0.85
+
+    def test_preserves_fts_rank_order_across_batch_materialization(self, store, mock_cm):
+        rank_cursor = MagicMock()
+        rank_cursor.fetchall.return_value = [(22, -0.9), (11, -0.8)]
+        section_cursor = MagicMock()
+        section_cursor.fetchall.return_value = [
+            (11, *_make_row(id_="second")),
+            (22, *_make_row(id_="first")),
+        ]
+        conn = MagicMock()
+        conn.execute.side_effect = [rank_cursor, section_cursor]
+        mock_cm.connection.return_value.__enter__ = MagicMock(return_value=conn)
+        mock_cm.connection.return_value.__exit__ = MagicMock(return_value=False)
+
+        results = store.search_bm25("introduction", limit=10)
+
+        assert [result["id"] for result in results] == ["first", "second"]
 
 
 class TestGet:

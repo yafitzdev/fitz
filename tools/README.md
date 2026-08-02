@@ -4,13 +4,14 @@ Developer and CI tooling for fitz-sage. Not part of the importable package.
 
 | Directory / File | Purpose |
 |---|---|
+| `cli_map/` | Static CLI command and wiring checks |
 | `contract_map/` | Enforces layer dependency rules across the codebase |
-| `detection/` | Training and evaluation scripts for the detection classifier |
-| `governance/` | Governance pipeline tooling |
 | `pre_release/` | Pre-release lint and verification steps |
+| `retrieval_eval/` | Retrieval evaluation helpers and reports |
 | `ci_check.py` | CI health checks run in GitHub Actions |
 | `mutation_test.py` | Mutation testing runner |
 | `pre_release.py` | Entry point for the full pre-release workflow |
+| `smoke_local_retrieval.py` | Local point/retrieve/enrichment smoke test |
 | `wheel_smoke.py` | Builds or accepts a wheel, installs it in a fresh venv, and smoke-tests packaging/runtime deps |
 
 ## Usage

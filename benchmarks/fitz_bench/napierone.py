@@ -254,9 +254,7 @@ def _prepare_selection(
     ordered_types = tuple(sorted(file_types))
     selection_key = "-".join(value.lower() for value in ordered_types)
     selection_dir = cache_dir / "selections" / profile / variant / selection_key
-    marker_path = (
-        cache_dir / "state" / "selections" / profile / variant / f"{selection_key}.json"
-    )
+    marker_path = cache_dir / "state" / "selections" / profile / variant / f"{selection_key}.json"
     signature = {
         "file_types": list(ordered_types),
         "archives": {

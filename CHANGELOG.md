@@ -9,22 +9,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.16.0] - 2026-08-02
+
+### 🎉 Highlights
+
+- **Searchable-first ingestion.** `point()` now parses and persists every
+  supported changed file before returning. The SQLite/FTS5 source index is
+  query-ready immediately afterward; optional entity, hierarchy, and summary
+  enrichment continues independently and cannot make source evidence
+  unavailable.
+- **Broad recall with bounded precision work.** Literal query terms and managed
+  Qwen semantic terms still fan out broadly through BM25, while the INT8 ONNX
+  cross-encoder scores a bounded, profile-aware candidate window. Evidence
+  closure retains access to the wider recall pool when a query contract is not
+  yet covered.
+- **One governance owner.** Pyrrho is now the sole authority for sufficiency,
+  dispute, and insufficiency decisions. Fitz-Sage delivers one fixed evidence
+  set and transports Pyrrho's decoded model decision without retrieval-side
+  overrides or fallback verdicts.
+- **Measured production boundaries.** The release adds reproducible folder,
+  format, ingestion, recovery, BEIR, semantic-holdout, and enterprise retrieval
+  evaluations, plus an explicit limitations contract. Known failures remain
+  visible instead of being hidden behind a green aggregate score.
+
+### 🚀 Added
 
 - Added versioned `RetrievalRun` execution records with redacted-by-default
   JSON export, deterministic explanations, typed query/candidate/Pyrrho
   traces, and environment fingerprints.
-- Added Pyrrho-only replay over integrity-checked frozen evidence through
-  the SDK and the new `fitz explain` / `fitz replay` CLI commands.
+- Added `--trace` and `--trace-content` retrieval controls, offline
+  `fitz explain`, and Pyrrho-only `fitz replay` over integrity-checked frozen
+  evidence. Equivalent capture, inspection, and replay APIs are available in
+  the SDK.
+- Added independent source-index and enrichment status. Unsupported files,
+  source-index failures, enrichment failures, and query readiness now have
+  distinct machine-readable states and concrete failure details.
+- Added deterministic coverage tracking for explicit compound-query clauses
+  and query-shape obligations. Missing source modalities and explicit bridges
+  can request bounded evidence closure without a chat-generated retrieval loop.
+- Added full-table typed execution for deterministic structured filters,
+  including locally bound positive and negative boolean predicates.
+- Added loopback-aware REST access control, API-key authentication for remote
+  clients, configurable source-root boundaries, opt-in CORS origins, and strict
+  collection-name validation.
+- Added PEP 561 `py.typed` metadata for downstream type checkers.
+- Added the 60-case limitations benchmark, focused `--case-id` runs,
+  per-case progress, an 11-case required hardening gate, and a versioned
+  `docs/LIMITATIONS.md` product contract.
+- Added production folder suites covering distractors, reload stability, query
+  shapes, and real PDF, DOCX, PPTX, XLSX, SQL, Go, Java, and TypeScript files.
 - Added a selective, SHA-256-verified NapierOne ingestion benchmark with
   per-format throughput and storage metrics, idempotent re-point checks, and
   exact hard-crash recovery verification over unchanged external files.
 - Added a checksum-verified BEIR retrieval benchmark over NFCorpus, FiQA, and
   SciFact with a transparent plain-BM25 baseline, graded ranking metrics,
   per-stage failure attribution, and exact query/Pyrrho trace retention.
+- Added paired BEIR component ablations, reusable verified indexes, and a
+  frozen semantic-vocabulary holdout so Qwen and reranker effects can be
+  measured on queries not used during diagnosis.
+- Added a frozen EnterpriseRAG-Bench holdout with deterministic corpus splits,
+  literal-BM25 and component ablations, paired statistics, timing attribution,
+  and explicit environment exclusions.
+- Added production-readiness, searchable-indexing, retrieval-run, and
+  evaluation documentation that separates package responsibilities from
+  user-owned data preparation.
 
-### Changed
+### 🔄 Changed
 
+- `point()` is now the only source-indexing boundary. It scans, hashes, parses,
+  stores typed retrieval units, updates FTS5, resolves imports, and then
+  returns; it no longer waits for Qwen-backed enrichment.
+- Background work is now explicitly enrichment, not indexing. The hidden
+  worker command is `fitz enrichment-daemon`, manifests track indexing and
+  enrichment separately, and unchanged files keep their searchable index.
+- Document-side semantic alias generation was removed from ingestion. Source
+  terms are indexed literally; managed Qwen semantic expansion remains at
+  query time, where it broadens BM25 recall without silently rewriting corpus
+  data.
+- The product contract now explicitly leaves OCR recovery, raw-log
+  compression, corpus cleanup, private acronym mappings, and identifier
+  equivalence to the user. Fitz-Sage does not normalize variants such as
+  `ATX-123`, `ATX_123`, and `ATX 123` into one value.
+- Ordinary phrases and keywords no longer act as hard evidence filters.
+  Exact identifiers remain strict anchors, while semantic and lexical
+  candidates can survive to reranking and evidence compilation.
+- Removed filesystem-recency and inferred source-authority ranking boosts.
+  Temporal requests are handled from query and document content rather than
+  treating a recently modified file as the newest fact.
+- Evidence compilation now preserves raw retrieved content and historical
+  sources instead of focusing paragraphs, rewriting evidence, or suppressing
+  older facts.
 - Bounded cross-encoder work independently from BM25 recall. Narrow,
   moderate, and broad profiles now score 24, 32, and 48 candidates by
   default, while evidence closure scores 16 and contract rescue logic keeps
@@ -36,44 +110,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query-relevant excerpt instead of repeating the generated fallback prefix,
   and reranker traces record scoring sizes instead of adding duplicate copies
   of the recalled source text.
-- Removed built-in synonym/acronym dictionaries, identifier separator
-  normalization, and hard-coded code-search synonym mappings. Managed Qwen
-  semantic keywords remain the default broad-recall enhancement.
-- Evidence compilation now preserves raw retrieved content and historical
-  sources instead of focusing paragraphs or suppressing older facts.
-- Pyrrho is now a separate runtime dependency and the sole owner of epistemic
-  governance, including thresholds, head consistency, and final verdicts.
-  Fitz-Sage requires the compatible Pyrrho `0.1.x` runtime API.
+- ONNX encoder and Qwen runtime sessions are shared across collections, while
+  retrieval state is request-local so independent queries can execute
+  concurrently.
+- Collection indexing and enrichment writers now coordinate through a
+  collection-scoped cross-process lock. Queries remain concurrent readers of
+  the WAL-backed SQLite stores.
+- Table retrieval now plans typed predicates and executes them against the
+  complete SQLite table instead of inferring answers from a bounded preview.
+  Concrete matched rows are included in reranker input.
+- Explicit clause fanout and evidence compilation now preserve coverage across
+  multi-part and comparison requests instead of allowing one strong clause to
+  displace the rest.
+- Pyrrho is now consumed directly as a pinned managed ONNX model, like the
+  reranker and Qwen. The accidental external `pyrrho` Python dependency was
+  removed; Fitz-Sage owns model loading, artifact validation, and mechanical
+  head decoding while the model supplies the learned governance judgment.
 - Fitz-Sage now selects one fixed evidence set, passes its exact source IDs and
   text to Pyrrho, and mechanically maps the returned verdict to `AnswerMode`.
 - Retrieval-run schema 2.0 records the exact Pyrrho input and serialized
   decision; replay no longer reproduces a Fitz-Sage cutoff policy.
 - Bare `governance: pyrrho` now uses Pyrrho's accepted default model at an
-  immutable commit. The benchmark-derived training-data caveat is documented,
-  and Pyrrho outcomes remain separate from Fitz-Sage retrieval metrics.
+  immutable commit, and Pyrrho outcomes remain separate from Fitz-Sage
+  retrieval metrics.
+- `fitz retrieve` is now the sole evidence command, `fitz answer` is the sole
+  optional synthesis command, and the REST/SDK surfaces use the same explicit
+  evidence-versus-answer split.
+- Supported Python versions are now declared as 3.10 through 3.12.
 
-### Removed
-
-- Removed Fitz-Sage's governance provider implementation, evidence-prefix
-  cutoff, local verdict overrides, and associated compatibility surfaces.
-- Removed the duplicate `fitz query` CLI alias and ambiguous synthesis
-  `query()` helpers. Use `fitz retrieve` / `evidence()` for evidence and
-  `fitz answer` / `answer()` for optional synthesis.
-- Removed the REST `/query` synthesis alias and `FitzService.query()`. Use
-  `/answer` and `FitzService.answer()`.
-- Removed the optional chat-generated multi-hop controller and its Pyrrho-gated
-  retrieval loop. Contract-driven evidence closure remains deterministic and
-  runs before Fitz submits one fixed evidence set to Pyrrho.
-- Removed the obsolete `tools/cli_map` package, which depended on deleted CLI
-  internals.
-- Removed the standalone fixed-evidence Pyrrho benchmark. Direct governance
-  model evaluation belongs to Pyrrho; Fitz benchmarks retain only live
-  integration outcomes alongside retrieval metrics.
-
-### Fixed
+### 🔧 Fixed
 
 - Exact table identifiers are looked up across the full SQLite table instead
   of only the bounded scan prefix.
+- Boolean table filters now understand general prefix negation and bind
+  polarity to the nearest field/value expression instead of leaking `not`
+  across unrelated clauses.
+- Long documents without headings are split into bounded searchable sections
+  instead of becoming one oversized retrieval unit.
+- Code files with no finer extractable symbols now retain a
+  filename-addressable module retrieval unit instead of being reported as
+  unsearchable.
+- Identifier evidence now matches qualified symbols such as
+  `module.Class.method` without weakening exact identifier boundaries.
 - Evidence closure now derives bridges from compiler-selected evidence and no
   longer replaces precise table rows merely because a follow-up has closure
   metadata.
@@ -87,18 +165,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Table row retrieval now gives the reranker a bounded preview of the concrete
   rows BM25 or deterministic filtering already matched, rather than only the
   table schema.
-- Evidence closure no longer lets generic bridge metadata bypass a required
-  literal phrase anchor.
+- Comparison table results and evidence for separate compound-query clauses
+  now survive closure and final evidence selection.
+- Table closure is scoped to each concrete bridge request, and explicit code
+  file bridges can resolve to symbols defined inside the referenced file.
 - Temporal benchmark cases retain historical sources in the evidence pack
   instead of treating their presence as forbidden retrieval.
-- Added the 60-case limitations benchmark, focused `--case-id` benchmark runs,
-  per-case progress, an 11-case required hardening gate, and a versioned
-  `LIMITATIONS.md` product contract.
-- Code files with no finer extractable symbols now retain a filename-addressable
-  module retrieval unit instead of being reported as unsearchable.
+- Qwen semantic generation now has bounded output, validates the keyword-list
+  contract, and falls back to literal retrieval when generation is malformed
+  instead of aborting the query.
+- Demand-summary failures are persisted as retryable enrichment failures rather
+  than being silently marked complete.
 - Table-ingestion failures now retain their concrete parse, read, or SQLite
   storage cause while reporting collection-relative paths instead of leaking
   absolute source paths.
+- Optional or unsupported formats are reported explicitly instead of being
+  counted as successful empty documents.
+- Evidence closure now skips modalities absent from the physical collection,
+  isolates each follow-up to request-local terms and its target strategy, and
+  records every skip in the retrieval trace.
+- Section BM25 now ranks lightweight FTS row IDs before materializing only the
+  winning source rows, avoiding full-content joins across large match sets
+  without changing result order.
+- Documentation now names the actually shipped managed model, Qwen3 0.6B ONNX,
+  rather than the deferred Qwen3.5 0.8B target.
+
+### 🗑 Removed
+
+- Removed built-in synonym/acronym dictionaries, identifier-separator
+  normalization, hard-coded code-search synonym mappings, and domain-specific
+  table rules. No compatibility aliases were retained.
+- Removed Fitz-Sage's governance provider implementation, evidence-prefix
+  cutoff, local verdict overrides, and associated compatibility surfaces.
+- Removed the duplicate `fitz query` CLI alias and ambiguous synthesis
+  `query()` helpers. Use `fitz retrieve` / `evidence()` for evidence and
+  `fitz answer` / `answer()` for optional synthesis.
+- Removed the REST `/query` synthesis alias and `FitzService.query()`. Use
+  `/answer` and `FitzService.answer()`.
+- Removed the optional chat-generated multi-hop controller, agentic-search
+  strategy, and Pyrrho-gated retrieval loop. Contract-driven evidence closure
+  remains deterministic and runs before one fixed submission to Pyrrho.
+- Removed document-side semantic keyword enrichment and its parsed-cache path;
+  source indexing now writes directly to the canonical typed stores.
+- Removed the unused generic chunking/plugin registry, duplicate tabular query
+  and extraction stack, legacy source-discovery and core registries, and stale
+  CLI context/UI helpers. Retrieval uses the engine's actual section, symbol,
+  and SQLite table implementations directly.
+- Removed obsolete `enable_multi_hop`, `max_hops`, `enable_citations`, and
+  engine-local `log_level` configuration fields.
+- Removed the obsolete `tools/cli_map` package, which depended on deleted CLI
+  internals.
+- Removed the standalone fixed-evidence Pyrrho benchmark. Direct governance
+  model evaluation belongs to Pyrrho; Fitz benchmarks retain only live
+  integration outcomes alongside retrieval metrics.
 
 ## [0.15.0] - 2026-07-08
 
@@ -2538,7 +2657,8 @@ Initial release of Fitz RAG framework.
 
 ---
 
-[Unreleased]: https://github.com/yafitzdev/fitz-sage/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/yafitzdev/fitz-sage/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/yafitzdev/fitz-sage/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/yafitzdev/fitz-sage/compare/v0.13.0...v0.14.0

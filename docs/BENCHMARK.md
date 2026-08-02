@@ -1,13 +1,13 @@
-# Fitz-Sage Benchmark Snapshot
+# Fitz-Sage Benchmarks
 
-> Temporary working record for the README update planned after the benchmark
-> program is complete. Last consolidated: 2026-08-01.
+This is the canonical benchmark report for the current Fitz-Sage retrieval
+architecture. Last consolidated: 2026-08-02.
 
-This file collects the latest accepted measurements and the decision-driving
-diagnostics produced during the post-v0.15.0 hardening work. It intentionally
-excludes smoke runs, interrupted runs, and superseded intermediate reports.
-The measurements were made at different Git revisions, so this is not one
-single release-candidate scorecard.
+It records accepted measurements, methodology, component ablations, and the
+diagnostics that explain current design decisions. Smoke runs, interrupted
+runs, and superseded intermediate reports are excluded. Measurements were made
+at the revisions identified in each section; they are a capability record, not
+one release-candidate scorecard.
 
 ## Reading Rules
 
@@ -41,7 +41,8 @@ single release-candidate scorecard.
 | Broad BEIR ablation | 66,454 docs, 1,271 queries | full macro final nDCG@10 0.4365 |
 | Semantic BEIR holdout | 531,605 docs, 240 queries | full macro final nDCG@10 0.6586 |
 | Enterprise retrieval holdout | 511,961 docs, 328 queries | full delivered nDCG@10 0.5780; reranker-only 0.5876 |
-| Reranker hardening | matched 60-query SciFact sample | mean query latency 20.84s to 7.43s |
+| SciFact query latency | matched 60-query sample | 7.43s mean; 6.77s p50; 12.56s p95 |
+| Enterprise warm query probes | 511,961-file index | 13.092s and 19.889s |
 
 ## Internal Production Matrix
 
@@ -90,8 +91,6 @@ targets.
 - All 25 complete-contract failures were attributed to exact Pyrrho verdicts
   or failure modes while retrieval and delivery still passed.
 - The run used `pyrrho-v2-nano-g1` at its current 2,048-token contract.
-- Pyrrho training included benchmark-derived deterministic rows, so 35/60 is
-  integration evidence, not an independent model-quality result.
 
 ### Local Fixture Performance
 
@@ -175,7 +174,7 @@ Run date: 2026-07-30. Git commit:
 - All 1,271 judged test queries: 323 NFCorpus, 648 FiQA, and 300 SciFact.
 - Source-only indexes; optional document enrichment disabled.
 - Four paired variants with identical indexes, query order, candidate budgets,
-  compiler, and exact Pyrrho runtime.
+  compiler, and exact pinned Pyrrho model.
 - INT8 `Alibaba-NLP/gte-reranker-modernbert-base` and managed Qwen.
 - 2,000-sample paired percentile bootstrap intervals.
 - Measurement-integrity gate passed. Total four-variant wall time was about
@@ -408,6 +407,38 @@ latency target. One reranker-only query had a retained 344.61-second transient
 outlier, of which 330.45 seconds was repeated recall rather than cross-encoder
 work.
 
+### Evidence-Closure Latency Investigation
+
+The persisted EnterpriseRAG-Bench source-only index contained 666,785 section
+rows and no table or symbol rows. Despite that physical boundary, the full
+holdout run executed closure retrieval for 241/328 queries and made 834 closure
+passes. Those passes consumed 6,934.28 seconds in total, or 21.14 seconds per
+holdout query. Pyrrho required an unavailable table or symbol modality for
+238 queries; the contracts imply at least 363 passes that could not possibly
+return the requested evidence from this index.
+
+The executor now checks which physical modalities exist before running a
+closure request, skips only requests whose requested index is empty, and
+records each skip in the retrieval trace. Executed closure searches use only
+the request-local terms and requested retrieval strategy instead of replaying
+the original query's semantic, comparison, and temporal recall legs. Pyrrho's
+plan and verdict are not changed.
+
+Section FTS was also changed to rank lightweight row IDs before materializing
+the winning section bodies. On the 7.75 GB Enterprise index, a matched 64-row
+search fell from 5.9821 seconds to 3.0509 seconds with identical result IDs.
+Two matched warm query probes changed as follows:
+
+| Enterprise query probe | Before | After | Closure behavior after |
+|---|---:|---:|---|
+| Unavailable symbol/table obligations (`qst_0169`) | 71.229s | 13.092s | 6/6 requests traced and skipped |
+| Valid section obligation (`qst_0164`) | 35.136s | 19.889s | 1/1 request executed and added evidence |
+
+These are diagnostic probes, not a rerun of holdout quality. The post-change
+`hardened_boundaries` gate preserved retrieval and delivered evidence at 11/11;
+the production gate passed. Full governed contracts passed 6/11, with all five
+failures attributed to the accepted Pyrrho model.
+
 Qwen produced malformed optional expansion output for 11/328 holdout queries.
 Every query completed through the literal plan, with the failure logged and
 traced. The availability fallback was implemented on development before the
@@ -415,7 +446,7 @@ holdout ran and does not alter Pyrrho or invent replacement terms.
 
 Full methodology, category/source breakdowns, development results, confidence
 intervals, and boundaries are in
-[`docs/evaluation/enterprise-rag-bench-2026-08-01.md`](docs/evaluation/enterprise-rag-bench-2026-08-01.md).
+[`evaluation/enterprise-rag-bench-2026-08-01.md`](evaluation/enterprise-rag-bench-2026-08-01.md).
 
 ## Query Timing And Reranker Hardening
 
@@ -495,20 +526,19 @@ rather than hidden.
 - The limitation suite is intentionally non-green at the full-contract level.
 - Current Pyrrho results are not an independent governance-quality benchmark.
 - Background Qwen document enrichment throughput, very large individual
-  documents, OCR, and a public persisted-collection reuse path remain to be
+  documents, OCR, and a fast validated no-change re-point path remain to be
   measured or implemented separately.
 
 ## Canonical Sources
 
-- [Production readiness](docs/PRODUCTION_READINESS.md)
+- [Production readiness](PRODUCTION_READINESS.md)
 - [Limitations and benchmark interpretation](LIMITATIONS.md)
-- [Benchmark runner and reranker validation](benchmarks/README.md)
-- [BEIR component ablation](docs/evaluation/beir-component-ablation-2026-07-30.md)
-- [Frozen BEIR semantic holdout](docs/evaluation/beir-semantic-holdout-2026-07-30.md)
-- [Frozen EnterpriseRAG-Bench holdout](docs/evaluation/enterprise-rag-bench-2026-08-01.md)
+- [Benchmark runner and reranker validation](../benchmarks/README.md)
+- [BEIR component ablation](evaluation/beir-component-ablation-2026-07-30.md)
+- [Frozen BEIR semantic holdout](evaluation/beir-semantic-holdout-2026-07-30.md)
+- [Frozen EnterpriseRAG-Bench holdout](evaluation/enterprise-rag-bench-2026-08-01.md)
 
 Detailed machine-specific JSON, Markdown, stdout, and stderr artifacts are
-under the ignored `benchmarks/results/` tree. The committed reports above are
-the canonical durable summaries. When the remaining benchmarks are complete,
-this temporary file should be reconciled against their release-candidate run
-identities before selected claims move into the README.
+under the ignored `../benchmarks/results/` tree. The committed reports above are
+the durable run summaries. Update this report when an accepted rerun changes a
+current measurement or a documented product boundary.

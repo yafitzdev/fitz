@@ -30,16 +30,17 @@ fitz answer "What is the refund policy?" --source ./docs \
   --synthesizer endpoint/qwen2.5-7b-instruct
 ```
 
-`fitz retrieve` is the product default. It returns a ranked `EvidencePack`; it does
-not generate an answer. Required retrieval enrichment runs through the managed
-Qwen3 0.6B ONNX GenAI model on CPU, so no API key or external inference server is
-needed for retrieval.
+`fitz retrieve` is the product default. It returns a ranked `EvidencePack`; it
+does not generate an answer. Query-time semantic terms, reranking, and Pyrrho
+run locally on CPU, so no API key or external inference server is needed.
+Optional background entity and hierarchy work may continue afterward.
 
 ---
 
 ## Commands
 
-The main commands are `retrieve`, `answer`, `collections`, and `serve`.
+The public commands are `retrieve`, `explain`, `replay`, `answer`,
+`collections`, and `serve`.
 Configuration is auto-created on first run; there is no separate init or ingest
 step.
 
@@ -152,13 +153,11 @@ Manage collections.
 
 ```bash
 fitz collections          # interactive menu
-fitz collections list
-fitz collections info my_collection
-fitz collections delete my_collection
 ```
 
-A collection is a single SQLite database under the fitz workspace. Deleting a
-collection removes the `.db` file and its `-wal` / `-shm` siblings.
+The menu lists, inspects, and deletes collections. A collection is a single
+SQLite database plus manifest state under the Fitz workspace. Deleting one
+removes the database, SQLite sidecars, and collection manifest directory.
 
 ### `fitz serve`
 
@@ -197,9 +196,10 @@ synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
 
-This is enough for `fitz retrieve` and
-`fitz_sage.evidence(...)`. Managed Qwen3 0.6B ONNX GenAI enrichment, the ONNX
-reranker, and the accepted immutable Pyrrho default all run locally on CPU.
+This is enough for `fitz retrieve` and `fitz_sage.evidence(...)`. Managed Qwen
+semantic query terms, the ONNX reranker, and the accepted Pyrrho default run
+locally on CPU. Background entity and hierarchy enrichment is independent of
+source-index readiness.
 
 See [CONFIG.md](CONFIG.md) for every key and
 [CONFIG_EXAMPLES.md](CONFIG_EXAMPLES.md) for deployment examples.

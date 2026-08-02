@@ -20,9 +20,9 @@ clear error (there is no torch-backed export fallback by design).
 Public surface — implements `RerankProvider`:
 
     reranker = OnnxReranker()                       # gte-reranker INT8
-    reranker = OnnxReranker(model_id="BAAI/bge-reranker-base",
+    reranker = OnnxReranker(model_id="owner/compatible-reranker",
                             onnx_subfolder="onnx",
-                            onnx_file="model_quantized.onnx")
+                            onnx_file="model_int8.onnx")
     response = reranker.rerank(query, documents, top_n=5)
 """
 
@@ -53,8 +53,8 @@ class OnnxReranker(OnnxEncoderBackend):
 
     Args:
         model_id: HuggingFace repo id of the cross-encoder. Defaults to
-            `Alibaba-NLP/gte-reranker-modernbert-base`. Any HF cross-encoder
-            with a `SequenceClassification` head (num_labels=1) works.
+            `Alibaba-NLP/gte-reranker-modernbert-base`. Alternatives must ship
+            a tokenizer and a compatible sequence-classification ONNX graph.
         onnx_subfolder: Repo subfolder holding the pre-built ONNX
             (`"onnx"` for the default model; `""` if the file sits at
             the repo root, as pyrrho does).

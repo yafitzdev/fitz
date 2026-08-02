@@ -33,10 +33,6 @@ Bare `pyrrho` uses `yafitzdev/pyrrho-v2-nano-g1` at immutable revision
 `948f0500b74871cfaec7689a01d4eab0dd516e1b`. A custom local package or remote
 package pinned to a full 40-character commit can be selected explicitly.
 
-The accepted default's training data included benchmark-derived deterministic
-rows. It is the current operational model, but scores on related
-fixed-evidence cases are not independent model-quality evidence.
-
 ## Runtime Boundary
 
 - The decision is local CPU inference and does not use a chat model.
@@ -51,4 +47,4 @@ Optional synthesis consumes the already-decided mode. It does not choose or
 repair it.
 
 See [Epistemic Governance](../../CONSTRAINTS.md) for the complete runtime
-contract and [Limitations](../../../LIMITATIONS.md) for measured behavior.
+contract and [Limitations](../../LIMITATIONS.md) for measured behavior.

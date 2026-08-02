@@ -261,11 +261,7 @@ class TableQueryHandler:
             (predicate.column.index, tuple(sorted(predicate.accepted_values)))
             for predicate in plan.predicates
         )
-        sort = (
-            (plan.sort.column.index, plan.sort.direction)
-            if plan.sort is not None
-            else None
-        )
+        sort = (plan.sort.column.index, plan.sort.direction) if plan.sort is not None else None
         limit = 1 if sort is not None else self._config.max_table_results
         return self._sqlite_table_store.select_rows(
             table_id,

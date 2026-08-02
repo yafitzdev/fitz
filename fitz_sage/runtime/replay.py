@@ -108,9 +108,7 @@ def _resolve_pyrrho(
     if pyrrho is None:
         spec = run.environment.components.get("pyrrho")
         if not spec:
-            raise ValueError(
-                "The trace does not identify Pyrrho; " "pass pyrrho='pyrrho/<package>'."
-            )
+            raise ValueError("The trace does not identify Pyrrho; " "pass pyrrho='pyrrho/<model>'.")
         return create_pyrrho(spec), spec
     if isinstance(pyrrho, str):
         return create_pyrrho(pyrrho), pyrrho

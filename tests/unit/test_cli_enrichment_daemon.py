@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
-from fitz_sage.cli.commands.enrichment_daemon import _remove_owned_pid_file
 from fitz_sage.cli.cli import app
+from fitz_sage.cli.commands.enrichment_daemon import _remove_owned_pid_file
 
 runner = CliRunner()
 

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core import ConfigurationError
 from fitz_sage.core.json_utils import parse_llm_json
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import path_to_module
 from fitz_sage.engines.fitz_krag.ingestion.formats import (
     BINARY_DOCUMENT_EXTENSIONS,
     CODE_EXTENSION_MAP,
@@ -37,7 +38,6 @@ from fitz_sage.engines.fitz_krag.ingestion.section_store import (
     CORPUS_SUMMARY_SCHEMA_VERSION,
     SectionStore,
 )
-from fitz_sage.engines.fitz_krag.ingestion.code_utils import path_to_module
 from fitz_sage.engines.fitz_krag.ingestion.strategies.base import IngestResult, SymbolEntry
 from fitz_sage.engines.fitz_krag.ingestion.strategies.python_code import (
     PythonCodeIngestStrategy,

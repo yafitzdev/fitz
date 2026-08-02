@@ -21,11 +21,9 @@
 # Root metadata.
 !.gitattributes
 !.gitignore
-!benchmark.md
 !CHANGELOG.md
 !CONTRIBUTING.md
 !LICENSE
-!LIMITATIONS.md
 !pyproject.toml
 !README.md
 

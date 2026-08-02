@@ -117,8 +117,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
     Send a message along with conversation history. The server is stateless;
     the client is responsible for maintaining and sending the history.
 
-    Query rewriting automatically resolves pronouns and references using
-    the conversation history (e.g., "their products" -> "TechCorp's products").
+    A configured query-intelligence provider may rewrite conversational
+    references using this history. The deterministic default uses the current
+    message as written.
     """
     service = get_service()
     context = _to_conversation_context(request.history)

@@ -92,7 +92,7 @@ class SectionSearchStrategy:
     def _to_address(self, section: dict[str, Any], *, query: str = "") -> Address:
         """Convert a section store row to an Address."""
         # Build breadcrumb location from parent title when available
-        title = section["title"]
+        title = str(section["title"])
         parent_title = section.get("parent_title")
         location = f"{parent_title} > {title}" if parent_title else title
 
@@ -100,7 +100,7 @@ class SectionSearchStrategy:
         # cross-encoder reranker a content snippet (not just the title) so it
         # has real text to score against. Once the warm loop summarizes the
         # file, the real summary replaces this.
-        summary = section.get("summary")
+        summary = str(section.get("summary") or "")
         has_summary = bool(summary)
         if not has_summary:
             content = (section.get("content") or "").strip()

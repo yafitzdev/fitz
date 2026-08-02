@@ -440,9 +440,7 @@ def _query_referenced_results(
 def _reference_seed_results(compiled_results: list[ReadResult]) -> list[ReadResult]:
     """Return evidence allowed to contribute explicit source references only."""
     return [
-        result
-        for result in compiled_results
-        if _result_has_compiler_role(result, ("required_",))
+        result for result in compiled_results if _result_has_compiler_role(result, ("required_",))
     ]
 
 
@@ -685,8 +683,7 @@ def _bridge_identifier_primary_terms(
     seen = {_normalize(identifier)}
     escaped = re.escape(identifier)
     descriptor_pattern = re.compile(
-        rf"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_-]{{2,}})\s+"
-        rf"{escaped}(?![A-Za-z0-9_])",
+        rf"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_-]{{2,}})\s+" rf"{escaped}(?![A-Za-z0-9_])",
         re.IGNORECASE,
     )
     for result in compiled_results:
@@ -711,7 +708,7 @@ def _bridge_identifier_primary_terms(
 
 def _query_descriptor_companion(query: str, descriptor: str) -> str:
     """Return the adjacent query term that qualifies a bridge descriptor."""
-    tokens = re.findall(r"[A-Za-z][A-Za-z0-9_-]*", query)
+    tokens: list[str] = re.findall(r"[A-Za-z][A-Za-z0-9_-]*", query)
     expected = _normalize(descriptor)
     for index, token in enumerate(tokens[:-1]):
         if _normalize(token) != expected:

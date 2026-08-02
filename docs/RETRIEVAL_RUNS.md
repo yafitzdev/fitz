@@ -94,7 +94,7 @@ default. Redacted output removes:
 - selected evidence content and excerpts;
 - frozen ranked-evidence content and address summaries;
 - source-derived item metadata;
-- the legacy raw retrieval trace embedded in `EvidencePack.metadata`.
+- the retrieval trace and other pack metadata represented by typed run fields.
 
 It retains the query, generated terms, source IDs, file paths, structural
 locations, scores, hashes, and governance output. A redacted trace is therefore
@@ -107,7 +107,7 @@ SHA-256 digests and character counts. Loading rejects changed frozen evidence.
 
 ## Pyrrho Replay
 
-Pyrrho replay asks a Pyrrho runtime to evaluate the exact delivered evidence
+Pyrrho replay asks the configured Pyrrho model to evaluate the exact delivered evidence
 stored in a content-bearing trace:
 
 ```bash

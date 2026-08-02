@@ -26,7 +26,7 @@ the default `fitz retrieve` CLI behavior.
 
 Retrieve a governed evidence pack without answer synthesis.
 
-```python
+```text
 fitz_sage.evidence(
     question: str,                 # The question to retrieve evidence for
     source: str | Path = None,     # If provided, registers documents first
@@ -64,7 +64,7 @@ run.write("run-with-content.json", include_content=True)
 print(run.explain())
 ```
 
-Use `fitz_sage.replay_pyrrho(...)` to evaluate another Pyrrho package over a
+Use `fitz_sage.replay_pyrrho(...)` to evaluate another Pyrrho model over a
 content-bearing record's exact delivered evidence:
 
 ```python
@@ -82,7 +82,7 @@ semantics.
 Generate a synthesized answer. This requires a configured synthesizer provider;
 use `evidence()` for the default retrieval path.
 
-```python
+```text
 fitz_sage.answer(
     question: str,                 # The question to ask
     source: str | Path = None,     # If provided, registers documents before querying
@@ -113,7 +113,7 @@ For advanced usage with multiple collections or custom configuration.
 
 ### Constructor
 
-```python
+```text
 from fitz_sage import fitz
 
 f = fitz(
@@ -135,7 +135,7 @@ f = fitz(
 
 #### answer()
 
-```python
+```text
 f.answer(
     question: str,
     source: str | Path = None,  # If provided, registers documents before querying
@@ -147,7 +147,7 @@ synthesizer provider.
 
 #### evidence()
 
-```python
+```text
 f.evidence(
     question: str,
     source: str | Path = None,  # If provided, registers documents before retrieval
@@ -156,7 +156,7 @@ f.evidence(
 
 #### trace()
 
-```python
+```text
 f.trace(
     question: str,
     source: str | Path = None,
@@ -170,11 +170,11 @@ f.replay_pyrrho(
 
 #### point()
 
-Register a source file or directory. Indexing runs in the background — queries
-work after the parsed search surface is ready and improve as Qwen enrichment
-completes.
+Register a source file or directory. This call synchronously parses changed
+supported files and completes the searchable source index. Optional Qwen
+entity and hierarchy work can continue in the background afterward.
 
-```python
+```text
 f.point(source: str | Path) -> None
 ```
 
@@ -184,13 +184,13 @@ The raw sources behind an answer/evidence pack, without governance packaging.
 For KRAG, returns `ReadResult` objects with `content`, `file_path`, and
 `line_range`. Most applications should prefer `evidence()`.
 
-```python
+```text
 f.retrieve(question: str) -> list
 ```
 
 #### wait_for_enrichment() / indexing_status()
 
-```python
+```text
 f.wait_for_enrichment() -> None  # optional entity/hierarchy completion
 f.indexing_status() -> dict      # source-index health + enrichment progress
 ```
@@ -220,8 +220,9 @@ legal_pack = legal.evidence("What are the payment terms?", source="./contracts")
 # Custom config
 f = fitz(config_path="./my_config.yaml")
 
-# Require existing config
-f = fitz(auto_init=False)  # Raises if no config
+# Require existing config. Construction is lazy; the first operation raises
+# when the config is missing.
+f = fitz(auto_init=False)
 ```
 
 ---
@@ -302,7 +303,7 @@ from fitz_sage import Provenance
 
 class Provenance:
     source_id: str    # Unique source identifier
-    excerpt: str      # Relevant excerpt
+    excerpt: str | None  # Relevant excerpt, when available
     metadata: dict    # Additional source info
 ```
 
@@ -337,6 +338,7 @@ engine.load("default")                  # bind to a collection
 engine.point(Path("./docs"))            # build the searchable source index
 
 pack = engine.evidence(Query(text="What is X?"))     # governed evidence
+# Requires a configured synthesizer:
 answer = engine.answer(Query(text="What is X?"))     # synthesized answer
 sources = engine.retrieve(Query(text="What is X?"))  # raw sources, no governance packaging
 ```
@@ -350,8 +352,8 @@ from fitz_sage import run, list_engines
 engines = list_engines()
 print(engines)  # ['fitz_krag']
 
-# Run with specific engine
-answer = run("What is X?", engine="fitz_krag")
+# run() always calls the engine's answer() contract. For fitz_krag it therefore
+# requires a synthesizer; use create_engine(...).evidence(...) for retrieval.
 ```
 
 ### Fitz KRAG Specific
@@ -359,7 +361,7 @@ answer = run("What is X?", engine="fitz_krag")
 ```python
 from fitz_sage.engines.fitz_krag.runtime import run_fitz_krag
 
-# KRAG-specific entry point
+# KRAG-specific answer entry point; requires a synthesizer in the config
 answer = run_fitz_krag("What is X?")
 
 # Create a reusable KRAG engine via the canonical factory
@@ -393,11 +395,11 @@ except EngineError as e:
 
 | Exception | When |
 |-----------|------|
-| `ConfigurationError` | Config file missing or invalid |
-| `QueryError` | Invalid query or retrieval failed |
+| `ConfigurationError` | Config missing, invalid, or incomplete for the requested operation |
+| `QueryError` | Invalid query or configured query-intelligence failure |
 | `EngineError` | Engine initialization or execution error |
 | `GenerationError` | LLM generation failed |
-| `KnowledgeError` | Base class for knowledge errors |
+| `KnowledgeError` | Source indexing, storage, or retrieval failure |
 
 ---
 

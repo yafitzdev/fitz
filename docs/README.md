@@ -11,9 +11,12 @@ historical implementation notes.
 | `features/retrieval/three-stage-strategy.md` | Retrieval strategy: broad recall -> ONNX rerank -> fixed evidence -> Pyrrho |
 | `features/retrieval/evidence-signals.md` | Pre-retrieval planning and post-retrieval evidence signals |
 | `RETRIEVAL_PIPELINE.md` | End-to-end query and source-index lifecycle |
-| `QUERY_UX.md` | One-command CLI user journey and background indexing behavior |
+| `QUERY_UX.md` | One-command CLI journey and optional background enrichment |
 | `EVIDENCE_PACK.md` | Governed evidence response contract |
 | `MANAGED_MODELS.md` | Local ONNX models, download behavior, and cache expectations |
+| `BENCHMARK.md` | Current benchmark results, methodology, timings, and interpretation |
+| `PRODUCTION_READINESS.md` | Package responsibilities, release gates, and measured boundaries |
+| `LIMITATIONS.md` | Input contract, user responsibilities, and measured product boundaries |
 | `features/governance/modality-boundaries.md` | Pyrrho governance boundaries for text, tables, code, logs, and config |
 | `CLI.md` | Command reference |
 | `SDK.md` | Python SDK reference |
@@ -25,8 +28,8 @@ historical implementation notes.
 | File | Contents |
 |---|---|
 | `ARCHITECTURE.md` | Package architecture and module boundaries |
-| `INGESTION.md` | Parser, chunking, typed-unit ingestion, and enrichment |
-| `ENRICHMENT.md` | Required managed-Qwen enrichment stages |
+| `INGESTION.md` | Parsers, typed-unit source indexing, and enrichment lifecycle |
+| `ENRICHMENT.md` | Optional background entity and hierarchy work |
 | `CONSTRAINTS.md` | Pyrrho governance and epistemic honesty |
 | `CONFIG.md` | Runtime configuration |
 | `FEATURE_CONTROL.md` | Provider-presence feature control |
