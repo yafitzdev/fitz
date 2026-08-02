@@ -175,7 +175,7 @@ and retrieval.
 |-------|--------------|
 | **1. Broad recall 🔎** | Finds candidate evidence:<br>`Doc 2`<br>`Doc 3`<br>`Doc 5`<br>`Doc 8` |
 | **2. Rerank 🎯** | Reorders by relevance:<br>`Doc 5`<br>`Doc 2`<br>`Doc 8`<br>`Doc 3` |
-| **3. Pyrrho 🛡️** | Evaluates the final delivered evidence set once:<br>`Doc 5 + Doc 2 + Doc 8` → `SUFFICIENT` |
+| **3. Governance 🛡️** | Pyrrho evaluates the final delivered evidence set once:<br>`Doc 5 + Doc 2 + Doc 8` → `SUFFICIENT` |
 
 <br>
 
