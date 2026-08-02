@@ -33,7 +33,7 @@ jobs:
 
       - name: Install linting tools
         run: |
-          pip install ruff black==24.10.0 isort mypy types-PyYAML
+          pip install ruff==0.14.11 black==24.10.0 isort==7.0.0 mypy==1.19.1 types-PyYAML
 
       - name: Check formatting with Black
         run: black --check --diff .
