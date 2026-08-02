@@ -6,7 +6,7 @@
 
 ### Fully local governed RAG for code, documents, and tables.
 
-**No LLM API key. No GPU. No infrastructure.**
+**No LLM API key or GPU required.**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/fitz-sage.svg)](https://pypi.org/project/fitz-sage/)
