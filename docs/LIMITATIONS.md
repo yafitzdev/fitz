@@ -123,15 +123,16 @@ is not proof of exhaustive corpus coverage.
 
 ## Conflicts And Governance
 
-Pyrrho owns the final evidence verdict. Fitz-Sage passes the fixed delivered
-sources once and returns Pyrrho's exact `SUFFICIENT`, `DISPUTED`, or
-`INSUFFICIENT` decision without local confidence thresholds, evidence floors,
-or dispute overrides.
+Pyrrho owns every evidence verdict. Fitz-Sage starts with the first three ranked
+sources, adds two only after exact `INSUFFICIENT`, and returns the stopping
+prefix without local confidence thresholds, query-shape evidence floors, or
+dispute overrides.
 
 False sufficient, insufficient, or disputed decisions are Pyrrho model debt.
 They should be addressed in Pyrrho rather than hidden by Fitz-Sage policy code.
-Conflicts can also be missed when the decisive source never reaches the fixed
-delivery set.
+Conflicts can also be missed when Pyrrho returns a false terminal verdict before
+the decisive source enters the prefix, or when that source lies beyond the
+delivery cap.
 
 ## Raw Logs, Scans, And Unsearchable Inputs
 
@@ -162,9 +163,9 @@ These values are observations, not SLAs or universal accuracy percentages:
 
 | Area | Current measurement | Interpretation |
 |---|---|---|
-| Required production retrieval | 186/192 compiled and delivered | Six package misses remain visible |
+| Required production retrieval | 190/192 compiled; 172/192 delivered | Early terminal Pyrrho verdicts can stop before later ranked evidence |
 | Query-shape suite | 60/60 | Measured deterministic shape coverage |
-| Intentional limitation suite | 52/52 asserted retrieval/delivery; 35/60 complete | Retrieval boundaries and accepted Pyrrho outputs are reported separately |
+| Intentional limitation suite | 51/52 compiled; 48/52 delivered; 31/60 complete | Retrieval, delivery, and Pyrrho boundaries are reported separately |
 | Local source indexing | 60.8 files/s core; 51.6 files/s mixed | Small local fixture corpora, source-only |
 | NapierOne scale indexing | 4,994/5,005 at 7.27 files/s | Eleven malformed/ultra-wide CSV failures were explicit |
 | Broad BEIR | 0.4239 delivered macro nDCG@10 | Biomedical, financial, and scientific tasks |

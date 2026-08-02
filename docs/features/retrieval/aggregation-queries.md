@@ -27,7 +27,7 @@ a narrow lookup, that profile can:
 - keep relevant modalities eligible;
 - inject an available corpus overview for broad context;
 - use evidence closure for unresolved coverage obligations;
-- compile a more representative fixed delivery set.
+- compile a more representative ranked prefix.
 
 The original query remains in recall. There is no generated instruction text
 silently appended to the user's query.

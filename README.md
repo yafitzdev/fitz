@@ -90,8 +90,8 @@ inspect, display, store, or pass to a synthesizer.
 as symbols, documents as sections, and tables as SQLite-backed data. Queries are routed across those
 typed surfaces with retrieval strategies that match the source structure.
 
-⭐ Governance is enforced by [Pyrrho](https://huggingface.co/yafitzdev) in a local CPU forward pass. Pyrrho evaluates the
-fixed delivered evidence set as `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`.
+⭐ Governance is enforced by [Pyrrho](https://huggingface.co/yafitzdev) in local CPU forward passes. Fitz starts with the
+first three ranked sources and adds two only while Pyrrho returns `INSUFFICIENT`.
 
 Yan Fitzner — ([LinkedIn](https://www.linkedin.com/in/yan-fitzner/), [GitHub](https://github.com/yafitzdev), [HuggingFace](https://huggingface.co/yafitzdev)).
 
@@ -159,7 +159,7 @@ and retrieval.
 
 > [!NOTE]
 > All retrieval units share the same retrieval intelligence: query profiling, temporal handling, comparisons,
-> aggregation, keyword expansion, reranking, fixed evidence delivery, and Pyrrho governance.
+> aggregation, keyword expansion, reranking, progressive evidence delivery, and Pyrrho governance.
 
 ---
 
@@ -175,7 +175,7 @@ and retrieval.
 |-------|--------------|
 | **1. Broad recall 🔎** | Finds candidate evidence:<br>`Doc 2`<br>`Doc 3`<br>`Doc 5`<br>`Doc 8` |
 | **2. Rerank 🎯** | Reorders by relevance:<br>`Doc 5`<br>`Doc 2`<br>`Doc 8`<br>`Doc 3` |
-| **3. Governance 🛡️** | Pyrrho evaluates the final delivered evidence set once:<br>`Doc 5 + Doc 2 + Doc 8` → `SUFFICIENT` |
+| **3. Governance 🛡️** | Grows the ranked prefix until Pyrrho decides:<br>`Doc 5 + Doc 2 + Doc 8` → `INSUFFICIENT`<br>`+ Doc 3` → `SUFFICIENT` |
 
 <br>
 
@@ -226,9 +226,9 @@ and latency separately.
 
 | Area | Scale | Current measurement |
 |------|------:|---------------------|
-| Production retrieval | 192 required contracts | 186/192 (96.9%) retrieved and delivered |
+| Production retrieval and delivery | 192 required contracts | 190/192 compiled; 172/192 delivered |
 | Query-shape recognition | 60 cases | 60/60 |
-| Intentional limitations | 52 evidence-asserted cases | 52/52 retrieved and delivered; zero forbidden hits |
+| Intentional limitations | 52 evidence-asserted cases | 51/52 compiled; 48/52 delivered |
 | Broad BEIR | 66,454 documents, 1,271 queries | 0.4239 delivered nDCG@10 |
 | Frozen semantic BEIR | 531,605 documents, 240 queries | 0.6519 delivered nDCG@10 |
 | EnterpriseRAG-Bench | 511,961 documents, 328 holdout queries | 0.5780 delivered nDCG@10 |
@@ -278,9 +278,10 @@ managed Qwen query keywords, and optional query intelligence.
 
 #### Post-retrieval 🛡️
 
-After retrieval, reranking, closure, and fixed-budget evidence delivery,
-Pyrrho evaluates the complete delivered set once. These signals tell you
-whether the result is usable.
+After retrieval, reranking, closure, and compilation, Fitz sends Pyrrho the
+first three ranked items. An exact `INSUFFICIENT` verdict adds the next two;
+`SUFFICIENT` or `DISPUTED` stops immediately. These signals tell you whether
+the result is usable.
 
 | Signal | What it means | What you can do with it |
 |--------|---------------|-------------------------|
@@ -298,7 +299,8 @@ next action.
 
 When an `EvidencePack` is not enough to diagnose a result, `RetrievalRun`
 records the actual query plan, term origins, candidate stages, compiled ranking,
-exact Pyrrho input and output, and runtime fingerprints from the same execution.
+evaluated evidence prefixes, exact Pyrrho outputs, and runtime fingerprints
+from the same execution.
 
 ```bash
 fitz retrieve "Which test failed?" -c reports --trace run.json
@@ -338,13 +340,15 @@ standard Hugging Face cache.
   RetrievalProfile → broad recall → rerank
     │
     ▼
-  Query + fixed delivered evidence set
+  Ranked evidence prefix (first 3)
     │
     ▼
   Pyrrho authoritative decision
-    │
-    ▼
-  SUFFICIENT / DISPUTED / INSUFFICIENT → EvidencePack
+    ├── SUFFICIENT / DISPUTED ───────────────────────→ EvidencePack
+    ├── INSUFFICIENT + exhausted ────────────────────→ EvidencePack
+    └── INSUFFICIENT + evidence remains → add next 2 ──┐
+                ▲                                      │
+                └──────────────────────────────────────┘
 ```
 
 <br>
@@ -356,11 +360,11 @@ standard Hugging Face cache.
 | `retrieval_intents` | Evidence intent metadata, such as lookup, temporal resolution, comparison, or broad coverage. |
 | `evidence_kinds` | Evidence-surface metadata, such as text, table, code, config, logs, or document layout. |
 
-Fitz-Sage passes evidence to Pyrrho unchanged. Its managed ONNX adapter applies
-the model's fixed input and head-decoding contract, maps the resulting verdict
-into `AnswerMode`, and returns the exact serialized decision with the `EvidencePack`.
-Applications can
-answer, retry, show conflict, or request more source material.
+Fitz-Sage passes every ranked prefix to Pyrrho unchanged. Its managed ONNX
+adapter applies the model's fixed input and head-decoding contract, maps the
+resulting verdict into `AnswerMode`, and returns the stopping prefix plus the
+exact serialized decisions with the `EvidencePack`. Applications can answer,
+retry, show conflict, or request more source material.
 
 <br>
 

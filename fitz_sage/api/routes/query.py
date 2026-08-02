@@ -85,7 +85,7 @@ async def evidence(request: QueryRequest) -> EvidenceResponse:
     Retrieve governed evidence without answer synthesis.
 
     This is the retrieval-first endpoint: it returns ranked source units,
-    Pyrrho mode/reasons, fixed-delivery metadata, and indexing status.
+    Pyrrho mode/reasons, progressive-delivery metadata, and indexing status.
     """
     service = get_service()
     collection = request.collection or "default"

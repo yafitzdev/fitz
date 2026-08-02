@@ -97,7 +97,7 @@ Strict import rules enforce separation of concerns (verified by
 Retrieval runs as a broad recall → rerank → compile → deliver → Pyrrho
 pipeline. A `RetrievalPass` is retrieve → fuse → rerank → read;
 contract-driven evidence closure may issue bounded follow-up retrieval before
-the fixed delivery set is submitted to Pyrrho.
+the ranked evidence enters progressive Pyrrho delivery.
 
 ```
 1  Query prep      deterministic plan, explicit clauses, Qwen semantic keywords
@@ -108,8 +108,8 @@ the fixed delivery set is submitted to Pyrrho.
 5  Read            fetch content for surviving addresses
 6  Closure         issue bounded follow-up retrieval for unresolved obligations
 7  Compile         enforce query-shape evidence obligations
-8  Deliver         select a fixed top_k/top_read evidence set
-9  Pyrrho          one authoritative decision over the delivered set
+8  Deliver         grow ranked prefixes within the top_k/top_read cap
+9  Pyrrho          authoritative decisions over growing ranked prefixes
 10 Record          optional RetrievalRun snapshots this same execution
 11 Synthesize      optional chat call writes an Answer from governed evidence
 ```
@@ -342,7 +342,7 @@ fitz_sage/
 ## See Also
 
 - [Unified Storage](features/platform/unified-storage.md) — SQLite + FTS5
-- [Retrieval Pipeline](RETRIEVAL_PIPELINE.md) — query flow, fixed evidence delivery, and indexing states
+- [Retrieval Pipeline](RETRIEVAL_PIPELINE.md) — query flow, progressive evidence delivery, and indexing states
 - [PLUGINS.md](PLUGINS.md) — supported extension points
 - [CONFIG.md](CONFIG.md) — configuration reference
 - [FEATURE_CONTROL.md](FEATURE_CONTROL.md) — feature-control architecture

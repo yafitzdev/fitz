@@ -36,8 +36,8 @@ user query
   -> bounded INT8 ONNX reranking
   -> read original source units
   -> bounded evidence closure for unresolved obligations
-  -> contract-aware compilation and fixed delivery
-  -> one Pyrrho decision over the exact delivered evidence
+  -> contract-aware compilation
+  -> Pyrrho over ranked prefixes of 3, then +2 while insufficient
   -> EvidencePack
   -> optional synthesizer -> Answer
 ```
@@ -71,9 +71,10 @@ validate SQL for one retrieved table.
 ## Governance Boundary
 
 Pyrrho owns governance. Fitz-Sage uses Pyrrho's query-only PRE heads as evidence
-obligations, performs retrieval mechanics, then sends one fixed evidence set to
-Pyrrho's evidence decision. Fitz-Sage mechanically transports the verdict and
-does not add local confidence floors, dispute overrides, or fallback verdicts.
+obligations, performs retrieval mechanics, then grows the ranked evidence
+prefix only after exact `INSUFFICIENT`. Fitz-Sage mechanically transports every
+verdict and does not add local confidence floors, dispute overrides, or fallback
+verdicts.
 
 ## Public Engine Methods
 

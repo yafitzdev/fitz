@@ -22,7 +22,7 @@ def validate_case(
     ranked_items: list[dict[str, Any]] | None = None,
     signals: dict[str, Any] | None = None,
 ) -> ValidationResult:
-    """Validate compiled retrieval, fixed delivery, Pyrrho, and query signals."""
+    """Validate compiled retrieval, governed delivery, Pyrrho, and query signals."""
     retrieval_failures: list[str] = []
     delivery_failures: list[str] = []
     governance_failures: list[str] = []

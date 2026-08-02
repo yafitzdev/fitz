@@ -74,7 +74,7 @@ Query
 │    └─► FTS5 + bm25() over per-collection .db
  ├─► OnnxReranker (bounded INT8 ONNX cross-encoder)
  ├─► Read + bounded evidence closure + compilation
- ├─► One Pyrrho decision (SUFFICIENT / DISPUTED / INSUFFICIENT)
+ ├─► Progressive Pyrrho prefixes (3, then +2 while INSUFFICIENT)
  ├─► EvidencePack
  └─► Optional synthesizer → Answer (+ provenance + mode)
 ```

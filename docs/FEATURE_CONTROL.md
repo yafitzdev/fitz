@@ -139,9 +139,8 @@ governance: pyrrho
 ```
 
 The bare value uses Pyrrho's accepted immutable default. Pyrrho owns v2
-query-planning heads and the one authoritative decision over the fixed delivered
-evidence set; Fitz/KRAG owns the retrieval mechanics that consume planning
-signals.
+query-planning heads and every authoritative prefix decision; Fitz/KRAG owns
+the mechanical `3, 5, 7, ...` delivery loop that consumes exact verdicts.
 
 ## Managed Qwen
 

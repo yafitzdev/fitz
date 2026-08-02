@@ -11,7 +11,7 @@ one release-candidate scorecard.
 
 ## Reading Rules
 
-- Retrieval, fixed evidence delivery, query-shape recognition, and Pyrrho
+- Retrieval, governed evidence delivery, query-shape recognition, and Pyrrho
   decisions are separate measurements. The Pyrrho figures must not be
   described as Fitz-Sage retrieval quality.
 - `source-only` means parsed source is query-ready while optional document
@@ -33,9 +33,9 @@ one release-candidate scorecard.
 
 | Area | Measured scale | Headline result |
 |---|---:|---|
-| Required production matrix | 252 capability contracts | 246/252 (97.6%) package capability; gate passed |
+| Required production matrix | 252 capability contracts | 250/252 (99.2%) package capability; gate passed |
 | Query-shape suite | 60 cases | 60/60 (100%) |
-| Limitation suite | 60 cases | 52/52 asserted retrieval and delivery; 35/60 complete with accepted Pyrrho |
+| Limitation suite | 60 cases | 51/52 compiled; 48/52 delivered; 31/60 complete |
 | Local source indexing | 18 core / 93 mixed files | 60.8 / 51.6 files/s |
 | NapierOne source indexing | up to 5,005 real files | 7.27 files/s at scale; recovery gate passed |
 | Broad BEIR ablation | 66,454 docs, 1,271 queries | full macro final nDCG@10 0.4365 |
@@ -46,16 +46,16 @@ one release-candidate scorecard.
 
 ## Internal Production Matrix
 
-The accepted local matrix was run on 2026-07-27 from fresh fixture folders and
+The accepted local matrix was run on 2026-08-02 from fresh fixture folders and
 isolated workspaces.
 
 | Metric | Result |
 |---|---:|
-| Required compiled retrieval | 186/192 (96.9%) |
-| Required fixed evidence delivery | 186/192 (96.9%) |
+| Required compiled retrieval | 190/192 (99.0%) |
+| Required governed evidence delivery | 172/192 (89.6%) |
 | Query-shape recognition | 60/60 (100%) |
-| Combined package capability | 246/252 (97.6%) |
-| Full contract including diagnostic Pyrrho modes | 193/252 (76.6%) |
+| Combined package capability | 250/252 (99.2%) |
+| Full contract including diagnostic Pyrrho modes | 189/252 (75.0%) |
 | Core retrieval after adding 80 near-neighbor documents | 20/20 |
 | Reload stability | 100% retrieval, delivery, and mode identity |
 | Required-suite ingestion | 209/209 files |
@@ -65,31 +65,34 @@ Suite-level results:
 
 | Suite | Retrieval or shape | Delivery | Purpose |
 |---|---:|---:|---|
-| Core | 20/20 | 20/20 | baseline behavior |
-| Holdout | 47/50 | 47/50 | first unseen corpus |
-| Holdout 2 | 47/50 | 47/50 | second unseen corpus |
-| Core plus 80 noise documents | 20/20 | 20/20 | near-neighbor robustness |
+| Core | 19/20 | 16/20 | baseline behavior |
+| Holdout | 49/50 | 45/50 | first unseen corpus |
+| Holdout 2 | 50/50 | 46/50 | second unseen corpus |
+| Core plus 80 noise documents | 20/20 | 17/20 | near-neighbor robustness |
 | Query shapes | 60/60 | n/a | temporal, comparison, aggregation, narrow |
-| PDF/DOCX/PPTX | 24/24 | 24/24 | rich-document facts |
-| SQL/Go/Java/TypeScript/PPTX | 17/17 | 17/17 | code and base formats |
-| XLSX, optional parser | 5/5 | 5/5 | optional parser path |
+| PDF/DOCX/PPTX | 24/24 | 21/24 | rich-document facts |
+| SQL/Go/Java/TypeScript/PPTX | 17/17 | 16/17 | code and base formats |
+| XLSX, optional parser | n/a | n/a | optional parser not enabled in this run |
 | Hardened boundaries | 11/11 | 11/11 | long-document, bridge, precision, structured cases |
-| Limitations, non-gating | 52/52 | 52/52 | cases with explicit evidence assertions |
+| Limitations, non-gating | 51/52 | 48/52 | cases with explicit evidence assertions |
 
-The six remaining required-suite package misses are one grouped code-constant
-case, two coordinated-prose second clauses, one table superlative, one missing
-companion service row, and one mixed table/code scheduler expression. They
-remain in the suite as visible boundaries rather than case-specific tuning
-targets.
+The two required compiled-retrieval misses are false-positive evidence in
+negative budget queries. Of 20 required delivery misses, 19 contain expected
+evidence later in the compiled ranking but stop after an earlier terminal
+Pyrrho verdict; one exhausts a negative-query prefix containing a false-positive
+candidate. They remain visible rather than receiving Fitz-side verdict
+overrides.
 
 ### Intentional Limitation Suite
 
 - 60 total cases were run.
-- All 52 cases with evidence assertions passed retrieval and fixed delivery.
-- Required recall was 100%, and no forbidden evidence was returned.
-- 35/60 complete contracts passed.
-- All 25 complete-contract failures were attributed to exact Pyrrho verdicts
-  or failure modes while retrieval and delivery still passed.
+- Of 52 cases with evidence assertions, 51 passed compiled retrieval and 48
+  passed governed delivery.
+- Required recall was 100%; one forbidden candidate remained in the compiled
+  ranking and stopping prefix.
+- 31/60 complete contracts passed; exact Pyrrho modes matched 35/60.
+- Three delivery failures stopped on an early terminal Pyrrho verdict. The
+  fourth exhausted the prefix with a forbidden false-positive candidate.
 - The run used `pyrrho-v2-nano-g1` at its current 2,048-token contract.
 
 ### Local Fixture Performance
@@ -104,13 +107,12 @@ The source-only core run passed 20/20 retrieval, delivery, and package
 capability contracts, with 100% required recall and no forbidden evidence. It
 passed 14/20 full contracts; the six failures were accepted Pyrrho outputs.
 
-Historical, enrichment-heavy timing is retained only for context: the old full
-matrix took 2,455.3 seconds, and its 98-file noisy-corpus step took 335.5
-seconds (roughly 0.29 files/s). Those figures included model-backed keyword,
-entity, and hierarchy work and are not source-index throughput.
+The current enrichment-complete matrix took 1,498.7 seconds. That figure
+includes model-backed keyword, entity, and hierarchy work and is not
+source-index throughput.
 
-Required-suite queries averaged 4.1 seconds with a 3.6-second median. The
-slowest limitation query took 27.9 seconds.
+Required-suite queries averaged 3.11 seconds with a 2.76-second median and a
+5.19-second p95. The slowest limitation query took 11.81 seconds.
 
 ## NapierOne Real-File Ingestion
 

@@ -5,7 +5,7 @@ or insufficient.
 
 ## Overview
 
-Pyrrho classifies one `(query, delivered evidence set)` pair into a native
+Pyrrho classifies each `(query, ranked evidence prefix)` pair into a native
 evidence verdict:
 
 | Verdict | Meaning |
@@ -17,9 +17,10 @@ evidence verdict:
 ```text
 User query
   -> Fitz retrieval, reranking, closure, and compilation
-  -> fixed delivered evidence set
-  -> one local Pyrrho decision
-  -> EvidencePack with exact Pyrrho metadata
+  -> first ranked prefix (up to 3 items)
+  -> local Pyrrho decision
+  -> INSUFFICIENT: add up to 2 more and repeat
+  -> SUFFICIENT / DISPUTED / evidence exhausted: EvidencePack
 ```
 
 ## Ownership
@@ -33,7 +34,8 @@ User query
   text, maps the returned verdict name to `AnswerMode`, and serializes the exact
   Pyrrho decision.
 - Fitz-Sage does not apply a second confidence floor, conflict heuristic,
-  evidence-count rule, retry loop, or query-shape override to the verdict.
+  query-shape evidence minimum, or verdict override. It only grows the ranked
+  prefix after Pyrrho's exact `INSUFFICIENT` verdict.
 
 ## Default Model
 
@@ -97,9 +99,10 @@ do not require a chat model.
 
 1. Fitz-Sage profiles the query and retrieves candidate evidence.
 2. Reranking, closure, and compilation produce the final ranking.
-3. `top_k`, or configured `top_read`, fixes the delivered evidence set.
-4. Pyrrho evaluates the query plus exactly those evidence items once.
-5. Fitz-Sage returns the same items and the exact serialized decision.
+3. `top_k`, or configured `top_read`, caps progressive evidence delivery.
+4. Fitz-Sage sends the first three ranked items to Pyrrho unchanged.
+5. `INSUFFICIENT` adds the next two items; `SUFFICIENT` or `DISPUTED` stops.
+6. Fitz-Sage returns the stopping prefix and exact serialized decisions.
 
 Optional synthesis consumes the already-decided mode. It does not choose or
 repair that mode.
@@ -113,7 +116,9 @@ repair that mode.
    verify claims against outside knowledge.
 4. Numeric agreement and conflict recognition are learned rather than
    hard-coded.
-5. The 2,048-token contract can hide evidence late in a large delivered set.
+5. The 2,048-token contract applies independently to every evaluated prefix.
+   Adding evidence cannot help when earlier items already consume the model's
+   visible token budget.
 
 See [Limitations](LIMITATIONS.md) for the measured Fitz-Sage retrieval
 boundary and the exact separation between retrieval and Pyrrho outcomes.

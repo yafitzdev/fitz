@@ -35,7 +35,7 @@ retrieval-worker limit. Duplicate addresses merge their query provenance.
 
 After reranking and reading, evidence compilation assigns comparison roles and
 tries to retain both sides. Evidence closure may issue bounded follow-up recall
-for a missing side before the fixed delivery set is created.
+for a missing side before progressive delivery starts.
 
 ## Contract
 

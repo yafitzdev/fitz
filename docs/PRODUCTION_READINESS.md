@@ -56,7 +56,7 @@ Current gates include:
 | Gate | Requirement |
 |---|---|
 | Required compiled retrieval | at least 85% |
-| Required fixed evidence delivery | at least 85% |
+| Required governed evidence delivery | at least 85% |
 | Query-shape recognition | at least 85% |
 | Core plus 80 near-neighbor files | no shared-case retrieval/delivery regression |
 | Boundary-hardening suite | 100% retrieval and delivery |
@@ -75,20 +75,21 @@ The accepted matrix records:
 
 | Metric | Result |
 |---|---:|
-| Required compiled retrieval | 186/192 (96.9%) |
-| Required fixed evidence delivery | 186/192 (96.9%) |
+| Required compiled retrieval | 190/192 (99.0%) |
+| Required governed evidence delivery | 172/192 (89.6%) |
 | Query-shape recognition | 60/60 (100%) |
-| Combined package capability | 246/252 (97.6%) |
-| Full contract including exact accepted Pyrrho modes | 193/252 (76.6%) |
+| Combined package capability | 250/252 (99.2%) |
+| Full contract including exact accepted Pyrrho modes | 189/252 (75.0%) |
 | Core retrieval after 80 near-neighbor documents | 20/20 |
 | Reload stability | 100% retrieval, delivery, and mode identity |
 | Required-suite ingestion | 209/209 files |
 | Production gate | pass |
 
-The six remaining required package misses cover grouped code constants,
-coordinated prose clauses, one table superlative, one companion service row,
-and one mixed table/code expression. They remain visible instead of receiving
-case-specific rules.
+The two required compiled-retrieval misses are false-positive evidence in
+negative budget queries. Of 20 required delivery misses, 19 stop after Pyrrho
+returns a terminal verdict before later expected evidence enters the prefix;
+one exhausts a prefix containing a false-positive candidate. They remain
+visible instead of receiving Fitz-side verdict overrides.
 
 ## Ingestion Evidence
 

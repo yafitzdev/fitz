@@ -346,11 +346,15 @@ def _format_pyrrho_metadata(metadata: dict, reasons: list[str]) -> list[str]:
 
     delivery = metadata.get("evidence_delivery", {}) if isinstance(metadata, dict) else {}
     if isinstance(delivery, dict) and delivery:
+        details = [f"limit {delivery.get('limit', '?')}"]
+        evaluated = delivery.get("evaluated_prefixes")
+        if isinstance(evaluated, list) and evaluated:
+            details.append("prefixes " + " -> ".join(str(count) for count in evaluated))
         lines.append(
             "Evidence delivery: "
             f"selected {delivery.get('selected', '?')}/"
             f"{delivery.get('available', '?')} "
-            f"(limit {delivery.get('limit', '?')})"
+            f"({'; '.join(details)})"
         )
 
     reason = pyrrho.get("reason") if pyrrho else None

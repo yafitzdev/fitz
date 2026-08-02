@@ -21,7 +21,7 @@ flowchart LR
     Q["User query"] --> P["Query profile"]
     P --> R["Typed recall"]
     R --> K["ONNX rerank"]
-    K --> C["Fixed delivery + Pyrrho v2"]
+    K --> C["Progressive delivery + Pyrrho v2"]
     C --> E["EvidencePack"]
 
     P --> P1["query shape"]
@@ -90,15 +90,16 @@ Example:
 
 ## Governance Signals
 
-After recall, reranking, closure, and compilation, Fitz-Sage applies a fixed
-evidence budget. Pyrrho v2 evaluates exactly that delivered set once.
+After recall, reranking, closure, and compilation, Fitz-Sage evaluates ranked
+prefixes of `3, 5, 7, ...` items through Pyrrho until a terminal verdict or the
+delivery cap.
 
 | Signal | Meaning | Product use |
 |---|---|---|
 | `mode` | Runtime `AnswerMode`: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Gate synthesis, UI display, automation, and review. |
 | `probabilities` | Pyrrho probabilities for insufficient, disputed, sufficient. | Display confidence and audit the model decision. |
 | `reason` / `reasons` | Human-readable explanation. | Tell users why Fitz judged evidence sufficient, disputed, or insufficient. |
-| `evidence_delivery` | Available, selected, and limit counts fixed before Pyrrho. | Audit what evidence the model actually received. |
+| `evidence_delivery` | Available/selected counts, cap, evaluated prefixes, and exact decision trajectory. | Audit what evidence the model actually received and why delivery stopped. |
 | `evidence_verdict` | Native v2 verdict: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Inspect the model head behind the runtime mode. |
 | `failure_mode` | Native v2 failure reason. | Explain insufficient or disputed evidence. |
 | `retrieval_intents` | Native v2 multi-label intent metadata. | Decide whether another pass should focus on lookup, time, comparison, or coverage. |
@@ -135,7 +136,7 @@ Expected retrieval behavior:
 
 - exact symbol and identifier recall should dominate
 - code evidence should stay eligible
-- a small fixed evidence budget is usually enough for this lookup
+- the first three ranked items are often enough for this lookup
 
 Likely governance metadata:
 
@@ -234,7 +235,7 @@ Useful governance metadata:
 | Ask for more documents | `mode`, `failure_mode`, `retrieval_intents`, `evidence_kinds` |
 | Run a focused retry | `retrieval_intents`, `evidence_kinds`, retrieval trace, compiler roles |
 | Explain disputes | `mode`, `failure_mode`, source evidence |
-| Build audit logs | fixed delivered evidence, content hashes, exact Pyrrho input/output, runtime fingerprints |
+| Build audit logs | progressive evidence trajectory, content hashes, exact Pyrrho input/output, runtime fingerprints |
 | Tune retrieval quality | `query_profile`, `retrieval_trace`, `evidence_delivery` |
 
 The core rule:

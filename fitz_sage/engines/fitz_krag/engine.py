@@ -31,10 +31,10 @@ from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.core.collections import validate_collection_name
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.evidence_compiler import compile_evidence
+from fitz_sage.engines.fitz_krag.evidence_delivery import deliver_progressively
 from fitz_sage.engines.fitz_krag.retrieval.query_coverage import compound_queries
 from fitz_sage.integrations.pyrrho import (
     answer_mode_from_pyrrho,
-    decide,
     decision_payload,
 )
 from fitz_sage.logging.logger import get_logger
@@ -65,7 +65,7 @@ def _evidence_delivery_limit(
     *,
     default_limit: int,
 ) -> int:
-    """Choose a fixed evidence budget without consulting a governance verdict."""
+    """Choose the largest ranked prefix available to progressive delivery."""
     value = default_limit if requested_limit is None else requested_limit
     if isinstance(value, bool):
         raise ValueError("top_k must be a positive integer.")
@@ -886,16 +886,18 @@ class FitzKragEngine:
             requested_top_k,
             default_limit=self._config.top_read,
         )
-        selected = list(compilation.results[:evidence_limit])
+        delivery_candidates = list(compilation.results[:evidence_limit])
         import time
 
         pyrrho_start = time.perf_counter()
-        decision = decide(
+        delivery = deliver_progressively(
             self._pyrrho,
             outcome.sanitized,
-            selected,
+            delivery_candidates,
         )
         pyrrho_timing = ("Pyrrho", time.perf_counter() - pyrrho_start)
+        selected = list(delivery.selected)
+        decision = delivery.decision
         mode = answer_mode_from_pyrrho(decision)
         timings = list(outcome.timings)
         timings.append(pyrrho_timing)
@@ -915,11 +917,10 @@ class FitzKragEngine:
                 "evidence_closure": closure_metadata,
                 "evidence_compiler": compilation.metadata,
                 "pyrrho": decision_payload(decision),
-                "evidence_delivery": {
-                    "available": len(compilation.results),
-                    "selected": len(selected),
-                    "limit": evidence_limit,
-                },
+                "evidence_delivery": delivery.metadata(
+                    available=len(compilation.results),
+                    limit=evidence_limit,
+                ),
             },
         )
         return _GovernedEvidenceResult(

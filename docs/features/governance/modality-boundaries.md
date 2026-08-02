@@ -27,9 +27,9 @@ the ranked evidence, source locations, table query metadata, and code/test
 context so a developer can inspect the result.
 
 `INSUFFICIENT` is especially useful for these modalities: it means the
-fixed delivered evidence did not satisfy the query contract. Fitz-Sage returns
-that verdict and evidence unchanged; a caller may prepare better source data or
-start a new retrieval with different inputs.
+largest allowed ranked prefix did not satisfy the query contract. Fitz-Sage
+returns that verdict and evidence unchanged; a caller may prepare better source
+data or start a new retrieval with different inputs.
 
 ## Future Direction
 

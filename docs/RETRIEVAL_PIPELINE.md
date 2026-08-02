@@ -71,9 +71,12 @@ flowchart TD
     X --> K["ONNX reranker"]
     K --> D["Read source content"]
     D --> B["Bounded evidence closure"]
-    B --> F["Compile fixed evidence set"]
-    F --> G["One Pyrrho decision"]
-    G --> E["EvidencePack"]
+    B --> F["Compile ranked evidence"]
+    F --> V["Deliver first up to 3"]
+    V --> G["Pyrrho decision"]
+    G -->|"INSUFFICIENT + evidence remains"| H["Add next up to 2"]
+    H --> G
+    G -->|"SUFFICIENT / DISPUTED / exhausted"| E["EvidencePack"]
 
     C --> C1["deterministic query shape"]
     C --> C2["Pyrrho PRE evidence obligations"]
@@ -86,10 +89,9 @@ flowchart TD
     R --> R2["Code symbol BM25 / name search"]
     R --> R3["Table metadata search"]
 
-    F --> F1["Contract-aware ordering and fixed delivery budget"]
-    G --> G1["Evaluate query + exact delivered evidence"]
+    F --> F1["Contract-aware ordering and maximum delivery budget"]
+    G --> G1["Evaluate query + exact ranked prefix"]
     G1 --> G2["SUFFICIENT / DISPUTED / INSUFFICIENT"]
-    G2 --> E
 ```
 
 ### Stage 1: Broad Recall
@@ -97,7 +99,7 @@ flowchart TD
 Broad recall is intentionally permissive. It uses literal query terms,
 managed Qwen semantic keywords, and intent fanout for
 comparison, temporal, aggregation, and freshness queries. False positives are
-acceptable because the reranker and fixed evidence delivery handle precision.
+acceptable because the reranker and evidence compilation handle precision.
 Query profiling combines deterministic query shape, Pyrrho's query-only PRE
 obligations, managed Qwen semantic keywords, and optional query-intelligence
 providers.
@@ -118,23 +120,25 @@ recall. It is the precision stage. The default backend is
 profile-aware scoring budget is separate from the full BM25 pool, which
 remains available to evidence-contract rescue logic.
 
-### Stage 3: Fixed Delivery And Pyrrho
+### Stage 3: Progressive Delivery And Pyrrho
 
 Pyrrho does not answer the query. Its PRE heads can describe evidence
-obligations before retrieval; after Fitz-Sage compiles one fixed evidence set,
-Pyrrho receives the exact query and source text once and owns the final verdict.
+obligations before retrieval. After compilation, Fitz-Sage grows one ranked
+prefix mechanically while Pyrrho owns every verdict.
 
 ```mermaid
 flowchart TD
     A["Reranked candidates"] --> B["Contract-aware compilation"]
-    B --> C["Fixed top_k / top_read delivery"]
-    C --> D["Pyrrho(query, exact evidence set)"]
-    D --> E["Return exact verdict and same evidence"]
+    B --> C["First up to 3 items"]
+    C --> D["Pyrrho(query, exact prefix)"]
+    D -->|"INSUFFICIENT + evidence remains"| F["Add next up to 2"]
+    F --> D
+    D -->|"SUFFICIENT / DISPUTED / exhausted"| E["Return exact verdict and prefix"]
 ```
 
-The default delivery contains at most the configured `top_read` evidence items,
-or fewer when the caller requests a smaller `top_k`. Fitz-Sage does not retry
-different prefixes or reinterpret Pyrrho's decision.
+The configured `top_read`, or a smaller caller `top_k`, caps delivery. Fitz-Sage
+does not inspect probabilities or reinterpret a verdict: only exact
+`INSUFFICIENT` continues the `3, 5, 7, ...` sequence.
 
 ---
 
@@ -209,7 +213,7 @@ the configured synthesizer. This is separate from the retrieval package default.
 | Entity graph | Context expansion when the relevant files have entity metadata. |
 | Hierarchical summaries | Optional injected context for broad analytical questions. |
 | ONNX reranker | Precision stage before governance. |
-| Pyrrho | Mandatory single sufficiency, dispute, or insufficiency decision over the fixed delivered evidence set. |
+| Pyrrho | Authoritative sufficiency, dispute, or insufficiency decisions over progressively larger ranked prefixes. |
 | Evidence closure | Deterministic bounded follow-up retrieval for unresolved query-contract obligations before compilation. |
 
 Synthetic corpus summaries are not normal section hits. They are schema-versioned,

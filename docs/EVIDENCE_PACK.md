@@ -62,7 +62,7 @@ The most important metadata blocks are:
 | `query_profile` | The effective retrieval profile used before recall. |
 | `retrieval_trace` | Candidate generation, reranking, final reads, and evidence-closure passes. |
 | `evidence_compiler` | Mechanical evidence roles, anchors, and ordering. |
-| `evidence_delivery` | Fixed evidence budget applied before Pyrrho runs. |
+| `evidence_delivery` | Progressive prefix sizes and exact Pyrrho trajectory. |
 | `pyrrho` | Pyrrho's exact serialized governance decision. |
 
 ### Query Profile
@@ -101,9 +101,10 @@ query. Exact Pyrrho PRE evidence obligations remain separate in
 
 ### Evidence Delivery And Pyrrho
 
-Fitz-Sage selects a fixed number of compiled evidence items, then calls Pyrrho
-once over exactly that set. Selection does not inspect or react to the verdict.
-`metadata.evidence_delivery` records the mechanical budget.
+Fitz-Sage starts with the first three compiled evidence items and adds two only
+after Pyrrho returns exact `INSUFFICIENT`. Exact `SUFFICIENT` or `DISPUTED`
+stops immediately. `metadata.evidence_delivery` records the mechanical schedule
+and every exact Pyrrho output.
 `metadata.pyrrho` is the dictionary returned by Pyrrho without reinterpretation.
 
 ```json
@@ -111,8 +112,11 @@ once over exactly that set. Selection does not inspect or react to the verdict.
   "metadata": {
     "evidence_delivery": {
       "available": 7,
-      "selected": 3,
-      "limit": 3
+      "selected": 5,
+      "limit": 7,
+      "initial_prefix_size": 3,
+      "prefix_increment": 2,
+      "evaluated_prefixes": [3, 5]
     },
     "pyrrho": {
       "schema_version": 1,
@@ -156,15 +160,20 @@ Field meanings:
 | Field | Meaning |
 |---|---|
 | `evidence_delivery.available` | Compiled evidence items available before the delivery budget. |
-| `evidence_delivery.selected` | Evidence items delivered to Pyrrho and returned in the pack. |
-| `evidence_delivery.limit` | Requested `top_k`, or configured `top_read` when omitted. |
+| `evidence_delivery.selected` | Items in the stopping prefix returned in the pack. |
+| `evidence_delivery.limit` | Maximum prefix from requested `top_k`, or configured `top_read`. |
+| `evidence_delivery.initial_prefix_size` | First evaluation target: three items, or all available when fewer. |
+| `evidence_delivery.prefix_increment` | Additional ranked items after each `INSUFFICIENT`: two. |
+| `evidence_delivery.evaluated_prefixes` | Prefix sizes Pyrrho actually evaluated. |
+| `evidence_delivery.trajectory` | Each prefix size and Pyrrho's exact serialized decision for it. |
 | `pyrrho.verdict` | Authoritative native verdict. |
 | `pyrrho.probabilities` | Native verdict probabilities. |
 | `pyrrho.heads` | Native v2 verdict, failure, retrieval-intent, and evidence-kind heads. |
 | `pyrrho.input` | Token count, truncation status, and model token limit. |
 
 Pyrrho owns thresholds and contradictory-head consistency. Fitz-Sage neither
-adds confidence thresholds nor overrides the verdict for any query shape.
+adds confidence thresholds nor overrides the verdict for any query shape; it
+only continues when the exact verdict is `INSUFFICIENT`.
 
 ### Retrieval Trace
 
@@ -204,7 +213,7 @@ reranker order, and evidence-closure behavior alongside the selected evidence.
 ### Evidence Compiler
 
 `metadata.evidence_compiler` records mechanical evidence constraints before
-fixed delivery: exact identifiers, soft keyword anchors, how many evidence
+progressive delivery: exact identifiers, soft keyword anchors, how many evidence
 items entered and left compilation, and selected evidence roles.
 
 ```json

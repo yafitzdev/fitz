@@ -75,7 +75,7 @@ A version 2 record contains:
 - retrieval strategy calls and result counts;
 - ordered candidate identities and scores at recall, rerank, and final stages;
 - the complete ranked evidence after evidence compilation;
-- the exact fixed evidence set delivered to Pyrrho;
+- the exact stopping prefix selected by progressive Pyrrho delivery;
 - the selected `EvidencePack`;
 - Pyrrho's exact serialized verdict, heads, probabilities, token counts,
   truncation status, and model identity;
@@ -130,12 +130,12 @@ result = replay_pyrrho(
 print(result.explain())
 ```
 
-Replay performs one Pyrrho call over the recorded `pyrrho_evidence`. It does
-not rerun query preparation,
-BM25, semantic keyword generation, retrieval, reranking, evidence closure, or
-compilation. This boundary is deliberate: replay answers "Would this Pyrrho
-package judge the same frozen evidence differently?", not "Would the current
-system retrieve the same evidence?"
+Replay performs one Pyrrho call over the recorded final `pyrrho_evidence`
+stopping prefix. It does not replay earlier prefix decisions or rerun query
+preparation, BM25, semantic keyword generation, retrieval, reranking, evidence
+closure, or compilation. This boundary is deliberate: replay answers "Would
+this Pyrrho package judge the same frozen evidence differently?", not "Would
+the current system retrieve the same evidence?"
 
 Replay records both the source and current Fitz versions, but Fitz-Sage does
 not reinterpret the result. Pyrrho replay currently supports `fitz_krag`

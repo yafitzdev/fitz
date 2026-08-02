@@ -54,19 +54,20 @@ facts. It can retain explicit comparison sides, temporal scope, exact literal
 anchors, requested modalities, and broad coverage roles when those candidates
 exist.
 
-A fixed `top_k`/`top_read` evidence set is then delivered once to Pyrrho:
+`top_k`/`top_read` caps a progressively delivered ranked prefix:
 
 ```text
 compiled source evidence
-    -> fixed delivery set
-    -> Pyrrho(query, exact evidence)
-    -> SUFFICIENT / DISPUTED / INSUFFICIENT
-    -> EvidencePack
+    -> first up to 3 items
+    -> Pyrrho(query, exact prefix)
+    -> INSUFFICIENT: add up to 2 and repeat
+    -> SUFFICIENT / DISPUTED / exhausted: EvidencePack
 ```
 
 Pyrrho owns logit decoding, thresholds, failure mode, and the final verdict.
-Fitz-Sage does not add confidence floors, evidence-count overrides, or retry a
-different evidence prefix after seeing the verdict.
+Fitz-Sage does not add confidence floors, evidence-count overrides, or
+query-shape verdict policy. It only continues after Pyrrho returns exact
+`INSUFFICIENT`.
 
 ## Optional Background Context
 
@@ -93,7 +94,7 @@ fingerprints, and optional frozen content for Pyrrho-only replay.
 
 - Broad recall cannot bridge private aliases or invisible vocabulary reliably.
 - Pointwise reranking can be weak on set-level and multi-document coverage.
-- Fixed budgets can exclude a relevant source.
+- Finite delivery caps can exclude a relevant source.
 - Evidence closure is bounded and can only search physical modalities that
   exist.
 - Pyrrho model quality and context length are governance boundaries, not Fitz

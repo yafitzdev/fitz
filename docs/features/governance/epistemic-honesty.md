@@ -8,20 +8,21 @@ silently treat every evidence set as sufficient.
 
 ## Pyrrho Governance
 
-Every `(query, delivered evidence set)` runs through one local Pyrrho classifier
-call. Pyrrho returns:
+Every `(query, ranked evidence prefix)` runs through the local Pyrrho
+classifier. Pyrrho returns:
 
 - `SUFFICIENT`
 - `DISPUTED`
 - `INSUFFICIENT`
 
-Fitz-Sage passes the fixed delivered evidence to Pyrrho unchanged, maps the
-native verdict name to `AnswerMode`, and includes the exact serialized Pyrrho
-decision in the `EvidencePack`.
+Fitz-Sage starts with up to three ranked items, adds two after exact
+`INSUFFICIENT`, maps the native verdict name to `AnswerMode`, and includes the
+stopping prefix plus exact serialized Pyrrho trajectory in the `EvidencePack`.
 
 Pyrrho owns model loading, thresholds, label consistency, and the verdict.
-Fitz-Sage does not retry alternative evidence sets, add confidence safeguards,
-or reinterpret the result with query heuristics.
+Fitz-Sage does not add confidence safeguards or reinterpret the result with
+query heuristics. Its only control rule is to continue the ranked prefix after
+exact `INSUFFICIENT` and stop on exact `SUFFICIENT` or `DISPUTED`.
 
 ## Configuration
 

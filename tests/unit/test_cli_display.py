@@ -85,7 +85,7 @@ def test_evidence_title_stays_stable_for_pyrrho_verdict():
 
 
 def test_format_pyrrho_metadata_shows_decision_and_delivery():
-    """Display Pyrrho's decision separately from the fixed evidence budget."""
+    """Display Pyrrho's decision separately from progressive delivery metadata."""
     metadata = {
         "pyrrho": {
             "verdict": "SUFFICIENT",
@@ -96,12 +96,17 @@ def test_format_pyrrho_metadata_shows_decision_and_delivery():
             },
             "reason": "Pyrrho: sources support a confident answer (P=0.53).",
         },
-        "evidence_delivery": {"available": 10, "selected": 6, "limit": 6},
+        "evidence_delivery": {
+            "available": 10,
+            "selected": 5,
+            "limit": 6,
+            "evaluated_prefixes": [3, 5],
+        },
     }
 
     assert _format_pyrrho_metadata(metadata, []) == [
         "Pyrrho: SUFFICIENT  P(SUFFICIENT)=0.53  P(INSUFFICIENT)=0.21  P(DISPUTED)=0.26",
-        "Evidence delivery: selected 6/10 (limit 6)",
+        "Evidence delivery: selected 5/10 (limit 6; prefixes 3 -> 5)",
         "Pyrrho: sources support a confident answer (P=0.53).",
     ]
 

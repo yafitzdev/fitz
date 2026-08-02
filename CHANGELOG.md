@@ -24,9 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closure retains access to the wider recall pool when a query contract is not
   yet covered.
 - **One governance owner.** Pyrrho is now the sole authority for sufficiency,
-  dispute, and insufficiency decisions. Fitz-Sage delivers one fixed evidence
-  set and transports Pyrrho's decoded model decision without retrieval-side
-  overrides or fallback verdicts.
+  dispute, and insufficiency decisions. Fitz-Sage mechanically grows the ranked
+  evidence prefix from three items in increments of two while Pyrrho returns
+  `INSUFFICIENT`, without retrieval-side overrides or fallback verdicts.
 - **Measured production boundaries.** The release adds reproducible folder,
   format, ingestion, recovery, BEIR, semantic-holdout, and enterprise retrieval
   evaluations, plus an explicit limitations contract. Known failures remain
@@ -126,10 +126,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reranker and Qwen. The accidental external `pyrrho` Python dependency was
   removed; Fitz-Sage owns model loading, artifact validation, and mechanical
   head decoding while the model supplies the learned governance judgment.
-- Fitz-Sage now selects one fixed evidence set, passes its exact source IDs and
-  text to Pyrrho, and mechanically maps the returned verdict to `AnswerMode`.
-- Retrieval-run schema 2.0 records the exact Pyrrho input and serialized
-  decision; replay no longer reproduces a Fitz-Sage cutoff policy.
+- Fitz-Sage now passes unchanged ranked evidence prefixes to Pyrrho in a
+  deterministic `3, 5, 7, ...` sequence. Exact `SUFFICIENT` or `DISPUTED`
+  stops delivery; exact `INSUFFICIENT` adds two more up to `top_k`/`top_read`.
+- Retrieval-run schema 2.0 records the selected stopping prefix and exact final
+  Pyrrho input and decision; `EvidencePack` metadata also records the evaluated
+  prefix trajectory. Replay evaluates the frozen stopping prefix.
 - Bare `governance: pyrrho` now uses Pyrrho's accepted default model at an
   immutable commit, and Pyrrho outcomes remain separate from Fitz-Sage
   retrieval metrics.

@@ -764,8 +764,8 @@ class TestEvidence:
         assert query_profile["profile"]["answer_type"] == "comparative"
         assert query_profile["profile"]["planning_owner"] == "hybrid"
 
-    def test_evidence_uses_fixed_budget_and_one_authoritative_pyrrho_call(self):
-        """Evidence delivery is fixed before Pyrrho and does not depend on its verdict."""
+    def test_evidence_respects_delivery_cap_below_initial_prefix(self):
+        """An explicit cap below three is evaluated as one complete prefix."""
         engine = _make_engine()
         addresses, results = _evidence_results(3)
         engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
@@ -796,6 +796,15 @@ class TestEvidence:
             "available": 3,
             "selected": 2,
             "limit": 2,
+            "initial_prefix_size": 3,
+            "prefix_increment": 2,
+            "evaluated_prefixes": [2],
+            "trajectory": [
+                {
+                    "evidence_count": 2,
+                    "decision": engine._pyrrho.decide.return_value.to_dict(),
+                }
+            ],
         }
         assert pack.metadata["pyrrho"] == engine._pyrrho.decide.return_value.to_dict()
         engine._pyrrho.decide.assert_called_once()
@@ -808,6 +817,43 @@ class TestEvidence:
             results,
             entity_expansion_limit=3,
         )
+
+    def test_evidence_grows_by_two_until_pyrrho_is_sufficient(self):
+        """Only Pyrrho's exact verdict controls progressive delivery."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(7)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
+
+        insufficient = _decision(AnswerMode.INSUFFICIENT, "Need more evidence.")
+        sufficient = _decision(AnswerMode.SUFFICIENT, "Enough evidence.")
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.side_effect = [insufficient, sufficient]
+
+        pack = engine.evidence(Query(text="What happened?"), top_k=7)
+
+        assert pack.mode == AnswerMode.SUFFICIENT
+        assert [item.file_path for item in pack.items] == [
+            "docs/1.md",
+            "docs/2.md",
+            "docs/3.md",
+            "docs/4.md",
+            "docs/5.md",
+        ]
+        assert [len(call_args.args[1]) for call_args in engine._pyrrho.decide.call_args_list] == [
+            3,
+            5,
+        ]
+        assert pack.metadata["pyrrho"] == sufficient.to_dict()
+        delivery = pack.metadata["evidence_delivery"]
+        assert delivery["available"] == 7
+        assert delivery["selected"] == 5
+        assert delivery["limit"] == 7
+        assert delivery["evaluated_prefixes"] == [3, 5]
+        assert delivery["trajectory"] == [
+            {"evidence_count": 3, "decision": insufficient.to_dict()},
+            {"evidence_count": 5, "decision": sufficient.to_dict()},
+        ]
 
     def test_broad_query_uses_requested_budget_without_local_evidence_floor(self):
         """Broad query shape cannot delay or override Pyrrho's verdict."""
@@ -828,7 +874,7 @@ class TestEvidence:
         engine._pyrrho.decide.assert_called_once()
 
     def test_comparison_query_returns_exact_pyrrho_dispute(self):
-        """Comparison query shape does not alter Pyrrho's disputed verdict."""
+        """A disputed prefix stops immediately without a local override."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
         engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
@@ -842,11 +888,11 @@ class TestEvidence:
         pack = engine.evidence(Query(text="Compare React vs Vue performance"), top_k=4)
 
         assert pack.mode == AnswerMode.DISPUTED
-        assert len(pack.items) == 4
+        assert len(pack.items) == 3
         engine._pyrrho.decide.assert_called_once()
 
     def test_comparative_query_delivers_both_requested_temporal_sides(self):
-        """Retrieval shape provides both sides before the single Pyrrho call."""
+        """Retrieval shape provides both sides before Pyrrho evaluation."""
         engine = _make_engine()
         addresses, results = _evidence_results(2)
         results[0].content = "Q1 total revenue was 100."
@@ -904,7 +950,6 @@ class TestEvidence:
             "docs/1.md",
             "docs/2.md",
             "docs/3.md",
-            "docs/4.md",
         ]
         engine._pyrrho.decide.assert_called_once()
 
@@ -923,7 +968,7 @@ class TestEvidence:
         pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=4)
 
         assert pack.mode == AnswerMode.DISPUTED
-        assert len(pack.items) == 4
+        assert len(pack.items) == 3
         engine._pyrrho.decide.assert_called_once()
 
     def test_trace_records_the_canonical_governed_execution(self, monkeypatch, tmp_path):

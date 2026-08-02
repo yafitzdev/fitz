@@ -8,7 +8,7 @@ historical implementation notes.
 
 | File | Contents |
 |---|---|
-| `features/retrieval/three-stage-strategy.md` | Retrieval strategy: broad recall -> ONNX rerank -> fixed evidence -> Pyrrho |
+| `features/retrieval/three-stage-strategy.md` | Retrieval strategy: broad recall -> ONNX rerank -> progressive evidence -> Pyrrho |
 | `features/retrieval/evidence-signals.md` | Pre-retrieval planning and post-retrieval evidence signals |
 | `RETRIEVAL_PIPELINE.md` | End-to-end query and source-index lifecycle |
 | `QUERY_UX.md` | One-command CLI journey and optional background enrichment |

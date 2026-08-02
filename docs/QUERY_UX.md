@@ -58,6 +58,6 @@ enrichment state. Only changed files are reparsed.
 
 - source: current working directory
 - collection: derived from the source folder name
-- retrieval: broad recall, ONNX rerank, fixed evidence, Pyrrho
+- retrieval: broad recall, ONNX rerank, progressive evidence, Pyrrho
 - enrichment: managed local Qwen entities/hierarchy, optional for query readiness
 - answer synthesis: not used

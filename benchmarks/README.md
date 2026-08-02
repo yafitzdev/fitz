@@ -651,7 +651,7 @@ python -m benchmarks.fitz_bench.production_runner \
 
 - `retrieval_pass_rate`: required evidence is present and forbidden evidence is
   absent in the compiled ranking.
-- `delivery_pass_rate`: the same evidence assertions over the fixed delivered
+- `delivery_pass_rate`: the same evidence assertions over the governed stopping
   `EvidencePack`.
 - `query_shape_pass_rate`: explicit query-plan signals match their human-labeled
   temporal, comparison, aggregation, or narrow expectation.
@@ -668,5 +668,5 @@ python -m benchmarks.fitz_bench.production_runner \
 Every rate includes an `*_evaluated` denominator. Cases without an assertion
 for that metric do not receive automatic credit. Do not use the full pass rate
 to describe retrieval quality. A mode-only Pyrrho error is reported as a
-Pyrrho failure; a correct item excluded by the fixed budget is a delivery
-failure, not a recall failure.
+Pyrrho failure; a correct item excluded by the stopping prefix or delivery cap
+is a delivery failure, not a recall failure.
