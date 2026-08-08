@@ -13,6 +13,7 @@ import typer
 
 from fitz_sage.cli.ui import display_evidence_pack, ui
 from fitz_sage.core import Query
+from fitz_sage.engines.fitz_krag.progressive.write_lock import CollectionBusyError
 from fitz_sage.logging.logger import get_logger
 from fitz_sage.runtime import create_engine, get_default_engine, get_engine_registry
 
@@ -236,12 +237,30 @@ def command(
             else:
                 if progress:
                     progress(f"Registering {effective_source}...")
-                engine_instance.point(
-                    effective_source,
-                    selected_collection,
-                    start_worker=False,
-                    progress=progress,
-                )
+                try:
+                    engine_instance.point(
+                        effective_source,
+                        selected_collection,
+                        start_worker=False,
+                        progress=progress,
+                    )
+                except CollectionBusyError as exc:
+                    background_enrichment_is_active = exc.operation == "background enrichment" or (
+                        _read_running_daemon_pid(_daemon_pid_path(selected_collection, cwd))
+                        is not None
+                    )
+                    if not background_enrichment_is_active or not _persisted_source_matches(
+                        selected_collection, effective_source, cwd
+                    ):
+                        raise
+
+                    engine_instance.load(selected_collection)
+                    if not engine_instance.indexing_status().get("query_ready", False):
+                        raise
+                    if progress:
+                        progress(
+                            f"Using query-ready collection '{selected_collection}' while enrichment runs..."
+                        )
         else:
             if progress:
                 progress(f"Loading collection '{selected_collection}'...")

@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from fitz_sage.cli.cli import app
 from fitz_sage.core import EvidenceItem, EvidencePack
 from fitz_sage.core.answer_mode import AnswerMode
+from fitz_sage.engines.fitz_krag.progressive.write_lock import CollectionBusyError
 
 runner = CliRunner()
 
@@ -299,6 +300,125 @@ class TestRetrieveCommand:
         mock_engine.load.assert_called_once_with(tmp_path.name)
         mock_engine.point.assert_not_called()
         mock_engine.evidence.assert_called_once()
+
+    def test_retrieve_reuses_query_ready_collection_during_background_enrichment(self, tmp_path):
+        """An explicit source query remains available while enrichment owns the writer lock."""
+        source = tmp_path / "docs"
+        source.mkdir()
+        collection_dir = tmp_path / ".fitz" / "collections" / "docs"
+        collection_dir.mkdir(parents=True)
+        (collection_dir / "manifest.json").write_text("{}", encoding="utf-8")
+        (collection_dir / "source_dir.txt").write_text(str(source), encoding="utf-8")
+
+        pack = EvidencePack(query="What changed?", mode=AnswerMode.SUFFICIENT)
+        mock_engine = MagicMock()
+        mock_engine.point.side_effect = CollectionBusyError(
+            "Collection 'docs' is busy.", owner={"operation": "background enrichment"}
+        )
+        mock_engine.indexing_status.return_value = {"query_ready": True}
+        mock_engine.evidence.return_value = pack
+
+        mock_registry = MagicMock()
+        mock_registry.list.return_value = ["fitz_krag"]
+        mock_caps = MagicMock()
+        mock_caps.supports_persistent_ingest = True
+        mock_registry.get_capabilities.return_value = mock_caps
+
+        with (
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry", return_value=mock_registry
+            ),
+            patch("fitz_sage.cli.commands.retrieve.get_default_engine", return_value="fitz_krag"),
+            patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
+            patch("fitz_sage.cli.commands.retrieve.Path.cwd", return_value=tmp_path),
+            patch("fitz_sage.cli.commands.retrieve.display_evidence_pack"),
+        ):
+            result = runner.invoke(
+                app,
+                ["retrieve", "What changed?", "--source", str(source)],
+            )
+
+        assert result.exit_code == 0
+        mock_engine.point.assert_called_once()
+        mock_engine.load.assert_called_once_with("docs")
+        mock_engine.evidence.assert_called_once()
+
+    def test_retrieve_reuses_query_ready_collection_when_windows_lock_hides_owner(self, tmp_path):
+        """A live enrichment daemon identifies the owner when Windows hides lock metadata."""
+        source = tmp_path / "docs"
+        source.mkdir()
+        collection_dir = tmp_path / ".fitz" / "collections" / "docs"
+        collection_dir.mkdir(parents=True)
+        (collection_dir / "manifest.json").write_text("{}", encoding="utf-8")
+        (collection_dir / "source_dir.txt").write_text(str(source), encoding="utf-8")
+
+        pack = EvidencePack(query="What changed?", mode=AnswerMode.SUFFICIENT)
+        mock_engine = MagicMock()
+        mock_engine.point.side_effect = CollectionBusyError("Collection 'docs' is busy.")
+        mock_engine.indexing_status.return_value = {"query_ready": True}
+        mock_engine.evidence.return_value = pack
+
+        mock_registry = MagicMock()
+        mock_registry.list.return_value = ["fitz_krag"]
+        mock_caps = MagicMock()
+        mock_caps.supports_persistent_ingest = True
+        mock_registry.get_capabilities.return_value = mock_caps
+
+        with (
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry", return_value=mock_registry
+            ),
+            patch("fitz_sage.cli.commands.retrieve.get_default_engine", return_value="fitz_krag"),
+            patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
+            patch("fitz_sage.cli.commands.retrieve.Path.cwd", return_value=tmp_path),
+            patch("fitz_sage.cli.commands.retrieve._read_running_daemon_pid", return_value=123),
+            patch("fitz_sage.cli.commands.retrieve.display_evidence_pack"),
+        ):
+            result = runner.invoke(
+                app,
+                ["retrieve", "What changed?", "--source", str(source)],
+            )
+
+        assert result.exit_code == 0
+        mock_engine.load.assert_called_once_with("docs")
+        mock_engine.evidence.assert_called_once()
+
+    def test_retrieve_does_not_reuse_collection_during_active_indexing(self, tmp_path):
+        """Only optional enrichment permits a query-ready collection fallback."""
+        source = tmp_path / "docs"
+        source.mkdir()
+        collection_dir = tmp_path / ".fitz" / "collections" / "docs"
+        collection_dir.mkdir(parents=True)
+        (collection_dir / "manifest.json").write_text("{}", encoding="utf-8")
+        (collection_dir / "source_dir.txt").write_text(str(source), encoding="utf-8")
+
+        mock_engine = MagicMock()
+        mock_engine.point.side_effect = CollectionBusyError(
+            "Collection 'docs' is busy.", owner={"operation": "source indexing"}
+        )
+
+        mock_registry = MagicMock()
+        mock_registry.list.return_value = ["fitz_krag"]
+        mock_caps = MagicMock()
+        mock_caps.supports_persistent_ingest = True
+        mock_registry.get_capabilities.return_value = mock_caps
+
+        with (
+            patch(
+                "fitz_sage.cli.commands.retrieve.get_engine_registry", return_value=mock_registry
+            ),
+            patch("fitz_sage.cli.commands.retrieve.get_default_engine", return_value="fitz_krag"),
+            patch("fitz_sage.cli.commands.retrieve.create_engine", return_value=mock_engine),
+            patch("fitz_sage.cli.commands.retrieve.Path.cwd", return_value=tmp_path),
+        ):
+            result = runner.invoke(
+                app,
+                ["retrieve", "What changed?", "--source", str(source)],
+            )
+
+        assert result.exit_code == 1
+        mock_engine.load.assert_not_called()
+        mock_engine.evidence.assert_not_called()
 
     def test_spawn_enrichment_daemon_reuses_running_pid(self, tmp_path):
         """A live PID file should prevent duplicate detached daemons."""
