@@ -134,6 +134,7 @@ def write_config(
         "# Retrieval defaults",
         "parser: cpu",
         "rerank: onnx",
+        "# Pyrrho resolves its accepted default to an immutable model revision.",
         "governance: pyrrho",
         "vision: null",
         "",
@@ -156,10 +157,11 @@ def write_local_enrichment_config(
         "# Fitz Configuration",
         "# Docs: https://github.com/yafitzdev/fitz-sage/blob/main/docs/CONFIG.md",
         "",
-        "# Ingestion uses Fitz-managed ONNX Qwen automatically.",
+        "# Query terms and optional background enrichment use managed ONNX Qwen.",
         "collection: default",
         "parser: cpu",
         "rerank: onnx",
+        "# Pyrrho resolves its accepted default to an immutable model revision.",
         "governance: pyrrho",
         "# Optional endpoint providers use chat_base_url; managed Qwen ignores it.",
         f"chat_base_url: {chat_base_url}",
@@ -194,7 +196,10 @@ def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
             f"\n  Detected an OpenAI-compatible server at {endpoint.base_url}, "
             f"but it lists no chat models."
         )
-        print(f"  Wrote minimal config; enrichment uses managed {DEFAULT_ENRICHMENT_MODEL}.")
+        print(
+            "  Wrote minimal config; semantic query terms and optional background "
+            f"work use managed {DEFAULT_ENRICHMENT_MODEL}."
+        )
         print(f"\n  Config: {config_path}\n")
         return True
 
@@ -208,7 +213,7 @@ def _configure_from_endpoint(endpoint: DetectedEndpoint) -> bool:
 
     print(f"\n  Auto-configured from {endpoint.base_url}:")
     print(f"    chat:       {chat_model}")
-    print(f"    enrichment: {DEFAULT_ENRICHMENT_MODEL} (managed ONNX)")
+    print(f"    query/background: {DEFAULT_ENRICHMENT_MODEL} (managed ONNX)")
     print(f"\n  Config: {config_path}\n")
     return True
 
@@ -226,7 +231,7 @@ def _configure_from_openai_key() -> bool:
     print("\n  Configured from OPENAI_API_KEY:")
     print("    chat (smart):    gpt-4o")
     print("    chat (fast/bal): gpt-4o-mini")
-    print(f"    enrichment:      {DEFAULT_ENRICHMENT_MODEL} (managed ONNX)")
+    print(f"    query/background: {DEFAULT_ENRICHMENT_MODEL} (managed ONNX)")
     print(f"\n  Config: {config_path}\n")
     return True
 
@@ -235,8 +240,14 @@ def _configure_local_enrichment_required() -> bool:
     """Write config when no optional chat endpoint is available."""
     config_path = write_local_enrichment_config()
     print("\n  No optional chat endpoint found.")
-    print(f"  Wrote minimal config; enrichment uses managed {DEFAULT_ENRICHMENT_MODEL}.")
-    print("  First ingest will download the managed Qwen3 0.6B ONNX GenAI weights locally.")
+    print(
+        "  Wrote minimal config; semantic query terms and optional background "
+        f"work use managed {DEFAULT_ENRICHMENT_MODEL}."
+    )
+    print(
+        "  The first model-backed query or enrichment operation downloads the "
+        "managed Qwen3 0.6B ONNX GenAI weights locally."
+    )
     print(f"\n  Config: {config_path}\n")
     return True
 

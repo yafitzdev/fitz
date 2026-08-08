@@ -17,6 +17,7 @@ from fitz_sage.llm.providers.base import (
     ChatProvider,
     ModelTier,
     RerankProvider,
+    RerankResponse,
     RerankResult,
     VisionProvider,
 )
@@ -28,10 +29,11 @@ __all__ = [
     "VisionProvider",
     # Types
     "ModelTier",
+    "RerankResponse",
     "RerankResult",
 ]
 
-# Managed ONNX chat provider for required enrichment.
+# Managed ONNX chat provider for query expansion and optional enrichment.
 from fitz_sage.llm.providers.onnx_chat import (  # noqa: E402,F401
     OnnxChat,
     OnnxChatModelError,

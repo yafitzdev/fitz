@@ -37,7 +37,6 @@ def _make_config(
     short_answer_tokens: int = 192,
     include_file_header: bool = True,
     strict_grounding: bool = True,
-    enable_citations: bool = True,
 ) -> MagicMock:
     """Build a mock FitzKragConfig with the given fields."""
     cfg = MagicMock()
@@ -46,7 +45,6 @@ def _make_config(
     cfg.short_answer_tokens = short_answer_tokens
     cfg.include_file_header = include_file_header
     cfg.strict_grounding = strict_grounding
-    cfg.enable_citations = enable_citations
     return cfg
 
 
@@ -247,12 +245,12 @@ class TestContextAssembler:
         assert "[S1]" in output
         assert "# src/mod.py" not in output
 
-    # -- test_assemble_chunk_no_language ------------------------------------
+    # -- test_assemble_section_no_language ----------------------------------
 
-    def test_assemble_chunk_no_language(self) -> None:
-        """CHUNK addresses use a bare code fence without language hint."""
+    def test_assemble_section_no_language(self) -> None:
+        """SECTION addresses use a bare code fence without language hint."""
         asm = ContextAssembler(_make_config())
-        addr = Address(kind=AddressKind.CHUNK, source_id="c1", location="doc", summary="")
+        addr = Address(kind=AddressKind.SECTION, source_id="s1", location="doc", summary="")
         result = ReadResult(address=addr, content="some text", file_path="doc.pdf")
         output = asm.assemble("test", [result])
 

@@ -30,7 +30,7 @@ def test_load_config_from_defaults():
     assert config.governance == "pyrrho"
 
     # Verify generation settings
-    assert hasattr(config, "enable_citations")
+    assert hasattr(config, "strict_grounding")
     assert hasattr(config, "strict_grounding")
     assert hasattr(config, "top_addresses")
 
@@ -83,44 +83,34 @@ def test_config_none_for_optional_vision():
     assert config.vision is None
 
 
-def test_enable_guardrails_raises_migration_error():
-    """A config using the removed `enable_guardrails` key gets an actionable error."""
-    with patch(
-        "fitz_sage.config.loader._load_user_config",
-        return_value={"enable_guardrails": False},
-    ):
-        with pytest.raises(ValueError, match="enable_guardrails"):
-            load_engine_config("fitz_krag")
+def test_create_pyrrho_dispatch(tmp_path):
+    """`create_pyrrho` maps a config spec to the managed model adapter."""
+    from fitz_sage.integrations.pyrrho import create_pyrrho
+    from fitz_sage.llm.providers.onnx_pyrrho import DEFAULT_MODEL_ID, OnnxPyrrho
+
+    default = create_pyrrho("pyrrho")
+    assert isinstance(default, OnnxPyrrho)
+    assert default.model_spec == DEFAULT_MODEL_ID
+    assert DEFAULT_MODEL_ID == "yafitzdev/pyrrho-v2-nano-g1"
+
+    custom_spec = f"acme/custom-fine-tune@{'a' * 40}"
+    custom = create_pyrrho(f"pyrrho/{custom_spec}")
+    assert isinstance(custom, OnnxPyrrho)
+    assert custom.model_spec == custom_spec
+
+    local_model = tmp_path / "pyrrho-v2-nano-g1"
+    local_model.mkdir()
+    local = create_pyrrho(f"pyrrho/{local_model}")
+    assert isinstance(local, OnnxPyrrho)
+    assert local.model_spec == str(local_model)
 
 
-def test_create_governance_dispatch(tmp_path):
-    """`create_governance` maps a config spec to a classifier instance."""
-    from fitz_sage.governance import Pyrrho, create_governance
-    from fitz_sage.governance.pyrrho import MODEL_ID, TAU
-
-    default = create_governance("pyrrho")
-    assert isinstance(default, Pyrrho)
-    assert default._model_id == MODEL_ID
-    assert MODEL_ID == "yafitzdev/pyrrho-v2-nano-g1"
-    assert TAU == 0.34
-
-    custom = create_governance("pyrrho/acme/custom-fine-tune")
-    assert isinstance(custom, Pyrrho)
-    assert custom._model_id == "acme/custom-fine-tune"
-
-    local_package = tmp_path / "pyrrho-v2-nano-g1"
-    local_package.mkdir()
-    local = create_governance(f"pyrrho/{local_package}")
-    assert isinstance(local, Pyrrho)
-    assert local._model_id == str(local_package)
-
-
-def test_create_governance_unknown_provider():
-    """An unknown governance provider raises an actionable error."""
-    from fitz_sage.governance import create_governance
+def test_create_pyrrho_unknown_provider():
+    """An unknown provider raises an actionable error."""
+    from fitz_sage.integrations.pyrrho import create_pyrrho
 
     with pytest.raises(ValueError, match="Unknown governance provider"):
-        create_governance("bogus")
+        create_pyrrho("bogus")
 
     with pytest.raises(ValueError, match="Governance must"):
-        create_governance(None)
+        create_pyrrho(None)

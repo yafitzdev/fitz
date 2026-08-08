@@ -35,25 +35,26 @@ Architecture:
 Philosophy:
     Knowledge → Engine → EvidencePack → optional Answer
 
-    Engines are black boxes that transform queries into governed evidence.
-    The platform only cares about the interface, not the implementation.
+    Retrieval engines transform queries into governed evidence; the minimal
+    KnowledgeEngine protocol returns an Answer. The runtime depends on those
+    public contracts rather than engine internals.
 
 Examples:
     Simple query:
     >>> from fitz_sage import evidence
     >>> pack = evidence("What is quantum computing?")
 
-    Specific engine:
-    >>> answer = run("What is X?", engine="fitz_krag")
+    Specific engine with answer synthesis configured:
+    >>> answer = run("What is X?", engine="fitz_krag")  # requires synthesizer
 
     Reusable engine:
-    >>> from fitz import create_engine, Query
+    >>> from fitz_sage import Query, create_engine
     >>> engine = create_engine("fitz_krag")
     >>> query = Query(text="What is Y?")
     >>> pack = engine.evidence(query)
 """
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 # =============================================================================
 # LAZY IMPORTS
@@ -70,6 +71,7 @@ def __getattr__(name: str):
         "ConfigurationError",
         "EngineError",
         "GenerationError",
+        "PyrrhoReplay",
         "EvidenceItem",
         "EvidencePack",
         "KnowledgeEngine",
@@ -77,6 +79,7 @@ def __getattr__(name: str):
         "Provenance",
         "Query",
         "QueryError",
+        "RetrievalRun",
         "RetrievalEngine",
         "TimeoutError",
         "UnsupportedOperationError",
@@ -91,6 +94,8 @@ def __getattr__(name: str):
         "get_engine_registry",
         "list_engines",
         "list_engines_with_info",
+        "load_retrieval_run",
+        "replay_pyrrho",
         "run",
     ):
         from fitz_sage import runtime
@@ -107,7 +112,7 @@ def __getattr__(name: str):
 
 
 # =============================================================================
-# MODULE-LEVEL SDK (matches CLI: fitz point, fitz query)
+# MODULE-LEVEL SDK (matches CLI: fitz point, fitz retrieve)
 # =============================================================================
 
 _default_fitz = None
@@ -123,11 +128,11 @@ def _get_default_fitz():
     return _default_fitz
 
 
-def query(question: str, source=None, collection: str = None):
+def answer(question: str, source=None, collection: str | None = None):
     """
-    Query the knowledge base.
+    Synthesize an answer from retrieved evidence.
 
-    Module-level convenience function matching `fitz query` CLI.
+    Module-level convenience function matching `fitz answer` CLI.
 
     Args:
         question: The question to ask.
@@ -140,8 +145,8 @@ def query(question: str, source=None, collection: str = None):
 
     Examples:
         >>> import fitz_sage
-        >>> pack = fitz_sage.evidence("What is the refund policy?", source="./docs")
-        >>> print(pack.mode)
+        >>> answer = fitz_sage.answer("What is the refund policy?", source="./docs")
+        >>> print(answer.text)
     """
     global _default_fitz
     if collection is not None:
@@ -149,10 +154,10 @@ def query(question: str, source=None, collection: str = None):
 
         _default_fitz = fitz(collection=collection)
     f = _get_default_fitz()
-    return f.query(question, source=source)
+    return f.answer(question, source=source)
 
 
-def evidence(question: str, source=None, collection: str = None):
+def evidence(question: str, source=None, collection: str | None = None):
     """
     Retrieve governed evidence without answer synthesis.
 
@@ -181,6 +186,23 @@ def evidence(question: str, source=None, collection: str = None):
     return f.evidence(question, source=source)
 
 
+def trace(question: str, source=None, collection: str | None = None):
+    """
+    Execute governed retrieval and return its versioned execution record.
+
+    Serialization redacts source content by default. Call
+    ``run.write(path, include_content=True)`` only when Pyrrho replay is
+    required and the trace can be handled as source data.
+    """
+    global _default_fitz
+    if collection is not None:
+        from fitz_sage.sdk import fitz
+
+        _default_fitz = fitz(collection=collection)
+    f = _get_default_fitz()
+    return f.trace(question, source=source)
+
+
 # =============================================================================
 # PUBLIC API
 # =============================================================================
@@ -196,7 +218,9 @@ __all__ = [
     "Answer",
     "EvidenceItem",
     "EvidencePack",
+    "PyrrhoReplay",
     "Provenance",
+    "RetrievalRun",
     # Core Exceptions
     "EngineError",
     "QueryError",
@@ -211,8 +235,11 @@ __all__ = [
     "list_engines",
     "list_engines_with_info",
     "get_engine_registry",
+    "load_retrieval_run",
+    "replay_pyrrho",
     # SDK
+    "answer",
     "fitz",
     "evidence",
-    "query",
+    "trace",
 ]

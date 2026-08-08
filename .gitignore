@@ -19,6 +19,7 @@
 !tools/**
 
 # Root metadata.
+!.gitattributes
 !.gitignore
 !CHANGELOG.md
 !CONTRIBUTING.md

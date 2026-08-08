@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import json
+import threading
 from hashlib import sha256
+from types import SimpleNamespace
 
 import pytest
 
+from fitz_sage.llm.providers import onnx_chat as onnx_chat_module
 from fitz_sage.llm.providers.onnx_chat import (
     DEFAULT_QWEN_MODEL_ID,
     DEFAULT_QWEN_ONNX_FILE,
@@ -15,7 +18,17 @@ from fitz_sage.llm.providers.onnx_chat import (
     GenAiRuntimeBundle,
     OnnxChat,
     OnnxChatModelError,
+    _bounded_generation_length,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_runtime_cache():
+    with onnx_chat_module._ONNX_CHAT_RUNTIME_CACHE_LOCK:
+        onnx_chat_module._ONNX_CHAT_RUNTIME_CACHE.clear()
+    yield
+    with onnx_chat_module._ONNX_CHAT_RUNTIME_CACHE_LOCK:
+        onnx_chat_module._ONNX_CHAT_RUNTIME_CACHE.clear()
 
 
 def _snapshot(tmp_path, *, with_model: bool = True):
@@ -147,3 +160,103 @@ def test_ensure_available_wraps_download_failures(monkeypatch):
     chat = OnnxChat()
     with pytest.raises(OnnxChatModelError, match="Could not download"):
         chat.ensure_available()
+
+
+def test_identical_model_specs_share_one_native_runtime(monkeypatch, tmp_path):
+    """Collection-local providers share one heavyweight GenAI model."""
+    model_calls: list[str] = []
+    model = object()
+    genai_tokenizer = object()
+    info = SimpleNamespace(snapshot_dir=str(tmp_path))
+
+    def fake_model(path):
+        model_calls.append(path)
+        return model
+
+    runtime = SimpleNamespace(
+        Model=fake_model,
+        Tokenizer=lambda loaded_model: genai_tokenizer,
+    )
+    monkeypatch.setattr(GenAiRuntimeBundle, "require_genai", staticmethod(lambda: runtime))
+    monkeypatch.setattr(
+        GenAiRuntimeBundle,
+        "prepare",
+        lambda self, model_info: tmp_path,
+    )
+    monkeypatch.setattr(
+        OnnxChat,
+        "ensure_available",
+        lambda self, include_checksum=False: info,
+    )
+    monkeypatch.setattr(
+        OnnxChat,
+        "_load_tokenizer",
+        lambda self, snapshot_dir: object(),
+    )
+
+    first = OnnxChat()
+    second = OnnxChat()
+    first._load()
+    second._load()
+
+    assert model_calls == [str(tmp_path)]
+    assert first._loaded_runtime is second._loaded_runtime
+
+
+def test_generation_length_is_bounded_by_runtime_context() -> None:
+    assert _bounded_generation_length(100, 128) == 228
+    assert _bounded_generation_length(8100, 512) == 8192
+
+    with pytest.raises(OnnxChatModelError, match="8192-token context limit"):
+        _bounded_generation_length(8192, 1)
+
+
+def test_chat_retries_one_native_allocation_failure(monkeypatch) -> None:
+    class _Generator:
+        calls = 0
+
+        @staticmethod
+        def format_messages(messages):
+            return "prompt"
+
+        @classmethod
+        def generate(cls, **kwargs):
+            cls.calls += 1
+            if cls.calls == 1:
+                raise RuntimeError("MatMulNBits: bad allocation")
+            return "completed"
+
+    chat = OnnxChat()
+    monkeypatch.setattr(chat, "_load", lambda: None)
+    chat._loaded_runtime = SimpleNamespace(
+        generator=_Generator(),
+        run_lock=threading.Lock(),
+    )
+
+    assert chat.chat([{"role": "user", "content": "query"}]) == "completed"
+    assert _Generator.calls == 2
+
+
+def test_chat_does_not_retry_unrelated_runtime_failure(monkeypatch) -> None:
+    class _Generator:
+        calls = 0
+
+        @staticmethod
+        def format_messages(messages):
+            return "prompt"
+
+        @classmethod
+        def generate(cls, **kwargs):
+            cls.calls += 1
+            raise RuntimeError("invalid model input")
+
+    chat = OnnxChat()
+    monkeypatch.setattr(chat, "_load", lambda: None)
+    chat._loaded_runtime = SimpleNamespace(
+        generator=_Generator(),
+        run_lock=threading.Lock(),
+    )
+
+    with pytest.raises(RuntimeError, match="invalid model input"):
+        chat.chat([{"role": "user", "content": "query"}])
+    assert _Generator.calls == 1

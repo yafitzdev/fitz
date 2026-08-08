@@ -4,7 +4,7 @@
 fitz-sage is retrieval-first. The default product surface returns a governed
 `EvidencePack`: ranked source units, Pyrrho metadata, indexing status, timings,
 and enough provenance for another application to decide what to do next.
-Generated answers are optional and live behind `fitz answer` / `fitz_sage.query()`.
+Generated answers are optional and live behind `fitz answer` / `fitz_sage.answer()`.
 
 For the retrieval strategy itself, see
 [Three-Stage Retrieval Strategy](features/retrieval/three-stage-strategy.md).
@@ -18,19 +18,19 @@ object shape, see [Evidence Pack](EVIDENCE_PACK.md).
 The intended CLI journey is one command:
 
 ```bash
-fitz query "Which documents are relevant?"
+fitz retrieve "Which documents are relevant?"
 ```
 
 When run from a document folder, this command:
 
 1. Registers the current directory as the source.
 2. Derives the collection name from the folder name.
-3. Parses enough structure to make the corpus searchable.
+3. Parses and persists all supported changed files.
 4. Returns governed evidence.
-5. Starts a detached indexing daemon when Qwen enrichment is still pending.
+5. Starts a detached enrichment daemon when optional work remains.
 
-Use `fitz retrieve` only when you need advanced evidence controls such as
-`--format json` or `--top-k`.
+The same command exposes advanced evidence controls such as `--format json`
+and `--top-k`.
 
 ---
 
@@ -38,26 +38,25 @@ Use `fitz retrieve` only when you need advanced evidence controls such as
 
 ```mermaid
 flowchart TD
-    A["fitz query / fitz retrieve"] --> B{"Source supplied?"}
+    A["fitz retrieve"] --> B{"Source supplied?"}
     B -->|"yes"| C["Register source into collection"]
     B -->|"no, no collection"| D["Use current directory as source"]
     B -->|"collection supplied"| E["Load existing collection"]
     D --> C
     C --> F["Build/update manifest"]
     F --> G["Parse files into searchable units"]
-    G --> H["Search surface ready"]
+    G --> H["Searchable source index ready"]
     E --> I["Run retrieval pipeline"]
     H --> I
     I --> J["Return EvidencePack"]
-    J --> K{"Deep enrichment complete?"}
+    J --> K{"Enrichment complete?"}
     K -->|"yes"| L["Exit"]
-    K -->|"no"| M["Spawn index-daemon"]
+    K -->|"no"| M["Spawn enrichment-daemon"]
     M --> L
 ```
 
-The foreground command waits for the search surface, not for full enrichment.
-That gives the user a fast first evidence pack while the daemon keeps building
-the richer index in the background.
+`point()` completes the source index before retrieval starts. Entity and
+hierarchy enrichment are separate and may continue after evidence is returned.
 
 ---
 
@@ -70,10 +69,17 @@ flowchart TD
     P --> R["Broad recall"]
     R --> X["Cross-strategy fusion"]
     X --> K["ONNX reranker"]
-    K --> G["Pyrrho cutoff loop"]
-    G --> E["EvidencePack"]
+    K --> D["Read source content"]
+    D --> B["Bounded evidence closure"]
+    B --> F["Compile ranked evidence"]
+    F --> V["Deliver first up to 3"]
+    V --> G["Pyrrho decision"]
+    G -->|"INSUFFICIENT + evidence remains"| H["Add next up to 2"]
+    H --> G
+    G -->|"SUFFICIENT / DISPUTED / exhausted"| E["EvidencePack"]
 
-    C --> C1["deterministic query profile"]
+    C --> C1["deterministic query shape"]
+    C --> C2["Pyrrho PRE evidence obligations"]
 
     P --> P1["Deterministic terms, query type, intent detection"]
     P --> P2["Managed Qwen semantic keywords"]
@@ -82,27 +88,21 @@ flowchart TD
     R --> R1["Section BM25 over FTS5"]
     R --> R2["Code symbol BM25 / name search"]
     R --> R3["Table metadata search"]
-    R --> R4["Unindexed scan for files not query-ready"]
 
-    G --> G1["Shape-aware evidence prefix"]
-    G1 --> G2["Evaluate query + top 1"]
-    G2 --> G3{"SUFFICIENT?"}
-    G3 -->|"yes"| E
-    G3 -->|"no"| G4["Evaluate query + top 2"]
-    G4 --> G5{"Enough evidence or max cutoff?"}
-    G5 -->|"continue"| G4
-    G5 -->|"stop"| E
+    F --> F1["Contract-aware ordering and maximum delivery budget"]
+    G --> G1["Evaluate query + exact ranked prefix"]
+    G1 --> G2["SUFFICIENT / DISPUTED / INSUFFICIENT"]
 ```
 
 ### Stage 1: Broad Recall
 
-Broad recall is intentionally permissive. It uses real query terms, dictionary
-synonyms/acronyms, managed Qwen semantic keywords, and intent fanout for
+Broad recall is intentionally permissive. It uses literal query terms,
+managed Qwen semantic keywords, and intent fanout for
 comparison, temporal, aggregation, and freshness queries. False positives are
-acceptable because the reranker and governance cutoff handle precision.
-The default Pyrrho v2 package is evidence-conditioned. Query profiling comes
-from deterministic signals, managed Qwen semantic keywords, and optional
-query-intelligence providers.
+acceptable because the reranker and evidence compilation handle precision.
+Query profiling combines deterministic query shape, Pyrrho's query-only PRE
+obligations, managed Qwen semantic keywords, and optional query-intelligence
+providers.
 
 Primary stores:
 
@@ -110,66 +110,64 @@ Primary stores:
 |-------|----------------|----------------|
 | `SectionStore` | document sections and synthetic summaries | SQLite FTS5 + `bm25()` |
 | `SymbolStore` | code symbols | name search + SQLite FTS5 + `bm25()` |
-| `TableStore` | table metadata | table name/schema search |
-| Manifest scan | files not yet query-ready | path/heading/symbol BM25, optional file-selection LLM if configured |
+| `TableStore` / `SqliteTableStore` | table metadata and concrete row values | name/schema search plus row-value BM25 |
 
 ### Stage 2: Rerank
 
 The ONNX cross-encoder reranker scores `(query, candidate)` pairs after broad
 recall. It is the precision stage. The default backend is
-`Alibaba-NLP/gte-reranker-modernbert-base` through `onnxruntime`.
+`Alibaba-NLP/gte-reranker-modernbert-base` through `onnxruntime`. The
+profile-aware scoring budget is separate from the full BM25 pool, which
+remains available to evidence-contract rescue logic.
 
-### Stage 3: Pyrrho Cutoff
+### Stage 3: Progressive Delivery And Pyrrho
 
-Pyrrho does not answer the query. It decides whether the ranked evidence prefix
-is sufficient.
+Pyrrho does not answer the query. Its PRE heads can describe evidence
+obligations before retrieval. After compilation, Fitz-Sage grows one ranked
+prefix mechanically while Pyrrho owns every verdict.
 
 ```mermaid
 flowchart TD
-    A["Reranked candidates"] --> B["Take prefix of size 1"]
-    B --> C["Pyrrho(query, prefix)"]
-    C --> D{"Verdict"}
-    D -->|"SUFFICIENT"| T["Stop: enough evidence"]
-    D -->|"INSUFFICIENT"| E{"Reached max cutoff?"}
-    D -->|"DISPUTED"| F{"Dispute stable enough?"}
-    F -->|"yes"| U["Stop: return disputed evidence"]
-    F -->|"no"| N["Add next document"]
-    E -->|"no"| N
-    E -->|"yes"| A0["Stop: insufficient"]
-    N --> C
+    A["Reranked candidates"] --> B["Contract-aware compilation"]
+    B --> C["First up to 3 items"]
+    C --> D["Pyrrho(query, exact prefix)"]
+    D -->|"INSUFFICIENT + evidence remains"| F["Add next up to 2"]
+    F --> D
+    D -->|"SUFFICIENT / DISPUTED / exhausted"| E["Return exact verdict and prefix"]
 ```
 
-The default cutoff inspects at most the top 10 evidence items, or fewer when
-the caller requested a smaller `top_k`.
+The configured `top_read`, or a smaller caller `top_k`, caps delivery. Fitz-Sage
+does not inspect probabilities or reinterpret a verdict: only exact
+`INSUFFICIENT` continues the `3, 5, 7, ...` sequence.
 
 ---
 
-## Indexing State Machine
+## Index And Enrichment State
 
 ```mermaid
 stateDiagram-v2
     [*] --> REGISTERED
-    REGISTERED --> PARSED: parse_file
-    PARSED --> KEYWORDED: Qwen keyword_file
-    KEYWORDED --> QUERY_READY
-    QUERY_READY --> ENTITY_LINKED: link_entities_file
-    ENTITY_LINKED --> HIERARCHY_READY: build_hierarchy_file
-    HIERARCHY_READY --> ENRICHED
-    ENRICHED --> SUMMARIZED: demand summarize_file
+    REGISTERED --> INDEXED: parse and persist
+    REGISTERED --> FAILED: indexing error
+    INDEXED --> ENTITY_LINKED: optional entity step
+    ENTITY_LINKED --> COMPLETE: optional hierarchy step
+    COMPLETE --> SUMMARIZED: queried-file warmup
+    INDEXED --> ENRICHMENT_FAILED: optional model error
+    ENTITY_LINKED --> ENRICHMENT_FAILED: optional model error
 ```
 
 | State | User impact |
 |-------|-------------|
 | `REGISTERED` | File is known but not searchable yet. |
-| `PARSED` | Raw content, symbols, sections, and tables are searchable. This is the foreground gate. |
-| `QUERY_READY` | Managed Qwen keyword enrichment is complete for that file. |
+| `INDEXED` | Raw content, symbols, sections, and tables are searchable. |
+| `FAILED` | Source indexing failed and the file is named in status. |
 | `ENTITY_LINKED` | Entity graph links are available. |
-| `HIERARCHY_READY` | L1 hierarchy summaries are available. |
-| `ENRICHED` | Required deep enrichment is complete. |
+| `COMPLETE` | Optional file entity/hierarchy enrichment is complete. |
 | `SUMMARIZED` | Demand summary exists because a query surfaced this file. |
+| `ENRICHMENT_FAILED` | Optional enrichment failed; source retrieval remains available. |
 
-`complete` in `indexing_status` means the query-ready keyword phase is done.
-`fully_enriched` means entity/hierarchy enrichment is also done.
+`indexing_status.complete` describes source-index success.
+`indexing_status.enrichment.complete` describes independent optional work.
 
 ---
 
@@ -177,30 +175,24 @@ stateDiagram-v2
 
 ### Case 1: No collection exists
 
-`fitz query "..."` registers the current directory, parses it, retrieves a
-best-effort evidence pack, and starts the daemon if enrichment remains.
+`fitz retrieve "..."` registers the current directory, indexes it, retrieves an
+evidence pack, and starts the enrichment daemon if optional work remains.
 
-### Case 2: Source registered, search surface not ready
+### Case 2: Source indexing is running
 
-The CLI waits while parsing runs. It may show `Parsing documents... N/M`.
-Retrieval starts once parsed units are searchable.
+The CLI waits inside `point()`. Retrieval starts only after supported files are
+indexed or explicitly failed.
 
 ### Case 3: Search surface ready, enrichment still pending
 
-Retrieval uses parsed sections, symbols, tables, and the unindexed scan for any
-files not yet query-ready. The output may show `Indexing pending`,
-`Enrichment pending`, or `Deep enrichment pending`. The daemon continues Qwen
-keywords, entities, hierarchy, and demand summaries.
+Retrieval uses the same persisted sections, symbols, and tables before and after
+enrichment. The output may show `Enrichment pending`. The daemon continues
+entities, hierarchy, and demand summaries.
 
-The supplemental scan only runs when the manifest still has files below
-query-ready. Fully query-ready collections do not print scan progress or touch
-disk fallback.
+### Case 4: Enrichment is complete
 
-### Case 4: Index is complete
-
-Retrieval uses the fully populated stores. No daemon is spawned, and later
-queries should be faster because Qwen keyword/entity/hierarchy enrichment has
-already run.
+Retrieval may additionally use entity links and hierarchy summaries. No daemon
+is spawned. The underlying source-index path is unchanged.
 
 ### Case 5: Optional answer synthesis
 
@@ -213,18 +205,16 @@ the configured synthesizer. This is separate from the retrieval package default.
 
 | Strategy | Role |
 |----------|------|
-| Sparse BM25 / keyword vocabulary | Broad recall backbone. |
+| Sparse BM25 / literal source terms | Broad recall backbone. |
 | Managed Qwen semantic query keywords | Broad recall expansion in the default no-endpoint path. |
-| Dictionary query expansion | Fast synonyms/acronyms, no LLM call. |
 | Query rewriting | Optional `query_intelligence` enhancement for conversational context or ambiguous phrasing. |
-| Multi-query decomposition | Optional `query_intelligence` enhancement for compound questions. |
+| Multi-query decomposition | Deterministic explicit-clause fanout; optional `query_intelligence` handles implicit or conversational compounds. |
 | Comparison / temporal / aggregation / freshness detection | Deterministic default signals, optionally improved by query intelligence. |
-| Entity graph | Context expansion after full enrichment. |
-| Hierarchical summaries | Fully indexed recall for broad analytical questions. |
-| Unindexed scan | Temporary bridge while files are not query-ready. |
+| Entity graph | Context expansion when the relevant files have entity metadata. |
+| Hierarchical summaries | Optional injected context for broad analytical questions. |
 | ONNX reranker | Precision stage before governance. |
-| Pyrrho | Mandatory sufficiency, dispute, and insufficiency cutoff for evidence packs. Comparison-shaped metric queries seed cutoff with direct metric/table evidence before Pyrrho can stop. |
-| Multi-hop | Bounded bridge retrieval when the first pass is still insufficient and the answer appears one hop away. |
+| Pyrrho | Authoritative sufficiency, dispute, or insufficiency decisions over progressively larger ranked prefixes. |
+| Evidence closure | Deterministic bounded follow-up retrieval for unresolved query-contract obligations before compilation. |
 
 Synthetic corpus summaries are not normal section hits. They are schema-versioned,
 deleted before regeneration, excluded from ordinary BM25, and injected only when
@@ -236,9 +226,9 @@ the query contract/profile calls for a representative corpus overview.
 
 | Model/runtime | Required? | Used for |
 |---------------|-----------|----------|
-| Managed Qwen3 0.6B ONNX GenAI | yes | ingestion keywords/entities/hierarchy and default semantic query keywords |
+| Managed Qwen3 0.6B ONNX GenAI | standard for query expansion; optional for background work | query semantic keywords, entities, and hierarchy |
 | ONNX reranker | default | candidate precision after broad recall |
-| Pyrrho v2 nano g1 | default product governance | native evidence verdict, failure mode, retrieval intents, and evidence-kind metadata |
+| Reviewed local Pyrrho v2 model | required product governance | native evidence verdict, failure mode, retrieval intents, and evidence-kind metadata |
 | OpenAI-compatible endpoint | optional | answer synthesis, optional query intelligence, optional vision parser |
 
 No dense embedding model and no vector database are used.

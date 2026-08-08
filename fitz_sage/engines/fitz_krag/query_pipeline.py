@@ -6,20 +6,22 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable
-from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+from fitz_sage.core.exceptions import QueryError, QueryIntelligenceError
 from fitz_sage.engines.fitz_krag.evidence_closure import (
     EvidenceClosureRequest,
     annotate_closure_result,
     plan_evidence_closure,
     request_metadata,
 )
+from fitz_sage.engines.fitz_krag.evidence_compiler import compile_evidence
 from fitz_sage.engines.fitz_krag.evidence_contract import build_query_contract
 from fitz_sage.engines.fitz_krag.query_planner import (
     DeterministicQueryPlanner,
     QueryPlan,
+    content_terms,
     plan_from_batch_result,
 )
 from fitz_sage.engines.fitz_krag.retrieval.trace import read_results_trace
@@ -35,6 +37,8 @@ if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.evidence_compiler import EvidenceCompilation
     from fitz_sage.engines.fitz_krag.types import Address, ReadResult
+    from fitz_sage.llm.providers.onnx_pyrrho import OnnxPyrrho
+    from fitz_sage.llm.providers.pyrrho_types import PyrrhoQueryPlan
 
 logger = get_logger(__name__)
 
@@ -49,11 +53,12 @@ class RetrievalOutcome:
     expanded: list["ReadResult"]
     addresses: list["Address"]
     timings: list[tuple[str, float]]
-    profile: Any | None = None
+    profile: RetrievalProfile | None = None
     retrieval_query: str = ""
     rewrite_result: Any = None
     query_profile_metadata: dict[str, Any] = field(default_factory=dict)
     retrieval_trace: dict[str, Any] = field(default_factory=dict)
+    query_terms: list[dict[str, str]] = field(default_factory=list)
 
 
 class QueryPipeline:
@@ -66,12 +71,11 @@ class QueryPipeline:
         query_planner: Any,
         query_batcher: Any,
         semantic_keyword_batcher: Any,
-        governance: Any,
+        pyrrho: "OnnxPyrrho",
         retrieval_pass: Any,
-        hop_controller: Any,
         expander: Any,
         table_handler: Any,
-        retrieval_strategy_scope: Callable[[bool], AbstractContextManager[Any]],
+        available_modalities: Callable[[], set[str]],
         fast_analyze: Callable[[str], Any],
         needs_detection: Callable[[str], bool],
         build_detection_summary: Callable[[dict[str, Any]], Any],
@@ -80,12 +84,11 @@ class QueryPipeline:
         self._query_planner = query_planner
         self._query_batcher = query_batcher
         self._semantic_keyword_batcher = semantic_keyword_batcher
-        self._governance = governance
+        self._pyrrho = pyrrho
         self._retrieval_pass = retrieval_pass
-        self._hop_controller = hop_controller
         self._expander = expander
         self._table_handler = table_handler
-        self._retrieval_strategy_scope = retrieval_strategy_scope
+        self._available_modalities = available_modalities
         self._fast_analyze = fast_analyze
         self._needs_detection = needs_detection
         self._build_detection_summary = build_detection_summary
@@ -96,20 +99,19 @@ class QueryPipeline:
         *,
         progress: Callable[[str], None] | None = None,
         use_query_intelligence: bool | None = None,
-        allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
         allow_table_sql_generation: bool = True,
         expand_context: bool = True,
     ) -> RetrievalOutcome:
         """Run the retrieval half of the KRAG pipeline."""
-        sanitized = _sanitize_query(query.text)
+        sanitized = _validated_query_text(query.text)
         timings: list[tuple[str, float]] = []
 
         _progress = progress or (lambda _: None)
         _progress("Analyzing query...")
 
         t0 = time.perf_counter()
-        plan = self._prepare_query_plan(
+        prepared_plan, prepared_keyword_origin = self._prepare_query_plan(
             sanitized,
             query.metadata,
             use_query_intelligence=use_query_intelligence,
@@ -117,8 +119,47 @@ class QueryPipeline:
         timings.append(("Query prep", time.perf_counter() - t0))
 
         t0 = time.perf_counter()
-        plan = self._add_semantic_query_keywords(sanitized, plan)
+        try:
+            plan = self._add_semantic_query_keywords(sanitized, prepared_plan)
+        except QueryIntelligenceError as exc:
+            logger.warning(
+                "Semantic query expansion failed; using prepared query plan: %s",
+                exc,
+            )
+            plan = prepared_plan
+            semantic_expansion_trace = {
+                "enabled": True,
+                "used": False,
+                "status": "failed",
+                "added_keywords": 0,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+        else:
+            prepared_keywords = {keyword.casefold() for keyword in prepared_plan.keywords}
+            added_keywords = [
+                keyword for keyword in plan.keywords if keyword.casefold() not in prepared_keywords
+            ]
+            enabled = self._semantic_keyword_batcher is not None
+            if not enabled:
+                status = "disabled"
+            elif added_keywords:
+                status = "expanded"
+            else:
+                status = "no_keywords"
+            semantic_expansion_trace = {
+                "enabled": enabled,
+                "used": bool(added_keywords),
+                "status": status,
+                "added_keywords": len(added_keywords),
+            }
         timings.append(("Qwen query keywords", time.perf_counter() - t0))
+        query_terms = _query_term_trace(
+            sanitized,
+            prepared_plan,
+            plan,
+            prepared_keyword_origin=prepared_keyword_origin,
+        )
 
         t0 = time.perf_counter()
         pyrrho_plan = self._plan_with_pyrrho(sanitized)
@@ -136,25 +177,17 @@ class QueryPipeline:
 
         _progress("Retrieving relevant sources...")
         t0 = time.perf_counter()
-        use_multi_hop = (
-            allow_llm_strategies and self._hop_controller and self._config.enable_multi_hop
+        pass_response = self._retrieval_pass.run(
+            plan.retrieval_query,
+            profile,
+            rewrite_result=plan.rewrite_result,
         )
-        with self._retrieval_strategy_scope(allow_llm_strategies):
-            if use_multi_hop:
-                read_results = self._hop_controller.execute(plan.retrieval_query, profile)
-                retrieval_trace = {"multi_hop": True}
-            else:
-                read_results = self._retrieval_pass.run(
-                    plan.retrieval_query,
-                    profile,
-                    rewrite_result=plan.rewrite_result,
-                    progress=progress,
-                )
-                retrieval_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
+        read_results = pass_response.results
+        retrieval_trace = dict(pass_response.trace)
+        retrieval_trace["semantic_query_expansion"] = semantic_expansion_trace
         addresses = [result.address for result in read_results]
         retrieval_duration = time.perf_counter() - t0
-        if not use_multi_hop:
-            timings.extend(_retrieval_pass_timings(self._retrieval_pass))
+        timings.extend(_retrieval_pass_timings(pass_response.timings))
         timings.append(("Retrieval", retrieval_duration))
 
         if not read_results:
@@ -168,6 +201,7 @@ class QueryPipeline:
                 rewrite_result=plan.rewrite_result,
                 query_profile_metadata=query_profile,
                 retrieval_trace=retrieval_trace,
+                query_terms=query_terms,
             )
 
         if expand_context:
@@ -199,6 +233,7 @@ class QueryPipeline:
             rewrite_result=plan.rewrite_result,
             query_profile_metadata=query_profile,
             retrieval_trace=retrieval_trace,
+            query_terms=query_terms,
         )
 
     def close_evidence(
@@ -207,7 +242,6 @@ class QueryPipeline:
         compilation: "EvidenceCompilation",
         *,
         progress: Callable[[str], None] | None = None,
-        allow_llm_strategies: bool = True,
         execute_table_queries: bool = True,
         allow_table_sql_generation: bool = True,
         expand_context: bool = True,
@@ -226,36 +260,55 @@ class QueryPipeline:
             retrieval_trace["evidence_closure"] = closure_trace
             return replace(outcome, retrieval_trace=retrieval_trace)
 
+        available_modalities = self._available_modalities()
+        executable_requests, skipped_requests = _partition_closure_requests(
+            plan.requests,
+            available_modalities,
+        )
+        closure_trace["available_modalities"] = sorted(available_modalities)
+        closure_trace["executed_request_count"] = len(executable_requests)
+        closure_trace["skipped_requests"] = skipped_requests
+        if not executable_requests:
+            closure_trace["added"] = 0
+            closure_trace["replaced"] = 0
+            retrieval_trace["evidence_closure"] = closure_trace
+            return replace(outcome, retrieval_trace=retrieval_trace)
+
         contract = build_query_contract(outcome.sanitized, outcome.profile)
         expanded = list(outcome.expanded)
+        closure_evidence = list(compilation.results)
         timings = list(outcome.timings)
         total_added = 0
         total_replaced = 0
         _progress = progress or (lambda _: None)
 
-        for run_index, request in enumerate(plan.requests, start=1):
+        for run_index, request in enumerate(executable_requests, start=1):
             _progress("Closing evidence obligations...")
             profile = _closure_profile(outcome.profile, self._config, request)
 
             t0 = time.perf_counter()
-            with self._retrieval_strategy_scope(allow_llm_strategies):
-                read_results = self._retrieval_pass.run(
-                    request.query,
-                    profile,
-                    exclude=None,
-                    rewrite_result=None,
-                    progress=progress,
-                )
+            pass_response = self._retrieval_pass.run(
+                request.query,
+                profile,
+                rewrite_result=None,
+            )
+            read_results = pass_response.results
+            retrieved_count = len(read_results)
+            read_results = _filter_companion_source_repeats(
+                request,
+                closure_evidence,
+                read_results,
+            )
             closure_duration = time.perf_counter() - t0
             timings.extend(
                 _prefixed_retrieval_pass_timings(
-                    self._retrieval_pass,
+                    pass_response.timings,
                     f"Evidence closure {run_index} ",
                 )
             )
             timings.append((f"Evidence closure {run_index}", closure_duration))
 
-            retrieval_pass_trace = dict(getattr(self._retrieval_pass, "last_trace", {}) or {})
+            retrieval_pass_trace = dict(pass_response.trace)
             if expand_context and read_results:
                 t0 = time.perf_counter()
                 read_results = self._expander.expand(
@@ -275,6 +328,12 @@ class QueryPipeline:
                     (f"Evidence closure {run_index} table queries", time.perf_counter() - t0)
                 )
 
+            selected_results = _select_closure_results(
+                request.query,
+                read_results,
+                profile,
+                request=request,
+            )
             annotated = [
                 annotate_closure_result(
                     result,
@@ -282,12 +341,14 @@ class QueryPipeline:
                     contract=contract,
                     run_index=run_index,
                 )
-                for result in read_results
+                for result in selected_results
             ]
+            closure_evidence.extend(annotated)
             expanded, added, replaced = _merge_closure_results(
                 expanded,
                 annotated,
                 allow_replace=True,
+                query_contract=contract.query_contract,
             )
             total_added += added
             total_replaced += replaced
@@ -295,7 +356,9 @@ class QueryPipeline:
                 {
                     "request": request_metadata(request),
                     "trace": retrieval_pass_trace,
+                    "retrieved_count": retrieved_count,
                     "read_count": len(read_results),
+                    "selected_count": len(selected_results),
                     "added": added,
                     "replaced": replaced,
                     "results": read_results_trace(annotated),
@@ -315,6 +378,7 @@ class QueryPipeline:
             rewrite_result=outcome.rewrite_result,
             query_profile_metadata=outcome.query_profile_metadata,
             retrieval_trace=retrieval_trace,
+            query_terms=outcome.query_terms,
         )
 
     def _prepare_query_plan(
@@ -323,7 +387,7 @@ class QueryPipeline:
         metadata: dict[str, Any],
         *,
         use_query_intelligence: bool | None,
-    ) -> QueryPlan:
+    ) -> tuple[QueryPlan, str]:
         """Build the deterministic plan, optionally enhanced by query intelligence."""
         if use_query_intelligence is None:
             use_query_intelligence = self._config.query_intelligence is not None
@@ -332,7 +396,7 @@ class QueryPipeline:
         plan = planner.plan(sanitized, detection_enabled=True)
 
         if not use_query_intelligence:
-            return plan
+            return plan, "deterministic"
 
         fast_analysis = self._fast_analyze(sanitized)
         need_llm_analysis = fast_analysis is None
@@ -352,6 +416,7 @@ class QueryPipeline:
             if need_detection and batch_result.detection_results is not None
             else plan.detection
         )
+        keyword_origin = "query_intelligence" if batch_result.keywords else "deterministic"
         plan = plan_from_batch_result(
             sanitized,
             batch_result,
@@ -361,12 +426,12 @@ class QueryPipeline:
         )
         if plan.rewrite_result and plan.retrieval_query != sanitized:
             logger.debug(
-                "Query rewritten",
-                original_preview=sanitized[:50],
-                rewritten_preview=plan.retrieval_query[:50],
+                "Query rewritten: %r -> %r",
+                sanitized[:50],
+                plan.retrieval_query[:50],
             )
 
-        return plan
+        return plan, keyword_origin
 
     def _add_semantic_query_keywords(self, query: str, plan: QueryPlan) -> QueryPlan:
         """Use local Qwen for keyword-only query expansion."""
@@ -395,34 +460,54 @@ class QueryPipeline:
             keywords=_merge_query_keywords(plan.keywords, batch_result.keywords),
         )
 
-    def _plan_with_pyrrho(self, query: str) -> Any | None:
-        """Run Pyrrho's query-only planning pass when the backend exposes it."""
-        planner = getattr(self._governance, "plan_query", None)
-        if not callable(planner):
-            return None
-        return planner(query)
+    def _plan_with_pyrrho(self, query: str) -> "PyrrhoQueryPlan":
+        """Run Pyrrho's required query-only planning pass."""
+        return self._pyrrho.plan_query(query)
 
 
-def _sanitize_query(text: str) -> str:
-    """Strip tags and cap pathologically long input."""
-    sanitized = re.sub(r"<[^>]+>", "", text).strip()
-    if not sanitized:
-        sanitized = text.strip()
-
-    if len(sanitized) > _MAX_QUERY_LENGTH:
-        original_length = len(sanitized)
-        sanitized = sanitized[:_MAX_QUERY_LENGTH]
-        logger.debug(
-            "Query truncated",
-            original_length=original_length,
-            new_length=_MAX_QUERY_LENGTH,
+def _validated_query_text(text: str) -> str:
+    """Trim surrounding whitespace without changing query semantics."""
+    query = text.strip()
+    if len(query) > _MAX_QUERY_LENGTH:
+        raise QueryError(
+            f"Query text exceeds the {_MAX_QUERY_LENGTH}-character limit "
+            f"({len(query)} characters supplied)."
         )
-    return sanitized
+    return query
 
 
-def _retrieval_pass_timings(retrieval_pass: Any) -> list[tuple[str, float]]:
-    """Read the latest one-pass timing breakdown."""
-    pass_timings = getattr(retrieval_pass, "last_timings", {})
+def _query_term_trace(
+    query: str,
+    prepared_plan: QueryPlan,
+    expanded_plan: QueryPlan,
+    *,
+    prepared_keyword_origin: str,
+) -> list[dict[str, str]]:
+    """Record term provenance without exposing planner implementation objects."""
+    traced: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(values: list[str], origin: str) -> None:
+        for value in values:
+            text = str(value).strip()
+            key = (text.casefold(), origin)
+            if not text or key in seen:
+                continue
+            seen.add(key)
+            traced.append({"text": text, "origin": origin})
+
+    add(content_terms(query), "literal")
+    add(list(prepared_plan.keywords), prepared_keyword_origin)
+    prepared = {keyword.casefold() for keyword in prepared_plan.keywords}
+    add(
+        [keyword for keyword in expanded_plan.keywords if keyword.casefold() not in prepared],
+        "semantic",
+    )
+    return traced
+
+
+def _retrieval_pass_timings(pass_timings: dict[str, float]) -> list[tuple[str, float]]:
+    """Normalize one-pass timing keys into pipeline labels."""
     return [
         (label, pass_timings[key])
         for key, label in (
@@ -434,15 +519,18 @@ def _retrieval_pass_timings(retrieval_pass: Any) -> list[tuple[str, float]]:
     ]
 
 
-def _prefixed_retrieval_pass_timings(retrieval_pass: Any, prefix: str) -> list[tuple[str, float]]:
+def _prefixed_retrieval_pass_timings(
+    pass_timings: dict[str, float],
+    prefix: str,
+) -> list[tuple[str, float]]:
     """Read one-pass timings with a label prefix."""
     return [
-        (f"{prefix}{name}", duration) for name, duration in _retrieval_pass_timings(retrieval_pass)
+        (f"{prefix}{name}", duration) for name, duration in _retrieval_pass_timings(pass_timings)
     ]
 
 
 def _closure_profile(
-    profile: Any,
+    profile: RetrievalProfile | None,
     config: "FitzKragConfig",
     request: EvidenceClosureRequest,
 ) -> RetrievalProfile:
@@ -450,37 +538,76 @@ def _closure_profile(
     base = profile or RetrievalProfile(
         top_k=config.top_addresses,
         top_read=config.top_read,
+        rerank_candidates=config.rerank_candidates,
     )
-    top_k = max(12, min(int(getattr(base, "top_k", config.top_addresses)), 32))
-    top_read = max(6, min(int(getattr(base, "top_read", config.top_read)), 12))
+    top_k = max(
+        config.rerank_k,
+        config.rerank_min_addresses,
+        12,
+        min(base.top_k, 32),
+    )
+    top_read = max(6, min(base.top_read, 12))
+    rerank_candidates = min(
+        top_k,
+        max(
+            config.rerank_k,
+            config.rerank_min_addresses,
+            min(base.rerank_candidates, 16),
+        ),
+    )
     weights = {
         "code": 0.01,
         "section": 0.01,
         "table": 0.01,
-        "chunk": 0.0,
     }
     if request.modality == "table":
-        weights.update({"table": 1.0, "section": 0.12})
+        weights["table"] = 1.0
     elif request.modality == "symbol":
-        weights.update({"code": 1.0, "section": 0.12})
+        weights["code"] = 1.0
     else:
-        weights.update({"section": 1.0, "code": 0.04, "table": 0.04})
+        weights["section"] = 1.0
 
     return replace(
         base,
         strategy_weights=weights,
+        entities=tuple(content_terms(request.query)[:8]),
         top_k=top_k,
         top_read=top_read,
-        query_contract=getattr(base, "query_contract", None),
-        retrieval_modality=getattr(base, "retrieval_modality", None),
-        retrieval_obligation=getattr(base, "retrieval_obligation", None),
+        rerank_candidates=rerank_candidates,
+        query_variations=[],
+        comparison_queries=[],
+        comparison_entities=[],
+        temporal_references=[],
+        keywords=[],
+        query_contract=base.query_contract,
+        retrieval_modality=base.retrieval_modality,
+        retrieval_obligation=base.retrieval_obligation,
         required_modalities=(request.modality,),
-        run_agentic=False,
         inject_corpus_summaries=False,
-        entity_expansion_limit=min(int(getattr(base, "entity_expansion_limit", 3)), 3),
-        specificity=getattr(base, "specificity", "moderate"),
-        answer_type=getattr(base, "answer_type", "factual"),
+        entity_expansion_limit=min(base.entity_expansion_limit, 3),
+        specificity=base.specificity,
+        answer_type=base.answer_type,
     )
+
+
+def _partition_closure_requests(
+    requests: list[EvidenceClosureRequest],
+    available_modalities: set[str],
+) -> tuple[list[EvidenceClosureRequest], list[dict[str, Any]]]:
+    """Separate executable requests from obligations absent from the physical index."""
+    executable: list[EvidenceClosureRequest] = []
+    skipped: list[dict[str, Any]] = []
+    for request in requests:
+        if request.modality in available_modalities:
+            executable.append(request)
+            continue
+        skipped.append(
+            {
+                "request": request_metadata(request),
+                "reason": "modality_unavailable",
+            }
+        )
+    return executable, skipped
 
 
 def _merge_closure_results(
@@ -488,25 +615,21 @@ def _merge_closure_results(
     additional: list["ReadResult"],
     *,
     allow_replace: bool,
+    query_contract: str | None = None,
 ) -> tuple[list["ReadResult"], int, int]:
     """Merge closure results while allowing bridge-grounded table refreshes."""
     merged = list(current)
-    positions = {
-        (str(result.address.source_id), str(result.address.location)): index
-        for index, result in enumerate(merged)
-        if getattr(result, "address", None) is not None
-    }
+    positions = {_result_unit_key(result): index for index, result in enumerate(merged)}
     added = 0
     replaced = 0
     for result in additional:
-        address = getattr(result, "address", None)
-        if address is None:
-            merged.append(result)
-            added += 1
-            continue
-        key = (str(address.source_id), str(address.location))
+        key = _result_unit_key(result)
         if key in positions:
-            if allow_replace and _closure_result_should_replace(merged[positions[key]], result):
+            if allow_replace and _closure_result_should_replace(
+                merged[positions[key]],
+                result,
+                query_contract=query_contract,
+            ):
                 merged[positions[key]] = result
                 replaced += 1
             continue
@@ -516,21 +639,217 @@ def _merge_closure_results(
     return merged, added, replaced
 
 
-def _closure_result_should_replace(existing: "ReadResult", candidate: "ReadResult") -> bool:
+def _select_closure_results(
+    query: str,
+    results: list["ReadResult"],
+    profile: Any,
+    *,
+    request: EvidenceClosureRequest | None = None,
+) -> list["ReadResult"]:
+    """Keep the best grounded result for one bounded closure obligation."""
+    if not results:
+        return []
+    if request is not None:
+        results = [result for result in results if result.address.kind.value == request.modality]
+        if not results:
+            return []
+        results = _prioritize_bridge_table_schema(request, results)
+        results = _prioritize_closure_symbol_identity(request, results)
+    if request is not None and request.role.startswith("bridge_document:"):
+        document = _normalize_source_name(request.role.removeprefix("bridge_document:"))
+        exact_locations = [
+            result
+            for result in results
+            if _normalize_source_name(str(result.address.location)) == document
+        ]
+        if exact_locations:
+            results = exact_locations
+    elif request is not None and request.role.startswith("bridge_definition:"):
+        definition = _normalize_source_name(request.role.removeprefix("bridge_definition:"))
+        definition_matches = [
+            result
+            for result in results
+            if definition in _normalize_source_name(f"{result.address.location} {result.content}")
+        ]
+        if definition_matches:
+            results = definition_matches
+    compilation = compile_evidence(query, results, profile=profile)
+    if compilation.results:
+        return compilation.results[:1]
+    return results[:1]
+
+
+def _prioritize_bridge_table_schema(
+    request: EvidenceClosureRequest,
+    results: list["ReadResult"],
+) -> list["ReadResult"]:
+    """Prefer bridge tables whose schema covers the requested fields."""
+    if request.modality != "table" or request.reason != "bridge_identifier":
+        return results
+
+    contract = build_query_contract(request.query)
+    identifier_terms = {
+        term
+        for identifier in contract.identifiers
+        for term in _normalize_source_name(identifier).split()
+    }
+    query_terms = [
+        term
+        for term in contract.keyword_anchors
+        if term not in identifier_terms and term != "table"
+    ]
+    if not query_terms:
+        return results
+
+    ranked = sorted(
+        enumerate(results),
+        key=lambda item: (
+            -_table_schema_query_score(item[1], query_terms),
+            item[0],
+        ),
+    )
+    return [result for _, result in ranked]
+
+
+def _table_schema_query_score(result: "ReadResult", query_terms: list[str]) -> int:
+    """Count requested field terms represented by a table's declared schema."""
+    metadata = dict(result.address.metadata)
+    metadata.update(result.metadata)
+    columns = metadata.get("columns")
+    column_values = columns if isinstance(columns, (list, tuple)) else []
+    schema = _normalize_source_name(
+        " ".join(
+            [
+                str(metadata.get("name") or ""),
+                result.address.location,
+                *(str(value) for value in column_values),
+            ]
+        )
+    )
+    return sum(1 for term in query_terms if re.search(rf"\b{re.escape(term)}s?\b", schema))
+
+
+def _prioritize_closure_symbol_identity(
+    request: EvidenceClosureRequest,
+    results: list["ReadResult"],
+) -> list["ReadResult"]:
+    """Prefer a concrete symbol whose identity covers the follow-up terms."""
+    if request.modality != "symbol":
+        return results
+
+    contract = build_query_contract(request.query)
+    identifier_terms = {
+        term
+        for identifier in contract.identifiers
+        for term in _normalize_source_name(identifier).split()
+    }
+    query_terms = [
+        term
+        for term in contract.keyword_anchors
+        if term not in identifier_terms and term not in {"code", "symbol"}
+    ]
+    if not query_terms:
+        return results
+
+    ranked = sorted(
+        enumerate(results),
+        key=lambda item: (
+            -_symbol_identity_query_score(item[1], query_terms),
+            item[0],
+        ),
+    )
+    return [result for _, result in ranked]
+
+
+def _symbol_identity_query_score(result: "ReadResult", query_terms: list[str]) -> int:
+    """Count follow-up terms represented by a symbol identity or signature."""
+    metadata = dict(result.address.metadata)
+    metadata.update(result.metadata)
+    identity = _normalize_source_name(
+        " ".join(
+            [
+                str(metadata.get("name") or ""),
+                str(metadata.get("qualified_name") or ""),
+                str(metadata.get("signature") or ""),
+                result.address.location,
+            ]
+        )
+    )
+    return sum(1 for term in query_terms if re.search(rf"\b{re.escape(term)}s?\b", identity))
+
+
+def _normalize_source_name(value: str) -> str:
+    """Normalize a source-derived document label for exact companion matching."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
+
+
+def _filter_companion_source_repeats(
+    request: EvidenceClosureRequest,
+    existing: list["ReadResult"],
+    candidates: list["ReadResult"],
+) -> list["ReadResult"]:
+    """Remove exact non-table evidence repeats without excluding their source."""
+    if request.modality == "table":
+        return candidates
+    existing_units = {_result_unit_key(result) for result in existing}
+    return [result for result in candidates if _result_unit_key(result) not in existing_units]
+
+
+def _result_unit_key(result: "ReadResult") -> tuple[str, str, str]:
+    """Return the stable identity of one retrievable unit."""
+    address = result.address
+    kind = address.kind.value
+    metadata_keys = {
+        "section": "section_id",
+        "symbol": "symbol_id",
+        "table": "table_id",
+    }
+    metadata_key = metadata_keys.get(kind)
+    unit_id = address.metadata.get(metadata_key) if metadata_key else None
+    identity = f"{metadata_key}:{unit_id}" if unit_id not in (None, "") else address.location
+    return str(address.source_id), kind, str(identity)
+
+
+def _closure_result_should_replace(
+    existing: "ReadResult",
+    candidate: "ReadResult",
+    *,
+    query_contract: str | None = None,
+) -> bool:
     """Return whether closure produced a more specific version of an existing result."""
-    if candidate.metadata.get("evidence_closure") and not existing.metadata.get("evidence_closure"):
+    candidate_closure = candidate.metadata.get("evidence_closure")
+    existing_closure = existing.metadata.get("evidence_closure")
+    candidate_deterministic = bool(candidate.metadata.get("deterministic_table_filter"))
+    existing_deterministic = bool(existing.metadata.get("deterministic_table_filter"))
+    if candidate_deterministic and not existing_deterministic:
         return True
-    if candidate.content == existing.content:
+    if existing_deterministic and not candidate_deterministic:
         return False
-    if candidate.metadata.get("deterministic_table_filter") and not existing.metadata.get(
-        "deterministic_table_filter"
-    ):
-        return True
+
     candidate_count = _metadata_int(candidate.metadata.get("result_count"))
     existing_count = _metadata_int(existing.metadata.get("result_count"))
-    if candidate_count > 0 and (existing_count == 0 or candidate_count < existing_count):
+    if candidate_count > 0 and existing_count > 0 and candidate_count != existing_count:
+        return candidate_count < existing_count
+    if candidate_count > 0 and existing_count == 0:
         return True
+    if existing_count > 0 and candidate_count == 0 and existing_deterministic:
+        return False
+
+    if isinstance(candidate_closure, dict) and not isinstance(existing_closure, dict):
+        # Closure provenance can enrich an unchanged result, but it does not
+        # supersede the original computation for a comparison query.
+        if candidate.content == existing.content:
+            return True
+        return not (query_contract == "comparison_coverage" and _has_sorted_table_plan(existing))
     return False
+
+
+def _has_sorted_table_plan(result: "ReadResult") -> bool:
+    """Return whether a table result came from an explicit deterministic sort."""
+    if result.address.kind.value != "table":
+        return False
+    plan = result.metadata.get("table_query_plan")
+    return isinstance(plan, dict) and isinstance(plan.get("sort"), dict)
 
 
 def _metadata_int(value: Any) -> int:

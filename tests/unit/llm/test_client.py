@@ -76,25 +76,6 @@ class TestUnknownProvider:
             get_vision("unknown_provider")
 
 
-class TestRemovedProviderErrors:
-    """Removed provider names raise actionable errors."""
-
-    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
-    def test_get_chat_raises(self, removed: str) -> None:
-        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
-            get_chat(removed)
-
-    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
-    def test_get_reranker_raises(self, removed: str) -> None:
-        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
-            get_reranker(removed)
-
-    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
-    def test_get_vision_raises(self, removed: str) -> None:
-        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
-            get_vision(removed)
-
-
 @pytest.mark.skipif(not HAS_OPENAI, reason="openai SDK not installed")
 class TestOpenAIPreset:
     """`openai` and `azure_openai` are presets over OpenAICompat."""

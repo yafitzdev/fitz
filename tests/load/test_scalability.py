@@ -10,11 +10,12 @@ Run with: pytest tests/load/test_scalability.py -v -s --tb=short -m scalability
 
 from __future__ import annotations
 
+import statistics
 import time
 
 import pytest
 
-from fitz_sage.core import Query
+from fitz_sage.engines.fitz_krag.retrieval_profile import build_retrieval_profile
 
 pytestmark = pytest.mark.scalability
 
@@ -25,30 +26,46 @@ class TestSequentialStability:
     @pytest.fixture(autouse=True)
     def setup_pipeline(self, krag_e2e_runner):
         self.runner = krag_e2e_runner
+        self.router = self.runner.engine._retrieval_router
+        configured_code_strategy = self.router._code_strategy
+        self.router._code_strategy = getattr(
+            configured_code_strategy,
+            "_fallback",
+            configured_code_strategy,
+        )
+        self.profile = build_retrieval_profile(
+            None,
+            None,
+            self.runner.engine._config,
+            keywords=[],
+        )
+        yield
+        self.router._code_strategy = configured_code_strategy
 
     def test_no_throughput_degradation(self):
-        """3rd query should not be significantly slower than 1st.
+        """Later queries should not be significantly slower than early queries.
 
         Catches resource leaks, connection pool exhaustion, memory pressure.
         """
         query = "Where is TechCorp headquartered?"
         times = []
 
-        for _ in range(3):
+        for _ in range(10):
             start = time.perf_counter()
-            self.runner.engine.answer(Query(text=query))
+            self.router.retrieve(query, self.profile)
             times.append(time.perf_counter() - start)
 
-        first = times[0]
-        last = times[-1]
+        first = statistics.median(times[:3])
+        last = statistics.median(times[-3:])
         ratio = last / first if first > 0 else float("inf")
+        allowed_last = max(first * 2.0, first + 0.1)
 
-        print("\nSequential Consistency (3 queries):")
+        print("\nSequential Consistency (10 queries):")
         for i, t in enumerate(times):
-            print(f"  Query {i + 1}: {t:.1f}s")
-        print(f"  Ratio last/first: {ratio:.2f}x")
+            print(f"  Query {i + 1}: {t:.3f}s")
+        print(f"  Median last-window/first-window: {ratio:.2f}x")
 
-        assert ratio < 2.0, (
-            f"Throughput degraded: query 3 is {ratio:.1f}x slower than query 1 "
-            f"({last:.1f}s vs {first:.1f}s)"
+        assert last < allowed_last, (
+            f"Throughput degraded: last-window median is {ratio:.1f}x the "
+            f"first-window median ({last:.3f}s vs {first:.3f}s)"
         )

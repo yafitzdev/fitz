@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeGuard
 
+from fitz_sage.core.identifiers import exact_identifiers
 from fitz_sage.engines.fitz_krag.retrieval.table_plan import (
+    TableQueryPlan,
     build_table_query_plan,
     execute_table_query_plan,
 )
@@ -156,26 +158,83 @@ class TableQueryHandler:
 
         sanitized_cols, original_cols = col_info
         row_count = self._sqlite_table_store.get_row_count(table_id)
-        rows = self._get_scan_data(table_name, sanitized_cols)
-        plan = build_table_query_plan(query, sanitized_cols, rows)
+        identifiers = tuple(exact_identifiers(query))
+        row_columns = sanitized_cols
+        rows: list[list[Any]] = []
+        exact_identifier_lookup = False
+        indexed_row_lookup = False
+        if identifiers:
+            find_rows = getattr(self._sqlite_table_store, "find_rows_by_identifiers", None)
+            if callable(find_rows):
+                candidate = find_rows(
+                    table_id,
+                    identifiers,
+                    limit=max(self._config.max_table_results, len(identifiers)),
+                )
+                if _is_row_data(candidate):
+                    row_columns, rows = candidate
+                    exact_identifier_lookup = True
+        if not exact_identifier_lookup:
+            row_numbers = _matched_row_numbers(result)
+            get_rows = getattr(self._sqlite_table_store, "get_rows_by_numbers", None)
+            if row_numbers and callable(get_rows):
+                candidate = get_rows(
+                    table_id,
+                    row_numbers,
+                    limit=self._config.max_table_results,
+                )
+                if _is_row_data(candidate):
+                    row_columns, rows = candidate
+                    indexed_row_lookup = True
+        if not exact_identifier_lookup and not indexed_row_lookup:
+            rows = self._get_scan_data(table_name, sanitized_cols)
+
+        plan = build_table_query_plan(query, row_columns, rows)
         selected_rows = execute_table_query_plan(plan, rows)
+        full_table_plan_execution = False
+        if (
+            not exact_identifier_lookup
+            and isinstance(row_count, int)
+            and row_count > len(rows)
+            and (plan.predicates or plan.sort is not None)
+        ):
+            full_table_result = self._execute_full_table_plan(table_id, plan)
+            if _is_row_data(full_table_result):
+                row_columns, selected_rows = full_table_result
+                full_table_plan_execution = True
+        if indexed_row_lookup and not full_table_plan_execution and not selected_rows:
+            selected_rows = rows
         if not selected_rows:
             return result
 
         name = result.address.metadata.get("name", result.address.location)
         columns = result.address.metadata.get("columns", original_cols)
+        result_columns = original_cols if len(original_cols) == len(row_columns) else row_columns
+        lookup_note = (
+            f"Rows selected by deterministic query across all {row_count} row(s)."
+            if full_table_plan_execution
+            else (
+                f"Rows selected by exact identifier lookup across all {row_count} row(s)."
+                if exact_identifier_lookup
+                else (
+                    f"Rows selected by BM25 row lookup across all {row_count} row(s)."
+                    if indexed_row_lookup
+                    else (
+                        f"Rows selected from a bounded scan of {len(rows)} row(s)"
+                        f" out of {row_count} total row(s)."
+                    )
+                )
+            )
+        )
         content = self._format_table_evidence(
             name=name,
             columns=columns,
             row_count=row_count,
             heading="Deterministic Table Matches",
             query_label="Selection: query-grounded row filter",
-            col_names=columns,
+            col_names=result_columns,
             rows=selected_rows,
-            note=(
-                f"Rows selected from a bounded scan of {len(rows)} row(s)"
-                f" out of {row_count} total row(s)."
-            ),
+            note=lookup_note,
         )
 
         return ReadResult(
@@ -185,9 +244,30 @@ class TableQueryHandler:
             metadata={
                 **result.metadata,
                 "deterministic_table_filter": True,
+                "exact_identifier_table_lookup": exact_identifier_lookup,
+                "indexed_table_row_lookup": indexed_row_lookup,
+                "full_table_plan_execution": full_table_plan_execution,
                 "result_count": len(selected_rows),
                 "table_query_plan": plan.metadata,
             },
+        )
+
+    def _execute_full_table_plan(
+        self,
+        table_id: str,
+        plan: TableQueryPlan,
+    ) -> tuple[list[str], list[list[Any]]] | None:
+        predicates = tuple(
+            (predicate.column.index, tuple(sorted(predicate.accepted_values)))
+            for predicate in plan.predicates
+        )
+        sort = (plan.sort.column.index, plan.sort.direction) if plan.sort is not None else None
+        limit = 1 if sort is not None else self._config.max_table_results
+        return self._sqlite_table_store.select_rows(
+            table_id,
+            predicates=predicates,
+            sort=sort,
+            limit=limit,
         )
 
     def _get_sample_data(
@@ -292,6 +372,8 @@ class TableQueryHandler:
         )
         prompt = prompt + error_context
 
+        if self._chat is None:
+            raise RuntimeError("SQL generation requires a configured chat provider")
         response = self._chat.chat([{"role": "user", "content": prompt}])
         return self._extract_sql(response)
 
@@ -364,3 +446,35 @@ class TableQueryHandler:
                 text = match.group(1)
 
         return text
+
+
+def _is_row_data(value: Any) -> TypeGuard[tuple[list[str], list[list[Any]]]]:
+    """Return whether a store result has the expected columns-and-rows shape."""
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], list)
+        and isinstance(value[1], list)
+        and all(isinstance(column, str) for column in value[0])
+        and all(isinstance(row, list) for row in value[1])
+    )
+
+
+def _matched_row_numbers(result: ReadResult) -> list[int]:
+    """Return row locations attached by the row-value BM25 strategy."""
+    values = result.metadata.get("matched_row_numbers")
+    if not isinstance(values, list):
+        row_search = result.address.metadata.get("row_search")
+        values = row_search.get("row_numbers") if isinstance(row_search, dict) else None
+    if not isinstance(values, list):
+        return []
+
+    row_numbers: list[int] = []
+    for value in values:
+        try:
+            row_number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if row_number >= 0 and row_number not in row_numbers:
+            row_numbers.append(row_number)
+    return row_numbers[:20]

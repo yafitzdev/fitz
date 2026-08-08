@@ -14,6 +14,8 @@ from typing import Callable, TypeVar
 
 from fastapi import HTTPException
 
+from fitz_sage.services.fitz_service import CollectionNotFoundError, FitzServiceError
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -44,6 +46,8 @@ def handle_api_errors(fn: Callable[..., T]) -> Callable[..., T]:
         except HTTPException:
             # Re-raise FastAPI HTTPExceptions as-is
             raise
+        except CollectionNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
         except ValueError as e:
             # Client error - bad input
             raise HTTPException(status_code=400, detail=str(e))
@@ -60,6 +64,9 @@ def handle_api_errors(fn: Callable[..., T]) -> Callable[..., T]:
         except NotImplementedError as e:
             # Feature not implemented
             raise HTTPException(status_code=501, detail=str(e))
+        except FitzServiceError as e:
+            logger.exception(f"Service error in {fn.__name__}: {e}")
+            raise HTTPException(status_code=500, detail="Fitz service operation failed")
         except Exception as e:
             # Unexpected error - log and return 500
             logger.exception(f"Unexpected error in {fn.__name__}: {e}")

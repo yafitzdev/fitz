@@ -5,18 +5,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date
 from enum import Enum
 from typing import Any
 
-_IDENTIFIER_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"
-    r"(?:[-_][A-Za-z0-9]+)*(?![A-Za-z0-9_])|"
-    r"(?<![A-Za-z0-9_])(?=[A-Za-z0-9-]*\d)[A-Za-z][A-Za-z0-9]*"
-    r"(?:-[A-Za-z0-9]+)+(?![A-Za-z0-9_])|"
-    r"\b[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9_-]*\b|"
-    r"\b[A-Z]\d+\b"
+from fitz_sage.core.identifiers import EXACT_IDENTIFIER_PATTERN as _IDENTIFIER_PATTERN
+from fitz_sage.core.identifiers import (
+    contains_exact_identifier,
+    exact_identifiers,
 )
+from fitz_sage.tabular.value_semantics import normalize_table_value as _normalize
+from fitz_sage.tabular.value_semantics import sortable_table_value as _sortable_value
+
 _MAX_SUPERLATIVES = {"highest", "largest", "latest", "longest", "max", "maximum", "most", "newest"}
 _MIN_SUPERLATIVES = {"earliest", "fastest", "least", "lowest", "min", "minimum", "shortest"}
 _STOPWORDS = {
@@ -49,6 +48,8 @@ _STOPWORDS = {
 }
 _BOOLEAN_TRUE = {"1", "active", "enabled", "true", "yes", "on"}
 _BOOLEAN_FALSE = {"0", "disabled", "false", "inactive", "no", "off"}
+_BOOLEAN_NEGATORS = {"no", "not", "without"}
+_MIN_UNPREFIXED_ROOT_LENGTH = 4
 _NEGATIVE_QUERY_TERMS = {
     "disabled",
     "false",
@@ -56,7 +57,6 @@ _NEGATIVE_QUERY_TERMS = {
     "no",
     "not",
     "off",
-    "unencrypted",
     "without",
 }
 _POSITIVE_QUERY_TERMS = {
@@ -270,25 +270,55 @@ def _row_predicates(
 
 
 def _boolean_predicate_values(column: ColumnBinding, query_text: str) -> set[str]:
-    column_terms = set(column.tokens)
-    has_column_reference = bool(column_terms & set(query_text.split()))
-    if "encrypt" in query_text and any(token.startswith("encrypt") for token in column_terms):
-        has_column_reference = True
-    if {"customer", "visible"} <= set(query_text.split()) and {
-        "customer",
-        "visible",
-    } <= column_terms:
-        has_column_reference = True
-    if not has_column_reference:
+    polarity_terms = _NEGATIVE_QUERY_TERMS | _POSITIVE_QUERY_TERMS
+    column_terms = {
+        term for term in column.tokens if term not in _STOPWORDS or term in polarity_terms
+    }
+    query_terms = tuple(
+        term for term in query_text.split() if term not in _STOPWORDS or term in polarity_terms
+    )
+    reference_indices = [
+        index
+        for index, term in enumerate(query_terms)
+        if term in column_terms or _is_unprefixed_column_reference(term, column_terms)
+    ]
+    if not reference_indices:
         return set()
 
-    if "unencrypted" in query_text or "not encrypted" in query_text:
+    if any(
+        _is_unprefixed_column_reference(query_terms[index], column_terms)
+        for index in reference_indices
+    ):
         return _BOOLEAN_FALSE
-    if any(term in query_text.split() for term in _NEGATIVE_QUERY_TERMS):
+    if any(
+        index > 0 and query_terms[index - 1] in _BOOLEAN_NEGATORS for index in reference_indices
+    ):
         return _BOOLEAN_FALSE
-    if any(term in query_text.split() for term in _POSITIVE_QUERY_TERMS):
+
+    direct_state_terms = {
+        query_terms[index] for index in reference_indices if query_terms[index] in polarity_terms
+    }
+    if direct_state_terms:
+        return _BOOLEAN_TRUE
+
+    neighboring_terms = {
+        query_terms[neighbor]
+        for index in reference_indices
+        for neighbor in (index - 1, index + 1)
+        if 0 <= neighbor < len(query_terms)
+    }
+    if neighboring_terms & (_NEGATIVE_QUERY_TERMS - _BOOLEAN_NEGATORS):
+        return _BOOLEAN_FALSE
+    if neighboring_terms & _POSITIVE_QUERY_TERMS:
         return _BOOLEAN_TRUE
     return set()
+
+
+def _is_unprefixed_column_reference(query_term: str, column_terms: set[str]) -> bool:
+    if not query_term.startswith("un"):
+        return False
+    root = query_term.removeprefix("un")
+    return len(root) >= _MIN_UNPREFIXED_ROOT_LENGTH and root in column_terms
 
 
 def _sort_clause(
@@ -372,16 +402,7 @@ def _row_satisfies_predicates(row: list[Any], predicates: tuple[RowPredicate, ..
 
 
 def _query_identifiers(query: str) -> list[str]:
-    identifiers: list[str] = []
-    seen: set[str] = set()
-    for match in _IDENTIFIER_PATTERN.finditer(query):
-        value = match.group(0).strip(".,;:()[]{}")
-        key = value.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        identifiers.append(value)
-    return identifiers
+    return exact_identifiers(query)
 
 
 def _query_terms(query: str) -> list[str]:
@@ -405,39 +426,8 @@ def _superlative_direction(query: str) -> str | None:
     return None
 
 
-def _sortable_value(value: Any) -> float | None:
-    text = str(value).strip()
-    if not text:
-        return None
-    try:
-        return float(date.fromisoformat(text).toordinal())
-    except ValueError:
-        pass
-    if _IDENTIFIER_PATTERN.fullmatch(text):
-        return None
-    match = re.fullmatch(r"-?\d+(?:\.\d+)?", text.replace(",", ""))
-    if not match:
-        return None
-    try:
-        return float(match.group(0))
-    except ValueError:
-        return None
-
-
 def _contains_identifier(text: str, identifier: str) -> bool:
-    lower = text.lower()
-    normalized = identifier.lower()
-    variants = {
-        normalized,
-        normalized.replace("_", "-"),
-        normalized.replace("-", "_"),
-        normalized.replace("_", " ").replace("-", " "),
-    }
-    for variant in variants:
-        escaped = re.escape(variant).replace(r"\ ", r"\s+")
-        if re.search(rf"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])", lower):
-            return True
-    return False
+    return contains_exact_identifier(text, identifier)
 
 
 def _contains_term(text: str, term: str) -> bool:
@@ -454,11 +444,6 @@ def _contains_term(text: str, term: str) -> bool:
 
 def _tokenize(value: str) -> list[str]:
     return _normalize(value).split()
-
-
-def _normalize(value: str) -> str:
-    value = value.replace("_", " ")
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
 
 
 __all__ = [

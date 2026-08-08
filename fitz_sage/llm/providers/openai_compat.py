@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, cast
 
 from fitz_sage.llm.auth import AuthProvider
 from fitz_sage.llm.auth.httpx_auth import DynamicHttpxAuth
@@ -127,7 +127,7 @@ class OpenAICompatChat:
 
         response = self._client.chat.completions.create(
             model=params.pop("model", self._model),
-            messages=messages,
+            messages=cast(Any, messages),
             **params,
         )
 
@@ -202,7 +202,7 @@ class OpenAICompatVision:
         params = {**self._defaults}
         response = self._client.chat.completions.create(
             model=params.pop("model", self._model),
-            messages=messages,
+            messages=cast(Any, messages),
             **params,
         )
 

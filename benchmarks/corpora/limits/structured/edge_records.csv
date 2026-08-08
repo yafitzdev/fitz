@@ -1,0 +1,9 @@
+record_id,station,status,duration_ms,score,owner,release
+EDGE-100,alpha,pass,120,88,Rhea,REL-2026.01
+EDGE-101,alpha,pass,75,91,Noor,REL-2026.02
+EDGE-102,beta,fail,310,42,Ivo,REL-2026.02
+EDGE-103,beta,pass,305,95,Uma,REL-2025.12
+EDGE-104,gamma,blocked,450,12,Pia,REL-2026.03
+EDGE-105,gamma,pass,140,77,Quinn,REL-2026.03
+EDGE-106,delta,fail,390,31,Rhea,REL-2026.04
+EDGE-107,delta,pass,95,89,Tao,REL-2026.04

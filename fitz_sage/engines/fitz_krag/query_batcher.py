@@ -18,7 +18,6 @@ from fitz_sage.engines.fitz_krag.query_analyzer import (
     QueryAnalysis,
     parse_analysis_dict,
 )
-from fitz_sage.retrieval.detection.detectors.expansion import expand_terms
 from fitz_sage.retrieval.detection.modules import distribute_to_modules
 from fitz_sage.retrieval.rewriter.rewriter import parse_rewrite_dict
 from fitz_sage.retrieval.rewriter.types import RewriteResult
@@ -107,6 +106,8 @@ _KEYWORDS_JSON = """\
 _KEYWORDS_INSTRUCTIONS = """\
 ## keywords
 - Produce 5-10 concrete retrieval keywords or short search phrases.
+- Return every keyword as a separate quoted JSON array item; never combine
+  multiple keywords into one comma-separated string.
 - Use real synonyms, acronym expansions, sibling concepts, and domain vocabulary.
 - Do not copy schema placeholders such as "term", "keyword", or "actual phrase".
 - Avoid repeating the exact query unless it is itself a useful search phrase."""
@@ -121,6 +122,8 @@ _KEYWORD_PLACEHOLDERS = {
     "term",
     "terms",
 }
+SEMANTIC_KEYWORD_MAX_ITEMS = 10
+SEMANTIC_KEYWORD_MAX_TOKENS = 128
 
 _ANALYSIS_SPEC = _QuerySectionSpec("analysis", _ANALYSIS_JSON, _ANALYSIS_INSTRUCTIONS)
 _REWRITING_SPEC = _QuerySectionSpec("rewriting", _REWRITING_JSON, _REWRITING_INSTRUCTIONS)
@@ -196,6 +199,7 @@ class QueryBatcher:
 
     chat_factory: "ChatFactory"
     detection_modules: list["DetectionModule"] = field(default_factory=list)
+    max_tokens: int | None = None
 
     def batch_classify(
         self,
@@ -239,7 +243,8 @@ class QueryBatcher:
 
         try:
             chat = self.chat_factory("fast")
-            response = chat.chat([{"role": "user", "content": prompt}])
+            options = {"max_tokens": self.max_tokens} if self.max_tokens is not None else {}
+            response = chat.chat([{"role": "user", "content": prompt}], **options)
         except QueryIntelligenceError:
             raise
         except Exception as e:
@@ -360,22 +365,11 @@ class QueryBatcher:
             result.extended_signals = _required_object(raw, "extended")
 
         if include_keywords:
-            llm_keywords: list[str] = []
             kw_data = _required_array(raw, "keywords")
-            llm_keywords = [
+            result.keywords = [
                 value
                 for value in (str(k).strip() for k in kw_data if isinstance(k, str))
                 if value and value.lower() not in _KEYWORD_PLACEHOLDERS
-            ]
-            # Fuse deterministic dict expansion (synonyms / acronyms) — always
-            # available, independent of whether the LLM section parsed.
-            seen: set[str] = set()
-            merged: list[str] = []
-            for term in (*llm_keywords, *expand_terms(query)):
-                low = term.lower()
-                if low not in seen:
-                    seen.add(low)
-                    merged.append(term)
-            result.keywords = merged
+            ][:SEMANTIC_KEYWORD_MAX_ITEMS]
 
         return result

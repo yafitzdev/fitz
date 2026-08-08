@@ -47,8 +47,6 @@ class TestCodeSearchStrategy:
         mock_symbol_store.search_bm25.return_value = [
             {**_make_symbol("s2", "transform", "mod.transform"), "bm25_score": 0.9},
         ]
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("process data", limit=5)
 
@@ -59,8 +57,6 @@ class TestCodeSearchStrategy:
         sym = _make_symbol("s1", "func", "mod.func")
         mock_symbol_store.search_by_name.return_value = [sym]
         mock_symbol_store.search_bm25.return_value = [{**sym, "bm25_score": 0.8}]
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("func", limit=5)
 
@@ -71,8 +67,6 @@ class TestCodeSearchStrategy:
         syms = [_make_symbol(f"s{i}", f"func{i}", f"mod.func{i}") for i in range(20)]
         mock_symbol_store.search_by_name.return_value = syms
         mock_symbol_store.search_bm25.return_value = []
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("func", limit=3)
 
@@ -83,8 +77,6 @@ class TestCodeSearchStrategy:
             _make_symbol("s1", "my_func", "pkg.my_func"),
         ]
         mock_symbol_store.search_bm25.return_value = []
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("my_func", limit=5)
 
@@ -94,8 +86,8 @@ class TestCodeSearchStrategy:
         assert addr.metadata["start_line"] == 1
         assert addr.metadata["end_line"] == 10
 
-    def test_prose_query_expands_to_symbol_name_variants(self, mock_symbol_store, config):
-        """Prose terms such as 'waive' should find identifier forms such as WAIVER_ENV."""
+    def test_prose_query_does_not_use_hardcoded_symbol_synonyms(self, mock_symbol_store, config):
+        """Code search must not silently map prose to domain-specific symbol terms."""
 
         def search_by_name(query, limit):
             if query == "waiver":
@@ -104,10 +96,9 @@ class TestCodeSearchStrategy:
 
         mock_symbol_store.search_by_name.side_effect = search_by_name
         mock_symbol_store.search_bm25.return_value = []
-        mock_symbol_store.search_by_keywords.return_value = []
-
         strategy = CodeSearchStrategy(mock_symbol_store, config)
         results = strategy.retrieve("Which environment variable can waive late fees?", limit=5)
 
-        assert len(results) == 1
-        assert results[0].metadata["qualified_name"] == "invoice.WAIVER_ENV"
+        assert results == []
+        searched_names = [call.args[0] for call in mock_symbol_store.search_by_name.call_args_list]
+        assert "waiver" not in searched_names

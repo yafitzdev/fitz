@@ -31,7 +31,7 @@ class KnowledgeEngine(Protocol):
 @dataclass
 class Query:
     text: str
-    metadata: dict | None = None
+    metadata: dict = field(default_factory=dict)
 ```
 
 ### `Answer`
@@ -40,7 +40,7 @@ class Query:
 @dataclass
 class Answer:
     text: str
-    mode: AnswerMode                  # runtime: SUFFICIENT | DISPUTED | INSUFFICIENT
+    mode: AnswerMode | None           # runtime: SUFFICIENT | DISPUTED | INSUFFICIENT
     provenance: list[Provenance]
     metadata: dict
 ```
@@ -50,7 +50,7 @@ class Answer:
 ```python
 @dataclass
 class Provenance:
-    source_id: str        # collection-qualified address
+    source_id: str        # stable engine-specific source identifier
     excerpt: str | None
     metadata: dict
 ```
@@ -68,12 +68,13 @@ queries to the right strategy.
 
 ```
 Query
- ├─► Query prep (deterministic signals + managed Qwen semantic keywords)
+ ├─► Query prep (deterministic signals, explicit clauses, managed Qwen keywords)
  ├─► Optional query intelligence (rewrite / analyze / detect)
  ├─► Router (symbol search · section search · table metadata)
 │    └─► FTS5 + bm25() over per-collection .db
- ├─► OnnxReranker (ONNX cross-encoder, ~30 ms CPU)
- ├─► Governance cutoff (Pyrrho v2 → SUFFICIENT / DISPUTED / INSUFFICIENT)
+ ├─► OnnxReranker (bounded INT8 ONNX cross-encoder)
+ ├─► Read + bounded evidence closure + compilation
+ ├─► Progressive Pyrrho prefixes (3, then +2 while INSUFFICIENT)
  ├─► EvidencePack
  └─► Optional synthesizer → Answer (+ provenance + mode)
 ```
@@ -81,22 +82,24 @@ Query
 ### Usage
 
 ```python
-from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
-from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+from pathlib import Path
+
 from fitz_sage.core import Query
+from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
+from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
 
 cfg = FitzKragConfig(
     collection="my_docs",
 )
 engine = FitzKragEngine(cfg)
-engine.load("my_docs")
+engine.point(Path("./docs"), start_worker=False)
 pack = engine.evidence(Query(text="What is X?"))
 ```
 
 ### Retrieval-first evidence
 
 `evidence()` returns the governed, serializable evidence pack. This is the
-contract used by `fitz query` and `fitz retrieve`:
+contract used by `fitz retrieve`:
 
 ```python
 pack = engine.evidence(Query(text="Where is auth handled?"))
@@ -120,7 +123,8 @@ with provenance and score), skipping evidence packaging and optional synthesis.
 
 See [CONFIG.md](CONFIG.md) for every key. The minimum is `collection:`.
 Chat providers are optional and only needed for synthesized answers, optional
-query intelligence, or vision parsing. Managed Qwen enrichment is internal.
+query intelligence, or vision parsing. Managed Qwen query terms and optional
+background enrichment are internal.
 
 ### Built-in features
 
@@ -130,11 +134,10 @@ query intelligence, or vision parsing. Managed Qwen enrichment is internal.
 | Import graph traversal  | Code: walks references and imports across files               |
 | Entity linking          | Cross-source linking via shared named entities                |
 | Hierarchical summaries  | L1 file summaries and L2 corpus overview built during enrichment |
-| Multi-hop retrieval     | Iterative bridge extraction for compound questions            |
-| ONNX reranker           | INT8 cross-encoder, single forward pass on CPU                |
+| Evidence closure        | Bounded bridge retrieval for unresolved query obligations      |
+| ONNX reranker           | Bounded INT8 cross-encoder, two batch-one CPU workers          |
 | Epistemic governance    | Pyrrho v2 sufficient / disputed / insufficient evidence verdicts |
-| Artifact generation     | Architecture narrative, dependency summary, etc. per collection |
-| Progressive ingestion   | Parse first, return evidence, continue Qwen enrichment in daemon |
+| Source indexing         | Parse and persist before `point()` returns; enrich afterward |
 
 ---
 
@@ -146,11 +149,12 @@ or the CLI:
 ```python
 from fitz_sage import run
 
+# run() calls answer(), so fitz_krag requires a configured synthesizer here.
 answer = run("What is X?", engine="fitz_krag")
 ```
 
 ```bash
-fitz query "What is X?" --engine fitz_krag --source ./docs
+fitz retrieve "What is X?" --engine fitz_krag --source ./docs
 ```
 
 ### Available engines
@@ -167,7 +171,8 @@ Custom engines register through the engine registry — see
 ## Custom engines
 
 ```python
-from fitz_sage.core import Query, Answer, AnswerMode
+from fitz_sage.core import Answer, Query
+from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.runtime import EngineRegistry
 
 class MyEngine:
@@ -179,7 +184,7 @@ class MyEngine:
             metadata={},
         )
 
-EngineRegistry.get_global().register("my_engine", lambda cfg: MyEngine())
+EngineRegistry.get_global().register("my_engine", lambda config: MyEngine())
 ```
 
 You don't need to subclass anything — duck-typing on the protocol is
@@ -194,7 +199,7 @@ config-loader hooks.
    exposing a single `answer()` method.
 2. **Config-driven.** Engine behaviour lives in YAML / `*Config`
    dataclasses, not in Python keywords.
-3. **Shared infrastructure.** Chat layer, SQLite storage, and
-   ingestion are shared across engines.
+3. **Optional shared infrastructure.** Engines may reuse Fitz-Sage chat,
+   storage, and ingestion modules, but the core protocol does not require them.
 4. **Honest evidence.** Every `EvidencePack` carries a `mode`; optional
    answers inherit that epistemic posture.

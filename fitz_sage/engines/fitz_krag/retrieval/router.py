@@ -11,14 +11,21 @@ from __future__ import annotations
 import logging
 import time as _time
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Callable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import (
     query_has_code_obligation,
     query_has_table_obligation,
 )
+from fitz_sage.engines.fitz_krag.retrieval.query_coverage import (
+    compound_queries,
+    ensure_query_coverage,
+    merge_retrieval_provenance,
+    tag_retrieval_query,
+)
 from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace
-from fitz_sage.engines.fitz_krag.types import Address
+from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
@@ -38,6 +45,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class RetrievalRouterResponse:
+    """Fused addresses and diagnostics from one router call."""
+
+    addresses: list[Address]
+    trace: dict[str, Any] = field(default_factory=dict)
+
+
 class RetrievalRouter:
     """Routes queries to available strategies, merges results."""
 
@@ -47,29 +62,25 @@ class RetrievalRouter:
         config: "FitzKragConfig",
         section_strategy: "SectionSearchStrategy | None" = None,
         table_strategy: "TableSearchStrategy | None" = None,
-        agentic_strategy: Any = None,
     ):
         self._code_strategy = code_strategy
         self._section_strategy = section_strategy
         self._table_strategy = table_strategy
         self._config = config
-        self._agentic_strategy = agentic_strategy
-        self._allow_llm_agentic = True
-        self.last_trace: dict[str, Any] = {}
 
     def retrieve(
         self,
         query: str,
         profile: Any = None,
         rewrite_result: "Any | None" = None,
-        progress: Callable[[str], None] | None = None,
-    ) -> list[Address]:
+    ) -> RetrievalRouterResponse:
         """
         Retrieve addresses using strategy weights from retrieval profile.
 
         When profile is provided, strategies with near-zero weight are skipped
-        and results are ranked using CrossStrategyRanker. Without profile,
-        all strategies run equally (backward compatible).
+        and results are ranked using CrossStrategyRanker. Without a profile,
+        all configured strategies run with equal weight. Returns the fused
+        addresses and request-local diagnostics.
         """
         from fitz_sage.engines.fitz_krag.retrieval.ranker import CrossStrategyRanker
 
@@ -77,7 +88,6 @@ class RetrievalRouter:
         weights = profile.strategy_weights if profile else None
         all_addresses: list[Address] = []
         strategy_calls: list[dict[str, Any]] = []
-        agentic_trace: dict[str, Any] | None = None
 
         # Collect queries to run (original + profile expansions + multi-query)
         # Each entry is (query_text, tag) where tag is used for temporal metadata
@@ -103,24 +113,21 @@ class RetrievalRouter:
             if profile.keywords:
                 tagged_queries.append((" ".join(profile.keywords), None))
 
-        # Multi-query: the rewriter's decomposed sub-queries (skip [0] = original).
+        # Rewrites, decomposed clauses, and ambiguity branches are all recall legs.
         rewrite_variations = rewrite_result.all_query_variations if rewrite_result else []
-        if len(rewrite_variations) > 1:
-            for var in rewrite_variations[1:]:
-                tagged_queries.append((var, None))
+        for variation in rewrite_variations:
+            tagged_queries.append((variation, None))
 
-        run_agentic = profile.run_agentic if profile else True
+        tagged_queries = list(dict.fromkeys(tagged_queries))
         unique_queries = list(dict.fromkeys(q for q, _ in tagged_queries))
         logger.debug(
-            f"Retrieval gates: agentic={run_agentic}, "
-            f"type={profile.analysis_type if profile else 'none'}, "
+            f"Retrieval gates: type={profile.analysis_type if profile else 'none'}, "
             f"conf={profile.analysis_confidence if profile else 0:.2f}, "
             f"queries={len(unique_queries)}"
         )
 
         # Submit all strategy calls concurrently
         _t_strategies = _time.perf_counter()
-        _progress = progress or (lambda _: None)
         pool = ThreadPoolExecutor(max_workers=self._config.retrieval_workers)
         futures: list[tuple[Future, str | None, str, str]] = []
         try:
@@ -145,16 +152,11 @@ class RetrievalRouter:
                     fut = pool.submit(self._run_strategy, self._table_strategy, q, limit, profile)
                     futures.append((fut, temporal_tag, type(self._table_strategy).__name__, q))
 
-            # Submit agentic search in the same pool
-            agentic_future: Future | None = None
-            if self._agentic_strategy and run_agentic and self._has_agentic_pending_files():
-                _progress("Supplemental scan: checking files still awaiting enriched index...")
-                agentic_future = pool.submit(self._run_agentic, query, limit, _progress)
-
             # Collect strategy results
             for fut, temporal_tag, strategy_name, strategy_query in futures:
                 try:
                     batch = fut.result(timeout=600)
+                    batch = tag_retrieval_query(batch, strategy_query)
                     strategy_call = {
                         "strategy": strategy_name,
                         "query": strategy_query,
@@ -180,21 +182,6 @@ class RetrievalRouter:
                     )
                     logger.warning(f"Strategy failed: {e}")
 
-            # Collect agentic results
-            if agentic_future:
-                try:
-                    agentic_addresses = agentic_future.result(timeout=600)
-                    all_addresses.extend(agentic_addresses)
-                    agentic_trace = {
-                        "enabled": True,
-                        "count": len(agentic_addresses),
-                        "addresses": addresses_trace(agentic_addresses),
-                    }
-                except Exception as e:
-                    agentic_trace = {"enabled": True, "count": 0, "error": str(e), "addresses": []}
-                    logger.warning(f"Agentic strategy failed: {e}")
-            else:
-                agentic_trace = {"enabled": False, "count": 0, "addresses": []}
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
 
@@ -203,14 +190,23 @@ class RetrievalRouter:
 
         # Corpus summary injection for broad/thematic queries
         inject_summaries = profile.inject_corpus_summaries if profile else False
+        corpus_summary_trace: dict[str, Any] = {
+            "enabled": bool(self._section_strategy and inject_summaries),
+            "count": 0,
+            "addresses": [],
+        }
         if self._section_strategy and inject_summaries:
             try:
                 corpus_addresses = self._section_strategy.retrieve(
                     query, limit=limit, detection=profile, inject_corpus_summaries=True
                 )
+                corpus_addresses = tag_retrieval_query(corpus_addresses, query)
                 all_addresses.extend(corpus_addresses)
+                corpus_summary_trace["count"] = len(corpus_addresses)
+                corpus_summary_trace["addresses"] = addresses_trace(corpus_addresses)
                 logger.debug(f"Injected {len(corpus_addresses)} corpus summary chunk(s)")
             except Exception as e:
+                corpus_summary_trace["error"] = str(e)
                 logger.debug(f"Corpus summary injection skipped: {e}")
 
         # Deduplicate
@@ -228,8 +224,15 @@ class RetrievalRouter:
 
         # File diversity: prevent one file from monopolizing all read slots
         ranked = self._enforce_file_diversity(ranked)
-        final = ranked[:limit]
-        self.last_trace = {
+        final = self._enforce_strategy_coverage(ranked, limit)
+        required_queries = compound_queries(rewrite_result)
+        final = ensure_query_coverage(
+            ranked,
+            final,
+            required_queries,
+            limit=limit,
+        )
+        trace = {
             "query": query,
             "limit": limit,
             "strategy_weights": dict(weights or {}),
@@ -238,8 +241,9 @@ class RetrievalRouter:
                 for query_text, temporal_tag in tagged_queries
             ],
             "unique_query_count": len(unique_queries),
+            "compound_queries": required_queries,
             "strategy_calls": strategy_calls,
-            "agentic": agentic_trace,
+            "corpus_summary": corpus_summary_trace,
             "raw_candidate_count": len(raw_addresses),
             "raw_candidates": addresses_trace(raw_addresses),
             "deduped_count": len(deduped),
@@ -250,7 +254,7 @@ class RetrievalRouter:
             "final": addresses_trace(final),
             "timings_ms": {"strategies": _strategies_ms},
         }
-        return final
+        return RetrievalRouterResponse(final, trace)
 
     def _run_strategy(
         self,
@@ -261,48 +265,11 @@ class RetrievalRouter:
     ) -> list[Address]:
         """Run a single strategy."""
         try:
-            return strategy.retrieve(query, limit, detection=profile)
+            results = strategy.retrieve(query, limit, detection=profile)
+            return [result for result in results if isinstance(result, Address)]
         except Exception as e:
             logger.warning(f"{type(strategy).__name__} failed for '{query[:50]}': {e}")
             return []
-
-    def _run_agentic(
-        self,
-        query: str,
-        limit: int,
-        progress: Callable[[str], None],
-    ) -> list[Address]:
-        """Run agentic search with progress reporting."""
-        try:
-            agentic_addresses = self._agentic_strategy.retrieve(
-                query, limit, allow_llm=self._allow_llm_agentic
-            )
-            if agentic_addresses:
-                paths = set()
-                for a in agentic_addresses:
-                    dp = a.metadata.get("disk_path")
-                    if dp:
-                        parts = dp.replace("\\", "/").split("/")
-                        paths.add(parts[-1] if parts else dp)
-                files_str = ", ".join(sorted(paths)[:5])
-                progress(
-                    f"Supplemental scan: added {len(agentic_addresses)} early candidate(s) "
-                    f"from {len(paths)} file(s) ({files_str})"
-                )
-            else:
-                progress("Supplemental scan: no early candidates found")
-            return agentic_addresses
-        except Exception as e:
-            logger.warning(f"Agentic strategy failed: {e}")
-            return []
-
-    def _has_agentic_pending_files(self) -> bool:
-        """Check whether supplemental search has a not-query-ready file surface."""
-        try:
-            return bool(self._agentic_strategy.has_pending_files())
-        except Exception as e:
-            logger.debug(f"Agentic pending-file check failed: {e}")
-            return False
 
     def _tag_temporal(self, addresses: list[Address], ref_text: str) -> list[Address]:
         """Tag addresses with the temporal reference that produced them."""
@@ -325,7 +292,7 @@ class RetrievalRouter:
         return tagged
 
     def _deduplicate(self, addresses: list[Address]) -> list[Address]:
-        """Deduplicate addresses by source_id+location, merging temporal tags."""
+        """Deduplicate addresses while retaining query-leg provenance."""
         seen: dict[tuple[str, str], int] = {}
         result: list[Address] = []
 
@@ -335,27 +302,8 @@ class RetrievalRouter:
                 seen[key] = len(result)
                 result.append(addr)
             else:
-                # Merge temporal_refs from duplicate into existing address
-                new_refs = addr.metadata.get("temporal_refs", [])
-                if new_refs:
-                    idx = seen[key]
-                    existing = result[idx]
-                    existing_refs = existing.metadata.get("temporal_refs", [])
-                    merged_refs = list(existing_refs)
-                    for ref in new_refs:
-                        if ref not in merged_refs:
-                            merged_refs.append(ref)
-                    if merged_refs != existing_refs:
-                        meta = dict(existing.metadata)
-                        meta["temporal_refs"] = merged_refs
-                        result[idx] = Address(
-                            kind=existing.kind,
-                            source_id=existing.source_id,
-                            location=existing.location,
-                            summary=existing.summary,
-                            score=max(existing.score, addr.score),
-                            metadata=meta,
-                        )
+                idx = seen[key]
+                result[idx] = merge_retrieval_provenance(result[idx], addr)
 
         return result
 
@@ -380,3 +328,61 @@ class RetrievalRouter:
                 deferred.append(addr)
 
         return promoted + deferred
+
+    @staticmethod
+    def _enforce_strategy_coverage(
+        addresses: list[Address],
+        limit: int,
+        minimum_per_strategy: int = 2,
+    ) -> list[Address]:
+        """Keep a small recall foothold for each strategy that found candidates."""
+        selected = list(addresses[:limit])
+        if len(selected) >= len(addresses) or minimum_per_strategy <= 0:
+            return selected
+
+        def strategy(address: Address) -> str:
+            if address.kind in {AddressKind.SYMBOL, AddressKind.FILE}:
+                return "code"
+            return address.kind.value
+
+        available: dict[str, int] = {}
+        for address in addresses:
+            name = strategy(address)
+            available[name] = available.get(name, 0) + 1
+        targets = {name: min(minimum_per_strategy, count) for name, count in available.items()}
+        selected_counts: dict[str, int] = {}
+        for address in selected:
+            name = strategy(address)
+            selected_counts[name] = selected_counts.get(name, 0) + 1
+
+        for missing_strategy, target in targets.items():
+            while selected_counts.get(missing_strategy, 0) < target:
+                replacement = next(
+                    (
+                        address
+                        for address in addresses[limit:]
+                        if strategy(address) == missing_strategy and address not in selected
+                    ),
+                    None,
+                )
+                if replacement is None:
+                    break
+                replace_at = next(
+                    (
+                        index
+                        for index in range(len(selected) - 1, -1, -1)
+                        if selected_counts[strategy(selected[index])]
+                        > targets[strategy(selected[index])]
+                    ),
+                    None,
+                )
+                if replace_at is None:
+                    break
+                removed_strategy = strategy(selected[replace_at])
+                selected[replace_at] = replacement
+                selected_counts[removed_strategy] -= 1
+                selected_counts[missing_strategy] = selected_counts.get(missing_strategy, 0) + 1
+        return selected
+
+
+__all__ = ["RetrievalRouter", "RetrievalRouterResponse"]

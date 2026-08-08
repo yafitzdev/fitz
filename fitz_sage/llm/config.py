@@ -28,8 +28,6 @@ Provider names are configuration knobs over those implementations:
               — separate path for OAuth2 + API-key composite auth
                 (kept for the day-job/automotive deployment flow).
 
-The removed ``ollama``, ``cohere``, and ``anthropic`` provider names raise
-actionable errors with the current endpoint-based configuration.
 """
 
 from __future__ import annotations
@@ -60,37 +58,6 @@ ENV_VAR_MAP: dict[str, str | None] = {
 HEADER_FORMAT_MAP: dict[str, str] = {
     "openai": "bearer",
     "azure_openai": "bearer",
-}
-
-# Removed providers and their actionable migration messages.
-_REMOVED_PROVIDERS: dict[str, str] = {
-    "ollama": (
-        "The 'ollama' provider has been removed. "
-        "Required enrichment is managed in-process with Qwen3 0.6B ONNX GenAI "
-        "and is not user-configurable.\n\n"
-        "For optional Ollama answer synthesis, use the 'endpoint' provider with "
-        "Ollama's OpenAI-compatible URL:\n\n"
-        "  synthesizer: endpoint/qwen2.5:14b\n"
-        "  chat_base_url: http://localhost:11434/v1"
-    ),
-    "cohere": (
-        "The 'cohere' provider has been removed. "
-        "If you need Cohere's chat models, use the 'endpoint' provider with "
-        "Cohere's OpenAI-compatible API or via OpenRouter:\n\n"
-        "  synthesizer: endpoint/command-a-03-2025\n"
-        "  chat_base_url: https://api.cohere.com/compatibility/v1\n"
-        "  chat_api_key_env: COHERE_API_KEY\n\n"
-        "Cohere /rerank is no longer wired in fitz-sage; use `rerank: onnx` "
-        "for the local cross-encoder reranker."
-    ),
-    "anthropic": (
-        "The 'anthropic' provider has been removed. "
-        "Use the 'endpoint' provider via OpenRouter or Anthropic's "
-        "OpenAI-compatible compatibility layer:\n\n"
-        "  synthesizer: endpoint/anthropic/claude-sonnet-4\n"
-        "  chat_base_url: https://openrouter.ai/api/v1\n"
-        "  chat_api_key_env: OPENROUTER_API_KEY"
-    ),
 }
 
 
@@ -142,19 +109,12 @@ def _validate_enterprise_config(auth_config: dict[str, Any]) -> None:
         )
 
 
-def _check_removed(provider: str) -> None:
-    """Raise an actionable migration error if ``provider`` was removed."""
-    if provider in _REMOVED_PROVIDERS:
-        raise ValueError(_REMOVED_PROVIDERS[provider])
-
-
 def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthProvider | None:
     """
     Resolve authentication for a provider.
 
     Args:
-        provider: Provider name. Must be one of ``ENV_VAR_MAP`` (or
-            ``enterprise``); removed names raise actionable errors.
+        provider: Provider name. Must be one of ``ENV_VAR_MAP``.
         config: Optional config dict. May contain an ``auth`` block.
 
     Returns:
@@ -191,8 +151,6 @@ def resolve_auth(provider: str, config: dict[str, Any] | None = None) -> AuthPro
             client_key_path: ...            # optional, mTLS
             client_key_password: ${KEY_PASSWORD}  # optional, mTLS
     """
-    _check_removed(provider)
-
     config = config or {}
     auth_config = config.get("auth", {})
     cert_path = config.get("cert_path") or auth_config.get("cert_path")
@@ -385,8 +343,6 @@ def create_chat_provider(
         A ChatProvider instance.
     """
     provider, _ = parse_provider_string(spec)
-    _check_removed(provider)
-
     if provider == "onnx":
         from fitz_sage.llm.providers.onnx_chat import DEFAULT_QWEN_MODEL_ALIAS, OnnxChat
 
@@ -461,8 +417,6 @@ def create_rerank_provider(
         return None
 
     provider, model = parse_provider_string(spec)
-    _check_removed(provider)
-
     if provider == "onnx":
         from fitz_sage.llm.providers.onnx_reranker import DEFAULT_MODEL_ID, OnnxReranker
 
@@ -488,8 +442,6 @@ def create_vision_provider(
         return None
 
     provider, _ = parse_provider_string(spec)
-    _check_removed(provider)
-
     if provider == "endpoint":
         from fitz_sage.llm.providers.openai_compat import OpenAICompatVision
 

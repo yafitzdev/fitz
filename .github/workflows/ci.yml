@@ -33,7 +33,7 @@ jobs:
 
       - name: Install linting tools
         run: |
-          pip install ruff black==24.10.0 isort
+          pip install ruff==0.14.11 black==24.10.0 isort==7.0.0 mypy==1.19.1 types-PyYAML
 
       - name: Check formatting with Black
         run: black --check --diff .
@@ -43,6 +43,9 @@ jobs:
 
       - name: Lint with Ruff
         run: ruff check .
+
+      - name: Type check package
+        run: mypy fitz_sage
 
   # ===========================================================================
   # Unit Tests (No External Dependencies)
@@ -77,7 +80,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # Minimal deps for unit tests (skip heavy ML deps like docling/torch).
-          pip install pydantic pyyaml httpx typing-extensions typer jinja2
+          pip install pydantic pyyaml httpx typing-extensions typer jinja2 fastapi
           # Lightweight document parser deps from the base install.
           pip install pypdfium2 python-docx python-pptx
           pip install pytest pytest-cov pytest-xdist psutil
@@ -117,7 +120,7 @@ jobs:
       - name: Install package
         run: |
           # Install minimal core dependencies (skip heavy ML deps)
-          pip install pydantic pyyaml httpx typing-extensions typer jinja2
+          pip install pydantic pyyaml httpx typing-extensions typer jinja2 fastapi
           # Auth resilience (lightweight, needed for M2M auth)
           pip install tenacity circuitbreaker
           pip install -e . --no-deps
@@ -126,7 +129,6 @@ jobs:
         run: |
           # Only check imports that don't require heavy ML dependencies
           python -c "from fitz_sage.core import Answer, Provenance, Query; print('Core imports OK')"
-          python -c "from fitz_sage.governance import create_governance, GovernanceDecision; print('Governance OK')"
           python -c "import fitz_sage; print('Package imports OK')"
 
       - name: Check CLI entry point exists
@@ -173,7 +175,7 @@ jobs:
       - name: Install dependencies
         run: |
           # Minimal deps for unit tests (skip heavy ML deps).
-          pip install pydantic pyyaml httpx typing-extensions typer jinja2
+          pip install pydantic pyyaml httpx typing-extensions typer jinja2 fastapi
           pip install pypdfium2 python-docx python-pptx
           pip install pytest pytest-cov pytest-xdist psutil
           pip install numpy
@@ -185,7 +187,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest tests/unit/ -m "not slow" --cov=fitz_sage --cov-report=xml --cov-report=term-missing -n 2
+          pytest tests/unit/ -m "not slow" --cov=fitz_sage --cov-report=xml --cov-report=term-missing --cov-fail-under=70 -n 2
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

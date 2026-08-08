@@ -1,16 +1,10 @@
 # fitz_sage/engines/fitz_krag/ingestion/enricher.py
-"""
-KRAG-specific enrichment — extract keywords and entities from symbols/sections.
-
-Reuses the LLM-based enrichment pattern from the shared enrichment bus but
-adapted for KRAG's data model (symbol dicts + section dicts instead of Chunks).
-"""
+"""Entity and temporal metadata enrichment for KRAG retrieval units."""
 
 from __future__ import annotations
 
 import json
 import re
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core.exceptions import EnrichmentError
@@ -41,14 +35,6 @@ _MAX_ENRICHMENT_TOKENS = 2048
 _RETRY_ENRICHMENT_TOKENS = 2048
 
 
-class EnrichmentStrategy(str, Enum):
-    """LLM enrichment payloads supported by the KRAG enrichment bus."""
-
-    KEYWORDS = "keywords"
-    ENTITIES = "entities"
-    FULL = "full"
-
-
 class KragEnricher:
     """Batch LLM enrichment for KRAG symbols and sections."""
 
@@ -56,29 +42,9 @@ class KragEnricher:
         self._chat = chat
         self._batch_size = batch_size
 
-    def enrich_symbols(self, symbol_dicts: list[dict[str, Any]]) -> None:
-        """Enrich symbol dicts in-place with keywords, entities, and temporal metadata."""
-        self._enrich_symbol_dicts(symbol_dicts, EnrichmentStrategy.FULL)
-
-    def enrich_symbol_keywords(self, symbol_dicts: list[dict[str, Any]]) -> None:
-        """Enrich symbol dicts in-place with retrieval keywords only."""
-        self._enrich_symbol_dicts(symbol_dicts, EnrichmentStrategy.KEYWORDS)
-
     def enrich_symbol_entities(self, symbol_dicts: list[dict[str, Any]]) -> None:
         """Enrich symbol dicts in-place with entities and temporal metadata."""
-        self._enrich_symbol_dicts(symbol_dicts, EnrichmentStrategy.ENTITIES)
-
-    def enrich_sections(self, section_dicts: list[dict[str, Any]]) -> None:
-        """Enrich section dicts in-place with keywords, entities, and temporal metadata."""
-        self._enrich_section_dicts(section_dicts, EnrichmentStrategy.FULL)
-
-    def enrich_section_keywords(self, section_dicts: list[dict[str, Any]]) -> None:
-        """Enrich section dicts in-place with retrieval keywords only."""
-        self._enrich_section_dicts(section_dicts, EnrichmentStrategy.KEYWORDS)
-
-    def enrich_section_entities(self, section_dicts: list[dict[str, Any]]) -> None:
-        """Enrich section dicts in-place with entities and temporal metadata."""
-        self._enrich_section_dicts(section_dicts, EnrichmentStrategy.ENTITIES)
+        self._enrich_symbol_dicts(symbol_dicts)
 
     def derive_section_entities(self, section_dicts: list[dict[str, Any]]) -> None:
         """Derive document-section entities without a second generation pass."""
@@ -95,9 +61,8 @@ class KragEnricher:
     def _enrich_symbol_dicts(
         self,
         symbol_dicts: list[dict[str, Any]],
-        strategy: EnrichmentStrategy,
     ) -> None:
-        """Apply one enrichment strategy to symbol dicts."""
+        """Apply entity enrichment to symbol dicts."""
         for i in range(0, len(symbol_dicts), self._batch_size):
             batch = symbol_dicts[i : i + self._batch_size]
             items = [
@@ -107,35 +72,15 @@ class KragEnricher:
                 }
                 for s in batch
             ]
-            enriched = self._enrich_batch(items, strategy)
+            enriched = self._enrich_batch(items)
             for j, enrichment in enumerate(enriched):
-                _apply_enrichment(batch[j], items[j], enrichment, strategy)
-
-    def _enrich_section_dicts(
-        self,
-        section_dicts: list[dict[str, Any]],
-        strategy: EnrichmentStrategy,
-    ) -> None:
-        """Apply one enrichment strategy to section dicts."""
-        for i in range(0, len(section_dicts), self._batch_size):
-            batch = section_dicts[i : i + self._batch_size]
-            items = [
-                {
-                    "name": s.get("title", ""),
-                    "content": (s.get("summary", "") or s.get("content", ""))[:500],
-                }
-                for s in batch
-            ]
-            enriched = self._enrich_batch(items, strategy)
-            for j, enrichment in enumerate(enriched):
-                _apply_enrichment(batch[j], items[j], enrichment, strategy)
+                _apply_enrichment(batch[j], items[j], enrichment)
 
     def _enrich_batch(
         self,
         items: list[dict[str, str]],
-        strategy: EnrichmentStrategy,
     ) -> list[dict[str, Any]]:
-        """Run a single LLM call to extract keywords + entities for a batch."""
+        """Run a single LLM call to extract entities for a batch."""
         parts = []
         for i, item in enumerate(items):
             parts.append(
@@ -150,7 +95,7 @@ class KragEnricher:
         messages = [
             {
                 "role": "system",
-                "content": _strategy_prompt(strategy, len(items)),
+                "content": _entity_prompt(len(items)),
             },
             {"role": "user", "content": prompt},
         ]
@@ -223,31 +168,23 @@ class KragEnricher:
         )
 
 
-def _deterministic_keywords(item: dict[str, str]) -> list[str]:
-    """Extract exact identifiers that should never depend on model recall."""
-    text = f"{item.get('name', '')}\n{item.get('content', '')}"
-    keywords: list[str] = []
-    seen: set[str] = set()
-    for pattern in _IDENTIFIER_PATTERNS:
-        for match in pattern.finditer(text):
-            value = match.group(0).strip(".,;:()[]{}")
-            if value and value not in seen:
-                seen.add(value)
-                keywords.append(value)
-    return keywords
-
-
 def _deterministic_entities(item: dict[str, str]) -> list[dict[str, str]]:
     """Extract identifier and named-phrase entities without model generation."""
     text = f"{item.get('name', '')}\n{item.get('content', '')}"
     entities: list[dict[str, str]] = []
     seen: set[str] = set()
+    identifier_spans: list[tuple[int, int]] = []
 
     for pattern in _IDENTIFIER_PATTERNS:
         for match in pattern.finditer(text):
+            if any(match.start() < end and match.end() > start for start, end in identifier_spans):
+                continue
             value = match.group(0).strip(".,;:()[]{}")
-            if _add_entity(entities, seen, value, "identifier") and len(entities) >= 8:
-                return entities
+            added = _add_entity(entities, seen, value, "identifier")
+            identifier_spans.append(match.span())
+            if added:
+                if len(entities) >= 8:
+                    return entities
 
     for match in _ENTITY_PHRASE_PATTERN.finditer(text):
         value = match.group(0).strip(".,;:()[]{}")
@@ -280,41 +217,17 @@ def _apply_enrichment(
     target: dict[str, Any],
     item: dict[str, str],
     enrichment: dict[str, Any],
-    strategy: EnrichmentStrategy,
 ) -> None:
     """Apply a parsed enrichment object to one symbol/section dict."""
-    if strategy in (EnrichmentStrategy.KEYWORDS, EnrichmentStrategy.FULL):
-        target["keywords"] = _merge_keywords(
-            enrichment.get("keywords", []),
-            _deterministic_keywords(item),
-        )
-
-    if strategy in (EnrichmentStrategy.ENTITIES, EnrichmentStrategy.FULL):
-        target["entities"] = enrichment.get("entities", [])
-        temporal = enrichment.get("temporal")
-        if temporal and isinstance(temporal, dict):
-            meta = target.get("metadata") or {}
-            meta["temporal"] = temporal
-            target["metadata"] = meta
-
-
-def _merge_keywords(model_keywords: Any, deterministic: list[str]) -> list[str]:
-    """Merge model and deterministic keywords while preserving first occurrence."""
-    merged: list[str] = []
-    seen: set[str] = set()
-    if isinstance(model_keywords, list):
-        for keyword in model_keywords:
-            if not isinstance(keyword, str):
-                continue
-            value = keyword.strip()
-            if value and value not in seen:
-                seen.add(value)
-                merged.append(value)
-    for keyword in deterministic:
-        if keyword not in seen:
-            seen.add(keyword)
-            merged.append(keyword)
-    return merged
+    target["entities"] = _merge_entities(
+        enrichment.get("entities", []),
+        _deterministic_entities(item),
+    )
+    temporal = enrichment.get("temporal")
+    if temporal and isinstance(temporal, dict):
+        meta = target.get("metadata") or {}
+        meta["temporal"] = temporal
+        target["metadata"] = meta
 
 
 def _merge_entities(
@@ -349,56 +262,25 @@ def _enrichment_max_tokens(item_count: int) -> int:
     )
 
 
-def _strategy_prompt(strategy: EnrichmentStrategy, item_count: int) -> str:
-    """Build the system prompt for one enrichment strategy."""
+def _entity_prompt(item_count: int) -> str:
+    """Build the entity-extraction system prompt."""
     common = (
         f"The user message contains exactly {item_count} item block(s). "
         "Each <item> block is one item, even when its content contains "
         "multiple lines, bullets, sentences, or questions.\n"
     )
-    if strategy == EnrichmentStrategy.KEYWORDS:
-        return common + (
-            "Extract retrieval keywords from each item.\n"
-            "Keywords: exact-match identifiers, technical terms, IDs, abbreviations, "
-            "and short semantic aliases that a user may search for.\n"
-            "Use only values grounded in the item text. Return empty arrays if none found.\n\n"
-            "Limits per object: at most 8 keywords. Never repeat a keyword. "
-            "If uncertain, omit it.\n\n"
-            f"Return ONLY a valid JSON array with exactly {item_count} object(s), "
-            "one object per <item> block. Do not return markdown fences or prose:\n"
-            '[{"keywords": ["<exact term>"]}, ...]'
-        )
-    if strategy == EnrichmentStrategy.ENTITIES:
-        return common + (
-            "Extract named entities and temporal references from each item.\n"
-            "Entities: named entities with types "
-            '(shape: {"name": "<entity>", "type": "<type>"}).\n'
-            "Temporal: dates, version numbers, and time references found in the text "
-            '(shape: {"dates": [], "versions": [], "refs": []}). '
-            "Use only values found in the item text. Return empty arrays if none found.\n\n"
-            "Limits per object: at most 6 entities and at most 5 temporal values per "
-            "temporal array. Never repeat an entity name. If uncertain, omit it.\n\n"
-            f"Return ONLY a valid JSON array with exactly {item_count} object(s), "
-            "one object per <item> block. Do not return markdown fences or prose:\n"
-            '[{"entities": [{"name": "<entity>", "type": "<type>"}], '
-            '"temporal": {"dates": [], "versions": [], "refs": []}}, ...]'
-        )
     return common + (
-        "Extract keywords, entities, and temporal references from each item.\n"
-        "Keywords: exact-match identifiers (function names, class names, "
-        "technical terms, IDs, abbreviations).\n"
+        "Extract named entities and temporal references from each item.\n"
         "Entities: named entities with types "
         '(shape: {"name": "<entity>", "type": "<type>"}).\n'
         "Temporal: dates, version numbers, and time references found in the text "
         '(shape: {"dates": [], "versions": [], "refs": []}). '
         "Use only values found in the item text. Return empty arrays if none found.\n\n"
-        "Limits per object: at most 8 keywords, at most 6 entities, at most "
-        "5 temporal values per temporal array. Never repeat a keyword or "
-        "entity name. If uncertain, omit it.\n\n"
+        "Limits per object: at most 6 entities and at most 5 temporal values per "
+        "temporal array. Never repeat an entity name. If uncertain, omit it.\n\n"
         f"Return ONLY a valid JSON array with exactly {item_count} object(s), "
         "one object per <item> block. Do not return markdown fences or prose:\n"
-        '[{"keywords": ["<exact term>"], '
-        '"entities": [{"name": "<entity>", "type": "<type>"}], '
+        '[{"entities": [{"name": "<entity>", "type": "<type>"}], '
         '"temporal": {"dates": [], "versions": [], "refs": []}}, ...]'
     )
 
@@ -417,13 +299,12 @@ def _looks_like_enrichment(value: Any) -> bool:
     """Return whether a parsed JSON object has the enrichment shape."""
     if not isinstance(value, dict):
         return False
-    return any(key in value for key in ("keywords", "entities", "temporal"))
+    return any(key in value for key in ("entities", "temporal"))
 
 
 def _normalize_enrichment(value: dict[str, Any]) -> dict[str, Any]:
     """Normalize model enrichment into bounded keyword/entity/temporal fields."""
     return {
-        "keywords": _coerce_string_list(value.get("keywords"), limit=8),
         "entities": _coerce_entities(value.get("entities"), limit=6),
         "temporal": _coerce_temporal(value.get("temporal")),
     }
@@ -431,9 +312,6 @@ def _normalize_enrichment(value: dict[str, Any]) -> dict[str, Any]:
 
 def _salvage_single_enrichment(response: str) -> dict[str, Any] | None:
     """Recover usable single-item enrichment from a truncated JSON prefix."""
-    keywords = _extract_json_value_after_key(response, "keywords", "[", "]")
-    if not isinstance(keywords, list):
-        keywords = _extract_complete_strings_from_array(response, "keywords")
     entities = _extract_json_value_after_key(response, "entities", "[", "]")
     if not isinstance(entities, list):
         entities = _extract_complete_entity_objects(response)
@@ -441,55 +319,13 @@ def _salvage_single_enrichment(response: str) -> dict[str, Any] | None:
 
     normalized = _normalize_enrichment(
         {
-            "keywords": keywords,
             "entities": entities,
             "temporal": temporal,
         }
     )
-    if normalized["keywords"] or normalized["entities"]:
+    if normalized["entities"] or any(normalized["temporal"].values()):
         return normalized
     return None
-
-
-def _extract_complete_strings_from_array(text: str, key: str) -> list[str]:
-    """Extract complete JSON strings from a truncated string array."""
-    key_index = text.find(f'"{key}"')
-    if key_index < 0:
-        return []
-    array_start = text.find("[", key_index)
-    if array_start < 0:
-        return []
-
-    values: list[str] = []
-    index = array_start + 1
-    while index < len(text):
-        if text[index] == "]":
-            break
-        if text[index] != '"':
-            index += 1
-            continue
-
-        end = index + 1
-        escaped = False
-        while end < len(text):
-            char = text[end]
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                break
-            end += 1
-        if end >= len(text) or text[end] != '"':
-            break
-        try:
-            value = json.loads(text[index : end + 1])
-        except json.JSONDecodeError:
-            break
-        if isinstance(value, str):
-            values.append(value)
-        index = end + 1
-    return values
 
 
 def _extract_json_value_after_key(

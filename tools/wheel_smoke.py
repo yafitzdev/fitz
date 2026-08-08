@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import venv
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,6 +46,7 @@ def run(
     cwd: Path,
     env: dict[str, str] | None = None,
     capture: bool = False,
+    echo_output: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run a subprocess with consistent logging and failure handling."""
     print(f"$ {' '.join(cmd)}", flush=True)
@@ -59,12 +61,14 @@ def run(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        if result.stdout:
+        if result.stdout and echo_output:
             print_console_safe(result.stdout)
     else:
         result = subprocess.run(cmd, cwd=cwd, env=env, text=True)
 
     if result.returncode != 0:
+        if result.stdout and not echo_output:
+            print_console_safe(result.stdout)
         raise RuntimeError(f"Command failed with exit {result.returncode}: {' '.join(cmd)}")
     return result
 
@@ -99,6 +103,9 @@ def newest_wheel(dist_dir: Path) -> Path | None:
 def build_wheel(out_dir: Path) -> Path:
     """Build a wheel into ``out_dir`` and return its path."""
     root = project_root()
+    for generated in (root / "build", root / "fitz_sage.egg-info"):
+        if generated.exists():
+            shutil.rmtree(generated)
     out_dir.mkdir(parents=True, exist_ok=True)
     run(
         [sys.executable, "-m", "build", "--wheel", "--outdir", str(out_dir)],
@@ -108,6 +115,46 @@ def build_wheel(out_dir: Path) -> Path:
     if wheel is None:
         raise RuntimeError(f"Build completed but no wheel was found in {out_dir}")
     return wheel
+
+
+def validate_wheel_contents(wheel: Path) -> None:
+    """Reject stale files from subsystems removed from the source tree."""
+    forbidden = (
+        "fitz_sage/cli/context.py",
+        "fitz_sage/cli/commands/query.py",
+        "fitz_sage/cli/utils.py",
+        "fitz_sage/cli/ui/engine_selection.py",
+        "fitz_sage/cli/ui/progress.py",
+        "fitz_sage/core/chunk.py",
+        "fitz_sage/core/conflicts.py",
+        "fitz_sage/core/constants.py",
+        "fitz_sage/core/knowledge.py",
+        "fitz_sage/core/math.py",
+        "fitz_sage/core/registry.py",
+        "fitz_sage/core/utils.py",
+        "fitz_sage/core/paths/cache.py",
+        "fitz_sage/core/paths/ingestion.py",
+        "fitz_sage/engines/fitz_krag/governance_cutoff.py",
+        "fitz_sage/engines/fitz_krag/retrieval/multihop.py",
+        "fitz_sage/governance/",
+        "fitz_sage/ingestion/chunking/",
+        "fitz_sage/ingestion/detection.py",
+        "fitz_sage/ingestion/exceptions/",
+        "fitz_sage/prompts/entities.py",
+        "fitz_sage/tabular/direct_query.py",
+        "fitz_sage/tabular/extractor.py",
+        "fitz_sage/tabular/models.py",
+        "fitz_sage/tabular/query.py",
+        "fitz_sage/tabular/registry.py",
+        "fitz_sage/tabular/sql_gen.py",
+    )
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+    stale = [name for name in names if any(name.startswith(prefix) for prefix in forbidden)]
+    if stale:
+        raise RuntimeError(f"Wheel contains removed modules: {', '.join(stale)}")
+    if "fitz_sage/py.typed" not in names:
+        raise RuntimeError("Wheel does not contain fitz_sage/py.typed")
 
 
 def resolve_wheel(args: argparse.Namespace, temp_root: Path) -> Path:
@@ -155,6 +202,14 @@ def smoke_import(paths: SmokePaths) -> None:
     env = isolated_env(paths.root)
     run([str(paths.fitz), "--help"], cwd=smoke_cwd, env=env)
     code = (
+        "from importlib.resources import files; "
+        "assert files('fitz_sage').joinpath('py.typed').is_file(); "
+        "from fitz_sage.llm.providers.onnx_pyrrho import DEFAULT_MODEL_REVISION; "
+        "assert len(DEFAULT_MODEL_REVISION) == 40; "
+        "import fitz_sage; "
+        "assert hasattr(fitz_sage, 'answer') and not hasattr(fitz_sage, 'query'); "
+        "from fitz_sage.services import FitzService; "
+        "assert hasattr(FitzService, 'answer') and not hasattr(FitzService, 'query'); "
         "from fitz_sage.runtime import create_engine; "
         "engine = create_engine('fitz_krag'); "
         "print(type(engine).__name__)"
@@ -163,9 +218,9 @@ def smoke_import(paths: SmokePaths) -> None:
 
 
 def smoke_retrieve(paths: SmokePaths) -> None:
-    """Run a first-run retrieve command from the installed wheel."""
-    smoke_cwd = paths.root / "retrieve-smoke"
-    source_dir = smoke_cwd / "docs"
+    """Run representative folder retrievals from the installed wheel."""
+    smoke_cwd = paths.root / "company-folder-smoke"
+    source_dir = smoke_cwd / "company_docs"
     source_dir.mkdir(parents=True)
     (source_dir / "release_notes.md").write_text(
         "\n".join(
@@ -180,29 +235,169 @@ def smoke_retrieve(paths: SmokePaths) -> None:
         ),
         encoding="utf-8",
     )
+    (source_dir / "long_validation.txt").write_text(
+        "\n".join(
+            [
+                "Condensed validation report for batch OMEGA.",
+                *[
+                    (
+                        f"Frame {index:03d} contains routine observations with no final "
+                        "verdict or release gate."
+                    )
+                    for index in range(1, 46)
+                ],
+                (
+                    "RUN_WHEEL_77 final verdict is FAIL with ERR_WHEEL_LATE; "
+                    "the release gate is RED."
+                ),
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (source_dir / "glossary.md").write_text(
+        "# Glossary\n\nNRT means Network Recovery Task in this corpus.\n",
+        encoding="utf-8",
+    )
+    (source_dir / "ownership.md").write_text(
+        "\n".join(
+            [
+                "# Network Recovery Task",
+                "",
+                "Network Recovery Task is owned by Orion Systems.",
+                "Its escalation channel is NRT-OPS.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (source_dir / "edge_records.csv").write_text(
+        "\n".join(
+            [
+                "record_id,station,status,duration_ms,score,owner,release",
+                "EDGE-206,delta,fail,390,31,Rhea,REL-2026.04",
+                "EDGE-207,delta,pass,210,89,Ivo,REL-2026.04",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     env = isolated_env(paths.root)
+    first_output = retrieve_output(
+        paths,
+        cwd=smoke_cwd,
+        env=env,
+        source=source_dir,
+        collection="company_docs",
+        query="Which test case validates checkout regression?",
+    )
+    assert_output(first_output, expected=("TC-4812",))
+
+    long_output = retrieve_output(
+        paths,
+        cwd=smoke_cwd,
+        env=env,
+        source=source_dir,
+        collection="company_docs",
+        query="What was the final verdict for RUN_WHEEL_77?",
+    )
+    assert_output(
+        long_output,
+        expected=("RUN_WHEEL_77", "ERR_WHEEL_LATE", "release gate is RED"),
+    )
+
+    record_output = retrieve_output(
+        paths,
+        cwd=smoke_cwd,
+        env=env,
+        source=source_dir,
+        collection="company_docs",
+        query="Who owns the failed delta edge record?",
+    )
+    assert_output(record_output, expected=("EDGE-206", "Rhea"))
+
+    bridge_output = retrieve_output(
+        paths,
+        cwd=smoke_cwd,
+        env=env,
+        source=source_dir,
+        collection="company_docs",
+        query="Who owns NRT?",
+    )
+    assert_output(
+        bridge_output,
+        expected=("NRT means Network Recovery Task", "Orion Systems", "NRT-OPS"),
+    )
+
+    isolated_cwd = paths.root / "isolated-folder-smoke"
+    isolated_source = isolated_cwd / "policy_docs"
+    isolated_source.mkdir(parents=True)
+    (isolated_source / "retention.md").write_text(
+        "# Project Lantern Retention\n\n"
+        "Project Lantern retains audit records for 27 days under policy RET-27.\n",
+        encoding="utf-8",
+    )
+    isolated_output = retrieve_output(
+        paths,
+        cwd=isolated_cwd,
+        env=env,
+        source=isolated_source,
+        collection="policy_docs",
+        query="How long does Project Lantern retain audit records?",
+    )
+    assert_output(
+        isolated_output,
+        expected=("Project Lantern", "27 days", "RET-27"),
+        forbidden=("TC-4812", "RUN_WHEEL_77", "EDGE-206"),
+    )
+
+
+def retrieve_output(
+    paths: SmokePaths,
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    source: Path,
+    collection: str,
+    query: str,
+) -> str:
+    """Run one installed CLI retrieval and return its console output."""
     result = run(
         [
             str(paths.fitz),
             "retrieve",
-            "Which test case validates checkout regression?",
+            query,
             "--source",
-            str(source_dir),
+            str(source),
             "--collection",
-            "wheel_smoke",
+            collection,
             "--top-k",
-            "5",
+            "8",
+            "--format",
+            "json",
         ],
-        cwd=smoke_cwd,
+        cwd=cwd,
         env=env,
         capture=True,
+        echo_output=False,
     )
-    output = result.stdout or ""
-    if "TC-4812" not in output:
-        raise RuntimeError("Wheel retrieve smoke did not return TC-4812 evidence")
-    if "Preparing managed Qwen" not in output:
-        raise RuntimeError("Wheel retrieve smoke did not preflight managed Qwen")
+    return result.stdout or ""
+
+
+def assert_output(
+    output: str,
+    *,
+    expected: tuple[str, ...],
+    forbidden: tuple[str, ...] = (),
+) -> None:
+    """Validate evidence text emitted by one installed CLI retrieval."""
+    missing = [value for value in expected if value not in output]
+    unexpected = [value for value in forbidden if value in output]
+    if missing:
+        raise RuntimeError(f"Wheel retrieve smoke missed evidence: {', '.join(missing)}")
+    if unexpected:
+        raise RuntimeError(f"Wheel retrieve smoke leaked another corpus: {', '.join(unexpected)}")
 
 
 def isolated_env(temp_root: Path) -> dict[str, str]:
@@ -250,6 +445,7 @@ def main() -> int:
     try:
         wheel = resolve_wheel(args, temp_root)
         print(f"Wheel under test: {wheel}", flush=True)
+        validate_wheel_contents(wheel)
         paths = create_smoke_env(temp_root)
         install_wheel(paths, wheel)
         smoke_import(paths)

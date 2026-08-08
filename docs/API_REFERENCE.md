@@ -6,7 +6,7 @@ Core data models and protocols for fitz-sage.
 
 ### EvidencePack
 
-The retrieval-first response contract. `fitz query`, `fitz retrieve`, and
+The retrieval-first response contract. `fitz retrieve` and
 `fitz_sage.evidence()` return this shape.
 
 For the product-level contract, Pyrrho metadata, and indexing-status examples,
@@ -45,34 +45,28 @@ Use `pack.to_dict()` or `pack.to_json()` when returning evidence from an API.
 
 ---
 
-### Chunk
+### RetrievalRun
 
-A generic unit of ingested content retained for compatibility with custom
-engines and older plugin surfaces. The production KRAG engine uses typed
-retrieval units (`Symbol`, `Section`, `TableSpec`) and exposes them through
-`EvidenceItem`, not through public chunk objects.
+The versioned execution record returned by `fitz_sage.trace()` and
+`RetrievalEngine.trace(Query)`.
 
-**Definition:**
+The public record groups stable contracts for query planning, strategy calls,
+candidate stages, frozen compiled evidence, exact Pyrrho input and output,
+selected `EvidencePack`, and environment fingerprints. It supports:
+
 ```python
-@dataclass
-class Chunk:
-    id: str                   # Chunk ID
-    doc_id: str              # Parent document ID
-    content: str             # Chunk text content
-    chunk_index: int         # Index within document
-    metadata: dict[str, Any] # Optional metadata
+run.to_dict(include_content=False)
+run.to_json(include_content=False)
+run.write(path, include_content=False)
+RetrievalRun.from_dict(payload)
+RetrievalRun.from_json(payload)
+RetrievalRun.read(path)
+run.explain()
 ```
 
-**Usage:**
-```python
-chunk = Chunk(
-    id="chunk_001",
-    doc_id="doc_123",
-    content="Quantum computing uses qubits...",
-    chunk_index=0,
-    metadata={"topic": "physics"}
-)
-```
+Serialization is source-content-redacted by default. `include_content=True` is
+required for `replay_pyrrho()`. See
+[Retrieval Execution Records](RETRIEVAL_RUNS.md).
 
 ---
 
@@ -95,18 +89,19 @@ Simple query:
 query = Query(text="What is quantum computing?")
 ```
 
-Query with engine hints:
+Query with KRAG hints:
 ```python
 query = Query(
     text="Summarize the paper",
-    metadata={"temperature": 0.3, "model": "claude-3-opus"}
+    metadata={"top_k": 8}
 )
 ```
 
 **Metadata Usage:**
 
 The `metadata` field allows passing engine-specific parameters without breaking the paradigm-agnostic interface:
-- **Fitz KRAG** reads: `{"conversation_context": ...}` (for query rewriting / pronoun resolution)
+- **Fitz KRAG** reads `top_k` and `conversation_context` (the latter is used
+  by configured query intelligence for conversational resolution).
 - Custom engines can define their own metadata keys
 
 Engines should ignore unknown metadata keys gracefully.
@@ -221,6 +216,7 @@ class KnowledgeEngine(Protocol):
 ```python
 engine = FitzKragEngine(config)
 query = Query(text="What is quantum computing?")
+# FitzKragEngine.answer() requires a configured synthesizer.
 answer = engine.answer(query)
 print(answer.text)
 ```
@@ -228,7 +224,7 @@ print(answer.text)
 **Implementation Notes:**
 
 How the engine generates the answer is entirely up to the implementation:
-- **Fitz KRAG**: Uses retrieval + generation
+- **Fitz KRAG**: Uses retrieval plus optional configured generation
 - Custom engines might use completely different approaches
 
 **Error Handling:**
@@ -254,12 +250,18 @@ retrieval-first evidence.
 ```python
 class RetrievalEngine(KnowledgeEngine, Protocol):
     def load(self, collection: str) -> None: ...
-    def point(self, source: Path, collection: str | None = None) -> Any: ...
-    def wait_for_query_surface(self) -> None: ...
-    def wait_for_indexing(self) -> None: ...
+    def point(
+        self,
+        source: Path,
+        collection: str | None = None,
+        *,
+        start_worker: bool = True,
+    ) -> Any: ...
+    def wait_for_enrichment(self) -> None: ...
     def indexing_status(self) -> dict: ...
     def retrieve(self, query: Query) -> list: ...
     def evidence(self, query: Query) -> EvidencePack: ...
+    def trace(self, query: Query) -> RetrievalRun: ...
 ```
 
 **Usage:**
@@ -270,30 +272,8 @@ from fitz_sage import Query, create_engine
 engine = create_engine("fitz_krag")
 engine.load("docs")
 engine.point(Path("./docs"), collection="docs")
-engine.wait_for_query_surface()
 
+# point() has already completed the searchable source index.
 pack = engine.evidence(Query(text="Which documents are relevant?"))
+run = engine.trace(Query(text="Why were these documents selected?"))
 ```
-
----
-
-### ChunkLike
-
-Protocol for duck-typed chunk handling without requiring the concrete `Chunk` class.
-
-**When to use:**
-- You want to accept chunk-like objects from external sources
-- You're building a plugin that needs flexibility
-- You want to avoid coupling to the concrete Chunk class
-
-**Properties:**
-```python
-class ChunkLike(Protocol):
-    id: str
-    doc_id: str
-    chunk_index: int
-    content: str
-    metadata: dict[str, Any] | None
-```
-
-**Note:** In most cases, using the concrete `Chunk` class is preferred. Only use `ChunkLike` when you need explicit duck-typing.

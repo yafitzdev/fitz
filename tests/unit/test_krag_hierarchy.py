@@ -2,15 +2,13 @@
 """
 Unit tests for L1/L2 hierarchy generation in the KRAG ingestion core.
 
-These exercise the *live* ingestion path: the background worker schedules
-``core.enrich_file`` (per file) and ``core.finalize`` (corpus). This is the
+These exercise the live enrichment path: the background worker schedules
+``core.build_hierarchy_file`` and ``core.build_corpus_hierarchy``. This is the
 path ``engine.point()`` runs in production — see test_progressive_worker.py
 for the worker → core scheduling, and these tests for what each op produces.
 
-Tests that:
-- enrich_file adds an L1 hierarchy_summary to each section's metadata
-- finalize generates and stores the L2 corpus summary as a section
-- LLM errors fail gracefully
+Tests that hierarchy output is persisted and model failures are surfaced to
+the worker for separate enrichment-state reporting.
 
 Code symbols deliberately have no hierarchy stage — they already carry
 machine-readable structure (imports, AST), so symbol-level summaries are
@@ -43,20 +41,6 @@ def _make_core(
     )
 
 
-def _fake_enricher() -> MagicMock:
-    """Enricher stub that stamps keywords/entities onto dicts in place (no LLM)."""
-    enricher = MagicMock()
-
-    def _stamp(dicts):
-        for d in dicts:
-            d["keywords"] = ["alpha"]
-            d["entities"] = []
-
-    enricher.enrich_symbols.side_effect = _stamp
-    enricher.enrich_sections.side_effect = _stamp
-    return enricher
-
-
 def _section_dicts(count: int = 3, file_id: str = "file-1") -> list[dict]:
     """Section dicts shaped like SectionStore.get_by_file output."""
     return [
@@ -67,7 +51,6 @@ def _section_dicts(count: int = 3, file_id: str = "file-1") -> list[dict]:
             "level": 1,
             "content": f"Content of section {i}",
             "summary": f"Summary of section {i}",
-            "keywords": [],
             "entities": [],
             "metadata": {},
         }
@@ -88,33 +71,30 @@ class TestL1SectionHierarchy:
         chat = MagicMock()
         chat.chat.return_value = "Document covers setup instructions."
         core = _make_core(chat=chat)
-        core._enricher = _fake_enricher()
         core._section_store = MagicMock()
         core._section_store.get_by_file.return_value = _section_dicts(3)
 
-        core.enrich_file("file-1", ".md")
+        core.build_hierarchy_file("file-1", ".md")
 
         # Enrichment persisted once, carrying the L1 summary in metadata
-        core._section_store.update_enrichment_by_file.assert_called_once()
-        persisted = core._section_store.update_enrichment_by_file.call_args[0][1]
+        core._section_store.update_entities_by_file.assert_called_once()
+        persisted = core._section_store.update_entities_by_file.call_args[0][1]
         for sec in persisted:
             assert sec["metadata"]["hierarchy_summary"] == "Document covers setup instructions."
 
-    def test_l1_failure_does_not_crash(self):
-        """An LLM failure during L1 generation is caught; enrichment still persists."""
+    def test_l1_failure_is_surfaced(self):
+        """The worker must see L1 failures so it can report enrichment failure."""
+        import pytest
+
         chat = MagicMock()
         chat.chat.side_effect = RuntimeError("Timeout")
         core = _make_core(chat=chat)
-        core._enricher = _fake_enricher()
         core._section_store = MagicMock()
         core._section_store.get_by_file.return_value = _section_dicts(3)
 
-        # Should not raise
-        core.enrich_file("file-1", ".md")
-
-        persisted = core._section_store.update_enrichment_by_file.call_args[0][1]
-        for sec in persisted:
-            assert "hierarchy_summary" not in sec["metadata"]
+        with pytest.raises(RuntimeError, match="Timeout"):
+            core.build_hierarchy_file("file-1", ".md")
+        core._section_store.update_entities_by_file.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +119,7 @@ class TestL2CorpusSummary:
         core._raw_store = MagicMock()
         core._import_store = MagicMock()
 
-        core.finalize()
+        core.build_corpus_hierarchy()
 
         # L2 stored under a synthetic raw file + a retrievable corpus section
         core._raw_store.upsert.assert_called_once()
@@ -161,14 +141,16 @@ class TestL2CorpusSummary:
         core._raw_store = MagicMock()
         core._import_store = MagicMock()
 
-        core.finalize()
+        core.build_corpus_hierarchy()
 
         core._section_store.upsert_batch.assert_not_called()
         core._section_store.delete_by_file.assert_called_once_with("__krag_corpus__")
         core._raw_store.delete.assert_called_once_with("__krag_corpus__")
 
-    def test_l2_failure_does_not_crash(self):
-        """An LLM failure during L2 generation is caught; nothing is stored."""
+    def test_l2_failure_is_surfaced(self):
+        """Collection failure is surfaced for persisted finalization status."""
+        import pytest
+
         chat = MagicMock()
         chat.chat.side_effect = RuntimeError("Timeout")
         core = _make_core(chat=chat)
@@ -177,8 +159,8 @@ class TestL2CorpusSummary:
         core._raw_store = MagicMock()
         core._import_store = MagicMock()
 
-        # Should not raise
-        core.finalize()
+        with pytest.raises(RuntimeError, match="Timeout"):
+            core.build_corpus_hierarchy()
 
         core._section_store.upsert_batch.assert_not_called()
         core._section_store.delete_by_file.assert_called_once_with("__krag_corpus__")

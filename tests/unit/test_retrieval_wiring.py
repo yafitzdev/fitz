@@ -1,15 +1,12 @@
 # tests/unit/test_retrieval_wiring.py
 """
-Tests for retrieval pipeline wiring: router dispatch logic, keyword enrichment
-boost, and freshness boost in section/code strategies.
+Tests for retrieval pipeline wiring and router dispatch.
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-
-import pytest
 
 from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouter
 from fitz_sage.engines.fitz_krag.retrieval.strategies.code_search import CodeSearchStrategy
@@ -110,6 +107,18 @@ class TestRouterRewriteVariations:
         # 3 total calls: original + 2 variations
         assert code_strategy.retrieve.call_count == 3
 
+    def test_router_runs_original_and_rewritten_queries_once_each(self):
+        """A rewritten primary query must not duplicate itself or hide the original."""
+        code_strategy = MagicMock()
+        code_strategy.retrieve = MagicMock(return_value=[])
+        router = _make_router(code_strategy=code_strategy)
+        rewrite_result = SimpleNamespace(all_query_variations=["original", "rewritten"])
+
+        router.retrieve("rewritten", rewrite_result=rewrite_result)
+
+        code_calls = [call.args[0] for call in code_strategy.retrieve.call_args_list]
+        assert code_calls == ["rewritten", "original"]
+
 
 class TestRouterUsesDetectionComparisonQueries:
     """Test 4: Router uses comparison_queries from RetrievalProfile."""
@@ -188,7 +197,9 @@ class TestRouterPassesDetectionToStrategies:
 
 
 def _make_section_strategy(
-    section_store=None, config=None, raw_store=None
+    section_store=None,
+    config=None,
+    raw_store=None,
 ) -> SectionSearchStrategy:
     """Build a SectionSearchStrategy with mocked dependencies."""
     store = section_store or MagicMock()
@@ -196,123 +207,23 @@ def _make_section_strategy(
     return SectionSearchStrategy(store, raw_store or MagicMock(), cfg)
 
 
-class TestSectionKeywordBoostIncreasesScore:
-    """Test 7: keyword enrichment boost increases combined_score."""
-
-    def test_section_keyword_boost_increases_score(self):
-        section_store = MagicMock()
-        # BM25 returns one result
-        section_store.search_bm25.return_value = [
-            {
-                "id": "s1",
-                "raw_file_id": "f1",
-                "title": "Setup",
-                "summary": "setup guide",
-                "level": 1,
-                "bm25_score": 0.5,
-            }
-        ]
-        # Semantic returns empty
-        # Keyword enrichment returns a hit for s1
-        section_store.search_by_keywords.return_value = [{"id": "s1"}]
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
-        strategy = _make_section_strategy(section_store=section_store)
-        results = strategy.retrieve("setup guide test", limit=5)
-
-        # Score should include the 0.1 keyword boost on top of BM25 contribution
-        assert len(results) == 1
-        # RRF with k=60: BM25 only at rank 0 → 1/(60+0) = 1/60 ≈ 0.0167
-        # With keyword boost: 1/60 + 0.1 ≈ 0.1167
-        assert results[0].score == pytest.approx(1 / 60 + 0.1, abs=0.01)
-
-
 # ===========================================================================
 # Code strategy tests
 # ===========================================================================
 
 
-def _make_code_strategy(symbol_store=None, config=None, raw_store=None) -> CodeSearchStrategy:
+def _make_code_strategy(symbol_store=None, config=None) -> CodeSearchStrategy:
     """Build a CodeSearchStrategy with mocked dependencies."""
     store = symbol_store or MagicMock()
     cfg = config or _make_config()
-    strategy = CodeSearchStrategy(store, cfg)
-    strategy._raw_store = raw_store
-    return strategy
+    return CodeSearchStrategy(store, cfg)
 
 
-class TestCodeKeywordBoostIncreasesScore:
-    """Test 8: keyword enrichment boost increases combined_score for code."""
+class TestSectionTemporalQuery:
+    """Temporal wording must not reinterpret ingestion order as document time."""
 
-    def test_code_keyword_boost_increases_score(self):
-        symbol_store = MagicMock()
-        # Keyword search by name returns one result
-        symbol_store.search_by_name.return_value = [
-            {
-                "id": "sym1",
-                "raw_file_id": "f1",
-                "name": "parse_config",
-                "qualified_name": "mod.parse_config",
-                "kind": "function",
-                "start_line": 10,
-                "end_line": 30,
-                "summary": "parses config",
-            }
-        ]
-        # BM25 returns empty
-        symbol_store.search_bm25.return_value = []
-        # Semantic returns empty
-        # Keyword enrichment returns a hit
-        symbol_store.search_by_keywords.return_value = [{"id": "sym1"}]
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
-        strategy = _make_code_strategy(symbol_store=symbol_store)
-        results = strategy.retrieve("parse config file", limit=5)
-
-        assert len(results) == 1
-        # Keyword rank score alone: keyword_weight * (1/(0+1)) = 0.4 * 1.0 = 0.4
-        # With keyword enrichment boost: 0.4 + 0.1 = 0.5
-        assert results[0].score == pytest.approx(0.5, abs=0.01)
-
-
-class TestKeywordBoostSkipsShortTerms:
-    """Test 9: query with only short words (<3 chars) gets no keyword boost."""
-
-    def test_keyword_boost_skips_short_terms(self):
+    def test_temporal_query_preserves_bm25_order(self):
         section_store = MagicMock()
-        section_store.search_bm25.return_value = [
-            {
-                "id": "s1",
-                "raw_file_id": "f1",
-                "title": "A",
-                "summary": "a",
-                "level": 1,
-                "bm25_score": 0.5,
-            }
-        ]
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
-        strategy = _make_section_strategy(section_store=section_store)
-        # All words are shorter than 3 chars
-        results = strategy.retrieve("is a do", limit=5)
-
-        # search_by_keywords should NOT be called because all terms are < 3 chars
-        section_store.search_by_keywords.assert_not_called()
-        assert len(results) == 1
-
-
-class TestSectionFreshnessBoostWithRecency:
-    """Test 10: freshness boost adds score to files with recent timestamps."""
-
-    def test_section_freshness_boost_with_recency(self):
-        section_store = MagicMock()
-        # Return results from 4 different files so top_quarter / top_half logic works
         section_store.search_bm25.return_value = [
             {
                 "id": f"s{i}",
@@ -324,99 +235,12 @@ class TestSectionFreshnessBoostWithRecency:
             }
             for i in range(4)
         ]
-        section_store.search_by_keywords.return_value = []
+        strategy = _make_section_strategy(section_store=section_store)
 
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
-        raw_store = MagicMock()
-        # f0 is most recent, f3 is oldest
-        raw_store.get_updated_timestamps.return_value = {
-            "f0": "2025-05-01",
-            "f1": "2025-04-01",
-            "f2": "2025-03-01",
-            "f3": "2025-02-01",
-        }
-
-        strategy = _make_section_strategy(
-            section_store=section_store,
-            raw_store=raw_store,
+        results = strategy.retrieve(
+            "recent changes",
+            limit=10,
+            detection=SimpleNamespace(has_temporal_intent=True),
         )
 
-        detection = SimpleNamespace(boost_recency=True)
-        results = strategy.retrieve("recent changes", limit=10, detection=detection)
-
-        # With 4 files: top_quarter = f0, top_half = f0,f1
-        # f0 gets +0.1, f1 gets +0.05, f2 and f3 get nothing
-        scores = {r.source_id: r.score for r in results}
-        # RRF with k=60: BM25 only at ranks 0,1,2,3 → 1/(60+rank)
-        assert scores["f0"] > scores["f2"]
-        assert scores["f0"] > scores["f3"]
-        assert scores["f0"] == pytest.approx(1 / 60 * 1.5, abs=0.01)
-        assert scores["f1"] == pytest.approx(1 / 61 * 1.2, abs=0.01)
-        assert scores["f2"] == pytest.approx(1 / 62, abs=0.001)
-
-
-class TestFreshnessNoBoostWithoutFlag:
-    """Test 11: detection.boost_recency=False means no raw_store call."""
-
-    def test_freshness_no_boost_without_flag(self):
-        section_store = MagicMock()
-        section_store.search_bm25.return_value = [
-            {
-                "id": "s1",
-                "raw_file_id": "f1",
-                "title": "T",
-                "summary": "s",
-                "level": 1,
-                "bm25_score": 0.5,
-            }
-        ]
-        section_store.search_by_keywords.return_value = []
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
-        raw_store = MagicMock()
-
-        strategy = _make_section_strategy(
-            section_store=section_store,
-            raw_store=raw_store,
-        )
-
-        detection = SimpleNamespace(boost_recency=False)
-        strategy.retrieve("anything", limit=5, detection=detection)
-
-        raw_store.get_updated_timestamps.assert_not_called()
-
-
-class TestFreshnessNoBoostWithoutRawStore:
-    """Test 12: detection.boost_recency=True but _raw_store=None -> no crash."""
-
-    def test_freshness_no_boost_without_raw_store(self):
-        section_store = MagicMock()
-        section_store.search_bm25.return_value = [
-            {
-                "id": "s1",
-                "raw_file_id": "f1",
-                "title": "T",
-                "summary": "s",
-                "level": 1,
-                "bm25_score": 0.5,
-            }
-        ]
-        section_store.search_by_keywords.return_value = []
-
-        embedder = MagicMock()
-        embedder.embed.return_value = [0.1] * 768
-
-        strategy = _make_section_strategy(
-            section_store=section_store,
-            raw_store=None,  # Explicitly None
-        )
-
-        detection = SimpleNamespace(boost_recency=True)
-
-        # Should not crash
-        results = strategy.retrieve("anything", limit=5, detection=detection)
-        assert len(results) == 1
+        assert [result.source_id for result in results] == ["f0", "f1", "f2", "f3"]

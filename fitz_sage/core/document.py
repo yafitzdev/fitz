@@ -4,9 +4,9 @@ Core document types for the ingestion pipeline.
 
 ParsedDocument represents structured content extracted from any file format.
 It preserves document structure (headings, tables, code blocks, etc.) so
-chunkers can make intelligent splitting decisions.
+engines can extract typed retrieval units.
 
-Flow: Source → Parser → ParsedDocument → Chunker → Chunks
+Flow: Source -> Parser -> ParsedDocument -> engine-specific typed units
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ class DocumentElement:
     A single structural element in a parsed document.
 
     Elements represent semantic units: paragraphs, headings, tables, etc.
-    Chunkers use element boundaries to make better splitting decisions.
+    Engines use element boundaries to preserve document structure.
     """
 
     type: ElementType
@@ -83,8 +83,8 @@ class ParsedDocument:
     """
     Structured representation of a parsed file.
 
-    Produced by Parsers, consumed by Chunkers.
-    Preserves document structure for intelligent chunking.
+    Produced by parsers and consumed by engine ingestion pipelines.
+    Preserves document structure for typed-unit extraction.
     """
 
     source: str  # Original source URI or path
@@ -94,7 +94,7 @@ class ParsedDocument:
 
     @property
     def full_text(self) -> str:
-        """Get all text content concatenated (for simple chunkers)."""
+        """Get all text content concatenated for consumers that need plain text."""
         return "\n\n".join(el.content for el in self.elements if el.content)
 
     @property

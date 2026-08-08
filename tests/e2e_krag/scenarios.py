@@ -32,7 +32,7 @@ class Feature(Enum):
     BASIC_RETRIEVAL = "basic_retrieval"
     FRESHNESS = "freshness"
     SPARSE_SEARCH = "sparse_search"
-    QUERY_EXPANSION = "query_expansion"
+    SEMANTIC_KEYWORDS = "semantic_keywords"
     TEMPORAL = "temporal"
     AGGREGATION = "aggregation"
     FIGURE_RETRIEVAL = "figure_retrieval"
@@ -827,41 +827,41 @@ SCENARIOS: list[TestScenario] = [
         min_sources=1,
     ),
     # =========================================================================
-    # Query Expansion (Synonym/Acronym Variations)
+    # Managed-Qwen Semantic Keywords
     # =========================================================================
     TestScenario(
         id="E71",
-        name="Query expansion: synonym for retrieve",
-        feature=Feature.QUERY_EXPANSION,
+        name="Semantic keywords: fetch and retrieve",
+        feature=Feature.SEMANTIC_KEYWORDS,
         query="How do I fetch employee data?",
-        # "fetch" should expand to "retrieve/get" and find relevant content
+        # Managed Qwen should add useful retrieval vocabulary.
         must_contain_any=["employee", "data", "retrieve", "get", "query"],
         min_sources=1,
     ),
     TestScenario(
         id="E72",
-        name="Query expansion: synonym for create",
-        feature=Feature.QUERY_EXPANSION,
+        name="Semantic keywords: add and create",
+        feature=Feature.SEMANTIC_KEYWORDS,
         query="How do I add a new user account?",
-        # "add" should expand to "create/register" and find auth module content
+        # Managed Qwen should bridge ordinary prose and corpus vocabulary.
         must_contain_any=["register", "create", "user", "account"],
         min_sources=1,
     ),
     TestScenario(
         id="E73",
-        name="Query expansion: acronym db to database",
-        feature=Feature.QUERY_EXPANSION,
+        name="Semantic keywords: db and database",
+        feature=Feature.SEMANTIC_KEYWORDS,
         query="How does the db connection work?",
-        # "db" should expand to "database" and find Data Service content
+        # This is model-proposed recall vocabulary, not fixed equivalence.
         must_contain_any=["database", "connection", "PostgreSQL", "pool"],
         min_sources=1,
     ),
     TestScenario(
         id="E74",
-        name="Query expansion: synonym for error",
-        feature=Feature.QUERY_EXPANSION,
+        name="Semantic keywords: failure and error",
+        feature=Feature.SEMANTIC_KEYWORDS,
         query="What failures can occur in authentication?",
-        # "failures" should expand to "errors/exceptions" and find auth content
+        # Managed Qwen should propose related failure vocabulary.
         must_contain_any=["error", "exception", "authentication", "fail"],
         min_sources=1,
     ),
@@ -1308,23 +1308,23 @@ SCENARIOS: list[TestScenario] = [
         min_sources=1,
     ),
     # =========================================================================
-    # Additional Query Expansion - EDGE CASES
+    # Additional Managed-Qwen Semantic Keywords - Edge Cases
     # =========================================================================
     TestScenario(
         id="E118",
-        name="Query expansion: informal term",
-        feature=Feature.QUERY_EXPANSION,
+        name="Semantic keywords: informal term",
+        feature=Feature.SEMANTIC_KEYWORDS,
         query="How do I log out of my account?",
-        # "log out" should find logout method
+        # Semantic keywords should help bridge the spaced and symbol forms.
         must_contain_any=["logout", "invalidate", "session", "token"],
         min_sources=1,
     ),
     TestScenario(
         id="E119",
-        name="Query expansion: British vs American spelling",
-        feature=Feature.QUERY_EXPANSION,
+        name="Semantic keywords: British vs American spelling",
+        feature=Feature.SEMANTIC_KEYWORDS,
         query="What authorisation levels exist?",
-        # British "authorisation" should find "authorization" content
+        # The model may propose the corpus spelling; no fixed alias is declared.
         must_contain_any=["role", "admin", "manager", "permission", "user"],
         min_sources=1,
     ),

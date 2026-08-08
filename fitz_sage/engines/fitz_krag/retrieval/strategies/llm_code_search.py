@@ -305,7 +305,7 @@ class LlmCodeSearchStrategy:
             except json.JSONDecodeError:
                 pass
 
-        # Fallback: parse as plain JSON array (backward compat)
+        # Also accept a direct JSON array of file paths.
         start = text.find("[")
         end = text.rfind("]") + 1
         if start < 0 or end <= start:

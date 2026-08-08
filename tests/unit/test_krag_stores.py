@@ -102,13 +102,12 @@ class TestSymbolStore:
     def test_search_by_name(self, mock_cm):
         cm, conn = mock_cm
         conn.execute.return_value.fetchall.return_value = [
-            ("s1", "func", "mod.func", "function", "f1", 1, 5, "def func()", [], [], {})
+            ("s1", "func", "mod.func", "function", "f1", 1, 5, "def func()", [], {})
         ]
         store = SymbolStore(cm, "test_col")
         results = store.search_by_name("func")
         assert len(results) == 1
         assert results[0]["name"] == "func"
-        assert results[0]["keywords"] == []
         assert results[0]["entities"] == []
 
     def test_delete_by_file(self, mock_cm):
@@ -131,7 +130,6 @@ class TestSymbolStore:
                 1,
                 3,
                 "def helper()",
-                ["helper"],
                 [{"name": "os", "type": "module"}],
                 {},
                 ["os", "sys"],
@@ -146,7 +144,6 @@ class TestSymbolStore:
                 10,
                 "def main_fn()",
                 [],
-                [],
                 {},
                 ["helper"],
             ),
@@ -155,7 +152,6 @@ class TestSymbolStore:
         results = store.get_by_file("f1")
         assert len(results) == 2
         assert results[0]["name"] == "helper"
-        assert results[0]["keywords"] == ["helper"]
         assert results[0]["entities"] == [{"name": "os", "type": "module"}]
         assert results[0]["references"] == ["os", "sys"]
         assert results[1]["name"] == "main_fn"

@@ -1,0 +1,7 @@
+system,scope,release,setting,value,unit,owner
+RX Monitor,historical,REL-2025.11,retention,14,days,Telemetry
+RX Monitor,current,REL-2026.03,retention,21,days,Telemetry
+Queue Flush,historical,REL-2025.12,backoff,400,ms,Runtime
+Queue Flush,current,REL-2026.04,backoff,650,ms,Runtime
+Gamma Router,legacy,REL-2024.09,route_limit,70,hops,Routing
+Gamma Router,current,REL-2026.01,route_limit,48,hops,Routing

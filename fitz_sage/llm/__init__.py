@@ -19,6 +19,7 @@ from fitz_sage.llm.factory import ChatFactory, ModelTier, get_chat_factory
 from fitz_sage.llm.providers.base import (
     ChatProvider,
     RerankProvider,
+    RerankResponse,
     RerankResult,
     VisionProvider,
 )
@@ -36,6 +37,7 @@ __all__ = [
     "ChatProvider",
     "RerankProvider",
     "VisionProvider",
+    "RerankResponse",
     "RerankResult",
     # Auth providers
     "AuthProvider",

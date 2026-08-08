@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from benchmarks.fitz_bench.models import BenchmarkCase
+
 
 @dataclass
 class _BenchmarkConfig:
@@ -21,7 +25,7 @@ class _BenchmarkConfig:
 
 
 def test_create_engine_applies_governance_override(monkeypatch):
-    """Benchmark runner should support local Pyrrho package paths."""
+    """Benchmark runner should support local Pyrrho model paths."""
     from benchmarks.fitz_bench import runner
 
     captured: dict[str, Any] = {}
@@ -92,3 +96,116 @@ def test_benchmark_workspace_preserves_absolute_override(tmp_path):
 
     override = Path("C:/tmp/fitz-bench-workspace").resolve()
     assert runner._benchmark_workspace(tmp_path, str(override), "bench_123") == override
+
+
+def test_activate_benchmark_workspace_resets_storage_before_switch(monkeypatch, tmp_path):
+    """Sequential production suites must not share the first suite's storage path."""
+    from benchmarks.fitz_bench import runner
+
+    calls: list[tuple[str, object | None]] = []
+    monkeypatch.setattr(
+        runner.SqliteConnectionManager,
+        "reset_instance",
+        lambda: calls.append(("reset", None)),
+    )
+    monkeypatch.setattr(
+        runner.FitzPaths,
+        "set_workspace",
+        lambda path: calls.append(("workspace", path)),
+    )
+
+    runner._activate_benchmark_workspace(tmp_path)
+
+    assert calls == [("reset", None), ("workspace", tmp_path)]
+
+
+def test_select_cases_preserves_suite_order():
+    """Repeated case filters should not reorder the benchmark suite."""
+    from benchmarks.fitz_bench import runner
+
+    cases = [
+        BenchmarkCase(case_id="alpha", domain="test", query="A"),
+        BenchmarkCase(case_id="beta", domain="test", query="B"),
+        BenchmarkCase(case_id="gamma", domain="test", query="C"),
+    ]
+
+    selected = runner._select_cases(cases, ["gamma", "alpha"])
+
+    assert [case.case_id for case in selected] == ["alpha", "gamma"]
+
+
+def test_select_cases_rejects_unknown_id():
+    """A typo in a release-gate case filter should fail loudly."""
+    from benchmarks.fitz_bench import runner
+
+    cases = [BenchmarkCase(case_id="alpha", domain="test", query="A")]
+
+    with pytest.raises(ValueError, match="missing"):
+        runner._select_cases(cases, ["missing"])
+
+
+def test_record_summary_separates_retrieval_and_governance() -> None:
+    from benchmarks.fitz_bench import runner
+
+    records = [
+        {
+            "validation": {
+                "passed": False,
+                "metrics": {
+                    "retrieval_evaluated": True,
+                    "retrieval_passed": True,
+                    "delivery_evaluated": True,
+                    "delivery_passed": True,
+                    "query_shape_evaluated": False,
+                    "query_shape_passed": True,
+                    "capability_evaluated": True,
+                    "capability_passed": True,
+                    "mode_match": False,
+                    "mrr": 1.0,
+                    "required_recall": 1.0,
+                    "hit_at_1": True,
+                    "hit_at_5": True,
+                    "forbidden_count": 0,
+                },
+            },
+            "case": {"required_evidence": [{"file": "policy.md"}]},
+        }
+    ]
+
+    summary = runner._record_summary(records)
+
+    assert summary["pass_rate"] == 0.0
+    assert summary["retrieval_pass_rate"] == 1.0
+    assert summary["delivery_pass_rate"] == 1.0
+    assert summary["query_shape_pass_rate"] is None
+    assert summary["capability_pass_rate"] == 1.0
+    assert summary["governance_pass_rate"] == 0.0
+
+
+def test_gate_uses_selected_metric_and_ingestion_health() -> None:
+    from benchmarks.fitz_bench import runner
+
+    summary = {
+        "pass_rate": 0.5,
+        "capability_pass_rate": 0.9,
+        "retrieval_pass_rate": 0.95,
+        "delivery_pass_rate": 0.8,
+        "query_shape_pass_rate": 0.75,
+    }
+    healthy = {"summary": {"healthy": True}}
+    failed = {"summary": {"healthy": False}}
+
+    assert runner._gate_result(
+        summary,
+        healthy,
+        metric="retrieval",
+        minimum=0.85,
+        allow_ingestion_failures=False,
+    )["passed"]
+    assert not runner._gate_result(
+        summary,
+        failed,
+        metric="retrieval",
+        minimum=0.85,
+        allow_ingestion_failures=False,
+    )["passed"]

@@ -5,7 +5,6 @@ Fitz CLI - Main application.
 Commands:
     fitz retrieve      Retrieve governed evidence (--source to register)
     fitz answer        Generate an optional synthesized answer
-    fitz query         Compatibility synthesized-answer command
     fitz collections   Manage collections (list, info, delete)
     fitz serve         Start the REST API server
 
@@ -34,7 +33,7 @@ import typer  # noqa: E402
 
 app = typer.Typer(
     name="fitz",
-    help='Fitz - local-first retrieval. Start with: fitz query "your question"',
+    help='Fitz - local-first retrieval. Start with: fitz retrieve "your question"',
     no_args_is_help=True,
     add_completion=False,
 )
@@ -45,36 +44,6 @@ app = typer.Typer(
 # =============================================================================
 # Each command is a thin wrapper that imports the real implementation only when invoked.
 # This keeps CLI startup fast by avoiding heavy imports (torch, pydantic models, etc.).
-
-
-@app.command("query")
-def query(
-    question: Optional[str] = typer.Argument(None, help="Question to retrieve evidence for."),
-    source: Optional[Path] = typer.Option(
-        None,
-        "--source",
-        "-s",
-        help="Path to documents. Defaults to the current directory.",
-    ),
-    collection: Optional[str] = typer.Option(
-        None,
-        "--collection",
-        "-c",
-        help="Collection name. Defaults to the source folder name.",
-    ),
-    engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
-) -> None:
-    """Retrieve governed evidence. Defaults to indexing the current directory."""
-    from fitz_sage.cli.commands import retrieve as mod
-
-    mod.command(
-        question=question,
-        source=source,
-        collection=collection,
-        engine=engine,
-        output_format="text",
-        top_k=None,
-    )
 
 
 @app.command("retrieve")
@@ -99,6 +68,16 @@ def retrieve(
         help="Output format: text or json.",
     ),
     top_k: Optional[int] = typer.Option(None, "--top-k", help="Maximum evidence items to show."),
+    trace_path: Optional[Path] = typer.Option(
+        None,
+        "--trace",
+        help="Write a versioned retrieval execution record to this JSON file.",
+    ),
+    trace_content: bool = typer.Option(
+        False,
+        "--trace-content",
+        help="Include source content in the trace so Pyrrho can be replayed.",
+    ),
 ) -> None:
     """Retrieve governed evidence without answer synthesis."""
     from fitz_sage.cli.commands import retrieve as mod
@@ -110,6 +89,55 @@ def retrieve(
         engine=engine,
         output_format=output_format,
         top_k=top_k,
+        trace_path=trace_path,
+        trace_content=trace_content,
+    )
+
+
+@app.command("explain")
+def explain(
+    trace_file: Path = typer.Argument(..., help="Retrieval trace JSON file."),
+) -> None:
+    """Explain a recorded retrieval execution without rerunning it."""
+    from fitz_sage.cli.commands import runs as mod
+
+    mod.explain_command(trace_file)
+
+
+@app.command("replay")
+def replay(
+    trace_file: Path = typer.Argument(..., help="Content-bearing retrieval trace JSON file."),
+    pyrrho: Optional[str] = typer.Option(
+        None,
+        "--pyrrho",
+        help="Pyrrho provider/model spec. Defaults to the recorded model.",
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write the replay result to this JSON file.",
+    ),
+    output_format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json.",
+    ),
+    include_content: bool = typer.Option(
+        False,
+        "--include-content",
+        help="Include selected source content in JSON output.",
+    ),
+) -> None:
+    """Replay Pyrrho over frozen evidence without rerunning retrieval."""
+    from fitz_sage.cli.commands import runs as mod
+
+    mod.replay_command(
+        trace_file,
+        pyrrho=pyrrho,
+        output=output,
+        output_format=output_format,
+        include_content=include_content,
     )
 
 
@@ -134,7 +162,7 @@ def answer(
         None,
         "--synthesizer",
         help=(
-            "Provider/model spec for answer synthesis " "(e.g. endpoint/qwen2.5-7b, openai/gpt-4o)."
+            "Provider/model spec for answer synthesis (e.g. endpoint/qwen2.5-7b, openai/gpt-4o)."
         ),
     ),
     model: Optional[str] = typer.Option(
@@ -150,7 +178,7 @@ def answer(
     ),
 ) -> None:
     """Answer with optional synthesis; use retrieve for evidence-only output."""
-    from fitz_sage.cli.commands import query as mod
+    from fitz_sage.cli.commands import answer as mod
 
     mod.command(
         question=question,
@@ -185,13 +213,13 @@ def serve(
     mod.command(host=host, port=port, reload=reload)
 
 
-@app.command("index-daemon", hidden=True)
-def index_daemon(
+@app.command("enrichment-daemon", hidden=True)
+def enrichment_daemon(
     collection: str = typer.Option(..., "--collection", "-c", help="Collection name."),
     engine: Optional[str] = typer.Option(None, "--engine", "-e", help="Engine to use."),
 ) -> None:
-    """Continue indexing a collection from a detached process."""
-    from fitz_sage.cli.commands import index_daemon as mod
+    """Continue enriching a collection from a detached process."""
+    from fitz_sage.cli.commands import enrichment_daemon as mod
 
     mod.command(collection=collection, engine=engine)
 

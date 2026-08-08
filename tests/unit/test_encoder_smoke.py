@@ -26,37 +26,31 @@ pytestmark = pytest.mark.slow
 
 
 def _pyrrho_smoke_spec() -> str:
-    """Use the local canonical v2 package when this checkout has it."""
-    env_path = os.environ.get("PYRRHO_V2_PACKAGE")
+    """Use the local canonical v2 model when this checkout has it."""
+    env_path = os.environ.get("PYRRHO_MODEL_PATH")
     if env_path and Path(env_path).is_dir():
         return f"pyrrho/{env_path}"
 
     repo_root = Path(__file__).resolve().parents[2]
-    sibling_package = repo_root.parent / "pyrrho" / "models" / "pyrrho-v2-nano-g1"
-    if sibling_package.is_dir():
-        return f"pyrrho/{sibling_package}"
+    sibling_model = repo_root.parent / "pyrrho" / "models" / "pyrrho-v2-nano-g1"
+    if sibling_model.is_dir():
+        return f"pyrrho/{sibling_model}"
 
     return "pyrrho"
 
 
 def test_pyrrho_loads_and_decides():
-    """Canonical Pyrrho v2 package -> a real local decide() call."""
-    from fitz_sage.core.answer_mode import AnswerMode
-    from fitz_sage.governance import create_governance
+    """Canonical Pyrrho v2 model -> a real local decide() call."""
+    from fitz_sage.integrations.pyrrho import create_pyrrho
 
-    governance = create_governance(_pyrrho_smoke_spec())
-    assert governance is not None
+    pyrrho = create_pyrrho(_pyrrho_smoke_spec())
 
     contexts = [SimpleNamespace(content="The capital of France is Paris.", metadata={})]
-    decision = governance.decide("What is the capital of France?", contexts)
+    decision = pyrrho.decide("What is the capital of France?", contexts)
 
-    assert decision.mode in (
-        AnswerMode.SUFFICIENT,
-        AnswerMode.DISPUTED,
-        AnswerMode.INSUFFICIENT,
-    )
-    assert len(decision.probs) == 3
-    assert abs(sum(decision.probs) - 1.0) < 1e-3  # softmax distribution
+    assert decision.verdict in {"SUFFICIENT", "DISPUTED", "INSUFFICIENT"}
+    assert set(decision.probabilities) == {"SUFFICIENT", "DISPUTED", "INSUFFICIENT"}
+    assert abs(sum(decision.probabilities.values()) - 1.0) < 1e-3
 
 
 def test_onnx_reranker_loads_and_ranks():
@@ -64,10 +58,11 @@ def test_onnx_reranker_loads_and_ranks():
     from fitz_sage.llm.providers.onnx_reranker import OnnxReranker
 
     reranker = OnnxReranker()
-    results = reranker.rerank(
+    response = reranker.rerank(
         "battery warranty period",
         ["The battery warranty is 8 years.", "Charging the battery takes 45 minutes."],
     )
+    results = response.results
 
     assert len(results) == 2
     assert results[0].score >= results[1].score  # sorted by relevance

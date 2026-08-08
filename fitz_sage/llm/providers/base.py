@@ -7,7 +7,7 @@ All providers implement these protocols for type-safe usage.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, runtime_checkable
 
 ModelTier = Literal["fast", "balanced", "smart"]
@@ -19,6 +19,14 @@ class RerankResult:
 
     index: int
     score: float
+
+
+@dataclass(frozen=True)
+class RerankResponse:
+    """Ranked documents and diagnostics from one provider call."""
+
+    results: list[RerankResult]
+    trace: dict[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -48,7 +56,7 @@ class RerankProvider(Protocol):
         query: str,
         documents: list[str],
         top_n: int | None = None,
-    ) -> list[RerankResult]:
+    ) -> RerankResponse:
         """
         Rerank documents by relevance to query.
 
@@ -58,7 +66,7 @@ class RerankProvider(Protocol):
             top_n: Maximum number of results to return.
 
         Returns:
-            List of RerankResult sorted by relevance (highest first).
+            Ranked results and diagnostics for this call.
         """
         ...
 
@@ -83,6 +91,7 @@ class VisionProvider(Protocol):
 
 __all__ = [
     "ModelTier",
+    "RerankResponse",
     "RerankResult",
     "ChatProvider",
     "RerankProvider",

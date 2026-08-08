@@ -20,16 +20,22 @@ clear error (there is no torch-backed export fallback by design).
 Public surface — implements `RerankProvider`:
 
     reranker = OnnxReranker()                       # gte-reranker INT8
-    reranker = OnnxReranker(model_id="BAAI/bge-reranker-base",
+    reranker = OnnxReranker(model_id="owner/compatible-reranker",
                             onnx_subfolder="onnx",
-                            onnx_file="model_quantized.onnx")
-    results = reranker.rerank(query, documents, top_n=5)
+                            onnx_file="model_int8.onnx")
+    response = reranker.rerank(query, documents, top_n=5)
 """
 
 from __future__ import annotations
 
+import hashlib
+import threading
+from collections import OrderedDict, deque
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import Any
+
 from fitz_sage.encoders.onnx import OnnxEncoderBackend
-from fitz_sage.llm.providers.base import RerankResult
+from fitz_sage.llm.providers.base import RerankResponse, RerankResult
 
 DEFAULT_MODEL_ID = "Alibaba-NLP/gte-reranker-modernbert-base"
 # gte-reranker-modernbert-base ships pre-built ONNX variants under onnx/;
@@ -37,7 +43,9 @@ DEFAULT_MODEL_ID = "Alibaba-NLP/gte-reranker-modernbert-base"
 DEFAULT_ONNX_SUBFOLDER = "onnx"
 DEFAULT_ONNX_FILE = "model_int8.onnx"
 MAX_LENGTH = 512  # gte-modernbert-base is trained at 512; longer inputs are truncated.
-DEFAULT_BATCH_SIZE = 16
+DEFAULT_BATCH_SIZE = 1
+DEFAULT_WORKERS = 2
+DEFAULT_CACHE_SIZE = 4096
 
 
 class OnnxReranker(OnnxEncoderBackend):
@@ -45,8 +53,8 @@ class OnnxReranker(OnnxEncoderBackend):
 
     Args:
         model_id: HuggingFace repo id of the cross-encoder. Defaults to
-            `Alibaba-NLP/gte-reranker-modernbert-base`. Any HF cross-encoder
-            with a `SequenceClassification` head (num_labels=1) works.
+            `Alibaba-NLP/gte-reranker-modernbert-base`. Alternatives must ship
+            a tokenizer and a compatible sequence-classification ONNX graph.
         onnx_subfolder: Repo subfolder holding the pre-built ONNX
             (`"onnx"` for the default model; `""` if the file sits at
             the repo root, as pyrrho does).
@@ -54,6 +62,9 @@ class OnnxReranker(OnnxEncoderBackend):
             variant.
         max_length: Tokenizer truncation cap (default 512).
         batch_size: Number of `(query, doc)` pairs per ONNX forward pass.
+        workers: Maximum concurrent ONNX forward passes.
+        cache_size: Maximum exact `(model, query, document)` scores retained
+            in memory. Set to zero to disable the cache.
     """
 
     def __init__(
@@ -63,66 +74,207 @@ class OnnxReranker(OnnxEncoderBackend):
         onnx_file: str = DEFAULT_ONNX_FILE,
         max_length: int = MAX_LENGTH,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        workers: int = DEFAULT_WORKERS,
+        cache_size: int = DEFAULT_CACHE_SIZE,
     ) -> None:
+        if max_length < 1:
+            raise ValueError("max_length must be at least 1")
+        if batch_size < 1:
+            raise ValueError("batch_size must be at least 1")
+        if workers < 1:
+            raise ValueError("workers must be at least 1")
+        if cache_size < 0:
+            raise ValueError("cache_size cannot be negative")
+
         super().__init__(model_id=model_id, onnx_file=onnx_file, onnx_subfolder=onnx_subfolder)
         self._max_length = max_length
         self._batch_size = batch_size
+        self._workers = workers
+        self._cache_size = cache_size
+        self._score_cache: OrderedDict[bytes, float] = OrderedDict()
+        self._cache_lock = threading.Lock()
+        self._cache_namespace = "\0".join(
+            (model_id, onnx_subfolder, onnx_file, str(max_length))
+        ).encode("utf-8")
 
     def rerank(
         self,
         query: str,
         documents: list[str],
         top_n: int | None = None,
-    ) -> list[RerankResult]:
-        """Score `(query, doc)` pairs with the cross-encoder, sort by score desc.
-
-        Documents the model fails to score get a default score of 0 and the
-        original ordinal as a stable tiebreaker.
-        """
+    ) -> RerankResponse:
+        """Score `(query, doc)` pairs and sort by score with stable ties."""
         if not documents:
-            return []
+            return RerankResponse([], self._shortcut_trace("no_documents", 0))
         if len(documents) == 1:
-            return [RerankResult(index=0, score=1.0)]
+            return RerankResponse(
+                [RerankResult(index=0, score=1.0)],
+                self._shortcut_trace("single_document", 1),
+            )
 
-        scores = self._score_pairs(query, documents)
+        scores, trace = self._score_pairs(query, documents)
 
         results = [RerankResult(index=i, score=float(s)) for i, s in enumerate(scores)]
         results.sort(key=lambda r: (-r.score, r.index))
 
         if top_n is not None:
             results = results[:top_n]
-        return results
+        return RerankResponse(results, trace)
 
-    def _score_pairs(self, query: str, documents: list[str]) -> list[float]:
-        """Run the cross-encoder forward pass in batches and return raw logits."""
-        import numpy as np
+    def _shortcut_trace(self, shortcut: str, document_count: int) -> dict[str, Any]:
+        return {
+            "requested_document_count": document_count,
+            "unique_document_count": document_count,
+            "duplicate_document_count": 0,
+            "cache_hit_count": 0,
+            "scored_document_count": 0,
+            "forward_pass_count": 0,
+            "batch_size": self._batch_size,
+            "workers": self._workers,
+            "cache_size": self._cache_size,
+            "shortcut": shortcut,
+        }
 
-        n = len(documents)
-        scores = [0.0] * n
-        for start in range(0, n, self._batch_size):
-            batch_docs = documents[start : start + self._batch_size]
-            queries = [query] * len(batch_docs)
-            enc = self._encode(
-                queries,
-                batch_docs,
-                padding=True,
-                truncation=True,
-                max_length=self._max_length,
-            )
-            logits = self._run(enc)
-            # Sequence-classification head with num_labels=1 -> shape (B, 1).
-            # If a model exposes a 2-class head (logits shape (B, 2)) we take
-            # the positive-class logit as the relevance score.
-            arr = np.asarray(logits)
-            if arr.ndim == 2 and arr.shape[1] == 1:
-                batch_scores = arr[:, 0]
-            elif arr.ndim == 2 and arr.shape[1] == 2:
-                batch_scores = arr[:, 1] - arr[:, 0]
-            else:
-                batch_scores = arr.reshape(arr.shape[0], -1)[:, 0]
-            for i, s in enumerate(batch_scores.tolist()):
-                scores[start + i] = float(s)
+    def _score_pairs(
+        self,
+        query: str,
+        documents: list[str],
+    ) -> tuple[list[float], dict[str, Any]]:
+        """Score exact unique pairs, reusing bounded process-local results."""
+        unique_documents = list(dict.fromkeys(documents))
+        score_by_document: dict[str, float] = {}
+        cache_keys: dict[str, bytes] = {}
+        uncached_documents: list[str] = []
+        cache_hits = 0
+
+        for document in unique_documents:
+            key = self._cache_key(query, document)
+            cache_keys[document] = key
+            cached = self._cache_get(key)
+            if cached is None:
+                uncached_documents.append(document)
+                continue
+            score_by_document[document] = cached
+            cache_hits += 1
+
+        uncached_scores = self._score_uncached_pairs(query, uncached_documents)
+        for document, score in zip(uncached_documents, uncached_scores, strict=True):
+            score_by_document[document] = score
+            self._cache_put(cache_keys[document], score)
+
+        trace = {
+            "requested_document_count": len(documents),
+            "unique_document_count": len(unique_documents),
+            "duplicate_document_count": len(documents) - len(unique_documents),
+            "cache_hit_count": cache_hits,
+            "scored_document_count": len(uncached_documents),
+            "forward_pass_count": _batch_count(len(uncached_documents), self._batch_size),
+            "batch_size": self._batch_size,
+            "workers": self._workers,
+            "cache_size": self._cache_size,
+        }
+        return [score_by_document[document] for document in documents], trace
+
+    def _score_uncached_pairs(self, query: str, documents: list[str]) -> list[float]:
+        """Run bounded batches while keeping at most ``workers`` jobs pending."""
+        if not documents:
+            return []
+
+        batches = [
+            documents[start : start + self._batch_size]
+            for start in range(0, len(documents), self._batch_size)
+        ]
+        if self._workers == 1 or len(batches) == 1:
+            scores: list[float] = []
+            for batch in batches:
+                scores.extend(self._score_batch(query, batch))
+            return scores
+
+        scores = []
+        pending: deque[tuple[int, Future[Any]]] = deque()
+        with ThreadPoolExecutor(
+            max_workers=min(self._workers, len(batches)),
+            thread_name_prefix="fitz-rerank",
+        ) as executor:
+            for batch in batches:
+                encoded = self._encode_batch(query, batch)
+                pending.append((len(batch), executor.submit(self._run, encoded)))
+                if len(pending) >= self._workers:
+                    scores.extend(self._resolve_batch(pending.popleft()))
+            while pending:
+                scores.extend(self._resolve_batch(pending.popleft()))
         return scores
+
+    def _score_batch(self, query: str, documents: list[str]) -> list[float]:
+        scores = _scores_from_logits(self._run(self._encode_batch(query, documents)))
+        self._validate_score_count(scores, len(documents))
+        return scores
+
+    def _encode_batch(self, query: str, documents: list[str]) -> Any:
+        return self._encode(
+            [query] * len(documents),
+            documents,
+            padding=True,
+            truncation=True,
+            max_length=self._max_length,
+        )
+
+    @staticmethod
+    def _resolve_batch(pending: tuple[int, Future[Any]]) -> list[float]:
+        expected_count, future = pending
+        scores = _scores_from_logits(future.result())
+        OnnxReranker._validate_score_count(scores, expected_count)
+        return scores
+
+    @staticmethod
+    def _validate_score_count(scores: list[float], expected_count: int) -> None:
+        if len(scores) != expected_count:
+            raise RuntimeError(
+                f"Reranker returned {len(scores)} scores for {expected_count} documents"
+            )
+
+    def _cache_key(self, query: str, document: str) -> bytes:
+        digest = hashlib.sha256()
+        for value in (self._cache_namespace, query.encode("utf-8"), document.encode("utf-8")):
+            digest.update(len(value).to_bytes(8, "big"))
+            digest.update(value)
+        return digest.digest()
+
+    def _cache_get(self, key: bytes) -> float | None:
+        if self._cache_size == 0:
+            return None
+        with self._cache_lock:
+            score = self._score_cache.get(key)
+            if score is not None:
+                self._score_cache.move_to_end(key)
+            return score
+
+    def _cache_put(self, key: bytes, score: float) -> None:
+        if self._cache_size == 0:
+            return
+        with self._cache_lock:
+            self._score_cache[key] = score
+            self._score_cache.move_to_end(key)
+            while len(self._score_cache) > self._cache_size:
+                self._score_cache.popitem(last=False)
+
+
+def _scores_from_logits(logits: Any) -> list[float]:
+    """Normalize one- and two-label sequence-classification logits."""
+    import numpy as np
+
+    arr = np.asarray(logits)
+    if arr.ndim == 2 and arr.shape[1] == 1:
+        batch_scores = arr[:, 0]
+    elif arr.ndim == 2 and arr.shape[1] == 2:
+        batch_scores = arr[:, 1] - arr[:, 0]
+    else:
+        batch_scores = arr.reshape(arr.shape[0], -1)[:, 0]
+    return [float(score) for score in batch_scores.tolist()]
+
+
+def _batch_count(item_count: int, batch_size: int) -> int:
+    return (item_count + batch_size - 1) // batch_size
 
 
 __all__ = ["OnnxReranker", "DEFAULT_MODEL_ID"]

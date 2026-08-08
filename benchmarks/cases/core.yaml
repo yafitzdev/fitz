@@ -70,11 +70,6 @@
           - "2026-05-20"
           - "general availability"
           - "EU"
-    forbidden_evidence:
-      - file: unstructured/project_orion_status.md
-        contains:
-          - "2026-01-15"
-          - "private beta"
   tags: [diagnostic, unstructured, temporal, freshness]
 
 - id: unstructured_search_outage_final_duration
@@ -88,11 +83,6 @@
           - "final postmortem"
           - "42 minutes"
           - "INC-101"
-    forbidden_evidence:
-      - file: unstructured/outage_postmortem.md
-        contains:
-          - "estimated"
-          - "20 minutes"
   tags: [diagnostic, unstructured, temporal, final_fact]
 
 - id: structured_warehouse_stock

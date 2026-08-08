@@ -25,6 +25,10 @@ class TableStore:
         self._cm = connection_manager
         self._collection = collection
 
+    def has_records(self) -> bool:
+        """Return whether table retrieval has any indexed records."""
+        return store_utils.has_rows(self._cm, self._collection, TABLE)
+
     def upsert_batch(self, tables: list[dict[str, Any]]) -> None:
         if not tables:
             return

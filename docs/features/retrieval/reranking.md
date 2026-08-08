@@ -1,169 +1,106 @@
-# Reranking (ONNX cross-encoder)
+# ONNX Cross-Encoder Reranking
 
-## Problem
+BM25 is the broad recall stage. The reranker adds a local `(query, candidate)`
+relevance score before source reading and evidence compilation.
 
-BM25 + FTS5 optimises for **recall** — find candidates that contain
-the right tokens. Token overlap isn't the same as true relevance:
+## Default Runtime
 
-- Two sections can both mention the query terms while only one
-  actually answers the question.
-- The top-5 by `bm25()` aren't always the best 5 for the user's
-  *intent*.
-- BM25 is intent-blind: it can't tell a "how do I do X?" question
-  from a "what is X?" question.
+| Property | Current default |
+|---|---|
+| Model | `Alibaba-NLP/gte-reranker-modernbert-base` |
+| Runtime | raw `onnxruntime` on CPU |
+| Precision | INT8 |
+| Input cap | 512 tokens per pair |
+| Batch size | 1 |
+| Workers | 2 concurrent forward passes |
+| Pair cache | 4,096-entry process-local LRU |
 
-## Solution: ONNX cross-encoder reranker
+The tokenizer and model load lazily on the first rerank call. Reranking never
+uses the configured chat endpoint and has no governance responsibility.
 
-After FTS5 / BM25 returns a candidate set, a single INT8 ONNX
-cross-encoder scores each `(query, candidate)` pair in one batched
-forward pass. Re-order by the model's score, keep the top-K.
+## Candidate Budget
 
-```
-Query: "What's the battery warranty?"
-            │
-            ▼
-   FTS5 + bm25() — recall
-   returns ~20 candidates
-            │
-            ▼
-   ONNX cross-encoder — precision           ◀── standard product path
-   one forward pass over (q, doc) pairs
-   ~30–100 ms CPU for 10–20 candidates
-            │
-            ▼
-   Top-K truly-relevant candidates
-            │
-            ▼
-   Pyrrho governance cutoff
-```
+`rerank_candidates` is the moderate-query base and defaults to 32:
 
-**Default backbone:** [`Alibaba-NLP/gte-reranker-modernbert-base`](https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base) —
-149M-parameter ModernBERT cross-encoder. Matches 1.2B-parameter
-rerankers on Hit@1, and INT8 ONNX quantisation gives 2.7–3.4× CPU
-speedup with ~98% of full-precision quality.
+| Profile | Scored prefix |
+|---|---:|
+| Narrow | 24 |
+| Moderate | 32 |
+| Broad/exploratory | 48 |
+| Evidence-closure pass | 16 |
 
-Override via `rerank: onnx/<hf-model-id>` — e.g.
-`onnx/BAAI/bge-reranker-base` for a multilingual alternative,
-`onnx/jinaai/jina-reranker-v3` for higher quality at larger size.
+The effective count is bounded by candidates actually recalled and respects
+`rerank_k` and `rerank_min_addresses`. Very small pools bypass reranking.
 
-## Why a cross-encoder, not the chat model?
+The unscored BM25 tail is not deleted. Evidence-contract and concrete-table-row
+rescue can still inspect the full recall pool, so the neural budget controls CPU
+cost without redefining the lexical recall cutoff.
 
-A dedicated cross-encoder is the right tool for `(query, document)` relevance
-scoring:
+## Exact Deduplication And Cache
 
-1. **Latency.** ~30–100 ms CPU for 10–20 candidates.
-2. **No external dependency.** Inference is local and does not call the
-   configured chat endpoint.
-3. **Stronger ranking signal.** Cross-encoders are the textbook
-   solution for pairwise relevance scoring.
+Byte-identical documents inside one call are scored once. A repeated
+`(model, query, document)` pair can reuse its cached score. Cache keys are
+SHA-256 digests, so the cache does not retain source text as keys.
 
-The same model family as the
-[Pyrrho governance classifier](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1):
-ModernBERT-base, local CPU inference, lazy-loaded on first call, and cached for
-the process lifetime. The reranker and Pyrrho v2 both run from pre-built ONNX
-graphs on CPU.
+No threshold-based eviction is used. Low-scoring pairs still occupy only the
+fixed LRU budget, and removing them early would make repeated-query performance
+depend on a model-score policy without reducing current-call inference cost.
 
-## How it works
+## Input Handling
 
-```python
-# Each batch of (query, doc) pairs goes through one ONNX forward pass.
-enc = tokenizer([query] * len(docs), docs,
-                padding=True, truncation=True, max_length=512,
-                return_tensors="np")
-logits = model(**enc).logits      # shape (B, 1) for sequence-classification heads
-scores = logits[:, 0]             # higher = more relevant
-```
+The model's 512-token limit is unchanged. Candidate construction uses bounded
+source-faithful text; long-document handling can provide a query-centered
+excerpt for ranking while delivered evidence retains the selected original
+source content.
 
-Sequence-classification head with `num_labels=1` is the standard
-cross-encoder shape; 2-class heads (some BGE variants) are handled by
-taking `pos_logit - neg_logit`.
+One-label sequence-classification heads use their scalar logit. Compatible
+two-label heads use positive minus negative logit. Model-logit magnitudes are
+not calibrated probabilities and are meaningful only for ranking within a
+query.
 
-### Smart skip
+## Measured Decision
 
-If the candidate pool is small (below `rerank_min_addresses`), the
-reranker step is bypassed — there's nothing meaningful to rank.
+The accepted matched 60-query SciFact hardening run measured 7.43 seconds mean
+end-to-end latency, 6.77 seconds p50, and 12.56 seconds p95, with relevant
+delivered evidence unchanged at 47/60. The isolated precision probe measured
+INT8 reranking at 4.204 seconds mean and FP32 at 7.598 seconds mean; FP32 ranked
+better in that probe but used more time and memory. INT8 remains the package
+default with that quality tradeoff recorded.
 
-### VIP preservation
-
-Artifact rows (architecture narrative, dependency summary) carry a
-sentinel `score = 1.0` and bypass the reranker. They're "always
-include" by design.
-
-## Key design decisions
-
-1. **Standard rerank stage.** `rerank: onnx` is the default product path,
-   and the engine config does not expose a normal "rerank off" mode.
-2. **Shared with pyrrho.** Both encoders subclass `OnnxEncoderBackend`
-   — one `onnxruntime` + `transformers` load path, no separate
-   infrastructure.
-3. **Override via spec.** `rerank: onnx/<hf-model-id>` lets users
-   swap in any HF cross-encoder with a `SequenceClassification` head.
-4. **Lazy load.** Tokenizer + model load on first `rerank()` call,
-   not at engine init — keeps startup fast.
-5. **Batched forward.** Pairs go through in batches of 16 by default;
-   `batch_size` is configurable per `OnnxReranker` instance.
+See [Benchmarks](../../BENCHMARK.md) for the paired scores, intervals, hardware
+limits, and interpretation.
 
 ## Configuration
 
-### Enable (default)
-
 ```yaml
-rerank: onnx        # uses Alibaba-NLP/gte-reranker-modernbert-base
+rerank: onnx
+rerank_candidates: 32
+rerank_k: 10
+rerank_min_addresses: 2
 ```
 
-### Use a different cross-encoder
+An alternate compatible Hugging Face sequence-classification repository can be
+selected with `rerank: onnx/<model-id>` only when it ships the expected
+tokenizer and `onnx/model_int8.onnx`. Other repository layouts require direct
+low-level `OnnxReranker` construction and cannot currently be selected through
+the engine YAML. Compatibility, model size, and runtime performance are then
+deployment responsibilities.
 
-```yaml
-rerank: onnx/BAAI/bge-reranker-base
-# rerank: onnx/jinaai/jina-reranker-v3
-# rerank: onnx/cross-encoder/ms-marco-MiniLM-L-6-v2
-```
+## Implementation
 
-## Files
+- `fitz_sage/engines/fitz_krag/retrieval/reranker.py`
+- `fitz_sage/llm/providers/onnx_reranker.py`
+- `fitz_sage/llm/config.py`
 
-| Component                  | Path                                                              |
-| -------------------------- | ----------------------------------------------------------------- |
-| Pipeline step              | `fitz_sage/engines/fitz_krag/retrieval/reranker.py`               |
-| ONNX reranker provider     | `fitz_sage/llm/providers/onnx_reranker.py`                        |
-| Factory dispatch           | `fitz_sage/llm/config.py` (`create_rerank_provider`)              |
+## Boundaries
 
-## Example
-
-**Query:** "What's the warranty period for the battery?"
-
-**After FTS5 + bm25 (top 5 by BM25):**
-
-1. "Battery specifications: 75 kWh capacity ..."  (bm25 rank 1)
-2. "Warranty terms vary by component ..."        (bm25 rank 2)
-3. "The battery uses lithium-ion cells ..."      (bm25 rank 3)
-4. "Battery warranty: 8 years or 100,000 miles." (bm25 rank 4)
-5. "Charging the battery takes 45 minutes ..."   (bm25 rank 5)
-
-**After ONNX cross-encoder reranker:**
-
-1. "Battery warranty: 8 years or 100,000 miles." (rerank 8.72)
-2. "Warranty terms vary by component ..."        (rerank 4.91)
-3. "Battery specifications: 75 kWh capacity ..." (rerank 1.34)
-4. "The battery uses lithium-ion cells ..."      (rerank 0.62)
-5. "Charging the battery takes 45 minutes ..."   (rerank -0.18)
-
-The reranker promotes the warranty-specific row over the broader
-battery-spec candidates. Raw logits — magnitudes vary by backbone.
-
-## Interaction with other features
-
-| Feature                | Relationship                                                       |
-| ---------------------- | ------------------------------------------------------------------ |
-| Sparse search (FTS5)   | Runs *before* reranking; produces the candidate pool               |
-| Query expansion        | Runs *before* reranking; all expanded results land in one pool     |
-| KRAG routing           | Cross-encoder sees the rewritten query, not the raw user text      |
-| Multi-hop              | Reranker runs inside each hop independently                        |
-| Governance (pyrrho)    | Reranker output feeds the pyrrho classifier; reranker doesn't see  |
-|                        | governance decisions                                                |
+- The scorer is pointwise; it does not optimize coverage of a result set.
+- Candidate budgeting can leave some recalled items unscored.
+- A 512-token pair cap is not unlimited long-document understanding.
+- Cache reuse requires exact query and candidate text.
 
 ## Related
 
-- [Sparse Search (FTS5 + bm25)](sparse-search.md) — the recall layer
-- [Multi-Hop Reasoning](multi-hop-reasoning.md) — reranker runs inside each hop
-- [Unified Storage](../platform/unified-storage.md) — SQLite + FTS5 layer
-- [Epistemic Governance (pyrrho)](../../CONSTRAINTS.md) — the next encoder in the pipeline
+- [Sparse Search](sparse-search.md)
+- [Three-Stage Strategy](three-stage-strategy.md)
+- [Enterprise Retrieval Measurement](../../evaluation/enterprise-rag-bench-2026-08-01.md)

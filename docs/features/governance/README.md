@@ -1,12 +1,13 @@
 # docs/features/governance/
 
-Documentation for the fitz-sage governance and epistemic honesty system.
+Documentation for Fitz-Sage's integration with the managed Pyrrho governance
+model.
 
 | File | Contents |
 |---|---|
-| `epistemic-honesty.md` | How fitz-sage decides when to say "I don't know" |
+| `epistemic-honesty.md` | How Fitz-Sage transports Pyrrho's evidence verdict |
 | `modality-boundaries.md` | What Pyrrho does and does not prove for text, tables, code, logs, and config |
 
-The governance system uses Pyrrho to classify retrieved evidence as
-`SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. See `docs/CONSTRAINTS.md` for the
-runtime contract.
+Pyrrho classifies delivered evidence as `SUFFICIENT`, `DISPUTED`, or
+`INSUFFICIENT`. Fitz-Sage does not add another decision policy. See
+`docs/CONSTRAINTS.md` for the ownership contract.

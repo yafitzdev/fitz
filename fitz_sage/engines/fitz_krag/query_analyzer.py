@@ -42,11 +42,11 @@ class QueryAnalysis:
 
 # Default strategy weights per query type
 _TYPE_WEIGHTS: dict[QueryType, dict[str, float]] = {
-    QueryType.CODE: {"code": 0.75, "section": 0.1, "table": 0.05, "chunk": 0.1},
-    QueryType.DOCUMENTATION: {"code": 0.1, "section": 0.75, "table": 0.05, "chunk": 0.1},
-    QueryType.GENERAL: {"code": 0.25, "section": 0.25, "table": 0.15, "chunk": 0.35},
-    QueryType.CROSS: {"code": 0.35, "section": 0.35, "table": 0.1, "chunk": 0.2},
-    QueryType.DATA: {"code": 0.05, "section": 0.15, "table": 0.70, "chunk": 0.10},
+    QueryType.CODE: {"code": 0.83, "section": 0.11, "table": 0.06},
+    QueryType.DOCUMENTATION: {"code": 0.11, "section": 0.83, "table": 0.06},
+    QueryType.GENERAL: {"code": 0.38, "section": 0.39, "table": 0.23},
+    QueryType.CROSS: {"code": 0.44, "section": 0.44, "table": 0.12},
+    QueryType.DATA: {"code": 0.06, "section": 0.17, "table": 0.77},
 }
 
 

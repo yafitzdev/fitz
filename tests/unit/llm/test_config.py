@@ -171,39 +171,6 @@ class TestUnknownProvider:
             create_vision_provider("weird")
 
 
-class TestRemovedProviders:
-    """Removed providers raise actionable migration errors."""
-
-    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
-    def test_resolve_auth_raises(self, removed: str) -> None:
-        """resolve_auth surfaces the migration message."""
-        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
-            resolve_auth(removed)
-
-    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
-    def test_create_chat_raises(self, removed: str) -> None:
-        """create_chat_provider surfaces the migration message."""
-        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
-            create_chat_provider(removed)
-
-    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
-    def test_create_rerank_raises(self, removed: str) -> None:
-        """create_rerank_provider surfaces the migration message."""
-        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
-            create_rerank_provider(removed)
-
-    @pytest.mark.parametrize("removed", ["ollama", "cohere", "anthropic"])
-    def test_create_vision_raises(self, removed: str) -> None:
-        """create_vision_provider surfaces the migration message."""
-        with pytest.raises(ValueError, match=f"'{removed}' provider has been removed"):
-            create_vision_provider(removed)
-
-    def test_message_recommends_endpoint(self) -> None:
-        """Migration message points users at the 'endpoint' provider."""
-        with pytest.raises(ValueError, match="'endpoint' provider"):
-            resolve_auth("ollama")
-
-
 class TestNoneHandling:
     """Test None handling."""
 

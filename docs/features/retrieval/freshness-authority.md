@@ -1,95 +1,59 @@
-# Freshness Boosting
+# Freshness Intent
 
 ## Problem
 
-Standard RAG treats all documents equally. This fails when:
+Queries such as "What is the latest status?" require temporal evidence
+handling. The time a file happened to be indexed does not establish when its
+content became effective or which source is authoritative.
 
-- "What's the latest status on feature X?" — Can't distinguish old vs new docs
+## Behavior
 
-Recency-sensitive questions need the retrieval ranking to favor
-recently-modified content.
+`FreshnessModule` detects current/recent query wording as query shape:
 
-## Solution: Intent-Triggered Recency Boosting
+- `latest`
+- `recent`
+- `current`
+- `updated`
+- `newest`
+- `today`
+- `fresh`
 
-Detect recency intent from the query and boost recently-modified files
-accordingly:
+That signal contributes to the temporal retrieval contract. Fitz-Sage can then
+prefer evidence whose content expresses the requested scope, such as explicit
+dates or `current`/`final` wording, while retaining competing historical
+evidence for Pyrrho.
 
-- **Recency keywords** ("latest", "recent", "current", "new",
-  "updated", "newest") → boost newer files
+Fitz-Sage does not boost a document from its ingestion timestamp, filesystem
+modification time, or row-update time. Users must put effective dates or
+authority markers in the source material when those distinctions matter.
 
-## How It Works
+## Flow
 
-Detection is **LLM-based**. The `FreshnessModule` contributes a prompt
-fragment to the single batched query-intelligence call made by
-`QueryBatcher`; the LLM sets a `boost_recency` flag from the query
-intent.
-
+```text
+Query asks for current/recent evidence
+    |
+    v
+Freshness intent is detected
+    |
+    v
+Temporal query contract is built
+    |
+    v
+Content-grounded temporal evidence is ordered for Pyrrho
 ```
-Query comes in
-    │
-    ├─ LLM detects recency intent? (asks about "latest", "recent", "current")
-    │       │
-    │       ▼
-    │   Multiplicative score boost for recently-modified files
-    │
-    └─ No recency intent? → Pass through unchanged
-```
-
-## Key Design Decisions
-
-1. **On by default, intent-triggered** — part of every query pass. Only
-   activates when the query signals recency intent.
-
-2. **Metadata captured at ingestion** — file modification timestamps
-   are recorded during ingestion.
-
-3. **Multiplicative score boost** — recently-modified files get their
-   relevance score scaled up; it does not override relevance ordering
-   for non-recency queries.
-
-4. **Graceful degradation** — if timestamp metadata is missing, units
-   pass through unchanged.
-
-## Example
-
-**Query:** "What's the latest status on the battery warranty change?"
-
-**Before recency boost:**
-1. notes/old_review_2023.md (score: 0.85)
-2. status/warranty_update_2026.md (score: 0.82)
-
-**After recency boost:** (recency keyword "latest" detected)
-1. status/warranty_update_2026.md (score: boosted — recently modified)
-2. notes/old_review_2023.md (score: 0.85)
-
-## Configuration
-
-No configuration required. The feature is built into the retrieval
-pipeline.
-
-## Intent Keywords
-
-**Recency triggers:**
-- "latest", "recent", "current", "new", "updated", "newest"
 
 ## Implementation
 
-- **Detection module:** `fitz_sage/retrieval/detection/modules/freshness.py`
-- **Query intelligence:** `fitz_sage/engines/fitz_krag/query_batcher.py` (`QueryBatcher`)
+- Detection module: `fitz_sage/retrieval/detection/modules/freshness.py`
+- Deterministic planning: `fitz_sage/engines/fitz_krag/query_planner.py`
+- Temporal evidence ordering: `fitz_sage/engines/fitz_krag/evidence_compiler.py`
 
-Detection is LLM-based. The `FreshnessModule` contributes a prompt
-fragment to the batched `QueryBatcher` call and parses a `boost_recency`
-flag from the combined response.
-
-## Benefits
-
-| Without Freshness | With Freshness |
-|-------------------|----------------|
-| Old docs rank equally | Recent docs boosted when asked |
-| User filters manually | Intent-based automatic boosting |
+The standard planner detects these terms deterministically. The optional
+query-intelligence module can parse the same signal from a batched provider
+response. Neither path produces a filesystem-recency score multiplier.
 
 ## Related Features
 
-- [**Temporal Queries**](temporal-queries.md) - Time-based retrieval (freshness complements time filtering)
-- [**Aggregation Queries**](aggregation-queries.md) - List/count detection (another detection module)
-- [**Comparison Queries**](comparison-queries.md) - Entity comparison (another detection module)
+- [Temporal Queries](temporal-queries.md)
+- [Aggregation Queries](aggregation-queries.md)
+- [Comparison Queries](comparison-queries.md)

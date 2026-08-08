@@ -3,8 +3,8 @@
 Engine Registry - Central registry for all knowledge engines.
 
 This module provides a registry pattern for discovering and instantiating
-knowledge engines. It enables the platform to support multiple engines
-(Fitz RAG, custom engines) without hardcoding engine names.
+knowledge engines. It enables the platform to support Fitz KRAG and custom
+engines without hardcoding engine names.
 
 Philosophy:
     - Engines register themselves on import
@@ -15,7 +15,7 @@ Philosophy:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, cast
 
 from fitz_sage.core import ConfigurationError, KnowledgeEngine
 from fitz_sage.core.instrumentation import maybe_wrap
@@ -61,10 +61,6 @@ class EngineCapabilities:
 
     api_key_env_var: Optional[str] = None
     """Environment variable name for API key"""
-
-    # CLI hints
-    cli_query_message: Optional[str] = None
-    """Custom message to show in query command (e.g., 'use quickstart instead')"""
 
 
 @dataclass
@@ -236,11 +232,14 @@ class EngineRegistry:
         # Return a wrapper factory that instruments the created engine
         def instrumented_factory(config: Any) -> KnowledgeEngine:
             engine = original_factory(config)
-            return maybe_wrap(
-                engine,
-                layer="engine",
-                plugin_name=name,
-                methods_to_track=_ENGINE_METHODS_TO_TRACK,
+            return cast(
+                KnowledgeEngine,
+                maybe_wrap(
+                    engine,
+                    layer="engine",
+                    plugin_name=name,
+                    methods_to_track=_ENGINE_METHODS_TO_TRACK,
+                ),
             )
 
         return instrumented_factory
@@ -440,8 +439,9 @@ def get_default_engine() -> str:
         if config_path.exists():
             with config_path.open("r", encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
-            if "default_engine" in config:
-                return config["default_engine"]
+            configured = config.get("default_engine")
+            if isinstance(configured, str) and configured:
+                return configured
     except Exception as e:
         logger.debug(f"Failed to load default engine from user config: {e}")
 

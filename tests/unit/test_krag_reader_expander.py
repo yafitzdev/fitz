@@ -59,19 +59,6 @@ def _make_file_address(
     )
 
 
-def _make_chunk_address(
-    text: str = "chunk content here",
-    location: str = "doc.md",
-) -> Address:
-    return Address(
-        kind=AddressKind.CHUNK,
-        source_id="chunk1",
-        location=location,
-        summary="A chunk",
-        metadata={"text": text},
-    )
-
-
 def _make_section_address(
     section_id: str = "sec-001",
     source_id: str = "file1",
@@ -186,26 +173,6 @@ class TestContentReader:
         assert results[0].content == RAW_FILE_CONTENT
         assert results[0].file_path == "module.py"
         assert results[0].line_range is None
-
-    def test_read_chunk(self):
-        """Reads chunk content from address metadata text field."""
-        reader = ContentReader(_make_raw_store())
-
-        addr = _make_chunk_address(text="Hello from chunk")
-        results = reader.read([addr], limit=10)
-
-        assert len(results) == 1
-        assert results[0].content == "Hello from chunk"
-        assert results[0].file_path == "doc.md"
-
-    def test_read_chunk_empty_text(self):
-        """Empty text in chunk metadata results in None (skipped)."""
-        reader = ContentReader(_make_raw_store())
-
-        addr = _make_chunk_address(text="")
-        results = reader.read([addr], limit=10)
-
-        assert results == []
 
     def test_read_section(self):
         """Reads section content from the section store with metadata."""
@@ -926,8 +893,8 @@ class TestContentReaderSectionContext:
         assert "breadcrumb" not in r.metadata
         assert "child_count" not in r.metadata
 
-    def test_read_section_backward_compat_no_config(self):
-        """ContentReader without config works as before (no breadcrumb/TOC)."""
+    def test_read_section_without_config_uses_plain_content(self):
+        """ContentReader without config returns plain section content."""
         section_data = {
             "sec-001": {
                 "content": "Section body text.",
@@ -1006,6 +973,44 @@ class TestContentReaderTable:
         assert "Row count: 100" in r.content
         assert r.file_path == "module.py"
         assert r.metadata["table_id"] == "tbl_abc"
+
+    def test_read_table_uses_bm25_matched_rows_instead_of_prefix_sample(self):
+        """Concrete row hits should survive the address-to-evidence read."""
+        raw_store = _make_raw_store()
+        table_store = MagicMock()
+        table_store.get.return_value = {
+            "id": "rec-001",
+            "raw_file_id": "file1",
+            "table_id": "tbl_abc",
+            "name": "Sales Data",
+            "columns": ["product", "revenue"],
+            "row_count": 900,
+            "summary": "Sales records",
+            "metadata": {},
+        }
+        sqlite_store = MagicMock()
+        sqlite_store.get_rows_by_numbers.return_value = (
+            ["product", "revenue"],
+            [["Meridian", "85000"]],
+        )
+        reader = ContentReader(
+            raw_store,
+            table_store=table_store,
+            sqlite_table_store=sqlite_store,
+        )
+        addr = self._make_table_address()
+        addr.metadata["row_search"] = {"row_numbers": [640]}
+
+        result = reader.read([addr], limit=10)[0]
+
+        assert "Matched data:" in result.content
+        assert "Meridian" in result.content
+        assert result.metadata["matched_row_numbers"] == [640]
+        sqlite_store.get_rows_by_numbers.assert_called_once_with(
+            "tbl_abc",
+            [640],
+            limit=20,
+        )
 
     def test_read_table_no_store(self):
         """Graceful fallback when table store unavailable."""

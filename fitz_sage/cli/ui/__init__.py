@@ -10,45 +10,17 @@ Usage:
     ui.header("My Command")
     ui.success("Done!")
     name = ui.prompt_text("Enter name", default="default")
-    engine = ui.prompt_engine_selection(engines, descriptions, default)
 """
 
 from __future__ import annotations
 
-from .console import (
-    RICH,
-    Columns,
-    Markdown,
-    Panel,
-    Progress,
-    Syntax,
-    Table,
-    console,
-)
+from .console import RICH, console
 from .display import display_answer, display_evidence_pack, display_sources
-from .engine_selection import EngineSelectionMixin
 from .output import OutputMixin
-from .progress import ProgressMixin
 from .prompts import PromptMixin
 
 
-def get_first_available(choices: list[str], fallback: str = "") -> str:
-    """
-    Get the first available choice from a list.
-
-    Args:
-        choices: List of available choices
-        fallback: Fallback if no choices available
-
-    Returns:
-        First choice, or fallback if list is empty
-    """
-    if not choices:
-        return fallback
-    return choices[0]
-
-
-class UI(OutputMixin, PromptMixin, ProgressMixin, EngineSelectionMixin):
+class UI(OutputMixin, PromptMixin):
     """
     Unified UI helpers with Rich fallback.
 
@@ -74,13 +46,4 @@ __all__ = [
     "display_answer",
     "display_evidence_pack",
     "display_sources",
-    # Utilities
-    "get_first_available",
-    # Rich components (for advanced use)
-    "Columns",
-    "Panel",
-    "Table",
-    "Syntax",
-    "Markdown",
-    "Progress",
 ]

@@ -14,11 +14,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fitz_sage.core.document import DocumentElement, ElementType, ParsedDocument
+from fitz_sage.engines.fitz_krag.ingestion.formats import DOCUMENT_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
-# File extensions this strategy handles
-DOC_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".html", ".md", ".rst", ".txt", ".sql"}
+_UNHEADED_SECTION_MAX_CHARS = 6000
 
 
 @dataclass
@@ -46,7 +46,7 @@ class TechnicalDocIngestStrategy:
     """Extracts sections from technical documents using parsed document elements."""
 
     def content_types(self) -> set[str]:
-        return DOC_EXTENSIONS
+        return set(DOCUMENT_EXTENSIONS)
 
     def extract(self, parsed_doc: ParsedDocument, file_path: str) -> DocIngestResult:
         """
@@ -63,25 +63,14 @@ class TechnicalDocIngestStrategy:
         headings = [el for el in elements if el.type == ElementType.HEADING]
 
         if not headings:
-            # No headings — treat entire document as one section
-            full_text = "\n\n".join(el.content for el in elements if el.content)
-            if not full_text.strip():
-                return DocIngestResult()
-            return DocIngestResult(
-                sections=[
-                    SectionEntry(
-                        title=_title_from_path(file_path),
-                        level=1,
-                        content=full_text,
-                        page_start=_first_page(elements),
-                        page_end=_last_page(elements),
-                        position=0,
-                    )
-                ]
-            )
+            return DocIngestResult(sections=_build_unheaded_sections(elements, file_path))
 
         # Build sections from heading structure
         sections = self._build_sections(elements)
+        document_title = headings[0].content.strip()
+        if document_title:
+            for section in sections:
+                section.metadata.setdefault("document_title", document_title)
         return DocIngestResult(sections=sections)
 
     def _build_sections(self, elements: list[DocumentElement]) -> list[SectionEntry]:
@@ -192,17 +181,109 @@ def _title_from_path(file_path: str) -> str:
     return name.replace("_", " ").replace("-", " ").title()
 
 
+def _build_unheaded_sections(
+    elements: list[DocumentElement],
+    file_path: str,
+) -> list[SectionEntry]:
+    chunks = _chunk_unheaded_elements(elements)
+    if not chunks:
+        return []
+
+    document_title = _title_from_path(file_path)
+    chunk_count = len(chunks)
+    sections: list[SectionEntry] = []
+    for position, (content, page_start, page_end) in enumerate(chunks):
+        metadata: dict[str, Any] = {}
+        title = document_title
+        if chunk_count > 1:
+            title = f"{document_title} - Part {position + 1}"
+            metadata = {
+                "document_title": document_title,
+                "unheaded_part": position + 1,
+                "unheaded_part_count": chunk_count,
+            }
+        sections.append(
+            SectionEntry(
+                title=title,
+                level=1,
+                content=content,
+                page_start=page_start,
+                page_end=page_end,
+                position=position,
+                metadata=metadata,
+            )
+        )
+    return sections
+
+
+def _chunk_unheaded_elements(
+    elements: list[DocumentElement],
+) -> list[tuple[str, int | None, int | None]]:
+    chunks: list[tuple[str, int | None, int | None]] = []
+    parts: list[str] = []
+    content_length = 0
+    page_start: int | None = None
+    page_end: int | None = None
+
+    def flush() -> None:
+        nonlocal content_length, page_start, page_end
+        if parts:
+            chunks.append(("\n\n".join(parts), page_start, page_end))
+        parts.clear()
+        content_length = 0
+        page_start = None
+        page_end = None
+
+    for element in elements:
+        for fragment in _split_unheaded_text(element.content):
+            separator_length = 2 if parts else 0
+            if parts and (
+                content_length + separator_length + len(fragment) > _UNHEADED_SECTION_MAX_CHARS
+            ):
+                flush()
+                separator_length = 0
+
+            if not parts:
+                page_start = element.page
+            elif page_start is None and element.page is not None:
+                page_start = element.page
+            parts.append(fragment)
+            content_length += separator_length + len(fragment)
+            if element.page is not None:
+                page_end = element.page
+
+    flush()
+    return chunks
+
+
+def _split_unheaded_text(value: str) -> list[str]:
+    remaining = value.strip()
+    if not remaining:
+        return []
+
+    fragments: list[str] = []
+    while len(remaining) > _UNHEADED_SECTION_MAX_CHARS:
+        boundary = _preferred_split_boundary(remaining)
+        fragments.append(remaining[:boundary].rstrip())
+        remaining = remaining[boundary:].lstrip()
+    if remaining:
+        fragments.append(remaining)
+    return fragments
+
+
+def _preferred_split_boundary(value: str) -> int:
+    lower_bound = _UNHEADED_SECTION_MAX_CHARS // 2
+    upper_bound = _UNHEADED_SECTION_MAX_CHARS + 1
+    for separator in ("\n\n", "\n", " "):
+        boundary = value.rfind(separator, lower_bound, upper_bound)
+        if boundary >= lower_bound:
+            return boundary
+    return _UNHEADED_SECTION_MAX_CHARS
+
+
 def _first_page(elements: list[DocumentElement]) -> int | None:
     """Get the first page number from elements."""
     for el in elements:
-        if el.page is not None:
-            return el.page
-    return None
-
-
-def _last_page(elements: list[DocumentElement]) -> int | None:
-    """Get the last page number from elements."""
-    for el in reversed(elements):
         if el.page is not None:
             return el.page
     return None

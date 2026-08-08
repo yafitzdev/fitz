@@ -1,27 +1,22 @@
 # fitz_sage/engines/fitz_krag/ingestion/pipeline.py
-# fitz_sage/engines/fitz_krag/ingestion/pipeline.py
 """
 KRAG ingestion core.
 
 The single ingestion implementation for the KRAG engine, structured as
 composable operations:
 
-- per file — ``parse_file`` (extract symbols / sections / tables, store
-  raw content; no LLM), ``summarize_file`` (provider summaries on demand),
-  ``keyword_file`` (minimum retrieval keywords), ``link_entities_file``
-  (entity graph), ``build_hierarchy_file`` (L1 hierarchy summary), and
-  ``enrich_file`` (blocking whole-file enrichment)
-- corpus — ``finalize`` (resolve the import graph, build the L2 hierarchy
-  summary)
+- per file — ``parse_file`` creates the searchable source index without an
+  LLM; entity linking, hierarchy generation, and demand summaries are
+  independent enrichment operations
+- corpus — ``resolve_imports`` is deterministic indexing work, while
+  ``build_corpus_hierarchy`` is model-backed enrichment
 
-``ingest()`` is a thin synchronous loop over these ops for blocking
-whole-corpus ingestion. The progressive ``BackgroundIngestWorker``
-schedules the same ops file-by-file on a background thread.
+``ingest()`` builds only the searchable source index. The background
+enrichment worker schedules optional model-backed operations.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import uuid
 from collections.abc import Callable
@@ -30,6 +25,12 @@ from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core import ConfigurationError
 from fitz_sage.core.json_utils import parse_llm_json
+from fitz_sage.engines.fitz_krag.ingestion.code_utils import path_to_module
+from fitz_sage.engines.fitz_krag.ingestion.formats import (
+    BINARY_DOCUMENT_EXTENSIONS,
+    CODE_EXTENSION_MAP,
+    enabled_extensions,
+)
 from fitz_sage.engines.fitz_krag.ingestion.import_graph_store import ImportGraphStore
 from fitz_sage.engines.fitz_krag.ingestion.raw_file_store import RawFileStore
 from fitz_sage.engines.fitz_krag.ingestion.schema import ensure_schema
@@ -37,17 +38,17 @@ from fitz_sage.engines.fitz_krag.ingestion.section_store import (
     CORPUS_SUMMARY_SCHEMA_VERSION,
     SectionStore,
 )
-from fitz_sage.engines.fitz_krag.ingestion.strategies.base import IngestResult
+from fitz_sage.engines.fitz_krag.ingestion.strategies.base import IngestResult, SymbolEntry
 from fitz_sage.engines.fitz_krag.ingestion.strategies.python_code import (
     PythonCodeIngestStrategy,
 )
 from fitz_sage.engines.fitz_krag.ingestion.strategies.technical_doc import (
-    DOC_EXTENSIONS,
     DocIngestResult,
     TechnicalDocIngestStrategy,
 )
 from fitz_sage.engines.fitz_krag.ingestion.symbol_store import SymbolStore, symbol_entry_to_dict
 from fitz_sage.engines.fitz_krag.ingestion.table_store import TableStore
+from fitz_sage.ingestion.hashing import compute_bytes_hash, compute_content_hash
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
@@ -56,17 +57,6 @@ if TYPE_CHECKING:
     from fitz_sage.tabular.store.sqlite import SqliteTableStore
 
 logger = logging.getLogger(__name__)
-
-# Extensions handled by code strategies
-EXTENSION_MAP: dict[str, str] = {
-    ".py": "python",
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".js": "typescript",
-    ".jsx": "typescript",
-    ".java": "java",
-    ".go": "go",
-}
 
 # Synthetic raw-file / section that carries the L2 corpus summary. Fixed IDs
 # so re-ingest upserts in place rather than accumulating duplicates.
@@ -79,10 +69,10 @@ class KragIngestPipeline:
     """
     Ingestion core for the KRAG engine.
 
-    Exposes per-file operations (``parse_file`` → ``summarize_file`` →
-    ``enrich_file``) and a corpus ``finalize`` step. ``ingest()`` drives them
-    synchronously over a whole directory; the background worker schedules
-    them incrementally.
+    ``parse_file`` and ``resolve_imports`` build the searchable source index.
+    Entity linking, file hierarchy generation, corpus hierarchy generation,
+    and demand summaries are separate model-backed enrichment operations.
+    ``ingest()`` runs only the searchable indexing operations.
     """
 
     def __init__(
@@ -119,12 +109,9 @@ class KragIngestPipeline:
         self._sqlite_table_store = sqlite_table_store
         self._entity_graph_store = entity_graph_store
 
-        # Enricher
+        # Entity enricher
         from fitz_sage.engines.fitz_krag.ingestion.enricher import KragEnricher
 
-        # The managed Qwen path is most reliable when each enrichment
-        # response contains one compact JSON object. Summary batching remains
-        # controlled by config.summary_batch_size.
         self._enricher: Any = KragEnricher(
             self._enricher_chat,
             batch_size=1,
@@ -167,19 +154,20 @@ class KragIngestPipeline:
 
         # Document strategy
         self._doc_strategy = TechnicalDocIngestStrategy()
+        self._parser_router = self._build_parser_router()
 
         ensure_schema(connection_manager, collection)
 
     # ------------------------------------------------------------------
-    # Per-file operations — parse / summarize / enrich
+    # Per-file operations — indexing and optional enrichment
     # ------------------------------------------------------------------
 
     def parse_file(self, rel_path: str, abs_path: Path, file_id: str) -> dict[str, int]:
         """Parse one file: store raw content + extract symbols/sections/tables.
 
         No LLM calls. Routes by extension. This is the single parse
-        implementation shared by the synchronous ``ingest()`` loop and the
-        progressive background worker.
+        implementation shared by ``point()`` and the synchronous ``ingest()``
+        utility.
 
         Returns:
             Counts dict: ``symbols``, ``sections``, ``tables``.
@@ -188,13 +176,17 @@ class KragIngestPipeline:
         ext = abs_path.suffix.lower()
         counts = {"symbols": 0, "sections": 0, "tables": 0}
 
-        if ext in EXTENSION_MAP:
+        if ext in CODE_EXTENSION_MAP:
             counts["symbols"] = self._parse_code_file(rel_path, abs_path, file_id)
         elif ext in self._table_extensions:
             counts["tables"] = self._parse_table_file(rel_path, abs_path, file_id)
         else:
             counts["sections"] = self._parse_doc_file(rel_path, abs_path, file_id)
 
+        if not any(counts.values()):
+            raise ValueError(
+                f"No searchable content could be extracted from supported file '{rel_path}'."
+            )
         return counts
 
     def summarize_file(self, file_id: str, file_type: str) -> None:
@@ -205,55 +197,24 @@ class KragIngestPipeline:
         if file_type in self._table_extensions:
             self._require_summarizer()
             self._summarize_table_file(file_id)
-        elif file_type not in EXTENSION_MAP:
+        elif file_type not in CODE_EXTENSION_MAP:
             self._require_summarizer()
             self._summarize_doc_file(file_id)
 
-    def keyword_file(self, file_id: str, file_type: str) -> None:
-        """Extract the minimum keyword index needed for query-ready retrieval."""
-        if file_type in EXTENSION_MAP:
-            self._keyword_code_file(file_id)
-        elif file_type not in self._table_extensions:
-            self._keyword_doc_file(file_id)
-
     def link_entities_file(self, file_id: str, file_type: str) -> None:
         """Extract entities and populate the entity graph for one file."""
-        if file_type in EXTENSION_MAP:
+        if file_type in CODE_EXTENSION_MAP:
             self._link_code_entities_file(file_id)
         elif file_type not in self._table_extensions:
             self._link_doc_entities_file(file_id)
 
     def build_hierarchy_file(self, file_id: str, file_type: str) -> None:
         """Generate file-level hierarchy summaries for one document file."""
-        if file_type not in EXTENSION_MAP and file_type not in self._table_extensions:
+        if file_type not in CODE_EXTENSION_MAP and file_type not in self._table_extensions:
             self._build_doc_hierarchy_file(file_id)
 
-    def enrich_file(self, file_id: str, file_type: str) -> None:
-        """Extract keywords/entities for one file and feed downstream stores.
-
-        Populates the vocabulary store and entity graph (incremental, per
-        file) and — for document files — the L1 hierarchy summary stored on
-        each section's metadata. Enrichment is part of the ingestion contract;
-        model runtime failures are surfaced instead of silently weakening the
-        retrieval index. Table files are summarized separately and are not
-        entity-enriched.
-        """
-        if file_type in EXTENSION_MAP:
-            self._enrich_code_file(file_id)
-        elif file_type not in self._table_extensions:
-            self._enrich_doc_file(file_id)
-
-    # ------------------------------------------------------------------
-    # Corpus operations — finalize
-    # ------------------------------------------------------------------
-
-    def finalize(self) -> None:
-        """Corpus-level steps, run once after every file has been processed.
-
-        Resolves the import graph and builds the L2 hierarchy summary.
-        Re-runs wholesale on re-ingest (incremental hierarchy is a v2 concern).
-        """
-        self.resolve_imports()
+    def build_corpus_hierarchy(self) -> None:
+        """Build the model-backed corpus hierarchy after file enrichment."""
         self._require_summarizer()
         self._build_corpus_summary()
 
@@ -273,8 +234,12 @@ class KragIngestPipeline:
             self._delete_file(existing_ids[stale_path])
         return len(stale_paths)
 
+    def discard_file(self, file_id: str) -> None:
+        """Remove stored retrieval units after a file fails to re-index."""
+        self._delete_file(file_id)
+
     # ------------------------------------------------------------------
-    # Synchronous whole-corpus ingest — a thin loop over the core ops
+    # Synchronous searchable source indexing
     # ------------------------------------------------------------------
 
     def ingest(
@@ -284,10 +249,7 @@ class KragIngestPipeline:
         on_progress: Callable[[int, int, str], None] | None = None,
     ) -> dict[str, Any]:
         """
-        Run a blocking whole-corpus ingest over ``source``.
-
-        Scans + diffs against stored hashes, then drives the core ops:
-        parse → summarize → enrich per file, delete removed files, finalize.
+        Build the searchable source index over ``source`` without model calls.
 
         Args:
             source: Path to source directory or single file
@@ -307,6 +269,8 @@ class KragIngestPipeline:
             "symbols_extracted": 0,
             "sections_extracted": 0,
             "tables_ingested": 0,
+            "files_failed": 0,
+            "failures": [],
             "collection": self._collection,
         }
 
@@ -343,22 +307,23 @@ class KragIngestPipeline:
         for i, (rel_path, abs_path, file_id) in enumerate(to_process):
             if on_progress:
                 on_progress(i + 1, total, rel_path)
-            counts = self.parse_file(rel_path, abs_path, file_id)
+            try:
+                counts = self.parse_file(rel_path, abs_path, file_id)
+            except Exception as exc:
+                self.discard_file(file_id)
+                stats["files_failed"] += 1
+                stats["failures"].append({"path": rel_path, "error": str(exc)})
+                logger.warning("Failed to index %s: %s", rel_path, exc)
+                continue
             stats["symbols_extracted"] += counts["symbols"]
             stats["sections_extracted"] += counts["sections"]
             stats["tables_ingested"] += counts["tables"]
 
-        # 3. Summarize, then 4. enrich (LLM)
-        for rel_path, abs_path, file_id in to_process:
-            self.summarize_file(file_id, abs_path.suffix.lower())
-        for rel_path, abs_path, file_id in to_process:
-            self.enrich_file(file_id, abs_path.suffix.lower())
-
-        # 5. Delete removed files (the synthetic corpus file is not scanned)
+        # 3. Delete removed files (the synthetic corpus file is not scanned)
         stats["files_deleted"] = self.delete_files_not_in_paths(current_paths)
 
-        # 6. Corpus finalize — import graph + L2 hierarchy summary
-        self.finalize()
+        # 4. Deterministic corpus index finalization
+        self.resolve_imports()
 
         logger.info(
             f"KRAG ingest complete: {stats['files_scanned']} scanned, "
@@ -375,7 +340,7 @@ class KragIngestPipeline:
     def _parse_code_file(self, rel_path: str, abs_path: Path, file_id: str) -> int:
         """Store raw content + extract/store symbols and imports. Returns symbol count."""
         ext = abs_path.suffix.lower()
-        lang = EXTENSION_MAP.get(ext)
+        lang = CODE_EXTENSION_MAP.get(ext)
         if not lang or lang not in self._strategies:
             return 0
 
@@ -385,7 +350,7 @@ class KragIngestPipeline:
             logger.warning(f"Cannot read {abs_path}: {e}")
             return 0
 
-        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        content_hash = compute_bytes_hash(content.encode())
         self._raw_store.upsert(
             file_id=file_id,
             path=rel_path,
@@ -396,6 +361,8 @@ class KragIngestPipeline:
         )
 
         result: IngestResult = self._strategies[lang].extract(content, rel_path)
+        if not result.symbols and content.strip():
+            result.symbols.append(_file_module_symbol(rel_path, content))
 
         # Replace any prior symbols/imports for this file
         self._symbol_store.delete_by_file(file_id)
@@ -420,14 +387,10 @@ class KragIngestPipeline:
 
         return len(result.symbols)
 
-    # Binary document formats where read_text() produces garbled output.
-    # For these, we hash the raw bytes and store Docling-extracted text instead.
-    _BINARY_DOC_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx"}
-
     def _parse_doc_file(self, rel_path: str, abs_path: Path, file_id: str) -> int:
         """Parse a document: store raw content + extract/store sections. Returns section count."""
         ext = abs_path.suffix.lower()
-        is_binary = ext in self._BINARY_DOC_EXTENSIONS
+        is_binary = ext in BINARY_DOCUMENT_EXTENSIONS
 
         content_hash = _hash_file(abs_path)
 
@@ -475,7 +438,6 @@ class KragIngestPipeline:
                     "summary": None,
                     "parent_section_id": sec.parent_id,
                     "position": sec.position,
-                    "keywords": [],
                     "entities": [],
                     "metadata": sec.metadata,
                 }
@@ -491,19 +453,17 @@ class KragIngestPipeline:
             from fitz_sage.tabular.parser.csv_parser import get_sample_rows, parse_csv
 
             parsed = parse_csv(abs_path)
-        except Exception as e:
-            logger.warning(f"CSV parsing failed for {abs_path}: {e}")
-            return 0
+        except Exception as exc:
+            raise ValueError(f"Could not parse table '{rel_path}': {exc}") from exc
 
         try:
             content = abs_path.read_text(encoding="utf-8", errors="replace")
-        except Exception as e:
-            logger.warning(f"Cannot read {abs_path}: {e}")
-            return 0
+        except Exception as exc:
+            raise ValueError(f"Could not read table '{rel_path}': {exc}") from exc
 
         preview = "\n".join(content.splitlines()[:50])
         ext = abs_path.suffix.lower()
-        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        content_hash = compute_bytes_hash(content.encode())
 
         self._raw_store.upsert(
             file_id=file_id,
@@ -523,9 +483,8 @@ class KragIngestPipeline:
                     source_file=rel_path,
                     file_hash=content_hash,
                 )
-            except Exception as e:
-                logger.warning(f"SqliteTableStore.store failed for {rel_path}: {e}")
-                return 0
+            except Exception as exc:
+                raise ValueError(f"Could not store table '{rel_path}': {exc}") from exc
 
         # Replace any prior table metadata for this file
         self._table_store.delete_by_file(file_id)
@@ -665,12 +624,12 @@ class KragIngestPipeline:
     # ------------------------------------------------------------------
 
     def _require_enricher(self) -> None:
-        """Fail closed when keyword/entity enrichment cannot run."""
+        """Fail when entity enrichment cannot run."""
         if self._enricher and self._enricher_chat:
             return
         raise ConfigurationError(
-            "Ingestion requires keyword/entity enrichment, but the managed "
-            "local Qwen ONNX runtime was not initialized."
+            "Entity enrichment requires the managed local Qwen ONNX runtime, "
+            "but it was not initialized."
         )
 
     def _require_summarizer(self) -> None:
@@ -682,24 +641,6 @@ class KragIngestPipeline:
             "local Qwen ONNX runtime was not initialized."
         )
 
-    def _keyword_code_file(self, file_id: str) -> None:
-        """Extract query-ready keywords for a code file's symbols."""
-        self._require_enricher()
-        symbols = self._symbol_store.get_by_file(file_id)
-        if not symbols:
-            return
-        self._enricher.enrich_symbol_keywords(symbols)
-        self._symbol_store.update_enrichment_by_file(file_id, symbols)
-
-    def _keyword_doc_file(self, file_id: str) -> None:
-        """Extract query-ready keywords for a document file's sections."""
-        self._require_enricher()
-        sections = self._section_store.get_by_file(file_id)
-        if not sections:
-            return
-        self._enricher.enrich_section_keywords(sections)
-        self._section_store.update_enrichment_by_file(file_id, sections)
-
     def _link_code_entities_file(self, file_id: str) -> None:
         """Extract entities for code symbols and update the entity graph."""
         self._require_enricher()
@@ -707,9 +648,9 @@ class KragIngestPipeline:
         if not symbols:
             return
         self._enricher.enrich_symbol_entities(symbols)
-        self._symbol_store.update_enrichment_by_file(file_id, symbols)
+        self._symbol_store.update_entities_by_file(file_id, symbols)
         if self._entity_graph_store:
-            self._populate_entity_graph(symbols, "symbol_id")
+            self._populate_entity_graph(symbols)
 
     def _link_doc_entities_file(self, file_id: str) -> None:
         """Extract entities for document sections and update the entity graph."""
@@ -718,9 +659,9 @@ class KragIngestPipeline:
         if not sections:
             return
         self._enricher.derive_section_entities(sections)
-        self._section_store.update_enrichment_by_file(file_id, sections)
+        self._section_store.update_entities_by_file(file_id, sections)
         if self._entity_graph_store:
-            self._populate_entity_graph(sections, "section_id")
+            self._populate_entity_graph(sections)
 
     def _build_doc_hierarchy_file(self, file_id: str) -> None:
         """Generate and persist an L1 hierarchy summary for a document file."""
@@ -729,46 +670,13 @@ class KragIngestPipeline:
         if not sections:
             return
         self._generate_l1_summary(sections)
-        self._section_store.update_enrichment_by_file(file_id, sections)
-
-    def _enrich_code_file(self, file_id: str) -> None:
-        """Enrich a code file's symbols with keywords + entities.
-
-        Code symbols have no hierarchy stage, but keyword/entity enrichment is
-        still required for the retrieval index.
-        """
-        self._require_enricher()
-        symbols = self._symbol_store.get_by_file(file_id)
-        if not symbols:
-            return
-        self._enricher.enrich_symbols(symbols)
-        self._symbol_store.update_enrichment_by_file(file_id, symbols)
-        if self._entity_graph_store:
-            self._populate_entity_graph(symbols, "symbol_id")
-
-    def _enrich_doc_file(self, file_id: str) -> None:
-        """Enrich a document file's sections with keywords + entities + L1 summary.
-
-        Keyword/entity extraction and the L1 hierarchy summary are both required
-        parts of the document retrieval index.
-        """
-        self._require_enricher()
-        self._require_summarizer()
-        sections = self._section_store.get_by_file(file_id)
-        if not sections:
-            return
-        self._enricher.enrich_sections(sections)
-        self._generate_l1_summary(sections)
-        # One write persists keywords, entities, and the L1 hierarchy summary
-        self._section_store.update_enrichment_by_file(file_id, sections)
-        if self._entity_graph_store:
-            self._populate_entity_graph(sections, "section_id")
+        self._section_store.update_entities_by_file(file_id, sections)
 
     # ------------------------------------------------------------------
     # Entity graph integration
     # ------------------------------------------------------------------
 
-    def _populate_entity_graph(self, item_dicts: list[dict[str, Any]], id_field: str) -> None:
+    def _populate_entity_graph(self, item_dicts: list[dict[str, Any]]) -> None:
         """Add entities from enriched items to the entity graph store."""
         try:
             for item in item_dicts:
@@ -804,22 +712,18 @@ class KragIngestPipeline:
         if not content:
             return
 
-        try:
-            group_summary = self._summarizer_chat.chat(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Summarize this group of document sections in 2-3 sentences. "
-                            "Focus on what this document covers overall."
-                        ),
-                    },
-                    {"role": "user", "content": content},
-                ]
-            )
-        except Exception as e:
-            logger.debug(f"L1 summary failed for section group: {e}")
-            return
+        group_summary = self._summarizer_chat.chat(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarize this group of document sections in 2-3 sentences. "
+                        "Focus on what this document covers overall."
+                    ),
+                },
+                {"role": "user", "content": content},
+            ]
+        )
 
         for sec in sections:
             meta = sec.get("metadata") or {}
@@ -834,8 +738,9 @@ class KragIngestPipeline:
             return
         source_signature = self._corpus_summary_source_signature(l1_summaries)
         corpus_summary = self._generate_corpus_summary(l1_summaries)
-        if corpus_summary:
-            self._store_corpus_summary(corpus_summary, source_signature)
+        if not corpus_summary:
+            raise ValueError("Corpus hierarchy model returned an empty summary.")
+        self._store_corpus_summary(corpus_summary, source_signature)
 
     def _delete_corpus_summary(self) -> None:
         """Remove the synthetic L2 summary before regeneration."""
@@ -845,31 +750,27 @@ class KragIngestPipeline:
     def _corpus_summary_source_signature(self, l1_summaries: list[str]) -> str:
         """Hash the L1 rollup inputs so stored L2 summaries are traceable."""
         normalized = "\n".join(sorted(s.strip() for s in l1_summaries if s.strip()))
-        return hashlib.sha256(normalized.encode()).hexdigest()
+        return compute_bytes_hash(normalized.encode())
 
-    def _generate_corpus_summary(self, l1_summaries: list[str]) -> str | None:
+    def _generate_corpus_summary(self, l1_summaries: list[str]) -> str:
         """Generate the L2 corpus-level summary from L1 summaries."""
         content = "\n".join(f"- {s}" for s in l1_summaries[:20])
-        try:
-            return self._summarizer_chat.chat(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Summarize this collection of document modules in 3-5 sentences. "
-                            "Describe the overall system architecture and purpose."
-                        ),
-                    },
-                    {"role": "user", "content": content},
-                ]
-            ).strip()
-        except Exception as e:
-            logger.warning(f"L2 corpus summary failed: {e}")
-            return None
+        return self._summarizer_chat.chat(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarize this collection of document modules in 3-5 sentences. "
+                        "Describe the overall system architecture and purpose."
+                    ),
+                },
+                {"role": "user", "content": content},
+            ]
+        ).strip()
 
     def _store_corpus_summary(self, summary: str, source_signature: str) -> None:
         """Persist the L2 summary as a retrievable section under a synthetic raw file."""
-        content_hash = hashlib.sha256(summary.encode()).hexdigest()
+        content_hash = compute_bytes_hash(summary.encode())
         self._raw_store.upsert(
             file_id=_CORPUS_FILE_ID,
             path=_CORPUS_FILE_PATH,
@@ -891,7 +792,6 @@ class KragIngestPipeline:
                     "summary": summary,
                     "parent_section_id": None,
                     "position": 0,
-                    "keywords": [],
                     "entities": [],
                     "metadata": {
                         "is_corpus_summary": True,
@@ -907,23 +807,25 @@ class KragIngestPipeline:
     # Document parsing
     # ------------------------------------------------------------------
 
+    def _build_parser_router(self) -> Any:
+        """Create one parser router so heavyweight parser instances are reused."""
+        from fitz_sage.ingestion.parser.router import ParserRouter
+
+        router = ParserRouter(parser=self._config.parser)
+        if self._config.parser == "docling_vision" and self._config.vision:
+            self._inject_vision_client(router)
+        return router
+
     def _parse_document(self, abs_path: Path) -> Any:
         """Parse a document file using the ingestion parser router."""
         try:
-            from fitz_sage.ingestion.parser.router import ParserRouter
             from fitz_sage.ingestion.source.base import SourceFile
-
-            router = ParserRouter(parser=self._config.parser)
-
-            # Inject vision client when using docling_vision parser
-            if self._config.parser == "docling_vision" and self._config.vision:
-                self._inject_vision_client(router)
 
             source_file = SourceFile(
                 uri=f"file://{abs_path}",
                 local_path=abs_path,
             )
-            return router.parse(source_file)
+            return self._parser_router.parse(source_file)
         except Exception as e:
             logger.warning(f"Document parsing failed for {abs_path}: {e}")
             return None
@@ -950,8 +852,6 @@ class KragIngestPipeline:
                 for parser in router._parsers.values():
                     if hasattr(parser, "vision_client"):
                         parser.vision_client = vision_client
-                        if hasattr(parser, "_vision_client_loaded"):
-                            parser._vision_client_loaded = True
                         break
         except Exception as e:
             logger.warning(f"Failed to inject vision client: {e}")
@@ -990,24 +890,18 @@ class KragIngestPipeline:
 
     def _scan_files(self, source: Path) -> list[Path]:
         """Scan source for files matching enabled code + document + table strategies."""
-        extensions = set()
-        for lang in self._config.code_languages:
-            for ext, lang_name in EXTENSION_MAP.items():
-                if lang_name == lang:
-                    extensions.add(ext)
-
-        # Include document extensions
-        extensions.update(DOC_EXTENSIONS)
-
-        # Include table extensions
-        extensions.update(self._config.table_extensions)
+        extensions = enabled_extensions(
+            code_languages=self._config.code_languages,
+            table_extensions=self._config.table_extensions,
+            parser=self._config.parser,
+        )
 
         if source.is_file():
             if source.suffix.lower() in extensions:
                 return [source]
             return []
 
-        files = []
+        files: list[Path] = []
         for ext in extensions:
             files.extend(source.rglob(f"*{ext}"))
 
@@ -1064,5 +958,16 @@ def _resolve_section_parents(section_dicts: list[dict[str, Any]], file_ids: list
 
 def _hash_file(path: Path) -> str:
     """Compute SHA-256 hash of file content."""
-    content = path.read_bytes()
-    return hashlib.sha256(content).hexdigest()
+    return compute_content_hash(path)
+
+
+def _file_module_symbol(file_path: str, content: str) -> SymbolEntry:
+    """Create a filename-addressable unit when code has no finer symbols."""
+    module_name = path_to_module(file_path, CODE_EXTENSION_MAP)
+    return SymbolEntry(
+        name=Path(file_path).stem,
+        qualified_name=module_name,
+        kind="module",
+        start_line=1,
+        end_line=max(1, len(content.splitlines())),
+    )

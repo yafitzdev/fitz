@@ -23,28 +23,31 @@ _DAEMON_RUNNING = "running"
 _DAEMON_FAILED = "failed"
 
 
-def _indexing_needs_daemon(status: dict) -> bool:
+def _enrichment_needs_daemon(status: dict) -> bool:
     """Return whether a detached worker should continue enrichment."""
-    if not status:
+    enrichment = status.get("enrichment") if isinstance(status, dict) else None
+    if not isinstance(enrichment, dict):
         return False
-    if status.get("fully_enriched", status.get("complete", True)):
-        return False
-    return bool(status.get("total", 0))
+    return (
+        bool(enrichment.get("pending", 0))
+        or bool(enrichment.get("failed", 0))
+        or enrichment.get("finalization") in {"pending", "failed"}
+    )
 
 
 def _daemon_pid_path(collection: str, cwd: Path) -> Path:
-    """Return the PID file path for a collection's detached index worker."""
-    return cwd / ".fitz" / "collections" / collection / "index_daemon.pid"
+    """Return the PID file path for a collection's enrichment worker."""
+    return cwd / ".fitz" / "collections" / collection / "enrichment_daemon.pid"
 
 
 def _daemon_log_path(collection: str, cwd: Path) -> Path:
-    """Return the detached index worker log path."""
-    return cwd / ".fitz" / "collections" / collection / "index_daemon.log"
+    """Return the detached enrichment worker log path."""
+    return cwd / ".fitz" / "collections" / collection / "enrichment_daemon.log"
 
 
 def _pid_is_running(pid: int) -> bool:
     """Return whether a process id appears to still be alive."""
-    if os.name == "nt":
+    if sys.platform == "win32":
         return _windows_pid_is_running(pid)
     try:
         os.kill(pid, 0)
@@ -53,25 +56,27 @@ def _pid_is_running(pid: int) -> bool:
         return False
 
 
-def _windows_pid_is_running(pid: int) -> bool:
-    """Return whether a Windows process id is active."""
-    import ctypes
-    from ctypes import wintypes
+if sys.platform == "win32":
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    process_query_limited_information = 0x1000
-    still_active = 259
+    def _windows_pid_is_running(pid: int) -> bool:
+        """Return whether a Windows process id is active."""
+        import ctypes
+        from ctypes import wintypes
 
-    handle = kernel32.OpenProcess(process_query_limited_information, False, int(pid))
-    if not handle:
-        return False
-    try:
-        exit_code = wintypes.DWORD()
-        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        process_query_limited_information = 0x1000
+        still_active = 259
+
+        handle = kernel32.OpenProcess(process_query_limited_information, False, int(pid))
+        if not handle:
             return False
-        return exit_code.value == still_active
-    finally:
-        kernel32.CloseHandle(handle)
+        try:
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
 
 
 def _read_running_daemon_pid(pid_path: Path) -> int | None:
@@ -83,8 +88,8 @@ def _read_running_daemon_pid(pid_path: Path) -> int | None:
     return pid if _pid_is_running(pid) else None
 
 
-def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
-    """Start a detached process that continues indexing this collection."""
+def _spawn_enrichment_daemon(collection: str, engine_name: str, cwd: Path) -> str:
+    """Start a detached process that enriches this collection."""
     pid_path = _daemon_pid_path(collection, cwd)
     if _read_running_daemon_pid(pid_path) is not None:
         return _DAEMON_RUNNING
@@ -93,7 +98,7 @@ def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
         sys.executable,
         "-m",
         "fitz_sage.cli.cli",
-        "index-daemon",
+        "enrichment-daemon",
         "--collection",
         collection,
         "--engine",
@@ -106,7 +111,7 @@ def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
     try:
         log_handle = log_path.open("ab")
     except Exception as e:
-        logger.debug(f"Failed to open index daemon log: {e}")
+        logger.debug(f"Failed to open enrichment daemon log: {e}")
         return _DAEMON_FAILED
 
     kwargs: dict = {
@@ -116,7 +121,7 @@ def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
         "stderr": log_handle,
         "close_fds": True,
     }
-    if os.name == "nt":
+    if sys.platform == "win32":
         kwargs["creationflags"] = (
             getattr(subprocess, "DETACHED_PROCESS", 0)
             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -133,7 +138,7 @@ def _spawn_index_daemon(collection: str, engine_name: str, cwd: Path) -> str:
         pid_path.write_text(str(process.pid), encoding="utf-8")
         return _DAEMON_SPAWNED
     except Exception as e:
-        logger.debug(f"Failed to spawn index daemon: {e}")
+        logger.debug(f"Failed to spawn enrichment daemon: {e}")
         return _DAEMON_FAILED
     finally:
         if log_handle is not None:
@@ -151,8 +156,9 @@ def _default_source(source: Optional[Path], collection: Optional[str]) -> Option
 
 def _collection_name_for_source(source: Path) -> str:
     """Derive the default collection name from the selected source directory."""
-    name = source.resolve().name.strip()
-    return name or "default"
+    from fitz_sage.core.collections import collection_name_from_path
+
+    return collection_name_from_path(source)
 
 
 def _persisted_source_matches(collection: str, source: Path, cwd: Path) -> bool:
@@ -181,6 +187,8 @@ def command(
     *,
     output_format: str = "text",
     top_k: int | None = None,
+    trace_path: Path | None = None,
+    trace_content: bool = False,
 ) -> None:
     """Run retrieval-first evidence mode."""
     output_format = output_format.lower().strip()
@@ -189,6 +197,9 @@ def command(
         raise typer.Exit(1)
     if top_k is not None and top_k < 1:
         ui.error("--top-k must be greater than zero.")
+        raise typer.Exit(1)
+    if trace_content and trace_path is None:
+        ui.error("--trace-content requires --trace PATH.")
         raise typer.Exit(1)
     effective_source = _default_source(source, collection)
     if effective_source is not None and not effective_source.exists():
@@ -225,34 +236,50 @@ def command(
             else:
                 if progress:
                     progress(f"Registering {effective_source}...")
-                engine_instance.point(effective_source, selected_collection, progress=progress)
-                engine_instance.wait_for_query_surface(progress=progress)
+                engine_instance.point(
+                    effective_source,
+                    selected_collection,
+                    start_worker=False,
+                    progress=progress,
+                )
         else:
             if progress:
                 progress(f"Loading collection '{selected_collection}'...")
             engine_instance.load(selected_collection)
 
-        pack = engine_instance.evidence(
-            Query(text=question_text, metadata=metadata),
-            progress=progress,
-            top_k=top_k,
-        )
+        query = Query(text=question_text, metadata=metadata)
+        if trace_path is not None:
+            run = engine_instance.trace(
+                query,
+                progress=progress,
+                top_k=top_k,
+            )
+            pack = run.evidence
+            written_trace = run.write(trace_path, include_content=trace_content)
+            if output_format != "json":
+                ui.info(f"Trace written to {written_trace}.")
+        else:
+            pack = engine_instance.evidence(
+                query,
+                progress=progress,
+                top_k=top_k,
+            )
         if output_format == "json":
             print(pack.to_json())
         else:
             display_evidence_pack(pack, max_items=top_k or 10)
-        if _indexing_needs_daemon(pack.indexing_status):
-            stop_worker = getattr(engine_instance, "stop_background_indexing", None)
+        if _enrichment_needs_daemon(pack.indexing_status):
+            stop_worker = getattr(engine_instance, "stop_background_enrichment", None)
             if callable(stop_worker):
                 stop_worker()
             if output_format != "json":
-                daemon_status = _spawn_index_daemon(selected_collection, engine_name, cwd)
+                daemon_status = _spawn_enrichment_daemon(selected_collection, engine_name, cwd)
                 if daemon_status == _DAEMON_SPAWNED:
-                    ui.info("Indexing continues in the background.")
+                    ui.info("Enrichment continues in the background.")
                 elif daemon_status == _DAEMON_RUNNING:
-                    ui.info("Indexing daemon already running.")
+                    ui.info("Enrichment daemon already running.")
             elif output_format == "json":
-                _spawn_index_daemon(selected_collection, engine_name, cwd)
+                _spawn_enrichment_daemon(selected_collection, engine_name, cwd)
     except Exception as e:
         ui.error(f"Retrieve failed: {e}")
         logger.debug("Retrieve error", exc_info=True)
@@ -269,10 +296,10 @@ def _select_collection(
     if source is not None:
         return requested or _collection_name_for_source(source)
 
-    collections = registry.get_list_collections(engine_name)
+    collections = [str(name) for name in registry.get_list_collections(engine_name)]
     if not collections:
         ui.warning("No collections found.")
-        ui.info("Run 'fitz query \"question\"' from your documents folder to get started.")
+        ui.info("Run 'fitz retrieve \"question\"' from your documents folder to get started.")
         raise typer.Exit(0)
 
     if requested is not None:
@@ -282,6 +309,6 @@ def _select_collection(
         return requested
 
     if len(collections) == 1:
-        return collections[0]
+        return str(collections[0])
 
-    return ui.prompt_numbered_choice("Collection", collections, collections[0])
+    return str(ui.prompt_numbered_choice("Collection", collections, collections[0]))

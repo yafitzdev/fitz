@@ -44,6 +44,7 @@ from .registry import (
     get_default_engine,
     get_engine_registry,
 )
+from .replay import load_retrieval_run, replay_pyrrho
 from .runner import (
     create_engine,
     list_engines,
@@ -60,6 +61,8 @@ __all__ = [
     "get_default_engine",
     # Runner
     "run",
+    "load_retrieval_run",
+    "replay_pyrrho",
     "create_engine",
     "list_engines",
     "list_engines_with_info",

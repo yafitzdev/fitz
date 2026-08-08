@@ -15,7 +15,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
-from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouter
+from fitz_sage.engines.fitz_krag.retrieval.router import (
+    RetrievalRouter,
+    RetrievalRouterResponse,
+)
 from fitz_sage.engines.fitz_krag.retrieval_profile import RetrievalProfile
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
 from tests.unit.mock_engine import build_mock_engine
@@ -126,12 +129,12 @@ class TestRouterDetection:
             section_strategy=section_strategy,
         )
 
-    def test_retrieve_without_detection_backward_compat(self):
-        """Router.retrieve without detection works as before (backward compat)."""
+    def test_retrieve_without_profile_uses_equal_strategy_weights(self):
+        """Router.retrieve can run all configured strategies without a profile."""
         addr = _make_address("file.py", "foo.bar", 0.8)
         router = self._make_router(code_results=[addr])
 
-        results = router.retrieve("what is foo?")
+        results = router.retrieve("what is foo?").addresses
 
         assert len(results) == 1
         assert results[0].source_id == "file.py"
@@ -157,7 +160,7 @@ class TestRouterDetection:
         )
 
         profile = _make_profile(query_variations=["expanded query"])
-        results = router.retrieve("original query", profile)
+        results = router.retrieve("original query", profile).addresses
 
         # Code strategy called twice: once for "original query", once for "expanded query"
         assert code_strategy.retrieve.call_count == 2
@@ -278,10 +281,24 @@ class TestEngineAnswerDetectionFlow:
         query = _make_query(
             "compare the latest authentication changes between the different modules in the system"
         )
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-        engine._reader.read.return_value = [MagicMock()]
-        engine._expander.expand.return_value = [MagicMock()]
-        engine._assembler.assemble.return_value = MagicMock()
+        from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
+
+        address = Address(
+            kind=AddressKind.SECTION,
+            source_id="auth-doc",
+            location="Authentication changes",
+            summary="Latest authentication changes",
+            score=0.9,
+        )
+        read_result = ReadResult(
+            address=address,
+            content="The authentication flow changed in the latest release.",
+            file_path="auth.md",
+        )
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
+        engine._reader.read.return_value = [read_result]
+        engine._expander.expand.return_value = [read_result]
+        engine._assembler.assemble.return_value = "[S1] Latest authentication changes"
         engine._synthesizer.generate.return_value = MagicMock(
             text="answer", provenance=[], metadata={}
         )
@@ -333,7 +350,7 @@ class TestTemporalTagging:
             temporal_references=["Q1 2024", "Q2 2024"],
         )
 
-        results = router.retrieve("compare Q1 vs Q2 revenue", profile)
+        results = router.retrieve("compare Q1 vs Q2 revenue", profile).addresses
 
         # Addresses from temporal queries should have temporal_refs in metadata
         tagged = [r for r in results if r.metadata.get("temporal_refs")]
@@ -366,7 +383,7 @@ class TestTemporalTagging:
             temporal_references=["Q1 2024"],
         )
 
-        results = router.retrieve("revenue trends", profile)
+        results = router.retrieve("revenue trends", profile).addresses
 
         # Find the original query's address (unique.symbol)
         original = [r for r in results if r.location == "unique.symbol"]
@@ -383,7 +400,7 @@ class TestTemporalTagging:
             temporal_references=[],  # No temporal data
         )
 
-        results = router.retrieve("original query", profile)
+        results = router.retrieve("original query", profile).addresses
 
         for r in results:
             assert "temporal_refs" not in r.metadata

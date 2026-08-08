@@ -11,7 +11,7 @@ class TestAddressKind:
         assert AddressKind.SYMBOL == "symbol"
         assert AddressKind.FILE == "file"
         assert AddressKind.SECTION == "section"
-        assert AddressKind.CHUNK == "chunk"
+        assert AddressKind.TABLE == "table"
 
     def test_string_enum(self):
         assert isinstance(AddressKind.SYMBOL, str)

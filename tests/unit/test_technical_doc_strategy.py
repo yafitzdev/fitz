@@ -6,8 +6,8 @@ from __future__ import annotations
 import pytest
 
 from fitz_sage.core.document import DocumentElement, ElementType, ParsedDocument
+from fitz_sage.engines.fitz_krag.ingestion.formats import DOCUMENT_EXTENSIONS
 from fitz_sage.engines.fitz_krag.ingestion.strategies.technical_doc import (
-    DOC_EXTENSIONS,
     TechnicalDocIngestStrategy,
 )
 
@@ -35,7 +35,7 @@ class TestContentTypes:
         assert ".txt" in strategy.content_types()
 
     def test_matches_doc_extensions(self, strategy):
-        assert strategy.content_types() == DOC_EXTENSIONS
+        assert strategy.content_types() == set(DOCUMENT_EXTENSIONS)
 
 
 class TestNoHeadings:
@@ -67,6 +67,55 @@ class TestNoHeadings:
         result = strategy.extract(doc, "empty.pdf")
         assert result.sections == []
 
+    def test_long_unheaded_document_is_split_without_losing_content(self, strategy):
+        content = "X" * 13000
+        doc = _make_doc(
+            [
+                DocumentElement(
+                    type=ElementType.TEXT,
+                    content=content,
+                    page=7,
+                )
+            ]
+        )
+
+        result = strategy.extract(doc, "docs/reference_dump.txt")
+
+        assert len(result.sections) == 3
+        assert all(len(section.content) <= 6000 for section in result.sections)
+        assert "".join(section.content for section in result.sections) == content
+        assert [section.position for section in result.sections] == [0, 1, 2]
+        assert [section.title for section in result.sections] == [
+            "Reference Dump - Part 1",
+            "Reference Dump - Part 2",
+            "Reference Dump - Part 3",
+        ]
+        assert all(section.page_start == 7 for section in result.sections)
+        assert all(section.page_end == 7 for section in result.sections)
+        assert result.sections[0].metadata == {
+            "document_title": "Reference Dump",
+            "unheaded_part": 1,
+            "unheaded_part_count": 3,
+        }
+
+    def test_unheaded_sections_preserve_element_page_ranges(self, strategy):
+        doc = _make_doc(
+            [
+                DocumentElement(type=ElementType.TEXT, content="A" * 4000, page=2),
+                DocumentElement(type=ElementType.TEXT, content="B" * 4000, page=3),
+            ]
+        )
+
+        result = strategy.extract(doc, "appendix.pdf")
+
+        assert len(result.sections) == 2
+        assert result.sections[0].content == "A" * 4000
+        assert result.sections[0].page_start == 2
+        assert result.sections[0].page_end == 2
+        assert result.sections[1].content == "B" * 4000
+        assert result.sections[1].page_start == 3
+        assert result.sections[1].page_end == 3
+
 
 class TestHeadingExtraction:
     def test_single_heading_with_content(self, strategy):
@@ -95,6 +144,7 @@ class TestHeadingExtraction:
         assert len(result.sections) == 2
         assert result.sections[0].title == "Chapter 1"
         assert result.sections[1].title == "Chapter 2"
+        assert result.sections[1].metadata["document_title"] == "Chapter 1"
 
     def test_nested_headings(self, strategy):
         doc = _make_doc(

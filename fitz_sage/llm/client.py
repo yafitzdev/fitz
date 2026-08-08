@@ -2,9 +2,9 @@
 """
 Public API for LLM providers.
 
-The default ingestion chat provider is the managed local ONNX Qwen runtime.
-Endpoint/cloud providers remain available for optional synthesis, query
-intelligence, and vision.
+The managed local ONNX Qwen runtime supplies semantic query terms and optional
+background enrichment. Endpoint/cloud providers remain available for optional
+synthesis, query intelligence, vision, and explicitly configured chat tiers.
 
 - ``onnx/qwen3-0.6b`` — managed in-process Qwen3 0.6B ONNX GenAI runtime.
 - ``endpoint/<model>`` — bring your own OpenAI-compatible URL.

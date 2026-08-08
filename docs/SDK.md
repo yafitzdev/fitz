@@ -20,13 +20,13 @@ for item in pack.items:
 ## Module-Level API
 
 The simplest retrieval-first SDK call is `fitz_sage.evidence(...)`. It matches
-the default `fitz query` CLI behavior.
+the default `fitz retrieve` CLI behavior.
 
 ### fitz_sage.evidence()
 
 Retrieve a governed evidence pack without answer synthesis.
 
-```python
+```text
 fitz_sage.evidence(
     question: str,                 # The question to retrieve evidence for
     source: str | Path = None,     # If provided, registers documents first
@@ -48,13 +48,42 @@ for item in pack.items:
     print(item.excerpt)
 ```
 
-### fitz_sage.query()
+### fitz_sage.trace()
+
+Return a versioned record of the same governed retrieval execution.
+
+```python
+run = fitz_sage.trace(
+    "What is the refund policy?",
+    source="./docs",
+    collection="policies",
+)
+
+run.write("run.json")  # source content redacted
+run.write("run-with-content.json", include_content=True)
+print(run.explain())
+```
+
+Use `fitz_sage.replay_pyrrho(...)` to evaluate another Pyrrho model over a
+content-bearing record's exact delivered evidence:
+
+```python
+result = fitz_sage.replay_pyrrho(
+    "run-with-content.json",
+    pyrrho="pyrrho/C:/models/pyrrho-candidate",
+)
+```
+
+See [Retrieval Execution Records](RETRIEVAL_RUNS.md) for security and replay
+semantics.
+
+### fitz_sage.answer()
 
 Generate a synthesized answer. This requires a configured synthesizer provider;
 use `evidence()` for the default retrieval path.
 
-```python
-fitz_sage.query(
+```text
+fitz_sage.answer(
     question: str,                 # The question to ask
     source: str | Path = None,     # If provided, registers documents before querying
     collection: str = None,        # Collection name (uses default if not specified)
@@ -66,7 +95,7 @@ fitz_sage.query(
 **Examples:**
 
 ```python
-answer = fitz_sage.query("What is the refund policy?")
+answer = fitz_sage.answer("What is the refund policy?")
 print(answer.text)
 print(answer.mode)  # runtime AnswerMode: SUFFICIENT, DISPUTED, or INSUFFICIENT
 
@@ -84,7 +113,7 @@ For advanced usage with multiple collections or custom configuration.
 
 ### Constructor
 
-```python
+```text
 from fitz_sage import fitz
 
 f = fitz(
@@ -104,10 +133,10 @@ f = fitz(
 
 ### Methods
 
-#### query()
+#### answer()
 
-```python
-f.query(
+```text
+f.answer(
     question: str,
     source: str | Path = None,  # If provided, registers documents before querying
 ) -> Answer  # synthesized answer: text, provenance, mode
@@ -118,20 +147,34 @@ synthesizer provider.
 
 #### evidence()
 
-```python
+```text
 f.evidence(
     question: str,
     source: str | Path = None,  # If provided, registers documents before retrieval
 ) -> EvidencePack
 ```
 
+#### trace()
+
+```text
+f.trace(
+    question: str,
+    source: str | Path = None,
+) -> RetrievalRun
+
+f.replay_pyrrho(
+    run: RetrievalRun | str | Path,
+    pyrrho: str | object = None,
+) -> PyrrhoReplay
+```
+
 #### point()
 
-Register a source file or directory. Indexing runs in the background — queries
-work after the parsed search surface is ready and improve as Qwen enrichment
-completes.
+Register a source file or directory. This call synchronously parses changed
+supported files and completes the searchable source index. Optional Qwen
+entity and hierarchy work can continue in the background afterward.
 
-```python
+```text
 f.point(source: str | Path) -> None
 ```
 
@@ -141,17 +184,19 @@ The raw sources behind an answer/evidence pack, without governance packaging.
 For KRAG, returns `ReadResult` objects with `content`, `file_path`, and
 `line_range`. Most applications should prefer `evidence()`.
 
-```python
+```text
 f.retrieve(question: str) -> list
 ```
 
-#### wait_for_query_surface() / wait_for_indexing() / indexing_status()
+#### wait_for_enrichment() / indexing_status()
 
-```python
-f.wait_for_query_surface() -> None  # block until parsed units are searchable
-f.wait_for_indexing() -> None       # block until query-ready keywording completes
-f.indexing_status() -> dict         # query-ready + deep-enrichment progress
+```text
+f.wait_for_enrichment() -> None  # optional entity/hierarchy completion
+f.indexing_status() -> dict      # source-index health + enrichment progress
 ```
+
+`point()` itself is the query-ready boundary. It returns after supported files
+are either searchable or reported as indexing failures.
 
 ### Properties
 
@@ -175,8 +220,9 @@ legal_pack = legal.evidence("What are the payment terms?", source="./contracts")
 # Custom config
 f = fitz(config_path="./my_config.yaml")
 
-# Require existing config
-f = fitz(auto_init=False)  # Raises if no config
+# Require existing config. Construction is lazy; the first operation raises
+# when the config is missing.
+f = fitz(auto_init=False)
 ```
 
 ---
@@ -199,8 +245,8 @@ class Answer:
 
 **Runtime Answer Modes:**
 
-Pyrrho v2's native model verdict is available in governance metadata as
-`evidence_verdict`. `AnswerMode` is the runtime API value.
+Pyrrho v2's native model verdict is available at
+`metadata["pyrrho"]["verdict"]`. `AnswerMode` is its mechanical runtime mapping.
 
 | Mode | Description |
 |------|-------------|
@@ -239,6 +285,15 @@ class EvidenceItem:
 
 Use `pack.to_dict()` or `pack.to_json()` for API responses and downstream apps.
 
+### RetrievalRun
+
+An inspectable, versioned record containing the effective query plan, term
+origins, retrieval strategies, candidate stages, compiled evidence ranking,
+exact Pyrrho input and output, selected `EvidencePack`, and runtime fingerprints.
+
+`to_dict()`, `to_json()`, and `write()` redact source bodies by default.
+Content-bearing traces are required for Pyrrho replay.
+
 ### Provenance
 
 Source attribution for an answer.
@@ -248,7 +303,7 @@ from fitz_sage import Provenance
 
 class Provenance:
     source_id: str    # Unique source identifier
-    excerpt: str      # Relevant excerpt
+    excerpt: str | None  # Relevant excerpt, when available
     metadata: dict    # Additional source info
 ```
 
@@ -280,10 +335,10 @@ from fitz_sage import create_engine, Query
 
 engine = create_engine("fitz_krag")
 engine.load("default")                  # bind to a collection
-engine.point(Path("./docs"))            # register a source
-engine.wait_for_query_surface()         # parsed units are searchable
+engine.point(Path("./docs"))            # build the searchable source index
 
 pack = engine.evidence(Query(text="What is X?"))     # governed evidence
+# Requires a configured synthesizer:
 answer = engine.answer(Query(text="What is X?"))     # synthesized answer
 sources = engine.retrieve(Query(text="What is X?"))  # raw sources, no governance packaging
 ```
@@ -297,8 +352,8 @@ from fitz_sage import run, list_engines
 engines = list_engines()
 print(engines)  # ['fitz_krag']
 
-# Run with specific engine
-answer = run("What is X?", engine="fitz_krag")
+# run() always calls the engine's answer() contract. For fitz_krag it therefore
+# requires a synthesizer; use create_engine(...).evidence(...) for retrieval.
 ```
 
 ### Fitz KRAG Specific
@@ -306,7 +361,7 @@ answer = run("What is X?", engine="fitz_krag")
 ```python
 from fitz_sage.engines.fitz_krag.runtime import run_fitz_krag
 
-# KRAG-specific entry point
+# KRAG-specific answer entry point; requires a synthesizer in the config
 answer = run_fitz_krag("What is X?")
 
 # Create a reusable KRAG engine via the canonical factory
@@ -340,11 +395,11 @@ except EngineError as e:
 
 | Exception | When |
 |-----------|------|
-| `ConfigurationError` | Config file missing or invalid |
-| `QueryError` | Invalid query or retrieval failed |
+| `ConfigurationError` | Config missing, invalid, or incomplete for the requested operation |
+| `QueryError` | Invalid query or configured query-intelligence failure |
 | `EngineError` | Engine initialization or execution error |
 | `GenerationError` | LLM generation failed |
-| `KnowledgeError` | Base class for knowledge errors |
+| `KnowledgeError` | Source indexing, storage, or retrieval failure |
 
 ---
 
@@ -354,7 +409,7 @@ The SDK uses the same config as CLI. See [CONFIG.md](CONFIG.md) for details.
 
 **Config search order:**
 1. `config_path` parameter (if provided)
-2. `~/.fitz/config/fitz_krag.yaml` (user config)
+2. `.fitz/config.yaml` in the current workspace
 3. Auto-created default config (if `auto_init=True`)
 
 ---

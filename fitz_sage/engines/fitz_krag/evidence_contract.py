@@ -7,6 +7,12 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from fitz_sage.core.identifiers import (
+    EXACT_IDENTIFIER_PATTERN,
+    contains_exact_identifier,
+    exact_identifiers,
+)
+
 _STOPWORDS = {
     "a",
     "an",
@@ -48,38 +54,6 @@ _STOPWORDS = {
     "who",
     "with",
 }
-_QUESTION_TITLE_WORDS = {
-    "Are",
-    "Can",
-    "Compare",
-    "Could",
-    "Did",
-    "Do",
-    "Does",
-    "For",
-    "How",
-    "Is",
-    "Should",
-    "Using",
-    "Was",
-    "What",
-    "When",
-    "Where",
-    "Which",
-    "Who",
-    "Will",
-    "Would",
-}
-
-EXACT_IDENTIFIER_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"
-    r"(?:[-_][A-Za-z0-9]+)*(?![A-Za-z0-9_])|"
-    r"(?<![A-Za-z0-9_])(?=[A-Za-z0-9-]*\d)[A-Za-z][A-Za-z0-9]*"
-    r"(?:-[A-Za-z0-9]+)+(?![A-Za-z0-9_])|"
-    r"\b[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9_-]*\b|"
-    r"\b[A-Z]\d+\b"
-)
-
 _MODALITY_TO_ADDRESS_KINDS = {
     "code": ("symbol",),
     "configuration": ("symbol", "section"),
@@ -140,22 +114,13 @@ class QueryContract:
 
     query: str
     query_contract: str | None = None
-    route: str | None = None
     answerability_shape: str | None = None
     retrieval_modality: str | None = None
     retrieval_obligation: str | None = None
     identifiers: tuple[str, ...] = ()
-    phrase_anchors: tuple[str, ...] = ()
-    source_anchors: tuple[str, ...] = ()
     keyword_anchors: tuple[str, ...] = ()
-    metric_terms: tuple[str, ...] = ()
     required_modalities: tuple[str, ...] = ()
     temporal_policy: str | None = None
-
-    @property
-    def has_hard_anchors(self) -> bool:
-        """Return whether literal anchors must be represented in evidence."""
-        return bool(self.identifiers or self.phrase_anchors)
 
 
 def build_query_contract(query: str, profile: Any = None) -> QueryContract:
@@ -177,29 +142,14 @@ def build_query_contract(query: str, profile: Any = None) -> QueryContract:
     return QueryContract(
         query=query,
         query_contract=query_contract,
-        route=_profile_value(profile, "query_route"),
         answerability_shape=answerability_shape,
         retrieval_modality=retrieval_modality,
         retrieval_obligation=retrieval_obligation,
         identifiers=tuple(exact_identifiers(query)),
-        phrase_anchors=tuple(_capitalized_phrases(query)),
         keyword_anchors=tuple(_keyword_anchors(query)),
         required_modalities=required_modalities,
         temporal_policy="temporal" if query_contract == "temporal_grounding" else None,
     )
-
-
-def exact_identifiers(query: str) -> list[str]:
-    """Extract literal exact identifiers from query text."""
-    identifiers: list[str] = []
-    seen: set[str] = set()
-    for match in EXACT_IDENTIFIER_PATTERN.finditer(query):
-        value = match.group(0).strip(".,;:()[]{}")
-        if value.lower() in seen:
-            continue
-        seen.add(value.lower())
-        identifiers.append(value)
-    return identifiers
 
 
 def normalize_text(value: str) -> str:
@@ -212,14 +162,14 @@ def required_modalities_from_profile(
     retrieval_obligation: str | None = None,
 ) -> tuple[str, ...]:
     """Translate retrieval profile labels into executor address kinds."""
+    obligation_kinds = _OBLIGATION_TO_ADDRESS_KINDS.get(retrieval_obligation or "", ())
+    if obligation_kinds:
+        return obligation_kinds
+
     kinds: list[str] = []
-    for source in (
-        _OBLIGATION_TO_ADDRESS_KINDS.get(retrieval_obligation or "", ()),
-        _MODALITY_TO_ADDRESS_KINDS.get(retrieval_modality or "", ()),
-    ):
-        for kind in source:
-            if kind not in kinds:
-                kinds.append(kind)
+    for kind in _MODALITY_TO_ADDRESS_KINDS.get(retrieval_modality or "", ()):
+        if kind not in kinds:
+            kinds.append(kind)
     return tuple(kinds)
 
 
@@ -256,23 +206,6 @@ def _profile_sequence_value(profile: Any, name: str) -> tuple[str, ...]:
     return ()
 
 
-def _capitalized_phrases(query: str) -> list[str]:
-    """Extract literal title-cased anchors such as Project Nebula."""
-    phrases: list[str] = []
-    for match in re.finditer(r"\b[A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)+\b", query):
-        words = match.group(0).strip().split()
-        while words and (words[0] in _QUESTION_TITLE_WORDS or words[0].lower() in _STOPWORDS):
-            words = words[1:]
-        phrase = " ".join(words)
-        if len(words) < 2:
-            continue
-        if phrase.lower() in {"return material authorization"}:
-            continue
-        if phrase and phrase.lower() not in {item.lower() for item in phrases}:
-            phrases.append(phrase)
-    return phrases
-
-
 def _keyword_anchors(query: str) -> list[str]:
     """Extract lexical query terms used only for mechanical evidence alignment."""
     normalized = normalize_text(query)
@@ -288,6 +221,7 @@ __all__ = [
     "EXACT_IDENTIFIER_PATTERN",
     "QueryContract",
     "build_query_contract",
+    "contains_exact_identifier",
     "exact_identifiers",
     "normalize_text",
     "required_modalities_for_obligation",

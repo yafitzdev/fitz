@@ -1,8 +1,4 @@
 # fitz_sage/retrieval/detection/detectors/__init__.py
-"""Dictionary-based query term expansion."""
+"""Deterministic retrieval detectors."""
 
-from .expansion import expand_terms
-
-__all__ = [
-    "expand_terms",
-]
+__all__: list[str] = []

@@ -1,14 +1,14 @@
 # tests/unit/test_answer_mode.py
 """Tests for the AnswerMode enum + mode-instruction mapping.
 
-The governance decision layer is now pyrrho (`fitz_sage.governance.pyrrho`);
+The governance decision layer is Pyrrho;
 end-to-end behaviour is exercised via the smoke test, not here.
 """
 
 from __future__ import annotations
 
 from fitz_sage.core.answer_mode import AnswerMode
-from fitz_sage.governance.instructions import (
+from fitz_sage.engines.fitz_krag.generation.mode_instructions import (
     MODE_INSTRUCTIONS,
     get_mode_instruction,
 )

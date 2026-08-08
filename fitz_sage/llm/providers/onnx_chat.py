@@ -1,11 +1,11 @@
 # fitz_sage/llm/providers/onnx_chat.py
 """
-In-process ONNX GenAI chat provider for the required local Qwen enrichment model.
+In-process ONNX GenAI provider for managed local Qwen work.
 
 This is deliberately narrow: Fitz owns one tiny local generation backend for
-the enrichment/summarization spine, using a pre-built Qwen3 0.6B ONNX GenAI
-bundle from Hugging Face on CPU. No external server, no GGUF, no llama.cpp,
-no torch.
+semantic query terms and optional background enrichment, using a pre-built
+Qwen3 0.6B ONNX GenAI bundle from Hugging Face on CPU. No external server, no
+GGUF, no llama.cpp, no torch.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import threading
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fitz_sage.core.exceptions import ManagedModelError
 
@@ -28,6 +28,7 @@ DEFAULT_QWEN_MODEL_ID = "onnx-community/Qwen3-0.6B-DQ-ONNX"
 DEFAULT_QWEN_ONNX_SUBFOLDER = "onnx"
 DEFAULT_QWEN_ONNX_FILE = "model_q4f16.onnx"
 DEFAULT_MAX_NEW_TOKENS = 512
+DEFAULT_MAX_CONTEXT_TOKENS = 8192
 
 _MODEL_ALIASES: dict[str, tuple[str, str, str]] = {
     DEFAULT_QWEN_MODEL_ALIAS: (
@@ -231,7 +232,10 @@ class GenAiRuntimeBundle:
         search = config.setdefault("search", {})
         search["do_sample"] = False
         search["temperature"] = 0
-        search["max_length"] = min(int(search.get("max_length", 8192) or 8192), 8192)
+        search["max_length"] = min(
+            int(search.get("max_length", DEFAULT_MAX_CONTEXT_TOKENS) or DEFAULT_MAX_CONTEXT_TOKENS),
+            DEFAULT_MAX_CONTEXT_TOKENS,
+        )
         (runtime_dir / "genai_config.json").write_text(
             json.dumps(config, indent=2),
             encoding="utf-8",
@@ -256,11 +260,14 @@ class OnnxGenAiGenerator:
     def format_messages(self, messages: list[dict[str, Any]]) -> str:
         """Apply the model chat template, disabling Qwen thinking by default."""
         if getattr(self._tokenizer, "chat_template", None):
-            return self._tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
+            return cast(
+                str,
+                self._tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                ),
             )
         rendered: list[str] = []
         for message in messages:
@@ -279,20 +286,27 @@ class OnnxGenAiGenerator:
         """Run ONNX GenAI generation and return generated text."""
         input_tokens = self._genai_tokenizer.encode(prompt)
         params = self._make_generator_params(
-            max_length=len(input_tokens) + max(1, max_new_tokens),
+            max_length=_bounded_generation_length(
+                len(input_tokens),
+                max_new_tokens,
+            ),
             temperature=temperature,
             top_p=top_p,
         )
         og = GenAiRuntimeBundle.require_genai()
         token_stream = self._genai_tokenizer.create_stream()
         generated = og.Generator(self._genai_model, params)
-        generated.append_tokens(input_tokens)
+        try:
+            generated.append_tokens(input_tokens)
 
-        chunks: list[str] = []
-        while not generated.is_done():
-            generated.generate_next_token()
-            chunks.append(token_stream.decode(generated.get_next_tokens()[0]))
-        return "".join(chunks)
+            chunks: list[str] = []
+            while not generated.is_done():
+                generated.generate_next_token()
+                chunks.append(token_stream.decode(generated.get_next_tokens()[0]))
+            return "".join(chunks)
+        finally:
+            # The native generator owns per-request KV-cache allocations.
+            del generated
 
     def _make_generator_params(
         self,
@@ -315,6 +329,18 @@ class OnnxGenAiGenerator:
         return params
 
 
+@dataclass(frozen=True)
+class _LoadedOnnxChatRuntime:
+    """Process-shared native runtime for one managed model artifact."""
+
+    generator: OnnxGenAiGenerator
+    run_lock: threading.Lock
+
+
+_ONNX_CHAT_RUNTIME_CACHE: dict[tuple[str, str, str], _LoadedOnnxChatRuntime] = {}
+_ONNX_CHAT_RUNTIME_CACHE_LOCK = threading.Lock()
+
+
 def _strip_thinking(text: str) -> str:
     """Remove Qwen reasoning blocks from completed responses."""
     text = _THINK_RE.sub("", text)
@@ -325,6 +351,23 @@ def _strip_thinking(text: str) -> str:
             else text.split("<think>")[0].rstrip()
         )
     return text
+
+
+def _bounded_generation_length(input_tokens: int, requested_new_tokens: int) -> int:
+    """Fit one generation inside the managed runtime's context window."""
+    if input_tokens >= DEFAULT_MAX_CONTEXT_TOKENS:
+        raise OnnxChatModelError(
+            "Managed Qwen prompt exceeds its "
+            f"{DEFAULT_MAX_CONTEXT_TOKENS}-token context limit "
+            f"({input_tokens} input tokens supplied)."
+        )
+    available = DEFAULT_MAX_CONTEXT_TOKENS - input_tokens
+    return input_tokens + min(max(1, requested_new_tokens), available)
+
+
+def _is_native_allocation_error(error: RuntimeError) -> bool:
+    """Identify the transient allocation failure emitted by ORT GenAI."""
+    return "bad allocation" in str(error).casefold()
 
 
 def _token_text(value: Any) -> str | None:
@@ -393,11 +436,8 @@ class OnnxChat:
         self._runtime = GenAiRuntimeBundle(spec)
         self._max_new_tokens = max_new_tokens
         self._load_lock = threading.RLock()
-        self._run_lock = threading.Lock()
         self._model_info: OnnxChatModelInfo | None = None
-        self._tokenizer: Any = None
-        self._generator: OnnxGenAiGenerator | None = None
-        self._runtime_dir: Path | None = None
+        self._loaded_runtime: _LoadedOnnxChatRuntime | None = None
 
     def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> str:
         """Generate a chat completion with deterministic local ONNX GenAI inference."""
@@ -409,17 +449,32 @@ class OnnxChat:
         top_p = float(kwargs.pop("top_p", 1.0) or 1.0)
         stop = kwargs.pop("stop", None)
 
-        if self._generator is None:
+        runtime = self._loaded_runtime
+        if runtime is None:
             raise OnnxChatModelError("Managed Qwen runtime was not loaded.")
-        prompt = self._generator.format_messages(messages)
+        prompt = runtime.generator.format_messages(messages)
 
-        with self._run_lock:
-            text = self._generator.generate(
-                prompt=prompt,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-            )
+        with runtime.run_lock:
+            try:
+                text = runtime.generator.generate(
+                    prompt=prompt,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                )
+            except RuntimeError as error:
+                if not _is_native_allocation_error(error):
+                    raise
+                logger.warning(
+                    "Managed Qwen hit a transient native allocation failure; "
+                    "retrying once after releasing the request generator."
+                )
+                text = runtime.generator.generate(
+                    prompt=prompt,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                )
 
         text = _strip_thinking(text).strip()
         return self._apply_stop(text, stop)
@@ -456,14 +511,16 @@ class OnnxChat:
 
     def _load(self) -> None:
         """Load tokenizer and ONNX GenAI model once per process."""
-        if self._tokenizer is not None and self._generator is not None:
+        if self._loaded_runtime is not None:
             return
-        with self._load_lock:
-            if self._tokenizer is not None and self._generator is not None:
+        spec = self._snapshot.spec
+        cache_key = (spec.repo_id, spec.onnx_subfolder, spec.onnx_file)
+        with _ONNX_CHAT_RUNTIME_CACHE_LOCK:
+            runtime = _ONNX_CHAT_RUNTIME_CACHE.get(cache_key)
+            if runtime is not None:
+                self._loaded_runtime = runtime
                 return
-
             og = GenAiRuntimeBundle.require_genai()
-            spec = self._snapshot.spec
 
             logger.info(
                 "Loading ONNX GenAI chat model %s (%s/%s)",
@@ -474,7 +531,7 @@ class OnnxChat:
             info = self.ensure_available()
             snapshot_dir = Path(info.snapshot_dir)
             try:
-                self._tokenizer = self._load_tokenizer(snapshot_dir)
+                tokenizer = self._load_tokenizer(snapshot_dir)
             except Exception as e:
                 raise OnnxChatModelError(
                     "Could not load the tokenizer for Fitz's managed Qwen3 0.6B "
@@ -485,8 +542,8 @@ class OnnxChat:
             try:
                 genai_model = og.Model(str(runtime_dir))
                 genai_tokenizer = og.Tokenizer(genai_model)
-                self._generator = OnnxGenAiGenerator(
-                    tokenizer=self._tokenizer,
+                generator = OnnxGenAiGenerator(
+                    tokenizer=tokenizer,
                     genai_model=genai_model,
                     genai_tokenizer=genai_tokenizer,
                 )
@@ -495,7 +552,12 @@ class OnnxChat:
                     "Could not initialize ONNX Runtime GenAI for Fitz's managed "
                     f"Qwen3 0.6B model at {runtime_dir}."
                 ) from e
-            self._runtime_dir = runtime_dir
+            runtime = _LoadedOnnxChatRuntime(
+                generator=generator,
+                run_lock=threading.Lock(),
+            )
+            _ONNX_CHAT_RUNTIME_CACHE[cache_key] = runtime
+            self._loaded_runtime = runtime
 
     @staticmethod
     def _require_genai() -> Any:

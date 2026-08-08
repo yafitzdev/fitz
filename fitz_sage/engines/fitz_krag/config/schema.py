@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 
 from fitz_sage.config.defaults import DEFAULT_LOCAL_LLM_BASE_URL
+from fitz_sage.core.collections import validate_collection_name
 from fitz_sage.core.config import BasePluginConfig
 
 
@@ -35,7 +36,7 @@ class FitzKragConfig(BasePluginConfig):
     ```
 
     Note: fitz-sage uses no embedding model. Retrieval is BM25 + KRAG
-    typed-unit routing (code symbols, sections, tables) + optional ONNX
+    typed-unit routing (code symbols, sections, tables) + mandatory ONNX
     rerank. The ``retrieval intelligence stack`` does the semantic work that
     dense retrieval traditionally provides without requiring a chat model.
     """
@@ -46,17 +47,17 @@ class FitzKragConfig(BasePluginConfig):
 
     chat_fast: str | None = Field(
         default=None,
-        description="Optional fast-tier chat model for synthesis and query intelligence",
+        description="Optional fast-tier chat model for low-level code/table enhancements",
     )
 
     chat_balanced: str | None = Field(
         default=None,
-        description="Optional balanced-tier chat model for synthesis and query intelligence",
+        description="Optional balanced-tier chat model for low-level code/table enhancements",
     )
 
     chat_smart: str | None = Field(
         default=None,
-        description="Optional smart-tier chat model for synthesis and query intelligence",
+        description="Optional smart-tier chat model for low-level code/table enhancements",
     )
 
     # Per-role base URLs — used by the ``endpoint`` and ``enterprise``
@@ -136,6 +137,11 @@ class FitzKragConfig(BasePluginConfig):
         ...,
         description="Collection name (required)",
     )
+
+    @field_validator("collection")
+    @classmethod
+    def _valid_collection(cls, value: str) -> str:
+        return validate_collection_name(value)
 
     # ==========================================================================
     # Code Strategy
@@ -262,11 +268,12 @@ class FitzKragConfig(BasePluginConfig):
     governance: str = Field(
         default="pyrrho",
         description=(
-            "Epistemic governance classifier. 'pyrrho' (default) evaluates "
-            "evidence prefixes with the local Pyrrho v2 classifier and maps "
+            "Epistemic governance classifier. Pyrrho evaluates delivered "
+            "evidence and Fitz-Sage mechanically maps "
             "SUFFICIENT / DISPUTED / INSUFFICIENT to the runtime modes; "
-            "'pyrrho/<hf-model-id>' or 'pyrrho/<local-package-path>' swaps in "
-            "a custom package."
+            "use 'pyrrho/<local-model-path>' or "
+            "'pyrrho/<owner/repo@40-character-commit>'. The bare 'pyrrho' "
+            "default uses Pyrrho's accepted immutable model revision."
         ),
     )
 
@@ -297,11 +304,6 @@ class FitzKragConfig(BasePluginConfig):
         ),
     )
 
-    enable_citations: bool = Field(
-        default=True,
-        description="Enable [S1], [S2] citation markers in answers",
-    )
-
     strict_grounding: bool = Field(
         default=True,
         description="Only generate answers from provided context",
@@ -330,11 +332,31 @@ class FitzKragConfig(BasePluginConfig):
         description="Number of addresses to keep after reranking",
     )
 
+    rerank_candidates: int = Field(
+        default=32,
+        ge=1,
+        description=(
+            "Base number of BM25 candidates scored by the cross-encoder. "
+            "Narrow queries use 75%, broad queries use 150%, and the full "
+            "BM25 pool remains available to evidence-contract rescue logic."
+        ),
+    )
+
     rerank_min_addresses: int = Field(
         default=2,
         ge=1,
         description="Minimum addresses before reranking is applied.",
     )
+
+    @model_validator(mode="after")
+    def _valid_rerank_window(self) -> "FitzKragConfig":
+        if self.rerank_candidates < self.rerank_k:
+            raise ValueError("rerank_candidates must be greater than or equal to rerank_k")
+        if self.rerank_candidates < self.rerank_min_addresses:
+            raise ValueError(
+                "rerank_candidates must be greater than or equal to rerank_min_addresses"
+            )
+        return self
 
     # ==========================================================================
     # BM25 Code Search
@@ -345,33 +367,4 @@ class FitzKragConfig(BasePluginConfig):
         ge=0.0,
         le=1.0,
         description="Weight for BM25 search in code hybrid merge",
-    )
-
-    # ==========================================================================
-    # Multi-Hop
-    # ==========================================================================
-
-    enable_multi_hop: bool = Field(
-        default=True,
-        description=(
-            "Multi-hop iterative retrieval. Each hop's sufficiency is judged "
-            "by the pyrrho governance classifier (no chat call), so a single "
-            "hop is the common case."
-        ),
-    )
-
-    max_hops: int = Field(
-        default=2,
-        ge=1,
-        le=5,
-        description="Maximum retrieval hops for multi-hop reasoning",
-    )
-
-    # ==========================================================================
-    # Logging
-    # ==========================================================================
-
-    log_level: str = Field(
-        default="INFO",
-        description="Logging level: DEBUG, INFO, WARNING, ERROR",
     )

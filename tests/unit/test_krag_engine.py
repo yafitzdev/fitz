@@ -21,11 +21,17 @@ from fitz_sage.core import (
     Provenance,
     Query,
     QueryError,
+    QueryIntelligenceError,
 )
 from fitz_sage.core.answer_mode import AnswerMode
 from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine, _build_provider_config
+from fitz_sage.engines.fitz_krag.progressive.write_lock import (
+    CollectionBusyError,
+    CollectionWriteLock,
+)
 from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
+from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouterResponse
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from tests.unit.mock_engine import build_mock_engine
 
@@ -51,11 +57,9 @@ def _make_config(**overrides) -> FitzKragConfig:
 _make_engine = build_mock_engine
 
 
-def _make_query(text: str = "How does auth work?") -> MagicMock:
-    """Return a mock Query with the given text."""
-    q = MagicMock(name="query")
-    q.text = text
-    return q
+def _make_query(text: str = "How does auth work?") -> Query:
+    """Return a real query so metadata defaults match the public contract."""
+    return Query(text=text)
 
 
 def _decision(
@@ -64,19 +68,29 @@ def _decision(
     *,
     probs: tuple[float, float, float] | None = None,
 ) -> MagicMock:
-    """Build a lightweight governance decision for cutoff tests."""
+    """Build a lightweight authoritative Pyrrho decision."""
     decision = MagicMock()
-    decision.mode = mode
+    decision.verdict = mode.value.upper()
     decision.reasons = (reason,)
     decision.reason = reason
     if probs is not None:
-        decision.probs = probs
+        probabilities = probs
     elif mode is AnswerMode.SUFFICIENT:
-        decision.probs = (0.11, 0.22, 0.67)
+        probabilities = (0.11, 0.22, 0.67)
     elif mode is AnswerMode.DISPUTED:
-        decision.probs = (0.12, 0.68, 0.20)
+        probabilities = (0.12, 0.68, 0.20)
     else:
-        decision.probs = (0.69, 0.18, 0.13)
+        probabilities = (0.69, 0.18, 0.13)
+    decision.to_dict.return_value = {
+        "schema_version": 1,
+        "verdict": decision.verdict,
+        "reason": reason,
+        "probabilities": {
+            "INSUFFICIENT": probabilities[0],
+            "DISPUTED": probabilities[1],
+            "SUFFICIENT": probabilities[2],
+        },
+    }
     return decision
 
 
@@ -128,41 +142,36 @@ class TestEngineInit:
             # storage
             "SqliteConnectionManager": ("fitz_sage.storage.sqlite.SqliteConnectionManager"),
             # stores
-            "RawFileStore": (
-                "fitz_sage.engines.fitz_krag.ingestion" ".raw_file_store.RawFileStore"
-            ),
-            "SymbolStore": ("fitz_sage.engines.fitz_krag.ingestion" ".symbol_store.SymbolStore"),
+            "RawFileStore": ("fitz_sage.engines.fitz_krag.ingestion.raw_file_store.RawFileStore"),
+            "SymbolStore": ("fitz_sage.engines.fitz_krag.ingestion.symbol_store.SymbolStore"),
             "ImportGraphStore": (
-                "fitz_sage.engines.fitz_krag.ingestion" ".import_graph_store.ImportGraphStore"
+                "fitz_sage.engines.fitz_krag.ingestion.import_graph_store.ImportGraphStore"
             ),
-            "SectionStore": ("fitz_sage.engines.fitz_krag.ingestion" ".section_store.SectionStore"),
-            "TableStoreKrag": ("fitz_sage.engines.fitz_krag.ingestion" ".table_store.TableStore"),
-            "ensure_schema": ("fitz_sage.engines.fitz_krag.ingestion" ".schema.ensure_schema"),
+            "SectionStore": ("fitz_sage.engines.fitz_krag.ingestion.section_store.SectionStore"),
+            "TableStoreKrag": ("fitz_sage.engines.fitz_krag.ingestion.table_store.TableStore"),
+            "ensure_schema": ("fitz_sage.engines.fitz_krag.ingestion.schema.ensure_schema"),
             # strategies
             "CodeSearchStrategy": (
-                "fitz_sage.engines.fitz_krag.retrieval" ".strategies.code_search.CodeSearchStrategy"
+                "fitz_sage.engines.fitz_krag.retrieval.strategies.code_search.CodeSearchStrategy"
             ),
             "SectionSearchStrategy": (
                 "fitz_sage.engines.fitz_krag.retrieval"
                 ".strategies.section_search.SectionSearchStrategy"
             ),
             "TableSearchStrategy": (
-                "fitz_sage.engines.fitz_krag.retrieval"
-                ".strategies.table_search.TableSearchStrategy"
+                "fitz_sage.engines.fitz_krag.retrieval.strategies.table_search.TableSearchStrategy"
             ),
             # retrieval
-            "RetrievalRouter": ("fitz_sage.engines.fitz_krag.retrieval" ".router.RetrievalRouter"),
-            "ContentReader": ("fitz_sage.engines.fitz_krag.retrieval" ".reader.ContentReader"),
-            "CodeExpander": ("fitz_sage.engines.fitz_krag.retrieval" ".expander.CodeExpander"),
+            "RetrievalRouter": ("fitz_sage.engines.fitz_krag.retrieval.router.RetrievalRouter"),
+            "ContentReader": ("fitz_sage.engines.fitz_krag.retrieval.reader.ContentReader"),
+            "CodeExpander": ("fitz_sage.engines.fitz_krag.retrieval.expander.CodeExpander"),
             "TableQueryHandler": (
-                "fitz_sage.engines.fitz_krag.retrieval" ".table_handler.TableQueryHandler"
+                "fitz_sage.engines.fitz_krag.retrieval.table_handler.TableQueryHandler"
             ),
             # context + generation
-            "ContextAssembler": (
-                "fitz_sage.engines.fitz_krag.context" ".assembler.ContextAssembler"
-            ),
+            "ContextAssembler": ("fitz_sage.engines.fitz_krag.context.assembler.ContextAssembler"),
             "CodeSynthesizer": (
-                "fitz_sage.engines.fitz_krag.generation" ".synthesizer.CodeSynthesizer"
+                "fitz_sage.engines.fitz_krag.generation.synthesizer.CodeSynthesizer"
             ),
             # shared tabular (SQLite-backed after Cloud removal)
             "SqliteTableStore": "fitz_sage.tabular.store.sqlite.SqliteTableStore",
@@ -211,6 +220,17 @@ class TestEngineInit:
 
         # Config stored correctly
         assert engine.config is config
+
+    def test_load_same_collection_does_not_reinitialize_components(self, _patches):
+        """The common create-then-load lifecycle initializes components once."""
+        config = _make_config(collection="default")
+        engine = FitzKragEngine(config)
+
+        with patch.object(engine, "_try_load_persisted_manifest"):
+            engine.load("default")
+
+        _patches["ensure_schema"].assert_called_once()
+        _patches["RetrievalRouter"].assert_called_once()
 
     def test_init_creates_synthesizer_when_configured(self, _patches):
         """A synthesizer provider creates the answer generator explicitly."""
@@ -312,29 +332,15 @@ class TestAnswer:
     """Tests for the answer() pipeline."""
 
     def test_answer_full_flow(self):
-        """Happy path: every stage returns valid data."""
+        """Synthesis consumes the same governed evidence set as evidence()."""
         engine = _make_engine()
         query = _make_query(
             "What does the login function do when the user provides invalid credentials?"
         )
-
-        # Wire up the pipeline stages
-        address_1 = MagicMock(name="addr1")
-        address_2 = MagicMock(name="addr2")
-        engine._retrieval_router.retrieve.return_value = [
-            address_1,
-            address_2,
-        ]
-
-        read_1 = MagicMock(name="read1")
-        engine._reader.read.return_value = [read_1]
-
-        expanded = [MagicMock(name="expanded1")]
-        engine._expander.expand.return_value = expanded
-
-        # Table handler passes through (side_effect from _make_engine)
-
-        context = MagicMock(name="context")
+        addresses, results = _evidence_results(2)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
+        context = "governed context"
         engine._assembler.assemble.return_value = context
 
         expected_answer = Answer(
@@ -344,49 +350,39 @@ class TestAnswer:
         )
         engine._synthesizer.generate.return_value = expected_answer
 
-        # Execute
         result = engine.answer(query)
 
-        # Verify each stage called with correct args
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
+        assert engine._retrieval_router.retrieve.call_count >= 1
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == query.text
         from fitz_sage.engines.fitz_krag.retrieval_profile import RetrievalProfile
 
         assert isinstance(call_args[0][1], RetrievalProfile)
         assert call_args[1]["rewrite_result"] is None
-        engine._reader.read.assert_called_once_with(
-            [address_1, address_2],
+        assert engine._reader.read.call_args_list[0] == call(
+            addresses,
             engine._config.top_read,
         )
-        engine._expander.expand.assert_called_once_with([read_1], entity_expansion_limit=3)
-        engine._table_handler.process.assert_called_once_with(
+        assert engine._expander.expand.call_count >= 1
+        assert engine._table_handler.process.call_args_list[0] == call(
             query.text,
-            expanded,
+            results,
             allow_sql_generation=True,
         )
-        engine._assembler.assemble.assert_called_once_with(
-            query.text,
-            expanded,
-        )
-        from fitz_sage.core.answer_mode import AnswerMode
+        selected = engine._synthesizer.generate.call_args.args[2]
+        engine._assembler.assemble.assert_called_once_with(query.text, selected)
 
         engine._synthesizer.generate.assert_called_once_with(
             query.text,
             context,
-            expanded,
+            selected,
             answer_mode=AnswerMode.SUFFICIENT,
             gap_context=None,
             conflict_context=None,
         )
 
         assert result is expected_answer
-        assert result.metadata["pyrrho"]["mode"] == "sufficient"
-        assert result.metadata["pyrrho"]["probabilities"] == {
-            "insufficient": 0.1,
-            "disputed": 0.1,
-            "sufficient": 0.8,
-        }
+        assert result.metadata["pyrrho"]["verdict"] == "SUFFICIENT"
         assert result.metadata["query_profile"]["profile"]["top_k"] == engine._config.top_addresses
 
     def test_answer_uses_no_chat_query_planner_by_default(self):
@@ -395,11 +391,11 @@ class TestAnswer:
         query = _make_query("Compare Q1 2024 vs Q2 2024 API failures")
         engine._query_batcher.batch_classify.side_effect = AssertionError("chat prep called")
 
-        address = MagicMock(name="addr")
-        engine._retrieval_router.retrieve.return_value = [address]
-        read_result = MagicMock(name="read")
-        engine._reader.read.return_value = [read_result]
-        engine._expander.expand.return_value = [read_result]
+        addresses, results = _evidence_results(2)
+        results[0].content = "Q1 2024 API failures totaled 8."
+        results[1].content = "Q2 2024 API failures totaled 5."
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         expected = Answer(text="Answer.", provenance=[], metadata={})
         engine._synthesizer.generate.return_value = expected
@@ -408,19 +404,19 @@ class TestAnswer:
 
         assert result is expected
         engine._query_batcher.batch_classify.assert_not_called()
-        call_args = engine._retrieval_router.retrieve.call_args
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         profile = call_args[0][1]
         assert "q1 2024" in profile.temporal_references
         assert "q2 2024" in profile.temporal_references
-        assert profile.planning_owner == "pyrrho"
-        engine._governance.plan_query.assert_called_once_with(query.text)
+        assert profile.planning_owner == "hybrid"
+        engine._pyrrho.plan_query.assert_called_once_with(query.text)
 
     def test_answer_empty_query_raises(self):
         """Empty or whitespace-only query text raises QueryError."""
         engine = _make_engine()
 
         for blank in ("", "   ", "\t\n"):
-            q = _make_query(blank)
+            q = MagicMock(text=blank, metadata={})
             with pytest.raises(QueryError, match="empty"):
                 engine.answer(q)
 
@@ -437,7 +433,7 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = []
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([])
 
         result = engine.answer(query)
 
@@ -456,7 +452,7 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([MagicMock()])
         engine._reader.read.return_value = []
 
         result = engine.answer(query)
@@ -504,9 +500,9 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-        engine._reader.read.return_value = [MagicMock()]
-        engine._expander.expand.return_value = [MagicMock()]
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError(
             "generation failed: LLM returned empty"
@@ -522,9 +518,9 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-        engine._reader.read.return_value = [MagicMock()]
-        engine._expander.expand.return_value = [MagicMock()]
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError("llm api rate limit exceeded")
 
@@ -538,9 +534,9 @@ class TestAnswer:
         engine = _make_engine()
         query = _make_query()
 
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-        engine._reader.read.return_value = [MagicMock()]
-        engine._expander.expand.return_value = [MagicMock()]
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
         engine._assembler.assemble.return_value = MagicMock()
         engine._synthesizer.generate.side_effect = RuntimeError("unexpected null pointer")
 
@@ -548,20 +544,24 @@ class TestAnswer:
             engine.answer(query)
 
     def test_answer_with_table_results(self):
-        """Table handler is invoked after expansion."""
+        """Table synthesis uses deterministic table evidence from the governed path."""
         engine = _make_engine()
         query = _make_query("what is the average salary?")
-
-        engine._retrieval_router.retrieve.return_value = [MagicMock()]
-
-        read_result = MagicMock(name="table_read_result")
+        address = Address(
+            kind=AddressKind.TABLE,
+            source_id="table-1",
+            location="salaries",
+            summary="Salary table",
+            score=0.9,
+        )
+        read_result = ReadResult(
+            address=address,
+            content="| employee | salary |\n| A | 50000 |",
+            file_path="salaries.csv",
+        )
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
         engine._reader.read.return_value = [read_result]
-
-        expanded = [read_result]
-        engine._expander.expand.return_value = expanded
-
-        # Override side_effect for this test to verify table_handler is called
-        augmented = [MagicMock(name="augmented")]
+        augmented = [read_result]
         engine._table_handler.process.side_effect = None
         engine._table_handler.process.return_value = augmented
 
@@ -574,12 +574,19 @@ class TestAnswer:
 
         engine.answer(query)
 
-        engine._table_handler.process.assert_called_once_with(
+        assert engine._table_handler.process.call_args_list[0] == call(
             query.text,
-            expanded,
+            [read_result],
             allow_sql_generation=True,
         )
-        engine._assembler.assemble.assert_called_once_with(query.text, augmented)
+        assert all(
+            invocation.kwargs["allow_sql_generation"] is True
+            for invocation in engine._table_handler.process.call_args_list
+        )
+        assembled_results = engine._assembler.assemble.call_args.args[1]
+        synthesized_results = engine._synthesizer.generate.call_args.args[2]
+        assert assembled_results == synthesized_results
+        assert [result.content for result in assembled_results] == [read_result.content]
 
 
 # ---------------------------------------------------------------------------
@@ -590,18 +597,17 @@ class TestAnswer:
 class TestEvidence:
     """Tests for retrieval-first evidence packs."""
 
-    def test_evidence_skips_chat_prep_synthesis_and_table_sql(self):
-        """Evidence mode uses deterministic retrieval prep and does not synthesize."""
+    def test_evidence_skips_chat_prep_and_synthesis_but_allows_table_queries(self):
+        """Evidence uses deterministic prep, runs table retrieval, and does not synthesize."""
         engine = _make_engine()
         engine._query_batcher.batch_classify.side_effect = AssertionError("chat prep called")
         engine._synthesizer.generate.side_effect = AssertionError("synthesis called")
 
-        def _deterministic_table_only(query, results, *, allow_sql_generation=True):
-            if allow_sql_generation:
-                raise AssertionError("table SQL called")
+        def _table_query(query, results, *, allow_sql_generation=True):
+            assert allow_sql_generation is True
             return results
 
-        engine._table_handler.process.side_effect = _deterministic_table_only
+        engine._table_handler.process.side_effect = _table_query
 
         address = Address(
             kind=AddressKind.SECTION,
@@ -616,15 +622,15 @@ class TestEvidence:
             file_path="docs/sprint.md",
             line_range=(10, 12),
         )
-        engine._retrieval_router.retrieve.return_value = [address]
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
         engine._reader.read.return_value = [result]
         engine._expander.expand.return_value = [result]
 
-        decision = MagicMock()
-        decision.mode = AnswerMode.SUFFICIENT
-        decision.reasons = ("Sources support a confident answer.",)
-        engine._governance = MagicMock()
-        engine._governance.decide.return_value = decision
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Sources support a confident answer.",
+        )
 
         pack = engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
 
@@ -635,10 +641,10 @@ class TestEvidence:
         assert pack.items[0].address_kind == "section"
         engine._query_batcher.batch_classify.assert_not_called()
         engine._synthesizer.generate.assert_not_called()
-        engine._table_handler.process.assert_called_once_with(
+        assert engine._table_handler.process.call_args_list[0] == call(
             "Which test case failed in Sprint 47?",
             [result],
-            allow_sql_generation=False,
+            allow_sql_generation=True,
         )
 
     def test_evidence_adds_semantic_keywords_to_broad_recall_profile(self):
@@ -660,34 +666,77 @@ class TestEvidence:
             file_path="docs/sprint.md",
             line_range=(10, 12),
         )
-        engine._retrieval_router.retrieve.return_value = [address]
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
         engine._reader.read.return_value = [result]
-        decision = MagicMock()
-        decision.mode = AnswerMode.SUFFICIENT
-        decision.reasons = ("Enough evidence.",)
-        engine._governance = MagicMock()
-        engine._governance.decide.return_value = decision
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Enough evidence.",
+        )
 
-        engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
+        pack = engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
 
         engine._query_batcher.batch_classify.assert_not_called()
         engine._semantic_keyword_batcher.batch_classify.assert_called_once()
         profile = engine._retrieval_router.retrieve.call_args_list[0].args[1]
         assert "payment retry" in profile.keywords
         assert "timeout failure" in profile.keywords
+        assert pack.metadata["retrieval_trace"]["semantic_query_expansion"] == {
+            "enabled": True,
+            "used": True,
+            "status": "expanded",
+            "added_keywords": 2,
+        }
+
+    def test_evidence_falls_back_when_semantic_keyword_expansion_is_malformed(self):
+        """Optional semantic expansion cannot make literal retrieval unavailable."""
+        engine = _make_engine()
+        engine._semantic_keyword_batcher.batch_classify.side_effect = QueryIntelligenceError(
+            "batched query intelligence missing `keywords` array"
+        )
+        address = Address(
+            kind=AddressKind.SECTION,
+            source_id="doc-1",
+            location="Sprint 47",
+            summary="Sprint 47 test results",
+            score=0.91,
+        )
+        result = ReadResult(
+            address=address,
+            content="Sprint 47 failed because the payment retry test timed out.",
+            file_path="docs/sprint.md",
+            line_range=(10, 12),
+        )
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
+        engine._reader.read.return_value = [result]
+
+        pack = engine.evidence(Query(text="Which test case failed in Sprint 47?"), top_k=1)
+
+        assert [item.file_path for item in pack.items] == ["docs/sprint.md"]
+        engine._retrieval_router.retrieve.assert_called_once()
+        profile = engine._retrieval_router.retrieve.call_args.args[1]
+        assert "payment retry" not in profile.keywords
+        assert pack.metadata["retrieval_trace"]["semantic_query_expansion"] == {
+            "enabled": True,
+            "used": False,
+            "status": "failed",
+            "added_keywords": 0,
+            "error_type": "QueryIntelligenceError",
+            "error": "batched query intelligence missing `keywords` array",
+        }
 
     def test_evidence_uses_pyrrho_pre_profile_for_comparisons(self):
         """Pre-retrieval profile steering is Pyrrho-owned when query heads exist."""
         engine = _make_engine()
         addresses, results = _evidence_results(2)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.return_value = _decision(
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
             AnswerMode.SUFFICIENT,
             "Enough comparative evidence.",
         )
-        engine._governance.plan_query.return_value = MagicMock(
+        engine._pyrrho.plan_query.return_value = MagicMock(
             retrieval_intents=MagicMock(
                 final_labels=("needs_lookup", "needs_comparison_or_set"),
                 final_label="needs_comparison_or_set",
@@ -708,30 +757,30 @@ class TestEvidence:
         assert profile.query_contract == "comparison_coverage"
         assert profile.has_comparison_intent is True
         assert profile.answer_type == "comparative"
-        assert profile.planning_owner == "pyrrho"
+        assert profile.planning_owner == "hybrid"
         query_profile = pack.metadata["query_profile"]
         assert "signals" not in query_profile
         assert "pyrrho_pre" in query_profile
         assert query_profile["profile"]["answer_type"] == "comparative"
-        assert query_profile["profile"]["planning_owner"] == "pyrrho"
+        assert query_profile["profile"]["planning_owner"] == "hybrid"
 
-    def test_evidence_uses_pyrrho_cutoff_over_reranked_results(self):
-        """Evidence mode returns the smallest reranked prefix Pyrrho accepts."""
+    def test_evidence_respects_delivery_cap_below_initial_prefix(self):
+        """An explicit cap below three is evaluated as one complete prefix."""
         engine = _make_engine()
         addresses, results = _evidence_results(3)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
 
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.INSUFFICIENT, "Need more evidence."),
-            _decision(AnswerMode.SUFFICIENT, "Enough evidence at two docs."),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Enough evidence.",
+        )
 
-        pack = engine.evidence(Query(text="What happened?"), top_k=3)
+        pack = engine.evidence(Query(text="What happened?"), top_k=2)
 
         assert pack.mode == AnswerMode.SUFFICIENT
-        assert pack.reasons == ["Enough evidence at two docs."]
+        assert pack.reasons == ["Enough evidence."]
         assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
         for timing_name in (
             "Query prep",
@@ -740,45 +789,48 @@ class TestEvidence:
             "Rerank",
             "Read",
             "Retrieval",
-            "Governance",
+            "Pyrrho",
         ):
             assert timing_name in pack.timings
-        cutoff = pack.metadata["governance_cutoff"]
-        assert cutoff["evaluated"] == 2
-        assert cutoff["selected"] == 2
-        assert cutoff["max"] == 3
-        assert cutoff["mode"] == "sufficient"
-        assert cutoff["policy"]["query_shape"] == "narrow"
-        assert cutoff["pyrrho"] == {
-            "mode": "sufficient",
-            "probabilities": {
-                "insufficient": 0.11,
-                "disputed": 0.22,
-                "sufficient": 0.67,
-            },
-            "reason": "Enough evidence at two docs.",
+        assert pack.metadata["evidence_delivery"] == {
+            "available": 3,
+            "selected": 2,
+            "limit": 2,
+            "initial_prefix_size": 3,
+            "prefix_increment": 2,
+            "evaluated_prefixes": [2],
+            "trajectory": [
+                {
+                    "evidence_count": 2,
+                    "decision": engine._pyrrho.decide.return_value.to_dict(),
+                }
+            ],
         }
-        first_contexts = engine._governance.decide.call_args_list[0].args[1]
-        second_contexts = engine._governance.decide.call_args_list[1].args[1]
-        assert len(first_contexts) == 1
-        assert len(second_contexts) == 2
-        engine._expander.expand.assert_not_called()
-
-    def test_broad_query_requires_minimum_sufficient_window(self):
-        """Pyrrho broad-answer plans do not stop on a top-1 sufficient verdict."""
-        engine = _make_engine()
-        addresses, results = _evidence_results(4)
-        engine._retrieval_router.retrieve.return_value = addresses
-        engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.SUFFICIENT, "Top one is plausible."),
-            _decision(AnswerMode.SUFFICIENT, "Top two are plausible."),
-            _decision(AnswerMode.SUFFICIENT, "Top three are plausible."),
-            _decision(AnswerMode.SUFFICIENT, "Broad window is enough."),
+        assert pack.metadata["pyrrho"] == engine._pyrrho.decide.return_value.to_dict()
+        engine._pyrrho.decide.assert_called_once()
+        contexts = engine._pyrrho.decide.call_args.args[1]
+        assert contexts == [
+            {"source_id": "doc-1", "text": results[0].content},
+            {"source_id": "doc-2", "text": results[1].content},
         ]
+        engine._expander.expand.assert_called_once_with(
+            results,
+            entity_expansion_limit=3,
+        )
 
-        pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=4)
+    def test_evidence_grows_by_two_until_pyrrho_is_sufficient(self):
+        """Only Pyrrho's exact verdict controls progressive delivery."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(7)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
+
+        insufficient = _decision(AnswerMode.INSUFFICIENT, "Need more evidence.")
+        sufficient = _decision(AnswerMode.SUFFICIENT, "Enough evidence.")
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.side_effect = [insufficient, sufficient]
+
+        pack = engine.evidence(Query(text="What happened?"), top_k=7)
 
         assert pack.mode == AnswerMode.SUFFICIENT
         assert [item.file_path for item in pack.items] == [
@@ -786,33 +838,61 @@ class TestEvidence:
             "docs/2.md",
             "docs/3.md",
             "docs/4.md",
+            "docs/5.md",
         ]
-        assert engine._governance.decide.call_count == 4
-        cutoff = pack.metadata["governance_cutoff"]
-        assert cutoff["policy"]["query_shape"] == "broad"
-        assert cutoff["policy"]["min_sufficient_docs"] == 4
+        assert [len(call_args.args[1]) for call_args in engine._pyrrho.decide.call_args_list] == [
+            3,
+            5,
+        ]
+        assert pack.metadata["pyrrho"] == sufficient.to_dict()
+        delivery = pack.metadata["evidence_delivery"]
+        assert delivery["available"] == 7
+        assert delivery["selected"] == 5
+        assert delivery["limit"] == 7
+        assert delivery["evaluated_prefixes"] == [3, 5]
+        assert delivery["trajectory"] == [
+            {"evidence_count": 3, "decision": insufficient.to_dict()},
+            {"evidence_count": 5, "decision": sufficient.to_dict()},
+        ]
 
-    def test_comparison_query_stops_on_disputed_after_two_docs(self):
-        """Pyrrho comparison plans can stop on disputed once both sides exist."""
+    def test_broad_query_uses_requested_budget_without_local_evidence_floor(self):
+        """Broad query shape cannot delay or override Pyrrho's verdict."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.INSUFFICIENT, "Need another side."),
-            _decision(AnswerMode.DISPUTED, "Sources disagree."),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Pyrrho accepts the evidence.",
+        )
+
+        pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=1)
+
+        assert pack.mode == AnswerMode.SUFFICIENT
+        assert [item.file_path for item in pack.items] == ["docs/1.md"]
+        engine._pyrrho.decide.assert_called_once()
+
+    def test_comparison_query_returns_exact_pyrrho_dispute(self):
+        """A disputed prefix stops immediately without a local override."""
+        engine = _make_engine()
+        addresses, results = _evidence_results(4)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.DISPUTED,
+            "Sources disagree.",
+        )
 
         pack = engine.evidence(Query(text="Compare React vs Vue performance"), top_k=4)
 
         assert pack.mode == AnswerMode.DISPUTED
-        assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
-        assert engine._governance.decide.call_count == 2
-        assert pack.metadata["governance_cutoff"]["policy"]["query_shape"] == "comparison"
+        assert len(pack.items) == 3
+        engine._pyrrho.decide.assert_called_once()
 
-    def test_comparative_or_query_requires_both_temporal_sides(self):
-        """Pyrrho comparison plans should not stop on one quarterly document."""
+    def test_comparative_query_delivers_both_requested_temporal_sides(self):
+        """Retrieval shape provides both sides before Pyrrho evaluation."""
         engine = _make_engine()
         addresses, results = _evidence_results(2)
         results[0].content = "Q1 total revenue was 100."
@@ -833,13 +913,13 @@ class TestEvidence:
             score=results[1].address.score,
             metadata=results[1].address.metadata,
         )
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.SUFFICIENT, "Top one is not enough."),
-            _decision(AnswerMode.SUFFICIENT, "Both quarters represented."),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.SUFFICIENT,
+            "Both quarters represented.",
+        )
 
         pack = engine.evidence(
             Query(text="Which quarter had higher total revenue, Q1 or Q2?"),
@@ -848,24 +928,20 @@ class TestEvidence:
 
         assert pack.mode == AnswerMode.SUFFICIENT
         assert [item.file_path for item in pack.items] == ["docs/1.md", "docs/2.md"]
-        assert engine._governance.decide.call_count == 2
-        cutoff = pack.metadata["governance_cutoff"]
-        assert cutoff["policy"]["query_shape"] == "comparison"
-        assert cutoff["policy"]["min_sufficient_docs"] == 2
+        engine._pyrrho.decide.assert_called_once()
 
-    def test_narrow_query_disputed_needs_patience_window(self):
-        """Narrow queries keep going for two more docs before disputed stops."""
+    def test_narrow_query_returns_pyrrho_dispute_without_local_policy(self):
+        """Narrow queries return Pyrrho's disputed verdict unchanged."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.INSUFFICIENT, "Need evidence."),
-            _decision(AnswerMode.DISPUTED, "Conflict appears.", probs=(0.26, 0.55, 0.19)),
-            _decision(AnswerMode.DISPUTED, "Conflict remains.", probs=(0.26, 0.55, 0.19)),
-            _decision(AnswerMode.DISPUTED, "Conflict persisted.", probs=(0.26, 0.55, 0.19)),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.DISPUTED,
+            "Conflict appears.",
+            probs=(0.26, 0.55, 0.19),
+        )
 
         pack = engine.evidence(Query(text="What happened to invoice 17?"), top_k=4)
 
@@ -874,33 +950,101 @@ class TestEvidence:
             "docs/1.md",
             "docs/2.md",
             "docs/3.md",
-            "docs/4.md",
         ]
-        assert engine._governance.decide.call_count == 4
-        cutoff = pack.metadata["governance_cutoff"]
-        assert cutoff["policy"]["query_shape"] == "narrow"
-        assert cutoff["policy"]["disputed_patience_docs"] == 2
+        engine._pyrrho.decide.assert_called_once()
 
-    def test_broad_query_disputed_continues_to_cutoff(self):
-        """Pyrrho broad-answer plans do not stop on disputed until the cutoff."""
+    def test_broad_query_returns_pyrrho_dispute_without_local_override(self):
+        """Broad queries also return Pyrrho's disputed verdict unchanged."""
         engine = _make_engine()
         addresses, results = _evidence_results(4)
-        engine._retrieval_router.retrieve.return_value = addresses
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
         engine._reader.read.return_value = results
-        engine._governance = MagicMock()
-        engine._governance.decide.side_effect = [
-            _decision(AnswerMode.DISPUTED, "Conflict one."),
-            _decision(AnswerMode.DISPUTED, "Conflict two."),
-            _decision(AnswerMode.DISPUTED, "Conflict three."),
-            _decision(AnswerMode.DISPUTED, "Conflict four."),
-        ]
+        engine._pyrrho = MagicMock()
+        engine._pyrrho.decide.return_value = _decision(
+            AnswerMode.DISPUTED,
+            "Conflict.",
+        )
 
         pack = engine.evidence(Query(text="Summarize customer feedback themes"), top_k=4)
 
         assert pack.mode == AnswerMode.DISPUTED
-        assert len(pack.items) == 4
-        assert engine._governance.decide.call_count == 4
-        assert pack.metadata["governance_cutoff"]["policy"]["query_shape"] == "broad"
+        assert len(pack.items) == 3
+        engine._pyrrho.decide.assert_called_once()
+
+    def test_trace_records_the_canonical_governed_execution(self, monkeypatch, tmp_path):
+        """A trace captures compiled and Pyrrho-delivered evidence without rerunning."""
+        from fitz_sage.core.paths import FitzPaths
+
+        engine = _make_engine()
+        addresses, results = _evidence_results(3)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
+        engine._semantic_keyword_batcher.batch_classify.return_value = BatchResult(
+            keywords=["incident"]
+        )
+        monkeypatch.setattr(FitzPaths, "workspace", classmethod(lambda cls: tmp_path))
+
+        run = engine.trace(Query(text="What happened?"), top_k=3)
+
+        assert engine._retrieval_router.retrieve.call_count == 1
+        assert run.evidence.mode == AnswerMode.SUFFICIENT
+        assert len(run.ranked_evidence) == 3
+        assert run.ranked_evidence[0].content == results[0].content
+        assert run.pyrrho.evidence_count == len(run.evidence.items)
+        assert len(run.pyrrho_evidence) == len(run.evidence.items)
+        assert run.pyrrho.decision == run.evidence.metadata["pyrrho"]
+        assert run.environment.engine == "fitz_krag"
+        assert run.environment.collection == "test_collection"
+        assert any(term.origin == "literal" for term in run.query.terms)
+        assert any(
+            term.text == "incident" and term.origin == "semantic" for term in run.query.terms
+        )
+
+    def test_trace_labels_query_intelligence_keyword_fallback_as_deterministic(
+        self, monkeypatch, tmp_path
+    ):
+        """Configured query intelligence does not claim fallback term ownership."""
+        from fitz_sage.core.paths import FitzPaths
+
+        engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
+        monkeypatch.setattr(
+            FitzPaths,
+            "workspace",
+            classmethod(lambda cls: tmp_path),
+        )
+
+        run = engine.trace(Query(text="What happened?"), top_k=1)
+
+        assert any(
+            term.text == "happened" and term.origin == "deterministic" for term in run.query.terms
+        )
+        assert not any(term.origin == "query_intelligence" for term in run.query.terms)
+
+    def test_trace_labels_keywords_returned_by_query_intelligence(self, monkeypatch, tmp_path):
+        """Model-produced query terms retain their actual producer."""
+        from fitz_sage.core.paths import FitzPaths
+
+        engine = _make_engine(query_intelligence="endpoint/qwen2.5-7b-instruct")
+        addresses, results = _evidence_results(1)
+        engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse(addresses)
+        engine._reader.read.return_value = results
+        engine._query_batcher.batch_classify.side_effect = None
+        engine._query_batcher.batch_classify.return_value = BatchResult(keywords=["diagnostic"])
+        monkeypatch.setattr(
+            FitzPaths,
+            "workspace",
+            classmethod(lambda cls: tmp_path),
+        )
+
+        run = engine.trace(Query(text="What happened?"), top_k=1)
+
+        assert any(
+            term.text == "diagnostic" and term.origin == "query_intelligence"
+            for term in run.query.terms
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -909,17 +1053,39 @@ class TestEvidence:
 
 
 class TestPoint:
-    """Tests for source registration and collection routing."""
+    """Tests for synchronous source indexing and collection routing."""
 
-    def test_point_collection_override_rebinds_collection_components(self, tmp_path):
-        """point(..., collection=...) binds background ingestion to that collection."""
+    def test_point_rejects_a_concurrent_collection_writer(self, tmp_path):
+        """Discovery cannot begin while another writer owns the collection."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._config = _make_config(collection="default")
-        engine._bg_worker = None
+        engine._enrichment_worker = None
+        source = tmp_path / "docs"
+        source.mkdir()
+        workspace = tmp_path / ".fitz"
+        lock = CollectionWriteLock(
+            workspace / "collections" / "default",
+            collection="default",
+            operation="background enrichment",
+        )
+
+        with (
+            lock,
+            patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
+            patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
+            pytest.raises(CollectionBusyError, match="Collection 'default' is busy"),
+        ):
+            engine.point(source, start_worker=False)
+
+        builder_cls.assert_not_called()
+
+    def test_point_collection_override_rebinds_collection_components(self, tmp_path):
+        """point(..., collection=...) binds ingestion to that collection."""
+        engine = FitzKragEngine.__new__(FitzKragEngine)
+        engine._config = _make_config(collection="default")
+        engine._enrichment_worker = None
         engine._manifest = None
         engine._source_dir = None
-        engine._retrieval_router = MagicMock()
-        engine._reader = MagicMock()
         engine._chat_factory = None
         engine._chat = None
         engine._connection_manager = MagicMock()
@@ -928,7 +1094,6 @@ class TestPoint:
         engine._entity_graph_store = None
         engine._enricher_chat = None
         engine._summarizer_chat = None
-        engine._fast_index_code_files = MagicMock()
 
         source = tmp_path / "docs"
         source.mkdir()
@@ -943,10 +1108,6 @@ class TestPoint:
             patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
             patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
             patch(
-                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
-                ".AgenticSearchStrategy"
-            ),
-            patch(
                 "fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline"
             ) as pipeline_cls,
         ):
@@ -960,62 +1121,69 @@ class TestPoint:
         build_manifest_path = builder_cls.return_value.build.call_args.args[1]
         assert build_manifest_path == workspace / "collections" / "custom" / "manifest.json"
 
-    def test_point_prepares_managed_qwen_snapshot_for_sources(self, tmp_path):
-        """Source registration validates managed Qwen model files early."""
+    def test_point_indexes_registered_files_without_loading_qwen(self, tmp_path):
+        """Every supported changed file is searchable before point returns."""
+        from fitz_sage.engines.fitz_krag.progressive.manifest import FileState
+
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._config = _make_config(collection="default")
-        engine._bg_worker = None
+        engine._enrichment_worker = None
         engine._manifest = None
         engine._source_dir = None
-        engine._retrieval_router = MagicMock()
-        engine._reader = MagicMock()
         engine._chat_factory = None
         engine._chat = None
         engine._connection_manager = MagicMock()
         engine._table_store = MagicMock()
         engine._sqlite_table_store = MagicMock()
         engine._entity_graph_store = None
-        engine._summarizer_chat = MagicMock()
-        engine._fast_index_code_files = MagicMock()
-
-        model_info = MagicMock()
-        model_info.revision = "abc123456789def"
         engine._enricher_chat = MagicMock()
-        engine._enricher_chat.ensure_available.return_value = model_info
+        engine._summarizer_chat = MagicMock()
 
         source = tmp_path / "docs"
         source.mkdir()
+        document = source / "release_notes.md"
+        document.write_text("# Release\nSearchable content", encoding="utf-8")
         workspace = tmp_path / ".fitz"
         manifest = MagicMock()
-        manifest.entries.return_value = {"release_notes.md": MagicMock()}
+        entry = MagicMock(
+            rel_path="release_notes.md",
+            abs_path=str(document),
+            file_id="file-1",
+            state=FileState.REGISTERED,
+        )
+        manifest.entries.return_value = {"release_notes.md": entry}
         progress = MagicMock()
+        pipeline = MagicMock()
 
         with (
             patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
             patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
             patch(
-                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
-                ".AgenticSearchStrategy"
+                "fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline",
+                return_value=pipeline,
             ),
-            patch("fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline"),
         ):
             builder_cls.return_value.build.return_value = manifest
 
             engine.point(source, start_worker=False, progress=progress)
 
-        engine._enricher_chat.ensure_available.assert_called_once()
-        progress.assert_any_call("Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...")
-        progress.assert_any_call("Managed Qwen snapshot ready (abc123456789).")
+        pipeline.parse_file.assert_called_once_with(
+            "release_notes.md",
+            document,
+            "file-1",
+        )
+        pipeline.resolve_imports.assert_called_once()
+        manifest.update_state.assert_called_once_with("release_notes.md", FileState.INDEXED)
+        engine._enricher_chat.ensure_available.assert_not_called()
+        progress.assert_any_call("Searchable source index ready (1/1 changed files).")
 
     def test_point_deletes_stale_files_outside_current_manifest(self, tmp_path):
         """Re-pointing cleans previously indexed files that the scanner now excludes."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._config = _make_config(collection="rag_test_corpus")
-        engine._bg_worker = None
+        engine._enrichment_worker = None
         engine._manifest = None
         engine._source_dir = None
-        engine._retrieval_router = MagicMock()
-        engine._reader = MagicMock()
         engine._chat_factory = None
         engine._chat = None
         engine._connection_manager = MagicMock()
@@ -1024,25 +1192,17 @@ class TestPoint:
         engine._entity_graph_store = None
         engine._enricher_chat = None
         engine._summarizer_chat = None
-        engine._fast_index_code_files = MagicMock()
 
         source = tmp_path / "rag_test_corpus"
         source.mkdir()
         workspace = source / ".fitz"
         manifest = MagicMock()
-        manifest.entries.return_value = {
-            "README.md": MagicMock(),
-            "hierarchical_rag/feedback.md": MagicMock(),
-        }
+        manifest.entries.return_value = {}
         pipeline_core = MagicMock()
 
         with (
             patch("fitz_sage.core.paths.FitzPaths.workspace", return_value=workspace),
             patch("fitz_sage.engines.fitz_krag.progressive.builder.ManifestBuilder") as builder_cls,
-            patch(
-                "fitz_sage.engines.fitz_krag.retrieval.strategies.agentic_search"
-                ".AgenticSearchStrategy"
-            ),
             patch(
                 "fitz_sage.engines.fitz_krag.ingestion.pipeline.KragIngestPipeline",
                 return_value=pipeline_core,
@@ -1052,28 +1212,30 @@ class TestPoint:
 
             engine.point(source, start_worker=False)
 
-        pipeline_core.delete_files_not_in_paths.assert_called_once_with(
-            {"README.md", "hierarchical_rag/feedback.md"}
-        )
+        pipeline_core.delete_files_not_in_paths.assert_called_once_with(set())
 
-    def test_continue_indexing_runs_worker_to_deep_completion(self, tmp_path):
-        """Persisted indexing resumes without rebuilding the manifest."""
+    def test_continue_enrichment_runs_worker_to_completion(self, tmp_path):
+        """Persisted enrichment resumes without rebuilding the source index."""
         engine = FitzKragEngine.__new__(FitzKragEngine)
         engine._manifest = MagicMock()
+        engine._manifest.path = tmp_path / "manifest.json"
         engine._source_dir = tmp_path / "docs"
+        engine._config = _make_config(collection="default")
         engine._build_ingest_core = MagicMock(return_value=MagicMock())
 
         with patch(
-            "fitz_sage.engines.fitz_krag.progressive.worker.BackgroundIngestWorker"
+            "fitz_sage.engines.fitz_krag.progressive.worker.BackgroundEnrichmentWorker"
         ) as worker_cls:
             worker = worker_cls.return_value
 
-            engine.continue_indexing()
+            engine.continue_enrichment()
 
         worker_cls.assert_called_once()
         assert worker_cls.call_args.kwargs["manifest"] is engine._manifest
-        assert worker_cls.call_args.kwargs["source_dir"] == engine._source_dir
-        worker.run_until_deep_complete.assert_called_once()
+        assert worker_cls.call_args.kwargs["write_lock"].path == tmp_path / "writer.lock"
+        engine._manifest.load.assert_called_once()
+        engine._manifest.prepare_enrichment_retry.assert_called_once()
+        worker.run_until_complete.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

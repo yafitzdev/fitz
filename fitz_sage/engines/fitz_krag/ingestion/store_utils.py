@@ -25,7 +25,7 @@ def build_fts_query(query: str) -> str | None:
     words = [w for w in re.findall(r"\w+", query) if w]
     if not words:
         return None
-    return " OR ".join(words)
+    return " OR ".join(f'"{word}"' for word in words)
 
 
 def decode_json(value: Any, default: Any) -> Any:
@@ -53,20 +53,25 @@ def delete_by_file(
         conn.commit()
 
 
-def update_enrichment_by_file(
+def has_rows(cm: SqliteConnectionManager, collection: str, table: str) -> bool:
+    """Return whether an index table contains at least one row."""
+    with cm.connection(collection) as conn:
+        return conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None
+
+
+def update_entities_by_file(
     cm: "SqliteConnectionManager",
     collection: str,
     table: str,
     enriched_dicts: list[dict[str, Any]],
 ) -> None:
-    """Write keywords/entities/metadata enrichment back onto index rows by id."""
-    sql = f"UPDATE {table} SET keywords = ?, entities = ?, metadata = ? WHERE id = ?"
+    """Write entity and hierarchy metadata back onto index rows by id."""
+    sql = f"UPDATE {table} SET entities = ?, metadata = ? WHERE id = ?"
     with cm.connection(collection) as conn:
         for item in enriched_dicts:
             conn.execute(
                 sql,
                 (
-                    json.dumps(item.get("keywords", [])),
                     json.dumps(item.get("entities", [])),
                     json.dumps(item.get("metadata", {})),
                     item["id"],

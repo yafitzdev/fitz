@@ -1,152 +1,124 @@
 # Epistemic Governance
 
-How fitz-sage decides whether retrieved evidence is sufficient, disputed, or
-insufficient.
-
----
+How fitz-sage reports whether the delivered evidence is sufficient, disputed,
+or insufficient.
 
 ## Overview
 
-Most RAG systems confidently answer even when they shouldn't. Pyrrho v2
-classifies `(query, retrieved evidence prefix)` pairs into one of three native
-evidence verdicts:
+Pyrrho classifies each `(query, ranked evidence prefix)` pair into a native
+evidence verdict:
 
 | Verdict | Meaning |
 |---|---|
-| `SUFFICIENT` | Sources consistently and sufficiently support an answer. |
-| `DISPUTED` | Sources contradict each other on the answer. |
-| `INSUFFICIENT` | Sources do not contain enough information to answer. |
+| `SUFFICIENT` | The delivered sources consistently and sufficiently support an answer. |
+| `DISPUTED` | The delivered sources contradict each other on the answer. |
+| `INSUFFICIENT` | The delivered sources do not contain enough information to answer. |
 
-```
+```text
 User query
-  │
-  ▼
-Retrieve via KRAG + FTS5
-  │
-  ▼
-Pyrrho v2 classifier (local CPU forward pass)
-  │
-  ▼
-SUFFICIENT / DISPUTED / INSUFFICIENT
-  │
-  ▼
-EvidencePack is returned; optional synthesizer can use the mode
+  -> Fitz retrieval, reranking, closure, and compilation
+  -> first ranked prefix (up to 3 items)
+  -> local Pyrrho decision
+  -> INSUFFICIENT: add up to 2 more and repeat
+  -> SUFFICIENT / DISPUTED / evidence exhausted: EvidencePack
 ```
 
-The classifier is
+## Ownership
+
+- The Pyrrho ONNX model supplies the learned governance judgment. Fitz-Sage's
+  managed adapter owns model resolution, artifact validation, tokenization,
+  and mechanical head decoding.
+- Fitz-Sage owns query-shape recognition, retrieval, evidence closure,
+  compilation, and delivery.
+- `fitz_sage/integrations/pyrrho.py` sends source IDs plus unchanged source
+  text, maps the returned verdict name to `AnswerMode`, and serializes the exact
+  Pyrrho decision.
+- Fitz-Sage does not apply a second confidence floor, conflict heuristic,
+  query-shape evidence minimum, or verdict override. It only grows the ranked
+  prefix after Pyrrho's exact `INSUFFICIENT` verdict.
+
+## Default Model
+
+Bare `pyrrho` resolves the CPU-local ONNX model
 [`yafitzdev/pyrrho-v2-nano-g1`](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
-on Hugging Face. It is a `ModernBERT` classifier trained from fitz-gov-v2
-evidence data. The default v2 package exposes only native v2 heads:
+at immutable revision:
+
+```text
+948f0500b74871cfaec7689a01d4eab0dd516e1b
+```
+
+Fitz-Sage downloads it lazily into the Hugging Face cache. A local model
+directory or another remote model pinned to a full 40-character
+commit can be configured explicitly.
+
+```yaml
+governance: pyrrho
+# governance: pyrrho/C:/models/custom-pyrrho
+# governance: pyrrho/owner/repository@0123456789abcdef0123456789abcdef01234567
+```
+
+## Model Contract
+
+Pyrrho exposes four native heads:
 
 | Head | Purpose |
-| ---- | ------- |
-| `evidence_verdict` | `SUFFICIENT` / `DISPUTED` / `INSUFFICIENT` over `query + evidence prefix`. |
-| `failure_mode` | Reason for insufficient or disputed evidence. |
-| `retrieval_intents` | Multi-label evidence intent metadata. |
-| `evidence_kinds` | Multi-label evidence-surface metadata. |
+|---|---|
+| `evidence_verdict` | `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT` |
+| `failure_mode` | Reason for insufficient or disputed evidence |
+| `retrieval_intents` | Multi-label query/evidence intent metadata |
+| `evidence_kinds` | Multi-label evidence-surface metadata |
 
----
+The managed adapter validates model manifests, label order, ONNX output width,
+token limits, graph parity metadata, and verdict/failure compatibility. These
+checks implement the model's declared interface; retrieval does not add a
+second governance policy.
 
-## Implementation
-
-- `pyrrho.py` — the local Pyrrho v2 inference module
-- `protocol.py` — the `EvidenceItem` protocol (any object with
-  `.content` + `.metadata`)
-- `instructions.py` — the small `AnswerMode → prompt instruction` map
-
----
+The accepted model currently has a 2,048-token input contract. Pyrrho records
+the original token count, budget, and truncation status. Evidence beyond that
+budget is unseen by the classifier even though Fitz-Sage can still return it in
+the `EvidencePack`.
 
 ## Public API
 
 ```python
-from fitz_sage.governance import GovernanceDecision, create_governance
+from fitz_sage.integrations.pyrrho import create_pyrrho
 
-governance = create_governance("pyrrho")
-decision = governance.decide(query, retrieved_contexts)
-# decision.mode    → runtime AnswerMode (SUFFICIENT / DISPUTED / INSUFFICIENT)
-# decision.probs   → (p_insufficient, p_disputed, p_sufficient)
-# decision.reason  → one-line human-readable explanation
-# decision exposes native v2 verdict, failure, retrieval-intent, and evidence-kind metadata
+pyrrho = create_pyrrho("pyrrho")
+decision = pyrrho.decide(query, retrieved_contexts)
+
+print(decision.verdict)
+print(decision.probabilities)
+print(decision.to_dict())
 ```
 
-`retrieved_contexts` is any sequence of objects satisfying the
-`EvidenceItem` protocol — both `Chunk` and KRAG's `ReadResult`
-qualify.
+The engine lazy-loads Pyrrho on the first query-plan or evidence-decision call.
+After model download and initialization, decisions are local CPU inference and
+do not require a chat model.
 
-`create_governance("pyrrho")` returns a `Pyrrho` classifier instance.
-The engine owns this instance and calls `.decide()` after retrieval and
-before answer synthesis. The model is lazy-loaded on first decision;
-that first call downloads/loads the ONNX package when missing, and
-subsequent calls are local CPU forward passes.
+## Pipeline Contract
 
----
+1. Fitz-Sage profiles the query and retrieves candidate evidence.
+2. Reranking, closure, and compilation produce the final ranking.
+3. `top_k`, or configured `top_read`, caps progressive evidence delivery.
+4. Fitz-Sage sends the first three ranked items to Pyrrho unchanged.
+5. `INSUFFICIENT` adds the next two items; `SUFFICIENT` or `DISPUTED` stops.
+6. Fitz-Sage returns the stopping prefix and exact serialized decisions.
 
-## Calibrated decision rule
+Optional synthesis consumes the already-decided mode. It does not choose or
+repair that mode.
 
-Raw `argmax` over the 3-way v2 evidence-verdict softmax gives the predicted
-class. Production uses a **threshold-calibrated fallback** on the `SUFFICIENT`
-probability to favour the safer modes:
+## Known Boundaries
 
-```python
-if pred == SUFFICIENT and P(SUFFICIENT) < TAU:
-    pred = argmax over (INSUFFICIENT, DISPUTED)
-```
+1. Pyrrho's current model quality is accepted, not treated as solved. False
+   sufficient, disputed, or insufficient decisions are Pyrrho model debt.
+2. The current model and evaluation are English-focused.
+3. Pyrrho judges only delivered evidence. It does not retrieve more material or
+   verify claims against outside knowledge.
+4. Numeric agreement and conflict recognition are learned rather than
+   hard-coded.
+5. The 2,048-token contract applies independently to every evaluated prefix.
+   Adding evidence cannot help when earlier items already consume the model's
+   visible token budget.
 
-`TAU = 0.34` is the default runtime threshold for v2.
-
----
-
-## Where it plugs in
-
-The `FitzKragEngine` profiles the query, retrieves and reranks candidates, then
-uses the default Pyrrho v2 package to evaluate evidence prefixes.
-
-The cutoff loop:
-
-1. Broad recall + rerank candidates → ranked `ReadResult`s.
-2. Pyrrho scores `query + top 1`.
-3. If the verdict is `INSUFFICIENT`, the engine adds the next evidence item and
-   scores again.
-4. The loop stops when evidence is `SUFFICIENT`, a dispute is stable, or the
-   cutoff is reached.
-5. `evidence()` returns an `EvidencePack` with mode, reasons, probabilities,
-   cutoff metadata, and source items.
-6. Optional `answer()` synthesis receives the same mode and evidence.
-
-`governance: pyrrho` is the product default and governance is mandatory in the
-standard retrieval pipeline.
-
----
-
-## Why a classifier?
-
-Governance has to judge the whole `(query, evidence prefix)` pair, not just
-individual keywords or source counts. Pyrrho gives the engine one calibrated
-local verdict with mode probabilities and native v2 metadata. That keeps the
-cutoff loop fast and makes the decision observable without adding endpoint calls
-to the retrieval path.
-
----
-
-## Limitations
-
-The model card calls out these known boundaries:
-
-1. **English-only training and evaluation data.**
-2. **Source-bounded judgment.** Pyrrho judges only the retrieved evidence;
-   it does not retrieve new evidence or verify claims against outside
-   knowledge.
-3. **Numeric agreement is learned, not hard-coded.** Exact numeric workflows
-   should still be evaluated before deployment.
-4. **Safety-tuned thresholding.** The decision threshold is tuned for low
-   false-sufficient rate, so some answerable cases may be classified as
-   `INSUFFICIENT` or `DISPUTED`.
-
----
-
-## See Also
-
-- [pyrrho model card](https://huggingface.co/yafitzdev/pyrrho-v2-nano-g1)
-- [fitz-gov on Hugging Face](https://huggingface.co/datasets/yafitzdev/fitz-gov-v2) — the evaluation dataset
-- [pyrrho training code](https://github.com/yafitzdev/pyrrho)
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — where governance fits in the engine pipeline
+See [Limitations](LIMITATIONS.md) for the measured Fitz-Sage retrieval
+boundary and the exact separation between retrieval and Pyrrho outcomes.

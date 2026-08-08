@@ -40,7 +40,7 @@ def _display_collections_table(collections: list[dict[str, Any]]) -> None:
             print(f"  {i}. {coll['name']} ({coll.get('count', '?')} items)")
 
 
-def _display_collection_info(name: str, chunk_count: int, metadata: dict[str, Any]) -> None:
+def _display_collection_info(name: str, item_count: int, metadata: dict[str, Any]) -> None:
     """Display detailed collection info."""
     print()
     if RICH:
@@ -52,25 +52,12 @@ def _display_collection_info(name: str, chunk_count: int, metadata: dict[str, An
         table.add_column("Value", style="cyan")
 
         table.add_row("Name", name)
-        table.add_row("Items", str(chunk_count))
+        table.add_row("Items", str(item_count))
 
         console.print(Panel(table, title=f"[bold]{name}[/bold]", border_style="blue"))
     else:
         print(f"  Name: {name}")
-        print(f"  Items: {chunk_count}")
-
-
-def _delete_table_registry(collection: str) -> None:
-    """Delete table registry file associated with a collection."""
-    from fitz_sage.core.paths import FitzPaths
-
-    registry_path = FitzPaths.table_registry(collection)
-    if registry_path.exists():
-        try:
-            registry_path.unlink()
-            ui.info(f"Deleted table registry: {registry_path.name}")
-        except Exception as e:
-            logger.warning(f"Failed to delete table registry: {e}")
+        print(f"  Items: {item_count}")
 
 
 def command() -> None:
@@ -92,11 +79,13 @@ def command() -> None:
 
     if not collection_infos:
         ui.info("No collections found.")
-        ui.info("Run 'fitz query \"question\" --source ./docs' to create one.")
+        ui.info("Run 'fitz retrieve \"question\" --source ./docs' to create one.")
         return
 
     # Convert to display format
-    collections = [{"name": c.name, "count": c.chunk_count} for c in collection_infos]
+    collections: list[dict[str, Any]] = [
+        {"name": c.name, "count": c.item_count} for c in collection_infos
+    ]
     _display_collections_table(collections)
     print()
 
@@ -104,7 +93,7 @@ def command() -> None:
     # Step 2: Select Collection
     # =========================================================================
 
-    collection_names = [c["name"] for c in collections]
+    collection_names: list[str] = [str(c["name"]) for c in collections]
     selected_collection = ui.prompt_numbered_choice(
         "Select collection",
         collection_names + ["Exit"],
@@ -122,13 +111,13 @@ def command() -> None:
         # Get fresh info
         try:
             info = service.get_collection(selected_collection)
-            chunk_count = info.chunk_count
+            item_count = info.item_count
             metadata = info.metadata
         except Exception:
-            chunk_count = 0
+            item_count = 0
             metadata = {}
 
-        _display_collection_info(selected_collection, chunk_count, metadata)
+        _display_collection_info(selected_collection, item_count, metadata)
 
         print()
         action = ui.prompt_numbered_choice(
@@ -138,15 +127,12 @@ def command() -> None:
         )
 
         if action == "Delete collection":
-            ui.warning(f"This will delete '{selected_collection}' with {chunk_count} items.")
+            ui.warning(f"This will delete '{selected_collection}' with {item_count} items.")
 
             if ui.prompt_confirm("Are you sure?", default=False):
                 try:
                     service.delete_collection(selected_collection)
                     ui.success(f"Deleted '{selected_collection}'")
-
-                    # Also delete associated table registry
-                    _delete_table_registry(selected_collection)
 
                     return  # Exit after deletion
                 except Exception as e:
@@ -162,11 +148,11 @@ def command() -> None:
                 ui.info("No collections remaining.")
                 return
 
-            collections = [{"name": c.name, "count": c.chunk_count} for c in collection_infos]
+            collections = [{"name": c.name, "count": c.item_count} for c in collection_infos]
             _display_collections_table(collections)
             print()
 
-            collection_names = [c["name"] for c in collections]
+            collection_names = [str(c["name"]) for c in collections]
             selected_collection = ui.prompt_numbered_choice(
                 "Select collection",
                 collection_names + ["Exit"],

@@ -3,7 +3,6 @@
 
 `EvidencePack` is the retrieval-first response contract. It is returned by:
 
-- `fitz query`
 - `fitz retrieve`
 - `fitz_sage.evidence()`
 
@@ -61,15 +60,19 @@ The most important metadata blocks are:
 | Block | Meaning |
 |---|---|
 | `query_profile` | The effective retrieval profile used before recall. |
-| `retrieval_trace` | Candidate generation, reranking, final reads, and retries. |
-| `evidence_compiler` | Mechanical evidence roles, anchors, and source-count constraints. |
-| `governance_cutoff` | Pyrrho v2 prefix evaluation and final governance decision. |
+| `retrieval_trace` | Candidate generation, reranking, final reads, and evidence-closure passes. |
+| `evidence_compiler` | Mechanical evidence roles, anchors, and ordering. |
+| `evidence_delivery` | Progressive prefix sizes and exact Pyrrho trajectory. |
+| `pyrrho` | Pyrrho's exact serialized governance decision. |
 
 ### Query Profile
 
 `metadata.query_profile` records how Fitz searched before governance ran. It
 contains query-shape metadata, managed Qwen query keywords, strategy weights,
 fetch limits, and intent flags.
+The `has_*_intent` fields describe Fitz's deterministic reading of the user's
+query. Exact Pyrrho PRE evidence obligations remain separate in
+`query_profile.pyrrho_pre` and `retrieval_intents`.
 
 ```json
 {
@@ -84,8 +87,7 @@ fetch limits, and intent flags.
         "strategy_weights": {
           "code": 0.25,
           "section": 0.25,
-          "table": 0.55,
-          "chunk": 0.35
+          "table": 0.55
         },
         "keywords": ["incident", "eu", "release"],
         "comparison_entities": ["EU token rotation", "policy interval"],
@@ -97,36 +99,35 @@ fetch limits, and intent flags.
 }
 ```
 
-### Governance Cutoff
+### Evidence Delivery And Pyrrho
 
-`metadata.governance_cutoff` records how Pyrrho evaluated ranked evidence
-prefixes. The runtime `mode` stays in the `sufficient` / `disputed` /
-`insufficient` vocabulary, while Pyrrho v2 heads expose the model's native evidence
-metadata.
+Fitz-Sage starts with the first three compiled evidence items and adds two only
+after Pyrrho returns exact `INSUFFICIENT`. Exact `SUFFICIENT` or `DISPUTED`
+stops immediately. `metadata.evidence_delivery` records the mechanical schedule
+and every exact Pyrrho output.
+`metadata.pyrrho` is the dictionary returned by Pyrrho without reinterpretation.
 
 ```json
 {
   "metadata": {
-    "governance_cutoff": {
-      "evaluated": 3,
-      "selected": 3,
-      "max": 10,
-      "mode": "sufficient",
-      "stop_reason": "sufficient_min_evidence_met",
-      "policy": {
-        "query_shape": "comparison",
-        "min_sufficient_docs": 2,
-        "min_disputed_docs": 2,
-        "disputed_patience_docs": 2
+    "evidence_delivery": {
+      "available": 7,
+      "selected": 5,
+      "limit": 7,
+      "initial_prefix_size": 3,
+      "prefix_increment": 2,
+      "evaluated_prefixes": [3, 5]
+    },
+    "pyrrho": {
+      "schema_version": 1,
+      "verdict": "SUFFICIENT",
+      "reason": "Pyrrho: evidence is sufficient for a confident answer (P=0.93).",
+      "probabilities": {
+        "INSUFFICIENT": 0.03,
+        "DISPUTED": 0.04,
+        "SUFFICIENT": 0.93
       },
-      "pyrrho": {
-        "mode": "sufficient",
-        "probabilities": {
-          "insufficient": 0.03,
-          "disputed": 0.04,
-          "sufficient": 0.93
-        },
-        "reason": "Pyrrho: sources support a confident answer (P=0.93).",
+      "heads": {
         "evidence_verdict": {
           "final_label": "SUFFICIENT",
           "confidence": 0.93
@@ -143,6 +144,11 @@ metadata.
           "final_labels": ["needs_text", "needs_table_or_record"],
           "confidence": 0.88
         }
+      },
+      "input": {
+        "tokens": 834,
+        "truncated": false,
+        "max_tokens": 2048
       }
     }
   }
@@ -153,20 +159,21 @@ Field meanings:
 
 | Field | Meaning |
 |---|---|
-| `evaluated` | How many ranked evidence prefixes Pyrrho evaluated. |
-| `selected` | How many evidence items were returned after cutoff. |
-| `max` | Maximum cutoff window for this query, capped at 10 by default. |
-| `mode` | Final runtime governance mode for the selected prefix. |
-| `stop_reason` | Why the cutoff loop stopped. |
-| `policy.query_shape` | Narrow, broad, comparison, or aggregation. |
-| `policy.min_sufficient_docs` | Minimum prefix size before the runtime `sufficient` mode can stop. |
-| `policy.min_disputed_docs` | Minimum prefix size before comparison disputes can stop. |
-| `policy.disputed_patience_docs` | Additional patience for narrow disputes. |
-| `pyrrho.probabilities` | Runtime probabilities for `insufficient`, `disputed`, and `sufficient` modes. |
-| `pyrrho.evidence_verdict` | Native v2 verdict head. |
-| `pyrrho.failure_mode` | Native v2 failure-mode head. |
-| `pyrrho.retrieval_intents` | Native v2 retrieval-intent head. |
-| `pyrrho.evidence_kinds` | Native v2 evidence-kind head. |
+| `evidence_delivery.available` | Compiled evidence items available before the delivery budget. |
+| `evidence_delivery.selected` | Items in the stopping prefix returned in the pack. |
+| `evidence_delivery.limit` | Maximum prefix from requested `top_k`, or configured `top_read`. |
+| `evidence_delivery.initial_prefix_size` | First evaluation target: three items, or all available when fewer. |
+| `evidence_delivery.prefix_increment` | Additional ranked items after each `INSUFFICIENT`: two. |
+| `evidence_delivery.evaluated_prefixes` | Prefix sizes Pyrrho actually evaluated. |
+| `evidence_delivery.trajectory` | Each prefix size and Pyrrho's exact serialized decision for it. |
+| `pyrrho.verdict` | Authoritative native verdict. |
+| `pyrrho.probabilities` | Native verdict probabilities. |
+| `pyrrho.heads` | Native v2 verdict, failure, retrieval-intent, and evidence-kind heads. |
+| `pyrrho.input` | Token count, truncation status, and model token limit. |
+
+Pyrrho owns thresholds and contradictory-head consistency. Fitz-Sage neither
+adds confidence thresholds nor overrides the verdict for any query shape; it
+only continues when the exact verdict is `INSUFFICIENT`.
 
 ### Retrieval Trace
 
@@ -193,8 +200,7 @@ inspect how a pack was produced:
         "output": []
       },
       "final_addresses": [],
-      "read_results": [],
-      "retries": []
+      "read_results": []
     }
   }
 }
@@ -202,13 +208,13 @@ inspect how a pack was produced:
 
 The trace is not a separate debug API. It is part of the retrieval-first
 contract because benchmark reports need candidate frontiers, strategy scores,
-reranker order, and retry behavior alongside the selected evidence.
+reranker order, and evidence-closure behavior alongside the selected evidence.
 
 ### Evidence Compiler
 
 `metadata.evidence_compiler` records mechanical evidence constraints before
-Pyrrho cutoff: literal anchors, required source count, how many evidence items
-entered and left compilation, and selected evidence roles.
+progressive delivery: exact identifiers, soft keyword anchors, how many evidence
+items entered and left compilation, and selected evidence roles.
 
 ```json
 {
@@ -216,16 +222,12 @@ entered and left compilation, and selected evidence roles.
     "evidence_compiler": {
       "contract": {
         "identifiers": ["INC-101"],
-        "phrase_anchors": ["Project Orion"],
-        "source_anchors": [],
         "keyword_anchors": ["latest", "status"],
-        "metric_terms": [],
         "required_modalities": ["table"],
         "temporal_policy": "temporal"
       },
       "input_count": 4,
       "output_count": 2,
-      "min_sources": 2,
       "filtered_all": false,
       "selected": []
     }
@@ -236,22 +238,28 @@ entered and left compilation, and selected evidence roles.
 ## Indexing Status
 
 `indexing_status` describes whether the collection can answer retrieval queries
-and whether required deep enrichment is complete.
+and whether optional enrichment is complete.
 
 ```json
 {
   "indexing_status": {
     "total": 65,
     "indexed": 64,
-    "pending": 1,
+    "pending": 0,
+    "failed": 1,
     "complete": false,
-    "query_ready": false,
-    "deep_pending": 22,
-    "fully_enriched": false,
-    "by_state": {
-      "query_ready": 43,
-      "enriched": 21,
-      "registered": 1
+    "query_ready": true,
+    "by_index_state": {
+      "indexed": 64,
+      "failed": 1
+    },
+    "enrichment": {
+      "total": 64,
+      "completed": 42,
+      "pending": 22,
+      "failed": 0,
+      "finalization": "pending",
+      "complete": false
     }
   }
 }
@@ -259,14 +267,14 @@ and whether required deep enrichment is complete.
 
 | Field | Meaning |
 |---|---|
-| `total` | Files tracked by the collection manifest. |
-| `indexed` | Files in a query-ready state. |
-| `pending` | Files not query-ready yet. |
-| `complete` | `pending == 0`; the query-ready index is complete. |
-| `query_ready` | Same readiness signal as `complete`. |
-| `deep_pending` | Files still missing full required enrichment. |
-| `fully_enriched` | `deep_pending == 0`. |
-| `by_state` | Manifest state counts. |
+| `total` | Supported files, including source-index failures. |
+| `indexed` | Files stored in the searchable source index. |
+| `pending` | Files not yet settled by source indexing. |
+| `failed` | Supported files that failed source indexing. |
+| `complete` | Every supported file indexed successfully. |
+| `query_ready` | No supported file remains pending. |
+| `by_index_state` | Source-index state counts. |
+| `enrichment` | Independent entity/hierarchy progress and failures. |
 
 ## Item Metadata
 
@@ -276,8 +284,8 @@ Evidence items are typed retrieval units. `address_kind` identifies the unit:
 |---|---|
 | `section` | Markdown, PDF, DOCX, PPTX, HTML, text, or parsed prose section. |
 | `symbol` | Code function, class, method, constant, or module-level symbol. |
-| `table` | CSV/table metadata or extracted document table. |
-| `file` | Supplemental file-level match before full indexing. |
+| `table` | Native configured delimited table, `.csv`/`.tsv` by default. |
+| `file` | Code file selected or added through structural expansion. |
 
 `excerpt` is display text. `content` is the fuller text passed into Pyrrho and
 optional synthesis.

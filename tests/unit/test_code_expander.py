@@ -130,8 +130,8 @@ class TestCodeExpander:
         raw_store, symbol_store, import_store = mock_stores
         expander = CodeExpander(raw_store, symbol_store, import_store, config)
 
-        addr = Address(kind=AddressKind.CHUNK, source_id="c1", location="doc", summary="")
-        result = ReadResult(address=addr, content="chunk text", file_path="doc.pdf")
+        addr = Address(kind=AddressKind.SECTION, source_id="s1", location="doc", summary="")
+        result = ReadResult(address=addr, content="section text", file_path="doc.pdf")
         expanded = expander.expand([result])
         assert len(expanded) == 1
 

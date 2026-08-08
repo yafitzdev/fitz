@@ -139,3 +139,197 @@ class TestTableSearchStrategy:
         assert len(addresses) == 1
         assert addresses[0].location == "Vendors"
         assert addresses[0].metadata["row_match"]["matched_rows"] == 1
+        assert addresses[0].metadata["rerank_text"] == (
+            "Columns: vendor_id | vendor | notice_days\nRow: VEN-301 | MeridianAI | 75"
+        )
+
+    def test_retrieve_searches_row_values_without_table_classification(self):
+        """Ordinary lookups must find table rows even when query profiling misses the modality."""
+        record = _make_table_record(
+            record_id="rec-rollouts",
+            table_id="tbl_rollouts",
+            name="Rollout Matrix",
+            columns=["feature", "region", "release", "status"],
+            row_count=2,
+        )
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = [
+            {
+                "table_id": "tbl_rollouts",
+                "rank": 1,
+                "bm25_score": 3.2,
+                "matched_rows": 1,
+                "row_numbers": [1],
+                "row_texts": ["token_rotation eu 2026.05 enabled"],
+            }
+        ]
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+        strategy._table_store.get_by_table_id.return_value = record
+
+        addresses = strategy.retrieve(
+            "Which release enabled token rotation in the EU region?",
+            limit=5,
+            detection=SimpleNamespace(required_modalities=("symbol", "section")),
+        )
+
+        assert [address.location for address in addresses] == ["Rollout Matrix"]
+        assert addresses[0].metadata["row_search"]["matched_rows"] == 1
+        assert addresses[0].metadata["rerank_text"] == (
+            "Columns: feature | region | release | status\nRow: token_rotation eu 2026.05 enabled"
+        )
+        sqlite_store.scan_rows.assert_not_called()
+
+    def test_typed_row_operation_takes_precedence_over_bm25_row_hit(self):
+        """A superlative must select its computed row, not BM25's lexical row."""
+        record = _make_table_record(
+            record_id="rec-exports",
+            table_id="tbl_exports",
+            name="Exports",
+            columns=["export_id", "dataset", "rows"],
+            row_count=3,
+        )
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = [
+            {
+                "table_id": "tbl_exports",
+                "rank": 1,
+                "row_numbers": [1],
+                "row_texts": ["EXP-501 customer_export_logs 120000"],
+            }
+        ]
+        sqlite_store.catalog.return_value = [
+            {
+                "table_id": "tbl_exports",
+                "table_name": "Exports",
+                "columns": record["columns"],
+            }
+        ]
+        sqlite_store.scan_rows.return_value = (
+            record["columns"],
+            [
+                ["EXP-501", "customer_export_logs", "120000"],
+                ["EXP-504", "audit_trail", "990000"],
+                ["EXP-505", "biometric_artifacts", "1200"],
+            ],
+        )
+        strategy = _make_strategy(keyword_results=[record], sqlite_table_store=sqlite_store)
+        strategy._table_store.get_by_table_id.return_value = record
+
+        addresses = strategy.retrieve(
+            "Which export has the most rows?",
+            limit=5,
+            detection=SimpleNamespace(required_modalities=("table",)),
+        )
+
+        assert len(addresses) == 1
+        assert "row_search" not in addresses[0].metadata
+        assert addresses[0].metadata["row_match"]["plan"]["sort"] == {
+            "column": "rows",
+            "direction": "max",
+        }
+        assert addresses[0].metadata["rerank_text"] == (
+            "Columns: export_id | dataset | rows\nRow: EXP-504 | audit_trail | 990000"
+        )
+
+    def test_retrieve_uses_full_table_exact_identifier_lookup(self):
+        """An exact ID beyond the bounded scan should still surface its table."""
+        record = _make_table_record(
+            record_id="rec-assets",
+            table_id="tbl_assets",
+            name="Assets",
+            columns=["asset_id", "owner"],
+            row_count=900,
+        )
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.catalog.return_value = [{"table_id": "tbl_assets"}]
+        sqlite_store.find_rows_by_identifiers.return_value = (
+            ["asset_id", "owner"],
+            [["AX-156", "Platform"]],
+        )
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+        strategy._table_store.get_by_table_id.return_value = record
+
+        addresses = strategy.retrieve("Who owns AX-156?", limit=5)
+
+        assert len(addresses) == 1
+        assert addresses[0].metadata["row_match"]["exact_identifier_lookup"] is True
+        sqlite_store.scan_rows.assert_not_called()
+
+    def test_retrieve_scans_rows_for_explicit_structured_record_shape(self):
+        """Record-property questions warrant a bounded row scan without an exact ID."""
+        record = _make_table_record(
+            record_id="rec-edges",
+            table_id="tbl_edges",
+            name="Edge Records",
+            columns=[
+                "edge_id",
+                "station",
+                "status",
+                "latency_ms",
+                "retries",
+                "owner",
+                "release",
+            ],
+            row_count=2,
+        )
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = []
+        sqlite_store.catalog.return_value = [{"table_id": "tbl_edges"}]
+        sqlite_store.scan_rows.return_value = (
+            record["columns"],
+            [
+                ["EDGE-106", "delta", "fail", "390", "31", "Rhea", "REL-2026.04"],
+                ["EDGE-107", "delta", "pass", "210", "4", "Ivo", "REL-2026.04"],
+            ],
+        )
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+        strategy._table_store.get_by_table_id.return_value = record
+
+        addresses = strategy.retrieve(
+            "Who owns the failed delta edge record?",
+            limit=5,
+        )
+
+        assert [address.location for address in addresses] == ["Edge Records"]
+        assert addresses[0].metadata["row_match"]["matched_rows"] >= 1
+        sqlite_store.scan_rows.assert_called_once_with("tbl_edges", limit=500)
+
+    def test_prose_record_reference_does_not_trigger_row_scan(self):
+        """The noun 'record' alone is not sufficient structured-data intent."""
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = []
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+
+        strategy.retrieve(
+            "What does the records retention policy require?",
+            limit=5,
+        )
+
+        sqlite_store.catalog.assert_not_called()
+        sqlite_store.scan_rows.assert_not_called()
+
+    def test_row_scan_budget_is_global_across_the_collection(self):
+        """Fallback scanning must not multiply its row limit by every table."""
+        sqlite_store = MagicMock(name="sqlite_table_store")
+        sqlite_store.search_rows_bm25.return_value = []
+        sqlite_store.catalog.return_value = [
+            {
+                "table_id": f"tbl_{index}",
+                "table_name": f"Records {index}",
+                "columns": ["record_id", "status", "owner"],
+            }
+            for index in range(20)
+        ]
+        sqlite_store.scan_rows.return_value = (
+            ["record_id", "status", "owner"],
+            [["OTHER", "pending", "Nobody"]],
+        )
+        strategy = _make_strategy(keyword_results=[], sqlite_table_store=sqlite_store)
+
+        strategy.retrieve(
+            "Who owns the failed delta edge record?",
+            limit=5,
+        )
+
+        assert sqlite_store.scan_rows.call_count == 4
+        assert sum(call.kwargs["limit"] for call in sqlite_store.scan_rows.call_args_list) == 2000

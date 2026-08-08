@@ -6,10 +6,14 @@ Unit tests for RetrievalPass — Tiers 1-4 of the retrieval stack
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressRerankResponse
 from fitz_sage.engines.fitz_krag.retrieval.retrieval_pass import RetrievalPass
+from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouterResponse
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
 
@@ -19,9 +23,10 @@ def _addr(
     summary: str | None = None,
     score: float = 0.9,
     metadata: dict | None = None,
+    kind: AddressKind = AddressKind.SYMBOL,
 ) -> Address:
     return Address(
-        kind=AddressKind.SYMBOL,
+        kind=kind,
         source_id=source_id,
         location=location,
         summary=summary or f"Symbol {location}",
@@ -34,20 +39,24 @@ def _read_result(addr: Address) -> ReadResult:
     return ReadResult(address=addr, content="body", file_path="module.py", line_range=(1, 2))
 
 
+def _profile(**values):
+    return SimpleNamespace(**{"rerank_candidates": 32, **values})
+
+
 def _build(router_addresses: list[Address], *, with_reranker: bool = True):
     """Construct a RetrievalPass over mocked router / reranker / reader."""
     router = MagicMock(name="router")
-    router.retrieve.return_value = router_addresses
+    router.retrieve.return_value = RetrievalRouterResponse(router_addresses)
 
     reranker = None
     if with_reranker:
         reranker = MagicMock(name="reranker")
-        reranker.rerank.side_effect = lambda query, addrs: addrs  # identity
+        reranker.rerank.side_effect = lambda query, addrs: AddressRerankResponse(addrs)
 
     reader = MagicMock(name="reader")
     reader.read.side_effect = lambda addrs, limit: [_read_result(a) for a in addrs]
 
-    config = SimpleNamespace(top_read=50)
+    config = SimpleNamespace(top_read=50, rerank_candidates=32)
     return RetrievalPass(router, reranker, reader, config), router, reranker, reader
 
 
@@ -58,41 +67,294 @@ class TestRetrievalPass:
         a1, a2 = _addr("a"), _addr("b")
         rp, router, reranker, reader = _build([a1, a2])
 
-        results = rp.run("query", profile=None)
+        results = rp.run("query", profile=None).results
 
         router.retrieve.assert_called_once()
         reranker.rerank.assert_called_once()
         reader.read.assert_called_once()
         assert [r.address.location for r in results] == ["a", "b"]
 
+    def test_concurrent_runs_keep_results_and_traces_request_local(self):
+        barrier = threading.Barrier(2)
+        router = MagicMock(name="router")
+
+        def retrieve(query, _profile, *, rewrite_result=None):
+            del rewrite_result
+            barrier.wait(timeout=2.0)
+            address = _addr(query, source_id=query)
+            return RetrievalRouterResponse(
+                [address],
+                trace={"request": query},
+            )
+
+        router.retrieve.side_effect = retrieve
+        reader = MagicMock(name="reader")
+        reader.read.side_effect = lambda addresses, _limit: [
+            _read_result(address) for address in addresses
+        ]
+        retrieval_pass = RetrievalPass(
+            router,
+            None,
+            reader,
+            SimpleNamespace(top_read=1, rerank_candidates=1),
+        )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(
+                executor.map(
+                    lambda query: retrieval_pass.run(query, profile=None),
+                    ("first", "second"),
+                )
+            )
+
+        assert [response.trace["query"] for response in responses] == [
+            "first",
+            "second",
+        ]
+        assert [response.trace["router"]["request"] for response in responses] == [
+            "first",
+            "second",
+        ]
+        assert [response.results[0].address.source_id for response in responses] == [
+            "first",
+            "second",
+        ]
+
+    def test_rerank_cap_preserves_full_recall_pool_for_evidence_rescue(self):
+        """The model window is bounded without hiding candidates from contract logic."""
+        leading = [_addr(f"candidate-{index}") for index in range(7)]
+        concrete_row = _addr(
+            "record-947",
+            kind=AddressKind.TABLE,
+            metadata={"row_match": {"matched_rows": 1}},
+        )
+        candidates = [*leading, concrete_row]
+        rp, _router, reranker, _reader = _build(candidates)
+
+        response = rp.run(
+            "Show record 947",
+            profile=_profile(rerank_candidates=3),
+        )
+        results = response.results
+
+        assert reranker.rerank.call_args.args[1] == candidates[:3]
+        assert len(results) == 3
+        assert results[-1].address.location == "record-947"
+        assert response.trace["reranker"]["candidate_limit"] == 3
+        assert response.trace["reranker"]["candidate_count"] == 3
+        assert response.trace["reranker"]["recall_pool_count"] == 8
+
+    def test_rerank_preserves_each_successful_compound_query_leg(self):
+        """Reranking may reorder query legs but must not erase one entirely."""
+        refund_query = "What is the refund window"
+        approver_query = "who approves exceptions"
+        refund = _addr(
+            "refund",
+            source_id="refund",
+            metadata={"retrieval_queries": [refund_query]},
+        )
+        approver = _addr(
+            "approver",
+            source_id="approver",
+            metadata={"retrieval_queries": [approver_query]},
+        )
+        noise_a = _addr("noise-a", source_id="noise-a")
+        noise_b = _addr("noise-b", source_id="noise-b")
+        rp, _router, reranker, _reader = _build([refund, approver, noise_a, noise_b])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = AddressRerankResponse([noise_a, noise_b])
+        rewrite_result = SimpleNamespace(
+            is_compound=True,
+            decomposed_queries=[refund_query, approver_query],
+        )
+
+        results = rp.run(
+            "What is the refund window, and who approves exceptions?",
+            rewrite_result=rewrite_result,
+        ).results
+
+        assert len(results) == 2
+        assert {result.address.source_id for result in results} == {
+            "refund",
+            "approver",
+        }
+
     def test_empty_retrieval_returns_empty(self):
         rp, router, reranker, reader = _build([])
 
-        results = rp.run("query")
+        results = rp.run("query").results
 
         assert results == []
         reranker.rerank.assert_not_called()
         reader.read.assert_not_called()
 
-    def test_exclude_filters_before_rerank(self):
-        a1 = _addr(location="a", source_id="s1")
-        a2 = _addr(location="b", source_id="s2")
-        rp, router, reranker, reader = _build([a1, a2])
-
-        rp.run("query", exclude={("s1", "a")})
-
-        # The excluded address is dropped before it reaches the reranker.
-        reranked_input = reranker.rerank.call_args[0][1]
-        assert [a.location for a in reranked_input] == ["b"]
-
     def test_no_reranker_skips_rerank(self):
         a1 = _addr("a")
         rp, router, _reranker, reader = _build([a1], with_reranker=False)
 
-        results = rp.run("query")
+        results = rp.run("query").results
 
         reader.read.assert_called_once()
         assert [r.address.location for r in results] == ["a"]
+
+    def test_rerank_does_not_rescue_schema_only_table_without_obligation(self):
+        """A modality that Pyrrho did not request must not displace ranked evidence."""
+        symbols = [
+            _addr(location=f"symbol-{index}", source_id=f"symbol-{index}") for index in range(6)
+        ]
+        sections = [
+            _addr(
+                location=f"section-{index}",
+                source_id=f"section-{index}",
+                kind=AddressKind.SECTION,
+            )
+            for index in range(5)
+        ]
+        table = _addr(
+            location="rollout-matrix",
+            source_id="rollout-matrix",
+            kind=AddressKind.TABLE,
+        )
+        rp, _router, reranker, _reader = _build([*symbols, *sections, table])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = AddressRerankResponse([*symbols[:6], *sections[:4]])
+        profile = _profile(required_modalities=("symbol", "section"))
+
+        results = rp.run(
+            "Which release enabled token rotation?",
+            profile=profile,
+        ).results
+
+        assert len(results) == 10
+        assert {result.address.kind for result in results} == {
+            AddressKind.SYMBOL,
+            AddressKind.SECTION,
+        }
+
+    def test_rerank_keeps_strong_concrete_row_match_without_table_obligation(self):
+        """A row-value match may recover a table when profiling misses its modality."""
+        symbols = [
+            _addr(location=f"symbol-{index}", source_id=f"symbol-{index}") for index in range(6)
+        ]
+        sections = [
+            _addr(
+                location=f"section-{index}",
+                source_id=f"section-{index}",
+                kind=AddressKind.SECTION,
+            )
+            for index in range(5)
+        ]
+        table = _addr(
+            location="rollout-matrix",
+            source_id="rollout-matrix",
+            kind=AddressKind.TABLE,
+            metadata={
+                "row_search": {
+                    "matched_rows": 1,
+                    "row_numbers": [1],
+                    "query_terms": [
+                        "release",
+                        "enabled",
+                        "token",
+                        "rotation",
+                        "eu",
+                        "region",
+                    ],
+                    "matched_terms": ["enabled", "token", "rotation", "eu"],
+                    "term_coverage": 4 / 6,
+                }
+            },
+        )
+        rp, _router, reranker, _reader = _build([*symbols, *sections, table])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = AddressRerankResponse([*symbols[:6], *sections[:4]])
+        profile = _profile(required_modalities=("symbol", "section"))
+
+        results = rp.run(
+            "Which release enabled token rotation in the EU region?",
+            profile=profile,
+        ).results
+
+        assert len(results) == 10
+        assert {result.address.kind for result in results} == {
+            AddressKind.SYMBOL,
+            AddressKind.SECTION,
+            AddressKind.TABLE,
+        }
+        assert results[-1].address.location == "rollout-matrix"
+
+    def test_rerank_rejects_weak_incidental_row_match(self):
+        """One common query term in a table row is not enough for candidate rescue."""
+        sections = [
+            _addr(
+                location=f"section-{index}",
+                source_id=f"section-{index}",
+                kind=AddressKind.SECTION,
+            )
+            for index in range(10)
+        ]
+        incidental_table = _addr(
+            location="incidents",
+            source_id="incidents",
+            kind=AddressKind.TABLE,
+            metadata={
+                "row_search": {
+                    "matched_rows": 1,
+                    "row_numbers": [1],
+                    "query_terms": ["gold", "support", "response", "severity", "incidents"],
+                    "matched_terms": ["incidents"],
+                    "term_coverage": 0.2,
+                }
+            },
+        )
+        rp, _router, reranker, _reader = _build([*sections, incidental_table])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = AddressRerankResponse(sections)
+
+        results = rp.run("What is the Gold support response time?").results
+
+        assert len(results) == 10
+        assert all(result.address.kind is AddressKind.SECTION for result in results)
+
+    def test_literal_recall_rescue_survives_concrete_row_coverage(self):
+        """Structural rescues must not overwrite a rare literal BM25 hit."""
+        glossary = _addr(
+            location="CBT",
+            source_id="glossary",
+            summary="CBT means Cell Balancing Task.",
+            kind=AddressKind.SECTION,
+        )
+        table = _addr(
+            location="records",
+            source_id="records",
+            kind=AddressKind.TABLE,
+            metadata={
+                "row_match": {
+                    "matched_rows": 1,
+                }
+            },
+        )
+        distractors = [
+            _addr(
+                location=f"owner-{index}",
+                source_id=f"owner-{index}",
+                summary="Ownership details for another system.",
+                kind=AddressKind.SECTION,
+            )
+            for index in range(10)
+        ]
+        rp, _router, reranker, _reader = _build([glossary, table, *distractors])
+        reranker.rerank.side_effect = None
+        reranker.rerank.return_value = AddressRerankResponse([*distractors[:9], table])
+        profile = _profile(required_modalities=("table",))
+
+        results = rp.run("Who owns CBT?", profile=profile).results
+
+        assert len(results) == 10
+        assert {result.address.source_id for result in results} >= {
+            "glossary",
+            "records",
+        }
 
     def test_broad_query_defers_duplicate_files_after_rerank(self):
         a1 = _addr(location="doc-a-file", source_id="doc-a")
@@ -100,10 +362,10 @@ class TestRetrievalPass:
         b1 = _addr(location="doc-b-file", source_id="doc-b")
         rp, _router, reranker, _reader = _build([a1, a2, b1])
         reranker.rerank.side_effect = None
-        reranker.rerank.return_value = [a1, a2, b1]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        reranker.rerank.return_value = AddressRerankResponse([a1, a2, b1])
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
-        results = rp.run("What are the key facts?", profile=profile)
+        results = rp.run("What are the key facts?", profile=profile).results
 
         assert [r.address.location for r in results] == [
             "doc-a-file",
@@ -129,10 +391,13 @@ class TestRetrievalPass:
         )
         rp, _router, reranker, _reader = _build([test_cases, roadmap, quarterly])
         reranker.rerank.side_effect = None
-        reranker.rerank.return_value = [test_cases, roadmap, quarterly]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        reranker.rerank.return_value = AddressRerankResponse([test_cases, roadmap, quarterly])
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
-        results = rp.run("What are the key facts in this corpus?", profile=profile)
+        results = rp.run(
+            "What are the key facts in this corpus?",
+            profile=profile,
+        ).results
 
         assert [r.address.source_id for r in results] == [
             "quarterly_summary_q2_2024.md",
@@ -158,10 +423,13 @@ class TestRetrievalPass:
         )
         rp, _router, reranker, _reader = _build([queries, q2, roadmap])
         reranker.rerank.side_effect = None
-        reranker.rerank.return_value = [queries, q2]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        reranker.rerank.return_value = AddressRerankResponse([queries, q2])
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
-        results = rp.run("What are the key facts in this corpus?", profile=profile)
+        results = rp.run(
+            "What are the key facts in this corpus?",
+            profile=profile,
+        ).results
 
         assert [r.address.source_id for r in results] == [
             "quarterly_summary_q2_2024.md",
@@ -187,10 +455,13 @@ class TestRetrievalPass:
         )
         rp, _router, reranker, _reader = _build([feedback, q1, roadmap])
         reranker.rerank.side_effect = None
-        reranker.rerank.return_value = [feedback, q1, roadmap]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        reranker.rerank.return_value = AddressRerankResponse([feedback, q1, roadmap])
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
-        results = rp.run("What are the key facts in this corpus?", profile=profile)
+        results = rp.run(
+            "What are the key facts in this corpus?",
+            profile=profile,
+        ).results
 
         assert [r.address.source_id for r in results] == [
             "quarterly_summary_q1_2024.md",
@@ -214,10 +485,13 @@ class TestRetrievalPass:
         )
         rp, _router, reranker, _reader = _build([incident, feedback])
         reranker.rerank.side_effect = None
-        reranker.rerank.return_value = [incident, feedback]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        reranker.rerank.return_value = AddressRerankResponse([incident, feedback])
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
-        results = rp.run("What are the key facts in this corpus?", profile=profile)
+        results = rp.run(
+            "What are the key facts in this corpus?",
+            profile=profile,
+        ).results
 
         assert [r.address.source_id for r in results] == [
             "hierarchical_rag/feedback_march_2024.md",
@@ -227,7 +501,7 @@ class TestRetrievalPass:
             ),
         ]
 
-    def test_broad_corpus_query_seeds_cutoff_window_with_corpus_family_diversity(self):
+    def test_broad_corpus_query_seeds_delivery_with_corpus_family_diversity(self):
         q2 = _addr(
             location="Key Metrics Progression",
             source_id="q2-id",
@@ -268,10 +542,15 @@ class TestRetrievalPass:
         )
         rp, _router, reranker, _reader = _build([q2, q1, roadmap, feedback, pdf, glossary])
         reranker.rerank.side_effect = None
-        reranker.rerank.return_value = [q2, q1, roadmap, feedback, pdf, glossary]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        reranker.rerank.return_value = AddressRerankResponse(
+            [q2, q1, roadmap, feedback, pdf, glossary]
+        )
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
-        results = rp.run("What are the key facts in this corpus?", profile=profile)
+        results = rp.run(
+            "What are the key facts in this corpus?",
+            profile=profile,
+        ).results
 
         assert [r.address.source_id for r in results[:4]] == [
             "q2-id",
@@ -311,8 +590,7 @@ class TestRetrievalPass:
             summary="Formal eval harness glossary fixture",
             metadata={
                 "source_path": (
-                    "retrieval_logic/formal_eval_harness/artifcats/"
-                    "A10_glossary_internal_terms.txt"
+                    "retrieval_logic/formal_eval_harness/artifcats/A10_glossary_internal_terms.txt"
                 )
             },
         )
@@ -324,10 +602,15 @@ class TestRetrievalPass:
         )
         rp, _router, reranker, _reader = _build([q2, q1, queries, test_cases, formal_eval, pdf])
         reranker.rerank.side_effect = None
-        reranker.rerank.return_value = [q2, q1, formal_eval, queries, test_cases]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        reranker.rerank.return_value = AddressRerankResponse(
+            [q2, q1, formal_eval, queries, test_cases]
+        )
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
-        results = rp.run("What are the key facts in this corpus?", profile=profile)
+        results = rp.run(
+            "What are the key facts in this corpus?",
+            profile=profile,
+        ).results
 
         assert [r.address.source_id for r in results] == [
             "q2-id",
@@ -352,10 +635,13 @@ class TestRetrievalPass:
         )
         rp, _router, reranker, _reader = _build([control, roadmap])
         reranker.rerank.side_effect = None
-        reranker.rerank.return_value = [control, roadmap]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        reranker.rerank.return_value = AddressRerankResponse([control, roadmap])
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
-        results = rp.run("What are the key facts in this corpus?", profile=profile)
+        results = rp.run(
+            "What are the key facts in this corpus?",
+            profile=profile,
+        ).results
 
         assert [r.address.source_id for r in results] == [
             "product_roadmap_2024.md",
@@ -379,10 +665,10 @@ class TestRetrievalPass:
         )
         rp, _router, reranker, _reader = _build([test_cases, roadmap])
         reranker.rerank.side_effect = None
-        reranker.rerank.return_value = [test_cases, roadmap]
-        profile = SimpleNamespace(specificity="broad", answer_type="exploratory")
+        reranker.rerank.return_value = AddressRerankResponse([test_cases, roadmap])
+        profile = _profile(specificity="broad", answer_type="exploratory")
 
-        results = rp.run("Summarize all test cases", profile=profile)
+        results = rp.run("Summarize all test cases", profile=profile).results
 
         assert [r.address.source_id for r in results] == [
             "keyword_test/test_cases.md",

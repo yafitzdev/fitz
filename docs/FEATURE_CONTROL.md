@@ -13,8 +13,9 @@ fitz-sage uses a **provider-presence pattern**:
 - **Provider presence determines IF** optional endpoint-backed features run.
 - **No `enabled: true / false` flags.** Setting a provider enables
   the feature; omitting it (or setting `null`) skips that step.
-- **Retrieval intelligence is baked in.** Managed Qwen enrichment, broad recall,
-  ONNX reranking, and Pyrrho governance are the standard product pipeline.
+- **Retrieval intelligence is baked in.** Managed Qwen semantic query terms,
+  broad recall, ONNX reranking, and Pyrrho governance are standard. Optional
+  background enrichment is independent of source-index readiness.
 
 This keeps the config declarative and avoids boolean flags that
 can drift out of sync with the actual provider config.
@@ -25,11 +26,11 @@ can drift out of sync with the actual provider config.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  CONFIG (~/.fitz/config/<engine>.yaml)                          │
+│  CONFIG (.fitz/config.yaml in the current workspace)            │
 │  Declares WHICH provider/model to use                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  vision: endpoint                rerank: onnx   │
+│  vision: endpoint/gpt-4o         rerank: onnx              │
 │  parser: docling_vision          collection: default            │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -63,7 +64,7 @@ images in PDFs during ingestion.
 
 ### How it works
 
-1. Set a vision provider in `~/.fitz/config/fitz_krag.yaml`.
+1. Set a vision provider in `.fitz/config.yaml`.
 2. Choose the parser:
    - `parser: cpu`             → fast default, no VLM
    - `parser: docling`         → figures replaced by `[Figure]`
@@ -75,10 +76,9 @@ images in PDFs during ingestion.
 ```yaml
 parser: docling_vision           # parser choice toggles VLM use
 
-vision: endpoint                 # any OpenAI-compatible vision model
+vision: endpoint/gpt-4o          # any OpenAI-compatible vision model
 vision_base_url: https://api.openai.com/v1
 vision_api_key_env: OPENAI_API_KEY
-vision_model: gpt-4o
 ```
 
 ### Key files
@@ -96,14 +96,15 @@ vision_model: gpt-4o
 
 The reranker is part of the standard retrieval pipeline. It is an INT8 ONNX cross-encoder
 (`Alibaba-NLP/gte-reranker-modernbert-base` by default) run on raw
-`onnxruntime`. One forward pass over `(query, candidate)` pairs;
-~30–100 ms on CPU for 10–20 candidates. No external API call.
+`onnxruntime`. It uses two concurrent batch-one passes over a bounded
+candidate prefix. No external API call.
 
 ### How it works
 
 1. `rerank: onnx` is the default.
 2. The retrieval pipeline includes the reranker step before Pyrrho governance.
 3. The engine config does not expose a normal "rerank off" mode.
+4. `rerank_candidates` controls neural work without shrinking BM25 recall.
 
 ### Config example
 
@@ -111,9 +112,8 @@ The reranker is part of the standard retrieval pipeline. It is an INT8 ONNX cros
 # Default — gte-reranker-modernbert-base
 rerank: onnx
 
-# Different cross-encoder
-# rerank: onnx/BAAI/bge-reranker-base
-# rerank: onnx/jinaai/jina-reranker-v3
+# Compatible custom repository with onnx/model_int8.onnx
+# rerank: onnx/owner/compatible-reranker
 ```
 
 ### Key files
@@ -133,29 +133,29 @@ follows the same declaration pattern — the `governance:` key declares the
 classifier:
 
 ```yaml
-governance: pyrrho                  # default — the local Pyrrho v2 classifier
-# governance: pyrrho/<hf-model-id>  # a Pyrrho package
+governance: pyrrho
+# Custom remote models require pyrrho/<owner/repo@40-character-commit>.
+# Local model directories use pyrrho/<absolute-path>.
 ```
 
-`governance: pyrrho` runs evidence-prefix checks in the cutoff loop.
-Pyrrho owns v2 query-planning heads and evidence governance; Fitz/KRAG owns the
-retrieval mechanics that consume those signals.
+The bare value uses Pyrrho's accepted immutable default. Pyrrho owns v2
+query-planning heads and every authoritative prefix decision; Fitz/KRAG owns
+the mechanical `3, 5, 7, ...` delivery loop that consumes exact verdicts.
 
-## Managed enrichment
+## Managed Qwen
 
-Managed Qwen enrichment does not follow provider presence because it is part of
-the product path. It is the standard local runtime for:
+Managed Qwen does not follow endpoint-provider presence. It supplies:
 
-- ingestion keywords and aliases;
-- entity extraction for the entity graph;
-- hierarchy summaries;
-- default semantic query keywords.
+- standard query-time semantic keywords;
+- optional background entity and temporal metadata;
+- optional hierarchy and demand summaries.
 
 Exact model/runtime details live in [Managed Models](MANAGED_MODELS.md).
 
-There is no `enrichment:` provider key. The managed runtime is local CPU
-infrastructure; if it cannot load, fitz-sage raises an error instead of routing
-to an external API or silently weakening the retrieval index.
+There is no `enrichment:` provider key. Source indexing does not load Qwen. A
+query-expansion failure is recorded and falls back to the literal plan; a
+background failure is reported through enrichment status without weakening the
+stored source index.
 
 ---
 
@@ -168,29 +168,12 @@ to an external API or silently weakening the retrieval index.
 
 ---
 
-## Adding a new optional feature
+## Maintenance Rule
 
-Pattern:
-
-1. **Ingestion-time** (like VLM): create two parser plugins, let
-   `parser:` pick.
-2. **Query-time**: add a config dependency (e.g. `answer_expander:`) and
-   skip the pipeline step when the dependency is absent.
-
-Sketch for a hypothetical query-time answer expander:
-
-```python
-# In the pipeline step
-if config.answer_expander is None:
-    return inputs   # passthrough — feature disabled
-expander = build_answer_expander(config.answer_expander)
-return expander.run(inputs)
-```
-
-```yaml
-# Config to switch it on
-answer_expander: endpoint/expander
-```
+Every documented key must exist in `FitzKragConfig`. Parser behavior is
+selected by `parser`; optional endpoint-backed behavior is controlled by the
+existing role keys (`query_intelligence`, `synthesizer`, `vision`, and the
+three chat tiers). Do not add illustrative or dormant config keys.
 
 ---
 
@@ -198,8 +181,9 @@ answer_expander: endpoint/expander
 
 | Feature | Config key | Product default |
 |---------|------------|-----------------|
-| Managed Qwen enrichment | internal | local CPU runtime |
-| Pyrrho governance | `governance:` | `governance: pyrrho` |
+| Managed Qwen semantic terms | internal | standard local CPU query step |
+| Background entity/hierarchy work | internal | optional after source indexing |
+| Pyrrho governance | `governance:` | accepted immutable default |
 | ONNX reranker | `rerank:` | `rerank: onnx` |
 | Answer synthesis | `synthesizer:` | `null`, enabled only by explicit provider |
 | Query intelligence | `query_intelligence:` | `null`, deterministic prep + Qwen keywords |
@@ -212,5 +196,5 @@ answer_expander: endpoint/expander
 - [Reranking](features/retrieval/reranking.md) — detailed reranker docs
 - [Enrichment](ENRICHMENT.md) — managed Qwen enrichment
 - [Retrieval Pipeline](RETRIEVAL_PIPELINE.md) — how retrieval stages fit together
-- [PLUGINS.md](PLUGINS.md) — plugin development guide
+- [PLUGINS.md](PLUGINS.md) — supported extension points
 - [CONFIG.md](CONFIG.md) — full configuration reference

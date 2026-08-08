@@ -21,7 +21,7 @@ flowchart LR
     Q["User query"] --> P["Query profile"]
     P --> R["Typed recall"]
     R --> K["ONNX rerank"]
-    K --> C["Pyrrho v2 cutoff"]
+    K --> C["Progressive delivery + Pyrrho v2"]
     C --> E["EvidencePack"]
 
     P --> P1["query shape"]
@@ -45,15 +45,20 @@ managed Qwen query keywords, and optional query intelligence.
 
 | Signal | Meaning | Retrieval effect |
 |---|---|---|
-| `analysis_type` | Query shape such as general, lookup, comparison, temporal, aggregation, or overview. | Sets breadth and candidate fanout. |
-| `keywords` | Managed Qwen and deterministic semantic query terms. | Improves lexical recall without embeddings. |
+| `analysis_type` | Primary surface such as general, code, documentation, data, or cross-surface. | Seeds strategy weights and entity targeting. |
+| `keywords` | Managed Qwen and deterministic semantic query terms. | Adds best-effort lexical candidates without embeddings. |
 | `comparison_entities` | Entities or sides that must both appear for comparison questions. | Helps avoid one-sided evidence packs. |
-| `temporal_references` | Dates, versions, quarters, or recency markers found in the query. | Boosts matching periods and freshness-sensitive evidence. |
-| `strategy_weights` | Code, section, table, and chunk retrieval weights. | Points recall at the likely evidence surface. |
+| `temporal_references` | Dates, versions, quarters, or recency markers found in the query. | Adds period-focused legs and content-grounded temporal ordering. |
+| `strategy_weights` | Code, section, and table retrieval weights. | Points recall at the likely evidence surface. |
 | `top_k` / `top_read` | Candidate and read limits. | Keeps narrow lookups fast and broad questions covered. |
+| `rerank_candidates` | Cross-encoder scoring budget. | Bounds neural work independently from the full BM25 recall pool. |
 | `required_modalities` | Evidence surfaces that should be present when known. | Ensures table, symbol, or section evidence remains eligible. |
 
 The profile is stored in `EvidencePack.metadata.query_profile.profile`.
+Its `has_*_intent` fields are Fitz-owned readings of the user's query.
+Pyrrho PRE retrieval obligations are preserved separately under
+`metadata.query_profile.pyrrho_pre` and in `retrieval_intents`; they can steer
+evidence coverage without relabeling user intent.
 
 Example:
 
@@ -66,6 +71,7 @@ Example:
       "answer_type": "comparative",
       "top_k": 50,
       "top_read": 50,
+      "rerank_candidates": 32,
       "keywords": ["rollback", "incident", "eu"],
       "comparison_entities": ["legacy guide", "implementation"],
       "has_comparison_intent": true,
@@ -73,8 +79,7 @@ Example:
       "strategy_weights": {
         "code": 0.6,
         "section": 0.25,
-        "table": 0.15,
-        "chunk": 0.35
+        "table": 0.15
       }
     }
   }
@@ -85,16 +90,16 @@ Example:
 
 ## Governance Signals
 
-After recall and reranking, Pyrrho v2 evaluates evidence prefixes: top 1, top
-2, top 3, and so on. The cutoff stops when the selected prefix is sufficient,
-disputed, or exhausted.
+After recall, reranking, closure, and compilation, Fitz-Sage evaluates ranked
+prefixes of `3, 5, 7, ...` items through Pyrrho until a terminal verdict or the
+delivery cap.
 
 | Signal | Meaning | Product use |
 |---|---|---|
 | `mode` | Runtime `AnswerMode`: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Gate synthesis, UI display, automation, and review. |
-| `probabilities` | Runtime probabilities for insufficient, disputed, sufficient. | Display confidence and audit cutoff decisions. |
+| `probabilities` | Pyrrho probabilities for insufficient, disputed, sufficient. | Display confidence and audit the model decision. |
 | `reason` / `reasons` | Human-readable explanation. | Tell users why Fitz judged evidence sufficient, disputed, or insufficient. |
-| `stop_reason` | Why cutoff stopped. | Route the next step: answer, retry, broaden, or request source material. |
+| `evidence_delivery` | Available/selected counts, cap, evaluated prefixes, and exact decision trajectory. | Audit what evidence the model actually received and why delivery stopped. |
 | `evidence_verdict` | Native v2 verdict: `SUFFICIENT`, `DISPUTED`, or `INSUFFICIENT`. | Inspect the model head behind the runtime mode. |
 | `failure_mode` | Native v2 failure reason. | Explain insufficient or disputed evidence. |
 | `retrieval_intents` | Native v2 multi-label intent metadata. | Decide whether another pass should focus on lookup, time, comparison, or coverage. |
@@ -131,7 +136,7 @@ Expected retrieval behavior:
 
 - exact symbol and identifier recall should dominate
 - code evidence should stay eligible
-- cutoff can stop once the selected evidence directly supports the lookup
+- the first three ranked items are often enough for this lookup
 
 Likely governance metadata:
 
@@ -152,7 +157,7 @@ Query:
 Expected retrieval behavior:
 
 - both comparison sides should be present
-- one-side evidence should not pass cutoff
+- retrieval should deliver both sides before Pyrrho evaluates the evidence
 - code and prose evidence may both matter
 
 Likely governance metadata when complete:
@@ -173,7 +178,7 @@ Query:
 Expected retrieval behavior:
 
 - evidence should match the requested timeframe
-- wrong-month evidence should be marked insufficient
+- wrong-month evidence should remain visible as a scope problem for Pyrrho
 - versioned or dated sources should be preferred
 
 Likely governance metadata when evidence is incomplete:
@@ -200,7 +205,7 @@ Useful governance metadata:
 | `evidence_verdict = INSUFFICIENT` | Native v2 verdict agrees the evidence cannot answer. |
 | `mode = INSUFFICIENT` | Runtime API mode for insufficient evidence. |
 | `failure_mode = missing_or_incomplete_evidence` | The corpus lacks the required Q4 evidence. |
-| `retrieval_intents = needs_temporal_resolution` | Another pass should focus on the missing period. |
+| `retrieval_intents = needs_temporal_resolution` | The caller can see that temporal evidence was required. |
 
 ### Conflict
 
@@ -228,10 +233,10 @@ Useful governance metadata:
 | Show evidence directly | source evidence, `mode`, `reasons` |
 | Generate prose only when safe | `mode`, `probabilities`, `evidence_verdict` |
 | Ask for more documents | `mode`, `failure_mode`, `retrieval_intents`, `evidence_kinds` |
-| Run a focused retry | `stop_reason`, `retrieval_intents`, `evidence_kinds`, retrieval trace |
+| Run a focused retry | `retrieval_intents`, `evidence_kinds`, retrieval trace, compiler roles |
 | Explain disputes | `mode`, `failure_mode`, source evidence |
-| Build audit logs | source evidence, `stop_reason`, `trajectory`, Pyrrho v2 heads |
-| Tune retrieval quality | `query_profile`, `retrieval_trace`, `governance_cutoff` |
+| Build audit logs | progressive evidence trajectory, content hashes, exact Pyrrho input/output, runtime fingerprints |
+| Tune retrieval quality | `query_profile`, `retrieval_trace`, `evidence_delivery` |
 
 The core rule:
 

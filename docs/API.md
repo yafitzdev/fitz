@@ -11,6 +11,9 @@ Complete reference for the Fitz REST API.
 # Install with API support
 pip install fitz-sage[api]
 
+# Initialize the workspace and a collection once
+fitz retrieve "What is indexed?" --source ./docs
+
 # Start the server
 fitz serve
 
@@ -37,7 +40,8 @@ Options:
 # Custom port
 fitz serve -p 3000
 
-# All interfaces (for Docker/remote access)
+# All interfaces (requires FITZ_API_KEY)
+export FITZ_API_KEY="replace-with-a-random-secret"
 fitz serve --host 0.0.0.0
 
 # Development mode
@@ -46,26 +50,52 @@ fitz serve --reload
 
 ---
 
+## Security Boundary
+
+Loopback clients (`127.0.0.1` and `::1`) may call the API without a key. Any
+non-loopback client must send the key configured in `FITZ_API_KEY`:
+
+```bash
+curl -H "X-Fitz-API-Key: $FITZ_API_KEY" http://server:8000/health
+```
+
+Browser cross-origin access is disabled by default. Set a comma-separated
+allowlist only for origins you control:
+
+```bash
+export FITZ_API_ALLOWED_ORIGINS="https://app.example.com,http://localhost:3000"
+```
+
+Request `source` paths are server-local paths. They must resolve inside the
+server's current working directory by default. `FITZ_API_SOURCE_ROOTS` can set
+an explicit platform-path-separated allowlist of roots.
+
+Collection names must match `[a-z0-9][a-z0-9_-]{0,63}`. fitz-sage does not
+normalize explicit names, so `project-a` and `project_a` remain distinct.
+
+---
+
 ## Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/query` | Query knowledge base and return an answer |
+| POST | `/answer` | Retrieve evidence and synthesize an answer |
 | POST | `/evidence` | Retrieve governed evidence without answer synthesis |
 | POST | `/chat` | Multi-turn chat |
 | GET | `/collections` | List collections |
 | GET | `/collections/{name}` | Get collection stats |
-| POST | `/collections/{name}/documents` | Ingest documents (background indexing) |
-| GET | `/collections/{name}/status` | Indexing progress |
+| POST | `/collections/{name}/documents` | Build/update the searchable source index |
+| GET | `/collections/{name}/status` | Source-index and enrichment status |
 | DELETE | `/collections/{name}` | Delete collection |
 | GET | `/health` | Health check |
 
 ---
 
-## POST /query
+## POST /answer
 
 Query the knowledge base with a single question and return answer text plus
-source attribution.
+source attribution. The selected collection config must include a
+`synthesizer`; use `/evidence` for retrieval without generation.
 
 ### Request
 
@@ -73,15 +103,17 @@ source attribution.
 {
   "question": "What is the refund policy?",
   "source": "./docs",
-  "collection": "default"
+  "collection": "default",
+  "conversation_history": []
 }
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `question` | string | Yes | - | The question to ask |
-| `source` | string | No | null | Path to file or directory. If provided, registers documents before querying. |
+| `source` | string | No | null | Allowed server-local file or directory. If provided, registers it and waits until the query surface is ready. |
 | `collection` | string | No | `"default"` | Collection to query |
+| `conversation_history` | array | No | `[]` | History made available to configured query intelligence; otherwise retrieval uses the current question. |
 
 ### Response
 
@@ -94,8 +126,10 @@ source attribution.
       "source_id": "policies/refund.md",
       "excerpt": "Returns are accepted within 30 days of purchase...",
       "metadata": {
-        "chunk_index": 2,
-        "page": 1
+        "kind": "section",
+        "location": "Refund Policy",
+        "file_path": "policies/refund.md",
+        "line_range": [4, 18]
       }
     }
   ],
@@ -113,7 +147,7 @@ source attribution.
 ### Example
 
 ```bash
-curl -X POST http://localhost:8000/query \
+curl -X POST http://localhost:8000/answer \
   -H "Content-Type: application/json" \
   -d '{"question": "What is the refund policy?"}'
 ```
@@ -123,7 +157,7 @@ curl -X POST http://localhost:8000/query \
 ## POST /evidence
 
 Retrieve a governed `EvidencePack` without answer synthesis. This is the REST
-equivalent of `fitz query`, `fitz retrieve`, and `fitz_sage.evidence()`.
+equivalent of `fitz retrieve` and `fitz_sage.evidence()`.
 
 ### Request
 
@@ -139,9 +173,9 @@ equivalent of `fitz query`, `fitz retrieve`, and `fitz_sage.evidence()`.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `question` | string | Yes | - | The question to retrieve evidence for |
-| `source` | string | No | null | Path to file or directory. If provided, registers documents before querying. |
+| `source` | string | No | null | Allowed server-local file or directory. If provided, registers it and waits until the query surface is ready. |
 | `collection` | string | No | `"default"` | Collection to query |
-| `conversation_history` | array | No | `[]` | Optional chat history for query rewriting |
+| `conversation_history` | array | No | `[]` | History made available to configured query intelligence; otherwise retrieval uses the current question. |
 
 ### Response
 
@@ -187,7 +221,12 @@ curl -X POST http://localhost:8000/evidence \
 
 Multi-turn conversation with the knowledge base.
 
-The server is **stateless** - the client must manage and send conversation history.
+Like `/answer`, this endpoint requires a configured `synthesizer`.
+
+The server is **stateless** - the client must manage and send conversation
+history. A configured `query_intelligence` provider can use that history to
+rewrite conversational references; the deterministic default does not claim
+automatic pronoun resolution.
 
 ### Request
 
@@ -216,7 +255,7 @@ The server is **stateless** - the client must manage and send conversation histo
 
 ### Response
 
-Same as `/query`:
+Same as `/answer`:
 
 ```json
 {
@@ -246,12 +285,15 @@ curl -X POST http://localhost:8000/chat \
 
 List all available collections.
 
+`item_count` is the number of persisted document-section rows. It is not a
+combined count of sections, code symbols, and native table rows.
+
 ### Response
 
 ```json
 [
-  {"name": "default", "chunk_count": 234},
-  {"name": "physics", "chunk_count": 567}
+  {"name": "default", "item_count": 234},
+  {"name": "physics", "item_count": 567}
 ]
 ```
 
@@ -267,16 +309,15 @@ curl http://localhost:8000/collections
 
 Get statistics for a specific collection.
 
+`item_count` has the same document-section-row meaning as the list endpoint.
+
 ### Response
 
 ```json
 {
   "name": "default",
-  "chunk_count": 234,
-  "metadata": {
-    "created_at": "2024-01-15T10:30:00",
-    "last_updated": "2024-01-16T14:20:00"
-  }
+  "item_count": 234,
+  "metadata": {}
 }
 ```
 
@@ -290,9 +331,9 @@ curl http://localhost:8000/collections/default
 
 ## POST /collections/{name}/documents
 
-Register documents into a collection. Indexing runs in the background — queries
-work immediately and improve as it completes. Returns `202 Accepted` with the
-current indexing status; poll `GET /collections/{name}/status` for progress.
+Register documents into a collection. The request returns after supported files
+are stored in the searchable source index. Optional model-backed enrichment may
+continue afterward.
 
 ### Request
 
@@ -302,12 +343,41 @@ current indexing status; poll `GET /collections/{name}/status` for progress.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `source` | string | Yes | Path to a file or directory to ingest |
+| `source` | string | Yes | Allowed server-local file or directory to ingest |
 
-### Response (`202 Accepted`)
+### Response (`200 OK`)
 
 ```json
-{"total": 42, "indexed": 0, "pending": 42, "complete": false, "by_state": {"registered": 42}}
+{
+  "discovered": 45,
+  "total": 42,
+  "indexed": 42,
+  "pending": 0,
+  "failed": 0,
+  "failed_files": [],
+  "unsupported": 3,
+  "unsupported_files": [
+    {"path": "archive.bin", "extension": ".bin"}
+  ],
+  "healthy": true,
+  "complete": true,
+  "query_ready": true,
+  "by_index_state": {"indexed": 42},
+  "enrichment": {
+    "total": 42,
+    "completed": 0,
+    "pending": 42,
+    "failed": 0,
+    "failed_files": [],
+    "pending_files": [
+      {"path": "guide.pdf", "state": "pending", "priority": 4}
+    ],
+    "finalization": "pending",
+    "finalization_error": null,
+    "complete": false
+  },
+  "by_enrichment_state": {"pending": 42}
+}
 ```
 
 ### Example
@@ -322,21 +392,59 @@ curl -X POST http://localhost:8000/collections/default/documents \
 
 ## GET /collections/{name}/status
 
-Background-indexing progress for a collection.
+Source-index health and optional enrichment progress for a collection.
 
 ### Response
 
 ```json
-{"total": 42, "indexed": 30, "pending": 12, "complete": false, "by_state": {"enriched": 30, "parsed": 12}}
+{
+  "discovered": 45,
+  "total": 42,
+  "indexed": 42,
+  "pending": 0,
+  "failed": 0,
+  "failed_files": [],
+  "unsupported": 3,
+  "unsupported_files": [
+    {"path": "archive.bin", "extension": ".bin"}
+  ],
+  "healthy": true,
+  "complete": true,
+  "query_ready": true,
+  "by_index_state": {"indexed": 42},
+  "enrichment": {
+    "total": 42,
+    "completed": 30,
+    "pending": 12,
+    "failed": 0,
+    "failed_files": [],
+    "pending_files": [
+      {"path": "guide.pdf", "state": "pending", "priority": 4}
+    ],
+    "finalization": "pending",
+    "finalization_error": null,
+    "complete": false
+  },
+  "by_enrichment_state": {"complete": 30, "pending": 12}
+}
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `total` | integer | Files registered |
-| `indexed` | integer | Files indexed (enriched or summarized) |
-| `pending` | integer | Files still pending (registered or parsed) |
-| `complete` | boolean | True when no files remain pending |
-| `by_state` | object | File counts per indexing state |
+| `discovered` | integer | All files found under the registered source |
+| `total` | integer | Supported files, including indexing failures |
+| `indexed` | integer | Files stored in the searchable source index |
+| `pending` | integer | Files not yet settled by source indexing |
+| `failed` | integer | Supported files that failed source indexing |
+| `failed_files` | array | Source-index failures with path, stage, and error |
+| `unsupported` | integer | Files outside the enabled format contract |
+| `unsupported_files` | array | Unsupported paths and extensions |
+| `healthy` | boolean | True when no supported file failed indexing |
+| `complete` | boolean | True when every supported file indexed successfully |
+| `query_ready` | boolean | True when no supported file remains pending |
+| `by_index_state` | object | File counts per source-index state |
+| `enrichment` | object | Independent entity/hierarchy progress and failures |
+| `by_enrichment_state` | object | Indexed-file counts per enrichment state |
 
 ### Example
 
@@ -348,15 +456,14 @@ curl http://localhost:8000/collections/default/status
 
 ## DELETE /collections/{name}
 
-Delete a collection and all its chunks.
+Delete a collection and its manifest and SQLite data.
 
 ### Response
 
 ```json
 {
   "deleted": true,
-  "collection": "default",
-  "chunks_deleted": 234
+  "collection": "default"
 }
 ```
 
@@ -378,7 +485,7 @@ Health check endpoint.
 {
   "status": "healthy",
   "version": "<installed version>",
-  "config_exists": true
+  "components": {"sqlite": true}
 }
 ```
 
@@ -397,9 +504,11 @@ All endpoints return standard HTTP error codes:
 | Code | Description |
 |------|-------------|
 | 400 | Bad request (invalid input) |
+| 401 | Invalid or missing API key for remote access |
+| 403 | Remote access is not configured |
 | 404 | Resource not found |
+| 422 | Request body failed schema validation |
 | 500 | Internal server error |
-| 501 | Feature not implemented |
 
 **Error response format:**
 
@@ -433,7 +542,7 @@ import requests
 BASE_URL = "http://localhost:8000"
 
 # Query
-response = requests.post(f"{BASE_URL}/query", json={
+response = requests.post(f"{BASE_URL}/answer", json={
     "question": "What is the refund policy?",
     "collection": "default"
 })
@@ -470,7 +579,7 @@ const BASE_URL = 'http://localhost:8000';
 
 // Query
 async function query(question) {
-  const response = await fetch(`${BASE_URL}/query`, {
+  const response = await fetch(`${BASE_URL}/answer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question })

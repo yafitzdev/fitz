@@ -1,0 +1,371 @@
+- id: shape_temporal_latest_status
+  domain: query_shape
+  query: What is the latest status of Project Orion?
+  expected_signals: &temporal
+    query.has_temporal_intent: true
+    query.has_comparison_intent: false
+    query.has_aggregation_intent: false
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_current_owner
+  domain: query_shape
+  query: Who is the current owner of the Atlas rollout?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_final_duration
+  domain: query_shape
+  query: What final outage duration was confirmed for INC-611?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_most_recent_release
+  domain: query_shape
+  query: Which release most recently enabled token rotation?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_as_of_date
+  domain: query_shape
+  query: What was the deployment status as of June 30, 2026?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_before_migration
+  domain: query_shape
+  query: Which policy applied before the storage migration?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_after_incident
+  domain: query_shape
+  query: Who owned the service after the payment incident?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_previous_version
+  domain: query_shape
+  query: What timeout did the previous version specify?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_effective_now
+  domain: query_shape
+  query: Which retention rule is effective now?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_superseded_policy
+  domain: query_shape
+  query: What policy was superseded by the April revision?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_at_launch
+  domain: query_shape
+  query: Which region was active when Project Vega launched?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_newest_audit
+  domain: query_shape
+  query: What conclusion appears in the newest audit note?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_original_deadline
+  domain: query_shape
+  query: What was the original deadline for the rollout?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_then_owner
+  domain: query_shape
+  query: Who owned the account at that time?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_temporal_since_revision
+  domain: query_shape
+  query: What has changed since the policy revision?
+  expected_signals: *temporal
+  tags: [query_shape, temporal]
+
+- id: shape_comparison_services
+  domain: query_shape
+  query: Compare the Atlas and Vega service-level objectives.
+  expected_signals: &comparison
+    query.has_temporal_intent: false
+    query.has_comparison_intent: true
+    query.has_aggregation_intent: false
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_regions
+  domain: query_shape
+  query: How do the EU and APAC rollout requirements differ?
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_policies
+  domain: query_shape
+  query: Contrast the employee and contractor access policies.
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_incidents
+  domain: query_shape
+  query: What are the differences between INC-611 and INC-724?
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_products
+  domain: query_shape
+  query: Compare Project Orion with Project Nimbus.
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_auth
+  domain: query_shape
+  query: How does service authentication differ from user authentication?
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_encryption
+  domain: query_shape
+  query: Compare encryption at rest and encryption in transit.
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_vendors
+  domain: query_shape
+  query: Contrast the support terms for BluePeak and Meridian.
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_plans
+  domain: query_shape
+  query: What differs between the standard and enterprise plans?
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_implementations
+  domain: query_shape
+  query: Compare the Go and Java authentication implementations.
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_databases
+  domain: query_shape
+  query: How do PostgreSQL and SQLite backup procedures differ?
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_teams
+  domain: query_shape
+  query: Compare the responsibilities of Platform and Security.
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_contracts
+  domain: query_shape
+  query: What is different about the two vendor contracts?
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_endpoints
+  domain: query_shape
+  query: Contrast the create-task and list-task endpoints.
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_comparison_controls
+  domain: query_shape
+  query: Compare control CTL-601 with control CTL-602.
+  expected_signals: *comparison
+  tags: [query_shape, comparison]
+
+- id: shape_aggregation_all_owners
+  domain: query_shape
+  query: List all service owners.
+  expected_signals: &aggregation
+    query.has_temporal_intent: false
+    query.has_comparison_intent: false
+    query.has_aggregation_intent: true
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_every_incident
+  domain: query_shape
+  query: Which incidents affected the west region?
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_count_deployments
+  domain: query_shape
+  query: How many deployments failed?
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_all_env_vars
+  domain: query_shape
+  query: Find every environment variable used by the application.
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_complete_inventory
+  domain: query_shape
+  query: Give me a complete inventory of documented cloud assets.
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_each_region
+  domain: query_shape
+  query: Summarize the rollout status for each region.
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_all_policies
+  domain: query_shape
+  query: What access policies are documented?
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_count_flags
+  domain: query_shape
+  query: How many feature flags are enabled?
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_exhaustive_routes
+  domain: query_shape
+  query: Enumerate every HTTP route exposed by the server.
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_all_risks
+  domain: query_shape
+  query: Identify all risks mentioned across the reports.
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_each_vendor
+  domain: query_shape
+  query: Show the renewal notice period for each vendor.
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_every_release
+  domain: query_shape
+  query: List every release that changed authentication.
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_corpus_overview
+  domain: query_shape
+  query: Provide an overview of all projects in the documentation.
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_count_tables
+  domain: query_shape
+  query: How many controls have an overdue review?
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_aggregation_full_dependency_set
+  domain: query_shape
+  query: Return the full set of dependencies used by the service.
+  expected_signals: *aggregation
+  tags: [query_shape, aggregation]
+
+- id: shape_narrow_incident_owner
+  domain: query_shape
+  query: Who owns incident INC-611?
+  expected_signals: &narrow
+    query.has_temporal_intent: false
+    query.has_comparison_intent: false
+    query.has_aggregation_intent: false
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_refund_window
+  domain: query_shape
+  query: What is the refund window?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_rotation_days
+  domain: query_shape
+  query: How many days is the service-token rotation interval?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_function_behavior
+  domain: query_shape
+  query: What does should_auto_rollback return?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_asset_encryption
+  domain: query_shape
+  query: Is asset AST-22 encrypted?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_vendor_contact
+  domain: query_shape
+  query: What is the BluePeak support contact?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_feature_owner
+  domain: query_shape
+  query: Who owns the atlas_checkout flag?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_constant_value
+  domain: query_shape
+  query: What is the value of EXPORT_LOCK_ENV?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_invoice_amount
+  domain: query_shape
+  query: What amount is shown for invoice INV-902?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_service_slo
+  domain: query_shape
+  query: What SLO is configured for SVC-204?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_retention
+  domain: query_shape
+  query: What is the biometric export retention period?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_route_path
+  domain: query_shape
+  query: Which path creates a task?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_database
+  domain: query_shape
+  query: Which database stores task records?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_policy_approver
+  domain: query_shape
+  query: Who approves guest access?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]
+
+- id: shape_narrow_release_region
+  domain: query_shape
+  query: Which region uses release 2026.05?
+  expected_signals: *narrow
+  tags: [query_shape, narrow]

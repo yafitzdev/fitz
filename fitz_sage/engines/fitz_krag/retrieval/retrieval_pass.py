@@ -9,25 +9,26 @@ One retrieval pass — candidate generation, fusion, precision rerank, read.
     Tier 3  precision rerank       ── AddressReranker.rerank()
     Tier 4  read content           ── ContentReader.read()
 
-Query in, `ReadResult`s out. A single-hop query runs one pass; the
-multi-hop controller loops it. Reranking lives *inside* the pass, so it
-runs on every query regardless of how many hops there are.
+Query in, `ReadResult`s out. Reranking lives inside the pass so every
+retrieval route uses the same precision stage.
 """
 
 from __future__ import annotations
 
 import re
 import time
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import order_addresses_for_contract
+from fitz_sage.engines.fitz_krag.retrieval.query_coverage import (
+    compound_queries,
+    ensure_query_coverage,
+)
 from fitz_sage.engines.fitz_krag.retrieval.trace import addresses_trace, read_results_trace
 from fitz_sage.engines.fitz_krag.types import ReadResult
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.retrieval.reader import ContentReader
     from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressReranker
@@ -87,6 +88,15 @@ _BROAD_GROUP_TARGET = 3
 _BROAD_GROUP_LOOKAHEAD = 16
 
 
+@dataclass(frozen=True)
+class RetrievalPassResponse:
+    """Read results, timings, and diagnostics from one retrieval pass."""
+
+    results: list[ReadResult]
+    timings: dict[str, float] = field(default_factory=dict)
+    trace: dict[str, Any] = field(default_factory=dict)
+
+
 class RetrievalPass:
     """Tiers 1-4 of the retrieval stack as one composable unit."""
 
@@ -101,74 +111,83 @@ class RetrievalPass:
         self._reranker = reranker
         self._reader = reader
         self._config = config
-        self.last_timings: dict[str, float] = {}
-        self.last_trace: dict[str, Any] = {}
 
     def run(
         self,
         query: str,
         profile: Any = None,
         *,
-        exclude: set[tuple[str, str]] | None = None,
         rewrite_result: Any = None,
-        progress: "Callable[[str], None] | None" = None,
-    ) -> list[ReadResult]:
-        """Run one retrieval pass: retrieve -> drop excluded -> rerank -> read.
+    ) -> RetrievalPassResponse:
+        """Run one retrieval pass: retrieve -> rerank -> read.
 
         Args:
             query: the retrieval query (rewritten or bridge query, not raw).
             profile: the RetrievalProfile carrying gates + strategy weights.
-            exclude: address keys ``(source_id, location)`` to drop before
-                reranking — used by multi-hop to skip already-read addresses.
             rewrite_result: the QueryRewriter result, forwarded to the router
                 so it can reuse decomposed query variations.
-            progress: optional status callback, forwarded to the router.
-
         Returns:
-            Read results for the surviving addresses (``<= rerank_k`` when a
-            reranker is configured).
+            Read results, timings, and diagnostics for this call. The result
+            count is ``<= rerank_k`` when a reranker is configured.
         """
-        self.last_timings = {}
-        self.last_trace = {"query": query}
+        timings: dict[str, float] = {}
 
         t0 = time.perf_counter()
-        addresses = self._router.retrieve(
-            query, profile, rewrite_result=rewrite_result, progress=progress
+        router_response = self._router.retrieve(
+            query,
+            profile,
+            rewrite_result=rewrite_result,
         )
-        self.last_timings["recall"] = time.perf_counter() - t0
+        addresses = router_response.addresses
+        timings["recall"] = time.perf_counter() - t0
         recall_addresses = list(addresses)
-        router_trace = dict(getattr(self._router, "last_trace", {}) or {})
-        if exclude:
-            addresses = [a for a in addresses if (a.source_id, a.location) not in exclude]
-        after_exclude = list(addresses)
+        router_trace = dict(router_response.trace)
         if not addresses:
-            self.last_timings["rerank"] = 0.0
-            self.last_timings["read"] = 0.0
-            self.last_trace = {
+            timings["rerank"] = 0.0
+            timings["read"] = 0.0
+            trace = {
                 "query": query,
                 "profile": _profile_trace(profile),
-                "exclude_count": len(exclude or set()),
                 "router": router_trace,
                 "recall_count": len(recall_addresses),
                 "recall": addresses_trace(recall_addresses),
-                "after_exclude_count": len(after_exclude),
-                "after_exclude": addresses_trace(after_exclude),
                 "reranker": {"used": False, "reason": "no_addresses"},
                 "final_addresses": [],
                 "read_results": [],
-                "timings": dict(self.last_timings),
+                "timings": dict(timings),
             }
-            return []
+            return RetrievalPassResponse([], timings, trace)
         if self._reranker is not None:
             candidates = addresses
+            rerank_candidate_limit = (
+                profile.rerank_candidates if profile is not None else self._config.rerank_candidates
+            )
+            rerank_inputs = addresses[:rerank_candidate_limit]
             t0 = time.perf_counter()
-            addresses = self._reranker.rerank(query, addresses)
-            self.last_timings["rerank"] = time.perf_counter() - t0
-            reranker_trace = dict(getattr(self._reranker, "last_trace", {}) or {})
-            addresses = order_addresses_for_contract(query, candidates, addresses, profile)
+            rerank_response = self._reranker.rerank(query, rerank_inputs)
+            addresses = rerank_response.addresses
+            timings["rerank"] = time.perf_counter() - t0
+            reranker_trace = dict(rerank_response.trace)
+            reranker_trace["candidate_limit"] = rerank_candidate_limit
+            reranker_trace["candidate_count"] = len(rerank_inputs)
+            reranker_trace["recall_pool_count"] = len(candidates)
+            addresses = _ensure_concrete_row_coverage(candidates, addresses, profile)
+            addresses = ensure_query_coverage(
+                candidates,
+                addresses,
+                compound_queries(rewrite_result),
+                limit=len(addresses),
+            )
+            addresses = order_addresses_for_contract(
+                query,
+                candidates,
+                addresses,
+                profile,
+                limit=len(addresses),
+            )
             addresses = _ensure_broad_corpus_coverage(query, candidates, addresses, profile)
         else:
-            self.last_timings["rerank"] = 0.0
+            timings["rerank"] = 0.0
             reranker_trace = {"used": False, "reason": "no_reranker"}
         addresses = _apply_broad_corpus_prior(query, addresses, profile)
         addresses = _enforce_broad_file_diversity(addresses, profile)
@@ -178,25 +197,22 @@ class RetrievalPass:
         t0 = time.perf_counter()
         read_limit = getattr(profile, "top_read", self._config.top_read)
         results = self._reader.read(addresses, read_limit)
-        self.last_timings["read"] = time.perf_counter() - t0
-        self.last_trace = {
+        timings["read"] = time.perf_counter() - t0
+        trace = {
             "query": query,
             "profile": _profile_trace(profile),
-            "exclude_count": len(exclude or set()),
             "router": router_trace,
             "recall_count": len(recall_addresses),
             "recall": addresses_trace(recall_addresses),
-            "after_exclude_count": len(after_exclude),
-            "after_exclude": addresses_trace(after_exclude),
             "reranker": reranker_trace,
             "final_address_count": len(final_addresses),
             "final_addresses": addresses_trace(final_addresses),
             "read_limit": read_limit,
             "read_result_count": len(results),
             "read_results": read_results_trace(results),
-            "timings": dict(self.last_timings),
+            "timings": dict(timings),
         }
-        return results
+        return RetrievalPassResponse(results, timings, trace)
 
 
 def _profile_trace(profile: Any) -> dict[str, Any]:
@@ -211,6 +227,7 @@ def _profile_trace(profile: Any) -> dict[str, Any]:
         "domain",
         "top_k",
         "top_read",
+        "rerank_candidates",
         "strategy_weights",
         "retrieval_modality",
         "retrieval_obligation",
@@ -221,7 +238,6 @@ def _profile_trace(profile: Any) -> dict[str, Any]:
         "comparison_queries",
         "comparison_entities",
         "temporal_references",
-        "run_agentic",
         "inject_corpus_summaries",
         "entity_expansion_limit",
     )
@@ -230,6 +246,96 @@ def _profile_trace(profile: Any) -> dict[str, Any]:
         if hasattr(profile, field_name):
             trace[field_name] = getattr(profile, field_name)
     return trace
+
+
+def _ensure_concrete_row_coverage(
+    candidates: list[Any],
+    ranked: list[Any],
+    profile: Any = None,
+) -> list[Any]:
+    """Keep a strongly matching concrete table row through top-k reranking."""
+    if not candidates or not ranked:
+        return ranked
+
+    strong_candidates = [
+        candidate for candidate in candidates if _concrete_row_strength(candidate) is not None
+    ]
+    if not strong_candidates:
+        return ranked
+    candidate = max(
+        strong_candidates,
+        key=lambda item: (
+            _concrete_row_strength(item) or (0.0, 0),
+            float(getattr(item, "score", 0.0) or 0.0),
+        ),
+    )
+    candidate_key = _address_identity(candidate)
+    if any(_address_identity(address) == candidate_key for address in ranked):
+        return ranked
+
+    selected = list(ranked)
+    selected_counts: dict[Any, int] = {}
+    for address in selected:
+        kind = getattr(address, "kind", None)
+        selected_counts[kind] = selected_counts.get(kind, 0) + 1
+    required_kinds = set(tuple(getattr(profile, "required_modalities", ()) or ()))
+    replace_at = next(
+        (
+            index
+            for index in range(len(selected) - 1, -1, -1)
+            if selected_counts.get(getattr(selected[index], "kind", None), 0)
+            > (
+                1
+                if getattr(
+                    getattr(selected[index], "kind", None),
+                    "value",
+                    str(getattr(selected[index], "kind", None)),
+                )
+                in required_kinds
+                else 0
+            )
+        ),
+        None,
+    )
+    if replace_at is None:
+        selected.append(candidate)
+    else:
+        selected[replace_at] = candidate
+    return selected
+
+
+def _concrete_row_strength(address: Any) -> tuple[float, int] | None:
+    """Return row-match confidence only for concrete, query-aligned rows."""
+    metadata = getattr(address, "metadata", {}) or {}
+    row_match = metadata.get("row_match")
+    if isinstance(row_match, dict):
+        try:
+            matched_rows = int(row_match.get("matched_rows", 0) or 0)
+        except (TypeError, ValueError):
+            matched_rows = 0
+        if matched_rows > 0:
+            return (1.0, matched_rows)
+
+    row_search = metadata.get("row_search")
+    if not isinstance(row_search, dict):
+        return None
+    try:
+        coverage = float(row_search.get("term_coverage", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    matched_terms = row_search.get("matched_terms")
+    matched_count = len(matched_terms) if isinstance(matched_terms, list) else 0
+    if coverage < 0.5 or matched_count < 2:
+        return None
+    return (coverage, matched_count)
+
+
+def _address_identity(address: Any) -> tuple[Any, Any, Any]:
+    return (
+        getattr(address, "kind", None),
+        getattr(address, "source_id", None),
+        getattr(address, "location", None),
+    )
 
 
 def _apply_broad_corpus_prior(query: str, addresses: list[Any], profile: Any = None) -> list[Any]:
@@ -379,7 +485,7 @@ def _enforce_broad_group_diversity(
     addresses: list[Any],
     profile: Any = None,
 ) -> list[Any]:
-    """For corpus overview queries, seed the cutoff window with corpus-family coverage."""
+    """For corpus overviews, seed final delivery with corpus-family coverage."""
     if not _should_apply_broad_corpus_prior(query, profile):
         return addresses
     if len(addresses) <= _BROAD_GROUP_TARGET:
@@ -451,4 +557,4 @@ def _primary_address_path(address: Any) -> str:
     )
 
 
-__all__ = ["RetrievalPass"]
+__all__ = ["RetrievalPass", "RetrievalPassResponse"]

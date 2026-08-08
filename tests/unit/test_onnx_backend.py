@@ -6,9 +6,19 @@ from __future__ import annotations
 import sys
 from types import ModuleType, SimpleNamespace
 
+import pytest
 from huggingface_hub.errors import EntryNotFoundError
 
 from fitz_sage.encoders.onnx import OnnxEncoderBackend
+
+
+@pytest.fixture(autouse=True)
+def _clear_runtime_cache():
+    with OnnxEncoderBackend._runtime_cache_lock:
+        OnnxEncoderBackend._runtime_cache.clear()
+    yield
+    with OnnxEncoderBackend._runtime_cache_lock:
+        OnnxEncoderBackend._runtime_cache.clear()
 
 
 def _install_transformers_stub(
@@ -79,6 +89,37 @@ def test_load_ignores_missing_external_data_sidecar(monkeypatch):
 
     assert calls == ["model_int8.onnx", "model_int8.onnx.data"]
     assert backend._session.path == "C:/cache/model_int8.onnx"
+
+
+def test_identical_model_specs_share_one_native_runtime(monkeypatch):
+    """Collections using the same encoder do not duplicate its native session."""
+    session_calls: list[str] = []
+    tokenizer = SimpleNamespace()
+
+    def fake_hf_hub_download(*, repo_id, filename, subfolder):
+        if filename.endswith(".data"):
+            raise EntryNotFoundError("missing")
+        return f"C:/cache/{filename}"
+
+    def fake_inference_session(path, providers):
+        session_calls.append(path)
+        return SimpleNamespace(path=path, providers=providers)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_hf_hub_download)
+    _install_transformers_stub(
+        monkeypatch,
+        from_pretrained=lambda model_id: tokenizer,
+    )
+    _install_onnxruntime_stub(monkeypatch, fake_inference_session)
+
+    first = OnnxEncoderBackend("acme/model", "model_int8.onnx", onnx_subfolder="onnx")
+    second = OnnxEncoderBackend("acme/model", "model_int8.onnx", onnx_subfolder="onnx")
+    first._load()
+    second._load()
+
+    assert session_calls == ["C:/cache/model_int8.onnx"]
+    assert first._session is second._session
+    assert first._tokenizer is second._tokenizer is tokenizer
 
 
 def test_load_falls_back_to_tokenizer_json(monkeypatch, tmp_path):

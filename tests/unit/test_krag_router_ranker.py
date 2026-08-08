@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
 from fitz_sage.engines.fitz_krag.retrieval.ranker import (
     ENTITY_MATCH_BONUS,
     CrossStrategyRanker,
@@ -56,7 +57,7 @@ def _code_profile(
 ) -> RetrievalProfile:
     """RetrievalProfile with CODE-like weights."""
     return RetrievalProfile(
-        strategy_weights={"code": 0.8, "section": 0.1, "table": 0.05, "chunk": 0.05},
+        strategy_weights={"code": 0.83, "section": 0.11, "table": 0.06},
         entities=entities,
         top_k=top_k,
         analysis_type="code",
@@ -67,13 +68,13 @@ def _code_profile(
 def _custom_weight_profile(
     code: float,
     section: float,
-    chunk: float,
+    table: float,
     entities: tuple[str, ...] = (),
     top_k: int = 10,
 ) -> RetrievalProfile:
     """Build a RetrievalProfile with custom strategy weights."""
     return RetrievalProfile(
-        strategy_weights={"code": code, "section": section, "chunk": chunk},
+        strategy_weights={"code": code, "section": section, "table": table},
         entities=entities,
         top_k=top_k,
         analysis_type="general",
@@ -104,7 +105,7 @@ class TestRetrievalRouter:
             section_strategy=None,
         )
 
-        result = router.retrieve("find func")
+        result = router.retrieve("find func").addresses
 
         code_strat.retrieve.assert_called_once_with("find func", 10, detection=None)
         assert len(result) == 2
@@ -125,7 +126,7 @@ class TestRetrievalRouter:
             section_strategy=None,
         )
 
-        result = router.retrieve("find func", _code_profile(top_k=8))
+        result = router.retrieve("find func", _code_profile(top_k=8)).addresses
 
         assert len(result) == 8
 
@@ -149,7 +150,7 @@ class TestRetrievalRouter:
             section_strategy=section_strat,
         )
 
-        result = router.retrieve("how to setup")
+        result = router.retrieve("how to setup").addresses
 
         code_strat.retrieve.assert_called_once()
         section_strat.retrieve.assert_called_once()
@@ -176,9 +177,9 @@ class TestRetrievalRouter:
         )
 
         # Custom weights: section weight is 0.04 (below 0.05 threshold)
-        profile = _custom_weight_profile(code=0.9, section=0.04, chunk=0.04)
+        profile = _custom_weight_profile(code=0.9, section=0.04, table=0.06)
 
-        result = router.retrieve("find func", profile)
+        result = router.retrieve("find func", profile).addresses
 
         code_strat.retrieve.assert_called_once()
         section_strat.retrieve.assert_not_called()
@@ -214,7 +215,7 @@ class TestRetrievalRouter:
             section_strategy=section_strat,
         )
 
-        result = router.retrieve("query")
+        result = router.retrieve("query").addresses
 
         # Duplicate by (source_id, location) -- first one wins
         assert len(result) == 1
@@ -236,7 +237,7 @@ class TestRetrievalRouter:
         )
 
         profile = _code_profile(entities=("hi_sym",))
-        result = router.retrieve("find hi_sym", profile)
+        result = router.retrieve("find hi_sym", profile).addresses
 
         # Ranker should apply entity bonus to hi_sym, boosting it
         assert len(result) == 2
@@ -260,7 +261,7 @@ class TestRetrievalRouter:
             config=config,
         )
 
-        result = router.retrieve("query")
+        result = router.retrieve("query").addresses
 
         assert [a.location for a in result] == ["high", "mid", "low"]
 
@@ -279,67 +280,114 @@ class TestRetrievalRouter:
             config=config,
         )
 
-        result = router.retrieve("query")
+        result = router.retrieve("query").addresses
 
         assert len(result) == 5
         # Should be top-5 by score
         assert result[0].score == 1.0
 
-    def test_agentic_progress_reports_pre_index_candidates(self):
-        """Progress text scopes agentic results as pre-index candidates."""
+    def test_retrieve_preserves_candidates_from_each_strategy(self):
+        """A dominant section leg must not push every table candidate past the read limit."""
         code_strat = MagicMock()
         code_strat.retrieve.return_value = []
-        agentic = MagicMock()
-        agentic.has_pending_files.return_value = True
-        agentic.retrieve.return_value = [
+        section_strat = MagicMock()
+        section_strat.retrieve.return_value = [
             _addr(
-                AddressKind.FILE,
-                source_id="a",
-                location="docs/a.md",
-                metadata={"disk_path": "docs/a.md"},
-            ),
-            _addr(
-                AddressKind.FILE,
-                source_id="b",
-                location="docs/b.md",
-                metadata={"disk_path": "docs/b.md"},
-            ),
+                AddressKind.SECTION,
+                source_id=f"doc-{index}",
+                location=f"section-{index}",
+                score=1.0 - index * 0.01,
+            )
+            for index in range(10)
         ]
-        progress = MagicMock()
-
+        table_strat = MagicMock()
+        table_strat.retrieve.return_value = [
+            _addr(
+                AddressKind.TABLE,
+                source_id="matrix.csv",
+                location=f"table-{index}",
+                score=0.1 - index * 0.01,
+            )
+            for index in range(2)
+        ]
         router = RetrievalRouter(
             code_strategy=code_strat,
-            config=_make_config(top_addresses=10),
-            agentic_strategy=agentic,
+            config=_make_config(top_addresses=6),
+            section_strategy=section_strat,
+            table_strategy=table_strat,
+        )
+        profile = _custom_weight_profile(
+            code=0.1,
+            section=0.8,
+            table=0.1,
+            top_k=6,
         )
 
-        router.retrieve("key facts", progress=progress)
+        result = router.retrieve("rollout status", profile).addresses
 
-        progress.assert_any_call(
-            "Supplemental scan: checking files still awaiting enriched index..."
-        )
-        progress.assert_any_call(
-            "Supplemental scan: added 2 early candidate(s) from 2 file(s) (a.md, b.md)"
-        )
+        assert len(result) == 6
+        assert sum(address.kind == AddressKind.TABLE for address in result) == 2
+        assert sum(address.kind == AddressKind.SECTION for address in result) == 4
 
-    def test_agentic_scan_is_skipped_without_pending_files(self):
-        """Fully query-ready collections do not emit supplemental scan noise."""
+    def test_strategy_coverage_does_not_invent_missing_modalities(self):
+        """Coverage only applies to strategies that returned real candidates."""
+        addresses = [
+            _addr(
+                AddressKind.SECTION,
+                source_id=f"doc-{index}",
+                location=f"section-{index}",
+                score=1.0 - index * 0.01,
+            )
+            for index in range(10)
+        ]
+
+        result = RetrievalRouter._enforce_strategy_coverage(addresses, 5)
+
+        assert result == addresses[:5]
+
+    def test_compound_query_preserves_one_candidate_per_successful_leg(self):
+        """Strong original-query hits must not erase explicit sub-question recall."""
+        query = "What is the refund window, and who approves exceptions?"
+        plan = DeterministicQueryPlanner().plan(query)
+        assert plan.rewrite_result is not None
+        refund_query, approver_query = plan.rewrite_result.decomposed_queries
+
         code_strat = MagicMock()
-        code_strat.retrieve.return_value = []
-        agentic = MagicMock()
-        agentic.has_pending_files.return_value = False
-        progress = MagicMock()
 
+        def retrieve(strategy_query, _limit, detection=None):
+            del detection
+            if strategy_query == refund_query:
+                return [_addr(source_id="refund", location="refund", score=0.10)]
+            if strategy_query == approver_query:
+                return [_addr(source_id="approver", location="approver", score=0.09)]
+            return [
+                _addr(source_id="noise-a", location="noise-a", score=0.99),
+                _addr(source_id="noise-b", location="noise-b", score=0.98),
+            ]
+
+        code_strat.retrieve.side_effect = retrieve
         router = RetrievalRouter(
             code_strategy=code_strat,
-            config=_make_config(top_addresses=10),
-            agentic_strategy=agentic,
+            config=_make_config(top_addresses=2),
         )
 
-        router.retrieve("key facts", progress=progress)
+        result = router.retrieve(
+            query,
+            _code_profile(top_k=2),
+            rewrite_result=plan.rewrite_result,
+        ).addresses
 
-        agentic.retrieve.assert_not_called()
-        progress.assert_not_called()
+        assert len(result) == 2
+        assert {address.source_id for address in result} == {"refund", "approver"}
+        assert {call.args[0] for call in code_strat.retrieve.call_args_list} >= {
+            query,
+            refund_query,
+            approver_query,
+        }
+        assert {tuple(address.metadata["retrieval_queries"]) for address in result} == {
+            (refund_query,),
+            (approver_query,),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -358,15 +406,15 @@ class TestCrossStrategyRanker:
     def test_rank_applies_weights(self):
         """CODE profile boosts SYMBOL addresses via higher weight."""
         sym_addr = _addr(AddressKind.SYMBOL, score=0.5, location="func")
-        chunk_addr = _addr(AddressKind.CHUNK, score=0.5, location="chunk1")
+        section_addr = _addr(AddressKind.SECTION, score=0.5, location="section1")
 
         profile = _code_profile()
-        # CODE weights: code=0.8, section=0.1, chunk=0.05
-        # sym: 0.5 * 0.8 = 0.40,  chunk: 0.5 * 0.05 = 0.025
-        result = self.ranker.rank([chunk_addr, sym_addr], profile)
+        # CODE weights: code=0.8, section=0.1
+        # sym: 0.5 * 0.8 = 0.40, section: 0.5 * 0.1 = 0.05
+        result = self.ranker.rank([section_addr, sym_addr], profile)
 
         assert result[0].kind == AddressKind.SYMBOL
-        assert result[1].kind == AddressKind.CHUNK
+        assert result[1].kind == AddressKind.SECTION
 
     # -- test_rank_entity_match_bonus_in_location -------------------------
 

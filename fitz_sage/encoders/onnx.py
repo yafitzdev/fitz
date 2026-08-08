@@ -2,9 +2,8 @@
 """
 Shared backend for INT8 ONNX encoders.
 
-`OnnxEncoderBackend` owns the parts that the pyrrho governance classifier
-and the ONNX cross-encoder reranker would otherwise duplicate line for
-line:
+`OnnxEncoderBackend` owns the shared mechanics used by Fitz-Sage's ONNX
+retrieval encoders, including the cross-encoder reranker:
 
 - a `threading.Lock`-guarded lazy load that runs once per process,
 - pulling a pre-built ONNX straight from a HuggingFace repo with
@@ -25,7 +24,7 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Any
+from typing import Any, ClassVar
 
 from fitz_sage.logging.logger import get_logger
 
@@ -42,6 +41,9 @@ class OnnxEncoderBackend:
             string when the file sits at the repo root.
     """
 
+    _runtime_cache: ClassVar[dict[tuple[str, str, str], tuple[Any, Any]]] = {}
+    _runtime_cache_lock: ClassVar[threading.Lock] = threading.Lock()
+
     def __init__(
         self,
         model_id: str,
@@ -51,7 +53,6 @@ class OnnxEncoderBackend:
         self._model_id = model_id
         self._onnx_file = onnx_file
         self._onnx_subfolder = onnx_subfolder
-        self._lock = threading.Lock()
         self._tokenizer: Any = None
         self._session: Any = None
 
@@ -59,58 +60,66 @@ class OnnxEncoderBackend:
         """Load the tokenizer + ONNX session once per process (idempotent)."""
         if self._tokenizer is not None and self._session is not None:
             return
-        with self._lock:
-            if self._tokenizer is not None and self._session is not None:
-                return
-            import os
+        cache_key = (self._model_id, self._onnx_subfolder, self._onnx_file)
+        with OnnxEncoderBackend._runtime_cache_lock:
+            runtime = OnnxEncoderBackend._runtime_cache.get(cache_key)
+            if runtime is None:
+                runtime = self._create_runtime()
+                OnnxEncoderBackend._runtime_cache[cache_key] = runtime
+            self._tokenizer, self._session = runtime
 
-            # transformers is used purely as a tokenizer here — silence its
-            # advisory that no DL framework (torch/TF/Flax) is installed.
-            os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+    def _create_runtime(self) -> tuple[Any, Any]:
+        """Create the immutable tokenizer/session pair for one model identity."""
+        import os
 
-            import onnxruntime as ort
-            from huggingface_hub import hf_hub_download
-            from huggingface_hub.errors import EntryNotFoundError, LocalEntryNotFoundError
-            from transformers import AutoTokenizer, PreTrainedTokenizerFast
+        # transformers is used purely as a tokenizer here — silence its
+        # advisory that no DL framework (torch/TF/Flax) is installed.
+        os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
-            logger.info(
-                f"Loading ONNX encoder {self._model_id} "
-                f"({self._onnx_subfolder or '.'}/{self._onnx_file})"
+        import onnxruntime as ort
+        from huggingface_hub import hf_hub_download
+        from huggingface_hub.errors import EntryNotFoundError, LocalEntryNotFoundError
+        from transformers import AutoTokenizer, PreTrainedTokenizerFast
+
+        logger.info(
+            f"Loading ONNX encoder {self._model_id} "
+            f"({self._onnx_subfolder or '.'}/{self._onnx_file})"
+        )
+        try:
+            onnx_path = hf_hub_download(
+                repo_id=self._model_id,
+                filename=self._onnx_file,
+                subfolder=self._onnx_subfolder or None,
             )
-            try:
-                onnx_path = hf_hub_download(
-                    repo_id=self._model_id,
-                    filename=self._onnx_file,
-                    subfolder=self._onnx_subfolder or None,
-                )
-            except Exception as e:
-                raise RuntimeError(
-                    f"Could not fetch the pre-built ONNX "
-                    f"'{self._onnx_subfolder or '.'}/{self._onnx_file}' from "
-                    f"{self._model_id}: {e}. Point the encoder at an ONNX "
-                    f"file the repo actually ships."
-                ) from e
-            sidecar_file = f"{self._onnx_file}.data"
-            try:
-                hf_hub_download(
-                    repo_id=self._model_id,
-                    filename=sidecar_file,
-                    subfolder=self._onnx_subfolder or None,
-                )
-            except (EntryNotFoundError, LocalEntryNotFoundError):
-                pass
-            except Exception as e:
-                raise RuntimeError(
-                    f"Could not fetch the ONNX external-data sidecar "
-                    f"'{self._onnx_subfolder or '.'}/{sidecar_file}' from "
-                    f"{self._model_id}: {e}."
-                ) from e
-            self._tokenizer = self._load_tokenizer(
-                AutoTokenizer=AutoTokenizer,
-                PreTrainedTokenizerFast=PreTrainedTokenizerFast,
-                hf_hub_download=hf_hub_download,
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not fetch the pre-built ONNX "
+                f"'{self._onnx_subfolder or '.'}/{self._onnx_file}' from "
+                f"{self._model_id}: {e}. Point the encoder at an ONNX "
+                f"file the repo actually ships."
+            ) from e
+        sidecar_file = f"{self._onnx_file}.data"
+        try:
+            hf_hub_download(
+                repo_id=self._model_id,
+                filename=sidecar_file,
+                subfolder=self._onnx_subfolder or None,
             )
-            self._session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        except (EntryNotFoundError, LocalEntryNotFoundError):
+            pass
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not fetch the ONNX external-data sidecar "
+                f"'{self._onnx_subfolder or '.'}/{sidecar_file}' from "
+                f"{self._model_id}: {e}."
+            ) from e
+        tokenizer = self._load_tokenizer(
+            AutoTokenizer=AutoTokenizer,
+            PreTrainedTokenizerFast=PreTrainedTokenizerFast,
+            hf_hub_download=hf_hub_download,
+        )
+        session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        return tokenizer, session
 
     def _load_tokenizer(
         self,

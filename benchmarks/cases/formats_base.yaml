@@ -1,0 +1,153 @@
+- id: pptx_q3_revenue
+  domain: healthcare
+  query: "What was Meridian Health's Q3 revenue?"
+  expected:
+    required_evidence:
+      - file: quarterly_review.pptx
+        contains: ["847", "million"]
+  tags: [production, format_pptx, direct_lookup]
+
+- id: pptx_patient_count
+  domain: healthcare
+  query: "How many patients did Meridian Health serve in Q3?"
+  expected:
+    required_evidence:
+      - file: quarterly_review.pptx
+        contains_any: ["2.4 million", "2,400,000"]
+  tags: [production, format_pptx, direct_lookup]
+
+- id: pptx_expansion
+  domain: healthcare
+  query: "Where does Meridian Health plan to open new clinics?"
+  expected:
+    required_evidence:
+      - file: quarterly_review.pptx
+        contains: ["clinics"]
+        contains_any: ["Austin", "Denver", "Portland"]
+  tags: [production, format_pptx, aggregation]
+
+- id: pptx_key_metrics
+  domain: healthcare
+  query: "List the key metrics in the Meridian Health quarterly review."
+  expected:
+    required_evidence:
+      - file: quarterly_review.pptx
+        contains_any: ["satisfaction", "readmission", "wait time", "telehealth"]
+  tags: [production, format_pptx, aggregation]
+
+- id: pptx_presenter
+  domain: healthcare
+  query: "Who presented the Meridian Health quarterly review?"
+  expected:
+    required_evidence:
+      - file: quarterly_review.pptx
+        contains_any: ["Sarah Mitchell", "Chief Medical Officer"]
+  tags: [production, format_pptx, direct_lookup]
+
+- id: sql_tables
+  domain: engineering
+  query: "What tables exist in the NovaMart ecommerce schema?"
+  expected:
+    required_evidence:
+      - file: ecommerce_schema.sql
+        contains: ["customers", "products", "orders", "order_items"]
+  tags: [production, format_sql, aggregation]
+
+- id: sql_order_columns
+  domain: engineering
+  query: "Which columns are defined on the orders table?"
+  expected:
+    required_evidence:
+      - file: ecommerce_schema.sql
+        contains: ["order_id", "customer_id", "status", "total_cents"]
+  tags: [production, format_sql, direct_lookup]
+
+- id: sql_customer_order_relation
+  domain: engineering
+  query: "How are customers and orders related in the NovaMart schema?"
+  expected:
+    required_evidence:
+      - file: ecommerce_schema.sql
+        contains: ["customer_id", "REFERENCES"]
+  tags: [production, format_sql, relationship]
+
+- id: sql_indexes
+  domain: engineering
+  query: "Which indexes exist in the NovaMart database?"
+  expected:
+    required_evidence:
+      - file: ecommerce_schema.sql
+        contains_any: ["idx_", "CREATE INDEX"]
+  tags: [production, format_sql, aggregation]
+
+- id: go_routes
+  domain: engineering
+  query: "Which HTTP routes does the TaskFlow Go server handle?"
+  expected:
+    required_evidence:
+      - file: server.go
+        contains_any: ["/health", "/api/tasks", "HandleFunc"]
+  tags: [production, format_go, code]
+
+- id: go_authentication
+  domain: security
+  query: "How does the TaskFlow Go server authenticate requests?"
+  expected:
+    required_evidence:
+      - file: server.go
+        contains_any: ["AuthMiddleware", "Bearer", "Authorization"]
+  tags: [production, format_go, code]
+
+- id: go_middleware
+  domain: engineering
+  query: "What middleware does the TaskFlow Go server use?"
+  expected:
+    required_evidence:
+      - file: server.go
+        contains_any: ["LoggingMiddleware", "AuthMiddleware"]
+  tags: [production, format_go, code, aggregation]
+
+- id: java_crud
+  domain: engineering
+  query: "Which CRUD operations does the Java UserService provide?"
+  expected:
+    required_evidence:
+      - file: UserService.java
+        contains_any: ["createUser", "getUserById", "updateUser", "deactivateUser"]
+  tags: [production, format_java, code, aggregation]
+
+- id: java_exceptions
+  domain: engineering
+  query: "Which exceptions can Java UserService throw?"
+  expected:
+    required_evidence:
+      - file: UserService.java
+        contains_any: ["UserNotFoundException", "DuplicateEmailException"]
+  tags: [production, format_java, code, aggregation]
+
+- id: java_annotations
+  domain: engineering
+  query: "Which annotations are used by Java UserService?"
+  expected:
+    required_evidence:
+      - file: UserService.java
+        contains_any: ["@Service", "@Transactional"]
+  tags: [production, format_java, code]
+
+- id: typescript_endpoints
+  domain: engineering
+  query: "Which API endpoints does the InventoryHub TypeScript client call?"
+  expected:
+    required_evidence:
+      - file: api_client.ts
+        contains_any: ["/api/products", "/api/warehouses", "/api/shipments"]
+  tags: [production, format_typescript, code, aggregation]
+
+- id: typescript_interfaces
+  domain: engineering
+  query: "Which interfaces are defined in the InventoryHub API client?"
+  expected:
+    required_evidence:
+      - file: api_client.ts
+        contains_any: ["Product", "Warehouse", "Shipment"]
+  tags: [production, format_typescript, code, aggregation]

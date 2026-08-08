@@ -5,13 +5,14 @@ High-level system design of fitz-sage.
 
 The architecture has three load-bearing decisions:
 
-1. **Managed enrichment, optional endpoints.** Required enrichment runs through
-   the in-process Qwen3 0.6B ONNX GenAI runtime on CPU. Fitz downloads the model on
-   first ingest if missing. Optional synthesis, query intelligence, and vision
-   use OpenAI-compatible HTTP endpoints or cloud/enterprise presets.
+1. **Immediate source index, deferred enrichment.** `point()` parses and stores
+   searchable source without loading Qwen. Managed Qwen supplies standard
+   query-time semantic keywords and optional background entity, hierarchy, and
+   demand-summary work. Optional synthesis, query intelligence, and vision use
+   OpenAI-compatible HTTP endpoints or cloud/enterprise presets.
 2. **No embeddings.** Retrieval is BM25 over SQLite FTS5 + KRAG
    typed-unit routing (symbols, sections, tables) + an ONNX cross-encoder
-   reranker that scores candidates in a single local forward pass — no
+   reranker that scores a bounded candidate prefix locally — no
    chat call. No vector DB, no embedding model, no `vector` column anywhere.
 3. **No server.** Storage is SQLite — one `.db` file per collection
    under `<workspace>/sqlite/`. Open it, query it, close it. WAL mode
@@ -27,7 +28,7 @@ The architecture has three load-bearing decisions:
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                          │
 │  │  CLI        │  │  Python SDK │  │  REST API   │                          │
-│  │  fitz ...   │  │  import ... │  │  /query     │                          │
+│  │  fitz ...   │  │  import ... │  │  /answer    │                          │
 │  └─────────────┘  └─────────────┘  └─────────────┘                          │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -41,7 +42,7 @@ The architecture has three load-bearing decisions:
 │  Engine: FitzKRAG                                                           │
 │  - Deterministic planner + managed Qwen semantic keywords                   │
 │  - Optional query-intelligence provider                                     │
-│  - Router: symbol search · section search · table SQL                       │
+│  - Router: symbol search · section search · table metadata / rows           │
 │  - Expander (import graph, entity links, same-file refs, hierarchy)         │
 │  - ONNX cross-encoder reranker (gte-reranker-modernbert-base)               │
 │  - Optional synthesizer (chat call that writes the answer)                  │
@@ -53,11 +54,11 @@ The architecture has three load-bearing decisions:
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────────┐
 │  LLM / ONNX         │  │  Storage (SQLite)   │  │  Ingestion Pipeline     │
 ├─────────────────────┤  ├─────────────────────┤  ├─────────────────────────┤
-│  Qwen3 0.6B ONNX GenAI  │  │  WAL + FTS5         │  │  Parse (CPU / Docling)  │
-│  enrichment + query │  │  one .db per        │  │  typed units: symbols,  │
-│  endpoint/cloud     │  │  collection         │  │   sections, tables      │
-│  for optional chat  │  │  bm25() ranking     │  │  Required staged        │
-│  + enterprise auth  │  │  json_each, json1   │  │   enrichment            │
+│  Qwen query terms + │  │  WAL + FTS5         │  │  Parse (CPU / Docling)  │
+│  optional background│  │  one .db per        │  │  typed units: symbols,  │
+│  work; endpoint chat│  │  collection         │  │  sections, tables       │
+│  is explicit        │  │  bm25() ranking     │  │  index first, enrich    │
+│                     │  │  json_each, json1   │  │  independently          │
 └─────────────────────┘  └─────────────────────┘  └─────────────────────────┘
           │
           ▼
@@ -73,16 +74,19 @@ The architecture has three load-bearing decisions:
 Strict import rules enforce separation of concerns (verified by
 `python -m tools.contract_map --fail-on-errors`):
 
-| Layer            | May import from                              |
-| ---------------- | -------------------------------------------- |
-| `core/`          | nothing (no imports from engines/ingestion)  |
-| `retrieval/`     | `core/`                                      |
-| `llm/`           | `core/`                                      |
-| `storage/`       | `core/`                                      |
-| `ingestion/`     | `core/`                                      |
-| `engines/`       | `core/`, `llm/`, `storage/`, `retrieval/`    |
-| `runtime/`       | all layers                                   |
-| `cli/`, `api/`   | all layers                                   |
+| Layer | May import from |
+| --- | --- |
+| `core/` | `core/` |
+| `encoders/` | `encoders/` |
+| `ingestion/` | `core/`, `ingestion/` |
+| `storage/` | `core/`, `storage/` |
+| `retrieval/` | `core/`, `retrieval/`, `storage/` |
+| `llm/` | `core/`, `encoders/`, `llm/` |
+| `governance/` | `core/`, `encoders/`, `governance/` |
+| `tabular/` | `core/`, `llm/`, `storage/`, `tabular/` |
+| `config/` | `config/`, `core/` |
+| `engines/` | `config/`, `core/`, `engines/`, `governance/`, `ingestion/`, `llm/`, `retrieval/`, `storage/`, `tabular/` |
+| `api/`, `cli/`, `runtime/`, `sdk/`, `services/`, `tools/` | unrestricted orchestration layers |
 
 ---
 
@@ -90,21 +94,31 @@ Strict import rules enforce separation of concerns (verified by
 
 ### Query
 
-Retrieval runs as a broad recall → rerank → govern pipeline. A
-`RetrievalPass` is retrieve → fuse → rerank → read; multi-hop may loop that
-pass on a bridge query when pyrrho judges the evidence insufficient.
+Retrieval runs as a broad recall → rerank → compile → deliver → Pyrrho
+pipeline. A `RetrievalPass` is retrieve → fuse → rerank → read;
+contract-driven evidence closure may issue bounded follow-up retrieval before
+the ranked evidence enters progressive Pyrrho delivery.
 
 ```
-1  Query prep      deterministic plan + Qwen semantic keywords
+1  Query prep      deterministic plan, explicit clauses, Qwen semantic keywords
                    optional query_intelligence rewrite/analyze/detect
-2  Broad recall    symbol / section / table BM25, intent fanout,
-                   unindexed scan when files are not query-ready
-3  Fuse            merge across strategies, dedup, keyword and freshness boosts
+2  Broad recall    symbol / section / table BM25 and intent fanout
+3  Fuse            merge across strategies and deduplicate
 4  Rerank          ONNX cross-encoder (gte-reranker-modernbert-base)
 5  Read            fetch content for surviving addresses
-6  Govern cutoff   pyrrho evaluates top-1, top-2, ... up to cutoff
-7  Synthesize      optional chat call writes an Answer from governed evidence
+6  Closure         issue bounded follow-up retrieval for unresolved obligations
+7  Compile         enforce query-shape evidence obligations
+8  Deliver         grow ranked prefixes within the top_k/top_read cap
+9  Pyrrho          authoritative decisions over growing ranked prefixes
+10 Record          optional RetrievalRun snapshots this same execution
+11 Synthesize      optional chat call writes an Answer from governed evidence
 ```
+
+`RetrievalRun` is built from the canonical governed result. Trace mode does not
+invoke a diagnostic copy of the pipeline. Pyrrho replay operates only on
+the frozen delivered evidence in a content-bearing record;
+it does not claim to reproduce retrieval against a mutable collection. See
+[Retrieval Execution Records](RETRIEVAL_RUNS.md).
 
 ### Ingestion
 
@@ -113,24 +127,25 @@ Files → Register manifest
       → Parse (CPU parser by default, Docling/vision/OCR optional,
         tree-sitter/AST for code, native table parsers)
       → Store typed units (symbols, sections, tables) in SQLite + FTS5
-      → Search surface ready
-      → Required staged enrichment:
-        Qwen keywords → query-ready
-        entity graph + hierarchy → fully enriched
-        demand summaries → only for files surfaced by queries
+      → Resolve imports
+      → Searchable source index ready
+      → Optional background enrichment:
+        entity graph + hierarchy
+        demand summaries only for files surfaced by queries
 ```
 
 ---
 
 ## Chat Provider Model
 
-The LLM layer has one managed local enrichment runtime — Qwen3 0.6B ONNX GenAI —
-and one canonical optional endpoint provider — **`endpoint`**:
+The LLM layer has one managed local Qwen runtime for semantic query terms and
+optional background work, plus one canonical optional endpoint provider —
+**`endpoint`**:
 
 | Spec                                   | Resolves to                                              |
 | -------------------------------------- | -------------------------------------------------------- |
-| `onnx/qwen3-0.6b`                    | managed Qwen3 0.6B ONNX GenAI generation on CPU             |
-| `endpoint/<URL>/<model>` or YAML triple | `chat_base_url` + `model` + optional `chat_api_key_env` |
+| `onnx/qwen3-0.6b`                     | managed Qwen3 0.6B ONNX GenAI generation on CPU          |
+| `endpoint/<model>`                    | model plus `chat_base_url` and optional API-key env       |
 | `openai/<model>`                       | endpoint pointing at `https://api.openai.com/v1`         |
 | `azure_openai/<deployment>`            | endpoint with Azure deployment URL                       |
 | `enterprise/<provider>/<model>`        | endpoint + M2M / mTLS / custom-CA auth                   |
@@ -140,10 +155,11 @@ servers such as Ollama are configured through `endpoint` plus their `/v1`
 base URL.
 
 The **`OnnxReranker`** is a separate INT8 ONNX cross-encoder
-(`Alibaba-NLP/gte-reranker-modernbert-base` by default) — same
-architecture family as pyrrho, and both run on raw `onnxruntime`
-via the shared `OnnxEncoderBackend`. It scores `(query, candidate)`
-pairs locally in ~30–100 ms on CPU with no external LLM call.
+(`Alibaba-NLP/gte-reranker-modernbert-base` by default). It uses Fitz-Sage's
+`OnnxEncoderBackend`; Pyrrho uses a dedicated managed adapter for its validated
+multi-head model contract.
+The reranker scores a profile-aware 24, 32, or 48 `(query, candidate)` pairs
+locally with no external LLM call.
 See [features/retrieval/reranking.md](features/retrieval/reranking.md).
 
 ---
@@ -169,11 +185,10 @@ PRAGMA foreign_keys = ON;
 PRAGMA busy_timeout = 30000;
 ```
 
-Each store inside the `.db` (sections, symbols, table-store, import
-graph, vocabulary, entity graph) has an FTS5 external-content companion
-indexed over its searchable columns. `search_bm25()` queries the FTS5
-table and joins back; the raw `bm25()` value (negative = better) is
-sign-flipped so downstream consumers treat higher as better.
+Sections and symbols have FTS5 external-content indexes. Native table rows use
+a separate row-value FTS5 index; table metadata, import edges, and entity links
+use ordinary SQLite tables and indexes. Store search methods sign-flip FTS5's
+negative `bm25()` value so downstream consumers treat higher as better.
 
 See [features/platform/unified-storage.md](features/platform/unified-storage.md)
 for schema and runtime details.
@@ -182,9 +197,10 @@ for schema and runtime details.
 
 ## Feature Control
 
-Features are controlled by **provider presence**, not boolean flags. Enrichment
-is standard engine behavior and is required for ingestion; it does not have a
-public provider knob.
+Optional endpoint-backed features are controlled by **provider presence**, not
+boolean flags. Query-time Qwen semantic expansion is standard engine behavior.
+Background enrichment starts independently after the source index is ready and
+does not have a public provider knob.
 
 ```yaml
 # ENABLED — a provider is named
@@ -205,15 +221,28 @@ chat_base_url: http://localhost:8080/v1
 @dataclass
 class Query:
     text: str
-    metadata: dict | None = None
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
 class Answer:
     text: str
-    mode: AnswerMode              # runtime: SUFFICIENT | DISPUTED | INSUFFICIENT
+    mode: AnswerMode | None       # runtime: SUFFICIENT | DISPUTED | INSUFFICIENT
     provenance: list[Provenance]  # source attribution chain
     metadata: dict
+
+
+@dataclass
+class RetrievalRun:
+    query: QueryExecution
+    evidence: EvidencePack
+    strategies: tuple[StrategyExecution, ...]
+    candidate_stages: tuple[CandidateStage, ...]
+    pyrrho: PyrrhoExecution
+    ranked_evidence: tuple[FrozenEvidence, ...]
+    pyrrho_evidence: tuple[FrozenEvidence, ...]
+    environment: RunEnvironment
+    schema_version: str
 ```
 
 There is no public `Chunk` type in the retrieval path — KRAG uses
@@ -225,13 +254,14 @@ metadata, not fixed-size text windows.
 ## Configuration Layout
 
 ```
-~/.fitz/
-├── config/
-│   └── fitz_krag.yaml       # engine config (role providers, retrieval knobs)
+.fitz/
+├── config.yaml              # engine config (role providers, retrieval knobs)
 ├── sqlite/                  # one .db per collection
 │   ├── fitz_default.db
 │   └── ...
-└── ingest_state.json        # incremental ingest manifest
+└── collections/
+    └── <collection>/
+        └── manifest.json    # index and enrichment state
 ```
 
 Minimal local config:
@@ -245,6 +275,10 @@ query_intelligence: null
 synthesizer: null
 chat_base_url: http://127.0.0.1:8080/v1
 ```
+
+The bare `governance: pyrrho` value uses Pyrrho's accepted immutable default.
+Local package directories and remote packages pinned to full commits are
+available for advanced deployments.
 
 Override per-invocation:
 
@@ -268,15 +302,15 @@ fitz_sage/
 │   ├── detection/       # deterministic modules + optional LLM parsing
 │   ├── entity_graph/    # Entity-based linking
 │   └── rewriter/        # optional query-intelligence rewrite types
-├── llm/                 # Managed ONNX enrichment + optional chat endpoints
+├── llm/                 # Managed ONNX query/background work + optional endpoints
 │   ├── providers/       # onnx_chat, endpoint, enterprise, onnx_reranker
 │   ├── auth/            # ApiKeyAuth, M2MAuth, CompositeAuth
 │   ├── config.py        # provider-spec → instance factory
 │   └── client.py        # get_chat, ...
 ├── storage/             # SqliteConnectionManager (WAL, FTS5)
-├── ingestion/           # parser/chunking plugins used by KRAG ingestion
-├── tabular/             # CSV/XLSX → SqliteTableStore + SQL generation
-├── governance/          # pyrrho classifier, answer modes, instructions
+├── ingestion/           # built-in parsers, source discovery, and hashing
+├── tabular/             # native table parsers and SqliteTableStore
+├── integrations/        # thin bridge from retrieval results to Pyrrho
 ├── runtime/             # multi-engine orchestration
 ├── cli/                 # typer commands
 ├── api/                 # FastAPI app + routes
@@ -288,26 +322,28 @@ fitz_sage/
 ## Design Principles
 
 1. **Explicit over clever.** No magic. Read the config; know what happens.
-2. **Managed enrichment.** Required metadata generation uses local Qwen ONNX;
-   optional chat calls go through `endpoint` or its presets.
+2. **Managed local models.** Query expansion uses local Qwen ONNX; background
+   Qwen work is optional, and endpoint chat roles remain explicit.
 3. **Structure-first retrieval.** Parse code/docs into typed units at
    ingest; route to the right strategy at query time.
 4. **No embeddings.** BM25 + KRAG routing + ONNX rerank is the retrieval
    backbone; there are no dense indexes or vector columns.
 5. **Honest over helpful.** Mark evidence insufficient instead of hallucinating.
-6. **Files over frameworks.** Plugins are Python modules wired by config,
-   not framework abstractions.
-7. **Local-first.** SQLite + ONNX enrichment works offline after the model is
-   cached; endpoint servers are optional.
-8. **Provenance always.** Every answer traces back to source addresses.
+6. **Narrow extension points.** Provider and parser implementations are wired
+   explicitly; source cleanup stays outside the package.
+7. **Local-first.** SQLite and managed ONNX query/background work run locally
+   after models are cached; explicitly selected endpoint and OCR servers remain
+   optional deployment dependencies.
+8. **KRAG provenance.** KRAG answers trace back to source addresses; custom
+   engine protocols remain engine-defined.
 
 ---
 
 ## See Also
 
 - [Unified Storage](features/platform/unified-storage.md) — SQLite + FTS5
-- [Retrieval Pipeline](RETRIEVAL_PIPELINE.md) — query flow, cutoff, and indexing states
-- [PLUGINS.md](PLUGINS.md) — plugin development guide
+- [Retrieval Pipeline](RETRIEVAL_PIPELINE.md) — query flow, progressive evidence delivery, and indexing states
+- [PLUGINS.md](PLUGINS.md) — supported extension points
 - [CONFIG.md](CONFIG.md) — configuration reference
 - [FEATURE_CONTROL.md](FEATURE_CONTROL.md) — feature-control architecture
 - [INGESTION.md](INGESTION.md) — ingestion pipeline

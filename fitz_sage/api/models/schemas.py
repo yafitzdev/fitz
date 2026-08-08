@@ -27,7 +27,10 @@ class QueryRequest(BaseModel):
     collection: str = Field("default", description="Collection to query")
     conversation_history: List["ChatMessage"] = Field(
         default_factory=list,
-        description="Optional conversation history for query rewriting (resolves pronouns like 'their' → 'TechCorp')",
+        description=(
+            "Optional history made available to configured query intelligence; "
+            "the deterministic default uses the current question."
+        ),
     )
 
 
@@ -50,7 +53,7 @@ class QueryResponse(BaseModel):
 class EvidenceItemResponse(BaseModel):
     """One ranked evidence item returned by retrieval-first endpoints."""
 
-    rank: int = Field(..., description="Rank within the selected evidence prefix")
+    rank: int = Field(..., description="Rank within the delivered evidence set")
     source_id: str = Field(..., description="Stable source identifier")
     file_path: str = Field(..., description="Source file path")
     address_kind: str = Field(..., description="Typed unit kind: section, symbol, table, or file")
@@ -58,7 +61,7 @@ class EvidenceItemResponse(BaseModel):
     line_range: Optional[List[int]] = Field(None, description="Line range when available")
     score: Optional[float] = Field(None, description="Retrieval or rerank score")
     excerpt: str = Field(..., description="Display excerpt")
-    content: str = Field(..., description="Fuller content passed to governance")
+    content: str = Field(..., description="Full evidence content passed to Pyrrho")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Item metadata")
 
 
@@ -117,14 +120,41 @@ class IngestRequest(BaseModel):
 
 
 class IndexingStatus(BaseModel):
-    """Background-indexing progress for a collection."""
+    """Source-index health and independent enrichment progress."""
 
-    total: int = Field(..., description="Total files registered")
-    indexed: int = Field(..., description="Files indexed (enriched or summarized)")
-    pending: int = Field(..., description="Files still pending (registered or parsed)")
-    complete: bool = Field(..., description="True when no files remain pending")
-    by_state: Dict[str, int] = Field(
-        default_factory=dict, description="File counts per indexing state"
+    discovered: int = Field(0, description="All files discovered under the source")
+    total: int = Field(..., description="Supported files, including failed files")
+    indexed: int = Field(..., description="Supported files stored in the searchable index")
+    pending: int = Field(..., description="Supported files not yet stored in the index")
+    failed: int = Field(0, description="Supported files that failed indexing")
+    failed_files: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Per-file indexing failures with stage and error",
+    )
+    unsupported: int = Field(0, description="Files outside the enabled format contract")
+    unsupported_files: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Unsupported file paths and extensions",
+    )
+    healthy: bool = Field(True, description="True when no supported file failed")
+    complete: bool = Field(
+        ...,
+        description="True when every supported file indexed successfully",
+    )
+    query_ready: bool = Field(
+        False,
+        description="True when no supported file remains pending",
+    )
+    by_index_state: Dict[str, int] = Field(
+        default_factory=dict, description="File counts per source-index state"
+    )
+    enrichment: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Independent model-backed enrichment progress",
+    )
+    by_enrichment_state: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Indexed file counts per enrichment state",
     )
 
 
@@ -132,14 +162,14 @@ class CollectionInfo(BaseModel):
     """Basic information about a collection."""
 
     name: str = Field(..., description="Collection name")
-    item_count: int = Field(..., description="Number of items in the collection")
+    item_count: int = Field(..., description="Number of persisted document-section rows")
 
 
 class CollectionStats(BaseModel):
     """Detailed statistics for a collection."""
 
     name: str = Field(..., description="Collection name")
-    item_count: int = Field(..., description="Number of items")
+    item_count: int = Field(..., description="Number of persisted document-section rows")
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional collection metadata"
     )

@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import PurePath
 from typing import Any
 
 from fitz_sage.engines.fitz_krag.evidence_compiler import EvidenceCompilation
-from fitz_sage.engines.fitz_krag.evidence_contract import QueryContract, build_query_contract
-from fitz_sage.engines.fitz_krag.types import AddressKind, ReadResult
+from fitz_sage.engines.fitz_krag.evidence_contract import (
+    QueryContract,
+    build_query_contract,
+    contains_exact_identifier,
+)
+from fitz_sage.engines.fitz_krag.types import ReadResult
 
 _BRIDGE_IDENTIFIER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_])_?[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+"
@@ -27,14 +30,25 @@ _UUID_PATTERN = re.compile(
     r"\b[0-9a-f]{4,}(?:-[0-9a-f]{4,})+\b|" r"\b[0-9a-f]{8,}\b",
     re.IGNORECASE,
 )
-_SOURCE_PHRASE_PATTERN = re.compile(
-    r"\b([A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z][A-Za-z0-9-]*){0,3}\s+"
+_SOURCE_REFERENCE_PATTERN = re.compile(
+    r"\b(?:according\s+to|follow|following|follows|from|see|use|using)\s+(?:the\s+)?"
+    r"([A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z][A-Za-z0-9-]*){0,3}\s+"
     r"(?:addendum|brief|contract|document|guide|matrix|notes?|playbook|policy|postmortem|"
     r"readme|report|rules?|sla|table))\b",
     re.IGNORECASE,
 )
 _SOURCE_FILE_TOKEN_PATTERN = re.compile(
     r"\b[A-Za-z0-9_.-]+\.(?:py|js|ts|tsx|jsx|java|go|rs|rb|php|cs|cpp|c|h|hpp|md|csv|json|yaml|yml|toml)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_DEFINITION_PATTERN = re.compile(
+    r"\b(?P<label>[A-Z][A-Z0-9_-]{1,11})\s+"
+    r"(?:means|stands\s+for|refers\s+to|is\s+short\s+for)\s+"
+    r"(?P<definition>[^\n.;:!?]{3,120})"
+)
+_DEFINITION_CONTEXT_TAIL = re.compile(
+    r"\s+(?:according\s+to|for\s+(?:this|the)|in\s+(?:this|the)|"
+    r"throughout\s+(?:this|the)|within\s+(?:this|the))\b.*$",
     re.IGNORECASE,
 )
 _TABLE_HINTS = {
@@ -127,6 +141,11 @@ def plan_evidence_closure(
     """Plan bounded follow-up searches for unresolved Pyrrho obligations."""
     contract = build_query_contract(query, profile)
     existing_roles = _existing_compiler_roles(compilation.results)
+    definition_bridges = _definition_bridge_phrases(
+        query,
+        current_results,
+        compilation.results,
+    )
     bridge_terms = _bridge_terms(query, current_results, compilation.results, contract)
     existing_modalities = _existing_modalities(compilation.results or current_results)
 
@@ -173,17 +192,16 @@ def plan_evidence_closure(
             primary_terms=[modality],
         )
 
-    if "table" in contract.required_modalities:
-        for identifier in _structured_bridge_identifiers(bridge_terms):
-            role = f"bridge:{identifier}"
-            if role in existing_roles:
-                continue
-            add(
-                modality="table",
-                role=role,
-                reason="bridge_identifier",
-                primary_terms=[identifier],
-            )
+    for definition in definition_bridges:
+        role = f"bridge_definition:{_normalize(definition)}"
+        if role in existing_roles:
+            continue
+        add(
+            modality="section",
+            role=role,
+            reason="bridge_definition",
+            primary_terms=[definition],
+        )
 
     if "section" in contract.required_modalities:
         for document in _document_bridge_terms(bridge_terms):
@@ -197,6 +215,25 @@ def plan_evidence_closure(
                 primary_terms=[document],
             )
 
+    if "table" in contract.required_modalities:
+        query_identifiers = {value.lower() for value in contract.identifiers}
+        for identifier in _structured_bridge_identifiers(bridge_terms):
+            if identifier.lower() in query_identifiers:
+                continue
+            role = f"bridge:{identifier}"
+            if role in existing_roles:
+                continue
+            add(
+                modality="table",
+                role=role,
+                reason="bridge_identifier",
+                primary_terms=_bridge_identifier_primary_terms(
+                    identifier,
+                    query,
+                    compilation.results,
+                ),
+            )
+
     metadata = {
         "contract": {
             "query_contract": contract.query_contract,
@@ -204,13 +241,13 @@ def plan_evidence_closure(
             "retrieval_modality": contract.retrieval_modality,
             "retrieval_obligation": contract.retrieval_obligation,
             "identifiers": list(contract.identifiers),
-            "source_anchors": list(contract.source_anchors),
             "required_modalities": list(contract.required_modalities),
             "temporal_policy": contract.temporal_policy,
         },
         "existing_roles": sorted(existing_roles),
         "existing_modalities": sorted(existing_modalities),
         "bridge_terms": bridge_terms,
+        "definition_bridges": definition_bridges,
         "request_count": len(requests),
         "requests": [request_metadata(request) for request in requests],
     }
@@ -234,8 +271,6 @@ def annotate_closure_result(
         "query": request.query,
         "bridges": list(request.bridges),
         "contract_identifiers": list(contract.identifiers),
-        "contract_phrase_anchors": list(contract.phrase_anchors),
-        "contract_source_anchors": list(contract.source_anchors),
     }
     return ReadResult(
         address=result.address,
@@ -270,14 +305,7 @@ def _existing_compiler_roles(results: list[ReadResult]) -> set[str]:
 
 
 def _existing_modalities(results: list[ReadResult]) -> set[str]:
-    modalities: set[str] = set()
-    for result in results:
-        kind = getattr(getattr(result, "address", None), "kind", None)
-        if isinstance(kind, AddressKind):
-            modalities.add(kind.value)
-        elif kind is not None:
-            modalities.add(str(kind))
-    return modalities
+    return {result.address.kind.value for result in results}
 
 
 def _bridge_terms(
@@ -306,27 +334,33 @@ def _bridge_terms(
 
     for value in contract.identifiers:
         add(value)
-    for value in contract.phrase_anchors:
-        add(value)
     for value in _specific_query_terms(contract):
         add(value)
 
-    evidence = list(compiled_results or [])
-    for result in current_results:
-        if result not in evidence:
-            evidence.append(result)
+    evidence = _bridge_seed_results(query, current_results, compiled_results)
+
+    for value in _definition_bridge_phrases(query, current_results, compiled_results):
+        add(value)
 
     for result in evidence[:10]:
+        if _result_kind(result) == "table":
+            continue
         text = _result_text(result)
         for match in _BRIDGE_IDENTIFIER_PATTERN.finditer(text):
-            add(match.group(0))
+            identifier = match.group(0)
+            if _bridge_identifier_is_query_grounded(
+                text,
+                identifier,
+                contract.identifiers,
+            ):
+                add(identifier)
         for match in _ACRONYM_PATTERN.finditer(text):
             add(match.group(0))
         for match in _BACKTICK_PATTERN.finditer(text):
             add(match.group(1))
         for match in _SNAKE_TOKEN_PATTERN.finditer(text):
             add(match.group(0))
-        for match in _SOURCE_PHRASE_PATTERN.finditer(text):
+        for match in _SOURCE_REFERENCE_PATTERN.finditer(text):
             add(match.group(1))
         for match in _SOURCE_FILE_TOKEN_PATTERN.finditer(text):
             add(match.group(0))
@@ -334,12 +368,143 @@ def _bridge_terms(
             if re.search(rf"\b{re.escape(hint)}\b", _normalize(text)):
                 add(hint)
 
-        path_name = PurePath(str(result.file_path).replace("\\", "/")).name
-        if path_name:
-            add(path_name)
-            add(PurePath(path_name).stem.replace("_", " "))
+    for result in _reference_seed_results(compiled_results)[:10]:
+        text = _result_text(result)
+        for match in _SOURCE_REFERENCE_PATTERN.finditer(text):
+            add(match.group(1))
+        for match in _SOURCE_FILE_TOKEN_PATTERN.finditer(text):
+            add(match.group(0))
 
     return terms[:32]
+
+
+def _bridge_identifier_is_query_grounded(
+    text: str,
+    identifier: str,
+    query_identifiers: tuple[str, ...],
+) -> bool:
+    """Keep new identifiers only when a source states their link to the query ID."""
+    if not query_identifiers:
+        return True
+    if any(identifier.casefold() == value.casefold() for value in query_identifiers):
+        return True
+    spans = re.split(r"(?<=[.!?])\s+|\n+", text)
+    return any(
+        contains_exact_identifier(span, identifier)
+        and any(
+            contains_exact_identifier(span, query_identifier)
+            for query_identifier in query_identifiers
+        )
+        for span in spans
+    )
+
+
+def _bridge_seed_results(
+    query: str,
+    current_results: list[ReadResult],
+    compiled_results: list[ReadResult],
+) -> list[ReadResult]:
+    """Return only evidence selected for a real contract obligation."""
+    evidence = [result for result in compiled_results if _result_has_bridge_seed_role(result)]
+    for result in _query_referenced_results(query, compiled_results):
+        if result not in evidence:
+            evidence.append(result)
+    if not evidence and not compiled_results:
+        return list(current_results)
+    return evidence
+
+
+def _query_referenced_results(
+    query: str,
+    compiled_results: list[ReadResult],
+) -> list[ReadResult]:
+    """Return evidence whose source is explicitly named by the query."""
+    references = {
+        _normalize_document_bridge(match.group(1))
+        for match in _SOURCE_REFERENCE_PATTERN.finditer(query)
+    }
+    if not references:
+        return []
+
+    matches: list[ReadResult] = []
+    for result in compiled_results:
+        labels = {
+            _normalize_document_bridge(str(result.address.location)),
+            _normalize_document_bridge(str(result.address.metadata.get("document_title") or "")),
+        }
+        if references & labels:
+            matches.append(result)
+    return matches
+
+
+def _reference_seed_results(compiled_results: list[ReadResult]) -> list[ReadResult]:
+    """Return evidence allowed to contribute explicit source references only."""
+    return [
+        result for result in compiled_results if _result_has_compiler_role(result, ("required_",))
+    ]
+
+
+def _definition_bridge_phrases(
+    query: str,
+    current_results: list[ReadResult],
+    compiled_results: list[ReadResult],
+) -> list[str]:
+    """Extract corpus-stated expansions for labels that occur in the query."""
+    phrases: list[str] = []
+    seen: set[str] = set()
+    for result in _bridge_seed_results(query, current_results, compiled_results)[:10]:
+        if _result_kind(result) == "table":
+            continue
+        for match in _EXPLICIT_DEFINITION_PATTERN.finditer(_result_text(result)):
+            label = match.group("label")
+            if not re.search(
+                rf"(?<![A-Za-z0-9_]){re.escape(label)}(?![A-Za-z0-9_])",
+                query,
+                re.IGNORECASE,
+            ):
+                continue
+            phrase = _DEFINITION_CONTEXT_TAIL.sub(
+                "",
+                match.group("definition").strip().strip("\"'()[]{}"),
+            ).strip()
+            normalized = _normalize(phrase)
+            word_count = len(normalized.split())
+            if (
+                word_count < 2
+                or word_count > 10
+                or normalized in seen
+                or normalized in _normalize(query)
+            ):
+                continue
+            seen.add(normalized)
+            phrases.append(phrase)
+    return phrases[:8]
+
+
+def _result_kind(result: ReadResult) -> str:
+    return result.address.kind.value
+
+
+def _result_has_bridge_seed_role(result: ReadResult) -> bool:
+    """Return whether compilation selected this result for a real obligation."""
+    return _result_has_compiler_role(
+        result,
+        (
+            "anchor_identifier:",
+            "anchor_keyword:",
+        ),
+    )
+
+
+def _result_has_compiler_role(result: ReadResult, prefixes: tuple[str, ...]) -> bool:
+    """Return whether evidence compilation assigned one of the given roles."""
+    compiler = result.metadata.get("evidence_compiler")
+    if not isinstance(compiler, dict):
+        return False
+    roles = compiler.get("roles")
+    if not isinstance(roles, list):
+        return False
+    return any(str(role).startswith(prefixes) for role in roles)
 
 
 def _specific_query_terms(contract: QueryContract) -> list[str]:
@@ -375,15 +540,17 @@ def _table_request_query(
     add = _term_adder(terms)
     for value in primary_terms:
         add(value)
-    for value in contract.identifiers:
-        add(value)
-    for value in _identifier_terms(bridge_terms):
-        add(value)
-    for value in _hint_terms(bridge_terms, _TABLE_HINTS):
-        add(value)
-    for value in _source_file_terms(bridge_terms):
-        if any(hint.replace(" ", "_") in _normalize(value) for hint in _TABLE_HINTS):
+    primary_identifiers = _identifier_terms(primary_terms)
+    if not primary_identifiers:
+        for value in contract.identifiers:
             add(value)
+        for value in _identifier_terms(bridge_terms):
+            add(value)
+        for value in _hint_terms(bridge_terms, _TABLE_HINTS):
+            add(value)
+        for value in _source_file_terms(bridge_terms):
+            if any(hint.replace(" ", "_") in _normalize(value) for hint in _TABLE_HINTS):
+                add(value)
     return " ".join(terms[:12])[:500]
 
 
@@ -413,6 +580,12 @@ def _section_request_query(
 ) -> str:
     terms: list[str] = []
     add = _term_adder(terms)
+    document_primary = _document_bridge_terms(primary_terms)
+    if document_primary:
+        for value in document_primary:
+            add(value)
+        return " ".join(terms[:8])[:500]
+
     for value in primary_terms:
         add(value)
     for value in contract.keyword_anchors:
@@ -500,6 +673,53 @@ def _structured_bridge_identifiers(terms: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
 
+def _bridge_identifier_primary_terms(
+    identifier: str,
+    query: str,
+    compiled_results: list[ReadResult],
+) -> list[str]:
+    """Pair a discovered identifier with its local corpus and query descriptors."""
+    terms = [identifier]
+    seen = {_normalize(identifier)}
+    escaped = re.escape(identifier)
+    descriptor_pattern = re.compile(
+        rf"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_-]{{2,}})\s+" rf"{escaped}(?![A-Za-z0-9_])",
+        re.IGNORECASE,
+    )
+    for result in compiled_results:
+        if _result_kind(result) == "table":
+            continue
+        for match in descriptor_pattern.finditer(_result_text(result)):
+            descriptor = match.group(1)
+            normalized = _normalize(descriptor)
+            if normalized in seen or normalized in _QUERY_TERM_STOPWORDS:
+                continue
+            seen.add(normalized)
+            terms.append(descriptor)
+            companion = _query_descriptor_companion(query, descriptor)
+            companion_key = _normalize(companion)
+            if companion and companion_key not in seen:
+                seen.add(companion_key)
+                terms.append(companion)
+            if len(terms) >= 4:
+                return terms
+    return terms
+
+
+def _query_descriptor_companion(query: str, descriptor: str) -> str:
+    """Return the adjacent query term that qualifies a bridge descriptor."""
+    tokens: list[str] = re.findall(r"[A-Za-z][A-Za-z0-9_-]*", query)
+    expected = _normalize(descriptor)
+    for index, token in enumerate(tokens[:-1]):
+        if _normalize(token) != expected:
+            continue
+        companion = tokens[index + 1]
+        normalized = _normalize(companion)
+        if normalized not in _QUERY_TERM_STOPWORDS:
+            return companion
+    return ""
+
+
 def _document_bridge_terms(terms: list[str]) -> list[str]:
     values: list[str] = []
     for term in terms:
@@ -513,7 +733,11 @@ def _document_bridge_terms(terms: list[str]) -> list[str]:
             continue
         if normalized in {"deterministic table", "query grounded row filter"}:
             continue
-        values.append(normalized)
+        document_end = next(
+            (index for index, word in enumerate(words) if word in _DOCUMENT_HINTS),
+            len(words) - 1,
+        )
+        values.append(" ".join(words[: document_end + 1]))
     return list(dict.fromkeys(values))
 
 
@@ -526,34 +750,8 @@ def _normalize_document_bridge(term: str) -> str:
 
 
 def _result_text(result: ReadResult) -> str:
-    metadata_values: list[str] = []
-    metadata_values.extend(_flatten_metadata(result.metadata))
-    metadata_values.extend(_flatten_metadata(getattr(result.address, "metadata", {}) or {}))
-    return "\n".join(
-        [
-            str(result.content),
-            str(result.file_path),
-            str(result.address.location),
-            str(result.address.summary),
-            *metadata_values,
-        ]
-    )
-
-
-def _flatten_metadata(value: Any) -> list[str]:
-    if isinstance(value, dict):
-        flattened: list[str] = []
-        for item in value.values():
-            flattened.extend(_flatten_metadata(item))
-        return flattened
-    if isinstance(value, (list, tuple, set)):
-        flattened = []
-        for item in value:
-            flattened.extend(_flatten_metadata(item))
-        return flattened
-    if value is None:
-        return []
-    return [str(value)]
+    """Return only evidence-bearing source text for bridge discovery."""
+    return str(result.content)
 
 
 def _normalize(value: str) -> str:

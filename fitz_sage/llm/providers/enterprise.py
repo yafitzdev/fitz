@@ -70,7 +70,7 @@ class EnterpriseChat:
 
         # OpenAI-compatible response format
         if "choices" in data and data["choices"]:
-            return data["choices"][0].get("message", {}).get("content", "")
+            return str(data["choices"][0].get("message", {}).get("content", ""))
         return ""
 
 

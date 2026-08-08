@@ -26,7 +26,7 @@ def display_answer(answer, show_sources: bool = True) -> None:
     """
     Display an answer with optional sources.
 
-    Used by `fitz query` for consistent output.
+    Used by `fitz retrieve` for consistent output.
     Supports both core Answer (.text, .provenance) and RGSAnswer (.answer, .sources).
 
     Args:
@@ -36,7 +36,7 @@ def display_answer(answer, show_sources: bool = True) -> None:
     print()
 
     # Support both Answer.text and RGSAnswer.answer
-    answer_text = getattr(answer, "text", None) or getattr(answer, "answer", "")
+    answer_text = str(getattr(answer, "text", None) or getattr(answer, "answer", ""))
 
     # Support both Answer.provenance and RGSAnswer.sources
     sources = getattr(answer, "provenance", None) or getattr(answer, "sources", [])
@@ -62,8 +62,9 @@ def display_answer(answer, show_sources: bool = True) -> None:
 
             for i, source in enumerate(sources[:5], 1):
                 metadata = getattr(source, "metadata", {})
-                content = getattr(source, "excerpt", None) or getattr(
-                    source, "content", getattr(source, "text", "")
+                content = str(
+                    getattr(source, "excerpt", None)
+                    or getattr(source, "content", getattr(source, "text", ""))
                 )
 
                 # Resolve display name: file_path > disk_path > source_id
@@ -123,18 +124,18 @@ def display_answer(answer, show_sources: bool = True) -> None:
                 print(f"  [{i}] {display_name}{loc}")
 
 
-def display_sources(chunks, max_sources: int = 5, indent: int = 0) -> None:
+def display_sources(sources, max_sources: int = 5, indent: int = 0) -> None:
     """
-    Display source chunks in a table.
+    Display answer provenance in a table.
 
-    Used by `fitz query` and `fitz chat` for consistent output.
+    Used by `fitz answer` for consistent output.
 
     Args:
-        chunks: List of Chunk objects with content and metadata
+        sources: Source objects with content or excerpt plus metadata
         max_sources: Maximum number of sources to display
         indent: Left padding/indent in spaces
     """
-    if not chunks:
+    if not sources:
         return
 
     print()
@@ -145,15 +146,14 @@ def display_sources(chunks, max_sources: int = 5, indent: int = 0) -> None:
         table = Table(title="Sources")
         table.add_column("#", style="dim", width=3)
         table.add_column("Document", style="cyan", max_width=40)
-        table.add_column("Chunk", style="dim", justify="center", width=5)
         table.add_column("Rerank", style="green", justify="right", width=7)
         table.add_column("Excerpt", style="dim", max_width=45)
 
-        for i, chunk in enumerate(chunks[:max_sources], 1):
-            # Get doc_id from chunk
-            doc_id = getattr(chunk, "doc_id", None)
+        for i, source in enumerate(sources[:max_sources], 1):
+            doc_id = getattr(source, "source_id", None) or getattr(source, "doc_id", None)
             if not doc_id:
-                doc_id = getattr(chunk, "metadata", {}).get("source_file", "?")
+                metadata = getattr(source, "metadata", {})
+                doc_id = metadata.get("file_path") or metadata.get("source_file", "?")
 
             # Get filename only (not full path)
             filename = os.path.basename(doc_id) if doc_id else "?"
@@ -163,23 +163,21 @@ def display_sources(chunks, max_sources: int = 5, indent: int = 0) -> None:
                 filename = filename[:35] + "..."
 
             # Get metadata
-            metadata = getattr(chunk, "metadata", {})
-
-            # Get chunk index
-            chunk_idx = metadata.get("chunk_index", "-")
-            chunk_str = str(chunk_idx) if chunk_idx != "-" else "-"
+            metadata = getattr(source, "metadata", {})
 
             # Get score
             rerank_score = metadata.get("rerank_score")
             rerank_str = f"{rerank_score:.3f}" if rerank_score is not None else "-"
 
             # Excerpt
-            content = getattr(chunk, "content", str(chunk))
+            content = str(
+                getattr(source, "excerpt", None) or getattr(source, "content", str(source))
+            )
             excerpt = content[:70] + "..." if len(content) > 70 else content
             excerpt = excerpt.replace("\n", " ").replace("\r", " ")
             excerpt = _sanitize_for_display(excerpt)
 
-            table.add_row(str(i), filename, chunk_str, rerank_str, excerpt)
+            table.add_row(str(i), filename, rerank_str, excerpt)
 
         if indent > 0:
             console.print(Padding(table, (0, 0, 0, indent)))
@@ -187,17 +185,13 @@ def display_sources(chunks, max_sources: int = 5, indent: int = 0) -> None:
             console.print(table)
     else:
         print("Sources:")
-        for i, chunk in enumerate(chunks[:max_sources], 1):
-            doc_id = getattr(chunk, "doc_id", None)
+        for i, source in enumerate(sources[:max_sources], 1):
+            doc_id = getattr(source, "source_id", None) or getattr(source, "doc_id", None)
             if not doc_id:
-                doc_id = getattr(chunk, "metadata", {}).get("source_file", "?")
+                metadata = getattr(source, "metadata", {})
+                doc_id = metadata.get("file_path") or metadata.get("source_file", "?")
             filename = os.path.basename(doc_id) if doc_id else "?"
-
-            metadata = getattr(chunk, "metadata", {})
-            chunk_idx = metadata.get("chunk_index", "")
-            chunk_str = f" [chunk {chunk_idx}]" if chunk_idx != "" else ""
-
-            print(f"  [{i}] {filename}{chunk_str}")
+            print(f"  [{i}] {filename}")
 
 
 def display_evidence_pack(pack, max_items: int = 10) -> None:
@@ -210,7 +204,7 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
     items = getattr(pack, "items", []) or []
     indexing_status = getattr(pack, "indexing_status", {}) or {}
     metadata = getattr(pack, "metadata", {}) or {}
-    governance_lines = _format_governance_metadata(metadata, reasons)
+    governance_lines = _format_pyrrho_metadata(metadata, reasons)
 
     if RICH:
         table = Table(title=_evidence_title(mode_text, metadata))
@@ -247,8 +241,9 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
             print(f"[{item.rank}] {_short_path(item.file_path)} {location} score={score}")
             print(f"    {_compact_evidence_excerpt(item.excerpt)}")
 
+    enrichment = indexing_status.get("enrichment", {}) if indexing_status else {}
     if indexing_status and (
-        not indexing_status.get("complete", True) or not indexing_status.get("fully_enriched", True)
+        not indexing_status.get("complete", True) or not enrichment.get("complete", True)
     ):
         status_line = _format_indexing_status(indexing_status)
         if RICH:
@@ -258,28 +253,52 @@ def display_evidence_pack(pack, max_items: int = 10) -> None:
 
 
 def _format_indexing_status(indexing_status: dict) -> str:
-    """Return a user-facing status line for query-ready vs deep enrichment work."""
+    """Return a user-facing source-index or enrichment status line."""
     total = indexing_status.get("total", "?")
-    by_state = indexing_status.get("by_state", {}) or {}
-    if by_state and not by_state.get("registered", 0):
-        if not indexing_status.get("complete", True):
-            pending = indexing_status.get("pending", "?")
-            return f"Enrichment pending: {pending}/{total}"
-        if not indexing_status.get("fully_enriched", True):
-            pending = indexing_status.get("deep_pending", "?")
-            return _pending_status_line("Deep enrichment pending", pending, total, indexing_status)
+    failed = int(indexing_status.get("failed", 0) or 0)
+    if failed:
+        files = indexing_status.get("failed_files", [])
+        first_path = ""
+        first_stage = ""
+        if isinstance(files, list) and files and isinstance(files[0], dict):
+            first_path = str(files[0].get("path") or "")
+            first_stage = str(files[0].get("stage") or "")
+        detail = f" ({first_path}, {first_stage})" if first_path else ""
+        return f"Indexing failures: {failed}/{total}{detail}"
 
-    if indexing_status.get("query_ready") and not indexing_status.get("fully_enriched", True):
-        pending = indexing_status.get("deep_pending", "?")
-        return _pending_status_line("Deep enrichment pending", pending, total, indexing_status)
+    if not indexing_status.get("query_ready", False):
+        return f"Indexing pending: {indexing_status.get('pending', '?')}/{total}"
 
-    pending = indexing_status.get("pending", "?")
-    return f"Indexing pending: {pending}/{total}"
+    enrichment = indexing_status.get("enrichment", {}) or {}
+    enrichment_failed = int(enrichment.get("failed", 0) or 0)
+    if enrichment_failed:
+        return _pending_status_line(
+            "Enrichment failures",
+            enrichment_failed,
+            total,
+            enrichment.get("failed_files", []),
+        )
+    finalization = enrichment.get("finalization")
+    if finalization == "failed":
+        return "Collection hierarchy enrichment failed"
+    pending = enrichment.get("pending", 0)
+    if pending or finalization == "pending":
+        return _pending_status_line(
+            "Enrichment pending",
+            pending,
+            total,
+            enrichment.get("pending_files", []),
+        )
+    return "Source index ready"
 
 
-def _pending_status_line(label: str, pending: object, total: object, indexing_status: dict) -> str:
-    """Return a status line with the first deep-pending path when available."""
-    files = indexing_status.get("deep_pending_files", [])
+def _pending_status_line(
+    label: str,
+    pending: object,
+    total: object,
+    files: object,
+) -> str:
+    """Return a status line with the first affected path when available."""
     if not isinstance(files, list) or not files:
         return f"{label}: {pending}/{total}"
     first = files[0]
@@ -298,62 +317,45 @@ def _evidence_title(mode_text: str, metadata: dict) -> str:
     return "Evidence"
 
 
-def _format_governance_metadata(metadata: dict, reasons: list[str]) -> list[str]:
-    """Format Pyrrho and cutoff metadata as compact display lines."""
-    cutoff = metadata.get("governance_cutoff", {}) if isinstance(metadata, dict) else {}
-    if not isinstance(cutoff, dict):
-        cutoff = {}
-
+def _format_pyrrho_metadata(metadata: dict, reasons: list[str]) -> list[str]:
+    """Format Pyrrho's exact decision and evidence-delivery facts."""
     lines: list[str] = []
     shown_reasons: set[str] = set()
     query_profile_line = _format_query_profile(metadata)
     if query_profile_line:
         lines.append(query_profile_line)
-    if _is_broad_overview(metadata):
-        selected = cutoff.get("selected", "?")
-        max_items = cutoff.get("max", "?")
-        lines.append(
-            f"Broad overview: selected {selected} representative source(s) from top {max_items}; "
-            "evidence sufficiency was not evaluated."
-        )
-        return _append_unique_reasons(lines, reasons)
 
-    pyrrho = _pyrrho_metadata(metadata)
+    pyrrho = metadata.get("pyrrho", {}) if isinstance(metadata, dict) else {}
+    if not isinstance(pyrrho, dict):
+        pyrrho = {}
     probs = pyrrho.get("probabilities", {}) if pyrrho else {}
     if isinstance(probs, dict) and probs:
-        verdict = _format_verdict(pyrrho.get("mode"))
+        verdict = _format_verdict(pyrrho.get("verdict"))
         lines.append(
             f"Pyrrho: {verdict}  "
-            f"P(SUFFICIENT)={_fmt_prob(probs.get('sufficient'))}  "
-            f"P(INSUFFICIENT)={_fmt_prob(probs.get('insufficient'))}  "
-            f"P(DISPUTED)={_fmt_prob(probs.get('disputed'))}"
+            f"P(SUFFICIENT)={_fmt_prob(probs.get('SUFFICIENT'))}  "
+            f"P(INSUFFICIENT)={_fmt_prob(probs.get('INSUFFICIENT'))}  "
+            f"P(DISPUTED)={_fmt_prob(probs.get('DISPUTED'))}"
         )
-    elif pyrrho and pyrrho.get("mode") and not pyrrho.get("reason"):
-        lines.append(f"Pyrrho: {_format_verdict(pyrrho.get('mode'))}")
+    elif pyrrho and pyrrho.get("verdict") and not pyrrho.get("reason"):
+        lines.append(f"Pyrrho: {_format_verdict(pyrrho.get('verdict'))}")
 
     head_line = _format_pyrrho_heads(pyrrho)
     if head_line:
         lines.append(head_line)
 
-    policy = cutoff.get("policy", {}) if isinstance(cutoff.get("policy", {}), dict) else {}
-    has_cutoff_values = any(key in cutoff for key in ("selected", "evaluated", "max")) or bool(
-        policy
-    )
-    if has_cutoff_values:
-        parts = [
-            f"selected {cutoff.get('selected', '?')}",
-            f"evaluated {cutoff.get('evaluated', '?')}/{cutoff.get('max', '?')}",
-        ]
-        if policy:
-            parts.extend(
-                [
-                    f"policy {policy.get('query_shape', '?')}",
-                    f"min sufficient {policy.get('min_sufficient_docs', '?')}",
-                    f"min disputed {policy.get('min_disputed_docs', '?')}",
-                    f"dispute patience {policy.get('disputed_patience_docs', '?')}",
-                ]
-            )
-        lines.append("Cutoff: " + "; ".join(parts))
+    delivery = metadata.get("evidence_delivery", {}) if isinstance(metadata, dict) else {}
+    if isinstance(delivery, dict) and delivery:
+        details = [f"limit {delivery.get('limit', '?')}"]
+        evaluated = delivery.get("evaluated_prefixes")
+        if isinstance(evaluated, list) and evaluated:
+            details.append("prefixes " + " -> ".join(str(count) for count in evaluated))
+        lines.append(
+            "Evidence delivery: "
+            f"selected {delivery.get('selected', '?')}/"
+            f"{delivery.get('available', '?')} "
+            f"({'; '.join(details)})"
+        )
 
     reason = pyrrho.get("reason") if pyrrho else None
     if isinstance(reason, str) and reason:
@@ -414,28 +416,10 @@ def _append_unique_reasons(
     return lines
 
 
-def _is_broad_overview(metadata: dict) -> bool:
-    """Return whether metadata represents a deterministic broad-overview result."""
-    cutoff = metadata.get("governance_cutoff", {}) if isinstance(metadata, dict) else {}
-    if not isinstance(cutoff, dict):
-        return False
-    policy = cutoff.get("policy", {}) if isinstance(cutoff.get("policy", {}), dict) else {}
-    return (
-        bool(cutoff.get("representative_sources")) or policy.get("query_shape") == "broad_overview"
-    )
-
-
-def _pyrrho_metadata(metadata: dict) -> dict:
-    """Return nested Pyrrho metadata from an evidence pack metadata dict."""
-    cutoff = metadata.get("governance_cutoff", {}) if isinstance(metadata, dict) else {}
-    if not isinstance(cutoff, dict):
-        return {}
-    pyrrho = cutoff.get("pyrrho", {})
-    return pyrrho if isinstance(pyrrho, dict) else {}
-
-
 def _fmt_prob(value: object) -> str:
     """Format a probability-like value."""
+    if not isinstance(value, (int, float, str)):
+        return "?"
     try:
         return f"{float(value):.2f}"
     except (TypeError, ValueError):
@@ -447,16 +431,20 @@ def _format_pyrrho_heads(pyrrho: dict) -> str:
     if not pyrrho:
         return ""
     parts: list[str] = []
+    heads = pyrrho.get("heads")
+    if not isinstance(heads, dict):
+        return ""
     for key, label in (
         ("evidence_verdict", "verdict"),
         ("failure_mode", "failure"),
         ("retrieval_intents", "intents"),
         ("evidence_kinds", "evidence"),
     ):
-        head = pyrrho.get(key)
+        head = heads.get(key)
         if not isinstance(head, dict):
             continue
         final_labels = head.get("final_labels")
+        final_label: object
         if isinstance(final_labels, list) and final_labels:
             final_label = ", ".join(str(item) for item in final_labels if item)
         else:

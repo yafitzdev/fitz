@@ -23,7 +23,6 @@ _KIND_TO_STRATEGY: dict[AddressKind, str] = {
     AddressKind.SYMBOL: "code",
     AddressKind.FILE: "code",
     AddressKind.SECTION: "section",
-    AddressKind.CHUNK: "chunk",
     AddressKind.TABLE: "table",
 }
 
@@ -67,7 +66,7 @@ class CrossStrategyRanker:
 
         # Strategy weight multiplier
         if weights:
-            strategy = _KIND_TO_STRATEGY.get(addr.kind, "chunk")
+            strategy = _KIND_TO_STRATEGY[addr.kind]
             weight = weights.get(strategy, 0.1)
             weighted_score = base_score * weight
         else:

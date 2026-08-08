@@ -9,7 +9,7 @@ By centralizing business logic here, we:
 3. Ensure consistent behavior everywhere
 
 Design Principles:
-- Stateless: No instance state, all state passed as parameters
+- Collection-scoped: Engine instances are cached by engine and collection
 - Synchronous: Async wrappers added by callers (API)
 - Config-driven: FitzConfig passed to operations that need it
 - Exception-based: Raises domain exceptions, interfaces translate
@@ -19,11 +19,11 @@ Usage:
 
     service = FitzService()
 
-    # Point at docs (progressive querying)
+    # Point at docs (searchable when this returns)
     manifest = service.point("/path/to/docs", collection="docs")
 
-    # Query
-    answer = service.query("What is RAG?", collection="docs")
+    # Optional answer synthesis
+    answer = service.answer("What is RAG?", collection="docs")
 
     # Collections
     collections = service.list_collections()
@@ -31,14 +31,19 @@ Usage:
 
 from __future__ import annotations
 
+import shutil
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from threading import Condition, RLock
+from typing import TYPE_CHECKING, Any, Iterator, cast
 
-from fitz_sage.core import Answer, EvidencePack
+from fitz_sage.core import Answer, EvidencePack, RetrievalRun
+from fitz_sage.core.collections import validate_collection_name
 from fitz_sage.logging.logger import get_logger
 
 if TYPE_CHECKING:
+    from fitz_sage.core.engine import RetrievalEngine
     from fitz_sage.retrieval.rewriter.types import ConversationContext
 
 logger = get_logger(__name__)
@@ -54,7 +59,7 @@ class CollectionInfo:
     """Information about a collection."""
 
     name: str
-    chunk_count: int
+    item_count: int
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -107,6 +112,61 @@ class QueryError(FitzServiceError):
     pass
 
 
+@dataclass
+class _EngineSlot:
+    """Coordinate concurrent reads and exclusive mutations for one engine."""
+
+    engine: Any
+    _condition: Condition = field(default_factory=Condition, init=False, repr=False)
+    _readers: int = field(default=0, init=False, repr=False)
+    _writer: bool = field(default=False, init=False, repr=False)
+    _waiting_writers: int = field(default=0, init=False, repr=False)
+    _closing: bool = field(default=False, init=False, repr=False)
+
+    def acquire(self, *, exclusive: bool) -> None:
+        """Acquire a shared query lease or an exclusive mutation lease."""
+        with self._condition:
+            if exclusive:
+                self._waiting_writers += 1
+                try:
+                    self._condition.wait_for(
+                        lambda: self._closing or (not self._writer and self._readers == 0)
+                    )
+                finally:
+                    self._waiting_writers -= 1
+            else:
+                self._condition.wait_for(
+                    lambda: self._closing or (not self._writer and self._waiting_writers == 0)
+                )
+
+            if self._closing:
+                raise FitzServiceError("Collection engine is closing")
+            if exclusive:
+                self._writer = True
+            else:
+                self._readers += 1
+
+    def release(self, *, exclusive: bool) -> None:
+        """Release a previously acquired lease."""
+        with self._condition:
+            if exclusive:
+                if not self._writer:
+                    raise RuntimeError("Engine mutation lease is not active")
+                self._writer = False
+            else:
+                if self._readers == 0:
+                    raise RuntimeError("Engine query lease is not active")
+                self._readers -= 1
+            self._condition.notify_all()
+
+    def close(self) -> None:
+        """Reject new work and wait for active calls to finish."""
+        with self._condition:
+            self._closing = True
+            self._condition.notify_all()
+            self._condition.wait_for(lambda: not self._writer and self._readers == 0)
+
+
 # =============================================================================
 # FitzService
 # =============================================================================
@@ -119,15 +179,20 @@ class FitzService:
     This class is the single source of truth for business logic.
     CLI, SDK, and API should all call these methods.
 
-    The service is stateless - configuration and collection are passed
-    to each method that needs them.
+    Engine instances are cached per engine and collection. Queries share an
+    engine concurrently; collection mutations remain exclusive.
     """
 
+    def __init__(self) -> None:
+        self._engines: dict[tuple[str, str], _EngineSlot] = {}
+        self._deleting_collections: set[str] = set()
+        self._cache_lock = RLock()
+
     # =========================================================================
-    # Query Operations
+    # Answer Operations
     # =========================================================================
 
-    def query(
+    def answer(
         self,
         question: str,
         collection: str,
@@ -136,7 +201,7 @@ class FitzService:
         engine: str | None = None,
     ) -> Answer:
         """
-        Query the knowledge base.
+        Synthesize an answer from retrieved evidence.
 
         Args:
             question: The question to ask
@@ -152,25 +217,18 @@ class FitzService:
             CollectionNotFoundError: If collection doesn't exist
         """
         from fitz_sage.core import Query
-        from fitz_sage.runtime import create_engine
 
         if not question or not question.strip():
             raise QueryError("Question cannot be empty")
 
         try:
-            engine_instance = create_engine(engine)
-            engine_instance.load(collection)
-
-            metadata: dict[str, Any] = {}
-            if conversation_context is not None:
-                metadata["conversation_context"] = conversation_context
-
-            query_obj = Query(text=question, metadata=metadata)
-            return engine_instance.answer(query_obj)
+            metadata = self._query_metadata(conversation_context)
+            with self._engine(collection, engine) as engine_instance:
+                return cast(Answer, engine_instance.answer(Query(text=question, metadata=metadata)))
 
         except Exception as e:
-            logger.error(f"Query failed (collection={collection}): {e}", exc_info=True)
-            raise QueryError(f"Query failed: {e}") from e
+            logger.error(f"Answer failed (collection={collection}): {e}", exc_info=True)
+            raise QueryError(f"Answer failed: {e}") from e
 
     def evidence(
         self,
@@ -196,25 +254,49 @@ class FitzService:
             QueryError: If evidence retrieval fails
         """
         from fitz_sage.core import Query
-        from fitz_sage.runtime import create_engine
 
         if not question or not question.strip():
             raise QueryError("Question cannot be empty")
 
         try:
-            engine_instance = create_engine(engine)
-            engine_instance.load(collection)
-
-            metadata: dict[str, Any] = {}
-            if conversation_context is not None:
-                metadata["conversation_context"] = conversation_context
-
-            query_obj = Query(text=question, metadata=metadata)
-            return engine_instance.evidence(query_obj)
+            metadata = self._query_metadata(conversation_context)
+            with self._engine(collection, engine) as engine_instance:
+                return cast(
+                    EvidencePack,
+                    engine_instance.evidence(Query(text=question, metadata=metadata)),
+                )
 
         except Exception as e:
             logger.error(f"Evidence retrieval failed (collection={collection}): {e}", exc_info=True)
             raise QueryError(f"Evidence retrieval failed: {e}") from e
+
+    def trace(
+        self,
+        question: str,
+        collection: str,
+        *,
+        conversation_context: "ConversationContext | None" = None,
+        engine: str | None = None,
+    ) -> RetrievalRun:
+        """Execute governed retrieval and return its versioned execution record."""
+        from fitz_sage.core import Query
+
+        if not question or not question.strip():
+            raise QueryError("Question cannot be empty")
+
+        try:
+            metadata = self._query_metadata(conversation_context)
+            with self._engine(collection, engine) as engine_instance:
+                return cast(
+                    RetrievalRun,
+                    engine_instance.trace(Query(text=question, metadata=metadata)),
+                )
+        except Exception as e:
+            logger.error(
+                f"Retrieval trace failed (collection={collection}): {e}",
+                exc_info=True,
+            )
+            raise QueryError(f"Retrieval trace failed: {e}") from e
 
     # =========================================================================
     # Point Operations
@@ -227,25 +309,20 @@ class FitzService:
         *,
         start_worker: bool = True,
     ) -> Any:
-        """Point at a source directory for progressive querying.
-
-        Builds manifest, returns immediately. Queries work instantly via
-        agentic search; progressively faster as background indexing completes.
+        """Build a searchable source index and start background enrichment.
 
         Args:
             source: Path to file or directory
             collection: Target collection name
-            start_worker: Whether to start background indexing thread.
+            start_worker: Whether to start the background enrichment thread.
                          False for short-lived CLI processes, True for SDK/API.
 
         Returns:
-            FileManifest with registered files
+            FileManifest with indexed files
 
         Raises:
             ValueError: If source doesn't exist
         """
-        from fitz_sage.runtime import create_engine
-
         source_path = Path(source)
         # Resolve to absolute path to prevent path traversal
         try:
@@ -256,21 +333,22 @@ class FitzService:
         if not source_path.exists():
             raise ValueError(f"Source path does not exist: {source_path}")
 
-        engine = create_engine()
-        engine.load(collection)
-        return engine.point(source_path, collection, start_worker=start_worker)
+        collection = validate_collection_name(collection)
+        with self._engine(collection, exclusive=True) as engine_instance:
+            return engine_instance.point(
+                source_path,
+                collection,
+                start_worker=start_worker,
+            )
 
     def indexing_status(self, collection: str) -> dict:
-        """Report background-indexing progress for a collection.
+        """Report source-index health and enrichment progress for a collection.
 
         Loads the persisted manifest (via a fresh engine), so it reflects
         progress made by the background worker across processes.
         """
-        from fitz_sage.runtime import create_engine
-
-        engine = create_engine()
-        engine.load(collection)
-        return engine.indexing_status()
+        with self._engine(collection) as engine_instance:
+            return cast(dict[Any, Any], engine_instance.indexing_status())
 
     # =========================================================================
     # Collection Operations
@@ -287,24 +365,70 @@ class FitzService:
         names = cm.list_collections()
         result: list[CollectionInfo] = []
         for name in names:
-            result.append(CollectionInfo(name=name, chunk_count=_collection_chunk_count(cm, name)))
+            result.append(CollectionInfo(name=name, item_count=_collection_item_count(cm, name)))
         result.sort(key=lambda x: x.name)
         return result
 
     def get_collection(self, name: str) -> CollectionInfo:
         """Get info about a collection. Raises CollectionNotFoundError if missing."""
+        name = validate_collection_name(name)
         cm = self._connection_manager()
         if name not in cm.list_collections():
             raise CollectionNotFoundError(name)
-        return CollectionInfo(name=name, chunk_count=_collection_chunk_count(cm, name))
+        return CollectionInfo(name=name, item_count=_collection_item_count(cm, name))
 
     def delete_collection(self, name: str) -> bool:
-        """Delete the collection's SQLite database file. Returns True on success."""
-        cm = self._connection_manager()
-        deleted = cm.delete_collection(name)
-        if deleted:
-            logger.info(f"Deleted collection: {name}")
-        return deleted
+        """Delete a collection's database and persisted manifest state."""
+        name = validate_collection_name(name)
+        with self._cache_lock:
+            if name in self._deleting_collections:
+                raise FitzServiceError(f"Collection is already being deleted: {name}")
+            self._deleting_collections.add(name)
+            keys = [key for key in self._engines if key[1] == name]
+            slots = [self._engines.pop(key) for key in keys]
+
+        try:
+            for slot in slots:
+                slot.close()
+                stop = getattr(slot.engine, "stop_background_enrichment", None)
+                if callable(stop):
+                    stop()
+
+            from fitz_sage.core.paths import FitzPaths
+            from fitz_sage.engines.fitz_krag.progressive.write_lock import (
+                CollectionWriteLock,
+            )
+
+            collections_root = (FitzPaths.workspace() / "collections").resolve()
+            collection_dir = (collections_root / name).resolve()
+            if collection_dir.parent != collections_root:
+                raise FitzServiceError(f"Invalid collection state path: {collection_dir}")
+
+            # Refuse to race a detached indexing/enrichment writer. Releasing
+            # before removal is necessary on Windows because the lock file is
+            # inside the directory being deleted.
+            if collection_dir.exists():
+                write_lock = CollectionWriteLock(
+                    collection_dir,
+                    collection=name,
+                    operation="collection deletion",
+                )
+                write_lock.acquire()
+                write_lock.release()
+
+            cm = self._connection_manager()
+            database_deleted = bool(cm.delete_collection(name))
+            state_deleted = collection_dir.exists()
+            if state_deleted:
+                shutil.rmtree(collection_dir)
+
+            deleted = database_deleted or state_deleted
+            if deleted:
+                logger.info(f"Deleted collection: {name}")
+            return deleted
+        finally:
+            with self._cache_lock:
+                self._deleting_collections.remove(name)
 
     @staticmethod
     def _connection_manager() -> Any:
@@ -314,6 +438,43 @@ class FitzService:
         cm.start()
         return cm
 
+    @staticmethod
+    def _query_metadata(conversation_context: Any | None) -> dict[str, Any]:
+        if conversation_context is None:
+            return {}
+        return {"conversation_context": conversation_context}
+
+    @contextmanager
+    def _engine(
+        self,
+        collection: str,
+        engine: str | None = None,
+        *,
+        exclusive: bool = False,
+    ) -> Iterator["RetrievalEngine"]:
+        """Yield a cached engine under a shared or exclusive lifecycle lease."""
+        from fitz_sage.runtime import create_engine
+        from fitz_sage.runtime.registry import get_default_engine
+
+        collection = validate_collection_name(collection)
+        engine_name = engine or get_default_engine()
+        key = (engine_name, collection)
+        with self._cache_lock:
+            if collection in self._deleting_collections:
+                raise FitzServiceError(f"Collection is being deleted: {collection}")
+            slot = self._engines.get(key)
+            if slot is None:
+                engine_instance = cast("RetrievalEngine", create_engine(engine_name))
+                engine_instance.load(collection)
+                slot = _EngineSlot(engine_instance)
+                self._engines[key] = slot
+
+        slot.acquire(exclusive=exclusive)
+        try:
+            yield cast("RetrievalEngine", slot.engine)
+        finally:
+            slot.release(exclusive=exclusive)
+
     # =========================================================================
     # Configuration Operations
     # =========================================================================
@@ -322,17 +483,15 @@ class FitzService:
         """
         Validate the current configuration.
 
-        Checks:
-        - Config file exists and parses
-        - Required plugins are available
-        - API keys are set for configured providers
-        - Vector DB is accessible
+        Checks that the workspace config exists and validates against the
+        active engine schema. Provider connectivity belongs to the provider
+        itself and is exercised when that optional feature is used.
 
         Returns:
             ConfigValidationResult with issues and warnings
         """
-        issues = []
-        warnings = []
+        issues: list[str] = []
+        warnings: list[str] = []
 
         # Check config exists
         from fitz_sage.core.paths import FitzPaths
@@ -344,23 +503,14 @@ class FitzService:
 
         # Try to load
         try:
-            from fitz_sage.cli.context import CLIContext
+            from fitz_sage.config.loader import load_engine_config
+            from fitz_sage.runtime import get_default_engine
 
-            ctx = CLIContext.load()
+            load_engine_config(get_default_engine())
         except Exception as e:
             logger.error(f"Failed to load config from {config_path}: {e}")
             issues.append(f"Config parse error: {e}")
             return ConfigValidationResult(valid=False, issues=issues)
-
-        # Check optional tiered chat providers.
-        try:
-            from fitz_sage.llm import get_chat_factory
-
-            if ctx.chat_tier_specs:
-                get_chat_factory(ctx.chat_tier_specs)
-        except Exception as e:
-            logger.warning(f"Chat plugin '{ctx.chat_plugin}' validation failed: {e}")
-            issues.append(f"Chat plugin '{ctx.chat_plugin}' not available: {e}")
 
         return ConfigValidationResult(
             valid=len(issues) == 0,
@@ -376,9 +526,8 @@ class FitzService:
         """
         Check system health.
 
-        Tests connectivity to:
-        - SQLite storage directory
-        - LLM chat provider (if configured)
+        Tests access to the local SQLite storage layer. Optional endpoint
+        providers are not contacted by a general health request.
         """
         components = {}
         issues = []
@@ -393,20 +542,6 @@ class FitzService:
             components["sqlite"] = False
             issues.append(f"SQLite: {e}")
 
-        # Check optional chat provider
-        try:
-            from fitz_sage.cli.context import CLIContext
-            from fitz_sage.llm import get_chat_factory
-
-            ctx = CLIContext.load()
-            if ctx.chat_tier_specs:
-                get_chat_factory(ctx.chat_tier_specs)  # Verify factory works
-                components["chat"] = True
-        except Exception as e:
-            logger.warning(f"Chat provider health check failed: {e}")
-            components["chat"] = False
-            issues.append(f"Chat provider: {e}")
-
         return HealthCheckResult(
             healthy=all(components.values()),
             components=components,
@@ -419,18 +554,18 @@ class FitzService:
 # =============================================================================
 
 
-def _collection_chunk_count(cm: Any, name: str) -> int:
-    """Return krag_section_index row count for a collection (0 if table absent)."""
+def _collection_item_count(cm: Any, name: str) -> int:
+    """Return indexed unit count for a collection (0 if the table is absent)."""
     try:
         with cm.connection(name) as conn:
             exists = conn.execute(
-                "SELECT name FROM sqlite_master " "WHERE type='table' AND name='krag_section_index'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='krag_section_index'"
             ).fetchone()
             if not exists:
                 return 0
             return int(conn.execute("SELECT COUNT(*) FROM krag_section_index").fetchone()[0])
     except Exception as e:
-        logger.debug(f"Chunk count failed for '{name}': {e}")
+        logger.debug(f"Indexed unit count failed for '{name}': {e}")
         return 0
 
 

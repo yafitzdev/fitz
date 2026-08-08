@@ -15,16 +15,10 @@ from fitz_sage.engines.fitz_krag.evidence_contract import (
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
     from fitz_sage.engines.fitz_krag.query_analyzer import QueryAnalysis
-
-_ROUTE_DOMAINS = {
-    "technology_computing": "technical",
-    "law_policy": "legal",
-    "science_medicine": "medical",
-    "economics_finance": "financial",
-    "history_geography": "general",
-    "culture_society": "general",
-    "general_commonsense": "general",
-}
+    from fitz_sage.llm.providers.pyrrho_types import (
+        MultiLabelDecision,
+        PyrrhoQueryPlan,
+    )
 
 _TEXT_EVIDENCE_TERMS = {
     "addendum",
@@ -92,7 +86,24 @@ _CODE_EVIDENCE_TERMS = {
     "scheduler",
     "symbol",
 }
-_TEMPORAL_TERMS = {"current", "final", "fresh", "latest", "newest", "recent", "updated"}
+_TEMPORAL_TERMS = {
+    "at that time",
+    "current",
+    "currently",
+    "effective now",
+    "final",
+    "formerly",
+    "fresh",
+    "latest",
+    "newest",
+    "now",
+    "original",
+    "previous",
+    "prior",
+    "recent",
+    "superseded",
+    "updated",
+}
 
 
 @dataclass(frozen=True)
@@ -102,10 +113,9 @@ class RetrievalProfile:
     # Strategy routing
     strategy_weights: dict[str, float] = field(
         default_factory=lambda: {
-            "code": 0.25,
-            "section": 0.25,
-            "table": 0.15,
-            "chunk": 0.35,
+            "code": 0.38,
+            "section": 0.39,
+            "table": 0.23,
         }
     )
     entities: tuple[str, ...] = ()
@@ -113,6 +123,7 @@ class RetrievalProfile:
     # Fetch parameters
     top_k: int = 50
     top_read: int = 50
+    rerank_candidates: int = 32
 
     # Query expansion (from detection)
     query_variations: list[str] = field(default_factory=list)
@@ -124,7 +135,6 @@ class RetrievalProfile:
 
     # Deterministic retrieval-profile signals
     query_contract: str | None = None
-    query_route: str | None = None
     answerability_shape: str | None = None
     retrieval_modality: str | None = None
     retrieval_obligation: str | None = None
@@ -133,14 +143,12 @@ class RetrievalProfile:
     required_modalities: tuple[str, ...] = ()
 
     # Feature gates
-    run_agentic: bool = True
     inject_corpus_summaries: bool = False
 
     # Temporal metadata (for tagging query variations with references)
     temporal_references: list[str] = field(default_factory=list)
 
-    # Boost signals
-    boost_recency: bool = False
+    # Query-shape signals
     has_aggregation_intent: bool = False
     has_comparison_intent: bool = False
     has_temporal_intent: bool = False
@@ -167,26 +175,25 @@ def build_retrieval_profile(
     *,
     extended_signals: dict[str, Any] | None = None,
     keywords: list[str] | None = None,
-    pyrrho_plan: Any | None = None,
+    pyrrho_plan: "PyrrhoQueryPlan | None" = None,
 ) -> RetrievalProfile:
     """Build a retrieval profile for the KRAG executor.
 
-    Pyrrho's query-only v2 heads own pre-retrieval evidence-intent signals when
-    available. Deterministic query prep remains the local fallback and supplies
-    mechanical retrieval defaults that are not model heads.
+    Pyrrho's query-only v2 heads contribute evidence-intent signals when
+    available. Fitz-owned deterministic query-shape signals remain active so
+    explicit temporal, comparison, and aggregation language cannot be dropped.
     """
     specificity = "moderate"
     answer_type = "factual"
     domain = "general"
-    route_label = None
     fallback = _deterministic_profile_signals(analysis, detection, extended_signals)
     pyrrho_signals = _pyrrho_profile_signals(pyrrho_plan)
     planning_owner = "fitz_krag"
     auxiliary_signal_policy = "deterministic_profile"
     if pyrrho_signals:
         fallback = _merge_pyrrho_signals(fallback, pyrrho_signals)
-        planning_owner = "pyrrho"
-        auxiliary_signal_policy = "pyrrho_v2_pre_with_deterministic_fallback"
+        planning_owner = "hybrid"
+        auxiliary_signal_policy = "pyrrho_v2_pre_plus_deterministic_query_shape"
     contract_label = fallback.get("query_contract")
     shape_label = fallback.get("answerability_shape")
     modality_label = fallback.get("retrieval_modality")
@@ -199,7 +206,6 @@ def build_retrieval_profile(
         required_modalities_from_v2_evidence_kinds(evidence_kinds),
         tuple(fallback.get("required_modalities", ())),
     )
-    domain = _ROUTE_DOMAINS.get(route_label, domain)
     if extended_signals:
         specificity = str(extended_signals.get("specificity") or specificity)
         answer_type = str(extended_signals.get("answer_type") or answer_type)
@@ -250,10 +256,9 @@ def build_retrieval_profile(
     strategy_weights = dict(getattr(analysis, "strategy_weights", {}) or {}) if analysis else {}
     if not strategy_weights:
         strategy_weights = {
-            "code": 0.25,
-            "section": 0.25,
-            "table": 0.15,
-            "chunk": 0.35,
+            "code": 0.38,
+            "section": 0.39,
+            "table": 0.23,
         }
 
     # --- Detection-derived retrieval text is query-head gated. ---
@@ -285,26 +290,22 @@ def build_retrieval_profile(
                 except Exception:
                     pass
 
-    boost_recency = False
-    has_aggregation_intent = False
-    has_comparison_intent = False
-    has_temporal_intent = False
-    if contract_label == "comparison_coverage":
-        has_comparison_intent = True
-    elif contract_label == "temporal_grounding":
-        has_temporal_intent = True
-        boost_recency = True
-    elif contract_label == "exhaustive_coverage":
-        has_aggregation_intent = True
-    if shape_label == "set_answer":
-        has_aggregation_intent = True
-    if "needs_comparison_or_set" in retrieval_intents:
-        has_comparison_intent = True
-    if "needs_temporal_resolution" in retrieval_intents:
-        has_temporal_intent = True
-        boost_recency = True
-    if "needs_broad_coverage" in retrieval_intents:
-        has_aggregation_intent = True
+    deterministic_aggregation = bool(getattr(detection, "has_aggregation_intent", False))
+    deterministic_comparison = bool(getattr(detection, "has_comparison_intent", False))
+    deterministic_temporal = bool(
+        getattr(detection, "has_temporal_intent", False)
+        or getattr(detection, "has_freshness_intent", False)
+        or _contains_any(
+            str(getattr(analysis, "refined_query", "") or "").lower(),
+            _TEMPORAL_TERMS,
+        )
+    )
+    # Query-shape fields describe the user's request. Pyrrho PRE heads describe
+    # evidence obligations and remain available in retrieval_intents/metadata;
+    # they must not relabel a narrow query as comparison, aggregation, or time.
+    has_aggregation_intent = deterministic_aggregation
+    has_comparison_intent = deterministic_comparison
+    has_temporal_intent = deterministic_temporal
 
     # --- top_k: base * fetch_multiplier * specificity adjustment ---
     top_k = config.top_addresses
@@ -312,7 +313,7 @@ def build_retrieval_profile(
         top_k = int(top_k * 1.5)
     elif specificity == "narrow":
         top_k = int(top_k * 0.7)
-    top_k = max(10, top_k)
+    top_k = max(10, config.rerank_k, config.rerank_min_addresses, top_k)
 
     top_read = config.top_read
     if specificity == "broad":
@@ -326,9 +327,6 @@ def build_retrieval_profile(
     elif answer_type in ("comparative", "exploratory"):
         top_read = int(top_read * 1.2)
 
-    # --- Executor gates: controlled by query profile, never by auxiliary analysis. ---
-    run_agentic = True
-
     inject_corpus_summaries = False
     if specificity == "broad" or answer_type == "exploratory":
         inject_corpus_summaries = True
@@ -339,6 +337,16 @@ def build_retrieval_profile(
         strategy_weights["table"] = max(strategy_weights.get("table", 0.0), 0.35)
         top_k = max(top_k, config.top_addresses)
         top_read = max(top_read, config.top_read)
+
+    rerank_candidates = config.rerank_candidates
+    if specificity == "broad":
+        rerank_candidates = int(rerank_candidates * 1.5)
+    elif specificity == "narrow":
+        rerank_candidates = int(rerank_candidates * 0.75)
+    rerank_candidates = min(
+        top_k,
+        max(config.rerank_k, config.rerank_min_addresses, rerank_candidates),
+    )
 
     apply_retrieval_modality_weights(strategy_weights, modality_label)
     apply_required_modality_weights(strategy_weights, required_modalities)
@@ -353,22 +361,20 @@ def build_retrieval_profile(
         entities=entities,
         top_k=top_k,
         top_read=top_read,
+        rerank_candidates=rerank_candidates,
         query_variations=query_variations,
         comparison_queries=comparison_queries,
         comparison_entities=comparison_entities,
         temporal_references=temporal_references,
         keywords=keywords or [],
         query_contract=contract_label,
-        query_route=route_label,
         answerability_shape=shape_label,
         retrieval_modality=modality_label,
         retrieval_obligation=obligation_label,
         retrieval_intents=retrieval_intents,
         evidence_kinds=evidence_kinds,
         required_modalities=required_modalities,
-        run_agentic=run_agentic,
         inject_corpus_summaries=inject_corpus_summaries,
-        boost_recency=boost_recency,
         has_aggregation_intent=has_aggregation_intent,
         has_comparison_intent=has_comparison_intent,
         has_temporal_intent=has_temporal_intent,
@@ -445,6 +451,7 @@ def _deterministic_profile_signals(
         add_kind("needs_code_or_symbol")
 
     has_comparison = bool(getattr(detection, "has_comparison_intent", False))
+    has_aggregation = bool(getattr(detection, "has_aggregation_intent", False))
     has_temporal = bool(
         getattr(detection, "has_temporal_intent", False)
         or getattr(detection, "has_freshness_intent", False)
@@ -458,12 +465,16 @@ def _deterministic_profile_signals(
     )
     if has_comparison or has_multi_source_hint:
         intents.append("needs_comparison_or_set")
+    if has_aggregation:
+        intents.append("needs_broad_coverage")
     if has_temporal:
         intents.append("needs_temporal_resolution")
 
     query_contract = None
     if has_temporal:
         query_contract = "temporal_grounding"
+    elif has_aggregation:
+        query_contract = "exhaustive_coverage"
     elif has_comparison or has_multi_source_hint:
         query_contract = "comparison_coverage"
     elif "needs_table_or_record" in kinds:
@@ -485,7 +496,9 @@ def _deterministic_profile_signals(
         retrieval_modality = "unstructured_text"
 
     answerability_shape = None
-    if has_comparison or has_multi_source_hint:
+    if has_aggregation:
+        answerability_shape = "synthesis_answer"
+    elif has_comparison or has_multi_source_hint:
         answerability_shape = "structured_reasoning"
 
     return {
@@ -499,12 +512,12 @@ def _deterministic_profile_signals(
     }
 
 
-def _pyrrho_profile_signals(pyrrho_plan: Any | None) -> dict[str, Any]:
+def _pyrrho_profile_signals(pyrrho_plan: "PyrrhoQueryPlan | None") -> dict[str, Any]:
     """Translate Pyrrho PRE heads into retrieval-profile signals."""
     if pyrrho_plan is None:
         return {}
-    intents = _head_final_labels(getattr(pyrrho_plan, "retrieval_intents", None))
-    kinds = _head_final_labels(getattr(pyrrho_plan, "evidence_kinds", None))
+    intents = _head_final_labels(pyrrho_plan.retrieval_intents)
+    kinds = _head_final_labels(pyrrho_plan.evidence_kinds)
     if not intents and not kinds:
         return {}
 
@@ -537,35 +550,42 @@ def _merge_pyrrho_signals(
     fallback: dict[str, Any],
     pyrrho_signals: dict[str, Any],
 ) -> dict[str, Any]:
-    """Overlay model-owned query heads while retaining deterministic fallbacks."""
+    """Union model query heads with deterministic recall signals."""
     merged = dict(fallback)
-    for key in (
-        "query_contract",
-        "answerability_shape",
-        "retrieval_modality",
-        "retrieval_obligation",
-    ):
-        if pyrrho_signals.get(key):
-            merged[key] = pyrrho_signals[key]
     for key in ("retrieval_intents", "evidence_kinds", "required_modalities"):
-        values = tuple(pyrrho_signals.get(key) or ())
-        if values:
-            merged[key] = values
+        merged[key] = tuple(
+            dict.fromkeys(
+                (
+                    *tuple(fallback.get(key) or ()),
+                    *tuple(pyrrho_signals.get(key) or ()),
+                )
+            )
+        )
+
+    intents = tuple(merged["retrieval_intents"])
+    kinds = tuple(merged["evidence_kinds"])
+    if "needs_temporal_resolution" in intents:
+        merged["query_contract"] = "temporal_grounding"
+        merged["answerability_shape"] = None
+    elif "needs_broad_coverage" in intents:
+        merged["query_contract"] = "exhaustive_coverage"
+        merged["answerability_shape"] = "synthesis_answer"
+    elif "needs_comparison_or_set" in intents:
+        merged["query_contract"] = "comparison_coverage"
+        merged["answerability_shape"] = "structured_reasoning"
+    elif "needs_table_or_record" in kinds:
+        merged["query_contract"] = "structured_lookup"
+
+    modality, obligation = _modality_from_evidence_kinds(kinds)
+    if modality:
+        merged["retrieval_modality"] = modality
+        merged["retrieval_obligation"] = obligation
     return merged
 
 
-def _head_final_labels(head: Any | None) -> tuple[str, ...]:
-    """Read final labels from a Pyrrho multi-label head without assuming its class."""
-    if head is None:
-        return ()
-    raw = getattr(head, "final_labels", ())
-    labels: list[str] = []
-    if isinstance(raw, (list, tuple, set)):
-        labels.extend(str(label) for label in raw if isinstance(label, str) and label)
-    final_label = getattr(head, "final_label", None)
-    if isinstance(final_label, str) and final_label and final_label not in labels:
-        labels.append(final_label)
-    return tuple(dict.fromkeys(labels))
+def _head_final_labels(head: "MultiLabelDecision") -> tuple[str, ...]:
+    """Return Pyrrho's final labels without reinterpreting them."""
+    return tuple(dict.fromkeys(head.final_labels))
 
 
 def _modality_from_evidence_kinds(kinds: tuple[str, ...]) -> tuple[str | None, str | None]:
@@ -598,13 +618,13 @@ def _contains_any(lower_text: str, terms: set[str]) -> bool:
 
 
 def _has_record_identifier(query: str) -> bool:
-    """Return whether query includes a table-like id such as EXP-505 or ROL-401."""
+    """Return whether query includes a table-like identifier such as ABC-123."""
     return bool(re.search(r"\b[A-Z]{2,}\d*[A-Z]*-\d+\b|\b[A-Z]{2,}\d+\b", query))
 
 
 def query_profile_metadata(
     profile: RetrievalProfile | None,
-    pyrrho_plan: Any | None = None,
+    pyrrho_plan: "PyrrhoQueryPlan | None" = None,
 ) -> dict[str, Any]:
     """Build serializable metadata for the pre-retrieval query profile."""
     if profile is None:
@@ -616,26 +636,22 @@ def query_profile_metadata(
     return metadata
 
 
-def _pyrrho_plan_metadata(pyrrho_plan: Any | None) -> dict[str, Any]:
+def _pyrrho_plan_metadata(pyrrho_plan: "PyrrhoQueryPlan | None") -> dict[str, Any]:
     """Serialize Pyrrho PRE heads for evidence-pack metadata."""
     if pyrrho_plan is None:
         return {}
     output: dict[str, Any] = {}
-    for name in ("retrieval_intents", "evidence_kinds"):
-        head = getattr(pyrrho_plan, name, None)
-        if head is None:
-            continue
+    for name, head in (
+        ("retrieval_intents", pyrrho_plan.retrieval_intents),
+        ("evidence_kinds", pyrrho_plan.evidence_kinds),
+    ):
         final_labels = _head_final_labels(head)
-        probabilities = getattr(head, "probabilities", None)
         output[name] = {
             "final_labels": list(final_labels),
-            "final_label": getattr(head, "final_label", None),
-            "confidence": float(getattr(head, "confidence", 0.0) or 0.0),
+            "final_label": head.final_label,
+            "confidence": float(head.confidence),
             "probabilities": {
-                str(label): float(value)
-                for label, value in (
-                    probabilities.items() if isinstance(probabilities, dict) else ()
-                )
+                str(label): float(value) for label, value in head.probabilities.items()
             },
         }
     return output
@@ -645,24 +661,27 @@ def _profile_metadata(profile: RetrievalProfile) -> dict[str, Any]:
     """Serialize retrieval-profile knobs that materially affect recall."""
     return {
         "query_contract": profile.query_contract,
-        "query_route": profile.query_route,
         "answerability_shape": profile.answerability_shape,
         "retrieval_modality": profile.retrieval_modality,
         "retrieval_obligation": profile.retrieval_obligation,
         "retrieval_intents": list(profile.retrieval_intents),
         "evidence_kinds": list(profile.evidence_kinds),
         "required_modalities": list(profile.required_modalities),
+        "keywords": list(profile.keywords),
+        "query_variations": list(profile.query_variations),
+        "comparison_queries": list(profile.comparison_queries),
+        "comparison_entities": list(profile.comparison_entities),
+        "temporal_references": list(profile.temporal_references),
         "domain": profile.domain,
         "specificity": profile.specificity,
         "answer_type": profile.answer_type,
         "top_k": profile.top_k,
         "top_read": profile.top_read,
+        "rerank_candidates": profile.rerank_candidates,
         "strategy_weights": {
             key: float(value) for key, value in sorted(profile.strategy_weights.items())
         },
-        "run_agentic": profile.run_agentic,
         "inject_corpus_summaries": profile.inject_corpus_summaries,
-        "boost_recency": profile.boost_recency,
         "has_aggregation_intent": profile.has_aggregation_intent,
         "has_comparison_intent": profile.has_comparison_intent,
         "has_temporal_intent": profile.has_temporal_intent,

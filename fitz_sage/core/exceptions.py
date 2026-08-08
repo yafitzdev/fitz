@@ -102,10 +102,11 @@ class QueryIntelligenceError(GenerationError):
 
 class EnrichmentError(KnowledgeError):
     """
-    Required ingestion enrichment failure.
+    Optional background enrichment failure.
 
-    Raised when managed enrichment cannot run or returns unusable metadata for
-    the indexing contract.
+    Raised when managed entity, hierarchy, or demand-summary work cannot run or
+    returns unusable metadata. Source indexing has an independent status
+    contract and remains queryable when background enrichment fails.
     """
 
     pass

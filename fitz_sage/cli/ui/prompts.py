@@ -8,7 +8,7 @@ Provides text, number, confirm, and choice prompts with Rich fallback.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 import typer
 
@@ -21,7 +21,7 @@ class PromptMixin:
     def prompt_text(self, prompt: str, default: str = "") -> str:
         """Prompt for text input."""
         if RICH:
-            return Prompt.ask(prompt, default=default)
+            return cast(str, Prompt.ask(prompt, default=default))
         else:
             response = input(f"{prompt} ({default}): ").strip()
             return response if response else default
@@ -29,7 +29,7 @@ class PromptMixin:
     def prompt_int(self, prompt: str, default: int = 0) -> int:
         """Prompt for integer input."""
         if RICH:
-            return IntPrompt.ask(prompt, default=default)
+            return cast(int, IntPrompt.ask(prompt, default=default))
         else:
             response = input(f"{prompt} ({default}): ").strip()
             try:
@@ -40,7 +40,7 @@ class PromptMixin:
     def prompt_confirm(self, prompt: str, default: bool = True) -> bool:
         """Prompt for yes/no confirmation."""
         if RICH:
-            return Confirm.ask(prompt, default=default)
+            return cast(bool, Confirm.ask(prompt, default=default))
         else:
             yn = "Y/n" if default else "y/N"
             response = input(f"{prompt} [{yn}]: ").strip().lower()
@@ -67,7 +67,11 @@ class PromptMixin:
             if not must_exist or path.exists():
                 return path
             else:
-                self.error(f"Path does not exist: {path}")
+                error = getattr(self, "error", None)
+                if callable(error):
+                    error(f"Path does not exist: {path}")
+                else:
+                    print(f"Error: Path does not exist: {path}")
                 if not self.prompt_confirm("Try again?", default=True):
                     raise typer.Exit(1)
 

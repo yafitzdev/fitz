@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 
 from fitz_sage.engines.fitz_krag.retrieval.reranker import AddressReranker
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind
+from fitz_sage.llm.providers.base import RerankResponse, RerankResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -34,12 +35,14 @@ def _addr(
     )
 
 
-def _make_rerank_result(index: int, score: float) -> MagicMock:
-    """Create a mock RerankResult with index and score attributes."""
-    result = MagicMock()
-    result.index = index
-    result.score = score
-    return result
+def _make_rerank_result(index: int, score: float) -> RerankResult:
+    """Create a reranker result."""
+    return RerankResult(index=index, score=score)
+
+
+def _provider_response(*results: RerankResult) -> RerankResponse:
+    """Create one explicit provider response."""
+    return RerankResponse(list(results))
 
 
 # ---------------------------------------------------------------------------
@@ -53,10 +56,10 @@ class TestAddressReranker:
     def test_default_reranks_two_or_more_addresses(self):
         """The product default reranks as soon as there is a real choice."""
         reranker_provider = MagicMock(name="reranker")
-        reranker_provider.rerank.return_value = [
+        reranker_provider.rerank.return_value = _provider_response(
             _make_rerank_result(index=1, score=0.95),
             _make_rerank_result(index=0, score=0.85),
-        ]
+        )
         addresses = [
             _addr(location="func_a", score=0.8),
             _addr(location="func_b", score=0.7),
@@ -64,7 +67,7 @@ class TestAddressReranker:
 
         reranker = AddressReranker(reranker=reranker_provider, k=2)
 
-        result = reranker.rerank("query", addresses)
+        result = reranker.rerank("query", addresses).addresses
 
         reranker_provider.rerank.assert_called_once()
         assert [address.location for address in result] == ["func_b", "func_a"]
@@ -80,11 +83,11 @@ class TestAddressReranker:
         ]
 
         # Reranker returns top-3 in reverse order by score
-        reranker_provider.rerank.return_value = [
+        reranker_provider.rerank.return_value = _provider_response(
             _make_rerank_result(index=4, score=0.95),
             _make_rerank_result(index=3, score=0.85),
             _make_rerank_result(index=2, score=0.75),
-        ]
+        )
 
         reranker = AddressReranker(
             reranker=reranker_provider,
@@ -92,7 +95,7 @@ class TestAddressReranker:
             min_addresses=5,
         )
 
-        result = reranker.rerank("what does func_4 do?", addresses)
+        result = reranker.rerank("what does func_4 do?", addresses).addresses
 
         # Reranker called with summaries and top_n
         reranker_provider.rerank.assert_called_once()
@@ -131,7 +134,7 @@ class TestAddressReranker:
             min_addresses=5,
         )
 
-        result = reranker.rerank("query", addresses)
+        result = reranker.rerank("query", addresses).addresses
 
         # Reranker NOT called
         reranker_provider.rerank.assert_not_called()
@@ -153,7 +156,7 @@ class TestAddressReranker:
             min_addresses=20,
         )
 
-        result = reranker.rerank("query", addresses)
+        result = reranker.rerank("query", addresses).addresses
 
         reranker_provider.rerank.assert_not_called()
         assert len(result) == 1
@@ -172,7 +175,7 @@ class TestAddressReranker:
             min_addresses=20,
         )
 
-        result = reranker.rerank("query", addresses)
+        result = reranker.rerank("query", addresses).addresses
 
         # Reranker was called (and failed)
         reranker_provider.rerank.assert_called_once()
@@ -185,9 +188,9 @@ class TestAddressReranker:
     def test_rerank_uses_summary_or_location_as_document(self):
         """Reranker receives summary text; falls back to location if no summary."""
         reranker_provider = MagicMock(name="reranker")
-        reranker_provider.rerank.return_value = [
+        reranker_provider.rerank.return_value = _provider_response(
             _make_rerank_result(index=0, score=0.9),
-        ]
+        )
 
         addr_with_summary = _addr(location="mod.func", summary="Handles user auth")
         addr_no_summary = Address(
@@ -218,9 +221,9 @@ class TestAddressReranker:
     def test_rerank_includes_agentic_file_text(self):
         """File-level agentic candidates include their loaded text for reranking."""
         reranker_provider = MagicMock(name="reranker")
-        reranker_provider.rerank.return_value = [
+        reranker_provider.rerank.return_value = _provider_response(
             _make_rerank_result(index=0, score=0.9),
-        ]
+        )
         address = Address(
             kind=AddressKind.FILE,
             source_id="doc",
@@ -243,6 +246,66 @@ class TestAddressReranker:
             "Document: Roadmap, Metrics\nLaunch plan and customer feedback trends."
         ]
 
+    def test_rerank_uses_query_relevant_window_from_late_file_text(self):
+        """Late literal evidence must reach the bounded cross-encoder input."""
+        reranker_provider = MagicMock(name="reranker")
+        reranker_provider.rerank.return_value = _provider_response(
+            _make_rerank_result(index=0, score=0.9),
+        )
+        late_evidence = "RUN_9 final verdict is FAIL with ERR_RETAINED."
+        address = Address(
+            kind=AddressKind.FILE,
+            source_id="report",
+            location="long_report.txt",
+            summary="Long test report",
+            score=0.5,
+            metadata={
+                "text": ("Routine setup: no final verdict is recorded. " * 120) + late_evidence
+            },
+        )
+
+        reranker = AddressReranker(
+            reranker=reranker_provider,
+            k=1,
+            min_addresses=1,
+        )
+        reranker.rerank("What is the final verdict for RUN_9?", [address])
+
+        document = reranker_provider.rerank.call_args.args[1][0]
+        assert late_evidence in document
+        assert len(document) <= len(address.summary) + 1 + 1200
+
+    def test_cold_long_section_does_not_repeat_its_fallback_prefix(self):
+        """Cold sections use their heading plus excerpt as the scoring surface."""
+        reranker_provider = MagicMock(name="reranker")
+        reranker_provider.rerank.return_value = _provider_response(
+            _make_rerank_result(index=0, score=0.9),
+        )
+        address = Address(
+            kind=AddressKind.SECTION,
+            source_id="report",
+            location="Results > Retained seal",
+            summary="Retained seal: " + ("routine setup " * 25),
+            score=0.5,
+            metadata={
+                "rerank_heading": "Results > Retained seal",
+                "rerank_text": "RUN_77 retained seal is KAPPA-END.",
+            },
+        )
+        reranker = AddressReranker(
+            reranker=reranker_provider,
+            k=1,
+            min_addresses=1,
+        )
+
+        response = reranker.rerank("What is the retained seal for RUN_77?", [address])
+
+        expected_document = "Results > Retained seal\nRUN_77 retained seal is KAPPA-END."
+        assert reranker_provider.rerank.call_args.args[1] == [expected_document]
+        assert "documents" not in response.trace
+        assert "input" not in response.trace
+        assert response.trace["document_characters"] == [len(expected_document)]
+
     def test_reranked_addresses_preserve_kind_and_metadata(self):
         """Reranked addresses retain kind, source_id, location, summary, metadata."""
         reranker_provider = MagicMock(name="reranker")
@@ -256,9 +319,9 @@ class TestAddressReranker:
             metadata={"section_id": "s1", "level": 2},
         )
 
-        reranker_provider.rerank.return_value = [
+        reranker_provider.rerank.return_value = _provider_response(
             _make_rerank_result(index=0, score=0.99),
-        ]
+        )
 
         # Need enough addresses to trigger reranking
         filler = [_addr(location=f"filler_{i}") for i in range(19)]
@@ -269,7 +332,7 @@ class TestAddressReranker:
             min_addresses=20,
         )
 
-        result = reranker.rerank("setup", [original] + filler)
+        result = reranker.rerank("setup", [original] + filler).addresses
 
         assert len(result) == 1
         assert result[0].kind == AddressKind.SECTION
@@ -289,7 +352,7 @@ class TestAddressReranker:
             min_addresses=3,
         )
 
-        result = reranker.rerank("query", [])
+        result = reranker.rerank("query", []).addresses
 
         reranker_provider.rerank.assert_not_called()
         assert result == []

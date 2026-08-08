@@ -3,11 +3,11 @@
 Unit tests for entity graph integration in KRAG.
 
 The ingestion tests exercise the *live* path: the background worker schedules
-``core.enrich_file``, which extracts entities and adds them to the
+``core.link_entities_file``, which extracts entities and adds them to the
 EntityGraphStore. This is what ``engine.point()`` runs in production.
 
 Tests that:
-- enrich_file adds extracted entities to the EntityGraphStore
+- link_entities_file adds extracted entities to the EntityGraphStore
 - symbols/sections without entities are skipped
 - entity graph errors fail gracefully
 - CodeExpander._add_entity_related finds related symbols
@@ -49,11 +49,9 @@ def _enricher_stamping(entity_sets: list[list[dict]]) -> MagicMock:
 
     def _stamp(dicts):
         for i, d in enumerate(dicts):
-            d["keywords"] = []
             d["entities"] = list(entity_sets[i % len(entity_sets)])
 
-    enricher.enrich_symbols.side_effect = _stamp
-    enricher.enrich_sections.side_effect = _stamp
+    enricher.enrich_symbol_entities.side_effect = _stamp
     return enricher
 
 
@@ -80,11 +78,11 @@ class TestEnrichEntityGraphIntegration:
         )
         core._symbol_store = MagicMock()
         core._symbol_store.get_by_file.return_value = [
-            {"id": "sym-001", "keywords": [], "entities": []},
-            {"id": "sym-002", "keywords": [], "entities": []},
+            {"id": "sym-001", "entities": []},
+            {"id": "sym-002", "entities": []},
         ]
 
-        core.enrich_file("file-1", ".py")
+        core.link_entities_file("file-1", ".py")
 
         assert entity_store.add_chunk_entities.call_count == 2
 
@@ -111,11 +109,11 @@ class TestEnrichEntityGraphIntegration:
         )
         core._symbol_store = MagicMock()
         core._symbol_store.get_by_file.return_value = [
-            {"id": "sym-001", "keywords": [], "entities": []},
-            {"id": "sym-002", "keywords": [], "entities": []},
+            {"id": "sym-001", "entities": []},
+            {"id": "sym-002", "entities": []},
         ]
 
-        core.enrich_file("file-1", ".py")
+        core.link_entities_file("file-1", ".py")
 
         entity_store.add_chunk_entities.assert_called_once()
         assert entity_store.add_chunk_entities.call_args[0][0] == "sym-001"
@@ -128,11 +126,11 @@ class TestEnrichEntityGraphIntegration:
         core._enricher = _enricher_stamping([[{"name": "PostgreSQL", "type": "technology"}]])
         core._symbol_store = MagicMock()
         core._symbol_store.get_by_file.return_value = [
-            {"id": "sym-001", "keywords": [], "entities": []},
+            {"id": "sym-001", "entities": []},
         ]
 
         # Should not raise
-        core.enrich_file("file-1", ".py")
+        core.link_entities_file("file-1", ".py")
 
     def test_link_doc_entities_uses_deterministic_derivation(self):
         """Progressive doc entity linking should not run Qwen entity generation."""
@@ -141,7 +139,6 @@ class TestEnrichEntityGraphIntegration:
         sections = [
             {
                 "id": "sec-001",
-                "keywords": ["contract"],
                 "entities": [],
                 "metadata": {},
             }
@@ -158,8 +155,7 @@ class TestEnrichEntityGraphIntegration:
         core.link_entities_file("file-1", ".md")
 
         core._enricher.derive_section_entities.assert_called_once_with(sections)
-        core._enricher.enrich_section_entities.assert_not_called()
-        core._section_store.update_enrichment_by_file.assert_called_once_with("file-1", sections)
+        core._section_store.update_entities_by_file.assert_called_once_with("file-1", sections)
         entity_store.add_chunk_entities.assert_called_once_with(
             "sec-001",
             [("TC-1000", "identifier")],

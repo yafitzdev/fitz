@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 from fastapi import APIRouter
+from starlette.concurrency import run_in_threadpool
 
 from fitz_sage.api.dependencies import get_service
 from fitz_sage.api.error_handlers import handle_api_errors
@@ -13,6 +16,7 @@ from fitz_sage.api.models.schemas import (
     IndexingStatus,
     IngestRequest,
 )
+from fitz_sage.api.security import resolve_api_source
 
 router = APIRouter(prefix="/collections", tags=["collections"])
 
@@ -22,9 +26,9 @@ router = APIRouter(prefix="/collections", tags=["collections"])
 async def list_collections() -> list[CollectionInfo]:
     """List all available collections."""
     service = get_service()
-    collections = service.list_collections()
+    collections = await run_in_threadpool(service.list_collections)
 
-    return [CollectionInfo(name=c.name, item_count=c.chunk_count) for c in collections]
+    return [CollectionInfo(name=c.name, item_count=c.item_count) for c in collections]
 
 
 @router.get("/{name}", response_model=CollectionStats)
@@ -34,11 +38,11 @@ async def get_collection(name: str) -> CollectionStats:
     Get statistics for a specific collection.
     """
     service = get_service()
-    info = service.get_collection(name)
+    info = await run_in_threadpool(service.get_collection, name)
 
     return CollectionStats(
         name=info.name,
-        item_count=info.chunk_count,
+        item_count=info.item_count,
         metadata=info.metadata,
     )
 
@@ -52,28 +56,31 @@ async def delete_collection(name: str) -> dict:
     Returns whether the collection was deleted.
     """
     service = get_service()
-    deleted = service.delete_collection(name)
+    deleted = await run_in_threadpool(service.delete_collection, name)
 
     return {"deleted": deleted, "collection": name}
 
 
-@router.post("/{name}/documents", response_model=IndexingStatus, status_code=202)
+@router.post("/{name}/documents", response_model=IndexingStatus)
 @handle_api_errors
 async def ingest_documents(name: str, request: IngestRequest) -> IndexingStatus:
     """
     Register documents into a collection.
 
-    Indexing runs in the background — queries work immediately and improve as it
-    completes. Poll ``GET /collections/{name}/status`` for progress.
+    Source indexing completes before this endpoint returns. Optional model-backed
+    enrichment may continue afterward.
     """
     service = get_service()
-    service.point(source=request.source, collection=name)
-    return IndexingStatus(**service.indexing_status(name))
+    source = resolve_api_source(request.source)
+    await run_in_threadpool(partial(service.point, source=source, collection=name))
+    status = await run_in_threadpool(service.indexing_status, name)
+    return IndexingStatus(**status)
 
 
 @router.get("/{name}/status", response_model=IndexingStatus)
 @handle_api_errors
 async def collection_status(name: str) -> IndexingStatus:
-    """Report background-indexing progress for a collection."""
+    """Report source-index health and optional enrichment progress."""
     service = get_service()
-    return IndexingStatus(**service.indexing_status(name))
+    status = await run_in_threadpool(service.indexing_status, name)
+    return IndexingStatus(**status)

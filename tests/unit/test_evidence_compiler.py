@@ -14,8 +14,8 @@ from fitz_sage.engines.fitz_krag.evidence_contract import build_query_contract
 from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 
 
-def test_pyrrho_comparison_contract_sets_prefix_floor() -> None:
-    """Comparison coverage is a Pyrrho contract signal, not a numeric regex gate."""
+def test_comparison_contract_orders_companion_evidence() -> None:
+    """Comparison coverage places both relevant sources first."""
     finance = _result(
         "The finance team reported Q1 revenue of 1.2 billion dollars.",
         "unstructured/finance_q1_report.md",
@@ -35,11 +35,32 @@ def test_pyrrho_comparison_contract_sets_prefix_floor() -> None:
         "unstructured/finance_q1_report.md",
         "unstructured/audit_q1_note.md",
     ]
-    assert compiled.results[0].metadata["evidence_compiler"]["min_sources"] == 2
 
 
-def test_compiler_filters_unaligned_hard_anchor_results() -> None:
-    """A missing named entity should not let unrelated conflicts reach Pyrrho."""
+def test_compiler_preserves_semantic_reranker_order_without_explicit_obligation() -> None:
+    """Lexical overlap must not become a second ranker after semantic reranking."""
+    semantic_match = _result(
+        "Refund requests are accepted within thirty days.",
+        "unstructured/refund_policy.md",
+    )
+    lexical_match = _result(
+        "Customer reimbursements are mentioned in this archived index.",
+        "unstructured/archive_index.md",
+    )
+
+    compiled = compile_evidence(
+        "How should customer reimbursements be handled?",
+        [semantic_match, lexical_match],
+    )
+
+    assert [result.file_path for result in compiled.results] == [
+        "unstructured/refund_policy.md",
+        "unstructured/archive_index.md",
+    ]
+
+
+def test_compiler_does_not_infer_hard_anchors_from_capitalization() -> None:
+    """Ordinary title-cased names must not erase reranked evidence."""
     finance = _result(
         "The finance team reported Q1 revenue of 1.2 billion dollars.",
         "unstructured/finance_q1_report.md",
@@ -51,33 +72,74 @@ def test_compiler_filters_unaligned_hard_anchor_results() -> None:
 
     compiled = compile_evidence("What is the Project Nebula budget?", [audit, finance])
 
-    assert compiled.results == []
-    assert compiled.metadata["filtered_all"] is True
-    assert compiled.metadata["contract"]["phrase_anchors"] == ["Project Nebula"]
+    assert [result.file_path for result in compiled.results] == [
+        "unstructured/audit_q1_note.md",
+        "unstructured/finance_q1_report.md",
+    ]
+    assert compiled.metadata["filtered_all"] is False
 
 
-def test_compiler_requires_anchor_in_evidence_not_closure_metadata() -> None:
-    """Closure bridge metadata should not make unrelated text satisfy a hard anchor."""
+def test_compiler_requires_exact_identifier_in_evidence_not_closure_metadata() -> None:
+    """Closure metadata must not make unrelated text satisfy an exact identifier."""
     closure_result = _result(
         "The finance report says Q1 revenue was 1.2 billion dollars.",
         "unstructured/finance_q1_report.md",
         metadata={
             "evidence_closure": {
                 "role": "bridge_document:finance report",
-                "contract_phrase_anchors": ["Project Nebula"],
+                "contract_identifiers": ["AX-156"],
                 "bridges": ["Q1"],
             }
         },
     )
 
-    compiled = compile_evidence("What is the Project Nebula budget?", [closure_result])
+    compiled = compile_evidence("What is the AX-156 budget?", [closure_result])
 
     assert compiled.results == []
     assert compiled.metadata["filtered_all"] is True
 
 
-def test_compiler_focuses_current_span_inside_multi_fact_section() -> None:
-    """EvidencePack content should not mix stale and current facts from one section."""
+def test_compiler_rejects_wrong_modality_closure_result_without_anchor() -> None:
+    """A table obligation must not admit evidence missing an exact identifier."""
+    closure_result = _result(
+        "Project Atlas FY27 pipeline is expected to reach 7.8 million ARR.",
+        "unstructured/finance_forecast.md",
+        metadata={
+            "evidence_closure": {
+                "role": "required_table",
+                "bridges": ["Project", "Helios", "budget"],
+            }
+        },
+    )
+
+    compiled = compile_evidence("What is the HEL-123 budget?", [closure_result])
+
+    assert compiled.results == []
+    assert compiled.metadata["filtered_all"] is True
+
+
+def test_compiler_rejects_generic_bridge_overlap_without_named_entity() -> None:
+    """A required table cannot replace a missing exact identifier."""
+    closure_result = _result(
+        "project | pipeline\nProject Atlas | 7.8 million ARR",
+        "structured/projects.csv",
+        kind=AddressKind.TABLE,
+        metadata={
+            "evidence_closure": {
+                "role": "required_table",
+                "bridges": ["Project", "HEL-123", "budget"],
+            }
+        },
+    )
+
+    compiled = compile_evidence("What is the HEL-123 budget?", [closure_result])
+
+    assert compiled.results == []
+    assert compiled.metadata["filtered_all"] is True
+
+
+def test_compiler_preserves_raw_current_and_historical_spans() -> None:
+    """The compiler must not rewrite a source before Pyrrho evaluates it."""
     status = _result(
         "[Introduction]\n"
         "2026-03-10: Pilot users under exception MFA-CX-13 may skip hardware keys until "
@@ -95,8 +157,9 @@ def test_compiler_focuses_current_span_inside_multi_fact_section() -> None:
     )
 
     assert "Current rule" in compiled.results[0].content
-    assert "may skip hardware keys" not in compiled.results[0].content
-    assert compiled.results[0].metadata["evidence_span"]["selected_index"] == 2
+    assert "may skip hardware keys" in compiled.results[0].content
+    assert compiled.results[0].content == status.content
+    assert "evidence_span" not in compiled.results[0].metadata
 
 
 def test_compiler_keeps_authoritative_latest_section_when_it_contains_old_history() -> None:
@@ -121,8 +184,7 @@ def test_compiler_keeps_authoritative_latest_section_when_it_contains_old_histor
 
     assert compiled.results[0].address.location == "Project Atlas APAC"
     assert "limited general availability" in compiled.results[0].content
-    assert "entered a pilot" not in compiled.results[0].content
-    assert compiled.metadata["suppressed"] == []
+    assert "entered a pilot" in compiled.results[0].content
 
 
 def test_compiler_does_not_count_parser_toc_as_evidence_body() -> None:
@@ -150,8 +212,8 @@ def test_compiler_does_not_count_parser_toc_as_evidence_body() -> None:
     assert compiled.results[0].address.location == "Introduction > May Launch Memo"
 
 
-def test_compiler_focuses_final_span_inside_multi_fact_section() -> None:
-    """Pyrrho temporal grounding should package final spans without earlier estimates."""
+def test_compiler_preserves_raw_estimate_and_final_spans() -> None:
+    """Temporal routing may reorder evidence but must not compact its content."""
     status = _result(
         "The first status update estimated that incident PAY-209 would recover in "
         "12 minutes.\n\n"
@@ -168,8 +230,9 @@ def test_compiler_focuses_final_span_inside_multi_fact_section() -> None:
     )
 
     assert "final postmortem" in compiled.results[0].content
-    assert "estimated" not in compiled.results[0].content
-    assert compiled.results[0].metadata["evidence_span"]["selected_index"] == 2
+    assert "estimated" in compiled.results[0].content
+    assert compiled.results[0].content == status.content
+    assert "evidence_span" not in compiled.results[0].metadata
 
 
 def test_compiler_does_not_focus_final_span_without_pyrrho_temporal() -> None:
@@ -290,8 +353,8 @@ def test_compiler_orders_temporal_candidates_from_pyrrho_contract() -> None:
     assert compiled.metadata["contract"]["temporal_policy"] == "temporal"
 
 
-def test_compiler_suppresses_same_source_initial_estimate_after_final_evidence() -> None:
-    """Pyrrho temporal grounding lets final evidence supersede earlier estimates."""
+def test_compiler_keeps_same_source_initial_estimate_and_final_evidence() -> None:
+    """Pyrrho, rather than the compiler, judges which temporal fact governs."""
     final = _result(
         "The final postmortem confirmed that Search outage INC-101 recovered after 42 minutes.",
         "unstructured/outage_postmortem.md",
@@ -309,12 +372,11 @@ def test_compiler_suppresses_same_source_initial_estimate_after_final_evidence()
         profile=_profile(query_contract="temporal_grounding"),
     )
 
-    assert [result.content for result in compiled.results] == [final.content]
-    assert compiled.metadata["suppressed"][0]["location"] == "Initial Status Update"
+    assert [result.content for result in compiled.results] == [final.content, initial.content]
 
 
-def test_compiler_suppresses_cross_source_stale_fact_after_final_evidence() -> None:
-    """Pyrrho temporal grounding lets final evidence supersede cross-source stale facts."""
+def test_compiler_keeps_cross_source_stale_and_final_evidence() -> None:
+    """The evidence pack must preserve disagreement for Pyrrho to evaluate."""
     final = _result(
         "Risk RSK-81 final residual score is 18 after reclassification.",
         "unstructured/risk_audit_note.md",
@@ -332,8 +394,10 @@ def test_compiler_suppresses_cross_source_stale_fact_after_final_evidence() -> N
         profile=_profile(query_contract="temporal_grounding"),
     )
 
-    assert [result.file_path for result in compiled.results] == ["unstructured/risk_audit_note.md"]
-    assert compiled.metadata["suppressed"][0]["file_path"] == ("unstructured/risk_finance_memo.md")
+    assert [result.file_path for result in compiled.results] == [
+        "unstructured/risk_audit_note.md",
+        "unstructured/risk_finance_memo.md",
+    ]
 
 
 def test_compiler_promotes_required_code_symbol() -> None:
@@ -417,13 +481,105 @@ def test_address_rescue_uses_profile_obligation_for_companion_table() -> None:
     assert ordered == [prose, table]
 
 
+def test_address_rescue_replaces_duplicate_inside_full_read_window() -> None:
+    """Required evidence must not be appended beyond the reranker's read limit."""
+    distractors = [
+        _address(
+            AddressKind.SECTION,
+            f"archive_{index}.md",
+            f"Archive {index}",
+            "Archived warehouse operations brief.",
+        )
+        for index in range(10)
+    ]
+    table = _address(
+        AddressKind.TABLE,
+        "structured/warehouses.csv",
+        "Warehouses",
+        "Table Warehouses columns: warehouse_id, region, item, stock, unit.",
+    )
+
+    ordered = order_addresses_for_contract(
+        "How many flux capacitor units are in the west region?",
+        [*distractors, table],
+        distractors,
+        profile=_profile(modality="structured_table"),
+        limit=10,
+    )
+
+    assert len(ordered) == 10
+    assert ordered[-1] == table
+
+
+def test_address_rescue_does_not_add_second_best_required_candidate() -> None:
+    """An already-selected best candidate satisfies its required modality."""
+    weak_table = _address(
+        AddressKind.TABLE,
+        "structured/incidents.csv",
+        "Incidents",
+        "Table Incidents columns: incident_id, service.",
+    )
+    best_table = _address(
+        AddressKind.TABLE,
+        "structured/warehouses.csv",
+        "Warehouses",
+        "Table Warehouses columns: warehouse_id, region, item, stock, unit.",
+    )
+
+    ordered = order_addresses_for_contract(
+        "How many flux capacitor units are in the west region?",
+        [weak_table, best_table],
+        [best_table],
+        profile=_profile(modality="structured_table"),
+    )
+
+    assert ordered == [best_table]
+
+
+def test_address_rescue_preserves_one_rare_literal_bm25_hit() -> None:
+    """A direct rare query-token hit must remain readable after reranking."""
+    glossary = _address(
+        AddressKind.SECTION,
+        "unstructured/glossary.md",
+        "CBT",
+        "CBT means Cell Balancing Task.",
+    )
+    table = _address(
+        AddressKind.TABLE,
+        "structured/records.csv",
+        "Records",
+        "Table Records columns: record_id, owner.",
+    )
+    distractors = [
+        _address(
+            AddressKind.SECTION,
+            f"unstructured/owner_{index}.md",
+            f"Owner {index}",
+            "Ownership details for another system.",
+        )
+        for index in range(10)
+    ]
+
+    ordered = order_addresses_for_contract(
+        "Who owns CBT?",
+        [glossary, table, *distractors],
+        [table, *distractors[:9]],
+        profile=_profile(modality="structured_table"),
+        limit=10,
+    )
+
+    assert len(ordered) == 10
+    assert glossary in ordered
+    assert table in ordered
+
+
 def test_query_contract_does_not_make_question_prefix_an_entity() -> None:
     """Question wording should not become a hard phrase anchor."""
     contract = build_query_contract(
         "Which Python symbol implements expired session refresh inside the grace window?"
     )
 
-    assert contract.phrase_anchors == ()
+    assert contract.identifiers == ()
 
 
 def test_compiler_does_not_treat_question_auxiliary_as_entity_anchor() -> None:
@@ -442,7 +598,6 @@ def test_compiler_does_not_treat_question_auxiliary_as_entity_anchor() -> None:
         [legacy, current],
     )
 
-    assert compiled.metadata["contract"]["phrase_anchors"] == []
     assert compiled.metadata.get("filtered_all") is not True
     assert [result.file_path for result in compiled.results] == [
         "unstructured/legacy_refund_note.md",
@@ -450,8 +605,8 @@ def test_compiler_does_not_treat_question_auxiliary_as_entity_anchor() -> None:
     ]
 
 
-def test_compiler_splits_code_identifiers_for_keyword_alignment() -> None:
-    """Code constants should align with natural-language terms inside identifiers."""
+def test_compiler_does_not_rerank_code_symbols_by_keyword_overlap() -> None:
+    """Symbol-name overlap must not replace the cross-encoder's ordering."""
     constant = _result(
         'REQUIRED_ENV_VARS = ("FITZ_API_TOKEN", "FITZ_WORKSPACE")',
         "code/config_loader.py",
@@ -471,14 +626,16 @@ def test_compiler_splits_code_identifiers_for_keyword_alignment() -> None:
         [function, constant],
     )
 
-    assert compiled.results[0].address.location == "code.config_loader.REQUIRED_ENV_VARS"
-    assert "FITZ_API_TOKEN" in compiled.results[0].content
+    assert [result.address.location for result in compiled.results] == [
+        "code.config_loader.load_required_env",
+        "code.config_loader.REQUIRED_ENV_VARS",
+    ]
 
 
 def test_compiler_treats_short_letter_digit_codes_as_identifiers() -> None:
     """Codes such as S1 are exact anchors, not disposable short words."""
     table = _result(
-        "incident_id | severity | owner | resolved_minutes\n" "INC-103 | S1 | Mina | 25",
+        "incident_id | severity | owner | resolved_minutes\nINC-103 | S1 | Mina | 25",
         "structured/incidents.csv",
         kind=AddressKind.TABLE,
         location="Incidents",
@@ -521,15 +678,15 @@ def test_compiler_does_not_invent_source_authority_roles() -> None:
         [postmortem, table, playbook],
     )
 
-    assert compiled.results[0].file_path == "mixed/incident_playbook.md"
+    assert compiled.results[0].file_path == "unstructured/outage_postmortem.md"
     assert (
         "source_anchor:incident playbook"
         not in compiled.results[0].metadata["evidence_compiler"]["roles"]
     )
 
 
-def test_compiler_chooses_required_table_by_fact_anchors() -> None:
-    """Required table selection should prefer concrete row facts over generic overlap."""
+def test_compiler_preserves_top_ranked_table_when_modality_is_already_satisfied() -> None:
+    """A satisfied modality must not trigger lexical reranking among tables."""
     rollout = _result(
         "feature | region | status | release | owner\n"
         "warehouse_audit | west | enabled | 2026.05 | Inventory",
@@ -538,7 +695,7 @@ def test_compiler_chooses_required_table_by_fact_anchors() -> None:
         location="Rollout Matrix",
     )
     warehouses = _result(
-        "warehouse_id | region | item | stock | unit\n" "WH-1 | west | flux capacitor | 17 | count",
+        "warehouse_id | region | item | stock | unit\nWH-1 | west | flux capacitor | 17 | count",
         "structured/warehouses.csv",
         kind=AddressKind.TABLE,
         location="Warehouses",
@@ -553,16 +710,16 @@ def test_compiler_chooses_required_table_by_fact_anchors() -> None:
     compiled = compile_evidence(
         "Which release mentioned the west-region warehouse audit and how many "
         "flux capacitor units did it confirm?",
-        [rollout, release, warehouses],
+        [release, rollout, warehouses],
         profile=_profile(modality="structured_table"),
     )
 
-    assert compiled.results[0].file_path == "structured/warehouses.csv"
+    assert compiled.results[0].file_path == "structured/rollout_matrix.csv"
     assert compiled.results[0].metadata["evidence_compiler"]["roles"] == ["required_table"]
 
 
-def test_compiler_prioritizes_literal_identifier_before_generic_required_modality() -> None:
-    """Exact row evidence should not sit behind a generic Pyrrho-required section."""
+def test_compiler_preserves_reranker_order_among_exact_identifier_matches() -> None:
+    """Exact identifiers filter candidates but do not create a second ranking signal."""
     note = _result(
         "Incident INC-103 appears in the operations status note.",
         "unstructured/status.md",
@@ -582,9 +739,10 @@ def test_compiler_prioritizes_literal_identifier_before_generic_required_modalit
         profile=_profile(obligation="error_signature"),
     )
 
-    assert compiled.results[0].file_path == "structured/incidents.csv"
+    assert compiled.results[0].file_path == "unstructured/status.md"
     assert compiled.results[0].metadata["evidence_compiler"]["roles"] == [
-        "anchor_identifier:INC-103"
+        "anchor_identifier:INC-103",
+        "required_section",
     ]
 
 
@@ -620,6 +778,40 @@ Columns: alert_id, duration_minutes
     assert "bridge:ALT-501" in compiled.results[1].metadata["evidence_compiler"]["roles"]
 
 
+def test_compiler_keeps_validated_document_companion_without_original_identifier() -> None:
+    """An explicit source bridge may lead to a policy that does not repeat the row ID."""
+    brief = _result(
+        "For model_eval renewal terms, use Procurement Policy.",
+        "mixed/pricing_brief.md",
+        location="Pricing Brief",
+    )
+    policy = _result(
+        "Procurement Policy: MeridianAI requires 75 days written notice.",
+        "unstructured/procurement_policy.md",
+        location="Procurement Policy",
+        metadata={
+            "evidence_closure": {
+                "role": "bridge_document:procurement policy",
+                "bridges": ["model_eval", "Procurement Policy"],
+                "contract_identifiers": ["model_eval"],
+            }
+        },
+    )
+
+    compiled = compile_evidence(
+        "Which model_eval notice applies?",
+        [brief, policy],
+    )
+
+    assert [result.file_path for result in compiled.results] == [
+        "mixed/pricing_brief.md",
+        "unstructured/procurement_policy.md",
+    ]
+    assert compiled.results[1].metadata["evidence_compiler"]["roles"] == [
+        "bridge_document:procurement policy"
+    ]
+
+
 def test_compiler_does_not_promote_bridge_companion_without_pyrrho_multi_modality() -> None:
     """Bridge companion pulls are not fitz-sage-owned when Pyrrho asks for one modality."""
     postmortem = _result(
@@ -647,7 +839,7 @@ def test_compiler_does_not_promote_bridge_companion_without_pyrrho_multi_modalit
 def test_compiler_does_not_make_policy_terms_source_authority() -> None:
     """Policy wording is lexical alignment unless Pyrrho supplies an authority signal."""
     table = _result(
-        "feature | region | status | release\n" "token_rotation | eu | enabled | 2026.05",
+        "feature | region | status | release\ntoken_rotation | eu | enabled | 2026.05",
         "structured/rollout_matrix.csv",
         kind=AddressKind.TABLE,
         location="Rollout Matrix",
@@ -676,7 +868,6 @@ def test_compiler_does_not_make_policy_terms_source_authority() -> None:
         for role in result.metadata["evidence_compiler"]["roles"]
     ]
     assert not any(role.startswith("source_anchor:") for role in roles)
-    assert compiled.metadata["contract"]["source_anchors"] == []
 
 
 def test_query_contract_does_not_force_table_for_generic_incident() -> None:
@@ -720,6 +911,16 @@ def test_query_contract_mixed_modality_requires_mixed_evidence_coverage() -> Non
     assert contract.required_modalities == ("section", "table", "symbol")
 
 
+def test_query_contract_obligation_refines_coarse_mixed_modality() -> None:
+    """A precise mixed obligation should not require an unrelated third kind."""
+    contract = build_query_contract(
+        "Using the implementation guide, which function handles authentication?",
+        profile=_profile(modality="mixed", obligation="prose_plus_code"),
+    )
+
+    assert contract.required_modalities == ("section", "symbol")
+
+
 def test_query_contract_keeps_code_export_window_as_symbol_only() -> None:
     """Code symbol questions should not inherit table obligations from domain nouns."""
     contract = build_query_contract(
@@ -749,8 +950,8 @@ def test_query_contract_does_not_force_table_for_incident_postmortem_fact() -> N
     assert contract.required_modalities == ()
 
 
-def test_compiler_keeps_temporal_candidates_for_pyrrho_review() -> None:
-    """The compiler no longer drops older dated candidates before Pyrrho sees them."""
+def test_compiler_needs_explicit_temporal_contract_to_reorder_candidates() -> None:
+    """Temporal wording alone does not bypass the trusted query profile."""
     deprecation = _result(
         "The legacy_sync deprecation date is 2026-09-30.",
         "unstructured/project_atlas_status.md",
@@ -767,26 +968,12 @@ def test_compiler_keeps_temporal_candidates_for_pyrrho_review() -> None:
         [deprecation, apac],
     )
 
-    assert compiled.results[0].content.startswith("On 2026-07-18")
+    assert compiled.results[0].content.startswith("The legacy_sync")
     assert any("legacy_sync" in result.content for result in compiled.results)
 
 
-def test_compiler_does_not_make_single_unit_multi_number_fact_a_conflict() -> None:
-    """Multiple numeric facts inside one aligned source are not conflicting sources."""
-    sla = _result(
-        "Platinum SEV0 pages after 30 minutes and requires acknowledgement within 5 minutes.",
-        "unstructured/observability_sla.md",
-        location="Observability SLA",
-    )
-
-    compiled = compile_evidence("What is the Platinum SEV0 acknowledgement time?", [sla])
-
-    assert compiled.results[0].metadata["evidence_compiler"]["min_sources"] == 1
-    assert "conflict_value" not in compiled.results[0].metadata["evidence_compiler"]["roles"]
-
-
-def test_compiler_prefers_requested_symbol_granularity() -> None:
-    """Method/function queries should select the method over the enclosing class."""
+def test_compiler_preserves_reranker_order_across_symbol_granularities() -> None:
+    """Compiler keyword heuristics must not choose between class and method results."""
     class_symbol = _result(
         "class FeatureGate:\n    def is_eligible(self, account): ...",
         "code/flags.py",
@@ -815,11 +1002,49 @@ def test_compiler_prefers_requested_symbol_granularity() -> None:
         [class_symbol, method_symbol],
     )
 
-    assert compiled.results[0].address.location == "flags.FeatureGate.is_eligible"
+    assert compiled.results[0].address.location == "flags.FeatureGate"
 
 
-def test_behavioral_code_query_does_not_infer_documentation_conflict() -> None:
-    """Code/doc conflict labels belong to Pyrrho, not compiler polarity regex."""
+def test_compiler_matches_exact_identifier_component_in_qualified_symbol() -> None:
+    """A module identifier may select a child symbol without fuzzy normalization."""
+    constant = _result(
+        'REQUIRED_DEPLOY_ENV = ("FITZ_DEPLOY_APPROVER", "FITZ_CHANGE_TICKET")',
+        "code/rollout_guard.py",
+        kind=AddressKind.SYMBOL,
+        location="code.rollout_guard.REQUIRED_DEPLOY_ENV",
+        address_metadata={
+            "kind": "constant",
+            "name": "REQUIRED_DEPLOY_ENV",
+            "qualified_name": "code.rollout_guard.REQUIRED_DEPLOY_ENV",
+        },
+    )
+    similar_module = _result(
+        'REQUIRED_DEPLOY_ENV = ("WRONG_VALUE",)',
+        "code/pre_rollout_guard.py",
+        kind=AddressKind.SYMBOL,
+        location="code.pre_rollout_guard.REQUIRED_DEPLOY_ENV",
+        address_metadata={
+            "kind": "constant",
+            "name": "REQUIRED_DEPLOY_ENV",
+            "qualified_name": "code.pre_rollout_guard.REQUIRED_DEPLOY_ENV",
+        },
+    )
+
+    compiled = compile_evidence(
+        "Which required deployment environment variables are enforced by rollout_guard?",
+        [constant, similar_module],
+        profile=_profile(modality="code"),
+    )
+
+    assert [result.file_path for result in compiled.results] == ["code/rollout_guard.py"]
+    assert compiled.results[0].content == constant.content
+    roles = compiled.results[0].metadata["evidence_compiler"]["roles"]
+    assert "anchor_identifier:rollout_guard" in roles
+    assert "required_symbol" in roles
+
+
+def test_behavioral_code_query_preserves_code_and_documentation() -> None:
+    """Fitz keeps both source types available for Pyrrho's judgment."""
     symbol = _result(
         "if user.get('archived') == 'true':\n    return False",
         "code/feature_flag_service.py",
@@ -848,12 +1073,11 @@ def test_behavioral_code_query_does_not_infer_documentation_conflict() -> None:
         for result in compiled.results
     }
     assert "required_symbol" in roles_by_file["code/feature_flag_service.py"]
-    assert "conflict_value" not in roles_by_file["code/feature_flag_service.py"]
-    assert "conflict_companion:documentation" not in roles_by_file["code/README.md"]
+    assert "code/README.md" in roles_by_file
 
 
-def test_code_notes_export_claim_conflict_is_not_compiler_owned() -> None:
-    """Opposing code/prose claims are evidence for Pyrrho, not compiler verdicts."""
+def test_code_notes_export_claims_are_both_preserved() -> None:
+    """Opposing code/prose claims remain raw evidence for Pyrrho."""
     symbol = _result(
         'if user.get("type") == "guest":\n    return False',
         "code/access_control.py",
@@ -877,13 +1101,150 @@ def test_code_notes_export_claim_conflict_is_not_compiler_owned() -> None:
         profile=_profile(modality="code"),
     )
 
-    roles_by_file = {
-        result.file_path: result.metadata["evidence_compiler"]["roles"]
-        for result in compiled.results
+    assert {result.file_path for result in compiled.results} == {
+        "code/access_control.py",
+        "code/README.md",
     }
-    assert "conflict_value" not in roles_by_file["code/access_control.py"]
-    assert "conflict_value" not in roles_by_file["code/README.md"]
-    assert "conflict_companion:documentation" not in roles_by_file["code/README.md"]
+
+
+def test_compiler_preserves_each_grounded_compound_query_clause() -> None:
+    """An identifier in one clause must not erase evidence for another clause."""
+    query = (
+        "Which deployment covers privacy_banner in EU and "
+        "what retention policy applies to EU customer export logs?"
+    )
+    query_legs = [
+        "Which deployment covers privacy_banner in EU",
+        "what retention policy applies to EU customer export logs",
+    ]
+    provenance = {"retrieval_queries": [query, *query_legs]}
+    deployment = _result(
+        "DEP-903 | privacy_banner | eu | stable",
+        "structured/deployments.csv",
+        kind=AddressKind.TABLE,
+        location="Deployments",
+        address_metadata=provenance,
+    )
+    feature_flag = _result(
+        "privacy_banner | eu | enabled | Privacy",
+        "structured/feature_flags.csv",
+        kind=AddressKind.TABLE,
+        location="Feature Flags",
+        address_metadata=provenance,
+    )
+    retention = _result(
+        "EU customer export logs are retained for 180 days.",
+        "unstructured/data_retention_policy.md",
+        location="Data Retention Policy",
+        address_metadata=provenance,
+    )
+
+    compiled = compile_evidence(
+        query,
+        [deployment, feature_flag, retention],
+        profile=_profile(
+            query_contract="comparison_coverage",
+            modality="mixed",
+            obligation="prose_plus_table",
+        ),
+        query_legs=query_legs,
+    )
+
+    assert [result.file_path for result in compiled.results[:2]] == [
+        "structured/deployments.csv",
+        "unstructured/data_retention_policy.md",
+    ]
+    roles = compiled.results[1].metadata["evidence_compiler"]["roles"]
+    assert "query_clause:2" in roles
+    assert "required_section" in roles
+
+
+def test_compiler_keeps_explicit_code_file_companion_without_query_identifier() -> None:
+    """An explicit source-file bridge grounds a helper that omits the row ID."""
+    brief = _result(
+        "Export EXP-502 uses `export_scheduler.py` for skip logic.",
+        "mixed/export_brief.md",
+        location="Export Brief",
+    )
+    function = _result(
+        "def should_skip_export(row_count: int, encrypted: bool) -> bool:\n"
+        "    return row_count > 100000 and not encrypted",
+        "code/export_scheduler.py",
+        kind=AddressKind.SYMBOL,
+        location="code.export_scheduler.should_skip_export",
+        address_metadata={
+            "kind": "function",
+            "name": "should_skip_export",
+            "qualified_name": "code.export_scheduler.should_skip_export",
+        },
+        metadata={
+            "evidence_closure": {
+                "role": "required_symbol",
+                "bridges": ["EXP-502", "export_scheduler.py"],
+                "contract_identifiers": ["EXP-502"],
+            }
+        },
+    )
+
+    compiled = compile_evidence(
+        "Should EXP-502 be skipped?",
+        [brief, function],
+        profile=_profile(obligation="prose_plus_code"),
+    )
+
+    assert [result.file_path for result in compiled.results] == [
+        "mixed/export_brief.md",
+        "code/export_scheduler.py",
+    ]
+    assert compiled.results[1].metadata["evidence_compiler"]["roles"] == ["required_symbol"]
+
+
+def test_compiler_rejects_code_companion_from_a_different_file() -> None:
+    """Closure cannot use one referenced filename to certify another module."""
+    unrelated = _result(
+        "def should_skip_export(row_count: int) -> bool:\n    return False",
+        "code/other_scheduler.py",
+        kind=AddressKind.SYMBOL,
+        location="code.other_scheduler.should_skip_export",
+        metadata={
+            "evidence_closure": {
+                "role": "required_symbol",
+                "bridges": ["EXP-502", "export_scheduler.py"],
+                "contract_identifiers": ["EXP-502"],
+            }
+        },
+    )
+
+    compiled = compile_evidence("Should EXP-502 be skipped?", [unrelated])
+
+    assert compiled.results == []
+    assert compiled.metadata["filtered_all"] is True
+
+
+def test_compound_clause_does_not_bypass_its_own_exact_identifier() -> None:
+    """Clause coverage cannot certify a result missing that clause's identifier."""
+    query = "What is AX-156 status, and who owns privacy_banner?"
+    query_legs = ["What is AX-156 status", "who owns privacy_banner"]
+    provenance = {"retrieval_queries": query_legs}
+    unrelated = _result(
+        "AX-155 is stable and owned by Search.",
+        "unstructured/status.md",
+        address_metadata=provenance,
+    )
+    privacy = _result(
+        "privacy_banner is owned by Privacy.",
+        "structured/feature_flags.csv",
+        kind=AddressKind.TABLE,
+        address_metadata=provenance,
+    )
+
+    compiled = compile_evidence(
+        query,
+        [unrelated, privacy],
+        query_legs=query_legs,
+    )
+
+    assert [result.file_path for result in compiled.results] == ["structured/feature_flags.csv"]
 
 
 def _profile(

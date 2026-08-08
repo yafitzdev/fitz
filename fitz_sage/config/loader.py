@@ -80,27 +80,6 @@ def deep_merge(base: dict, override: dict) -> dict:
 
 
 # =============================================================================
-# Removed Config Keys
-# =============================================================================
-
-# Removed config keys mapped to actionable replacement text.
-_REMOVED_CONFIG_KEYS: dict[str, str] = {
-    "enable_guardrails": (
-        "`enable_guardrails` was replaced by `governance`.\n"
-        "  enable_guardrails: true   ->  governance: pyrrho\n"
-        "  enable_guardrails: false  ->  remove the key; governance is mandatory"
-    ),
-}
-
-
-def _check_removed_config_keys(config: dict[str, Any]) -> None:
-    """Raise an actionable error if the config uses a removed key."""
-    for key, message in _REMOVED_CONFIG_KEYS.items():
-        if key in config:
-            raise ValueError(message)
-
-
-# =============================================================================
 # Loading Functions
 # =============================================================================
 
@@ -116,6 +95,8 @@ def _load_defaults(engine: str) -> dict[str, Any]:
 
     with defaults_path.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"Engine defaults must be a mapping: {defaults_path}")
 
     # Unwrap engine key if present (e.g., fitz_krag: {...})
     if engine in raw:
@@ -123,8 +104,11 @@ def _load_defaults(engine: str) -> dict[str, Any]:
     else:
         defaults = raw
 
+    if not isinstance(defaults, dict):
+        raise ValueError(f"Engine defaults must be a mapping: {defaults_path}")
+
     logger.debug(f"Loaded defaults for {engine} from {defaults_path}")
-    return defaults
+    return dict(defaults)
 
 
 def _load_user_config(engine: str) -> dict[str, Any] | None:
@@ -181,7 +165,6 @@ def load_engine_config(engine: str):
     user_config = _load_user_config(engine)
 
     if user_config is not None:
-        _check_removed_config_keys(user_config)
         # Merge user config over defaults
         merged = deep_merge(defaults, user_config)
         logger.debug(f"Merged config for {engine}: defaults + user overrides")
@@ -195,29 +178,7 @@ def load_engine_config(engine: str):
     return config_model
 
 
-def get_config_source(engine: str) -> str:
-    """
-    Get a description of where config is loaded from.
-
-    Useful for CLI display.
-
-    Args:
-        engine: Engine name
-
-    Returns:
-        Human-readable source description
-    """
-    user_path = FitzPaths.config()
-
-    if user_path.exists():
-        return f"{user_path} (overriding defaults)"
-    else:
-        defaults_path = _get_defaults_path(engine)
-        return f"{defaults_path} (package defaults)"
-
-
 __all__ = [
     "load_engine_config",
     "deep_merge",
-    "get_config_source",
 ]

@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature for fitz
+about: Suggest a new feature for fitz-sage
 title: "[FEATURE] "
 labels: enhancement
 assignees: ""
@@ -32,12 +32,12 @@ Any alternative solutions or features you've considered.
 
 ## Area (if applicable)
 
-- [ ] `chat` - LLM chat completion
-- [ ] `parser` - Document parsing
-- [ ] `chunking` - Format-specific chunking
-- [ ] `retrieval` - Retrieval intelligence
-- [ ] `ingestion` - Typed-unit ingestion
-- [ ] Other / Not a plugin
+- [ ] Engine / retrieval pipeline
+- [ ] Query planning / retrieval intelligence
+- [ ] Parser / typed-unit ingestion
+- [ ] SDK / REST API / CLI
+- [ ] Models / providers
+- [ ] Documentation / tooling
 
 ## Willingness to Contribute
 

@@ -40,8 +40,7 @@ def _raw_files_ddl() -> str:
         file_type TEXT NOT NULL,
         size_bytes INTEGER NOT NULL,
         metadata TEXT NOT NULL DEFAULT '{{}}',
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_{TABLE_PREFIX}raw_files_path
         ON {TABLE_PREFIX}raw_files(path);
@@ -64,7 +63,6 @@ def _symbol_index_ddl() -> str:
         index_text TEXT NOT NULL DEFAULT '',
         imports TEXT NOT NULL DEFAULT '[]',
         "references" TEXT NOT NULL DEFAULT '[]',
-        keywords TEXT NOT NULL DEFAULT '[]',
         entities TEXT NOT NULL DEFAULT '[]',
         metadata TEXT NOT NULL DEFAULT '{{}}',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -132,7 +130,6 @@ def _section_index_ddl() -> str:
         summary TEXT,
         parent_section_id TEXT,
         position INTEGER NOT NULL,
-        keywords TEXT NOT NULL DEFAULT '[]',
         entities TEXT NOT NULL DEFAULT '[]',
         metadata TEXT NOT NULL DEFAULT '{{}}',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP

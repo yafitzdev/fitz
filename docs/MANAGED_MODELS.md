@@ -4,13 +4,13 @@
 fitz-sage retrieval works without an API key or an external inference server.
 The standard retrieval path uses local CPU models.
 
-## Default Local Models
+## Local Models
 
 | Job | Model | Runtime | Why it exists |
 |---|---|---|---|
-| Enrichment and semantic query keywords | `onnx-community/Qwen3-0.6B-DQ-ONNX` (`qwen3-0.6b`) | `onnxruntime-genai`, CPU | Required metadata backbone for better recall. |
+| Semantic query terms and background enrichment | `onnx-community/Qwen3-0.6B-DQ-ONNX` (`qwen3-0.6b`) | `onnxruntime-genai`, CPU | Standard query expansion plus optional entity/hierarchy metadata. |
 | Reranking | `Alibaba-NLP/gte-reranker-modernbert-base` | raw `onnxruntime`, CPU | Cross-encoder precision over broad recall candidates. |
-| Governance | `yafitzdev/pyrrho-v2-nano-g1` | raw `onnxruntime`, CPU | Sufficiency/conflict/insufficiency classifier for ranked evidence prefixes with native v2 metadata. |
+| Governance | `yafitzdev/pyrrho-v2-nano-g1` at revision `948f0500b74871cfaec7689a01d4eab0dd516e1b` | raw `onnxruntime`, CPU | Accepted immutable Pyrrho default; custom local or commit-pinned models are supported. |
 
 None of these models require `optimum`, `llama.cpp`, GGUF, or an
 OpenAI-compatible server. Qwen uses ONNX Runtime GenAI; the reranker and Pyrrho
@@ -18,23 +18,14 @@ v2 load pre-built ONNX graphs through plain ONNX Runtime.
 
 ## Download Behavior
 
-Models are downloaded lazily from Hugging Face the first time a workflow needs
-them. Qwen and the reranker use the Hugging Face cache. Pyrrho uses Fitz's
-managed user cache under `~/.fitz/models/pyrrho/...` so Windows users do not need
-symlink privileges.
+Qwen, the reranker, and Pyrrho are downloaded lazily into the Hugging Face
+cache.
 
 | Model | Trigger |
 |---|---|
-| Qwen3 0.6B ONNX GenAI | First query or ingest that can use local enrichment or semantic query keywords. |
+| Qwen3 0.6B ONNX GenAI | First background-enrichment or semantic-query-keyword operation. `point()` does not load it. |
 | ONNX reranker | First retrieval pass that has enough candidates to rerank. |
-| Pyrrho v2 | First governance cutoff evaluation. |
-
-The CLI may print messages such as:
-
-```text
-Preparing managed Qwen3 0.6B ONNX GenAI enrichment snapshot...
-Managed Qwen snapshot ready (<revision>).
-```
+| Pyrrho v2 | First query-plan or evidence-decision call. |
 
 After the first download, subsequent runs reuse the cached snapshots.
 
@@ -46,8 +37,8 @@ Run the standard local CPU path against a tiny generated corpus:
 python tools/smoke_local_retrieval.py
 ```
 
-The script initializes managed Qwen, indexes the corpus, and runs governed
-evidence queries so the reranker and Pyrrho path execute as well. It is a
+The script resolves managed Qwen, indexes the corpus, runs background
+enrichment, and executes queries through the reranker and Pyrrho. It is a
 runtime smoke check, not a retrieval-quality benchmark.
 
 ## Offline and Air-Gapped Use
@@ -60,15 +51,14 @@ Warm the standard model set:
 ```bash
 python -c "from fitz_sage.llm.providers.onnx_chat import OnnxChat; OnnxChat().ensure_available(include_checksum=True)"
 python -c "from fitz_sage.llm.providers.onnx_reranker import OnnxReranker; OnnxReranker().rerank('warmup', ['one', 'two'])"
-python -c "from types import SimpleNamespace; from fitz_sage.governance import create_governance; create_governance('pyrrho').decide('warmup', [SimpleNamespace(content='warmup evidence', metadata={})])"
+python -c "from fitz_sage.integrations.pyrrho import create_pyrrho; create_pyrrho('pyrrho').decide('warmup', [{'source_id': 'warmup', 'text': 'warmup evidence'}])"
 ```
 
-Copy both cache roots:
+Copy the model cache:
 
 | Cache | What it contains |
 |---|---|
-| Hugging Face cache (`HF_HOME`, or the platform default) | Qwen ONNX snapshot, reranker ONNX file, tokenizers, configs |
-| `~/.fitz/models/pyrrho/` | Managed Pyrrho ONNX package |
+| Hugging Face cache (`HF_HOME`, or the platform default) | Qwen and Pyrrho snapshots, reranker ONNX file, tokenizers, and configs |
 
 On the target machine, point `HF_HOME` at the copied Hugging Face cache and set
 Hugging Face offline mode:
@@ -78,36 +68,36 @@ export HF_HOME=/opt/fitz/hf-cache
 export HF_HUB_OFFLINE=1
 ```
 
-For Pyrrho, either copy `~/.fitz/models/pyrrho/` to the same Fitz home location
-or configure governance with the unpacked local package path:
+Alternatively, copy an unpacked custom Pyrrho model and configure its exact
+local path:
 
 ```yaml
-governance: pyrrho//opt/fitz/models/pyrrho/yafitzdev__pyrrho-v2-nano-g1
+governance: pyrrho//opt/fitz/models/pyrrho/custom-release
 ```
 
 The double slash after `pyrrho/` is intentional for absolute Unix paths. On
 Windows, use a normal absolute path after the provider prefix, for example
-`pyrrho/C:\fitz\models\pyrrho\yafitzdev__pyrrho-v2-nano-g1`.
+`pyrrho/C:\fitz\models\pyrrho\custom-release`.
 
-## Qwen Enrichment
+## Qwen Responsibilities
 
 Qwen enrichment is not a user-selected endpoint provider. It is part of the
 local retrieval product:
 
 - query-time semantic keyword expansion
-- file keyword and alias extraction
-- entity linking
-- L1 file summaries
-- L2 corpus hierarchy
-- demand summaries for surfaced files
+- optional entity and temporal metadata
+- optional L1 file summaries
+- optional L2 corpus hierarchy
+- optional demand summaries for surfaced files
 
-If the local Qwen runtime cannot initialize, fitz-sage raises an error instead
-of silently weakening the retrieval index. The foreground query path can return
-before all deep enrichment is complete after the managed runtime is available.
+`point()` never waits for Qwen. If query expansion fails, Fitz-Sage records the
+failure and continues with the literal prepared plan. Background failures are
+reported in `indexing_status().enrichment` while the source index remains
+searchable.
 
 ## Optional Synthesis Is Separate
 
-Answer synthesis is not part of `fitz query`. If a user explicitly runs
+Answer synthesis is not part of `fitz retrieve`. If a user explicitly runs
 `fitz answer`, synthesis may use an OpenAI-compatible endpoint configured by the
 user. That endpoint is separate from the managed ONNX models above.
 

@@ -5,10 +5,13 @@ API server command.
 Usage:
     fitz serve              # Start on default port 8000
     fitz serve --port 3000  # Custom port
-    fitz serve --host 0.0.0.0  # Listen on all interfaces
+    FITZ_API_KEY=secret fitz serve --host 0.0.0.0
 """
 
 from __future__ import annotations
+
+import ipaddress
+import os
 
 import typer
 
@@ -46,7 +49,7 @@ def command(
     Examples:
         fitz serve                    # Start on localhost:8000
         fitz serve -p 3000            # Custom port
-        fitz serve --host 0.0.0.0     # Listen on all interfaces
+        FITZ_API_KEY=secret fitz serve --host 0.0.0.0
         fitz serve --reload           # Auto-reload on code changes
 
     API Documentation:
@@ -73,9 +76,18 @@ def command(
         config_path = FitzPaths.config()
         ui.error("No configuration found.")
         ui.info("Run a query first to auto-configure:")
-        ui.info('  fitz query "test" --source ./docs')
+        ui.info('  fitz retrieve "test" --source ./docs')
         ui.info("Or create the config manually:")
         ui.info(f"  {config_path}")
+        raise typer.Exit(1)
+
+    try:
+        is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = host.lower() == "localhost"
+    if not is_loopback and not os.getenv("FITZ_API_KEY"):
+        ui.error("Remote API binding requires the FITZ_API_KEY environment variable.")
+        ui.info("Clients must send the key in the X-Fitz-API-Key header.")
         raise typer.Exit(1)
 
     ui.header("Fitz API Server", f"http://{host}:{port}")

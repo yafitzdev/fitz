@@ -39,21 +39,6 @@ class TestCollectionsCommand:
         assert "no collection" in result.output.lower() or "ingest" in result.output.lower()
 
 
-class TestCollectionsHelpers:
-    """Tests for collections helper functions."""
-
-    def test_cli_context_loads_config(self):
-        """Test CLIContext loads config."""
-        mock_ctx = MagicMock()
-
-        with patch("fitz_sage.cli.context.CLIContext.load", return_value=mock_ctx):
-            from fitz_sage.cli.context import CLIContext
-
-            ctx = CLIContext.load()
-
-        assert ctx is not None
-
-
 class TestDisplayCollectionsTable:
     """Tests for _display_collections_table."""
 
@@ -86,7 +71,7 @@ class TestDisplayCollectionInfo:
 
             _display_collection_info(
                 name="my_collection",
-                chunk_count=150,
+                item_count=150,
                 metadata={},
             )
 
@@ -101,7 +86,7 @@ class TestDisplayCollectionInfo:
 
             _display_collection_info(
                 name="test",
-                chunk_count=200,
+                item_count=200,
                 metadata={},
             )
 
@@ -130,8 +115,8 @@ class TestCollectionsWithData:
         """Test collections can list and exit."""
         mock_service = MagicMock()
         mock_service.list_collections.return_value = [
-            CollectionInfo(name="docs", chunk_count=100),
-            CollectionInfo(name="code", chunk_count=50),
+            CollectionInfo(name="docs", item_count=100),
+            CollectionInfo(name="code", item_count=50),
         ]
 
         with patch("fitz_sage.cli.commands.collections.FitzService", return_value=mock_service):
@@ -145,11 +130,11 @@ class TestCollectionsWithData:
         """Test collections can select a collection and exit."""
         mock_service = MagicMock()
         mock_service.list_collections.return_value = [
-            CollectionInfo(name="docs", chunk_count=10),
+            CollectionInfo(name="docs", item_count=10),
         ]
         mock_service.get_collection.return_value = CollectionInfo(
             name="docs",
-            chunk_count=10,
+            item_count=10,
             metadata={},
         )
 
@@ -167,11 +152,11 @@ class TestCollectionsDelete:
         """Test delete can be cancelled."""
         mock_service = MagicMock()
         mock_service.list_collections.return_value = [
-            CollectionInfo(name="docs", chunk_count=10),
+            CollectionInfo(name="docs", item_count=10),
         ]
         mock_service.get_collection.return_value = CollectionInfo(
             name="docs",
-            chunk_count=10,
+            item_count=10,
             metadata={},
         )
 

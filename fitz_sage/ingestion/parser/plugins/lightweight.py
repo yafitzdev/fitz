@@ -136,7 +136,7 @@ class LightweightDOCXParser(BaseParser):
             if not text:
                 continue
 
-            style_name = (para.style.name or "").lower()
+            style_name = (para.style.name if para.style is not None else "").lower()
 
             if "heading" in style_name:
                 # Extract heading level from style name (e.g., "Heading 2")

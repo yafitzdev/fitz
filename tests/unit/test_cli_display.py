@@ -6,58 +6,63 @@ from __future__ import annotations
 from fitz_sage.cli.ui.display import (
     _compact_evidence_excerpt,
     _evidence_title,
-    _format_governance_metadata,
     _format_indexing_status,
+    _format_pyrrho_metadata,
 )
 
 
-def test_format_indexing_status_shows_deep_enrichment_when_query_ready():
-    """Query-ready collections should not look like indexing is still blocked."""
+def test_format_indexing_status_shows_enrichment_when_query_ready():
+    """Query-ready collections report optional enrichment separately."""
     status = {
         "total": 63,
         "pending": 0,
         "complete": True,
         "query_ready": True,
-        "deep_pending": 62,
-        "fully_enriched": False,
+        "enrichment": {
+            "pending": 62,
+            "finalization": "pending",
+            "complete": False,
+        },
     }
 
-    assert _format_indexing_status(status) == "Deep enrichment pending: 62/63"
+    assert _format_indexing_status(status) == "Enrichment pending: 62/63"
 
 
-def test_format_indexing_status_names_single_deep_pending_file():
-    """A one-file deep-enrichment tail should be visible to the user."""
+def test_format_indexing_status_names_single_pending_enrichment_file():
+    """A one-file enrichment tail should be visible to the user."""
     status = {
         "total": 62,
         "pending": 0,
         "complete": True,
         "query_ready": True,
-        "deep_pending": 1,
-        "deep_pending_files": [
-            {"path": "pdf/1.0 BA Yan Fitzner.pdf", "state": "query_ready", "priority": 4}
-        ],
-        "fully_enriched": False,
+        "enrichment": {
+            "pending": 1,
+            "pending_files": [
+                {"path": "pdf/1.0 BA Yan Fitzner.pdf", "state": "pending", "priority": 4}
+            ],
+            "finalization": "pending",
+            "complete": False,
+        },
     }
 
     assert _format_indexing_status(status) == (
-        "Deep enrichment pending: 1/62 (pdf/1.0 BA Yan Fitzner.pdf, query_ready)"
+        "Enrichment pending: 1/62 (pdf/1.0 BA Yan Fitzner.pdf, pending)"
     )
 
 
-def test_format_indexing_status_shows_enrichment_after_parse_surface_ready():
-    """Parsed files are searchable, so remaining keyword work is enrichment."""
+def test_format_indexing_status_shows_indexing_failure_before_enrichment():
+    """Source-index failures remain distinct from optional enrichment."""
     status = {
-        "total": 63,
-        "indexed": 1,
-        "pending": 62,
+        "total": 3,
+        "indexed": 2,
+        "pending": 0,
+        "failed": 1,
+        "failed_files": [{"path": "broken.pdf", "stage": "parse", "error": "invalid"}],
         "complete": False,
-        "query_ready": False,
-        "deep_pending": 63,
-        "fully_enriched": False,
-        "by_state": {"parsed": 62, "query_ready": 1},
+        "query_ready": True,
     }
 
-    assert _format_indexing_status(status) == "Enrichment pending: 62/63"
+    assert _format_indexing_status(status) == "Indexing failures: 1/3 (broken.pdf, parse)"
 
 
 def test_format_indexing_status_shows_indexing_when_query_surface_is_pending():
@@ -67,8 +72,6 @@ def test_format_indexing_status_shows_indexing_when_query_surface_is_pending():
         "pending": 12,
         "complete": False,
         "query_ready": False,
-        "deep_pending": 63,
-        "fully_enriched": False,
     }
 
     assert _format_indexing_status(status) == "Indexing pending: 12/63"
@@ -76,65 +79,40 @@ def test_format_indexing_status_shows_indexing_when_query_surface_is_pending():
 
 def test_evidence_title_stays_stable_for_pyrrho_verdict():
     """Evidence table title should not encode governance state."""
-    metadata = {
-        "governance_cutoff": {
-            "pyrrho": {"mode": "sufficient"},
-        }
-    }
+    metadata = {"pyrrho": {"verdict": "SUFFICIENT"}}
 
     assert _evidence_title("sufficient", metadata) == "Evidence"
 
 
-def test_broad_overview_title_stays_stable():
-    """Broad overview semantics belong in governance metadata, not the title."""
+def test_format_pyrrho_metadata_shows_decision_and_delivery():
+    """Display Pyrrho's decision separately from progressive delivery metadata."""
     metadata = {
-        "governance_cutoff": {
-            "representative_sources": True,
-            "policy": {"query_shape": "broad_overview"},
-        }
+        "pyrrho": {
+            "verdict": "SUFFICIENT",
+            "probabilities": {
+                "INSUFFICIENT": 0.21,
+                "DISPUTED": 0.26,
+                "SUFFICIENT": 0.53,
+            },
+            "reason": "Pyrrho: sources support a confident answer (P=0.53).",
+        },
+        "evidence_delivery": {
+            "available": 10,
+            "selected": 5,
+            "limit": 6,
+            "evaluated_prefixes": [3, 5],
+        },
     }
 
-    assert _evidence_title("insufficient", metadata) == "Evidence"
-
-
-def test_format_governance_metadata_shows_pyrrho_and_cutoff():
-    """Governance metadata should expose probabilities and cutoff policy."""
-    metadata = {
-        "governance_cutoff": {
-            "evaluated": 6,
-            "selected": 6,
-            "max": 10,
-            "mode": "sufficient",
-            "policy": {
-                "query_shape": "broad",
-                "min_sufficient_docs": 4,
-                "min_disputed_docs": 2,
-                "disputed_patience_docs": 2,
-            },
-            "pyrrho": {
-                "mode": "sufficient",
-                "probabilities": {
-                    "insufficient": 0.21,
-                    "disputed": 0.26,
-                    "sufficient": 0.53,
-                },
-                "reason": "Pyrrho: sources support a confident answer (P=0.53).",
-            },
-        }
-    }
-
-    assert _format_governance_metadata(metadata, []) == [
+    assert _format_pyrrho_metadata(metadata, []) == [
         "Pyrrho: SUFFICIENT  P(SUFFICIENT)=0.53  P(INSUFFICIENT)=0.21  P(DISPUTED)=0.26",
-        (
-            "Cutoff: selected 6; evaluated 6/10; policy broad; "
-            "min sufficient 4; min disputed 2; dispute patience 2"
-        ),
+        "Evidence delivery: selected 5/10 (limit 6; prefixes 3 -> 5)",
         "Pyrrho: sources support a confident answer (P=0.53).",
     ]
 
 
-def test_format_governance_metadata_shows_query_profile():
-    """Pre-retrieval profile knobs should be visible separately from cutoff."""
+def test_format_pyrrho_metadata_shows_query_profile():
+    """Pre-retrieval profile knobs remain separate from Pyrrho."""
     metadata = {
         "query_profile": {
             "profile": {
@@ -148,7 +126,7 @@ def test_format_governance_metadata_shows_query_profile():
         }
     }
 
-    assert _format_governance_metadata(metadata, []) == [
+    assert _format_pyrrho_metadata(metadata, []) == [
         (
             "Query profile: profile moderate/comparative/technical; top 20; read 12; "
             "weights section 0.25, code 0.25, table 0.55"
@@ -156,11 +134,11 @@ def test_format_governance_metadata_shows_query_profile():
     ]
 
 
-def test_format_governance_metadata_shows_native_v2_heads():
+def test_format_pyrrho_metadata_shows_native_v2_heads():
     """v2 metadata should show native heads only."""
     metadata = {
-        "governance_cutoff": {
-            "pyrrho": {
+        "pyrrho": {
+            "heads": {
                 "evidence_verdict": {"final_label": "SUFFICIENT", "confidence": 0.92},
                 "failure_mode": {"final_label": "none", "confidence": 0.88},
                 "retrieval_intents": {
@@ -173,11 +151,11 @@ def test_format_governance_metadata_shows_native_v2_heads():
                     "final_labels": ["needs_text"],
                     "confidence": 0.81,
                 },
-            },
-        }
+            }
+        },
     }
 
-    assert _format_governance_metadata(metadata, []) == [
+    assert _format_pyrrho_metadata(metadata, []) == [
         (
             "Pyrrho heads: verdict SUFFICIENT (0.92); failure none (0.88); "
             "intents needs_lookup, needs_temporal_resolution (0.96); "
@@ -186,18 +164,16 @@ def test_format_governance_metadata_shows_native_v2_heads():
     ]
 
 
-def test_format_governance_metadata_preserves_extra_reasons():
-    """Additional governance reasons should not be hidden by Pyrrho metadata."""
+def test_format_pyrrho_metadata_preserves_extra_reasons():
+    """Additional reasons should not be hidden by Pyrrho metadata."""
     metadata = {
-        "governance_cutoff": {
-            "pyrrho": {
-                "mode": "insufficient",
-                "reason": "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
-            },
-        }
+        "pyrrho": {
+            "verdict": "INSUFFICIENT",
+            "reason": "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
+        },
     }
 
-    assert _format_governance_metadata(
+    assert _format_pyrrho_metadata(
         metadata,
         [
             "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
@@ -206,37 +182,6 @@ def test_format_governance_metadata_preserves_extra_reasons():
     ) == [
         "Pyrrho: retrieved sources do not contain enough evidence (P=0.70).",
         "Pyrrho found insufficient evidence after evaluating the top 10 evidence item(s).",
-    ]
-
-
-def test_format_broad_overview_metadata_skips_pyrrho_cutoff_language():
-    """Broad overview metadata should explain representative-source semantics."""
-    metadata = {
-        "governance_cutoff": {
-            "evaluated": 0,
-            "selected": 4,
-            "max": 10,
-            "mode": "insufficient",
-            "representative_sources": True,
-            "sufficiency_evaluated": False,
-            "policy": {
-                "query_shape": "broad_overview",
-                "min_sufficient_docs": 4,
-                "min_disputed_docs": 2,
-                "disputed_patience_docs": 2,
-            },
-        }
-    }
-
-    assert _format_governance_metadata(
-        metadata,
-        ["Query is too broad for evidence sufficiency; returned representative sources."],
-    ) == [
-        (
-            "Broad overview: selected 4 representative source(s) from top 10; "
-            "evidence sufficiency was not evaluated."
-        ),
-        "Query is too broad for evidence sufficiency; returned representative sources.",
     ]
 
 

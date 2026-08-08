@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fitz_sage.core import Answer, GenerationError, Provenance
 from fitz_sage.core.answer_mode import AnswerMode
+from fitz_sage.engines.fitz_krag.generation.mode_instructions import (
+    get_mode_instruction,
+)
 from fitz_sage.engines.fitz_krag.types import ReadResult
-from fitz_sage.governance.instructions import get_mode_instruction
 
 if TYPE_CHECKING:
     from fitz_sage.engines.fitz_krag.config.schema import FitzKragConfig
@@ -230,7 +232,7 @@ class CodeSynthesizer:
         lines = ["I don't have enough information to answer this question."]
 
         # Governance reasons (why constraints fired)
-        reasons = gap_context.get("governance_reasons", ())
+        reasons = gap_context.get("decision_reasons", ())
         if reasons:
             lines.append("")
             lines.append("Why:")
@@ -267,7 +269,7 @@ class CodeSynthesizer:
         if corpus_size == 0:
             lines.append("  - Documents or code files covering this topic")
             lines.append(
-                "  - Use fitz_sage.query('your question', source='./path') to query a directory"
+                "  - Use fitz_sage.answer('your question', source='./path') to answer from a directory"
             )
         else:
             lines.append("  - Documents covering the specific topic of this question")
@@ -283,7 +285,7 @@ class CodeSynthesizer:
             if r.metadata.get("context_type"):
                 continue
 
-            metadata = {
+            metadata: dict[str, Any] = {
                 "kind": r.address.kind.value,
                 "location": r.address.location,
                 "file_path": r.file_path,

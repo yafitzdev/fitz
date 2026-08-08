@@ -8,13 +8,13 @@ answer() pipeline, and that failures or absence are handled gracefully.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
-from fitz_sage.core import Answer, Provenance
+from fitz_sage.core import Answer, Provenance, Query
 from fitz_sage.core.exceptions import QueryIntelligenceError
 from fitz_sage.engines.fitz_krag.engine import FitzKragEngine
+from fitz_sage.engines.fitz_krag.retrieval.router import RetrievalRouterResponse
+from fitz_sage.engines.fitz_krag.types import Address, AddressKind, ReadResult
 from tests.unit.mock_engine import build_mock_engine
 
 # ---------------------------------------------------------------------------
@@ -26,23 +26,31 @@ from tests.unit.mock_engine import build_mock_engine
 _make_engine = build_mock_engine
 
 
-def _make_query(text: str = "How does auth work?") -> MagicMock:
-    """Return a mock Query with the given text."""
-    q = MagicMock(name="query")
-    q.text = text
-    return q
+def _make_query(text: str = "How does auth work?") -> Query:
+    """Return a query with the given text."""
+    return Query(text=text)
 
 
 def _wire_happy_path(engine: FitzKragEngine, query_text: str) -> Answer:
     """Wire up all pipeline stages to return valid data for a full flow."""
-    address = MagicMock(name="addr")
-    engine._retrieval_router.retrieve.return_value = [address]
+    address = Address(
+        kind=AddressKind.SECTION,
+        source_id="auth-doc",
+        location="Authentication",
+        summary="Authentication implementation",
+        score=0.9,
+    )
+    engine._retrieval_router.retrieve.return_value = RetrievalRouterResponse([address])
 
-    read_result = MagicMock(name="read")
+    read_result = ReadResult(
+        address=address,
+        content="The authentication module validates login sessions.",
+        file_path="auth.md",
+    )
     engine._reader.read.return_value = [read_result]
     engine._expander.expand.return_value = [read_result]
 
-    context = MagicMock(name="context")
+    context = "[S1] Authentication implementation"
     engine._assembler.assemble.return_value = context
 
     expected = Answer(
@@ -99,8 +107,7 @@ class TestQueryRewriting:
         assert batch_call_args[0][0] == query.text
 
         # Router receives the rewritten query and the rewrite_result
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == rewritten
         assert call_args[1]["rewrite_result"] is rewrite_result
 
@@ -135,9 +142,13 @@ class TestQueryRewriting:
         result = engine.answer(query)
 
         # Router uses original query (rewrite returned same text)
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == query.text
+        assert call_args[1]["rewrite_result"].is_compound
+        assert call_args[1]["rewrite_result"].decomposed_queries == [
+            "What is the login function",
+            "how does it validate user credentials",
+        ]
 
         assert result is expected
 
@@ -158,8 +169,8 @@ class TestQueryRewriting:
         engine._query_batcher.batch_classify.assert_called_once()
         engine._retrieval_router.retrieve.assert_not_called()
 
-    def test_rewriting_skipped_when_rewriter_is_none(self):
-        """When _query_rewriter is None, the original query flows through directly."""
+    def test_default_planner_decomposes_explicit_compound_query(self):
+        """Explicit clauses are decomposed without rewriting the original query."""
         engine = _make_engine()
         query = _make_query(
             "Where is the UserService class defined and what methods does it expose?"
@@ -170,10 +181,16 @@ class TestQueryRewriting:
 
         result = engine.answer(query)
 
-        # Router uses original query with no rewrite_result
-        engine._retrieval_router.retrieve.assert_called_once()
-        call_args = engine._retrieval_router.retrieve.call_args
+        # The router keeps the original query and receives explicit retrieval legs.
+        call_args = engine._retrieval_router.retrieve.call_args_list[0]
         assert call_args[0][0] == query.text
-        assert call_args[1]["rewrite_result"] is None
+        rewrite_result = call_args[1]["rewrite_result"]
+        assert rewrite_result is not None
+        assert rewrite_result.is_compound
+        assert rewrite_result.rewritten_query == query.text
+        assert rewrite_result.decomposed_queries == [
+            "Where is the UserService class defined",
+            "what methods does it expose",
+        ]
 
         assert result is expected

@@ -1,155 +1,85 @@
-<!-- docs/features/retrieval/entity-graph.md -->
-# Entity Graph (Related-Address Discovery)
+# Entity Graph
 
-## Problem
+The entity graph is optional background metadata for finding source units that
+mention a shared named entity. It is not required for source indexing or the
+first query.
 
-Token-overlap retrieval (FTS5 BM25) returns rows independently. That
-fails when:
+## Population
 
-- **Q:** "What else mentions TechCorp?"
-- **Pure BM25:** returns only rows that match the query terms
-- **Expected:** also return rows that mention the same entities
-  (TechCorp's products, people, related systems)
+During background enrichment:
 
-BM25 doesn't model entity relationships. If section A and section B
-both mention `AuthService` but discuss different aspects, they won't
-co-occur unless the query happens to match both.
+- code-symbol entities and temporal metadata are proposed by managed Qwen;
+- document-section entities are derived deterministically from section text or
+  an available summary;
+- entity-to-unit edges are stored in the collection database.
 
-## Solution: entity-based linking
+Tables are not currently populated into this graph. Fitz-Sage does not use the
+graph to create domain aliases or to equate differently spelled identifiers.
 
-During ingestion, extract named entities per typed unit (symbol /
-section / table) and store them as edges in a small SQLite graph.
-At query time, after the BM25 hit list comes back, expand it by
-walking shared-entity edges.
+## Schema
 
-```
-Initial BM25 hits:  [Section A (mentions AuthService, OAuth2)]
-                              │
-                              ▼
-                       Entity-graph lookup
-                              │
-                              ▼
-                   Shared entities: AuthService, OAuth2
-                              │
-                              ▼
-              Other addresses mentioning the same entities
-                              │
-                              ▼
-Expanded set:   [Section A, Section B (AuthService), Section C (OAuth2)]
+```sql
+CREATE TABLE entities (
+    name TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    entity_type TEXT,
+    mention_count INTEGER DEFAULT 1
+);
+
+CREATE TABLE entity_chunks (
+    entity_name TEXT NOT NULL,
+    chunk_id TEXT NOT NULL,
+    PRIMARY KEY (entity_name, chunk_id)
+);
 ```
 
-## How it works
+The `chunk_id` column stores a symbol or section identifier. These
+are ordinary SQLite tables with indexes, not FTS5 tables or a separate graph
+database.
 
-### At ingestion time
+Entity names are lowercased and trimmed for graph keys. That internal graph-key
+normalization does not rewrite source text or declare separator/abbreviation
+variants equivalent.
 
-1. **Entity extraction.** `KragEnricher` extracts named entities from
-   each typed unit (symbol / section) via the chat-tier LLM, as part of
-   its batched keyword + entity + temporal extraction.
-2. **Graph population.** During the pipeline's `enrich` step, the
-   extracted entities + unit associations are written to the
-   `EntityGraphStore` — two SQLite tables alongside the rest of the
-   collection:
+## Expansion
 
-   ```
-   entities         : (id, name, type, mention_count)
-   entity_addresses : (entity_id, address_id, count)
-   ```
+For already-read symbol or section IDs, the store can rank neighboring IDs by
+the number of shared entities. The KRAG expander currently materializes bounded
+related **symbol** neighbors into evidence. Section edges are persisted, but
+section-neighbor materialization is not part of the current retrieval contract.
 
-   FTS5 index on `entities.name` lets you do prefix / phrase lookups
-   on entity names without scanning.
-
-### At query time
-
-1. **Initial retrieval.** BM25 + KRAG routing returns a top-K set.
-2. **Entity lookup.** Pull entities for the top hits.
-3. **Graph expansion.** Find other addresses sharing those entities,
-   subject to `min_shared_entities` and `max_total`.
-4. **Ranking.** Sort expansions by number of shared entities.
-5. **Merge + dedupe.** Combine with the original BM25 hits.
-
-```python
-initial = bm25_search(query, k=20)
-ents    = entity_store.entities_for(initial)
-related = entity_store.addresses_sharing(ents, min_shared=2, max_total=10)
-final   = dedupe(initial + related)
+```text
+recalled source units
+    -> collect their entity edges
+    -> rank related IDs by shared entities
+    -> materialize unseen related symbols within the profile budget
 ```
 
-## Key design decisions
+This is context expansion after lexical recall, not a replacement for BM25 and
+not a guarantee that every source mentioning an entity is delivered.
 
-1. **Always-on.** Baked into the enrichment + retrieval pipelines;
-   no configuration knob.
-2. **SQLite-native storage.** Lives alongside the rest of the
-   collection in the same `.db` file. No separate graph database, no
-   network.
-3. **Lightweight graph.** Only stores entity-address edges + a
-   denormalised mention count. No full entity attributes.
-4. **Ingestion-time extraction.** Entities extracted once via the
-   chat model during ingest; query-time path is pure SQL.
-5. **Configurable expansion.** `min_shared_entities` controls how
-   tight the linkage must be (default 1); `max_total` caps the size
-   of the expanded set.
+## Failure Behavior
 
-## Entity types
+An entity-stage failure is reported in `indexing_status().enrichment`. The
+original sections, symbols, tables, and FTS5 indexes remain available. A later
+enrichment continuation can retry the failed stage.
 
-`KragEnricher` extracts these entity types (tunable via prompt):
+## Implementation
 
-| Type           | Examples                                          |
-| -------------- | ------------------------------------------------- |
-| `class`        | `AuthService`, `UserController`, `PaymentGateway` |
-| `function`     | `validateToken()`, `processPayment()`             |
-| `person`       | John Smith, Alice (when contextually a person)    |
-| `organization` | TechCorp, Acme Inc, Engineering Team              |
-| `technology`   | OAuth2, SQLite, React, Kubernetes                 |
-| `concept`      | Authentication, Rate Limiting, Caching            |
+- `fitz_sage/retrieval/entity_graph/store.py`
+- `fitz_sage/engines/fitz_krag/ingestion/enricher.py`
+- `fitz_sage/engines/fitz_krag/ingestion/pipeline.py`
+- `fitz_sage/engines/fitz_krag/retrieval/expander.py`
 
-## Configuration
+## Boundaries
 
-None for the user. Tunable via constructor / engine config:
-
-- `max_total` — max related addresses retrieved (default 20)
-- `min_shared_entities` — minimum shared entities to count as related
-  (default 1)
-
-## Files
-
-| Component             | Path                                                              |
-| --------------------- | ----------------------------------------------------------------- |
-| Graph store           | `fitz_sage/retrieval/entity_graph/store.py` (`EntityGraphStore`)  |
-| Entity extraction     | `fitz_sage/engines/fitz_krag/ingestion/enricher.py` (`KragEnricher`) |
-| Graph population      | `fitz_sage/engines/fitz_krag/ingestion/pipeline.py` (`_populate_entity_graph`) |
-| KRAG integration      | `fitz_sage/engines/fitz_krag/retrieval/expander.py`               |
-
-## Example
-
-**Sections:**
-- A: "The `AuthService` class validates JWT tokens using the OAuth2 protocol."
-- B: "`AuthService` logs all authentication attempts to the audit table."
-- C: "OAuth2 refresh tokens expire after 30 days by default."
-
-**Query:** "How does authentication work?"
-
-**Without entity graph:** BM25 returns A (strongest token overlap).
-
-**With entity graph:**
-- Initial: A
-- Entities found in A: `AuthService`, `OAuth2`
-- Graph expansion: B (shares `AuthService`), C (shares `OAuth2`)
-- Final: A, B, C
-
-The synthesizer then has complete context about `AuthService`
-behaviour *and* OAuth2 configuration.
-
-## Dependencies
-
-- `KragEnricher` entity extraction during ingestion through the managed Qwen
-  ONNX runtime.
-- Same SQLite `.db` as the rest of the collection (no separate store).
-- Runs inside the KRAG expander; no extra LLM calls at query time.
+- Entity extraction can omit or misclassify names.
+- Shared names do not prove a semantic relationship.
+- Tables do not contribute graph edges.
+- Current retrieval materializes related symbols, not related sections.
 
 ## Related
 
-- **Enrichment** — extracts the entities during ingest
-- [Multi-Hop Reasoning](multi-hop-reasoning.md) — can use the entity
-  graph for bridge extraction
-- [Comparison Queries](comparison-queries.md) — entity graph helps
-  retrieve both compared entities
+- [Background Enrichment](../../ENRICHMENT.md)
+- [Code Symbol Extraction](../ingestion/code-symbol-extraction.md)
+- [Limitations](../../LIMITATIONS.md)

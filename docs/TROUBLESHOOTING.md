@@ -1,309 +1,237 @@
-<!-- docs/TROUBLESHOOTING.md -->
-# Troubleshooting Guide
+# Troubleshooting
 
-Common issues and solutions for fitz-sage: managed ONNX enrichment, optional
-OpenAI-compatible HTTP endpoints, and SQLite + FTS5 storage.
+Fitz-Sage keeps source indexing, optional background enrichment, local query
+models, and optional endpoint roles separate. Start by identifying which
+boundary failed.
 
----
+## Quick Checks
 
-## Quick Diagnostics
+1. Inspect `.fitz/config.yaml` in the directory where the command runs.
+2. Run with `FITZ_LOG_LEVEL=DEBUG`.
+3. Inspect collection status through the SDK or REST API.
+4. Distinguish `query_ready` from `enrichment.complete`.
 
-Open the config file directly at `~/.fitz/config/fitz_krag.yaml`. For
-`fitz query` / `fitz retrieve`, verify the collection and indexing status. For
-`fitz answer`, also verify `synthesizer`,
-`chat_base_url`, and the API-key environment variable if your endpoint
-requires one.
+```python
+from fitz_sage import fitz
 
----
-
-## Common Issues
-
-### Config Not Found
-
-**Error:**
-```
-No LLM provider found
+client = fitz(collection="docs")
+client.point("./docs")
+print(client.indexing_status())
 ```
 
-**Solution:**
+`point()` returns after supported files are indexed or explicitly failed. It
+does not wait for Qwen entity or hierarchy enrichment.
 
-The config is created automatically on first run — edit it, or pass
-`--synthesizer`, `--endpoint`, and `--api-key-env` directly on the
-`fitz answer` command:
+## Endpoint Connection Errors
+
+`fitz retrieve` does not need an external chat server. An endpoint connection
+matters only when the config enables a role such as:
+
+```yaml
+query_intelligence: endpoint/qwen2.5-7b-instruct
+synthesizer: endpoint/qwen2.5-7b-instruct
+vision: endpoint/gpt-4o
+```
+
+Check the configured URL and model:
+
+```bash
+curl http://localhost:8080/v1/models
+```
+
+For Ollama's OpenAI-compatible chat protocol, use a `/v1` URL such as
+`http://localhost:11434/v1`. The `glm_ocr` parser is different: its scan
+fallback talks to Ollama's native API at `http://localhost:11434` and expects
+the `glm-ocr` model.
+
+## Missing API Key
+
+Hosted keys are read from environment variables. The config stores the variable
+name, not the secret:
+
+```yaml
+chat_api_key_env: OPENAI_API_KEY
+```
+
+```bash
+# Linux/macOS
+export OPENAI_API_KEY="..."
+
+# PowerShell
+$env:OPENAI_API_KEY = "..."
+```
+
+Leave the key field unset for an unauthenticated local endpoint.
+
+## Managed Model Download Or Load Failure
+
+The managed components load lazily:
+
+| Component | First trigger | Failure behavior |
+|---|---|---|
+| Qwen | semantic query terms or background enrichment | query expansion falls back to literal plan; background failure is reported |
+| ONNX reranker | a retrieval pool large enough to rerank | query fails because reranking is part of the product path |
+| Pyrrho | PRE planning or final evidence decision | query fails because governance is mandatory |
+
+Check network/proxy access to Hugging Face during the first download, available
+disk space, and the configured Hugging Face cache (`HF_HOME`). For an
+air-gapped deployment, warm and copy the caches as described in
+[Managed Models](MANAGED_MODELS.md).
+
+## Source Files Are Missing Or Unsearchable
+
+Inspect `indexing_status()` instead of assuming discovery succeeded:
+
+- `unsupported_files` lists extensions outside the active parser/config contract;
+- `failed_files` lists supported files that failed parsing or storage;
+- `indexed` counts searchable supported files;
+- `query_ready` means no supported file remains pending.
+
+The default CPU parser supports embedded text in PDF, DOCX, and PPTX. Common
+boundaries:
+
+- image-only PDF or PPTX files need OCR/vision selection;
+- `.xlsx` is disabled under `parser: cpu` and is not a native table format;
+- native CSV/TSV expects a usable first-row header;
+- empty source files are reported instead of indexed as empty evidence;
+- code-language settings can exclude otherwise recognized code extensions.
+
+See [Ingestion](INGESTION.md) for the authoritative format matrix.
+
+## Source Index Is Ready But Enrichment Is Pending
+
+This is normal. Evidence retrieval uses the persisted sections, symbols, and
+tables immediately. `indexing_status()["enrichment"]` reports optional entity,
+hierarchy, and demand-summary progress.
+
+For a long-lived Python process:
+
+```python
+from fitz_sage import fitz
+
+client = fitz(collection="my_docs")
+client.wait_for_enrichment()
+```
+
+The CLI can hand pending work to its hidden enrichment daemon after returning
+evidence. An enrichment failure does not remove source-index data.
+
+## SQLite Path Or Lock Errors
+
+The default workspace is `<current-directory>/.fitz/`, not a global home
+directory. Confirm the process can create and write:
+
+```text
+.fitz/sqlite/fitz_<collection>.db
+.fitz/collections/<collection>/manifest.json
+```
+
+SQLite uses WAL mode and a 30-second busy timeout. Multiple readers are allowed,
+but writes to one collection are serialized. Do not manually delete only the
+main `.db` while a process is using its `-wal`/`-shm` sidecars.
+
+Use the interactive collection manager to delete a collection cleanly:
+
+```bash
+fitz collections
+```
+
+The REST API also exposes `DELETE /collections/{name}`.
+
+## Old Collection Schema
+
+Fitz-Sage has no compatibility migration promise for unreleased/old collection
+schemas. Delete the collection through the collection manager and point the
+source again. Source files remain the authority.
+
+## Slow Queries
+
+Use a retrieval trace before changing budgets:
+
+```bash
+fitz retrieve "question" --source ./docs --trace run.json
+fitz explain run.json
+```
+
+Common costs are managed Qwen query expansion, cross-encoder reranking, Pyrrho,
+and repeated evidence closure. On very large section indexes, closure recall can
+dominate. Lowering `rerank_candidates`, `top_addresses`, or `top_read` trades
+coverage for latency; compare evidence quality before keeping that change.
+
+Cold queries also include lazy model load and may include model download. See
+[Benchmarks](BENCHMARK.md) for current warm measurements.
+
+## Answer Command Has No Synthesizer
+
+`fitz retrieve` returns evidence without generation. `fitz answer` requires a
+configured synthesizer or invocation flags:
 
 ```bash
 fitz answer "What is X?" \
-  --endpoint https://api.openai.com/v1 \
-  --synthesizer endpoint/gpt-4o-mini \
-  --api-key-env OPENAI_API_KEY \
-  --source ./docs
+  --source ./docs \
+  --synthesizer openai/gpt-4o
 ```
 
----
-
-### Cannot connect to chat endpoint
-
-**Error:**
-```
-LLMError: Cannot connect to http://localhost:8080/v1
-```
-
-**Solution:**
-
-1. Confirm an OpenAI-compatible server is running and reachable at the
-   configured `chat_base_url`. This applies only when you configured an
-   endpoint-backed role such as `synthesizer:`, `query_intelligence:`, or
-   `vision:`.
-   Common local options:
-
-   ```bash
-   # vLLM
-   python -m vllm.entrypoints.openai.api_server --model my-model --port 8080
-
-   # LM Studio: enable the local server in Settings → Developer
-   ```
-
-2. Verify reachability:
-   ```bash
-   curl http://localhost:8080/v1/models
-   ```
-
-3. If using Ollama, point fitz-sage at Ollama's OpenAI-compatible
-   endpoint (`http://localhost:11434/v1`) with an `endpoint/...`
-   provider spec.
-
----
-
-### No API Key
-
-**Error:**
-```
-AuthenticationError: API key not found in environment variable OPENAI_API_KEY
-```
-
-**Solution:**
-
-Set the env var named in `chat_api_key_env` (defaults vary by config):
-
-```bash
-# Linux / macOS
-export OPENAI_API_KEY="..."
-export TOGETHER_API_KEY="..."
-
-# Windows (PowerShell)
-$env:OPENAI_API_KEY = "..."
-
-# Windows (cmd)
-set OPENAI_API_KEY=...
-```
-
-For unauthenticated local servers, leave `chat_api_key_env` unset.
-
----
-
-### Storage path errors
-
-**Error:**
-```
-sqlite3.OperationalError: unable to open database file
-```
-
-**Cause:** The workspace storage directory doesn't exist or isn't writable.
-
-**Solution:**
-
-1. Confirm `<workspace>/sqlite/` exists. By default `<workspace>` is
-   `~/.fitz/`.
-2. Verify write permissions for the user running fitz-sage.
-3. To start fresh, delete the per-collection file (the collection
-   name maps to `fitz_<collection>.db`):
-   ```bash
-   rm ~/.fitz/sqlite/fitz_<collection>.db
-   rm ~/.fitz/sqlite/fitz_<collection>.db-wal
-   rm ~/.fitz/sqlite/fitz_<collection>.db-shm
-   ```
-
----
-
-### Stale collection / schema mismatch
-
-If a collection was created on a much older fitz-sage and a `SELECT`
-errors out with a missing column, the simplest path is to delete the
-collection's `.db` and re-ingest. There is no in-place migration step.
-
-```bash
-fitz collections delete my_collection
-fitz query "..." --source ./docs
-```
-
----
-
-### Rate Limit Error
-
-**Error:**
-```
-RateLimitError: Rate limit exceeded
-```
-
-**Solution:**
-
-1. Wait and retry (the chat provider applies exponential backoff
-   automatically — see `fitz_sage/llm/auth/`).
-2. Use cheaper optional role providers:
-   ```yaml
-   query_intelligence: openai/gpt-4o-mini
-   synthesizer: openai/gpt-4o
-   ```
-
----
-
-### Empty Chunks
-
-**Error:**
-```
-ValueError: No chunks created from documents
-```
-
-**Causes:**
-- Documents are empty or unreadable.
-- Parser failed silently (enable DEBUG logging to see why).
-- All content filtered out by chunking rules.
-
-**Solution:**
-
-1. Check document contents manually.
-2. Enable DEBUG logging by setting `log_level: DEBUG` in
-   `~/.fitz/config/fitz_krag.yaml`, then re-run the query.
-3. Check supported formats in [INGESTION.md](INGESTION.md).
-
----
-
-### No Documents Found
-
-**Error:**
-```
-ValueError: No documents found in ./path
-```
-
-**Causes:**
-- Wrong path.
-- No supported file types.
-- Files filtered by `.gitignore` patterns.
-
-**Solution:**
-
-1. Verify path exists.
-2. Check file extensions (supported: `.pdf`, `.docx`, `.md`, `.txt`,
-   `.py`, `.go`, `.ts`, `.java`, `.cs`, `.sql`, `.xlsx`, `.csv`, etc.).
-3. Try with a specific file:
-   ```bash
-   fitz query "test query" --source ./path/file.pdf
-   ```
-
----
-
-### Timeout Errors
-
-**Error:**
-```
-TimeoutError: Request timed out
-```
-
-**Solution:**
-
-1. Check network connection.
-2. For large documents, lower `chunk_size` or `top_addresses` so
-   each LLM call stays within timeout.
-3. Switch to a faster model for the synthesizer.
-
----
+This requirement is deliberate; the retrieval package does not silently choose
+a prose-generation endpoint.
 
 ## Debugging
 
-### Enable Debug Logging
-
-```yaml
-# In ~/.fitz/config/fitz_krag.yaml
-log_level: DEBUG
-```
-
-### Inspect State File
+Enable logs:
 
 ```bash
-cat .fitz/ingest_state.json | python -m json.tool
+# Linux/macOS
+FITZ_LOG_LEVEL=DEBUG fitz retrieve "test" --source ./docs
+
+# PowerShell
+$env:FITZ_LOG_LEVEL = "DEBUG"
+fitz retrieve "test" --source ./docs
 ```
 
-### Test Chat Endpoint Directly
+Inspect the manifest:
+
+```bash
+python -m json.tool .fitz/collections/<collection>/manifest.json
+```
+
+Test an endpoint directly:
 
 ```python
 from fitz_sage.llm.client import get_chat
 
-chat = get_chat("endpoint", tier="smart")  # or use the full URL form
-response = chat.chat([{"role": "user", "content": "Hello"}])
-print(response)
+chat = get_chat(
+    "endpoint/qwen2.5-7b-instruct",
+    config={"base_url": "http://localhost:8080/v1"},
+)
+print(chat.chat([{"role": "user", "content": "Hello"}]))
 ```
 
-### Inspect the SQLite Store
+Inspect current SQLite tables:
 
 ```bash
-sqlite3 ~/.fitz/sqlite/fitz_<collection>.db
+sqlite3 .fitz/sqlite/fitz_<collection>.db
 .tables
-SELECT COUNT(*) FROM krag_sections;
-SELECT id, title FROM krag_sections LIMIT 5;
+SELECT COUNT(*) FROM krag_section_index;
+SELECT id, title FROM krag_section_index LIMIT 5;
 ```
 
----
+## Reporting A Problem
 
-## Error Reference
+Include:
 
-### Exception Hierarchy
+- `pip show fitz-sage`;
+- `python --version` and operating system;
+- the full traceback;
+- redacted `.fitz/config.yaml`;
+- source-index and enrichment status;
+- a redacted retrieval trace when the problem is ranking or governance.
 
-```
-EngineError (base)
-├── ConfigurationError       # Config issues
-├── QueryError               # Invalid query
-├── KnowledgeError           # Retrieval issues
-├── GenerationError          # LLM issues
-├── TimeoutError             # Timeout
-└── UnsupportedOperationError
+Report issues at [GitHub Issues](https://github.com/yafitzdev/fitz-sage/issues).
 
-APIError
-├── AuthenticationError      # Bad API key
-├── RateLimitError           # Rate limited
-└── ModelNotFoundError       # Invalid model
-```
+## Related
 
-### HTTP Status Codes (REST API)
-
-| Code | Meaning |
-|------|---------|
-| 400  | Bad request (invalid input) |
-| 401  | Authentication failed |
-| 404  | Collection / resource not found |
-| 429  | Rate limited |
-| 500  | Internal server error |
-| 501  | Feature not supported |
-
----
-
-## Getting Help
-
-1. **Check config:** inspect `~/.fitz/config/fitz_krag.yaml` directly
-2. **Check logs:** enable DEBUG level
-3. **Report issues:** [GitHub Issues](https://github.com/yafitzdev/fitz-sage/issues)
-
-When reporting, include:
-- fitz-sage version: `pip show fitz-sage`
-- Python version: `python --version`
-- OS
-- Full traceback
-- Effective config (the contents of `~/.fitz/config/fitz_krag.yaml`, with secrets redacted)
-
----
-
-## See Also
-
-- [CONFIG.md](CONFIG.md) — Configuration reference
-- [CLI.md](CLI.md) — CLI commands
-- [INGESTION.md](INGESTION.md) — Ingestion pipeline
-- [features/platform/unified-storage.md](features/platform/unified-storage.md) — SQLite + FTS5 storage layer
+- [Configuration](CONFIG.md)
+- [CLI](CLI.md)
+- [Ingestion](INGESTION.md)
+- [Retrieval Runs](RETRIEVAL_RUNS.md)
+- [Limitations](LIMITATIONS.md)

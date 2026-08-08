@@ -4,8 +4,13 @@
 from __future__ import annotations
 
 from fitz_sage.engines.fitz_krag.query_analyzer import QueryType
-from fitz_sage.engines.fitz_krag.query_planner import DeterministicQueryPlanner
+from fitz_sage.engines.fitz_krag.query_batcher import BatchResult
+from fitz_sage.engines.fitz_krag.query_planner import (
+    DeterministicQueryPlanner,
+    plan_from_batch_result,
+)
 from fitz_sage.retrieval.detection.modules import AggregationType, TemporalIntent
+from fitz_sage.retrieval.rewriter.types import RewriteResult, RewriteType
 
 
 class TestDeterministicQueryPlanner:
@@ -23,7 +28,8 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.temporal_intent == TemporalIntent.POINT_IN_TIME
         assert plan.detection.has_comparison_intent
         assert plan.detection.comparison_queries
-        assert "endpoint" in plan.keywords
+        assert "API" in plan.keywords
+        assert "failures" in plan.keywords
         assert plan.extended_signals == {
             "specificity": "moderate",
             "answer_type": "comparative",
@@ -41,8 +47,56 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.aggregation_type == AggregationType.COUNT
         assert plan.detection.fetch_multiplier == 4
 
+    def test_plans_explicit_set_quantifiers_as_aggregation(self):
+        """Common exhaustive-set language should request broad retrieval."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "Find every environment variable.",
+            "Show the owner for each vendor.",
+            "Return the full set of dependencies.",
+        ):
+            plan = planner.plan(query)
+            assert plan.detection is not None
+            assert plan.detection.has_aggregation_intent
+
+        plan = planner.plan("List the key metrics in the review.")
+        assert plan.detection is not None
+        assert plan.detection.has_aggregation_intent
+
+    def test_plans_implicit_plural_set_questions_as_aggregation(self):
+        """Plural wh-questions should request complete set coverage."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "Which incidents affected the west region?",
+            "What access policies are documented?",
+            "Which vendors support SAML?",
+        ):
+            plan = planner.plan(query)
+            assert plan.detection is not None
+            assert plan.detection.has_aggregation_intent
+
+    def test_singular_process_with_modal_is_not_a_set_request(self):
+        """A noun ending in s plus a modal is not reliable plural grammar."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("Which process should use the emergency route?")
+
+        assert plan.detection is not None
+        assert not plan.detection.has_aggregation_intent
+
+    def test_scalar_measurement_is_not_a_corpus_aggregation(self):
+        """A singular duration lookup should remain a narrow fact request."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("How many days is the token rotation interval?")
+
+        assert plan.detection is not None
+        assert not plan.detection.has_aggregation_intent
+
     def test_key_facts_query_is_broad_exploratory(self):
-        """Corpus key-facts queries should use the broad cutoff policy."""
+        """Corpus key-facts queries should use broad retrieval coverage."""
         planner = DeterministicQueryPlanner()
 
         plan = planner.plan("What are the key facts in this corpus?")
@@ -58,7 +112,7 @@ class TestDeterministicQueryPlanner:
 
         assert plan.analysis.primary_type == QueryType.CODE
         assert plan.detection is None
-        assert "failure" in plan.keywords
+        assert "errors" in plan.keywords
 
     def test_detects_changed_between_temporal_comparison(self):
         """Between-period change wording should route like a comparison."""
@@ -71,6 +125,27 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.has_comparison_intent
         assert plan.detection.comparison_entities == ["Q1", "Q2 2024"]
 
+    def test_detects_general_difference_wording(self):
+        """Difference requests need comparison coverage without a fixed preposition."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "What is different about the two vendor contracts?",
+            "How are the regional policies different?",
+        ):
+            plan = planner.plan(query)
+            assert plan.detection is not None
+            assert plan.detection.has_comparison_intent
+
+    def test_different_adjective_does_not_imply_comparison(self):
+        """The adjective 'different' can introduce a set without comparing it."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("What different policies apply to contractors?")
+
+        assert plan.detection is not None
+        assert not plan.detection.has_comparison_intent
+
     def test_temporal_detection_recognizes_month_names(self):
         """Month-scoped queries should carry temporal references."""
         planner = DeterministicQueryPlanner()
@@ -81,12 +156,114 @@ class TestDeterministicQueryPlanner:
         assert plan.detection.has_temporal_intent
         assert "march 2024" in plan.detection.temporal.metadata["references"]
 
-    def test_exact_identifier_keywords_include_tokenizer_variants(self):
-        """Exact IDs should survive underscore vs hyphen tokenizer differences."""
+    def test_freshness_word_is_query_shape_not_storage_recency(self):
+        """Current/latest wording should create intent without implying file age."""
+        plan = DeterministicQueryPlanner().plan("What is the latest refund policy?")
+
+        assert plan.detection is not None
+        assert plan.detection.has_freshness_intent
+        assert plan.detection.has_temporal_intent
+
+    def test_temporal_detection_recognizes_lifecycle_language(self):
+        """Version-state and relative-time language should retain temporal intent."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "Which retention rule is effective now?",
+            "What was the original deadline?",
+            "Who owned the account at that time?",
+            "Which region was active when Project Vega launched?",
+            "Which policy applied during the migration?",
+            "Which release most recently enabled token rotation?",
+        ):
+            plan = planner.plan(query)
+            assert plan.detection is not None
+            assert plan.detection.has_temporal_intent
+
+    def test_release_version_does_not_imply_temporal_intent(self):
+        """A dotted release id is an identifier unless the query adds time scope."""
+        planner = DeterministicQueryPlanner()
+
+        plan = planner.plan("Which region uses release 2026.05?")
+
+        assert plan.detection is not None
+        assert not plan.detection.has_temporal_intent
+
+    def test_exact_identifier_keywords_remain_literal(self):
+        """Deterministic planning must not invent separator variants for IDs."""
         planner = DeterministicQueryPlanner()
 
         plan = planner.plan("Find TC_1000")
 
         assert "TC_1000" in plan.keywords
-        assert "TC-1000" in plan.keywords
-        assert "TC 1000" in plan.keywords
+        assert "TC-1000" not in plan.keywords
+        assert "TC 1000" not in plan.keywords
+
+    def test_decomposes_explicit_compound_questions(self):
+        """Independent clauses should become separate retrieval legs."""
+        planner = DeterministicQueryPlanner()
+
+        examples = {
+            "What is the refund window, and who approves exceptions?": [
+                "What is the refund window",
+                "who approves exceptions",
+            ],
+            "What is the SLA? Who owns escalation?": [
+                "What is the SLA",
+                "Who owns escalation",
+            ],
+            "List failed tests; then show their owners.": [
+                "List failed tests",
+                "show their owners.",
+            ],
+            "What failed?\n- Where is the runbook?": [
+                "What failed",
+                "Where is the runbook",
+            ],
+        }
+
+        for query, expected in examples.items():
+            plan = planner.plan(query)
+            assert plan.retrieval_query == query
+            assert plan.rewrite_result is not None
+            assert plan.rewrite_result.is_compound
+            assert plan.rewrite_result.decomposed_queries == expected
+
+    def test_does_not_split_ordinary_conjunctions_or_comparisons(self):
+        """Shared predicates and entity lists are one retrieval question."""
+        planner = DeterministicQueryPlanner()
+
+        for query in (
+            "What are the retention and deletion policies?",
+            "Compare React and Vue performance.",
+            "How do I install and configure the agent?",
+            "Which alerts and incidents affected checkout?",
+        ):
+            assert planner.plan(query).rewrite_result is None
+
+    def test_model_rewrite_keeps_deterministic_explicit_decomposition(self):
+        """Optional query intelligence should enhance, not erase, query shape."""
+        query = "What is the refund window, and who approves exceptions?"
+        fallback = DeterministicQueryPlanner().plan(query)
+        model_rewrite = RewriteResult(
+            original_query=query,
+            rewritten_query="refund window and exception approval policy",
+            rewrite_type=RewriteType.RETRIEVAL,
+            confidence=0.8,
+        )
+
+        plan = plan_from_batch_result(
+            query,
+            BatchResult(rewrite_result=model_rewrite),
+            fallback_analysis=fallback.analysis,
+            detection=fallback.detection,
+            fallback_plan=fallback,
+        )
+
+        assert plan.retrieval_query == model_rewrite.rewritten_query
+        assert plan.rewrite_result is not None
+        assert plan.rewrite_result.rewrite_type is RewriteType.COMBINED
+        assert plan.rewrite_result.decomposed_queries == [
+            "What is the refund window",
+            "who approves exceptions",
+        ]

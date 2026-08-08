@@ -14,8 +14,8 @@ surfaces today, not as separately trained governance domains.
 
 | Evidence surface | Current behavior | Boundary |
 |---|---|---|
-| Unstructured text | Pyrrho evaluates evidence prefixes directly. | Primary supported governance path. |
-| Tables / structured data | KRAG retrieves table metadata and SQL-backed results; Pyrrho judges the textual evidence representation. | Pyrrho does not prove SQL correctness, join validity, unit conversion, or aggregation completeness. |
+| Unstructured text | Pyrrho evaluates the delivered evidence set directly. | Primary supported governance path. |
+| Tables / structured data | KRAG retrieves table metadata and grounded rows, with optional generated SQL when chat tiers are configured; Pyrrho judges the textual evidence representation. | Pyrrho does not prove SQL correctness, join validity, unit conversion, or aggregation completeness. |
 | Code | KRAG retrieves symbols, files, imports, and references; Pyrrho judges the retrieved snippets as text. | Pyrrho is not yet trained to prove call-graph completeness, runtime behavior, API compatibility, or test adequacy. |
 | Logs / traces / config | Retrieval favors exact tokens and source metadata. | Pyrrho can judge whether shown evidence looks sufficient, but domain-specific failure semantics are not separately modeled. |
 
@@ -27,8 +27,9 @@ the ranked evidence, source locations, table query metadata, and code/test
 context so a developer can inspect the result.
 
 `INSUFFICIENT` is especially useful for these modalities: it means the
-retrieved prefix did not satisfy the query contract, and fitz-sage should either
-broaden retrieval or tell the user which source surface appears missing.
+largest allowed ranked prefix did not satisfy the query contract. Fitz-Sage
+returns that verdict and evidence unchanged; a caller may prepare better source
+data or start a new retrieval with different inputs.
 
 ## Future Direction
 

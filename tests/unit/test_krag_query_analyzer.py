@@ -67,50 +67,45 @@ class TestQueryAnalysis:
         """CODE type produces code-heavy weights."""
         analysis = QueryAnalysis(primary_type=QueryType.CODE)
         assert analysis.strategy_weights == {
-            "code": 0.75,
-            "section": 0.1,
-            "table": 0.05,
-            "chunk": 0.1,
+            "code": 0.83,
+            "section": 0.11,
+            "table": 0.06,
         }
 
     def test_strategy_weights_documentation(self) -> None:
         """DOCUMENTATION type produces section-heavy weights."""
         analysis = QueryAnalysis(primary_type=QueryType.DOCUMENTATION)
         assert analysis.strategy_weights == {
-            "code": 0.1,
-            "section": 0.75,
-            "table": 0.05,
-            "chunk": 0.1,
+            "code": 0.11,
+            "section": 0.83,
+            "table": 0.06,
         }
 
     def test_strategy_weights_general(self) -> None:
         """GENERAL type produces balanced weights."""
         analysis = QueryAnalysis(primary_type=QueryType.GENERAL)
         assert analysis.strategy_weights == {
-            "code": 0.25,
-            "section": 0.25,
-            "table": 0.15,
-            "chunk": 0.35,
+            "code": 0.38,
+            "section": 0.39,
+            "table": 0.23,
         }
 
     def test_strategy_weights_cross(self) -> None:
         """CROSS type produces code/section balanced weights with table."""
         analysis = QueryAnalysis(primary_type=QueryType.CROSS)
         assert analysis.strategy_weights == {
-            "code": 0.35,
-            "section": 0.35,
-            "table": 0.1,
-            "chunk": 0.2,
+            "code": 0.44,
+            "section": 0.44,
+            "table": 0.12,
         }
 
     def test_strategy_weights_data(self) -> None:
         """DATA type produces table-heavy weights with section floor for hybrid retrieval."""
         analysis = QueryAnalysis(primary_type=QueryType.DATA)
         assert analysis.strategy_weights == {
-            "code": 0.05,
-            "section": 0.15,
-            "table": 0.70,
-            "chunk": 0.10,
+            "code": 0.06,
+            "section": 0.17,
+            "table": 0.77,
         }
 
     def test_strategy_weights_returns_copy(self) -> None:

@@ -9,7 +9,7 @@ Brief description of what this PR does.
 - [ ] Breaking change (fix or feature that would cause existing functionality to change)
 - [ ] Documentation update
 - [ ] Refactoring (no functional changes)
-- [ ] New plugin
+- [ ] Extension-point change
 
 ## Related Issues
 
@@ -39,10 +39,10 @@ Closes #(issue number)
 
 ## Architecture Compliance
 
-- [ ] No imports from `rag/` or `ingest/` in `core/`
-- [ ] No imports from `rag/` in `ingest/`
-- [ ] New plugins follow the Protocol pattern
-- [ ] Config-driven design (no hardcoded provider selection)
+- [ ] `python -m tools.contract_map --fail-on-errors` passes
+- [ ] Pyrrho remains the sole owner of governance decisions
+- [ ] Source cleanup and domain mappings remain caller-owned
+- [ ] New extension behavior is explicit and covered by dispatch tests
 
 ## Screenshots (if applicable)
 

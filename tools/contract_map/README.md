@@ -6,10 +6,19 @@ Detects forbidden cross-layer imports at the module level so violations are caug
 
 ## Rules enforced
 
-- `core/` — no imports from `engines/`, `ingestion/`, `retrieval/`, `llm/`, `storage/`
-- `retrieval/`, `llm/`, `ingestion/` — may only import from `core/`
-- `engines/` — may import `core/`, `llm/`, `storage/`, `retrieval/`
-- `runtime/`, `cli/` — unrestricted
+| Layer | May import from |
+|---|---|
+| `core` | `core` |
+| `encoders` | `encoders` |
+| `ingestion` | `core`, `ingestion` |
+| `storage` | `core`, `storage` |
+| `retrieval` | `core`, `retrieval`, `storage` |
+| `llm` | `core`, `encoders`, `llm` |
+| `governance` | `core`, `encoders`, `governance` |
+| `tabular` | `core`, `llm`, `storage`, `tabular` |
+| `config` | `config`, `core` |
+| `engines` | `config`, `core`, `engines`, `governance`, `ingestion`, `llm`, `retrieval`, `storage`, `tabular` |
+| `api`, `cli`, `runtime`, `sdk`, `services`, `tools` | unrestricted orchestration layers |
 
 ## Usage
 
