@@ -1,8 +1,7 @@
 <!-- docs/README.md -->
 # Documentation
 
-Start here when you need the current fitz-sage product model instead of
-historical implementation notes.
+Start here for the current fitz-sage product model.
 
 ## Core Guides
 

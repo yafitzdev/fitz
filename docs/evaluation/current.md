@@ -2,8 +2,7 @@
 # Current Measurement Plan
 
 This page tracks what fitz-sage should measure for the current retrieval-first
-architecture. Historical benchmark writeups remain in this directory as records,
-but they are not the product contract.
+architecture.
 
 ## What Needs Measurement
 
