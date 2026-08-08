@@ -17,6 +17,16 @@ from fitz_sage.core.exceptions import KnowledgeError
 class CollectionBusyError(KnowledgeError):
     """Raised when another process already owns a collection's write path."""
 
+    def __init__(self, message: str, *, owner: dict[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.owner = dict(owner or {})
+
+    @property
+    def operation(self) -> str | None:
+        """Return the active writer operation when lock metadata is available."""
+        operation = self.owner.get("operation")
+        return operation if isinstance(operation, str) else None
+
 
 class CollectionWriteLock:
     """Own the single-writer path for one collection until explicitly released."""
@@ -61,7 +71,7 @@ class CollectionWriteLock:
             owner = _read_owner(handle)
             handle.close()
             if _is_lock_contention(exc):
-                raise CollectionBusyError(self._busy_message(owner)) from exc
+                raise CollectionBusyError(self._busy_message(owner), owner=owner) from exc
             raise
 
         try:
